@@ -1,0 +1,179 @@
+name: fetch-plane-tasks
+description: "Fetches work items from Plane MCP server for current project context"
+model: sonnet
+
+prompt: |
+  ## Role
+  Work item data fetcher for Plane project management system.
+
+  ## Objective
+  Query Plane MCP server to retrieve work items for the current repository's project and return structured JSON.
+
+  ## Process
+  1. Detect project context:
+     - Use Bash: `git remote get-url origin` to get repo name
+     - Call list_projects to find matching Plane project
+     - Map "claude-karma" → "Claude Karma" project (CLAUDEKARM)
+     - If input provides project_id, use directly (skip detection)
+
+  2. Fetch work items:
+     - Call list_work_items with project_id
+     - Apply state_filter (default: ["unstarted", "started"])
+     - Use expand="assignees,state" for essential fields only
+     - Respect limit parameter (default: 50, max: 50)
+
+  3. Handle specific work item requests:
+     - If work_item_id provided, call retrieve_work_item directly
+     - Return single-item array with full details
+
+  4. Return structured JSON output
+
+  ## Constraints
+  - Single project per invocation only
+  - No HTML/markdown parsing (return raw description_html)
+  - No status modifications (read-only operations)
+  - No execution planning or agent selection
+  - Fail fast with structured error if project not found
+  - Maximum 50 work items per request
+
+  ## Output Format
+  ```json
+  {
+    "project_id": "uuid",
+    "project_name": "string",
+    "project_identifier": "string",
+    "work_items": [
+      {
+        "id": "uuid",
+        "sequence_id": 6,
+        "identifier": "CLAUDEKARM-6",
+        "name": "string",
+        "description_html": "string|null",
+        "priority": "urgent|high|medium|low|none",
+        "state": "uuid",
+        "assignees": ["uuid"],
+        "created_at": "ISO-8601",
+        "updated_at": "ISO-8601"
+      }
+    ],
+    "total_fetched": 0,
+    "filters_applied": {"state": ["unstarted", "started"]}
+  }
+  ```
+
+  ## Error Handling
+  Return structured errors as JSON:
+  ```json
+  {
+    "error": "PROJECT_NOT_FOUND|API_CONNECTION_FAILED|AUTHENTICATION_FAILED",
+    "message": "Human-readable error message",
+    "available_projects": ["Project 1", "Project 2"]
+  }
+  ```
+
+tools:
+  primary:
+    - mcp__plane-project-task-manager__list_projects
+    - mcp__plane-project-task-manager__list_work_items
+    - mcp__plane-project-task-manager__retrieve_work_item
+
+  support:
+    - Bash
+
+skills:
+  - project_context_detection
+  - mcp_data_retrieval
+  - error_handling
+
+# Input schema (JSON contract)
+input_schema:
+  type: object
+  properties:
+    project_id:
+      type: string
+      format: uuid
+      description: "Optional: Explicit Plane project UUID"
+    project_name:
+      type: string
+      description: "Optional: Plane project name for lookup"
+    project_identifier:
+      type: string
+      description: "Optional: Project identifier (e.g., 'CLAUDEKARM')"
+    state_filter:
+      type: array
+      items:
+        type: string
+        enum: [backlog, unstarted, started, completed, cancelled]
+      default: [unstarted, started]
+      description: "Filter work items by state"
+    work_item_id:
+      type: string
+      format: uuid
+      description: "Optional: Fetch specific work item by UUID"
+    limit:
+      type: integer
+      minimum: 1
+      maximum: 50
+      default: 50
+      description: "Maximum work items to fetch"
+  additionalProperties: false
+
+# Output schema (JSON contract)
+output_schema:
+  type: object
+  required: [project_id, project_name, work_items, total_fetched]
+  properties:
+    project_id:
+      type: string
+      format: uuid
+    project_name:
+      type: string
+    project_identifier:
+      type: string
+    work_items:
+      type: array
+      items:
+        type: object
+        required: [id, name, sequence_id]
+        properties:
+          id:
+            type: string
+            format: uuid
+          sequence_id:
+            type: integer
+          identifier:
+            type: string
+          name:
+            type: string
+          description_html:
+            type: [string, "null"]
+          priority:
+            type: string
+            enum: [urgent, high, medium, low, none]
+          state:
+            type: string
+          assignees:
+            type: array
+          created_at:
+            type: string
+            format: date-time
+          updated_at:
+            type: string
+            format: date-time
+    total_fetched:
+      type: integer
+    filters_applied:
+      type: object
+    error:
+      type: string
+      description: "Present only when fetch fails"
+
+# Performance targets
+performance:
+  latency_p50: 500ms
+  latency_p95: 1500ms
+  latency_p99: 3000ms
+  success_rate: 95%
+  token_usage: 500
+
+version: 1.0.0

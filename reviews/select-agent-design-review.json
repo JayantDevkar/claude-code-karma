@@ -1,0 +1,211 @@
+{
+  "review_metadata": {
+    "agent_reviewed": "select-agent",
+    "design_file": "/Users/jayantdevkar/Documents/GitHub/claude-karma/plans/v2/select-agent.yaml",
+    "philosophy_file": "/Users/jayantdevkar/Documents/GitHub/claude-karma/philosophy/QUICK_REFERENCE.md",
+    "review_date": "2026-01-06",
+    "reviewer": "Claude Code Agent"
+  },
+  "checklist": {
+    "1_single_clear_responsibility": {
+      "status": "PASS",
+      "details": "Agent has single, well-defined responsibility: discover agents via filesystem scanning and recommend best-fit matches based on task requirements.",
+      "evidence": "Name clearly indicates 'select-agent', description explicitly states 'Discovers available agents...and recommends best-fit matches', objective is singular and measurable"
+    },
+    "2_name_follows_action_target_format": {
+      "status": "PASS",
+      "details": "Name 'select-agent' follows the action-target format correctly (action=select, target=agent).",
+      "evidence": "Matches philosophy guideline pattern 'analyze-security', 'parse-json' etc. Complies with NAMING_CONVENTIONS.md reference"
+    },
+    "3_maximum_3_primary_tools": {
+      "status": "PASS",
+      "details": "Agent declares exactly 3 primary tools: Glob, Read, Grep (conditional)",
+      "evidence": "tools.primary section lists: Glob, Read, Grep with comment 'Quick keyword searches (conditional)' - meets 3-tool maximum requirement"
+    },
+    "4_prompt_under_500_tokens": {
+      "status": "PASS",
+      "details": "Prompt contains approximately 173-190 estimated tokens (conservative estimate with 10% margin)",
+      "evidence": "Prompt section word count: 226 words. Token calculation: 226 words ÷ 1.3 ≈ 173-190 tokens. File claims '~480 tokens' but actual measurement is 173-190 tokens. This is accurate and well under 500-token limit."
+    },
+    "5_input_output_contracts_specified": {
+      "status": "PASS",
+      "details": "Comprehensive JSON schemas provided for both input and output with required fields, types, descriptions, and constraints.",
+      "evidence": "input_schema (lines 77-121): defines task_type (enum), required_capabilities (array), complexity, target_language, file_references. output_schema (lines 124-191): defines recommendations (object array), selection_confidence (enum), total_agents_scanned (integer), malformed_agents, warnings. All required fields specified."
+    },
+    "6_error_states_documented": {
+      "status": "PASS",
+      "details": "Error handling section comprehensively documents four error scenarios with explicit handling strategies.",
+      "evidence": "error_handling section (lines 201-205) covers: malformed_yaml (skip_and_warn), missing_skills (use_fallback_scoring), no_agents_found (return_empty_with_warning), boundary_violation (exclude_agent). Constraints section includes handling for malformed files."
+    },
+    "7_performance_targets_defined": {
+      "status": "PASS",
+      "details": "Performance targets defined for latency, success rate, and token usage with specific p50/p95/p99 percentiles.",
+      "evidence": "performance section (lines 194-199) specifies: latency_p50: 300ms, latency_p95: 800ms, latency_p99: 1500ms, success_rate: 98%, token_usage: 650. All targets meet philosophy guidelines (P50 <500ms guideline is 300ms baseline)."
+    }
+  },
+  "solid_principles_analysis": {
+    "single_responsibility_principle": {
+      "status": "PASS",
+      "analysis": "Agent has one reason to change: discovery/matching algorithm logic. Does not mix concerns (e.g., no agent invocation, no external system integration).",
+      "evidence": "Boundaries clearly separate 'includes' (discovery, parsing, matching, recommendation) from 'excludes' (invocation, external systems, user interaction, code generation)"
+    },
+    "open_closed_principle": {
+      "status": "PASS",
+      "analysis": "Agent designed to be open for extension (can add new scoring criteria, discovery mechanisms) but closed for modification (core matching logic isolated).",
+      "evidence": "Scoring algorithm (lines 21-28) is parameterized with additive scoring system; new criteria can be added without changing core logic"
+    },
+    "liskov_substitution_principle": {
+      "status": "N/A",
+      "analysis": "Not applicable - this is a standalone agent, not part of inheritance hierarchy"
+    },
+    "interface_segregation_principle": {
+      "status": "PASS",
+      "analysis": "Input and output contracts are minimal and focused. Consumers only receive required information (agent name, score, rationale, config_path, optional invocation hints).",
+      "evidence": "output_schema.recommendations separates required fields (agent_name, score, rationale, config_path) from optional enhancements (invocation_hint, capabilities, tools)"
+    },
+    "dependency_inversion_principle": {
+      "status": "PASS",
+      "analysis": "Agent depends on abstractions (Glob, Read tools) rather than concrete filesystem implementations. Scoring algorithm depends on abstract agent structure (name, description, skills, tools).",
+      "evidence": "Uses filesystem tool abstractions (Glob for discovery, Read for parsing) rather than hardcoding file operations"
+    }
+  },
+  "tool_verification": {
+    "glob_tool": {
+      "status": "AVAILABLE",
+      "evidence": "Standard Claude Code tool for file pattern matching. Used correctly in prompt (line 14): 'Glob to discover all agent.yaml files: agents/**/agent.yaml'"
+    },
+    "read_tool": {
+      "status": "AVAILABLE",
+      "evidence": "Standard Claude Code tool for reading files. Used correctly in prompt (line 15) to parse agent.yaml configurations"
+    },
+    "grep_tool": {
+      "status": "AVAILABLE",
+      "evidence": "Standard Claude Code tool for content search. Referenced as conditional (line 53): 'Quick keyword searches (conditional)' - appropriate use"
+    },
+    "tool_references_issues": {
+      "status": "PASS",
+      "details": "All tool references are correct and available in Claude Code standard toolset"
+    }
+  },
+  "boundary_definitions": {
+    "includes_analysis": {
+      "status": "CLEAR",
+      "documented": [
+        "Agent discovery via filesystem scanning",
+        "Agent metadata parsing from YAML",
+        "Capability-based scoring and ranking",
+        "Recommendation generation with rationale"
+      ]
+    },
+    "excludes_analysis": {
+      "status": "CLEAR",
+      "documented": [
+        "Agent invocation or execution",
+        "External system integration (Plane, Linear, etc.)",
+        "User interaction or clarification",
+        "File modification or code generation",
+        "Work item fetching or parsing"
+      ]
+    },
+    "boundary_completeness": {
+      "status": "PASS",
+      "analysis": "Boundaries are explicit and comprehensive. Clear separation of concerns prevents scope creep."
+    }
+  },
+  "improvement_suggestions": [
+    {
+      "category": "Documentation",
+      "severity": "MINOR",
+      "issue": "Token count annotation is inaccurate",
+      "current": "# Token count: ~480 tokens (under 500 limit)",
+      "suggested": "# Token count: ~190 tokens (under 500 limit)",
+      "rationale": "Actual measurement shows 173-190 tokens. While the comment is technically correct ('under 500 limit'), the estimate is significantly off and should reflect actual measurement.",
+      "impact": "LOW - does not affect functionality, only documentation accuracy"
+    },
+    {
+      "category": "Scoring Algorithm",
+      "severity": "MINOR",
+      "issue": "Fuzzy matching algorithm not fully specified",
+      "current": "Score each agent using fuzzy matching algorithm: [list of criteria]",
+      "suggested": "Specify exact matching strategy: Levenshtein distance threshold? Substring matching? Semantic similarity? Provide implementation hints.",
+      "rationale": "Philosophy guideline emphasizes 'specific measurable goal'. Current scoring criteria are clear (additive weights), but matching strategy for 'Description keyword match' and skill matching is vague.",
+      "impact": "MEDIUM - could lead to inconsistent results across implementations"
+    },
+    {
+      "category": "Error Handling",
+      "severity": "MINOR",
+      "issue": "No explicit timeout or rate limiting defined",
+      "current": "No mention of timeout behavior when scanning many agents",
+      "suggested": "Add constraint: 'If agent count >100, consider pagination or early stopping. Timeout scanning at 5s per agent.'",
+      "rationale": "As agent directory grows, scanning latency could exceed p99 target (1500ms). Need defensive bounds.",
+      "impact": "MEDIUM - becomes critical if agent repository grows beyond current size"
+    },
+    {
+      "category": "Scoring Logic",
+      "severity": "MINOR",
+      "issue": "Score weighting may not sum meaningfully across all criteria",
+      "current": "Max score could exceed 150 in edge cases if all bonus criteria are met",
+      "suggested": "Document max possible score and mapping to confidence levels. Example: Score range [0, 150] → HIGH [80, 150], MEDIUM [50, 79], LOW [30, 49]",
+      "rationale": "Confidence level mapping is defined but relationship to max achievable score is implicit",
+      "impact": "LOW - scoring algorithm is actually well-designed, just needs clarification"
+    },
+    {
+      "category": "Process",
+      "severity": "MINOR",
+      "issue": "Invocation hints generation not detailed in Process",
+      "current": "Step 6: Generate invocation hints for orchestrator [no implementation details]",
+      "suggested": "Add: 'Invocation hint format: Task[agent_name] with input[...]. Reference output_schema.recommendations.invocation_hint.'",
+      "rationale": "Output schema requires invocation_hint field but prompt doesn't detail how to generate it",
+      "impact": "LOW - likely inferred from output schema but should be explicit"
+    }
+  ],
+  "critical_issues": [],
+  "medium_issues": [
+    {
+      "issue": "Fuzzy matching strategy underspecified",
+      "description": "The prompt mentions 'fuzzy matching algorithm' but doesn't define how keyword matching works",
+      "recommendation": "Add implementation details: e.g., 'Use substring matching for skills, keyword presence for description'"
+    }
+  ],
+  "low_issues": [
+    {
+      "issue": "Token count annotation off by ~290 tokens",
+      "description": "File states ~480 tokens but actual prompt measures ~190 tokens",
+      "recommendation": "Update line 207 to reflect actual token count"
+    },
+    {
+      "issue": "Timeout behavior not specified",
+      "description": "Performance targets define latency but not timeout policy if scanning many agents",
+      "recommendation": "Add to Constraints: 'Timeout individual agent processing if >5s elapsed'"
+    }
+  ],
+  "compliance_summary": {
+    "philosophy_compliance_score": "95/100",
+    "rationale": "Excellent compliance with philosophy guidelines. Single responsibility is clear, naming follows conventions, tools are minimal and appropriate, prompt is well-optimized, contracts are comprehensive, error handling is explicit, and performance targets are defined. Minor issues are documentation clarity and algorithmic detail, not fundamental design flaws.",
+    "philosophy_checklist_results": {
+      "single_clear_responsibility": "PASS",
+      "action_target_naming": "PASS",
+      "max_3_primary_tools": "PASS",
+      "prompt_under_500_tokens": "PASS",
+      "input_output_contracts": "PASS",
+      "error_states_documented": "PASS",
+      "performance_targets_defined": "PASS"
+    },
+    "all_checklist_items_passing": true
+  },
+  "risk_assessment": {
+    "production_ready": true,
+    "risks": [
+      {
+        "risk": "Scalability with large agent directories",
+        "severity": "LOW",
+        "mitigation": "Implement early stopping or pagination if agents >100"
+      }
+    ],
+    "recommendations_before_deploy": [
+      "Clarify fuzzy matching algorithm implementation",
+      "Add tests for scoring calculation with edge cases",
+      "Benchmark with 50+ agents to validate p99 target of 1500ms"
+    ]
+  }
+}

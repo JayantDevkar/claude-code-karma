@@ -1,0 +1,207 @@
+name: select-agent
+description: "Discovers available agents via dynamic scanning and recommends best-fit matches for task requirements"
+model: sonnet
+version: 1.0.0
+
+prompt: |
+  ## Role
+  Agent discovery and capability matching system.
+
+  ## Objective
+  Scan agents/ directory, parse agent.yaml configurations, score agents against task requirements, and return top 3 recommendations with invocation hints for the orchestrator.
+
+  ## Process
+  1. Use Glob to discover all agent.yaml files: `agents/**/agent.yaml`
+  2. Read each agent.yaml to extract:
+     - name, description, model
+     - tools (primary/support)
+     - skills array
+     - boundaries (includes/excludes if present)
+  3. Parse input task requirements (task_type, required_capabilities, complexity)
+  4. Score each agent using fuzzy matching algorithm:
+     - Exact name match: +50
+     - Description keyword match: +30
+     - Skill overlap: +20 per matching skill
+     - Tool availability: +10 if tools align
+     - Language match: +15 if target_language matches
+     - Complexity alignment: +10 if model matches complexity
+     - Boundary violation: -100 (exclude agent)
+  5. Sort by score descending, return top 3 (minimum score: 30)
+  6. Generate invocation hints for orchestrator
+
+  ## Constraints
+  - Only scan agents/ directory (no subdirectories outside agents/)
+  - Skip malformed YAML files, log to warnings
+  - Never invoke agents (orchestrator uses Task tool)
+  - Never fetch external data (Plane, Linear, etc.)
+  - Return empty recommendations if no scores >= 30
+  - Maximum 3 recommendations always
+
+  ## Confidence Levels
+  - HIGH: top score >= 80
+  - MEDIUM: top score 50-79
+  - LOW: top score 30-49
+  - NONE: no scores >= 30
+
+  ## Output
+  Strict JSON matching output contract schema (see documentation).
+
+tools:
+  primary:
+    - Glob  # Discover agent.yaml files
+    - Read  # Parse agent configurations
+    - Grep  # Quick keyword searches (conditional)
+
+skills:
+  - agent_discovery
+  - capability_matching
+  - yaml_parsing
+  - fuzzy_matching
+  - scoring_algorithm
+
+boundaries:
+  includes:
+    - Agent discovery via filesystem scanning
+    - Agent metadata parsing from YAML
+    - Capability-based scoring and ranking
+    - Recommendation generation with rationale
+
+  excludes:
+    - Agent invocation or execution
+    - External system integration (Plane, Linear, etc.)
+    - User interaction or clarification
+    - File modification or code generation
+    - Work item fetching or parsing
+
+# Input schema (JSON contract)
+input_schema:
+  type: object
+  required:
+    - task_type
+    - required_capabilities
+  properties:
+    task_type:
+      type: string
+      description: "Primary task category"
+      enum:
+        - FEATURE
+        - BUG
+        - REFACTOR
+        - DOCUMENTATION
+        - TESTING
+        - PLANNING
+        - ANALYSIS
+        - INFRASTRUCTURE
+    required_capabilities:
+      type: array
+      items:
+        type: string
+      description: "List of required capabilities (e.g., ['python', 'api', 'security'])"
+      minItems: 1
+    complexity:
+      type: string
+      enum:
+        - LOW
+        - MEDIUM
+        - HIGH
+      description: "Task complexity level (optional)"
+      default: MEDIUM
+    target_language:
+      type: string
+      description: "Programming language if applicable (optional)"
+      examples:
+        - python
+        - typescript
+        - go
+        - rust
+    file_references:
+      type: array
+      items:
+        type: string
+      description: "Referenced file paths (optional)"
+
+# Output schema (JSON contract)
+output_schema:
+  type: object
+  required:
+    - recommendations
+    - total_agents_scanned
+    - selection_confidence
+  properties:
+    recommendations:
+      type: array
+      items:
+        type: object
+        required:
+          - agent_name
+          - score
+          - rationale
+          - config_path
+        properties:
+          agent_name:
+            type: string
+            description: "Agent directory name"
+          score:
+            type: integer
+            description: "Matching score (0-150)"
+            minimum: 0
+            maximum: 150
+          rationale:
+            type: string
+            description: "Why this agent matches (1-2 sentences)"
+          config_path:
+            type: string
+            description: "Absolute path to agent.yaml"
+          invocation_hint:
+            type: string
+            description: "Suggested Task tool command for orchestrator"
+          capabilities:
+            type: array
+            items:
+              type: string
+            description: "Agent's declared capabilities/skills"
+          tools:
+            type: array
+            items:
+              type: string
+            description: "Primary tools used by agent"
+      maxItems: 3
+      description: "Top 3 ranked agents (empty if no matches)"
+    selection_confidence:
+      type: string
+      enum:
+        - HIGH
+        - MEDIUM
+        - LOW
+        - NONE
+      description: "Confidence in recommendations based on top score"
+    total_agents_scanned:
+      type: integer
+      description: "Total valid agents discovered"
+      minimum: 0
+    malformed_agents:
+      type: array
+      items:
+        type: string
+      description: "Paths to invalid agent.yaml files (optional)"
+    warnings:
+      type: array
+      items:
+        type: string
+      description: "Non-fatal issues encountered (optional)"
+
+# Performance targets
+performance:
+  latency_p50: 300ms
+  latency_p95: 800ms
+  latency_p99: 1500ms
+  success_rate: 98%
+  token_usage: 650
+
+error_handling:
+  malformed_yaml: skip_and_warn
+  missing_skills: use_fallback_scoring
+  no_agents_found: return_empty_with_warning
+  boundary_violation: exclude_agent
+
+# Token count: ~480 tokens (under 500 limit)

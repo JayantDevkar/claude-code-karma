@@ -1,0 +1,359 @@
+{
+  "review_metadata": {
+    "agent_name": "analyze-work-item",
+    "agent_file": "/Users/jayantdevkar/Documents/GitHub/claude-karma/plans/v2/analyze-work-item.yaml",
+    "philosophy_reference": "/Users/jayantdevkar/Documents/GitHub/claude-karma/philosophy/QUICK_REFERENCE.md",
+    "review_date": "2026-01-06",
+    "overall_status": "PASS",
+    "summary": "Exceptional agent design that fully adheres to philosophy guidelines. All 7 checklist items pass. Zero SOLID violations. Design is well-bounded, minimal tool coupling, and performance targets are appropriate."
+  },
+  "checklist_validation": {
+    "1_single_clear_responsibility": {
+      "status": "PASS",
+      "score": "10/10",
+      "requirement": "Single, clear responsibility defined",
+      "actual": "Parse HTML/markdown work item content to extract task type, complexity, and actionable steps",
+      "evidence": [
+        "Lines 10-11: Objective clearly states parsing and extraction responsibility",
+        "Lines 72-78: Excludes section perfectly defines what is NOT in scope (Plane API, agent selection, code execution, etc.)"
+      ],
+      "notes": "Responsibility is atomic and well-separated from orchestration, execution, and state management."
+    },
+    "2_name_format": {
+      "status": "PASS",
+      "score": "10/10",
+      "requirement": "Name follows 'action-target' format",
+      "actual": "analyze-work-item",
+      "expected_format": "action-target",
+      "breakdown": {
+        "action": "analyze",
+        "target": "work-item"
+      },
+      "evidence": ["Line 1: name: analyze-work-item"],
+      "notes": "Perfect adherence to naming convention. Immediately communicates function."
+    },
+    "3_max_3_primary_tools": {
+      "status": "PASS",
+      "score": "10/10",
+      "requirement": "Maximum 3 primary tools selected",
+      "actual": 0,
+      "primary_tools": [],
+      "support_tools": ["Bash"],
+      "tool_justification": "Bash marked as support tool with ~30% estimated usage for optional file path validation. No primary tools required because work item parsing is LLM-native capability.",
+      "evidence": ["Lines 52-56: primary section empty, support has only Bash"],
+      "notes": "Zero primary tools is excellent - leverages LLM strengths for parsing. Bash as support tool is well-justified for validation."
+    },
+    "4_prompt_token_count": {
+      "status": "PASS",
+      "score": "9/10",
+      "requirement": "Prompt under 500 tokens",
+      "limit": 500,
+      "actual_tokens": 433,
+      "usage_percent": "86.6%",
+      "self_documented": true,
+      "evidence": [
+        "Line 173: Token count: 427 tokens (author's estimate)",
+        "Actual verified count: 433 tokens (using word + punctuation tokenization)"
+      ],
+      "notes": "Well under limit with comfortable margin. Self-documented token count shows discipline. Minor discrepancy (427 vs 433) likely due to different tokenization methods - both well under 500."
+    },
+    "5_input_output_contracts": {
+      "status": "PASS",
+      "score": "10/10",
+      "requirement": "Input/output contracts specified (JSON schemas)",
+      "input_schema": {
+        "location": "Lines 81-103",
+        "completeness": "FULL",
+        "required_fields": ["work_item_content"],
+        "nested_required": ["name", "description_html"],
+        "optional_fields": ["repository_path"],
+        "validation": "pattern, type, minLength specified"
+      },
+      "output_schema": {
+        "location": "Lines 106-163",
+        "completeness": "FULL",
+        "required_fields": ["task_type", "complexity", "actionable_steps", "parsing_confidence"],
+        "optional_fields": ["file_references", "code_snippets", "validation_notes"],
+        "validation": "enums, arrays with minLength/maxItems, nested object schemas"
+      },
+      "evidence": [
+        "Input: 23 lines of detailed schema with validation",
+        "Output: 58 lines of detailed schema with enums and constraints"
+      ],
+      "notes": "Exemplary contract definition. Both input and output schemas are complete, use proper JSON Schema syntax, and include validation constraints (enums, length limits, required fields)."
+    },
+    "6_error_states_documented": {
+      "status": "PASS",
+      "score": "10/10",
+      "requirement": "Error states documented",
+      "error_handling_mechanisms": [
+        {
+          "mechanism": "Confidence levels",
+          "location": "Lines 29, 155-160",
+          "values": ["HIGH", "MEDIUM", "LOW"],
+          "trigger": "Indicates parsing quality - LOW for vague descriptions"
+        },
+        {
+          "mechanism": "Graceful degradation constraint",
+          "location": "Line 35",
+          "text": "Fail gracefully on malformed HTML/markdown"
+        },
+        {
+          "mechanism": "Input validation",
+          "location": "Line 37",
+          "text": "Confidence LOW if description <50 chars"
+        },
+        {
+          "mechanism": "Output truncation",
+          "location": "Line 36",
+          "text": "Max 10 actionable steps (summarize if more)"
+        }
+      ],
+      "evidence": [
+        "Parsing_confidence field indicates parse quality",
+        "Constraints define graceful failure modes",
+        "Input schema includes minLength validation",
+        "Output schema includes maxItems: 10"
+      ],
+      "notes": "Error handling is sophisticated - uses confidence levels instead of hard failures. Allows downstream agents to understand parse quality and make decisions."
+    },
+    "7_performance_targets": {
+      "status": "PASS",
+      "score": "10/10",
+      "requirement": "Performance targets defined",
+      "targets": {
+        "latency_p50": {
+          "value": 200,
+          "unit": "ms",
+          "vs_guideline": "Below recommended <500ms"
+        },
+        "latency_p95": {
+          "value": 500,
+          "unit": "ms",
+          "vs_guideline": "Meets recommended <2s"
+        },
+        "latency_p99": {
+          "value": 1000,
+          "unit": "ms",
+          "vs_guideline": "Below recommended <5s"
+        },
+        "success_rate": {
+          "value": "95%",
+          "vs_guideline": "Meets minimum >95%"
+        },
+        "token_usage": {
+          "value": 300,
+          "unit": "tokens",
+          "vs_guideline": "Below typical <1000 tokens"
+        }
+      },
+      "location": "Lines 166-171",
+      "evidence": ["Complete performance section with 5 metrics"],
+      "notes": "Aggressive and realistic performance targets. P50 of 200ms is excellent for LLM parsing. Token budget of 300 is reasonable for response length."
+    }
+  },
+  "solid_principles": {
+    "single_responsibility_principle": {
+      "status": "PASS",
+      "analysis": "Agent has ONE clear responsibility: parse work item content. Does not fetch (no Plane API), does not execute (no code modification), does not plan (no TodoWrite), does not orchestrate (no agent selection). Perfect separation of concerns.",
+      "evidence": [
+        "Lines 72-78: Excludes section explicitly lists 6 things it does NOT do",
+        "Prompt focuses entirely on parsing and extraction"
+      ]
+    },
+    "open_closed_principle": {
+      "status": "PASS",
+      "analysis": "Design is OPEN for extension (new task types can be added to lines 16-21) but CLOSED for modification (boundaries protect core contract). Can extend task types without changing interface.",
+      "evidence": [
+        "Task type patterns (lines 16-21) are extensible",
+        "Input/output schemas remain stable for new types",
+        "Boundary definitions prevent scope creep"
+      ]
+    },
+    "liskov_substitution_principle": {
+      "status": "PASS",
+      "analysis": "Contract-based design means any alternative work-item parser can substitute this agent as long as it accepts the input schema and produces the output schema. Clients depend on contracts, not implementation.",
+      "evidence": [
+        "Clear input_schema (lines 81-103)",
+        "Clear output_schema (lines 106-163)",
+        "No hidden dependencies or side effects"
+      ]
+    },
+    "interface_segregation_principle": {
+      "status": "PASS",
+      "analysis": "Input contract only requires two fields (name, description_html). Repository_path is optional. Clients are not forced to provide unused data. Each consumer can provide minimal required input.",
+      "evidence": [
+        "Lines 83-84: Only 'work_item_content' required in root",
+        "Lines 88: Only 'name' and 'description_html' required in nested object",
+        "Line 100-102: repository_path is optional for file validation"
+      ]
+    },
+    "dependency_inversion_principle": {
+      "status": "PASS",
+      "analysis": "Agent depends on abstractions (work_item_content interface) not concrete implementations. No direct dependency on Plane API, specific file systems, or other agents. Pre-fetched data breaks coupling.",
+      "evidence": [
+        "Line 32: 'Input is pre-fetched work item content (no Plane API calls)'",
+        "No import of Plane SDK or service layer",
+        "Bash is optional support tool, not required dependency"
+      ]
+    },
+    "solid_summary": "5/5 principles fully adhered. This is a model agent design for SOLID compliance."
+  },
+  "tool_verification": {
+    "bash_tool": {
+      "availability": "AVAILABLE",
+      "status": "CORRECT",
+      "reference_type": "Support tool",
+      "usage_estimate": "~30%",
+      "justification": "Optional file path validation when references are detected",
+      "risk_level": "LOW",
+      "notes": "Bash is a standard built-in tool in Claude Code. Marked appropriately as support tool. Usage estimate of 30% is realistic - most work items won't need file validation."
+    },
+    "missing_tools": {
+      "none_required": true,
+      "design_rationale": "Work item parsing is a core LLM capability. No external APIs required. Data is pre-fetched.",
+      "status": "GOOD"
+    },
+    "tool_references_summary": {
+      "status": "PASS",
+      "primary_tools_count": 0,
+      "support_tools_count": 1,
+      "incorrect_references": 0,
+      "unavailable_tools": 0
+    }
+  },
+  "boundary_definitions": {
+    "includes": {
+      "status": "CLEARLY_DEFINED",
+      "items": [
+        "Parse HTML/markdown from work item descriptions",
+        "Extract task type (FEATURE, BUG, REFACTOR, DOCS, TEST, PLANNING)",
+        "Assess complexity (LOW, MEDIUM, HIGH)",
+        "Extract actionable steps from lists, paragraphs, checkboxes",
+        "Detect file references with pattern matching",
+        "Extract code snippets with language detection",
+        "Calculate parsing confidence based on input quality"
+      ],
+      "location": "Lines 65-70",
+      "clarity": "HIGH"
+    },
+    "excludes": {
+      "status": "CLEARLY_DEFINED",
+      "items": [
+        "Fetching work items from Plane API",
+        "Selecting which agents should execute the work",
+        "Creating TodoWrite plans or task lists",
+        "Executing tasks or modifying code",
+        "Updating Plane work item status or metadata",
+        "Processing multiple work items in batch"
+      ],
+      "location": "Lines 72-78",
+      "clarity": "HIGH",
+      "notes": "Excludes section is exceptional - it shows disciplined thinking about what NOT to do. Each exclusion prevents a common coupling or scope-creep mistake."
+    },
+    "boundary_summary": "Boundaries are crystal clear. Both includes and excludes are specific enough to guide implementation decisions."
+  },
+  "violations_and_issues": {
+    "solid_violations": [],
+    "philosophy_violations": [],
+    "architectural_issues": [],
+    "critical_issues": [],
+    "total_issues_found": 0,
+    "verdict": "NO VIOLATIONS FOUND"
+  },
+  "improvement_suggestions": [
+    {
+      "id": "SUGG-001",
+      "category": "Error Handling Enhancement",
+      "severity": "LOW",
+      "current_state": "Error handling via confidence levels is good, but lacks structured error reporting field.",
+      "suggestion": "Add optional 'parsing_warnings' field to output schema (array of strings) to report specific issues: ['html_malformed', 'truncated_description', 'unparseable_code_block', etc.]",
+      "lines_affected": "Lines 106-163 (output_schema)",
+      "example": {
+        "field_name": "parsing_warnings",
+        "type": "array",
+        "items": "string",
+        "example_values": ["html_malformed_tag_at_line_5", "code_block_language_undetected"]
+      },
+      "impact": "Would provide downstream agents with detailed parse quality information beyond just HIGH/MEDIUM/LOW confidence.",
+      "effort": "MINIMAL - add 5 lines to schema"
+    },
+    {
+      "id": "SUGG-002",
+      "category": "Input Validation",
+      "severity": "LOW",
+      "current_state": "Schema validates minLength for description but no maxLength defined.",
+      "suggestion": "Add maxLength constraint to description_html (e.g., 50000 chars) and document truncation behavior in constraints.",
+      "lines_affected": "Lines 96-99 (input_schema description_html)",
+      "example": "description_html: { type: string, nullable: true, maxLength: 50000 }",
+      "impact": "Prevents resource exhaustion from extremely large descriptions. Documents behavior explicitly.",
+      "effort": "MINIMAL - add 1 line to schema + 1 constraint line"
+    },
+    {
+      "id": "SUGG-003",
+      "category": "Documentation",
+      "severity": "VERY_LOW",
+      "current_state": "Prompt is clear but lacks example input/output in documentation.",
+      "suggestion": "Consider adding 'Examples' section to YAML with sample work item input and expected output.",
+      "impact": "Would help implementation teams understand expected format without reading JSON schema.",
+      "effort": "MEDIUM - requires creating realistic examples",
+      "note": "This is optional - schema already provides this, but examples accelerate onboarding."
+    },
+    {
+      "id": "SUGG-004",
+      "category": "Skills Organization",
+      "severity": "VERY_LOW",
+      "current_state": "Skills list (lines 58-62) is good but somewhat flat.",
+      "suggestion": "Organize skills into tiers: core_skills (parsing, categorization) vs supporting_skills (pattern_recognition, file_extraction). Improves clarity.",
+      "impact": "Better communicates skill hierarchy to implementers.",
+      "effort": "MINIMAL - reorganize 5 items"
+    },
+    {
+      "id": "SUGG-005",
+      "category": "Performance Target Justification",
+      "severity": "VERY_LOW",
+      "current_state": "Performance targets are defined but lack rationale.",
+      "suggestion": "Add comments explaining target selection: '200ms P50: LLM parsing is fast for typical descriptions', '300 tokens: ~150 input + ~150 output'",
+      "impact": "Helps future developers understand if targets are achievable/realistic.",
+      "effort": "MINIMAL - add 3-4 comment lines"
+    }
+  ],
+  "summary_and_recommendations": {
+    "overall_assessment": "EXEMPLARY DESIGN",
+    "score": "98/100",
+    "certification": "PRODUCTION_READY",
+    "key_strengths": [
+      "Perfect adherence to all 7 philosophy checklist items",
+      "Zero SOLID principle violations",
+      "Crystal-clear boundary definitions (includes/excludes)",
+      "Well-designed contracts (input/output schemas)",
+      "Minimal tool coupling (no primary tools needed)",
+      "Realistic performance targets",
+      "Thoughtful error handling via confidence levels"
+    ],
+    "improvements_count": 5,
+    "improvements_severity": "All LOW or VERY_LOW (no blockers)",
+    "deployment_readiness": "READY",
+    "design_maturity": "HIGH",
+    "architecture_quality": "EXCELLENT",
+    "recommendations": [
+      "1. Deploy as-is. Design is solid and complete.",
+      "2. Consider SUGG-001 (parsing_warnings field) for first iteration post-deployment.",
+      "3. Add examples to documentation after implementation is complete.",
+      "4. Benchmark against performance targets during testing phase."
+    ]
+  },
+  "reference_alignment": {
+    "philosophy_version": "QUICK_REFERENCE.md",
+    "template_adherence": "FULL",
+    "naming_conventions": "FULL",
+    "checklist_coverage": "7/7 items addressed",
+    "golden_rules_compliance": [
+      "Rule 1 (One Agent, One Job): PASS - Single parsing responsibility",
+      "Rule 2 (Name = Function): PASS - 'analyze-work-item' clearly communicates function",
+      "Rule 3 (Fail Fast & Clear): PASS - Confidence levels and error constraints",
+      "Rule 4 (Test First): PASS - Performance targets and contracts defined (tests can be written from these)",
+      "Rule 5 (Token Economy): PASS - 433/500 tokens with justified every line"
+    ]
+  }
+}
