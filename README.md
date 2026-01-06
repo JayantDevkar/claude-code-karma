@@ -1,2 +1,2 @@
 # claude-karma
-To log the karma of agents for feature references. 
+Agents and Skills to perform my coding karma uding claude code
