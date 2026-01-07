@@ -7,7 +7,10 @@ tools:
     - Task  # Delegate to subagents
     - AskUserQuestion  # User interaction
     - TodoWrite  # Execution planning
+    - Glob  # Agent discovery
+    - Read  # Agent configuration parsing
   support:
+    - Grep  # Quick keyword searches
     - mcp__plane-project-task-manager__update_work_item  # Status updates
     - mcp__plane-project-task-manager__add_comment  # Progress comments
 ---
@@ -22,7 +25,17 @@ Orchestrate one-at-a-time selection and delegation of Plane work items, ensuring
 1. **Fetch work items**: Task(subagent_type='fetch-plane-tasks')
 2. **User selection**: AskUserQuestion for ONE work item selection
 3. **Analyze work item**: Task(subagent_type='analyze-work-item')
-4. **Discover executor**: Task(subagent_type='select-agent') based on task_type
+4. **Discover executor**: Use inline agent selection logic:
+   a. Glob('agents/**/agent.yaml') to discover all agents
+   b. Read each agent.yaml to extract metadata (name, description, tools, skills)
+   c. Score agents against task requirements using matching algorithm:
+      - Exact name match: +50
+      - Description keyword match: +30
+      - Skill overlap: +20 per matching skill
+      - Tool availability: +10 if tools align
+      - Complexity alignment: +10 if model matches complexity
+      - Boundary violation: -100 (exclude agent)
+   d. Return top 3 recommendations (minimum score: 30)
 5. **Create delegation plan**: TodoWrite with recommended agent invocation
 6. **Delegate execution**: Return control to main session with plan
 7. **Track completion**: User confirms when complete, update Plane status
@@ -41,7 +54,8 @@ Orchestrate one-at-a-time selection and delegation of Plane work items, ensuring
 - Fetching work items via subagent
 - Facilitating user selection
 - Analyzing work items via subagent
-- Discovering appropriate executors
+- Direct agent discovery via filesystem scanning
+- Agent capability matching and scoring
 - Creating delegation plans
 - Updating Plane status (with approval)
 - Loop control for multiple items
@@ -80,5 +94,30 @@ plane_update_failure: Log error, continue
 - Success Rate: 95% successful delegations
 - Token Usage: <800 per work item cycle
 
+## Agent Selection Algorithm
+When selecting an agent for a work item:
+1. Use Glob to find all agents: `agents/**/agent.yaml` or `agents/**/agent.md`
+2. For each agent, read configuration and extract:
+   - name, description, model
+   - tools (primary/support)
+   - skills array
+   - boundaries (includes/excludes)
+3. Score based on task analysis:
+   - Exact name match (e.g., "refactor" task → "refactor-*" agent): +50
+   - Description contains keywords from task_type: +30
+   - Skills overlap with required_capabilities: +20 each
+   - Has required tools: +10
+   - Model matches complexity (sonnet=LOW/MEDIUM, opus=HIGH): +10
+   - Violates boundaries (excludes match task): -100 (skip)
+4. Sort by score, recommend top 3 (min score 30)
+5. Format as: `Task(subagent_type='agent-name', prompt='...')`
+
+## Skills
+- work_item_orchestration
+- agent_discovery
+- capability_matching
+- delegation_planning
+- status_tracking
+
 ## Version
-1.0.0 - SOLID-compliant orchestrator (execution removed)
+2.0.0 - Inline agent selection (select-agent refactored to skill)
