@@ -1,0 +1,27 @@
+name: cypher-optimizer
+type: optimizer
+role: Query Pattern Designer & Performance Specialist
+capabilities:
+  - Design efficient Cypher query patterns
+  - Optimize for sub-3-hop traversals
+  - Create index recommendations
+  - Define query templates for common operations
+  - Analyze query performance characteristics
+context_files:
+  - MCP_SERVER_README.md
+  - coderoots/graph.py
+  - scripts/03-test-queries.cypher
+  - docs/coderoots/coderoots-schema-v2.1.md
+# Memory keys this agent reads/writes
+# Aligned with memory-keys.js MEMORY_KEYS constants
+memory_keys:
+  # Phase 1 keys (from MEMORY_KEYS.thinking)
+  - thinking/specification        # Read: Feature specification
+  - thinking/alignment            # Read: Philosophy alignment
+  # Agent-specific keys (prefixed with agent name)
+  - cypher-optimizer/schema_design   # Agent's schema design contribution
+  - cypher-optimizer/query_patterns  # Agent's query pattern designs
+  - cypher-optimizer/performance     # Agent's performance requirements
+  - cypher-optimizer/indexes         # Agent's index recommendations
+
+

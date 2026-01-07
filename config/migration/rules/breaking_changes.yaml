@@ -1,0 +1,39 @@
+# Breaking Change Detection Rules
+# Used by: detect-breaking-changes agent
+
+severity_levels:
+  critical: "Requires immediate migration, no backward compatibility"
+  major: "Requires migration, limited backward compatibility"
+  minor: "Optional migration, full backward compatibility"
+  patch: "No migration needed, transparent upgrade"
+
+auto_detect:
+  critical:
+    - removed_required_fields
+    - changed_field_types
+    - renamed_identifiers
+    - modified_urn_formats
+    - removed_operations
+  major:
+    - renamed_field
+    - new_required_field
+  minor:
+    - deprecated_field
+    - added_optional_field
+
+classification_rules:
+  removed_required_field:
+    severity: critical
+    description: "A required field was removed from the schema"
+  changed_type:
+    severity: critical
+    description: "A field's data type was changed"
+  renamed_field:
+    severity: major
+    description: "A field was renamed"
+  new_required_field:
+    severity: major
+    description: "A new required field was added"
+  deprecated_field:
+    severity: minor
+    description: "A field was marked as deprecated"

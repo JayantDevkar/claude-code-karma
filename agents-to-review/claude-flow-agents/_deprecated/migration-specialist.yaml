@@ -1,0 +1,248 @@
+name: migration-specialist
+type: developer
+role: Migration Planning and Documentation Specialist
+capabilities:
+  - Create comprehensive migration guides
+  - Generate automated upgrade scripts
+  - Document breaking changes with mitigation paths
+  - Provide rollback procedures and safety nets
+  - Create version compatibility matrices
+  - Identify data transformation requirements
+  - Generate schema diff reports
+context_files:
+  - docs/coderoots/coderoots-schema-v*.md
+  - implementation/implementation_summary.md
+  - CHANGELOG.md
+  - coderoots/knowledge/schemas.py
+  - coderoots/knowledge/urn.py
+# Memory keys this agent reads/writes
+# Aligned with memory-keys.js MEMORY_KEYS constants
+memory_keys:
+  # Phase 2 keys (read-only, from MEMORY_KEYS.thinking)
+  - thinking/specification      # Read: Feature specification
+  # Phase 3 keys (read-only, from MEMORY_KEYS.building)
+  - building/files              # Read: Files modified
+  - building/status             # Read: Implementation status
+  # Phase 4 keys (from MEMORY_KEYS.shipping)
+  - shipping/changelog          # Write: Changelog entry
+  # Agent-specific keys (prefixed with agent name)
+  - migration-specialist/schema_changes    # Agent's schema change analysis
+  - migration-specialist/breaking_changes  # Agent's breaking changes list
+  - migration-specialist/migration_guide   # Agent's migration guide
+  - migration-specialist/rollback_plan     # Agent's rollback procedures
+  - migration-specialist/compatibility     # Agent's compatibility matrix
+
+# Phase 4 configuration
+phase4:
+  priority: 3
+  depends_on:
+    - integration-validator  # Need test results first
+  can_start_immediately: false
+  files_owned:
+    - validation/migration/migration_guide.md
+    - validation/migration/upgrade_script.py
+    - validation/migration/rollback_script.py
+    - validation/migration/compatibility_matrix.md
+  
+  deliverables:
+    migration_guide:
+      required: true
+      format: markdown
+      sections:
+        - overview
+        - prerequisites
+        - step_by_step_instructions
+        - verification_steps
+        - troubleshooting
+    upgrade_script:
+      required: true
+      format: python
+      includes:
+        - backup_creation
+        - schema_migration
+        - data_transformation
+        - verification
+    rollback_script:
+      required: true
+      format: python
+      includes:
+        - restore_from_backup
+        - schema_downgrade
+        - verification
+    compatibility_matrix:
+      required: true
+      format: markdown
+      versions:
+        - previous: v2.1
+        - current: v2.2
+        - next: v2.3
+
+# Schema analysis configuration
+schema_analysis:
+  compare_versions:
+    - from: v2.1
+    - to: v2.2
+  check_items:
+    - new_node_types
+    - removed_node_types
+    - modified_properties
+    - new_relationships
+    - removed_relationships
+    - urn_format_changes
+    - validation_rule_changes
+
+# Breaking change detection
+breaking_changes:
+  severity_levels:
+    critical: "Requires immediate migration, no backward compatibility"
+    major: "Requires migration, limited backward compatibility"
+    minor: "Optional migration, full backward compatibility"
+    patch: "No migration needed, transparent upgrade"
+  auto_detect:
+    - removed_required_fields
+    - changed_field_types
+    - renamed_identifiers
+    - modified_urn_formats
+    - removed_operations
+
+# Migration templates
+templates:
+  migration_guide: |
+    # Migration Guide: v{from_version} → v{to_version}
+    
+    ## Overview
+    This guide covers migration from CodeRoots v{from_version} to v{to_version}.
+    
+    **New Features:**
+    {new_features}
+    
+    **Breaking Changes:**
+    {breaking_changes}
+    
+    ## Prerequisites
+    - [ ] Backup your Neo4j database
+    - [ ] Review breaking changes
+    - [ ] Plan maintenance window
+    - [ ] Test migration in staging
+    
+    ## Migration Steps
+    
+    ### Step 1: Backup
+    ```bash
+    {backup_command}
+    ```
+    
+    ### Step 2: Stop Services
+    ```bash
+    {stop_command}
+    ```
+    
+    ### Step 3: Run Migration
+    ```bash
+    python validation/migration/upgrade_script.py
+    ```
+    
+    ### Step 4: Verify
+    ```bash
+    python validation/migration/verify_migration.py
+    ```
+    
+    ### Step 5: Restart Services
+    ```bash
+    {start_command}
+    ```
+    
+    ## Rollback Procedure
+    If issues occur:
+    ```bash
+    python validation/migration/rollback_script.py
+    ```
+    
+    ## Troubleshooting
+    {troubleshooting}
+
+  upgrade_script: |
+    #!/usr/bin/env python
+    """
+    Auto-generated migration script: v{from_version} → v{to_version}
+    Generated: {date}
+    """
+    import os
+    import sys
+    import json
+    from datetime import datetime
+    
+    # Migration configuration
+    FROM_VERSION = "{from_version}"
+    TO_VERSION = "{to_version}"
+    
+    def create_backup():
+        """Create backup before migration"""
+        backup_dir = f"backups/pre_migration_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        os.makedirs(backup_dir, exist_ok=True)
+        print(f"✅ Backup created: {backup_dir}")
+        return backup_dir
+    
+    def migrate_schema():
+        """Apply schema changes"""
+        {schema_migration}
+    
+    def migrate_data():
+        """Transform data if needed"""
+        {data_migration}
+    
+    def verify_migration():
+        """Verify migration success"""
+        {verification}
+    
+    def main():
+        print(f"🚀 Starting migration: {FROM_VERSION} → {TO_VERSION}")
+        
+        backup_dir = create_backup()
+        
+        try:
+            migrate_schema()
+            migrate_data()
+            verify_migration()
+            print("✅ Migration completed successfully!")
+        except Exception as e:
+            print(f"❌ Migration failed: {e}")
+            print(f"Rollback with: python rollback_script.py --backup {backup_dir}")
+            sys.exit(1)
+    
+    if __name__ == "__main__":
+        main()
+
+  rollback_script: |
+    #!/usr/bin/env python
+    """
+    Rollback script: v{to_version} → v{from_version}
+    Use this to revert a failed migration.
+    """
+    import argparse
+    
+    # Version constants (substituted by template)
+    FROM_VERSION = "{from_version}"
+    TO_VERSION = "{to_version}"
+    
+    def restore_backup(backup_dir):
+        """Restore from backup"""
+        {restore_logic}
+    
+    def downgrade_schema():
+        """Revert schema changes"""
+        {downgrade_logic}
+    
+    def main():
+        parser = argparse.ArgumentParser()
+        parser.add_argument('--backup', required=True)
+        args = parser.parse_args()
+        
+        print(f"🔄 Rolling back from v{TO_VERSION} to v{FROM_VERSION}")
+        restore_backup(args.backup)
+        downgrade_schema()
+        print("✅ Rollback complete")
+    
+    if __name__ == "__main__":
+        main()
+

@@ -1,0 +1,62 @@
+name: schema-implementer
+type: developer
+subtype: implementer
+role: Technical Specification Writer & Schema Designer
+capabilities:
+  # Phase 2: Specification
+  - Transform philosophy alignment into concrete schemas
+  - Design node and relationship specifications
+  - Define validation rules and constraints
+  - Map requirements to URN formats
+  - Create migration strategies
+  # Phase 3: Implementation (as coordinator)
+  - Implement schema changes in schemas.py
+  - Update URN generation in urn.py
+  - Modify validators.py for new validation rules
+  - Update templates.py for new query templates
+  - Ensure all changes are backward compatible
+context_files:
+  - docs/coderoots/coderoots-schema-v2.1.md
+  - docs/coderoots/component-node-specification.md
+  - coderoots/knowledge/schemas.py
+  - coderoots/knowledge/urn.py
+  - coderoots/knowledge/validators.py
+  - coderoots/knowledge/templates.py
+  - approved_specs/{feature}_spec.annotated.md
+# Memory keys this agent reads/writes
+# Aligned with memory-keys.js MEMORY_KEYS constants
+memory_keys:
+  # Phase 1 keys (read-only for this agent, from MEMORY_KEYS.thinking)
+  - thinking/approved         # Read: Phase 1 approval status
+  - thinking/alignment        # Read: Philosophy analysis results
+  # Phase 2 keys (from MEMORY_KEYS.thinking)
+  - thinking/specification    # Write: Technical specification
+  - thinking/work_packages    # Write: Work packages for building phase
+  # Phase 3 keys (from MEMORY_KEYS.building)
+  - building/status           # Write: Overall implementation status
+  - building/files            # Write: List of modified files
+  # Agent-specific keys (prefixed with agent name)
+  - schema-implementer/schema_design  # Agent's schema design decisions
+
+# Phase 3 parallel execution configuration
+phase3:
+  priority: 1  # Goes first - other agents depend on schema changes
+  depends_on: []
+  is_coordinator: true  # Leads the parallel implementation
+  files_owned:
+    - coderoots/knowledge/schemas.py
+    - coderoots/knowledge/urn.py
+    - coderoots/knowledge/validators.py
+    - coderoots/knowledge/templates.py
+  validation:
+    - python -m py_compile coderoots/knowledge/schemas.py
+    - python -c "from coderoots.knowledge import schemas, urn, validators"
+
+# Work package structure expected from pre-implementation hook
+work_package_schema:
+  changes:
+    - file: string         # Target file
+      type: string         # add|modify|remove
+      description: string  # What changes are needed
+
+

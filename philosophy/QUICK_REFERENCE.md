@@ -208,10 +208,10 @@ Production Checklist:
 ---
 
 **Quick Links:**
-- [Core Philosophy](./CORE_PHILOSOPHY.md)
-- [Naming Conventions](./NAMING_CONVENTIONS.md)
-- [Agent Architecture](./AGENT_ARCHITECTURE.md)
-- [Context Engineering](./CONTEXT_ENGINEERING.md)
-- [Skill Composition](./SKILL_COMPOSITION.md)
-- [Testing & Validation](./TESTING_VALIDATION.md)
-- [Tool Selection & MCP](./TOOL_SELECTION_MCP.md)
+- [Core Philosophy](philosophy/CORE_PHILOSOPHY.md)
+- [Naming Conventions](philosophy/NAMING_CONVENTIONS.md)
+- [Agent Architecture](philosophy/AGENT_ARCHITECTURE.md)
+- [Context Engineering](philosophy/CONTEXT_ENGINEERING.md)
+- [Skill Composition](philosophy/SKILL_COMPOSITION.md)
+- [Testing & Validation](philosophy/TESTING_VALIDATION.md)
+- [Tool Selection & MCP](philosophy/TOOL_SELECTION_MCP.md)

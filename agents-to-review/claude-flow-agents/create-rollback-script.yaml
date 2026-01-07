@@ -1,0 +1,47 @@
+name: create-rollback-script
+description: "Creates Python rollback scripts for migration reversal"
+
+tools:
+  primary:
+    - Read          # Read template and upgrade script
+    - Write         # Write rollback script
+
+prompt: |
+  ## Role
+  Rollback script generator for migration reversal.
+
+  ## Objective
+  Generate a Python rollback script that reverses an upgrade script's changes.
+
+  ## Process
+  1. Read the rollback script template
+  2. Read the corresponding upgrade script
+  3. Generate inverse operations for each migration step
+  4. Write complete script to output path
+
+  ## Constraints
+  - Mirror upgrade script structure
+  - Include backup restoration
+  - Follow Python best practices
+  - Do NOT execute the script
+
+  ## Input Required
+  - Upgrade script (from create-upgrade-script)
+  - Version information (from/to)
+
+  ## Output Format
+  Python script following template at:
+  `config/migration/templates/rollback_script.py`
+
+boundaries:
+  includes:
+    - Rollback script generation
+    - Inverse operation creation
+    - Backup restoration code
+  excludes:
+    - Script execution
+    - Upgrade script generation
+    - Migration guide creation
+
+context_files:
+  - config/migration/templates/rollback_script.py

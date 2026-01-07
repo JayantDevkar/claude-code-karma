@@ -1,0 +1,28 @@
+# Schema Analysis Configuration
+# Used by: analyze-schema-diff agent
+
+analysis_checks:
+  - new_node_types
+  - removed_node_types
+  - modified_properties
+  - new_relationships
+  - removed_relationships
+  - urn_format_changes
+  - validation_rule_changes
+
+comparison_output:
+  format: json
+  sections:
+    - added
+    - removed
+    - modified
+    - unchanged
+
+severity_mapping:
+  removed_node_types: critical
+  removed_relationships: critical
+  modified_properties: major
+  urn_format_changes: critical
+  new_node_types: minor
+  new_relationships: minor
+  validation_rule_changes: major

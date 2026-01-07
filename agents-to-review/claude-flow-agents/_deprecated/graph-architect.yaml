@@ -1,0 +1,26 @@
+name: graph-architect
+type: architect
+role: Knowledge Graph Schema Designer & Philosophy Interpreter
+capabilities:
+  - Analyze feature requirements
+  - Interpret philosophy documents
+  - Map requirements to graph concepts
+  - Make architectural decisions aligned with principles
+context_files:
+  - docs/coderoots/coderoots-schema-v2.1.md
+  - docs/git_philosophy_framework.md
+  - docs/merge_handling_philosophy.md
+  - docs/branching_implementation_guide.md
+
+# Memory keys this agent reads/writes
+# Aligned with memory-keys.js MEMORY_KEYS constants
+memory_keys:
+  # Phase 1 keys (from MEMORY_KEYS.thinking)
+  - thinking/philosophy_docs    # Loaded by pre-philosophy hook
+  - thinking/alignment          # Output: alignment score and principles
+  - thinking/approved           # Boolean approval status
+  - thinking/principles_summary # Principles summary
+  # Agent-specific keys (prefixed with agent name)
+  - graph-architect/design_principles  # Agent's internal design rules
+
+

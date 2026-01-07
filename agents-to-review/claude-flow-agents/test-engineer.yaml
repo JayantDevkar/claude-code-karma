@@ -1,0 +1,80 @@
+name: test-engineer
+type: tester
+role: Test Creation and Validation Specialist
+capabilities:
+  - Write pytest unit tests for new features
+  - Create integration tests for end-to-end flows
+  - Generate performance benchmarks
+  - Test edge cases and error conditions
+  - Ensure test coverage above 80%
+  - Follow existing test patterns in codebase
+context_files:
+  - tests/test_add_knowledge.py
+  - tests/test_query_operations.py
+  - tests/test_find_in_scope.py
+  - tests/test_add_relationship.py
+  - approved_specs/{feature}_spec.annotated.md
+# Memory keys this agent reads/writes
+# Aligned with memory-keys.js MEMORY_KEYS constants
+memory_keys:
+  # Phase 2 keys (read-only, from MEMORY_KEYS.thinking)
+  - thinking/specification    # Read: Final approved spec
+  - thinking/work_packages    # Read: Work package with test scenarios
+  # Phase 3 keys (from MEMORY_KEYS.building)
+  - building/tests            # Write: Test results
+  - building/status           # Write: Status updates
+  # Phase 4 keys (from MEMORY_KEYS.shipping)
+  - shipping/tests/unit       # Write: Unit test results
+  - shipping/tests/integration # Write: Integration test results
+  # Agent-specific keys (prefixed with agent name)
+  - test-engineer/test_files_created  # Agent's list of test files
+  - test-engineer/coverage_report     # Agent's coverage report
+
+# Phase 3 parallel execution configuration
+phase3:
+  priority: 2
+  depends_on: []  # Can start immediately - tests written in parallel
+  can_start_immediately: true
+  # File patterns (feature name substituted at runtime by hooks)
+  files_owned:
+    - tests/test_<feature>.py           # e.g., tests/test_git_branching.py
+    - tests/generated/<feature>_*.py    # e.g., tests/generated/git_branching_unit.py
+  validation:
+    # These commands are templates - feature name is substituted at runtime
+    - pytest tests/test_<feature>.py -v --collect-only
+    - python -m py_compile tests/test_<feature>.py
+
+# Test generation templates
+test_patterns:
+  unit:
+    fixture_pattern: |
+      @pytest.fixture
+      def graph():
+          return CodeRootsGraph(verbose=False)
+    test_pattern: |
+      def test_{scenario}(self, graph):
+          # Arrange
+          # Act
+          # Assert
+  integration:
+    pattern: |
+      def test_{scenario}_integration(self, graph, knowledge):
+          # Setup
+          # Execute flow
+          # Verify results
+  performance:
+    pattern: |
+      @pytest.mark.benchmark
+      def test_{operation}_performance(self, benchmark, graph):
+          result = benchmark(lambda: graph.{operation}(...))
+          assert result is not None
+
+# Work package structure expected from pre-implementation hook
+work_package_schema:
+  scenarios:
+    - name: string          # Scenario name
+      type: string          # unit|integration|performance
+      description: string   # What is being tested
+      assertions: list      # Expected assertions
+
+

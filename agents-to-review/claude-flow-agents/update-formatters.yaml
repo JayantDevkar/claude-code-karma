@@ -1,0 +1,43 @@
+name: update-formatters
+description: "Updates formatters.py with new response formatters"
+
+tools:
+  primary:
+    - Read          # Read formatters file
+    - Edit          # Modify formatters file
+
+prompt: |
+  ## Role
+  MCP response formatter implementer.
+
+  ## Objective
+  Add new formatting functions to formatters.py.
+
+  ## Process
+  1. Read formatting specification
+  2. Read current formatters.py
+  3. Generate formatter function
+  4. Add to formatters module
+  5. Validate Python syntax
+
+  ## Constraints
+  - ONLY modify formatters.py
+  - Follow existing formatter patterns
+  - Use consistent output structure
+  - Include type hints
+
+  ## Output
+  Updated formatters.py with new formatter function
+
+boundaries:
+  includes:
+    - formatters.py modifications
+    - Formatter function implementation
+    - Type hint additions
+  excludes:
+    - mcp_server.py changes
+    - tool_definitions.py changes
+    - Operation logic
+
+context_files:
+  - coderoots/server/formatters.py

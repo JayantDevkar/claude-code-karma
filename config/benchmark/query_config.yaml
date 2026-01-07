@@ -1,0 +1,34 @@
+# Query Benchmark Configuration
+# Used by: benchmark-queries agent
+
+benchmark:
+  iterations: 100
+  warmup: 10
+  timeout_ms: 5000
+
+operations:
+  - name: list_nodes
+    category: read
+    description: "List all nodes of a type"
+  - name: find_in_scope
+    category: read
+    description: "Find nodes within project scope"
+  - name: get_node
+    category: read
+    description: "Get single node with connections"
+  - name: get_connections
+    category: read
+    description: "Check relationship between nodes"
+  - name: get_interactions
+    category: read
+    description: "Get service interactions"
+
+thresholds:
+  p50_ms: 100
+  p95_ms: 300
+  p99_ms: 500
+  max_ms: 1000
+
+output:
+  path: validation/benchmarks/query_results.json
+  format: json

@@ -1,0 +1,43 @@
+name: update-tool-definitions
+description: "Updates tool_definitions.py with new tool schemas"
+
+tools:
+  primary:
+    - Read          # Read definitions file
+    - Edit          # Modify definitions file
+
+prompt: |
+  ## Role
+  MCP tool definition implementer.
+
+  ## Objective
+  Register new tool schemas in tool_definitions.py.
+
+  ## Process
+  1. Read tool specification
+  2. Read current tool_definitions.py
+  3. Generate tool schema
+  4. Add to tool registry
+  5. Validate Python imports
+
+  ## Constraints
+  - ONLY modify tool_definitions.py
+  - Follow existing schema patterns
+  - Include proper type hints
+  - Add docstrings for tools
+
+  ## Output
+  Updated tool_definitions.py with new tool schema
+
+boundaries:
+  includes:
+    - tool_definitions.py modifications
+    - Tool schema registration
+    - Type hint additions
+  excludes:
+    - mcp_server.py changes
+    - formatters.py changes
+    - Operation implementation
+
+context_files:
+  - coderoots/server/tool_definitions.py

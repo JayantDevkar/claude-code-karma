@@ -1,0 +1,200 @@
+name: doc-maintainer
+type: documenter
+role: Documentation and Changelog Specialist
+capabilities:
+  - Update README.md with new features
+  - Modify schema documentation
+  - Update MCP_SERVER_README.md with new operations
+  - Create migration guides
+  - Update FILES_INDEX.md
+  - Maintain CHANGELOG.md
+  - Ensure documentation consistency with implementation
+context_files:
+  - README.md
+  - MCP_SERVER_README.md
+  - FILES_INDEX.md
+  - docs/coderoots/coderoots-schema-v2.1.md
+  - docs/branching_implementation_guide.md
+  - approved_specs/{feature}_spec.annotated.md
+# Memory keys this agent reads/writes
+# Aligned with memory-keys.js MEMORY_KEYS constants
+memory_keys:
+  # Phase 2 keys (read-only, from MEMORY_KEYS.thinking)
+  - thinking/specification    # Read: Final approved spec
+  - thinking/work_packages    # Read: Work package for this agent
+  # Phase 3 keys (from MEMORY_KEYS.building)
+  - building/status           # Read: Check if implementation is done
+  - building/files            # Read: What files were changed
+  # Phase 4 keys (from MEMORY_KEYS.shipping)
+  - shipping/pr_description   # Write: PR description
+  - shipping/changelog        # Write: Changelog entry
+  # Agent-specific keys (prefixed with agent name)
+  - doc-maintainer/docs_to_update   # Agent's list of docs to update
+  - doc-maintainer/docs_updated     # Agent's list of updated doc files
+  - doc-maintainer/schema_version   # Current schema version for doc naming
+
+# Phase 3 parallel execution configuration
+phase3:
+  priority: 3
+  depends_on:
+    - schema-implementer  # Needs implementation details
+    - mcp-updater         # Needs new operation list
+  files_owned:
+    - README.md
+    - MCP_SERVER_README.md
+    - FILES_INDEX.md
+    - docs/coderoots/coderoots-schema-v2.2.md
+    - docs/migration-v2.1-to-v2.2.md
+  validation:
+    - markdownlint docs/*.md || true
+
+# Documentation update patterns
+doc_patterns:
+  schema_version:
+    create: docs/coderoots/coderoots-schema-v{version}.md
+    migrate: docs/migration-v{old}-to-v{new}.md
+  readme_sections:
+    - Features
+    - Installation
+    - Usage
+    - API Reference
+  mcp_readme_sections:
+    - Available Operations
+    - Tool Definitions
+    - Examples
+
+# Work package structure expected from pre-implementation hook
+work_package_schema:
+  updates:
+    - file: string         # Target file
+      sections: list       # Sections to update
+      type: string         # add|modify|remove
+      content_source: string  # Where to get content from
+
+# =============================================================================
+# Phase 4: Validation & Documentation (Final Phase)
+# =============================================================================
+phase4:
+  priority: 4
+  depends_on:
+    - integration-validator  # Need validation results
+    - performance-auditor    # Need performance metrics
+    - migration-specialist   # Need migration guide
+  can_start_immediately: false
+  
+  # Phase 4 specific capabilities
+  capabilities:
+    - Generate final documentation package
+    - Update all cross-references
+    - Create feature announcement
+    - Update changelog with release notes
+    - Ensure all examples work
+    - Verify all links are valid
+    - Generate PR description
+  
+  # Files to finalize
+  final_docs:
+    - file: README.md
+      action: final_update
+      verify: true
+    - file: CHANGELOG.md
+      action: add_release_notes
+      verify: true
+    - file: docs/features/{feature}.md
+      action: create
+      template: feature_documentation
+    - file: final/announcement.md
+      action: create
+      template: announcement
+    - file: final/pr_description.md
+      action: create
+      template: pr_description
+  
+  # Final verification
+  verification:
+    - all_links_valid: true
+    - all_examples_run: true
+    - no_todo_markers: true
+    - changelog_updated: true
+    - version_bumped: true
+
+# Phase 4 templates
+phase4_templates:
+  feature_documentation: |
+    # {feature_name}
+    
+    ## Overview
+    {description}
+    
+    ## Usage
+    {usage_examples}
+    
+    ## API Reference
+    {api_reference}
+    
+    ## Examples
+    {code_examples}
+    
+    ## Related Documentation
+    {related_docs}
+  
+  announcement: |
+    # 🎉 New Feature: {feature_name}
+    
+    We're excited to announce {feature_name} in CodeRoots v{version}!
+    
+    ## What's New
+    {highlights}
+    
+    ## Getting Started
+    {getting_started}
+    
+    ## Migration Notes
+    {migration_notes}
+    
+    ## Feedback
+    Please report any issues or feedback to the repository.
+  
+  pr_description: |
+    ## Summary
+    {summary}
+    
+    ## Changes
+    {changes}
+    
+    ## Test Coverage
+    - [ ] Unit tests added/updated
+    - [ ] Integration tests pass
+    - [ ] Performance benchmarks acceptable
+    
+    ## Documentation
+    - [ ] README updated
+    - [ ] API documentation updated
+    - [ ] Migration guide (if breaking changes)
+    
+    ## Checklist
+    - [ ] Code follows project conventions
+    - [ ] All tests pass
+    - [ ] Documentation complete
+    - [ ] Changelog updated
+  
+  release_notes: |
+    ## v{version} - {date}
+    
+    ### 🎉 New Features
+    {new_features}
+    
+    ### 🔧 Improvements
+    {improvements}
+    
+    ### 🐛 Bug Fixes
+    {bug_fixes}
+    
+    ### ⚠️ Breaking Changes
+    {breaking_changes}
+    
+    ### 📚 Documentation
+    {documentation}
+    
+    ### 📦 Migration
+    {migration_link}

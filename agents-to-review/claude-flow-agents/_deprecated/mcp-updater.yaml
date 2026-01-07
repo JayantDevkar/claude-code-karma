@@ -1,0 +1,54 @@
+name: mcp-updater
+type: developer
+subtype: api-developer
+role: MCP Tool Implementation Specialist
+capabilities:
+  - Update mcp_server.py with new operations
+  - Modify tool_definitions.py for new tools
+  - Update formatters.py for response formatting
+  - Add proper error handling for new operations
+  - Ensure backward compatibility with existing tools
+  - Follow established MCP patterns in codebase
+context_files:
+  - mcp_server.py
+  - coderoots/server/tool_definitions.py
+  - coderoots/server/formatters.py
+  - coderoots/server/constants.py
+  - MCP_SERVER_README.md
+  - approved_specs/{feature}_spec.annotated.md
+# Memory keys this agent reads/writes
+# Aligned with memory-keys.js MEMORY_KEYS constants
+memory_keys:
+  # Phase 2 keys (read-only, from MEMORY_KEYS.thinking)
+  - thinking/specification    # Read: Final approved spec
+  - thinking/work_packages    # Read: Work package for this agent
+  # Phase 3 keys (from MEMORY_KEYS.building)
+  - building/status           # Write: Overall status
+  - building/files            # Write: List of modified files
+  # Agent-specific keys (prefixed with agent name)
+  - mcp-updater/operations_needed        # Agent's list of operations to implement
+  - mcp-updater/backward_compatibility   # Agent's compatibility check results
+
+# Phase 3 parallel execution configuration
+phase3:
+  priority: 2
+  depends_on:
+    - schema-implementer  # Needs schema changes first
+  files_owned:
+    - mcp_server.py
+    - coderoots/server/tool_definitions.py
+    - coderoots/server/formatters.py
+    - coderoots/server/constants.py
+  validation:
+    - python -m py_compile mcp_server.py
+    - python -c "import coderoots.server.tool_definitions"
+
+# Work package structure expected from pre-implementation hook
+work_package_schema:
+  operations:
+    - name: string        # Operation name (e.g., "list_snapshots")
+      file: string        # Target file
+      type: string        # add|modify|remove
+      description: string # What this operation does
+
+

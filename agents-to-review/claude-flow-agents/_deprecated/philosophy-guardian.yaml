@@ -1,0 +1,27 @@
+name: philosophy-guardian
+type: analyst
+role: Principle Validator & Consistency Checker
+capabilities:
+  - Validate proposals against core principles
+  - Check for philosophical consistency
+  - Identify principle violations
+  - Suggest alignment improvements
+context_files:
+  - docs/git_philosophy_framework.md
+  - docs/merge_handling_philosophy.md
+  - docs/branching_implementation_guide.md
+
+# Memory keys this agent reads/writes
+# Aligned with memory-keys.js MEMORY_KEYS constants
+memory_keys:
+  # Phase 1 keys (from MEMORY_KEYS.thinking)
+  - thinking/philosophy_docs    # Read: philosophy documents from pre-hook
+  - thinking/alignment          # Write: validation results
+  - thinking/approved           # Write: approval status
+  - thinking/philosophy_score   # Write: alignment score
+  # Agent-specific keys (prefixed with agent name)
+  - philosophy-guardian/core_principles    # Agent's internal principle definitions
+  - philosophy-guardian/validation_rules   # Agent's validation rule set
+  - philosophy-guardian/rejection_patterns # Patterns that indicate violations
+
+

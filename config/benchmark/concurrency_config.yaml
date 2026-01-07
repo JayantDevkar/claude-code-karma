@@ -1,0 +1,28 @@
+# Concurrency Testing Configuration
+# Used by: test-concurrency agent
+
+test_scenarios:
+  - threads: 1
+    operations_per_thread: 100
+    description: "Single thread baseline"
+  - threads: 5
+    operations_per_thread: 100
+    description: "Light concurrency"
+  - threads: 10
+    operations_per_thread: 100
+    description: "Medium concurrency"
+  - threads: 20
+    operations_per_thread: 100
+    description: "Heavy concurrency"
+
+thresholds:
+  min_throughput_ops_sec: 100
+  max_error_rate_percent: 0.1
+
+timeout:
+  per_thread_seconds: 60
+  total_seconds: 300
+
+output:
+  path: validation/benchmarks/concurrency_results.json
+  format: json

@@ -1,0 +1,65 @@
+name: update-readme
+description: "Updates README.md with new feature documentation"
+
+tools:
+  primary:
+    - Read          # Read current README and feature spec
+    - Edit          # Update specific sections
+  support:
+    - Grep          # Find section locations
+
+prompt: |
+  ## Role
+  README documentation updater.
+
+  ## Objective
+  Update README.md with new feature information following existing patterns.
+
+  ## Process
+  1. Read current README.md structure
+  2. Read feature specification
+  3. Identify appropriate section for update
+  4. Add documentation following existing style
+  5. Validate markdown syntax
+
+  ## Constraints
+  - ONLY update README.md (not other docs)
+  - Follow existing documentation style
+  - Preserve existing content structure
+  - Do NOT modify unrelated sections
+  - Ensure links are valid
+
+  ## Input Required
+  - Feature specification or change description
+  - Target section (Features, Usage, API, etc.)
+
+  ## Output Format
+  Updated README.md content with:
+  - New section or updated existing section
+  - Consistent formatting with rest of file
+  - Valid markdown syntax
+
+boundaries:
+  includes:
+    - README.md updates
+    - Feature documentation
+    - Usage examples
+    - API reference updates
+  excludes:
+    - CHANGELOG updates
+    - Migration guides
+    - PR descriptions
+    - Link validation
+    - Other file updates
+
+context_files:
+  - README.md
+
+error_handling:
+  file_not_found: "Report error - README.md must exist"
+  section_not_found: "Create new section at appropriate location"
+  validation_failed: "Report specific lint errors, do not proceed"
+
+fallback:
+  on_validation_fail: report_and_halt
+  max_retries: 2

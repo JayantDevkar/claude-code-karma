@@ -1,0 +1,120 @@
+name: integration-validator
+type: validator
+role: System Integration and Validation Specialist
+capabilities:
+  - Run end-to-end integration tests
+  - Validate cross-component interactions
+  - Test backward compatibility with previous versions
+  - Verify graph consistency and data integrity
+  - Check API contract compliance
+  - Execute regression test suites
+  - Validate MCP tool operations
+context_files:
+  - tests/test_*.py
+  - tests/generated/*.py
+  - mcp_server.py
+  - coderoots/server/tool_definitions.py
+  - implementation/implementation_summary.md
+  - approved_specs/{feature}_spec.annotated.md
+# Memory keys this agent reads/writes
+# Aligned with memory-keys.js MEMORY_KEYS constants
+memory_keys:
+  # Phase 3 keys (read-only, from MEMORY_KEYS.building)
+  - building/files            # Read: Files modified during implementation
+  - building/status           # Read: Implementation status
+  # Phase 4 keys (from MEMORY_KEYS.shipping)
+  - shipping/tests/integration  # Write: Integration test results
+  - shipping/validation_checklist  # Write: Validation checklist
+  # Agent-specific keys (prefixed with agent name)
+  - integration-validator/test_results    # Agent's test results
+  - integration-validator/compatibility   # Agent's backward compatibility report
+  - integration-validator/regression      # Agent's regression test results
+
+# Phase 4 validation configuration
+phase4:
+  priority: 1
+  role: coordinator
+  can_start_immediately: true
+  test_suites:
+    - integration
+    - regression
+    - compatibility
+    - e2e
+  validation_scope:
+    - graph_operations
+    - mcp_tools
+    - memory_persistence
+    - cross_component_interactions
+    - error_handling
+  files_owned:
+    - validation/reports/integration_report.md
+    - validation/reports/compatibility_report.md
+    - validation/reports/regression_report.md
+  success_criteria:
+    - all_integration_tests_pass: true
+    - backward_compatible: true
+    - no_regressions: true
+    - graph_consistency: true
+    - mcp_operations_valid: true
+
+# Test execution configuration
+test_execution:
+  commands:
+    integration: "pytest tests/ -v -m integration --tb=short"
+    regression: "pytest tests/ -v -m regression --tb=short"
+    compatibility: "pytest tests/ -v -m compatibility --tb=short"
+    all: "pytest tests/ -v --cov=coderoots --cov-report=html"
+  timeout_minutes: 30
+  retry_on_failure: 1
+  collect_coverage: true
+  coverage_threshold: 80
+
+# Validation checklists
+checklists:
+  graph_operations:
+    - All CRUD operations work
+    - Relationships created correctly
+    - URN generation consistent
+    - Query operations return expected results
+  mcp_tools:
+    - All tools respond correctly
+    - Error handling works
+    - Response formatting consistent
+    - Backward compatible with existing clients
+  data_integrity:
+    - No orphaned nodes
+    - All relationships valid
+    - Constraints enforced
+    - Indexes working
+
+# Output templates
+report_template: |
+  # Integration Validation Report
+  
+  **Feature:** {feature_name}
+  **Date:** {date}
+  **Status:** {status}
+  
+  ## Test Results
+  
+  ### Integration Tests
+  - Total: {integration_total}
+  - Passed: {integration_passed}
+  - Failed: {integration_failed}
+  
+  ### Regression Tests
+  - Total: {regression_total}
+  - Passed: {regression_passed}
+  - Failed: {regression_failed}
+  
+  ### Compatibility Tests
+  - Total: {compatibility_total}
+  - Passed: {compatibility_passed}
+  - Failed: {compatibility_failed}
+  
+  ## Failures
+  {failures_detail}
+  
+  ## Recommendations
+  {recommendations}
+

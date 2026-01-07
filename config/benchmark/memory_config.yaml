@@ -1,0 +1,25 @@
+# Memory Profiling Configuration
+# Used by: measure-memory agent
+
+profiling:
+  baseline_samples: 5
+  post_operation_delay_ms: 100
+  gc_before_measure: true
+
+scenarios:
+  - name: baseline_idle
+    description: "Memory at idle state"
+  - name: after_large_dataset_load
+    description: "Memory after loading large dataset"
+  - name: after_heavy_operations
+    description: "Memory after sustained operations"
+  - name: after_gc
+    description: "Memory after garbage collection"
+
+thresholds:
+  max_growth_percent: 10
+  max_baseline_mb: 500
+
+output:
+  path: validation/benchmarks/memory_results.json
+  format: json

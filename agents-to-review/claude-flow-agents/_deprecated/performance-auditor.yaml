@@ -1,0 +1,138 @@
+name: performance-auditor
+type: analyst
+role: Performance Analysis and Optimization Specialist
+capabilities:
+  - Benchmark query performance
+  - Measure memory usage and footprint
+  - Profile execution time for operations
+  - Identify performance bottlenecks
+  - Generate comparative performance reports
+  - Test concurrent operation handling
+  - Validate performance thresholds
+context_files:
+  - scripts/simple_benchmark.py
+  - validation/benchmarks/*.json
+  - approved_specs/{feature}_spec.annotated.md
+  - implementation/implementation_summary.md
+# Memory keys this agent reads/writes
+# Aligned with memory-keys.js MEMORY_KEYS constants
+memory_keys:
+  # Phase 3 keys (read-only, from MEMORY_KEYS.building)
+  - building/files            # Read: Files to benchmark
+  - building/status           # Read: Implementation status
+  # Phase 4 keys (from MEMORY_KEYS.shipping)
+  - shipping/validation_checklist  # Write: Performance validation results
+  # Agent-specific keys (prefixed with agent name)
+  - performance-auditor/baseline       # Agent's performance baseline
+  - performance-auditor/metrics        # Agent's current metrics
+  - performance-auditor/recommendations # Agent's optimization recommendations
+  - performance-auditor/passed         # Agent's pass/fail status
+  - performance-auditor/comparison     # Agent's baseline comparison
+
+# Phase 4 configuration
+phase4:
+  priority: 2
+  depends_on: []  # Can run in parallel with integration-validator
+  can_start_immediately: true
+  files_owned:
+    - validation/benchmarks/results.json
+    - validation/benchmarks/comparison.json
+    - validation/reports/performance_report.md
+  
+  # Benchmark categories
+  benchmarks:
+    query_latency:
+      description: "Measure response time for graph queries"
+      operations:
+        - list_nodes
+        - find_in_scope
+        - get_node
+        - get_connections
+        - get_interactions
+      iterations: 100
+      warmup: 10
+    memory_footprint:
+      description: "Measure memory usage under load"
+      scenarios:
+        - baseline_idle
+        - after_large_dataset_load
+        - after_heavy_operations
+        - after_gc
+    concurrent_operations:
+      description: "Test concurrent access patterns"
+      threads: [1, 5, 10, 20]
+      operations_per_thread: 100
+    graph_traversal_depth:
+      description: "Measure traversal performance at depth"
+      depths: [1, 2, 3, 5]
+      node_count: [100, 1000, 10000]
+
+  # Performance thresholds (fail if exceeded)
+  thresholds:
+    query_response_ms:
+      p50: 100
+      p95: 300
+      p99: 500
+      max: 1000
+    memory_growth_percent: 10
+    traversal_hops: 3
+    concurrent_throughput_ops_sec: 100
+    
+  # Acceptable regression from baseline
+  regression_tolerance:
+    latency_increase_percent: 10
+    memory_increase_percent: 15
+    throughput_decrease_percent: 5
+
+# Benchmark execution configuration
+execution:
+  commands:
+    quick: "python scripts/simple_benchmark.py --quick"
+    full: "python scripts/simple_benchmark.py --full --iterations 100"
+    compare: "python scripts/simple_benchmark.py --compare-baseline"
+    profile: "python -m cProfile -o validation/profile.stats scripts/simple_benchmark.py"
+  timeout_minutes: 20
+  warmup_iterations: 10
+  results_format: json
+
+# Performance report template
+report_template: |
+  # Performance Audit Report
+  
+  **Feature:** {feature_name}
+  **Date:** {date}
+  **Status:** {status}
+  
+  ## Summary
+  - Overall Performance: {overall_status}
+  - Baseline Comparison: {baseline_comparison}
+  - Regressions Detected: {regression_count}
+  
+  ## Query Latency
+  | Operation | P50 (ms) | P95 (ms) | P99 (ms) | Baseline | Change |
+  |-----------|----------|----------|----------|----------|--------|
+  {latency_table}
+  
+  ## Memory Usage
+  - Baseline: {memory_baseline} MB
+  - Current: {memory_current} MB
+  - Growth: {memory_growth}%
+  - Status: {memory_status}
+  
+  ## Concurrent Operations
+  - Throughput: {throughput} ops/sec
+  - Baseline: {throughput_baseline} ops/sec
+  - Change: {throughput_change}%
+  
+  ## Recommendations
+  {recommendations}
+  
+  ## Raw Data
+  See: validation/benchmarks/results.json
+
+# Baseline management
+baseline:
+  file: validation/benchmarks/baseline.json
+  auto_update: false  # Require manual baseline updates
+  version_tracked: true
+
