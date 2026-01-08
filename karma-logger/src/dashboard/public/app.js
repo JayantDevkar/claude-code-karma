@@ -90,6 +90,81 @@ class SSEConnection {
   }
 }
 
+class LoadingState {
+  constructor(containerId) {
+    this.container = document.getElementById(containerId);
+  }
+
+  setLoading(isLoading) {
+    if (!this.container) return;
+    this.container.classList.toggle('is-loading', Boolean(isLoading));
+  }
+
+  async transition(render) {
+    if (!this.container) {
+      render?.();
+      return;
+    }
+    this.container.classList.add('is-transitioning');
+    await new Promise(r => setTimeout(r, 200));
+    render?.();
+    this.container.classList.remove('is-transitioning');
+  }
+}
+
+class MetricsBuffer {
+  constructor(maxSize = 10) {
+    this.maxSize = maxSize;
+    this.buffers = {
+      tokensIn: [],
+      tokensOut: [],
+      cost: [],
+      agentCount: []
+    };
+  }
+
+  push(metric, value) {
+    if (!this.buffers[metric]) return;
+    const v = typeof value === 'number' && Number.isFinite(value) ? value : 0;
+    this.buffers[metric].push(v);
+    if (this.buffers[metric].length > this.maxSize) {
+      this.buffers[metric].shift();
+    }
+  }
+
+  get(metric) {
+    return this.buffers[metric] || [];
+  }
+}
+
+function calculateTrend(current, history) {
+  if (!history || history.length < 2) return null;
+  const prev = history.slice(0, -1);
+  if (prev.length === 0) return null;
+
+  const avg = prev.reduce((a, b) => a + b, 0) / prev.length;
+  if (!Number.isFinite(avg) || avg === 0) return null;
+
+  const pct = ((current - avg) / avg) * 100;
+  if (!Number.isFinite(pct)) return null;
+
+  return {
+    value: pct,
+    direction: pct >= 0 ? 'up' : 'down',
+    formatted: `${pct >= 0 ? '+' : ''}${pct.toFixed(0)}%`
+  };
+}
+
+function buildConnector(depth, isLast, parentConnectors) {
+  if (depth === 0) return isLast ? '└──' : '├──';
+
+  let prefix = '';
+  for (let i = 0; i < depth; i++) {
+    prefix += parentConnectors[i] ? '│   ' : '    ';
+  }
+  return prefix + (isLast ? '└──' : '├──');
+}
+
 // Agent Node Component (registered via v-scope in template)
 function AgentNode(props) {
   return {
@@ -122,6 +197,7 @@ PetiteVue.createApp({
   currentView: 'live',
   selectedProject: null,
   projects: [],
+  projectsLoading: false,
   dateRange: 30,
   expandedAgents: {},
   allAgentsExpanded: false,
@@ -135,7 +211,17 @@ PetiteVue.createApp({
     sessions: 0,
     agents: 0
   },
+  // Phase 4: sparkline + trend state
+  metricsBuffer: null,
+  sparklines: null,
+  trends: {
+    tokensIn: { text: '—', cls: 'trend--neutral' },
+    tokensOut: { text: '—', cls: 'trend--neutral' },
+    cost: { text: '—', cls: 'trend--neutral' },
+    agentCount: { text: '—', cls: 'trend--neutral' }
+  },
   agentTree: [],
+  agentsLoading: true,
   sessions: [],
   chartManager: null,
   eventSource: null,
@@ -146,11 +232,13 @@ PetiteVue.createApp({
   historyProject: '',
   historyDays: 30,
   historyData: [],
+  historyLoading: false,
   historySummary: {
     totalCost: 0,
     totalSessions: 0,
     avgCost: 0
   },
+  loadingStates: null,
 
   // Lifecycle
   init() {
@@ -158,8 +246,65 @@ PetiteVue.createApp({
     this.chartManager = new ChartManager('chart', {
       maxDataPoints: window.CHART_DATA_RETENTION_POINTS || 3600
     });
+    this.metricsBuffer = new MetricsBuffer(10);
+    this.sparklines = {};
+    this.initSparklines();
+
+    // Phase 6: state managers for subtle transitions/loading opacity
+    this.loadingStates = {
+      projects: new LoadingState('project-list'),
+      chart: new LoadingState('chart')
+    };
+
     this.connectSSE({ resetRetries: true });
     this.fetchInitialData();
+  },
+
+  // Phase 4: Sparkline initialization and updates
+  initSparklines() {
+    const Sparkline = window.Sparkline;
+    if (!Sparkline) return;
+
+    const COLORS = {
+      tokensIn: { lineColor: '#22c55e', fillColor: 'rgba(34, 197, 94, 0.2)' },
+      tokensOut: { lineColor: '#3b82f6', fillColor: 'rgba(59, 130, 246, 0.2)' },
+      cost: { lineColor: '#10b981', fillColor: 'rgba(16, 185, 129, 0.2)' },
+      agentCount: { lineColor: '#f59e0b', fillColor: 'rgba(245, 158, 11, 0.2)' }
+    };
+
+    const canvases = [
+      { key: 'tokensIn', id: 'tokens-in-sparkline' },
+      { key: 'tokensOut', id: 'tokens-out-sparkline' },
+      { key: 'cost', id: 'cost-sparkline' },
+      { key: 'agentCount', id: 'agents-sparkline' }
+    ];
+
+    for (const { key, id } of canvases) {
+      const canvas = document.getElementById(id);
+      if (!canvas) continue;
+      const spark = new Sparkline(canvas, COLORS[key] || {});
+      this.sparklines[key] = spark;
+      spark.setData([]);
+    }
+  },
+
+  updateSparklineAndTrend(key, current) {
+    if (!this.metricsBuffer) return;
+
+    const history = this.metricsBuffer.get(key);
+    const trend = calculateTrend(current, history);
+
+    if (!trend) {
+      this.trends[key] = { text: '—', cls: 'trend--neutral' };
+    } else {
+      this.trends[key] = {
+        text: trend.formatted,
+        cls: trend.direction === 'up' ? 'trend--up' : 'trend--down'
+      };
+    }
+
+    const spark = this.sparklines?.[key];
+    if (spark) spark.setData(history);
   },
 
   // SSE Connection
@@ -188,6 +333,15 @@ PetiteVue.createApp({
 
         if (data.metrics) {
           this.updateMetrics(data.metrics);
+          // Phase 4: seed sparklines with initial totals once
+          this.metricsBuffer?.push('tokensIn', data.metrics.tokensIn ?? this.metrics.tokensIn);
+          this.metricsBuffer?.push('tokensOut', data.metrics.tokensOut ?? this.metrics.tokensOut);
+          this.metricsBuffer?.push('cost', data.metrics.cost ?? this.metrics.cost);
+          this.metricsBuffer?.push('agentCount', data.metrics.agents ?? this.metrics.agents);
+          this.updateSparklineAndTrend('tokensIn', this.metrics.tokensIn);
+          this.updateSparklineAndTrend('tokensOut', this.metrics.tokensOut);
+          this.updateSparklineAndTrend('cost', this.metrics.cost);
+          this.updateSparklineAndTrend('agentCount', this.metrics.agents);
         }
 
         if (data.sessions) {
@@ -209,6 +363,17 @@ PetiteVue.createApp({
       try {
         const data = JSON.parse(event.data);
         this.updateMetrics(data);
+        // Phase 4: buffer + sparkline updates only for real-time events
+        this.metricsBuffer?.push('tokensIn', data.tokensIn ?? this.metrics.tokensIn);
+        this.metricsBuffer?.push('tokensOut', data.tokensOut ?? this.metrics.tokensOut);
+        this.metricsBuffer?.push('cost', data.cost ?? this.metrics.cost);
+        this.metricsBuffer?.push('agentCount', data.agents ?? this.metrics.agents);
+
+        this.updateSparklineAndTrend('tokensIn', this.metrics.tokensIn);
+        this.updateSparklineAndTrend('tokensOut', this.metrics.tokensOut);
+        this.updateSparklineAndTrend('cost', this.metrics.cost);
+        this.updateSparklineAndTrend('agentCount', this.metrics.agents);
+
         this.addChartDataPoint(data);
       } catch (err) {
         console.error('Failed to parse metrics event:', err);
@@ -221,6 +386,7 @@ PetiteVue.createApp({
       try {
         const data = JSON.parse(event.data);
         this.agentTree = data;
+        this.agentsLoading = false;
       } catch (err) {
         console.error('Failed to parse agents event:', err);
       }
@@ -277,6 +443,7 @@ PetiteVue.createApp({
         }
         if (data.agents) {
           this.agentTree = data.agents;
+          this.agentsLoading = false;
         }
       }
     } catch (err) {
@@ -436,10 +603,18 @@ PetiteVue.createApp({
 
   async fetchProjects() {
     try {
+      this.projectsLoading = true;
+      this.loadingStates?.projects?.setLoading(true);
       const res = await fetch('/api/projects');
-      this.projects = await res.json();
+      const next = await res.json();
+      await this.loadingStates?.projects?.transition(() => {
+        this.projects = next;
+      });
     } catch (err) {
       console.error('Failed to fetch projects:', err);
+    } finally {
+      this.projectsLoading = false;
+      this.loadingStates?.projects?.setLoading(false);
     }
   },
 
@@ -463,6 +638,7 @@ PetiteVue.createApp({
 
   async updateHistory() {
     try {
+      this.historyLoading = true;
       const endpoint = this.historyProject
         ? `/api/projects/${encodeURIComponent(this.historyProject)}/history?days=${this.historyDays}`
         : `/api/totals/history?days=${this.historyDays}`;
@@ -477,6 +653,8 @@ PetiteVue.createApp({
       this.updateHistorySummary();
     } catch (err) {
       console.error('Failed to fetch history:', err);
+    } finally {
+      this.historyLoading = false;
     }
   },
 
@@ -494,8 +672,82 @@ PetiteVue.createApp({
   },
 
   // === Phase 4: Agent Tree Methods ===
-  get computedAgentTree() {
+  get agentRoots() {
     return this.buildAgentTree(this.agentTree);
+  },
+
+  get agentRows() {
+    const roots = this.agentRoots || [];
+    if (roots.length === 0) return [];
+
+    const rows = [];
+
+    const walk = (nodes, depth, parentConnectors) => {
+      nodes.forEach((node, index) => {
+        const isLast = index === nodes.length - 1;
+        const connector = buildConnector(depth, isLast, parentConnectors);
+        const hasChildren = Boolean(node.children && node.children.length > 0);
+        const isExpanded = Boolean(this.expandedAgents[node.id]);
+        const isRunning = !(node.ended_at || node.endedAt);
+
+        const costCents = node.metrics?.cost?.total ?? node.cost_total ?? 0;
+        const tokensIn = node.metrics?.tokensIn ?? node.tokens_in ?? 0;
+        const tokensOut = node.metrics?.tokensOut ?? node.tokens_out ?? 0;
+        const tokensTotal = tokensIn + tokensOut;
+
+        rows.push({
+          id: node.id,
+          depth,
+          connector,
+          indicator: hasChildren ? '◈' : '◇',
+          hasChildren,
+          isExpanded,
+          isRunning,
+          modelClass: this.getModelClass(node.model),
+          modelText: this.getModelShort(node.model),
+          typeText: node.type || node.agent_type || 'unknown',
+          costCents,
+          tokensTotal
+        });
+
+        const childConnectors = [...parentConnectors];
+        childConnectors[depth] = !isLast;
+
+        if (hasChildren && isExpanded) {
+          walk(node.children, depth + 1, childConnectors);
+        }
+      });
+    };
+
+    walk(roots, 0, []);
+    return rows;
+  },
+
+  get agentExpandableCount() {
+    const roots = this.agentRoots || [];
+    let total = 0;
+    const walk = (nodes) => {
+      nodes.forEach(n => {
+        if (n.children && n.children.length > 0) total += 1;
+        if (n.children && n.children.length > 0) walk(n.children);
+      });
+    };
+    walk(roots);
+    return total;
+  },
+
+  get agentExpandedCount() {
+    const roots = this.agentRoots || [];
+    let expanded = 0;
+    const walk = (nodes) => {
+      nodes.forEach(n => {
+        const hasChildren = Boolean(n.children && n.children.length > 0);
+        if (hasChildren && this.expandedAgents[n.id]) expanded += 1;
+        if (hasChildren) walk(n.children);
+      });
+    };
+    walk(roots);
+    return expanded;
   },
 
   buildAgentTree(agents) {
@@ -544,7 +796,7 @@ PetiteVue.createApp({
       });
     };
     this.allAgentsExpanded = !this.allAgentsExpanded;
-    setAll(this.computedAgentTree, this.allAgentsExpanded);
+    setAll(this.agentRoots, this.allAgentsExpanded);
   },
 
   getModelClass(model) {
@@ -561,6 +813,19 @@ PetiteVue.createApp({
     if (model.includes('sonnet')) return 'sonnet';
     if (model.includes('haiku')) return 'haiku';
     return model.split('-')[0] || '?';
+  },
+
+  // Phase 5: formatting helpers
+  formatTokens(tokens) {
+    const t = typeof tokens === 'number' ? tokens : 0;
+    if (t >= 1_000_000) return (t / 1_000_000).toFixed(1) + 'M';
+    if (t >= 1_000) return (t / 1_000).toFixed(0) + 'K';
+    return String(t);
+  },
+
+  formatCostCompact(cents) {
+    const c = typeof cents === 'number' ? cents : 0;
+    return '$' + (c / 100).toFixed(2);
   },
 
   // Cleanup

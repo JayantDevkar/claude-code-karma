@@ -354,5 +354,5 @@ tests/walkie-talkie/
 
 ## Related Documentation
 
-- [Phase Documentation](../feature/karma-logger/agent-walkie-talkie/)
-- [Karma Logger README](../README.md)
+- [Phase Documentation](../../feature/agent-walkie-talkie/plan/v0.md)
+- [Karma Logger README](../../README.md)

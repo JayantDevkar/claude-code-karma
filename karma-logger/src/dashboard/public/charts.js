@@ -425,3 +425,126 @@ class HistoryChart {
 window.ChartManager = ChartManager;
 window.HistoryChart = HistoryChart;
 window.CHART_DATA_RETENTION_POINTS = CHART_DATA_RETENTION_POINTS;
+
+/**
+ * Sparkline - tiny HiDPI-safe canvas line chart
+ * Used by Phase 4 metric cards and Phase 7 project cards.
+ */
+class Sparkline {
+  constructor(canvas, options = {}) {
+    this.canvas = canvas;
+    this.ctx = null;
+    this.dpr = window.devicePixelRatio || 1;
+    this.options = {
+      lineColor: '#10b981',
+      fillColor: 'rgba(16, 185, 129, 0.2)',
+      lineWidth: 1.5,
+      padding: 2,
+      baselineColor: '#64748b',
+      ...options
+    };
+    this.data = [];
+    this._lastCssSize = { w: 0, h: 0 };
+
+    this.setupHiDPI();
+  }
+
+  setupHiDPI() {
+    const rect = this.canvas.getBoundingClientRect();
+    const cssW = Math.max(1, Math.round(rect.width || this.canvas.width || 60));
+    const cssH = Math.max(1, Math.round(rect.height || this.canvas.height || 20));
+
+    // Avoid re-initializing if size hasn't changed.
+    if (this._lastCssSize.w === cssW && this._lastCssSize.h === cssH && this.ctx) return;
+    this._lastCssSize = { w: cssW, h: cssH };
+
+    this.canvas.style.width = `${cssW}px`;
+    this.canvas.style.height = `${cssH}px`;
+    this.canvas.width = Math.round(cssW * this.dpr);
+    this.canvas.height = Math.round(cssH * this.dpr);
+
+    const ctx = this.canvas.getContext('2d');
+    // Reset transforms before scaling to prevent compounding.
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.scale(this.dpr, this.dpr);
+    this.ctx = ctx;
+  }
+
+  setData(values) {
+    this.data = Array.isArray(values) ? values : [];
+    this.render();
+  }
+
+  render() {
+    this.setupHiDPI();
+
+    const { ctx, data } = this;
+    const { lineColor, fillColor, lineWidth, padding } = this.options;
+
+    const w = this._lastCssSize.w;
+    const h = this._lastCssSize.h;
+
+    ctx.clearRect(0, 0, w, h);
+
+    if (!data || data.length < 2) {
+      this.renderEmpty();
+      return;
+    }
+
+    const min = Math.min(...data);
+    const max = Math.max(...data);
+    const range = max - min || 1;
+
+    const stepX = (w - padding * 2) / (data.length - 1);
+    const points = data.map((val, i) => ({
+      x: padding + i * stepX,
+      y: h - padding - ((val - min) / range) * (h - padding * 2)
+    }));
+
+    // Fill
+    ctx.beginPath();
+    ctx.moveTo(points[0].x, h);
+    for (const p of points) ctx.lineTo(p.x, p.y);
+    ctx.lineTo(points[points.length - 1].x, h);
+    ctx.closePath();
+    ctx.fillStyle = fillColor;
+    ctx.fill();
+
+    // Line
+    ctx.beginPath();
+    ctx.moveTo(points[0].x, points[0].y);
+    for (const p of points.slice(1)) ctx.lineTo(p.x, p.y);
+    ctx.strokeStyle = lineColor;
+    ctx.lineWidth = lineWidth;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.stroke();
+
+    // End dot
+    const lastPoint = points[points.length - 1];
+    ctx.beginPath();
+    ctx.arc(lastPoint.x, lastPoint.y, 2, 0, Math.PI * 2);
+    ctx.fillStyle = lineColor;
+    ctx.fill();
+  }
+
+  renderEmpty() {
+    this.setupHiDPI();
+    const { ctx } = this;
+    const { baselineColor } = this.options;
+    const w = this._lastCssSize.w;
+    const h = this._lastCssSize.h;
+
+    ctx.clearRect(0, 0, w, h);
+    ctx.beginPath();
+    ctx.setLineDash([2, 2]);
+    ctx.moveTo(2, h / 2);
+    ctx.lineTo(w - 2, h / 2);
+    ctx.strokeStyle = baselineColor;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+}
+
+window.Sparkline = Sparkline;

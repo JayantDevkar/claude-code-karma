@@ -533,6 +533,15 @@ karma-logger/
 │   │       ├── app.js
 │   │       └── charts.js
 │   │
+│   ├── walkie-talkie/         # Agent coordination (KV cache + IPC)
+│   │   ├── index.ts
+│   │   ├── types.ts
+│   │   ├── cache-store.ts
+│   │   ├── agent-radio.ts
+│   │   ├── socket-server.ts
+│   │   ├── socket-client.ts
+│   │   └── README.md          # Walkie-Talkie docs
+│   │
 │   └── tui/                  # Terminal UI (Ink/React)
 │       ├── index.ts          # TUI entry point
 │       ├── App.tsx           # Main TUI component

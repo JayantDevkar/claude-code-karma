@@ -53,14 +53,22 @@
             <span class="metric-card__icon" aria-hidden="true">▲</span>
             <span class="metric-card__value">{{ formatNumber(metrics.tokensIn) }}</span>
           </div>
-          <div class="metric-card__label">tokens in</div>
+          <div class="metric-card__label">Tokens In</div>
+          <div class="metric-card__footer">
+            <canvas class="sparkline" id="tokens-in-sparkline" width="60" height="20" aria-hidden="true"></canvas>
+            <span class="trend" :class="trends.tokensIn.cls">{{ trends.tokensIn.text }}</span>
+          </div>
         </article>
         <article class="metric-card metric-card--compact">
           <div class="metric-card__header">
             <span class="metric-card__icon" aria-hidden="true">▼</span>
             <span class="metric-card__value">{{ formatNumber(metrics.tokensOut) }}</span>
           </div>
-          <div class="metric-card__label">tokens out</div>
+          <div class="metric-card__label">Tokens Out</div>
+          <div class="metric-card__footer">
+            <canvas class="sparkline" id="tokens-out-sparkline" width="60" height="20" aria-hidden="true"></canvas>
+            <span class="trend" :class="trends.tokensOut.cls">{{ trends.tokensOut.text }}</span>
+          </div>
         </article>
         <article class="metric-card metric-card--compact">
           <div class="metric-card__header">
@@ -68,6 +76,10 @@
             <span class="metric-card__value">{{ formatCostNumber(metrics.cost) }}</span>
           </div>
           <div class="metric-card__label">session</div>
+          <div class="metric-card__footer">
+            <canvas class="sparkline" id="cost-sparkline" width="60" height="20" aria-hidden="true"></canvas>
+            <span class="trend" :class="trends.cost.cls">{{ trends.cost.text }}</span>
+          </div>
         </article>
         <article class="metric-card metric-card--compact">
           <div class="metric-card__header">
@@ -75,73 +87,79 @@
             <span class="metric-card__value">{{ formatNumber(metrics.agents) }}</span>
           </div>
           <div class="metric-card__label">agents</div>
+          <div class="metric-card__footer">
+            <canvas class="sparkline" id="agents-sparkline" width="60" height="20" aria-hidden="true"></canvas>
+            <span class="trend" :class="trends.agentCount.cls">{{ trends.agentCount.text }}</span>
+          </div>
         </article>
       </section>
 
       <!-- Token Chart -->
       <section class="chart-section">
         <h2>Token Usage Over Time</h2>
-        <div id="chart" class="chart-container">
+        <div id="chart" class="chart-container view-container">
           <div class="empty-state">
-            Waiting for data...
+            <span class="empty-state__icon" aria-hidden="true">⚡</span>
+            <h3 class="empty-state__title">Waiting for connection</h3>
+            <p class="empty-state__message">
+              The dashboard will update automatically when a session starts.
+            </p>
+            <div class="empty-state__tip">
+              <span class="empty-state__tip-label">Tip:</span>
+              Keep this tab open while coding to see live metrics.
+            </div>
           </div>
         </div>
       </section>
 
       <!-- Agent Hierarchy -->
       <section class="agents-section">
-        <div class="tree-header">
-          <h2>Agent Hierarchy</h2>
-          <button v-if="agentTree && agentTree.length > 0" class="expand-all-btn" @click="expandAllAgents">
-            {{ allAgentsExpanded ? 'Collapse All' : 'Expand All' }}
-          </button>
-        </div>
-        <div class="agent-tree" v-if="computedAgentTree && computedAgentTree.length > 0">
-          <template v-for="node in computedAgentTree" :key="node.id">
-            <div class="tree-node" :style="{ '--depth': 0 }">
-              <div class="node-content">
-                <button v-if="node.children && node.children.length > 0" class="expand-btn" @click="toggleAgent(node.id)">
-                  {{ expandedAgents[node.id] ? '▼' : '▶' }}
-                </button>
-                <span v-else class="expand-placeholder"></span>
-                <span :class="['agent-badge', getModelClass(node.model)]">{{ getModelShort(node.model) }}</span>
-                <span class="agent-type">{{ node.type || node.agent_type || 'main' }}</span>
-                <span class="agent-cost">{{ formatCost(node.metrics?.cost?.total || node.cost_total || 0) }}</span>
-                <span class="agent-tokens">{{ formatNumber((node.metrics?.tokensIn || node.tokens_in || 0) + (node.metrics?.tokensOut || node.tokens_out || 0)) }}</span>
-              </div>
-              <div v-if="node.children && node.children.length > 0 && expandedAgents[node.id]" class="node-children">
-                <template v-for="child in node.children" :key="child.id">
-                  <div class="tree-node" :style="{ '--depth': 1 }">
-                    <div class="node-content">
-                      <button v-if="child.children && child.children.length > 0" class="expand-btn" @click="toggleAgent(child.id)">
-                        {{ expandedAgents[child.id] ? '▼' : '▶' }}
-                      </button>
-                      <span v-else class="expand-placeholder"></span>
-                      <span :class="['agent-badge', getModelClass(child.model)]">{{ getModelShort(child.model) }}</span>
-                      <span class="agent-type">{{ child.type || child.agent_type || 'agent' }}</span>
-                      <span class="agent-cost">{{ formatCost(child.metrics?.cost?.total || child.cost_total || 0) }}</span>
-                      <span class="agent-tokens">{{ formatNumber((child.metrics?.tokensIn || child.tokens_in || 0) + (child.metrics?.tokensOut || child.tokens_out || 0)) }}</span>
-                    </div>
-                    <div v-if="child.children && child.children.length > 0 && expandedAgents[child.id]" class="node-children">
-                      <template v-for="grandchild in child.children" :key="grandchild.id">
-                        <div class="tree-node" :style="{ '--depth': 2 }">
-                          <div class="node-content">
-                            <span class="expand-placeholder"></span>
-                            <span :class="['agent-badge', getModelClass(grandchild.model)]">{{ getModelShort(grandchild.model) }}</span>
-                            <span class="agent-type">{{ grandchild.type || grandchild.agent_type || 'agent' }}</span>
-                            <span class="agent-cost">{{ formatCost(grandchild.metrics?.cost?.total || grandchild.cost_total || 0) }}</span>
-                            <span class="agent-tokens">{{ formatNumber((grandchild.metrics?.tokensIn || grandchild.tokens_in || 0) + (grandchild.metrics?.tokensOut || grandchild.tokens_out || 0)) }}</span>
-                          </div>
-                        </div>
-                      </template>
-                    </div>
-                  </div>
-                </template>
-              </div>
+        <section class="agent-tree">
+          <header class="agent-tree__header">
+            <h3 class="title-section">Agents</h3>
+            <span class="agent-tree__counter">{{ agentExpandedCount }}/{{ agentExpandableCount }} expanded</span>
+          </header>
+
+          <div class="agent-tree__list agent-tree__list--skeleton" role="tree" v-show="agentsLoading">
+            <div class="skeleton skeleton--node"></div>
+            <div class="skeleton skeleton--node skeleton--node-indent"></div>
+            <div class="skeleton skeleton--node skeleton--node-indent"></div>
+            <div class="skeleton skeleton--node"></div>
+          </div>
+
+          <div class="agent-tree__list" role="tree" v-show="!agentsLoading && agentRows && agentRows.length > 0">
+            <div
+              v-for="row in agentRows"
+              :key="row.id"
+              class="agent-node"
+              :class="[{ 'is-expanded': row.isExpanded, 'is-running': row.isRunning }, `agent-node--depth-${row.depth}`]"
+              role="treeitem"
+              :aria-expanded="row.hasChildren ? String(row.isExpanded) : null"
+              :data-depth="row.depth"
+              tabindex="0"
+              @click="row.hasChildren && toggleAgent(row.id)"
+            >
+              <span class="agent-node__connector">{{ row.connector }}</span>
+              <span class="agent-node__indicator" aria-hidden="true">{{ row.indicator }}</span>
+              <span class="agent-node__model" :class="`agent-node__model--${row.modelClass}`">{{ row.modelText }}</span>
+              <span class="agent-node__type">{{ row.typeText }}</span>
+              <span class="agent-node__cost">{{ formatCostCompact(row.costCents) }}</span>
+              <span class="agent-node__tokens">{{ formatTokens(row.tokensTotal) }}</span>
             </div>
-          </template>
-        </div>
-        <div v-else class="empty-state">No agents spawned yet</div>
+          </div>
+
+          <div class="empty-state" v-show="!agentsLoading && (!agentRows || agentRows.length === 0)">
+            <span class="empty-state__icon" aria-hidden="true">◇</span>
+            <h3 class="empty-state__title">No agents yet</h3>
+            <p class="empty-state__message">
+              Run a Claude Code session to see real-time agent hierarchy here.
+            </p>
+            <div class="empty-state__tip">
+              <span class="empty-state__tip-label">Tip:</span>
+              Use <code>karma watch</code> in terminal for live session monitoring.
+            </div>
+          </div>
+        </section>
       </section>
 
       <!-- Recent Sessions -->
@@ -170,7 +188,11 @@
           </table>
         </div>
         <div v-else class="empty-state">
-          No sessions recorded yet
+          <span class="empty-state__icon" aria-hidden="true">📊</span>
+          <h3 class="empty-state__title">No sessions recorded</h3>
+          <p class="empty-state__message">
+            Start using Claude Code to see your session metrics and costs here.
+          </p>
         </div>
       </section>
       </div>
@@ -184,20 +206,51 @@
             <option value="90">Last 90 days</option>
           </select>
         </div>
-        <div id="project-list" class="project-list">
-          <div v-if="projects.length === 0" class="empty-state">No projects found</div>
-          <div v-for="p in projects" :key="p.projectName" class="project-card" @click="selectProject(p.projectName)">
-            <div class="project-header">
-              <span class="project-name">{{ p.projectName }}</span>
-              <span class="project-cost">{{ formatCost(p.totalCost) }}</span>
-            </div>
-            <div class="project-meta">
-              <span>{{ p.sessionCount }} sessions</span>
-              <span>{{ formatNumber(p.totalTokensIn + p.totalTokensOut) }} tokens</span>
-              <span>{{ p.activeDays }} days</span>
-            </div>
-            <div class="project-last-activity">
-              Last: {{ formatRelativeTime(p.lastActivity) }}
+        <div id="project-list" class="project-list view-container">
+          <div v-show="projectsLoading">
+            <article class="project-card project-card--skeleton" aria-hidden="true">
+              <div class="project-header">
+                <span class="skeleton skeleton--title"></span>
+                <span class="skeleton skeleton--cost"></span>
+              </div>
+              <span class="skeleton skeleton--meta"></span>
+            </article>
+            <article class="project-card project-card--skeleton" aria-hidden="true">
+              <div class="project-header">
+                <span class="skeleton skeleton--title"></span>
+                <span class="skeleton skeleton--cost"></span>
+              </div>
+              <span class="skeleton skeleton--meta"></span>
+            </article>
+            <article class="project-card project-card--skeleton" aria-hidden="true">
+              <div class="project-header">
+                <span class="skeleton skeleton--title"></span>
+                <span class="skeleton skeleton--cost"></span>
+              </div>
+              <span class="skeleton skeleton--meta"></span>
+            </article>
+          </div>
+          <div class="empty-state" v-show="!projectsLoading && projects.length === 0">
+            <span class="empty-state__icon" aria-hidden="true">📁</span>
+            <h3 class="empty-state__title">No projects found</h3>
+            <p class="empty-state__message">
+              Projects appear after you've had Claude Code sessions in different directories.
+            </p>
+          </div>
+          <div v-show="!projectsLoading && projects.length > 0">
+            <div v-for="p in projects" :key="p.projectName" class="project-card" @click="selectProject(p.projectName)">
+              <div class="project-header">
+                <span class="project-name">{{ p.projectName }}</span>
+                <span class="project-cost">{{ formatCost(p.totalCost) }}</span>
+              </div>
+              <div class="project-meta">
+                <span>{{ p.sessionCount }} sessions</span>
+                <span>{{ formatNumber(p.totalTokensIn + p.totalTokensOut) }} tokens</span>
+                <span>{{ p.activeDays }} days</span>
+              </div>
+              <div class="project-last-activity">
+                Last: {{ formatRelativeTime(p.lastActivity) }}
+              </div>
             </div>
           </div>
         </div>

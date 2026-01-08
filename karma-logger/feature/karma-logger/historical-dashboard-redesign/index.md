@@ -8,19 +8,47 @@
 
 ## Implementation Status (this branch)
 
-**Implemented (2026-01-08)**:
-- **Phase 1**: Compact single-line header + denser 4-up metric cards
-- **Phase 2**: Hover/focus/active/disabled interaction states + reduced-motion support
-- **Phase 3**: Connection indicator + reconnect banner with exponential backoff + manual retry
+### ✅ Completed Phases
 
-**Files touched for Phases 1–3** (actual implementation):
+| Phase | Status | Date | Key Features |
+|-------|--------|------|--------------|
+| **Phase 1** | ✅ Done | 2026-01-08 | Compact single-line header, 4-column metric cards, CSS variables, typography |
+| **Phase 2** | ✅ Done | 2026-01-08 | Hover/focus/active/disabled states, transitions, reduced-motion support |
+| **Phase 3** | ✅ Done | 2026-01-08 | Connection indicator (4 states), error banner, exponential backoff retry |
+| **Phase 4** | ✅ Done | 2026-01-08 | Metric card sparklines + trend badges, metrics ring buffer, HiDPI canvas support |
+| **Phase 5** | ✅ Done | 2026-01-08 | ASCII agent tree (unlimited depth), model badges, running state, expansion counter |
+| **Phase 6** | ✅ Done | 2026-01-08 | Purposeful empty states, skeleton loading, view transitions (fade/opacity) |
+
+### 🔲 Remaining Phases
+
+| Phase | Focus | Priority | Effort | Impact | Status |
+|-------|-------|----------|--------|--------|--------|
+| **Phase 8** | Keyboard Navigation | P2 | Medium | High | Not started |
+| **Phase 7** | Projects & History Polish | P3 | Medium | Medium | Not started |
+| **Phase 9** | Celebrations & Alerts | P3 | Medium | Medium | Not started |
+| **Phase 10** | Power Features | P4 | High | Medium | Not started |
+
+### Recommended Implementation Order
+
+Based on effort/impact analysis:
+```
+Week 1-2:  Phase 4 (Sparklines) → Phase 6 (Empty States)
+Week 3:    Phase 5 (Agent Tree) → Phase 8 (Keyboard Nav)
+Week 4:    Phase 7 (Polish) → Phase 9 (Celebrations)
+Future:    Phase 10 (Power Features)
+```
+
+**Files touched for Phases 1–6** (actual implementation):
 - `src/dashboard/public/index.html`
 - `src/dashboard/public/style.css`
 - `src/dashboard/public/app.js`
+- `src/dashboard/public/charts.js`
 
 **Notes**:
 - Connection dot now reflects `connected/reconnecting/disconnected/error` via `connectionState` in `app.js`.
 - Banner UI is wired and dismissible; retry triggers a fresh SSE connect.
+- Sparkline + trend rendering is wired via `Sparkline` (in `charts.js`) + `MetricsBuffer` (in `app.js`).
+- Skeleton + empty states are implemented for Live/Projects views; view switching was verified in a browser.
 
 ---
 
@@ -136,7 +164,7 @@ From original design doc:
 |------|--------|
 | `public/style.css` | 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 |
 | `public/app.js` | 3, 4, 5, 6, 7, 8, 9, 10 |
-| `public/index.html` | 1, 3, 6 |
+| `public/index.html` | 1, 3, 4, 5, 6 |
 | `public/charts.js` | 4, 7 |
 
 ### New Components
@@ -185,7 +213,7 @@ From original design doc:
 
 ### Component Classes (All Phases)
 - `.metric-card--compact` (Phase 1)
-- `.metric-card__sparkline` (Phase 4)
+- `.sparkline` (Phase 4)
 - `.agent-node__connector` (Phase 5)
 - `.skeleton` (Phase 6)
 - `.error-card` (Phase 3)
