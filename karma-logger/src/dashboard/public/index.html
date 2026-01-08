@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Karma Dashboard</title>
+
+  <!-- Pico CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/@picocss/pico@2/css/pico.min.css">
+
+  <!-- uPlot for charts -->
+  <link rel="stylesheet" href="https://unpkg.com/uplot@1.6.30/dist/uPlot.min.css">
+
+  <!-- Custom styles -->
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div id="app" @vue:mounted="init">
+    <!-- Header -->
+    <header class="dashboard-header">
+      <div class="header-left">
+        <h1>Karma Dashboard</h1>
+        <span class="session-id" v-if="sessionId">Session: {{ sessionId.slice(0, 8) }}...</span>
+      </div>
+      <div class="header-right">
+        <span :class="['status-badge', connected ? 'connected' : 'disconnected']">
+          {{ connected ? 'Connected' : 'Disconnected' }}
+        </span>
+      </div>
+    </header>
+
+    <main class="container">
+      <!-- Metrics Cards -->
+      <section class="metrics-grid">
+        <article class="metric-card">
+          <div class="metric-label">Tokens In</div>
+          <div class="metric-value">{{ formatNumber(metrics.tokensIn) }}</div>
+        </article>
+        <article class="metric-card">
+          <div class="metric-label">Tokens Out</div>
+          <div class="metric-value">{{ formatNumber(metrics.tokensOut) }}</div>
+        </article>
+        <article class="metric-card">
+          <div class="metric-label">Total Cost</div>
+          <div class="metric-value cost">{{ formatCost(metrics.cost) }}</div>
+        </article>
+      </section>
+
+      <!-- Token Chart -->
+      <section class="chart-section">
+        <h2>Token Usage Over Time</h2>
+        <div id="chart" class="chart-container">
+          <div v-if="chartData.length === 0" class="empty-state">
+            Waiting for data...
+          </div>
+        </div>
+      </section>
+
+      <!-- Agent Hierarchy -->
+      <section class="agents-section">
+        <h2>Agent Hierarchy</h2>
+        <div class="agent-tree" v-if="agentTree.length > 0">
+          <agent-node
+            v-for="agent in agentTree"
+            :key="agent.id"
+            :agent="agent"
+            :depth="0"
+          ></agent-node>
+        </div>
+        <div v-else class="empty-state">
+          No agents spawned yet
+        </div>
+      </section>
+
+      <!-- Recent Sessions -->
+      <section class="sessions-section">
+        <h2>Recent Sessions</h2>
+        <div v-if="sessions.length > 0" class="sessions-table-wrapper">
+          <table class="sessions-table">
+            <thead>
+              <tr>
+                <th>Session ID</th>
+                <th>Project</th>
+                <th>Agents</th>
+                <th>Tokens</th>
+                <th>Cost</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="session in sessions" :key="session.id">
+                <td class="session-id-cell">{{ session.id.slice(0, 8) }}...</td>
+                <td>{{ session.projectName || 'Unknown' }}</td>
+                <td>{{ session.agentCount || 0 }}</td>
+                <td>{{ formatNumber((session.tokensIn || 0) + (session.tokensOut || 0)) }}</td>
+                <td class="cost">{{ formatCost(session.cost || 0) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div v-else class="empty-state">
+          No sessions recorded yet
+        </div>
+      </section>
+    </main>
+
+    <footer class="dashboard-footer">
+      <p>Karma Logger - Real-time Claude Code metrics</p>
+    </footer>
+  </div>
+
+  <!-- Agent Node Component Template -->
+  <template id="agent-node-template">
+    <div class="agent-node" :style="{ marginLeft: depth * 20 + 'px' }">
+      <span class="agent-connector" v-if="depth > 0"></span>
+      <span class="agent-icon">&#9679;</span>
+      <span class="agent-id">{{ agent.id.slice(0, 7) }}</span>
+      <span class="agent-type">{{ agent.type || 'agent' }}</span>
+      <span class="agent-model">({{ agent.model || 'unknown' }})</span>
+      <span class="agent-cost">{{ formatCost(agent.metrics?.cost?.total || 0) }}</span>
+      <div v-if="agent.children && agent.children.length > 0">
+        <agent-node
+          v-for="child in agent.children"
+          :key="child.id"
+          :agent="child"
+          :depth="depth + 1"
+        ></agent-node>
+      </div>
+    </div>
+  </template>
+
+  <!-- uPlot -->
+  <script src="https://unpkg.com/uplot@1.6.30/dist/uPlot.iife.min.js"></script>
+
+  <!-- Petite-Vue -->
+  <script src="https://unpkg.com/petite-vue@0.4.1/dist/petite-vue.iife.js"></script>
+
+  <!-- App -->
+  <script src="/app.js"></script>
+</body>
+</html>

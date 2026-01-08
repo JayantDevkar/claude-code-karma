@@ -1,15 +1,34 @@
 /**
  * Hono Web Server for Dashboard
- * Phase 5: Main server with SSE and API routes
+ * Phase 5/6: Main server with SSE, API routes, and static file serving
  */
 
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { randomUUID } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 import { createApiRoutes } from './api.js';
 import { sseManager, SSEManager } from './sse.js';
 import type { MetricsAggregator } from '../aggregator.js';
 import type { LogWatcher } from '../watcher.js';
+
+// Get the directory of this file (works in both src and dist)
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+// Resolve public directory path (handles both dev and built scenarios)
+// In dev: __dirname is src/dashboard, public is at src/dashboard/public
+// In dist: __dirname is dist/dashboard, but static files are in src/dashboard/public
+function getPublicPath(): string {
+  // Check if we're running from dist (compiled) or src (dev)
+  if (__dirname.includes('/dist/')) {
+    // Running from dist, go up to project root and into src
+    return join(__dirname, '../../src/dashboard/public');
+  }
+  // Running from src (dev mode with tsx)
+  return join(__dirname, 'public');
+}
 
 export interface ServerOptions {
   port?: number;
@@ -58,61 +77,62 @@ export function createApp(aggregator: MetricsAggregator): Hono {
   const apiRoutes = createApiRoutes(aggregator);
   app.route('/api', apiRoutes);
 
-  // Root route - show basic info until Phase 6 adds UI
-  app.get('/', (c) => {
-    const totals = aggregator.getTotals();
-    return c.html(`
-<!DOCTYPE html>
-<html>
-<head>
-  <title>Karma Dashboard</title>
-  <style>
-    body { font-family: system-ui, sans-serif; max-width: 600px; margin: 2rem auto; padding: 0 1rem; }
-    h1 { color: #333; }
-    .metric { margin: 1rem 0; padding: 1rem; background: #f5f5f5; border-radius: 8px; }
-    .label { color: #666; font-size: 0.875rem; }
-    .value { font-size: 1.5rem; font-weight: bold; color: #333; }
-    code { background: #e5e5e5; padding: 0.2rem 0.4rem; border-radius: 4px; }
-    .endpoints { margin-top: 2rem; }
-    .endpoints li { margin: 0.5rem 0; }
-  </style>
-</head>
-<body>
-  <h1>Karma Dashboard</h1>
-  <p>Real-time metrics for Claude Code sessions.</p>
+  // Serve static files from public directory
+  // Use custom middleware for absolute path support
+  app.get('/*', async (c) => {
+    const publicPath = getPublicPath();
+    let requestPath = c.req.path;
 
-  <div class="metric">
-    <div class="label">Sessions</div>
-    <div class="value">${totals.sessions}</div>
-  </div>
+    // Serve index.html for root path
+    if (requestPath === '/') {
+      requestPath = '/index.html';
+    }
 
-  <div class="metric">
-    <div class="label">Total Tokens</div>
-    <div class="value">${(totals.tokensIn + totals.tokensOut).toLocaleString()}</div>
-  </div>
+    const filePath = join(publicPath, requestPath);
 
-  <div class="metric">
-    <div class="label">Estimated Cost</div>
-    <div class="value">$${(totals.totalCost / 100).toFixed(4)}</div>
-  </div>
+    try {
+      const fs = await import('node:fs/promises');
 
-  <div class="endpoints">
-    <h2>API Endpoints</h2>
-    <ul>
-      <li><code>GET /api/session</code> - Current session metrics</li>
-      <li><code>GET /api/sessions</code> - All sessions</li>
-      <li><code>GET /api/totals</code> - Aggregated totals</li>
-      <li><code>GET /api/health</code> - Health check</li>
-      <li><code>GET /events</code> - SSE stream</li>
-    </ul>
-  </div>
+      // Security: ensure the resolved path is within publicPath
+      const { resolve } = await import('node:path');
+      const resolvedFile = resolve(filePath);
+      const resolvedPublic = resolve(publicPath);
+      if (!resolvedFile.startsWith(resolvedPublic)) {
+        return c.text('Forbidden', 403);
+      }
 
-  <p style="margin-top: 2rem; color: #666;">
-    Full UI coming in Phase 6. For now, use <code>karma watch --ui</code> for TUI.
-  </p>
-</body>
-</html>
-    `);
+      const content = await fs.readFile(filePath);
+
+      // Determine content type
+      const ext = requestPath.split('.').pop()?.toLowerCase();
+      const contentTypes: Record<string, string> = {
+        'html': 'text/html; charset=utf-8',
+        'css': 'text/css; charset=utf-8',
+        'js': 'application/javascript; charset=utf-8',
+        'json': 'application/json; charset=utf-8',
+        'png': 'image/png',
+        'jpg': 'image/jpeg',
+        'jpeg': 'image/jpeg',
+        'svg': 'image/svg+xml',
+        'ico': 'image/x-icon',
+      };
+
+      const contentType = contentTypes[ext || ''] || 'application/octet-stream';
+
+      return new Response(content, {
+        headers: {
+          'Content-Type': contentType,
+          'Cache-Control': 'no-cache',
+        },
+      });
+    } catch (err: unknown) {
+      const error = err as NodeJS.ErrnoException;
+      if (error.code === 'ENOENT') {
+        return c.text('Not Found', 404);
+      }
+      console.error('Static file error:', err);
+      return c.text('Internal Server Error', 500);
+    }
   });
 
   return app;

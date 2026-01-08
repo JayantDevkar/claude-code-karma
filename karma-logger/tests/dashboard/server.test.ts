@@ -219,20 +219,13 @@ describe('Dashboard Server', () => {
       expect(html).toContain('Karma Dashboard');
     });
 
-    it('displays current metrics in HTML', async () => {
-      const session = createMockSessionInfo();
-      aggregator.processEntry(
-        createMockEntry({
-          model: 'claude-sonnet-4-20250514',
-          usage: { inputTokens: 1000, outputTokens: 500, cacheReadTokens: 0, cacheCreationTokens: 0 },
-        }),
-        session
-      );
-
+    it('serves dashboard HTML', async () => {
       const res = await app.request('/');
       const html = await res.text();
-      expect(html).toContain('Sessions');
-      expect(html).toContain('Total Tokens');
+      // The dashboard now serves static HTML from public/index.html
+      expect(html).toContain('Karma Dashboard');
+      expect(html).toContain('Tokens In');
+      expect(html).toContain('Recent Sessions');
     });
   });
 
