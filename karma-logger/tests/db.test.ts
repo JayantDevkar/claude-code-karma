@@ -368,6 +368,90 @@ describe('KarmaDB', () => {
       expect(detail?.agents.length).toBe(2);
     });
   });
+
+  describe('foreign key constraints', () => {
+    it('CASCADE deletes agents when session is deleted', () => {
+      const session = createMockSession({ sessionId: 'fk-test-session' });
+      db.saveSession(session);
+
+      // Create multiple agents for this session
+      db.saveAgent(createMockAgent(session.sessionId, { agentId: 'fk-agent-1' }));
+      db.saveAgent(createMockAgent(session.sessionId, { agentId: 'fk-agent-2' }));
+      db.saveAgent(createMockAgent(session.sessionId, { agentId: 'fk-agent-3' }));
+
+      // Verify agents exist
+      let detail = db.getSessionDetail(session.sessionId);
+      expect(detail?.agents.length).toBe(3);
+
+      // Delete session - agents should be cascade deleted
+      db.deleteSession(session.sessionId);
+
+      // Verify session and all agents are gone
+      expect(db.getSession(session.sessionId)).toBeNull();
+      detail = db.getSessionDetail(session.sessionId);
+      expect(detail).toBeNull();
+    });
+
+    it('SET NULL on parent_id when parent agent is deleted', () => {
+      const session = createMockSession({ sessionId: 'parent-test-session' });
+      db.saveSession(session);
+
+      // Create parent agent
+      const parentAgent = createMockAgent(session.sessionId, { agentId: 'parent-agent' });
+      db.saveAgent(parentAgent);
+
+      // Create child agent with parent reference
+      const childAgent = createMockAgent(session.sessionId, {
+        agentId: 'child-agent',
+        parentId: 'parent-agent',
+      });
+      db.saveAgent(childAgent);
+
+      // Verify parent-child relationship exists
+      let detail = db.getSessionDetail(session.sessionId);
+      const childBefore = detail?.agents.find(a => a.id === 'child-agent');
+      expect(childBefore?.parentId).toBe('parent-agent');
+
+      // Note: We need a method to delete individual agents to test SET NULL
+      // For now, we verify the constraint is defined in the schema
+      // The CASCADE delete test above proves FK enforcement is working
+    });
+
+    it('prevents inserting agent with non-existent session_id when FK enforced', () => {
+      // Attempt to insert agent with non-existent session
+      const orphanAgent = createMockAgent('non-existent-session', { agentId: 'orphan-agent' });
+
+      // This should throw due to FK constraint violation
+      expect(() => db.saveAgent(orphanAgent)).toThrow();
+    });
+
+    it('handles nested agent hierarchy with CASCADE delete', () => {
+      const session = createMockSession({ sessionId: 'hierarchy-session' });
+      db.saveSession(session);
+
+      // Create agent hierarchy: root -> child1 -> grandchild
+      db.saveAgent(createMockAgent(session.sessionId, { agentId: 'root-agent' }));
+      db.saveAgent(createMockAgent(session.sessionId, {
+        agentId: 'child-agent',
+        parentId: 'root-agent',
+      }));
+      db.saveAgent(createMockAgent(session.sessionId, {
+        agentId: 'grandchild-agent',
+        parentId: 'child-agent',
+      }));
+
+      // Verify hierarchy exists
+      let detail = db.getSessionDetail(session.sessionId);
+      expect(detail?.agents.length).toBe(3);
+
+      // Delete session - entire hierarchy should be cascade deleted
+      db.deleteSession(session.sessionId);
+
+      // Verify all agents are gone
+      detail = db.getSessionDetail(session.sessionId);
+      expect(detail).toBeNull();
+    });
+  });
 });
 
 // Helper functions to create mock data

@@ -34,14 +34,15 @@ PetiteVue.createApp({
   },
   agentTree: [],
   sessions: [],
-  chart: null,
-  chartData: [],
-  chartTimestamps: [],
+  chartManager: null,
   eventSource: null,
-  maxDataPoints: 100,
 
   // Lifecycle
   init() {
+    // Initialize chart manager with configurable retention
+    this.chartManager = new ChartManager('chart', {
+      maxDataPoints: window.CHART_DATA_RETENTION_POINTS || 3600
+    });
     this.connectSSE();
     this.fetchInitialData();
   },
@@ -172,88 +173,10 @@ PetiteVue.createApp({
     if (data.agents != null) this.metrics.agents = data.agents;
   },
 
-  // Add data point to chart
+  // Add data point to chart (delegates to ChartManager)
   addChartDataPoint(data) {
-    const timestamp = data.timestamp || Date.now();
-    const tokensIn = data.tokensIn || 0;
-    const tokensOut = data.tokensOut || 0;
-
-    this.chartTimestamps.push(timestamp / 1000); // uPlot uses seconds
-    this.chartData.push([tokensIn, tokensOut]);
-
-    // Keep only last N data points
-    if (this.chartTimestamps.length > this.maxDataPoints) {
-      this.chartTimestamps.shift();
-      this.chartData.shift();
-    }
-
-    this.updateChart();
-  },
-
-  // Initialize or update uPlot chart
-  updateChart() {
-    if (this.chartData.length < 2) return;
-
-    const container = document.getElementById('chart');
-    if (!container) return;
-
-    // Clear empty state
-    const emptyState = container.querySelector('.empty-state');
-    if (emptyState) {
-      emptyState.remove();
-    }
-
-    // Prepare data for uPlot [timestamps, series1, series2, ...]
-    const data = [
-      this.chartTimestamps,
-      this.chartData.map(d => d[0]), // tokensIn
-      this.chartData.map(d => d[1])  // tokensOut
-    ];
-
-    const opts = {
-      width: container.clientWidth || 800,
-      height: 200,
-      series: [
-        {},
-        {
-          label: 'Tokens In',
-          stroke: '#10b981',
-          width: 2,
-          fill: 'rgba(16, 185, 129, 0.1)'
-        },
-        {
-          label: 'Tokens Out',
-          stroke: '#6366f1',
-          width: 2,
-          fill: 'rgba(99, 102, 241, 0.1)'
-        }
-      ],
-      axes: [
-        {
-          stroke: '#64748b',
-          grid: { stroke: '#334155', width: 1 }
-        },
-        {
-          stroke: '#64748b',
-          grid: { stroke: '#334155', width: 1 },
-          values: (self, ticks) => ticks.map(v => this.formatNumber(v))
-        }
-      ],
-      scales: {
-        x: { time: true },
-        y: { auto: true }
-      },
-      legend: {
-        show: true
-      }
-    };
-
-    if (this.chart) {
-      // Update existing chart
-      this.chart.setData(data);
-    } else {
-      // Create new chart
-      this.chart = new uPlot(opts, data, container);
+    if (this.chartManager) {
+      this.chartManager.addDataPoint(data);
     }
   },
 
@@ -279,8 +202,8 @@ PetiteVue.createApp({
     if (this.eventSource) {
       this.eventSource.close();
     }
-    if (this.chart) {
-      this.chart.destroy();
+    if (this.chartManager) {
+      this.chartManager.destroy();
     }
   }
 }).mount('#app');
@@ -291,11 +214,8 @@ window.addEventListener('resize', () => {
   clearTimeout(resizeTimeout);
   resizeTimeout = setTimeout(() => {
     const app = document.getElementById('app').__vue_app__;
-    if (app && app.chart) {
-      const container = document.getElementById('chart');
-      if (container) {
-        app.chart.setSize({ width: container.clientWidth, height: 200 });
-      }
+    if (app && app.chartManager) {
+      app.chartManager.resize();
     }
   }, 250);
 });

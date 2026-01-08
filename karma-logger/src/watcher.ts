@@ -12,7 +12,8 @@ import chokidar from 'chokidar';
 import type { FSWatcher } from 'chokidar';
 
 import { findClaudeLogsDir, parseSessionPath, type SessionInfo } from './discovery.js';
-import type { LogEntry, RawLogEntry } from './types.js';
+import { isValidEntry, normalizeEntry } from './parser.js';
+import type { LogEntry } from './types.js';
 
 /**
  * Events emitted by LogWatcher
@@ -40,61 +41,6 @@ export interface WatcherOptions {
   logsDir?: string;
   /** Stability threshold in ms before processing changes */
   stabilityThreshold?: number;
-}
-
-/**
- * Type guard for valid log entries
- */
-function isValidRawEntry(entry: unknown): entry is RawLogEntry {
-  if (typeof entry !== 'object' || entry === null) return false;
-  const e = entry as Record<string, unknown>;
-  return (
-    (e.type === 'user' || e.type === 'assistant') &&
-    typeof e.uuid === 'string' &&
-    typeof e.sessionId === 'string'
-  );
-}
-
-/**
- * Parse and normalize a raw entry
- */
-function normalizeEntry(raw: RawLogEntry): LogEntry {
-  const entry: LogEntry = {
-    type: raw.type as 'user' | 'assistant',
-    uuid: raw.uuid,
-    parentUuid: raw.parentUuid,
-    sessionId: raw.sessionId,
-    timestamp: new Date(raw.timestamp),
-    toolCalls: [],
-    hasThinking: false,
-  };
-
-  if (raw.type === 'assistant' && raw.message) {
-    const msg = raw.message as unknown as Record<string, unknown>;
-    if (msg.role === 'assistant') {
-      entry.model = msg.model as string;
-
-      const usage = msg.usage as Record<string, number> | undefined;
-      if (usage) {
-        entry.usage = {
-          inputTokens: usage.input_tokens ?? 0,
-          outputTokens: usage.output_tokens ?? 0,
-          cacheReadTokens: usage.cache_read_input_tokens ?? 0,
-          cacheCreationTokens: usage.cache_creation_input_tokens ?? 0,
-        };
-      }
-
-      const content = msg.content as Array<{ type: string; name?: string }> | undefined;
-      if (Array.isArray(content)) {
-        entry.toolCalls = content
-          .filter(b => b.type === 'tool_use')
-          .map(b => b.name ?? 'unknown');
-        entry.hasThinking = content.some(b => b.type === 'thinking');
-      }
-    }
-  }
-
-  return entry;
 }
 
 /**
@@ -138,6 +84,7 @@ export class LogWatcher extends EventEmitter {
         pollInterval: 50,
       },
       usePolling: false,
+      followSymlinks: true, // Follow symlinked .claude directories
       depth: 3, // project/session/agent.jsonl
     });
 
@@ -301,7 +248,7 @@ export class LogWatcher extends EventEmitter {
 
           try {
             const parsed = JSON.parse(line);
-            if (isValidRawEntry(parsed)) {
+            if (isValidEntry(parsed)) {
               const entry = normalizeEntry(parsed);
               this.emit('entry', entry, sessionInfo);
             }

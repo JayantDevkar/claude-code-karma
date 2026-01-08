@@ -6,6 +6,7 @@
 import chalk from 'chalk';
 import { KarmaDB, getDB, type SessionRecord, type SessionSummary, type AgentRecord } from '../db.js';
 import { formatNumber, formatCost, formatDuration } from '../tui/utils/format.js';
+import { parseModelsJson, parseToolUsageJson } from '../converters.js';
 
 /**
  * Report command options
@@ -188,8 +189,8 @@ function displaySessionDetail(session: SessionRecord, agents: AgentRecord[]): vo
   }
 
   // Top tools section
-  const toolUsage = JSON.parse(session.toolUsage) as Record<string, number>;
-  const sortedTools = Object.entries(toolUsage)
+  const toolUsageMap = parseToolUsageJson(session.toolUsage);
+  const sortedTools = Array.from(toolUsageMap.entries())
     .sort((a, b) => b[1] - a[1])
     .slice(0, 5);
 
@@ -204,11 +205,11 @@ function displaySessionDetail(session: SessionRecord, agents: AgentRecord[]): vo
   }
 
   // Models used
-  const models = JSON.parse(session.models) as string[];
-  if (models.length > 0) {
+  const modelsSet = parseModelsJson(session.models);
+  if (modelsSet.size > 0) {
     lines.push('---');
     lines.push(`  ${chalk.bold.dim('MODELS USED')}`);
-    lines.push(`    ${chalk.dim(models.join(', '))}`);
+    lines.push(`    ${chalk.dim(Array.from(modelsSet).join(', '))}`);
   }
 
   const boxed = drawBox(lines, width);

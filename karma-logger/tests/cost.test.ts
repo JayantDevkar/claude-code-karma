@@ -3,7 +3,10 @@
  * Phase 3: Cost and pricing tests
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import * as os from 'node:os';
 import {
   getPricingForModel,
   calculateCost,
@@ -14,6 +17,12 @@ import {
   getKnownModels,
   isKnownModel,
   MODEL_PRICING,
+  setPricingProjectPath,
+  clearPricingCache,
+  getPricingOverrides,
+  hasPricingOverride,
+  getOverriddenModels,
+  getPricingConfigPaths,
 } from '../src/cost.js';
 import type { TokenUsage } from '../src/types.js';
 
@@ -240,5 +249,366 @@ describe('MODEL_PRICING', () => {
     for (const pricing of Object.values(MODEL_PRICING)) {
       expect(pricing.cacheRead).toBeLessThan(pricing.input);
     }
+  });
+});
+
+// ============================================
+// Pricing Override Configuration Tests
+// ============================================
+
+describe('Pricing Override Configuration', () => {
+  let testDir: string;
+  let globalConfigDir: string;
+  let originalHomedir: typeof os.homedir;
+
+  beforeEach(() => {
+    // Create temp directories for testing
+    testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'karma-pricing-test-'));
+    globalConfigDir = path.join(testDir, '.karma');
+    fs.mkdirSync(globalConfigDir, { recursive: true });
+
+    // Clear any cached pricing
+    clearPricingCache();
+    setPricingProjectPath(null);
+  });
+
+  afterEach(() => {
+    // Clean up temp directories
+    fs.rmSync(testDir, { recursive: true, force: true });
+    clearPricingCache();
+    setPricingProjectPath(null);
+  });
+
+  describe('clearPricingCache', () => {
+    it('clears the pricing cache', () => {
+      // Get overrides to populate cache
+      getPricingOverrides();
+
+      // Clear and verify no errors
+      clearPricingCache();
+
+      // Should be able to get overrides again
+      const overrides = getPricingOverrides();
+      expect(overrides).toBeDefined();
+    });
+  });
+
+  describe('setPricingProjectPath', () => {
+    it('sets project path for config resolution', () => {
+      // Create a project-level config
+      const projectPricingPath = path.join(testDir, '.karma-pricing.json');
+      const customPricing = {
+        models: {
+          'custom-enterprise-model': {
+            inputPer1k: 0.005,
+            outputPer1k: 0.025,
+          },
+        },
+      };
+      fs.writeFileSync(projectPricingPath, JSON.stringify(customPricing));
+
+      // Set project path
+      setPricingProjectPath(testDir);
+
+      // Verify custom model is now available
+      const overrides = getPricingOverrides();
+      expect(overrides['custom-enterprise-model']).toBeDefined();
+      expect(overrides['custom-enterprise-model'].input).toBe(5.0); // 0.005 * 1000
+      expect(overrides['custom-enterprise-model'].output).toBe(25.0); // 0.025 * 1000
+    });
+
+    it('clears cache when project path changes', () => {
+      // Create config in first project
+      const project1Dir = path.join(testDir, 'project1');
+      fs.mkdirSync(project1Dir);
+      fs.writeFileSync(
+        path.join(project1Dir, '.karma-pricing.json'),
+        JSON.stringify({
+          models: { 'model-a': { inputPer1k: 0.001, outputPer1k: 0.002 } },
+        })
+      );
+
+      // Create config in second project
+      const project2Dir = path.join(testDir, 'project2');
+      fs.mkdirSync(project2Dir);
+      fs.writeFileSync(
+        path.join(project2Dir, '.karma-pricing.json'),
+        JSON.stringify({
+          models: { 'model-b': { inputPer1k: 0.003, outputPer1k: 0.004 } },
+        })
+      );
+
+      // Set to project 1
+      setPricingProjectPath(project1Dir);
+      expect(hasPricingOverride('model-a')).toBe(true);
+      expect(hasPricingOverride('model-b')).toBe(false);
+
+      // Switch to project 2
+      setPricingProjectPath(project2Dir);
+      expect(hasPricingOverride('model-a')).toBe(false);
+      expect(hasPricingOverride('model-b')).toBe(true);
+    });
+  });
+
+  describe('getPricingOverrides', () => {
+    it('returns empty object when no config files exist', () => {
+      const overrides = getPricingOverrides();
+      expect(overrides).toEqual({});
+    });
+
+    it('loads pricing from project-level config', () => {
+      const projectPricingPath = path.join(testDir, '.karma-pricing.json');
+      const customPricing = {
+        models: {
+          'claude-3-opus': {
+            inputPer1k: 0.015,
+            outputPer1k: 0.075,
+          },
+        },
+      };
+      fs.writeFileSync(projectPricingPath, JSON.stringify(customPricing));
+
+      setPricingProjectPath(testDir);
+      const overrides = getPricingOverrides();
+
+      expect(overrides['claude-3-opus']).toBeDefined();
+      expect(overrides['claude-3-opus'].input).toBe(15.0);
+      expect(overrides['claude-3-opus'].output).toBe(75.0);
+    });
+
+    it('calculates cache pricing defaults when not specified', () => {
+      const projectPricingPath = path.join(testDir, '.karma-pricing.json');
+      const customPricing = {
+        models: {
+          'enterprise-model': {
+            inputPer1k: 0.010, // $10 per 1M
+            outputPer1k: 0.050, // $50 per 1M
+          },
+        },
+      };
+      fs.writeFileSync(projectPricingPath, JSON.stringify(customPricing));
+
+      setPricingProjectPath(testDir);
+      const overrides = getPricingOverrides();
+
+      // Cache read defaults to 10% of input
+      expect(overrides['enterprise-model'].cacheRead).toBe(1.0);
+      // Cache creation defaults to 125% of input
+      expect(overrides['enterprise-model'].cacheCreation).toBe(12.5);
+    });
+
+    it('uses explicit cache pricing when specified', () => {
+      const projectPricingPath = path.join(testDir, '.karma-pricing.json');
+      const customPricing = {
+        models: {
+          'custom-model': {
+            inputPer1k: 0.010,
+            outputPer1k: 0.050,
+            cacheReadPer1k: 0.002,
+            cacheCreationPer1k: 0.015,
+          },
+        },
+      };
+      fs.writeFileSync(projectPricingPath, JSON.stringify(customPricing));
+
+      setPricingProjectPath(testDir);
+      const overrides = getPricingOverrides();
+
+      expect(overrides['custom-model'].cacheRead).toBe(2.0);
+      expect(overrides['custom-model'].cacheCreation).toBe(15.0);
+    });
+
+    it('ignores invalid config files', () => {
+      const projectPricingPath = path.join(testDir, '.karma-pricing.json');
+      fs.writeFileSync(projectPricingPath, 'not valid json');
+
+      setPricingProjectPath(testDir);
+      const overrides = getPricingOverrides();
+
+      expect(overrides).toEqual({});
+    });
+
+    it('ignores config with invalid structure', () => {
+      const projectPricingPath = path.join(testDir, '.karma-pricing.json');
+      fs.writeFileSync(projectPricingPath, JSON.stringify({ notModels: {} }));
+
+      setPricingProjectPath(testDir);
+      const overrides = getPricingOverrides();
+
+      expect(overrides).toEqual({});
+    });
+
+    it('ignores models with missing required fields', () => {
+      const projectPricingPath = path.join(testDir, '.karma-pricing.json');
+      const customPricing = {
+        models: {
+          'valid-model': { inputPer1k: 0.01, outputPer1k: 0.05 },
+          'invalid-model-1': { inputPer1k: 0.01 }, // missing outputPer1k
+          'invalid-model-2': { outputPer1k: 0.05 }, // missing inputPer1k
+          'invalid-model-3': { inputPer1k: 'not a number', outputPer1k: 0.05 },
+        },
+      };
+      fs.writeFileSync(projectPricingPath, JSON.stringify(customPricing));
+
+      setPricingProjectPath(testDir);
+      const overrides = getPricingOverrides();
+
+      expect(overrides['valid-model']).toBeDefined();
+      expect(overrides['invalid-model-1']).toBeUndefined();
+      expect(overrides['invalid-model-2']).toBeUndefined();
+      expect(overrides['invalid-model-3']).toBeUndefined();
+    });
+  });
+
+  describe('hasPricingOverride', () => {
+    it('returns true for models with overrides', () => {
+      const projectPricingPath = path.join(testDir, '.karma-pricing.json');
+      fs.writeFileSync(
+        projectPricingPath,
+        JSON.stringify({
+          models: { 'custom-model': { inputPer1k: 0.01, outputPer1k: 0.05 } },
+        })
+      );
+
+      setPricingProjectPath(testDir);
+
+      expect(hasPricingOverride('custom-model')).toBe(true);
+      expect(hasPricingOverride('non-existent-model')).toBe(false);
+    });
+  });
+
+  describe('getOverriddenModels', () => {
+    it('returns list of models with overrides', () => {
+      const projectPricingPath = path.join(testDir, '.karma-pricing.json');
+      fs.writeFileSync(
+        projectPricingPath,
+        JSON.stringify({
+          models: {
+            'model-a': { inputPer1k: 0.01, outputPer1k: 0.05 },
+            'model-b': { inputPer1k: 0.02, outputPer1k: 0.10 },
+          },
+        })
+      );
+
+      setPricingProjectPath(testDir);
+      const overriddenModels = getOverriddenModels();
+
+      expect(overriddenModels).toContain('model-a');
+      expect(overriddenModels).toContain('model-b');
+      expect(overriddenModels.length).toBe(2);
+    });
+  });
+
+  describe('getPricingConfigPaths', () => {
+    it('returns correct global path', () => {
+      const paths = getPricingConfigPaths();
+      expect(paths.global).toBe(path.join(os.homedir(), '.karma', 'pricing.json'));
+    });
+
+    it('returns null project path when no project specified', () => {
+      const paths = getPricingConfigPaths();
+      expect(paths.project).toBeNull();
+    });
+
+    it('returns correct project path when specified', () => {
+      const paths = getPricingConfigPaths('/some/project');
+      expect(paths.project).toBe('/some/project/.karma-pricing.json');
+    });
+  });
+
+  describe('integration with cost calculation', () => {
+    it('uses overridden pricing in cost calculations', () => {
+      const projectPricingPath = path.join(testDir, '.karma-pricing.json');
+      fs.writeFileSync(
+        projectPricingPath,
+        JSON.stringify({
+          models: {
+            'enterprise-sonnet': {
+              inputPer1k: 0.001, // $1 per 1M (very cheap)
+              outputPer1k: 0.005, // $5 per 1M
+            },
+          },
+        })
+      );
+
+      setPricingProjectPath(testDir);
+
+      const usage: TokenUsage = {
+        inputTokens: 1_000_000,
+        outputTokens: 100_000,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
+      };
+
+      const cost = calculateCost('enterprise-sonnet', usage);
+
+      // Input: 1M * $1/1M = $1
+      expect(cost.inputCost).toBeCloseTo(1.0, 2);
+      // Output: 100K * $5/1M = $0.5
+      expect(cost.outputCost).toBeCloseTo(0.5, 2);
+    });
+
+    it('overrides hardcoded model pricing', () => {
+      // Override the standard sonnet model
+      const projectPricingPath = path.join(testDir, '.karma-pricing.json');
+      fs.writeFileSync(
+        projectPricingPath,
+        JSON.stringify({
+          models: {
+            'claude-sonnet-4-20250514': {
+              inputPer1k: 0.001, // Override to $1 per 1M
+              outputPer1k: 0.005, // Override to $5 per 1M
+            },
+          },
+        })
+      );
+
+      setPricingProjectPath(testDir);
+
+      const pricing = getPricingForModel('claude-sonnet-4-20250514');
+
+      // Should use overridden pricing, not hardcoded $3/$15
+      expect(pricing.input).toBe(1.0);
+      expect(pricing.output).toBe(5.0);
+    });
+
+    it('includes overridden models in getKnownModels', () => {
+      const projectPricingPath = path.join(testDir, '.karma-pricing.json');
+      fs.writeFileSync(
+        projectPricingPath,
+        JSON.stringify({
+          models: {
+            'brand-new-enterprise-model': {
+              inputPer1k: 0.020,
+              outputPer1k: 0.100,
+            },
+          },
+        })
+      );
+
+      setPricingProjectPath(testDir);
+
+      const knownModels = getKnownModels();
+      expect(knownModels).toContain('brand-new-enterprise-model');
+    });
+
+    it('recognizes overridden models with isKnownModel', () => {
+      const projectPricingPath = path.join(testDir, '.karma-pricing.json');
+      fs.writeFileSync(
+        projectPricingPath,
+        JSON.stringify({
+          models: {
+            'special-enterprise-model': {
+              inputPer1k: 0.020,
+              outputPer1k: 0.100,
+            },
+          },
+        })
+      );
+
+      setPricingProjectPath(testDir);
+
+      expect(isKnownModel('special-enterprise-model')).toBe(true);
+    });
   });
 });

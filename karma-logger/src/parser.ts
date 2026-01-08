@@ -19,7 +19,7 @@ import type {
 /**
  * Type guard to check if entry is a valid user or assistant entry
  */
-function isValidEntry(entry: unknown): entry is RawLogEntry {
+export function isValidEntry(entry: unknown): entry is RawLogEntry {
   if (typeof entry !== 'object' || entry === null) return false;
   const e = entry as Record<string, unknown>;
   return (
@@ -33,7 +33,7 @@ function isValidEntry(entry: unknown): entry is RawLogEntry {
 /**
  * Type guard to check if message is an assistant message with usage
  */
-function isAssistantMessage(msg: unknown): msg is AssistantMessage {
+export function isAssistantMessage(msg: unknown): msg is AssistantMessage {
   if (typeof msg !== 'object' || msg === null) return false;
   const m = msg as Record<string, unknown>;
   return m.role === 'assistant' && typeof m.usage === 'object';
@@ -42,7 +42,7 @@ function isAssistantMessage(msg: unknown): msg is AssistantMessage {
 /**
  * Extract tool call names from content blocks
  */
-function extractToolCalls(content: ContentBlock[]): string[] {
+export function extractToolCalls(content: ContentBlock[]): string[] {
   return content
     .filter((block): block is ToolUseBlock => block.type === 'tool_use')
     .map(block => block.name);
@@ -51,14 +51,14 @@ function extractToolCalls(content: ContentBlock[]): string[] {
 /**
  * Check if content contains thinking blocks
  */
-function hasThinkingContent(content: ContentBlock[]): boolean {
+export function hasThinkingContent(content: ContentBlock[]): boolean {
   return content.some(block => block.type === 'thinking');
 }
 
 /**
  * Normalize raw usage to our internal format
  */
-function normalizeUsage(raw: AssistantMessage['usage']): TokenUsage {
+export function normalizeUsage(raw: AssistantMessage['usage']): TokenUsage {
   return {
     inputTokens: raw.input_tokens ?? 0,
     outputTokens: raw.output_tokens ?? 0,
@@ -70,7 +70,7 @@ function normalizeUsage(raw: AssistantMessage['usage']): TokenUsage {
 /**
  * Transform raw entry to normalized LogEntry
  */
-function normalizeEntry(raw: RawLogEntry): LogEntry {
+export function normalizeEntry(raw: RawLogEntry): LogEntry {
   const entry: LogEntry = {
     type: raw.type as 'user' | 'assistant',
     uuid: raw.uuid,

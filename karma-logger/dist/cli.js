@@ -36,12 +36,14 @@ Documentation: https://github.com/anthropics/karma-logger
         .option('-p, --project <name>', 'Show status for specific project')
         .option('-a, --all', 'Show all active sessions')
         .option('-j, --json', 'Output as JSON')
+        .option('-t, --tree', 'Display agent hierarchy tree')
         .addHelpText('after', `
 Examples:
   $ karma status                  Show current project session
   $ karma status --all            Show all active sessions
   $ karma status -p myproject     Show specific project
   $ karma status --json           Output as JSON
+  $ karma status --tree           Show agent hierarchy tree
 `)
         .action(async (options, cmd) => {
         const ctx = getContext(cmd);
@@ -52,6 +54,7 @@ Examples:
             project: options.project,
             all: options.all,
             json: options.json,
+            tree: options.tree,
         });
     });
     // Watch command with multiple modes

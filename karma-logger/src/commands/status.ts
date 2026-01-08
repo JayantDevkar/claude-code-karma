@@ -4,8 +4,9 @@
  */
 
 import chalk from 'chalk';
-import type { SessionMetrics } from '../aggregator.js';
+import type { SessionMetrics, AgentTreeNode } from '../aggregator.js';
 import { MetricsAggregator } from '../aggregator.js';
+import { emptyCostBreakdown } from '../cost.js';
 import {
   discoverSessions,
   getLatestSession,
@@ -22,6 +23,7 @@ export interface StatusOptions {
   project?: string;
   all?: boolean;
   json?: boolean;
+  tree?: boolean;
 }
 
 /**
@@ -245,6 +247,173 @@ async function displayAllSessions(): Promise<void> {
 }
 
 /**
+ * Tree display constants
+ */
+const TREE_CHARS = {
+  vertical: '│',
+  branch: '├',
+  lastBranch: '└',
+  horizontal: '──',
+  space: '   ',
+};
+
+/**
+ * Get status indicator for agent node
+ */
+function getStatusIndicator(node: AgentTreeNode): string {
+  const now = Date.now();
+  const lastActivity = node.metrics.lastActivity.getTime();
+  const isRunning = now - lastActivity < 5000; // Active in last 5 seconds
+
+  if (isRunning) {
+    return chalk.yellow('⟳'); // Running
+  }
+  return chalk.green('✓'); // Complete
+}
+
+/**
+ * Render a single tree node
+ */
+function renderTreeNode(
+  node: AgentTreeNode,
+  prefix: string,
+  isLast: boolean,
+  depth: number
+): string[] {
+  const lines: string[] = [];
+
+  // Build connector
+  const connector = depth === 0 ? '' : (isLast ? TREE_CHARS.lastBranch : TREE_CHARS.branch) + TREE_CHARS.horizontal;
+
+  // Status indicator
+  const status = getStatusIndicator(node);
+
+  // Agent type display
+  const typeDisplay = node.type === 'main' ? chalk.cyan('main') : chalk.magenta(node.type);
+
+  // Model display
+  const modelDisplay = chalk.dim(`(${node.model})`);
+
+  // Cost display
+  const cost = node.metrics.cost?.total ?? 0;
+  const costDisplay = chalk.green(formatCost(cost));
+
+  // Build the line
+  const line = `${prefix}${connector} ${status} ${typeDisplay} ${modelDisplay} ${costDisplay}`;
+  lines.push(line);
+
+  // Render children
+  const childPrefix = prefix + (depth === 0 ? '' : (isLast ? TREE_CHARS.space : TREE_CHARS.vertical + '  '));
+  node.children.forEach((child, index) => {
+    const isChildLast = index === node.children.length - 1;
+    lines.push(...renderTreeNode(child, childPrefix, isChildLast, depth + 1));
+  });
+
+  return lines;
+}
+
+/**
+ * Build root node for agent tree (like useAgentTree.ts buildRootNode)
+ */
+function buildRootNode(
+  nodes: AgentTreeNode[],
+  sessionId: string,
+  metrics: SessionMetrics
+): AgentTreeNode {
+  return {
+    id: sessionId,
+    type: 'main',
+    model: metrics.models.values().next().value || 'sonnet',
+    metrics: {
+      agentId: sessionId,
+      sessionId,
+      agentType: 'main',
+      model: metrics.models.values().next().value || 'sonnet',
+      startedAt: metrics.startedAt,
+      lastActivity: metrics.lastActivity,
+      tokensIn: metrics.tokensIn,
+      tokensOut: metrics.tokensOut,
+      cacheReadTokens: metrics.cacheReadTokens,
+      cacheCreationTokens: metrics.cacheCreationTokens,
+      cost: metrics.cost,
+      toolsUsed: new Set(),
+      toolCalls: metrics.toolCalls,
+      entryCount: metrics.entryCount,
+    },
+    children: nodes,
+  };
+}
+
+/**
+ * Display agent tree
+ */
+async function displayTree(session: SessionInfo, metrics: SessionMetrics): Promise<void> {
+  // Build aggregator and parse session to get agents
+  const entries = await parseSessionFile(session.filePath);
+  const aggregator = new MetricsAggregator();
+
+  for (const entry of entries) {
+    aggregator.processEntry(entry, session);
+  }
+
+  const agentNodes = aggregator.getAgentTree(session.sessionId);
+  const rootNode = buildRootNode(agentNodes, session.sessionId, metrics);
+
+  console.log();
+  console.log(chalk.bold.cyan('AGENT HIERARCHY'));
+  console.log(chalk.dim(`Session: ${session.sessionId.slice(0, 8)} | Project: ${session.projectName}`));
+  console.log();
+
+  const lines = renderTreeNode(rootNode, '', true, 0);
+  console.log(lines.join('\n'));
+
+  // Summary
+  const totalAgents = metrics.agentCount + 1; // +1 for main
+  console.log();
+  console.log(chalk.dim(`Total: ${totalAgents} agent${totalAgents !== 1 ? 's' : ''} | Cost: ${formatCost(metrics.cost.total)}`));
+  console.log();
+}
+
+/**
+ * Display agent tree as JSON
+ */
+async function displayTreeJson(session: SessionInfo, metrics: SessionMetrics): Promise<void> {
+  const entries = await parseSessionFile(session.filePath);
+  const aggregator = new MetricsAggregator();
+
+  for (const entry of entries) {
+    aggregator.processEntry(entry, session);
+  }
+
+  const agentNodes = aggregator.getAgentTree(session.sessionId);
+
+  // Convert to serializable format
+  function serializeNode(node: AgentTreeNode): object {
+    return {
+      id: node.id,
+      type: node.type,
+      model: node.model,
+      tokensIn: node.metrics.tokensIn,
+      tokensOut: node.metrics.tokensOut,
+      cost: node.metrics.cost?.total ?? 0,
+      toolCalls: node.metrics.toolCalls,
+      children: node.children.map(serializeNode),
+    };
+  }
+
+  const rootNode = buildRootNode(agentNodes, session.sessionId, metrics);
+  const output = {
+    sessionId: session.sessionId,
+    project: session.projectName,
+    tree: serializeNode(rootNode),
+    totalAgents: metrics.agentCount + 1,
+    totalCost: metrics.cost.total,
+  };
+
+  console.log(JSON.stringify(output, null, 2));
+}
+
+/**
  * Main status command handler
  */
 export async function statusCommand(options: StatusOptions): Promise<void> {
@@ -311,6 +480,16 @@ export async function statusCommand(options: StatusOptions): Promise<void> {
   // Build and display metrics
   const metrics = await buildSessionMetrics(session);
   const isStale = isStaleSession(metrics.lastActivity);
+
+  // Handle --tree flag
+  if (options.tree) {
+    if (options.json) {
+      await displayTreeJson(session, metrics);
+    } else {
+      await displayTree(session, metrics);
+    }
+    return;
+  }
 
   if (options.json) {
     displayJson(metrics);

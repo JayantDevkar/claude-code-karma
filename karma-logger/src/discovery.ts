@@ -5,7 +5,7 @@
 
 import { homedir } from 'node:os';
 import { join, basename, dirname, relative } from 'node:path';
-import { readdir, stat } from 'node:fs/promises';
+import { readdir, stat, realpath } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 
 /**
@@ -102,19 +102,45 @@ function extractProjectName(projectPath: string): string {
 }
 
 /**
- * Recursively find all JSONL files in a directory
+ * Recursively find all JSONL files in a directory, following symlinks
+ * @param dir - Directory to search
+ * @param visitedPaths - Set of real paths already visited (for circular symlink detection)
  */
-async function findJsonlFiles(dir: string): Promise<string[]> {
+async function findJsonlFiles(dir: string, visitedPaths: Set<string> = new Set()): Promise<string[]> {
   const files: string[] = [];
 
   try {
+    // Resolve the real path to detect circular symlinks
+    const realDir = await realpath(dir);
+
+    // Prevent infinite loops from circular symlinks
+    if (visitedPaths.has(realDir)) {
+      return files;
+    }
+    visitedPaths.add(realDir);
+
     const entries = await readdir(dir, { withFileTypes: true });
 
     for (const entry of entries) {
       const fullPath = join(dir, entry.name);
 
-      if (entry.isDirectory()) {
-        const subFiles = await findJsonlFiles(fullPath);
+      // Handle symlinks by checking what they point to
+      if (entry.isSymbolicLink()) {
+        try {
+          // stat() follows symlinks and returns info about the target
+          const targetStats = await stat(fullPath);
+
+          if (targetStats.isDirectory()) {
+            const subFiles = await findJsonlFiles(fullPath, visitedPaths);
+            files.push(...subFiles);
+          } else if (targetStats.isFile() && entry.name.endsWith('.jsonl')) {
+            files.push(fullPath);
+          }
+        } catch {
+          // Symlink target might not exist (broken symlink) or be inaccessible
+        }
+      } else if (entry.isDirectory()) {
+        const subFiles = await findJsonlFiles(fullPath, visitedPaths);
         files.push(...subFiles);
       } else if (entry.isFile() && entry.name.endsWith('.jsonl')) {
         files.push(fullPath);

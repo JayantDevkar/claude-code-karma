@@ -8,6 +8,13 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import type { CostBreakdown } from './cost.js';
+import type { SessionMetrics, AgentMetrics } from './aggregator.js';
+import {
+  sessionMetricsToRecord,
+  sessionRecordToMetrics,
+  agentMetricsToRecord,
+  agentRecordToMetrics,
+} from './converters.js';
 
 // ============================================
 // Types
@@ -105,6 +112,8 @@ export class KarmaDB {
 
     this.db = new Database(this.dbPath);
     this.db.pragma('journal_mode = WAL');
+    // Enable foreign key constraint enforcement
+    this.db.pragma('foreign_keys = ON');
     this.migrate();
   }
 
@@ -139,7 +148,8 @@ export class KarmaDB {
       CREATE INDEX IF NOT EXISTS idx_sessions_started ON sessions(started_at);
     `);
 
-    // Create agents table
+    // Create agents table with proper foreign key constraints
+    // Note: SQLite requires FK constraints in CREATE TABLE, can't add later
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS agents (
         id TEXT PRIMARY KEY,
@@ -156,10 +166,12 @@ export class KarmaDB {
         cost_total REAL DEFAULT 0,
         tools_used TEXT DEFAULT '[]',
         tool_calls INTEGER DEFAULT 0,
-        FOREIGN KEY (session_id) REFERENCES sessions(id)
+        FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE,
+        FOREIGN KEY (parent_id) REFERENCES agents(id) ON DELETE SET NULL
       );
 
       CREATE INDEX IF NOT EXISTS idx_agents_session ON agents(session_id);
+      CREATE INDEX IF NOT EXISTS idx_agents_parent ON agents(parent_id);
     `);
 
     // Create schema version table for future migrations
@@ -175,6 +187,80 @@ export class KarmaDB {
     if (version.v === null) {
       this.db.prepare('INSERT INTO schema_version (version, applied_at) VALUES (?, ?)').run(1, new Date().toISOString());
     }
+
+    // Migration v2: Add proper FK constraints to agents table
+    // SQLite doesn't support ALTER TABLE ADD CONSTRAINT, so we must recreate the table
+    if ((version.v ?? 0) < 2) {
+      this.migrateAgentsTableWithFKConstraints();
+      this.db.prepare('INSERT INTO schema_version (version, applied_at) VALUES (?, ?)').run(2, new Date().toISOString());
+    }
+  }
+
+  /**
+   * Migration v2: Recreate agents table with proper FK constraints
+   * This is needed because SQLite doesn't support ALTER TABLE ADD CONSTRAINT
+   */
+  private migrateAgentsTableWithFKConstraints(): void {
+    // Check if agents table exists and needs migration
+    const tableInfo = this.db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='agents'").get() as { sql: string } | undefined;
+
+    if (!tableInfo) {
+      // Table doesn't exist yet, will be created with correct schema
+      return;
+    }
+
+    // Check if FK constraints already exist (look for ON DELETE CASCADE in schema)
+    if (tableInfo.sql.includes('ON DELETE CASCADE')) {
+      // Already migrated
+      return;
+    }
+
+    // Temporarily disable foreign keys for migration
+    this.db.pragma('foreign_keys = OFF');
+
+    // Use a transaction for atomic migration
+    this.db.exec(`
+      BEGIN TRANSACTION;
+
+      -- Create new table with proper FK constraints
+      -- Note: Self-referential FK uses agents(id) - SQLite resolves this correctly after rename
+      CREATE TABLE agents_new (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        parent_id TEXT,
+        agent_type TEXT,
+        model TEXT,
+        started_at TEXT NOT NULL,
+        ended_at TEXT,
+        tokens_in INTEGER DEFAULT 0,
+        tokens_out INTEGER DEFAULT 0,
+        cache_read_tokens INTEGER DEFAULT 0,
+        cache_creation_tokens INTEGER DEFAULT 0,
+        cost_total REAL DEFAULT 0,
+        tools_used TEXT DEFAULT '[]',
+        tool_calls INTEGER DEFAULT 0,
+        FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE,
+        FOREIGN KEY (parent_id) REFERENCES agents(id) ON DELETE SET NULL
+      );
+
+      -- Copy data from old table
+      INSERT INTO agents_new SELECT * FROM agents;
+
+      -- Drop old table and indexes
+      DROP TABLE agents;
+
+      -- Rename new table to agents
+      ALTER TABLE agents_new RENAME TO agents;
+
+      -- Recreate indexes
+      CREATE INDEX IF NOT EXISTS idx_agents_session ON agents(session_id);
+      CREATE INDEX IF NOT EXISTS idx_agents_parent ON agents(parent_id);
+
+      COMMIT;
+    `);
+
+    // Re-enable foreign keys
+    this.db.pragma('foreign_keys = ON');
   }
 
   /**
@@ -491,9 +577,9 @@ export class KarmaDB {
 
   /**
    * Delete a session and its agents
+   * Note: Agents are automatically deleted via ON DELETE CASCADE constraint
    */
   deleteSession(id: string): boolean {
-    const info = this.db.prepare('DELETE FROM agents WHERE session_id = ?').run(id);
     const sessionInfo = this.db.prepare('DELETE FROM sessions WHERE id = ?').run(id);
     return sessionInfo.changes > 0;
   }
@@ -542,6 +628,126 @@ export class KarmaDB {
    */
   getPath(): string {
     return this.dbPath;
+  }
+
+  // ============================================
+  // Type-Safe Methods Using Converters
+  // ============================================
+
+  /**
+   * Save session metrics using the converter
+   * Preferred method for saving SessionMetrics from aggregator
+   */
+  saveSessionMetrics(metrics: SessionMetrics): void {
+    const record = sessionMetricsToRecord(metrics);
+    const stmt = this.db.prepare(`
+      INSERT INTO sessions (
+        id, project_path, project_name, started_at, ended_at,
+        models, tokens_in, tokens_out, cache_read_tokens, cache_creation_tokens,
+        cost_total, cost_input, cost_output, cost_cache_read, cost_cache_creation,
+        agent_count, tool_calls, tool_usage
+      ) VALUES (
+        @id, @projectPath, @projectName, @startedAt, @endedAt,
+        @models, @tokensIn, @tokensOut, @cacheReadTokens, @cacheCreationTokens,
+        @costTotal, @costInput, @costOutput, @costCacheRead, @costCacheCreation,
+        @agentCount, @toolCalls, @toolUsage
+      )
+      ON CONFLICT(id) DO UPDATE SET
+        ended_at = @endedAt,
+        tokens_in = @tokensIn,
+        tokens_out = @tokensOut,
+        cache_read_tokens = @cacheReadTokens,
+        cache_creation_tokens = @cacheCreationTokens,
+        cost_total = @costTotal,
+        cost_input = @costInput,
+        cost_output = @costOutput,
+        cost_cache_read = @costCacheRead,
+        cost_cache_creation = @costCacheCreation,
+        agent_count = @agentCount,
+        tool_calls = @toolCalls,
+        tool_usage = @toolUsage,
+        models = @models
+    `);
+
+    stmt.run(record);
+  }
+
+  /**
+   * Save agent metrics using the converter
+   * Preferred method for saving AgentMetrics from aggregator
+   */
+  saveAgentMetrics(metrics: AgentMetrics): void {
+    const record = agentMetricsToRecord(metrics);
+    const stmt = this.db.prepare(`
+      INSERT INTO agents (
+        id, session_id, parent_id, agent_type, model,
+        started_at, ended_at, tokens_in, tokens_out,
+        cache_read_tokens, cache_creation_tokens, cost_total,
+        tools_used, tool_calls
+      ) VALUES (
+        @id, @sessionId, @parentId, @agentType, @model,
+        @startedAt, @endedAt, @tokensIn, @tokensOut,
+        @cacheReadTokens, @cacheCreationTokens, @costTotal,
+        @toolsUsed, @toolCalls
+      )
+      ON CONFLICT(id) DO UPDATE SET
+        ended_at = @endedAt,
+        tokens_in = @tokensIn,
+        tokens_out = @tokensOut,
+        cache_read_tokens = @cacheReadTokens,
+        cache_creation_tokens = @cacheCreationTokens,
+        cost_total = @costTotal,
+        tools_used = @toolsUsed,
+        tool_calls = @toolCalls
+    `);
+
+    stmt.run(record);
+  }
+
+  /**
+   * Get session as SessionMetrics type (in-memory format)
+   * Uses converter for proper type transformation
+   */
+  getSessionAsMetrics(id: string): SessionMetrics | null {
+    const record = this.getSession(id);
+    if (!record) return null;
+    return sessionRecordToMetrics(record);
+  }
+
+  /**
+   * Get agent as AgentMetrics type (in-memory format)
+   * Uses converter for proper type transformation
+   */
+  getAgentAsMetrics(id: string): AgentMetrics | null {
+    const record = this.db.prepare(`
+      SELECT
+        id, session_id as sessionId, parent_id as parentId,
+        agent_type as agentType, model, started_at as startedAt,
+        ended_at as endedAt, tokens_in as tokensIn, tokens_out as tokensOut,
+        cache_read_tokens as cacheReadTokens, cache_creation_tokens as cacheCreationTokens,
+        cost_total as costTotal, tools_used as toolsUsed, tool_calls as toolCalls
+      FROM agents WHERE id = ?
+    `).get(id) as AgentRecord | undefined;
+
+    if (!record) return null;
+    return agentRecordToMetrics(record);
+  }
+
+  /**
+   * Get session detail with agents as in-memory types
+   * Uses converters for proper type transformation
+   */
+  getSessionDetailAsMetrics(id: string): {
+    session: SessionMetrics;
+    agents: AgentMetrics[];
+  } | null {
+    const detail = this.getSessionDetail(id);
+    if (!detail) return null;
+
+    return {
+      session: sessionRecordToMetrics(detail.session),
+      agents: detail.agents.map(agentRecordToMetrics),
+    };
   }
 }
 

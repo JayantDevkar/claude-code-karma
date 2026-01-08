@@ -50,7 +50,7 @@
       <section class="chart-section">
         <h2>Token Usage Over Time</h2>
         <div id="chart" class="chart-container">
-          <div v-if="chartData.length === 0" class="empty-state">
+          <div class="empty-state">
             Waiting for data...
           </div>
         </div>
@@ -126,6 +126,9 @@
 
   <!-- Petite-Vue -->
   <script src="https://unpkg.com/petite-vue@0.4.1/dist/petite-vue.iife.js"></script>
+
+  <!-- Charts (uPlot setup) -->
+  <script src="/charts.js"></script>
 
   <!-- App -->
   <script src="/app.js"></script>
