@@ -29,7 +29,14 @@
       </div>
     </header>
 
+    <nav class="view-tabs">
+      <button class="tab" :class="{ active: currentView === 'live' }" @click="switchView('live')">Live</button>
+      <button class="tab" :class="{ active: currentView === 'projects' }" @click="switchView('projects')">Projects</button>
+      <button class="tab" :class="{ active: currentView === 'history' }" @click="switchView('history')">History</button>
+    </nav>
+
     <main class="container">
+      <div id="live-view" class="view" v-show="currentView === 'live'">
       <!-- Metrics Cards -->
       <section class="metrics-grid">
         <article class="metric-card">
@@ -58,19 +65,58 @@
 
       <!-- Agent Hierarchy -->
       <section class="agents-section">
-        <h2>Agent Hierarchy</h2>
-        <div class="agent-tree" v-if="agentTree && agentTree.length > 0">
-          <div v-for="agent in agentTree" :key="agent.id" class="agent-node">
-            <span class="agent-icon">●</span>
-            <span class="agent-id">{{ agent.id ? agent.id.slice(0, 7) : 'unknown' }}</span>
-            <span class="agent-type">{{ agent.type || 'agent' }}</span>
-            <span class="agent-model">({{ agent.model || 'unknown' }})</span>
-            <span class="agent-cost">{{ formatCost(agent.metrics?.cost?.total || 0) }}</span>
-          </div>
+        <div class="tree-header">
+          <h2>Agent Hierarchy</h2>
+          <button v-if="agentTree && agentTree.length > 0" class="expand-all-btn" @click="expandAllAgents">
+            {{ allAgentsExpanded ? 'Collapse All' : 'Expand All' }}
+          </button>
         </div>
-        <div v-if="!agentTree || agentTree.length === 0" class="empty-state">
-          No agents spawned yet
+        <div class="agent-tree" v-if="computedAgentTree && computedAgentTree.length > 0">
+          <template v-for="node in computedAgentTree" :key="node.id">
+            <div class="tree-node" :style="{ '--depth': 0 }">
+              <div class="node-content">
+                <button v-if="node.children && node.children.length > 0" class="expand-btn" @click="toggleAgent(node.id)">
+                  {{ expandedAgents[node.id] ? '▼' : '▶' }}
+                </button>
+                <span v-else class="expand-placeholder"></span>
+                <span :class="['agent-badge', getModelClass(node.model)]">{{ getModelShort(node.model) }}</span>
+                <span class="agent-type">{{ node.type || node.agent_type || 'main' }}</span>
+                <span class="agent-cost">{{ formatCost(node.metrics?.cost?.total || node.cost_total || 0) }}</span>
+                <span class="agent-tokens">{{ formatNumber((node.metrics?.tokensIn || node.tokens_in || 0) + (node.metrics?.tokensOut || node.tokens_out || 0)) }}</span>
+              </div>
+              <div v-if="node.children && node.children.length > 0 && expandedAgents[node.id]" class="node-children">
+                <template v-for="child in node.children" :key="child.id">
+                  <div class="tree-node" :style="{ '--depth': 1 }">
+                    <div class="node-content">
+                      <button v-if="child.children && child.children.length > 0" class="expand-btn" @click="toggleAgent(child.id)">
+                        {{ expandedAgents[child.id] ? '▼' : '▶' }}
+                      </button>
+                      <span v-else class="expand-placeholder"></span>
+                      <span :class="['agent-badge', getModelClass(child.model)]">{{ getModelShort(child.model) }}</span>
+                      <span class="agent-type">{{ child.type || child.agent_type || 'agent' }}</span>
+                      <span class="agent-cost">{{ formatCost(child.metrics?.cost?.total || child.cost_total || 0) }}</span>
+                      <span class="agent-tokens">{{ formatNumber((child.metrics?.tokensIn || child.tokens_in || 0) + (child.metrics?.tokensOut || child.tokens_out || 0)) }}</span>
+                    </div>
+                    <div v-if="child.children && child.children.length > 0 && expandedAgents[child.id]" class="node-children">
+                      <template v-for="grandchild in child.children" :key="grandchild.id">
+                        <div class="tree-node" :style="{ '--depth': 2 }">
+                          <div class="node-content">
+                            <span class="expand-placeholder"></span>
+                            <span :class="['agent-badge', getModelClass(grandchild.model)]">{{ getModelShort(grandchild.model) }}</span>
+                            <span class="agent-type">{{ grandchild.type || grandchild.agent_type || 'agent' }}</span>
+                            <span class="agent-cost">{{ formatCost(grandchild.metrics?.cost?.total || grandchild.cost_total || 0) }}</span>
+                            <span class="agent-tokens">{{ formatNumber((grandchild.metrics?.tokensIn || grandchild.tokens_in || 0) + (grandchild.metrics?.tokensOut || grandchild.tokens_out || 0)) }}</span>
+                          </div>
+                        </div>
+                      </template>
+                    </div>
+                  </div>
+                </template>
+              </div>
+            </div>
+          </template>
         </div>
+        <div v-else class="empty-state">No agents spawned yet</div>
       </section>
 
       <!-- Recent Sessions -->
@@ -102,6 +148,71 @@
           No sessions recorded yet
         </div>
       </section>
+      </div>
+
+      <div id="projects-view" class="view" v-show="currentView === 'projects'">
+        <div class="view-header">
+          <h2>Projects</h2>
+          <select id="date-range-filter" v-model="dateRange" @change="fetchProjects">
+            <option value="7">Last 7 days</option>
+            <option value="30">Last 30 days</option>
+            <option value="90">Last 90 days</option>
+          </select>
+        </div>
+        <div id="project-list" class="project-list">
+          <div v-if="projects.length === 0" class="empty-state">No projects found</div>
+          <div v-for="p in projects" :key="p.projectName" class="project-card" @click="selectProject(p.projectName)">
+            <div class="project-header">
+              <span class="project-name">{{ p.projectName }}</span>
+              <span class="project-cost">{{ formatCost(p.totalCost) }}</span>
+            </div>
+            <div class="project-meta">
+              <span>{{ p.sessionCount }} sessions</span>
+              <span>{{ formatNumber(p.totalTokensIn + p.totalTokensOut) }} tokens</span>
+              <span>{{ p.activeDays }} days</span>
+            </div>
+            <div class="project-last-activity">
+              Last: {{ formatRelativeTime(p.lastActivity) }}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="history-view" class="view" v-show="currentView === 'history'">
+        <div class="view-header">
+          <h2>Cost History</h2>
+          <div class="history-controls">
+            <select id="history-project-filter" v-model="historyProject" @change="updateHistory">
+              <option value="">All Projects</option>
+              <option v-for="p in projects" :key="p.projectName" :value="p.projectName">{{ p.projectName }}</option>
+            </select>
+            <div class="date-range-buttons">
+              <button class="range-btn" :class="{ active: historyDays === 7 }" @click="setHistoryDays(7)">7d</button>
+              <button class="range-btn" :class="{ active: historyDays === 30 }" @click="setHistoryDays(30)">30d</button>
+              <button class="range-btn" :class="{ active: historyDays === 90 }" @click="setHistoryDays(90)">90d</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="history-chart-container">
+          <canvas id="history-chart"></canvas>
+        </div>
+
+        <div class="history-summary">
+          <div class="summary-card">
+            <span class="label">Total Cost</span>
+            <span class="value">{{ formatCost(historySummary.totalCost) }}</span>
+          </div>
+          <div class="summary-card">
+            <span class="label">Sessions</span>
+            <span class="value">{{ historySummary.totalSessions }}</span>
+          </div>
+          <div class="summary-card">
+            <span class="label">Avg/Day</span>
+            <span class="value">{{ formatCost(historySummary.avgCost) }}</span>
+          </div>
+        </div>
+      </div>
     </main>
 
     <footer class="dashboard-footer">

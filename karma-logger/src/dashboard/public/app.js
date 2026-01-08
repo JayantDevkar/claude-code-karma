@@ -22,6 +22,12 @@ PetiteVue.createApp({
   // State
   sessionId: null,
   connected: false,
+  currentView: 'live',
+  selectedProject: null,
+  projects: [],
+  dateRange: 30,
+  expandedAgents: {},
+  allAgentsExpanded: false,
   metrics: {
     tokensIn: 0,
     tokensOut: 0,
@@ -36,6 +42,16 @@ PetiteVue.createApp({
   sessions: [],
   chartManager: null,
   eventSource: null,
+  // History view state
+  historyChart: null,
+  historyProject: '',
+  historyDays: 30,
+  historyData: [],
+  historySummary: {
+    totalCost: 0,
+    totalSessions: 0,
+    avgCost: 0
+  },
 
   // Lifecycle
   init() {
@@ -203,6 +219,158 @@ PetiteVue.createApp({
     return '$' + (cents / 100).toFixed(4);
   },
 
+  formatRelativeTime(iso) {
+    if (!iso) return 'never';
+    const diff = Date.now() - new Date(iso).getTime();
+    const hours = Math.floor(diff / 3600000);
+    if (hours < 1) return 'just now';
+    if (hours < 24) return hours + 'h ago';
+    const days = Math.floor(hours / 24);
+    return days + 'd ago';
+  },
+
+  // View switching
+  switchView(view) {
+    this.currentView = view;
+    if (view === 'projects') {
+      this.fetchProjects();
+    }
+    if (view === 'history') {
+      this.initHistoryChart();
+      this.fetchProjects(); // Ensure projects dropdown is populated
+      this.updateHistory();
+    }
+  },
+
+  async fetchProjects() {
+    try {
+      const res = await fetch('/api/projects');
+      this.projects = await res.json();
+    } catch (err) {
+      console.error('Failed to fetch projects:', err);
+    }
+  },
+
+  selectProject(name) {
+    this.selectedProject = name;
+    // Will be enhanced in later phases
+    console.log('Selected project:', name);
+  },
+
+  // === Phase 5: History Chart Methods ===
+  initHistoryChart() {
+    if (!this.historyChart) {
+      this.historyChart = new HistoryChart('history-chart');
+    }
+  },
+
+  setHistoryDays(days) {
+    this.historyDays = days;
+    this.updateHistory();
+  },
+
+  async updateHistory() {
+    try {
+      const endpoint = this.historyProject
+        ? `/api/projects/${encodeURIComponent(this.historyProject)}/history?days=${this.historyDays}`
+        : `/api/totals/history?days=${this.historyDays}`;
+
+      const res = await fetch(endpoint);
+      this.historyData = await res.json();
+
+      if (this.historyChart) {
+        this.historyChart.setData(this.historyData);
+      }
+
+      this.updateHistorySummary();
+    } catch (err) {
+      console.error('Failed to fetch history:', err);
+    }
+  },
+
+  updateHistorySummary() {
+    const data = this.historyData || [];
+    const totalCost = data.reduce((sum, d) => sum + (d.cost || 0), 0);
+    const totalSessions = data.reduce((sum, d) => sum + (d.sessions || 0), 0);
+    const avgCost = data.length > 0 ? totalCost / data.length : 0;
+
+    this.historySummary = {
+      totalCost: totalCost,
+      totalSessions: totalSessions,
+      avgCost: avgCost
+    };
+  },
+
+  // === Phase 4: Agent Tree Methods ===
+  get computedAgentTree() {
+    return this.buildAgentTree(this.agentTree);
+  },
+
+  buildAgentTree(agents) {
+    if (!agents || agents.length === 0) return [];
+
+    // Create lookup map
+    const map = new Map();
+    agents.forEach(a => {
+      map.set(a.id, { ...a, children: [] });
+    });
+
+    // Build hierarchy
+    const roots = [];
+    for (const agent of map.values()) {
+      const parentId = agent.parent_id || agent.parentId;
+      if (parentId && map.has(parentId)) {
+        map.get(parentId).children.push(agent);
+      } else {
+        roots.push(agent);
+      }
+    }
+
+    // Sort children by start time
+    const sortChildren = (node) => {
+      node.children.sort((a, b) => {
+        const aTime = new Date(a.started_at || a.startedAt || 0);
+        const bTime = new Date(b.started_at || b.startedAt || 0);
+        return aTime - bTime;
+      });
+      node.children.forEach(sortChildren);
+    };
+    roots.forEach(sortChildren);
+
+    return roots;
+  },
+
+  toggleAgent(agentId) {
+    this.expandedAgents[agentId] = !this.expandedAgents[agentId];
+  },
+
+  expandAllAgents() {
+    const setAll = (nodes, expanded) => {
+      nodes.forEach(node => {
+        this.expandedAgents[node.id] = expanded;
+        if (node.children) setAll(node.children, expanded);
+      });
+    };
+    this.allAgentsExpanded = !this.allAgentsExpanded;
+    setAll(this.computedAgentTree, this.allAgentsExpanded);
+  },
+
+  getModelClass(model) {
+    if (!model) return 'unknown';
+    if (model.includes('opus')) return 'opus';
+    if (model.includes('sonnet')) return 'sonnet';
+    if (model.includes('haiku')) return 'haiku';
+    return 'other';
+  },
+
+  getModelShort(model) {
+    if (!model) return '?';
+    if (model.includes('opus')) return 'opus';
+    if (model.includes('sonnet')) return 'sonnet';
+    if (model.includes('haiku')) return 'haiku';
+    return model.split('-')[0] || '?';
+  },
+
   // Cleanup
   destroy() {
     if (this.eventSource) {
@@ -210,6 +378,9 @@ PetiteVue.createApp({
     }
     if (this.chartManager) {
       this.chartManager.destroy();
+    }
+    if (this.historyChart) {
+      this.historyChart.destroy();
     }
   }
 }).mount('#app');
