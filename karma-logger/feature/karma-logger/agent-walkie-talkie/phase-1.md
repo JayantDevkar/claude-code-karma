@@ -34,10 +34,13 @@ interface CacheStore {
   destroy(): void;  // Cleanup intervals and subscriptions
 }
 
+// NOTE: CacheStore is single-process only (no cross-process sharing).
+// For IPC, use the socket server in Phase 5.
+
 interface CacheStats {
   keys: number;
   subscribers: number;
-  memoryBytes: number;
+  memoryBytes: number;  // Estimate: sizeof(key) + sizeof(JSON.stringify(value))
 }
 ```
 
@@ -120,14 +123,32 @@ describe('MemoryCacheStore', () => {
 
 ## Acceptance Criteria
 
-- [ ] All CRUD operations work correctly
-- [ ] TTL expiration tested with fake timers
-- [ ] Glob patterns match expected keys
-- [ ] Pub/sub delivers to matching subscribers
-- [ ] `destroy()` cleans up intervals
-- [ ] No memory leaks in subscriber cleanup
-- [ ] p99 latency <1ms for set/get/delete (excluding pattern operations)
+- [x] All CRUD operations work correctly
+- [x] TTL expiration tested with fake timers
+- [x] Glob patterns match expected keys
+- [x] Pub/sub delivers to matching subscribers
+- [x] `destroy()` cleans up intervals
+- [x] No memory leaks in subscriber cleanup
+- [x] p99 latency <1ms for set/get/delete (excluding pattern operations)
   - Note: `keys()`, `getMany()`, `publish()` are O(n) and may exceed 1ms with many keys
+
+## Implementation Status: COMPLETED ✅
+
+**Completed:** 2026-01-08
+
+**Files Created:**
+- `src/walkie-talkie/types.ts` - CacheStore interface, CacheStats, SubscriberCallback
+- `src/walkie-talkie/cache-store.ts` - MemoryCacheStore implementation (~260 lines)
+- `src/walkie-talkie/index.ts` - Re-exports
+- `tests/walkie-talkie/cache-store.test.ts` - 50 tests, all passing
+
+**Key Implementation Details:**
+- Default TTL: 300,000ms (5 minutes)
+- Infinite TTL: ttlMs = -1
+- Cleanup interval: 5 seconds
+- Pattern matching: `*` matches any characters except `:`
+- Error isolation: subscriber errors caught and logged, other subscribers continue
+- Memory estimation via JSON.stringify for stats
 
 ## Edge Cases
 

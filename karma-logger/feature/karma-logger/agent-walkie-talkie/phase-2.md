@@ -68,6 +68,7 @@ interface AgentRadio {
   onSiblingStatus(cb: (agentId: string, status: AgentStatus) => void): () => void;
 
   // Queries
+  getParentStatus(): AgentStatus | null;
   getChildStatuses(): Map<string, AgentStatus>;
   getSiblingStatuses(): Map<string, AgentStatus>;
   waitForAgent(agentId: string, state: AgentState, timeoutMs?: number): Promise<AgentStatus>;
@@ -84,12 +85,17 @@ interface AgentRadio {
 ### 2.2 Key Schema
 
 ```
-session:{rootSessionId}:agent:{agentId}:status      → AgentStatus
-session:{rootSessionId}:agent:{agentId}:progress    → ProgressUpdate
-session:{rootSessionId}:agent:{agentId}:result      → Final result
-session:{rootSessionId}:agents                      → string[] (agent IDs)
-channel:{rootSessionId}:{agentId}:inbox             → Message[]
+agent:{agentId}:status      → AgentStatus
+agent:{agentId}:progress    → ProgressUpdate
+agent:{agentId}:result      → Final result
+session:{rootSessionId}:agents   → string[] (agent IDs in session)
+agent:{agentId}:inbox       → Message[]
 ```
+
+**Design Decision:** Simplified key schema without nesting under `session:*:agent:*`.
+- AgentStatus contains `rootSessionId` for session lookup
+- Simpler patterns for Phase 5 subscription: `agent:*:status`
+- Session agent list still scoped by rootSessionId
 
 ### 2.3 Implement AgentRadioImpl (`agent-radio.ts`)
 
@@ -98,9 +104,10 @@ channel:{rootSessionId}:{agentId}:inbox             → Message[]
 | `constructor` | Register in session agents list, set initial 'pending' status |
 | `setStatus` | Update `agent:{id}:status`, preserve startedAt |
 | `getStatus` | Read from cache |
+| `getParentStatus` | Read parent's status if parentId exists, else null |
 | `reportProgress` | Write to `agent:{id}:progress` with 1min TTL |
 | `publishResult` | Write to `agent:{id}:result`, set status 'completed' |
-| `onChildStatus` | Subscribe `session:{rootSessionId}:agent:*:status`, filter parentId === self |
+| `onChildStatus` | Subscribe `agent:*:status`, filter parentId === self |
 | `getChildStatuses` | Query all agents in session, filter by parentId |
 | `waitForAgent` | Check current + subscribe with timeout Promise |
 | `send` | Append to target's inbox |
@@ -172,12 +179,29 @@ describe('AgentRadioImpl', () => {
 
 ## Acceptance Criteria
 
-- [ ] Status lifecycle: pending → active → completed/failed
-- [ ] Parent can list and monitor children
-- [ ] Siblings can discover each other
-- [ ] `waitForAgent` with timeout works
-- [ ] Direct messaging between agents
-- [ ] No dangling subscriptions after destroy()
+- [x] Status lifecycle: pending → active → completed/failed
+- [x] Parent can list and monitor children
+- [x] Siblings can discover each other
+- [x] `waitForAgent` with timeout works
+- [x] Direct messaging between agents
+- [x] No dangling subscriptions after destroy()
+
+## Implementation Status: COMPLETED ✅
+
+**Completed:** 2026-01-08
+
+**Files Created:**
+- `src/walkie-talkie/types.ts` - Extended with AgentState, AgentStatus, ProgressUpdate, AgentMessage, AgentRadio types
+- `src/walkie-talkie/agent-radio.ts` - AgentRadioImpl class (~290 lines)
+- `src/walkie-talkie/index.ts` - Updated exports
+- `tests/walkie-talkie/agent-radio.test.ts` - 29 tests, all passing
+
+**Key Implementation Details:**
+- TTL Strategy: Status 5min, Progress 1min, Result 10min, Session agents 1hr, Inbox 5min
+- Default wait timeout: 30 seconds
+- Pattern-based pub/sub for status subscriptions
+- Message inbox with append-only semantics
+- Clean destroy() with full subscription and data cleanup
 
 ## Edge Cases
 
