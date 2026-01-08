@@ -742,6 +742,48 @@ export class MetricsAggregator extends EventEmitter {
   }
 
   /**
+   * Get or create radio instance for an agent
+   * Used by socket server when CLI requests come before agent discovery
+   * @param agentId The agent ID
+   * @param sessionId The session ID
+   * @param parentId Optional parent agent ID
+   * @param agentType Optional agent type
+   * @param model Optional model name
+   * @returns AgentRadio instance or null if radio not enabled
+   */
+  getOrCreateAgentRadio(
+    agentId: string,
+    sessionId: string,
+    parentId?: string | null,
+    agentType?: string,
+    model?: string
+  ): AgentRadio | null {
+    if (!this.cache) {
+      return null;
+    }
+
+    // Return existing radio if available
+    const existing = this.agentRadios.get(agentId);
+    if (existing) {
+      return existing;
+    }
+
+    // Create and register new radio
+    const radio = new AgentRadioImpl(
+      this.cache,
+      agentId,
+      sessionId,
+      sessionId, // rootSessionId defaults to sessionId
+      parentId ?? null,
+      parentId ? 'agent' : 'session',
+      agentType ?? 'unknown',
+      model ?? 'unknown'
+    );
+    this.agentRadios.set(agentId, radio);
+    return radio;
+  }
+
+  /**
    * Get the cache store instance (for direct queries)
    * @returns CacheStore instance or null if radio not enabled
    */

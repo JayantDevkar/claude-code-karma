@@ -10,8 +10,7 @@ import * as net from 'node:net';
 import * as fs from 'node:fs';
 import type { Server } from 'node:net';
 import type { MetricsAggregator } from '../aggregator.js';
-import type { RadioRequest, RadioResponse, AgentStatus, CacheStore } from './types.js';
-import { AgentRadioImpl } from './agent-radio.js';
+import type { RadioRequest, RadioResponse, AgentStatus } from './types.js';
 
 /** Default socket path for Unix */
 const DEFAULT_SOCKET_PATH = '/tmp/karma-radio.sock';
@@ -152,21 +151,21 @@ export function handleRadioRequest(
     };
   }
 
-  // Get or create radio for this agent
-  let radio = aggregator.getAgentRadio(agentId);
+  // Get or create radio for this agent (registers with aggregator for persistence)
+  const radio = aggregator.getOrCreateAgentRadio(
+    agentId,
+    sessionId,
+    parentId,
+    agentType,
+    model
+  );
+
   if (!radio) {
-    // Create a new radio for this agent
-    // Note: This handles cases where CLI calls come before registerAgent
-    radio = new AgentRadioImpl(
-      cache,
-      agentId,
-      sessionId,
-      sessionId, // rootSessionId defaults to sessionId
-      parentId ?? null,
-      parentId ? 'agent' : 'session',
-      agentType ?? 'unknown',
-      model ?? 'unknown'
-    );
+    return {
+      id: request.id,
+      success: false,
+      error: 'Failed to create radio instance',
+    };
   }
 
   try {
