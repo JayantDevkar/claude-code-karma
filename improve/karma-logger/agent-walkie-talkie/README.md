@@ -10,7 +10,7 @@ Atomic improvement phases for the karma-logger walkie-talkie system, derived fro
 | 2 | [Status + Progress Consolidation](./phase-2-status-progress-consolidation.md) | Medium | Low | **DONE** |
 | 3 | [Batch Operations](./phase-3-batch-operations.md) | Low | Low | **DONE** |
 | 4 | [Subscription-Based Wait](./phase-4-subscription-based-wait.md) | Future | High | **DONE** |
-| 5 | [Metadata Schema Validation](./phase-5-metadata-schema-validation.md) | Low | Medium | Planned |
+| 5 | [Metadata Schema Validation](./phase-5-metadata-schema-validation.md) | Low | Medium | **DONE** |
 | 6 | [Cache Persistence](./phase-6-cache-persistence.md) | Future | High | Planned |
 
 ## Recommended Implementation Order
