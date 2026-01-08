@@ -2,6 +2,7 @@
  * karma watch command
  * Phase 5: Real-time streaming display of session activity
  * Phase 6.2: Automatic persistence from watch mode (FLAW-004)
+ * Phase 6.3: Persistent activity buffer (FLAW-006)
  */
 
 import chalk from 'chalk';
@@ -13,7 +14,7 @@ import {
   getLatestSession,
   type SessionInfo,
 } from '../discovery.js';
-import type { LogEntry } from '../types.js';
+import type { LogEntry, ActivityEntry } from '../types.js';
 import { formatNumber, formatCost } from '../tui/utils/format.js';
 import { getDB, closeDB } from '../db.js';
 
@@ -38,9 +39,10 @@ const AUTO_PERSIST_INTERVAL_MS = 30_000;
 const INACTIVITY_THRESHOLD_MS = 300_000;
 
 /**
- * Activity entry for the ring buffer
+ * Display-oriented activity entry for the ring buffer
+ * Note: This is distinct from ActivityEntry in types.ts which is for persistence
  */
-interface ActivityEntry {
+interface DisplayActivityEntry {
   timestamp: Date;
   model: string;
   type: 'tool' | 'agent_spawn' | 'agent_complete' | 'message';
@@ -50,24 +52,24 @@ interface ActivityEntry {
 }
 
 /**
- * Ring buffer for activity entries
+ * Ring buffer for display activity entries
  */
-class ActivityBuffer {
-  private entries: ActivityEntry[] = [];
+class DisplayActivityBuffer {
+  private entries: DisplayActivityEntry[] = [];
   private maxSize: number;
 
   constructor(maxSize = 20) {
     this.maxSize = maxSize;
   }
 
-  add(entry: ActivityEntry): void {
+  add(entry: DisplayActivityEntry): void {
     this.entries.push(entry);
     if (this.entries.length > this.maxSize) {
       this.entries.shift();
     }
   }
 
-  getAll(): ActivityEntry[] {
+  getAll(): DisplayActivityEntry[] {
     return [...this.entries];
   }
 
@@ -157,7 +159,7 @@ function toolColor(tool: string): (text: string) => string {
  */
 class WatchDisplay {
   private width: number;
-  private activityBuffer: ActivityBuffer;
+  private activityBuffer: DisplayActivityBuffer;
   private lastMetrics: SessionMetrics | null = null;
   private projectName: string;
   private sessionId: string;
@@ -172,7 +174,7 @@ class WatchDisplay {
     activityOnly?: boolean;
   }) {
     this.width = Math.min(process.stdout.columns || 80, 80);
-    this.activityBuffer = new ActivityBuffer(options.activityOnly ? 30 : 15);
+    this.activityBuffer = new DisplayActivityBuffer(options.activityOnly ? 30 : 15);
     this.projectName = options.projectName;
     this.sessionId = options.sessionId;
     this.compact = options.compact ?? false;
@@ -200,7 +202,7 @@ class WatchDisplay {
   /**
    * Add an activity entry
    */
-  addActivity(entry: ActivityEntry): void {
+  addActivity(entry: DisplayActivityEntry): void {
     this.activityBuffer.add(entry);
     if (this.isRunning) {
       this.render();
@@ -341,7 +343,7 @@ class WatchDisplay {
     return lines;
   }
 
-  private formatActivityLine(entry: ActivityEntry, maxWidth: number): string {
+  private formatActivityLine(entry: DisplayActivityEntry, maxWidth: number): string {
     const time = chalk.dim(formatTime(entry.timestamp));
     const model = modelColor(entry.model)(`[${shortModel(entry.model)}]`);
 
@@ -422,6 +424,7 @@ class WatchDisplay {
 /**
  * WatchPersistence handles automatic session persistence to SQLite
  * Implements FLAW-004: Automatic persistence from watch mode
+ * Implements FLAW-006: Persistent activity buffer
  */
 class WatchPersistence {
   private aggregator: MetricsAggregator;
@@ -429,6 +432,7 @@ class WatchPersistence {
   private persistInterval: ReturnType<typeof setInterval> | null = null;
   private sessionId: string;
   private persistCount = 0;
+  private activityPersistCount = 0;
 
   constructor(aggregator: MetricsAggregator, sessionId: string, enabled = true) {
     this.aggregator = aggregator;
@@ -457,6 +461,7 @@ class WatchPersistence {
     // Start periodic auto-persistence
     this.persistInterval = setInterval(() => {
       this.persistActiveSessions();
+      this.persistActivity();  // FLAW-006: Also persist activity periodically
     }, AUTO_PERSIST_INTERVAL_MS);
   }
 
@@ -494,6 +499,26 @@ class WatchPersistence {
   }
 
   /**
+   * Persist activity buffer to database (FLAW-006)
+   * Uses drain to atomically get and clear the buffer
+   */
+  private persistActivity(): void {
+    if (!this.enabled) return;
+
+    try {
+      const entries = this.aggregator.drainActivityBuffer();
+      if (entries.length === 0) return;
+
+      const db = getDB();
+      const count = db.saveActivityBatch(entries);
+      this.activityPersistCount += count;
+    } catch (error) {
+      // Silent fail for activity persistence errors
+      // Activity may be lost but session data is still persisted
+    }
+  }
+
+  /**
    * Persist all active sessions (called periodically)
    */
   private persistActiveSessions(): void {
@@ -510,7 +535,7 @@ class WatchPersistence {
   }
 
   /**
-   * Final persist before shutdown - handles all sessions
+   * Final persist before shutdown - handles all sessions and activity
    */
   async persistBeforeExit(): Promise<void> {
     if (!this.enabled) return;
@@ -528,6 +553,9 @@ class WatchPersistence {
         this.persistSession(session);
       }
 
+      // Persist any remaining activity (FLAW-006)
+      this.persistActivity();
+
       // Close database connection
       closeDB();
     } catch (error) {
@@ -538,18 +566,19 @@ class WatchPersistence {
   /**
    * Get persistence statistics
    */
-  getStats(): { persistCount: number; enabled: boolean } {
+  getStats(): { persistCount: number; activityPersistCount: number; enabled: boolean } {
     return {
       persistCount: this.persistCount,
+      activityPersistCount: this.activityPersistCount,
       enabled: this.enabled,
     };
   }
 }
 
 /**
- * Extract activity info from a log entry
+ * Extract display activity info from a log entry (for terminal display)
  */
-function extractActivity(entry: LogEntry, session: SessionInfo): ActivityEntry | null {
+function extractDisplayActivity(entry: LogEntry, session: SessionInfo): DisplayActivityEntry | null {
   if (entry.type !== 'assistant') return null;
 
   const model = entry.model || 'unknown';
@@ -567,6 +596,28 @@ function extractActivity(entry: LogEntry, session: SessionInfo): ActivityEntry |
   }
 
   return null;
+}
+
+/**
+ * Extract persistence activity entries from a log entry (for database storage)
+ * Creates one ActivityEntry per tool call for granular tracking
+ */
+function extractPersistenceActivity(entry: LogEntry, session: SessionInfo): ActivityEntry[] {
+  if (entry.type !== 'assistant' || entry.toolCalls.length === 0) {
+    return [];
+  }
+
+  const model = entry.model || undefined;
+  const sessionId = session.parentSessionId ?? session.sessionId;
+
+  return entry.toolCalls.map(tool => ({
+    timestamp: entry.timestamp,
+    sessionId,
+    tool,
+    type: 'tool_call' as const,
+    agentId: session.isAgent ? session.sessionId : undefined,
+    model,
+  }));
 }
 
 /**
@@ -623,9 +674,16 @@ export async function watchCommand(options: WatchOptions): Promise<void> {
 
   // Wire up events
   watcher.on('entry', (entry: LogEntry, sessionInfo: SessionInfo) => {
-    const activity = extractActivity(entry, sessionInfo);
-    if (activity) {
-      display.addActivity(activity);
+    // Extract and display activity
+    const displayActivity = extractDisplayActivity(entry, sessionInfo);
+    if (displayActivity) {
+      display.addActivity(displayActivity);
+    }
+
+    // Record activity for persistence (FLAW-006)
+    const persistenceActivities = extractPersistenceActivity(entry, sessionInfo);
+    for (const activity of persistenceActivities) {
+      aggregator.recordActivity(activity);
     }
 
     // Update metrics display

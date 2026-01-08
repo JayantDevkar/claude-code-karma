@@ -11,6 +11,7 @@ import {
   discoverSessions,
   getLatestSession,
   discoverProjects,
+  getSessionAgents,
   type SessionInfo,
 } from '../discovery.js';
 import { parseSessionFile } from '../parser.js';
@@ -358,6 +359,20 @@ async function displayTree(session: SessionInfo, metrics: SessionMetrics): Promi
     aggregator.processEntry(entry, session);
   }
 
+  // Load agent files (same pattern as dashboard preload - fixes empty tree)
+  const agents = await getSessionAgents(session.projectPath, session.sessionId);
+  for (const agent of agents) {
+    try {
+      aggregator.registerAgent(agent, session);
+      const agentEntries = await parseSessionFile(agent.filePath);
+      for (const entry of agentEntries) {
+        aggregator.processEntry(entry, agent);
+      }
+    } catch {
+      // Skip agents that can't be parsed
+    }
+  }
+
   const agentNodes = aggregator.getAgentTree(session.sessionId);
   const rootNode = buildRootNode(agentNodes, session.sessionId, metrics);
 
@@ -369,8 +384,8 @@ async function displayTree(session: SessionInfo, metrics: SessionMetrics): Promi
   const lines = renderTreeNode(rootNode, '', true, 0);
   console.log(lines.join('\n'));
 
-  // Summary
-  const totalAgents = metrics.agentCount + 1; // +1 for main
+  // Summary - count actual loaded agents, not stale metrics
+  const totalAgents = agents.length + 1; // +1 for main
   console.log();
   console.log(chalk.dim(`Total: ${totalAgents} agent${totalAgents !== 1 ? 's' : ''} | Cost: ${formatCost(metrics.cost.total)}`));
   console.log();
@@ -385,6 +400,20 @@ async function displayTreeJson(session: SessionInfo, metrics: SessionMetrics): P
 
   for (const entry of entries) {
     aggregator.processEntry(entry, session);
+  }
+
+  // Load agent files (same pattern as dashboard preload)
+  const agents = await getSessionAgents(session.projectPath, session.sessionId);
+  for (const agent of agents) {
+    try {
+      aggregator.registerAgent(agent, session);
+      const agentEntries = await parseSessionFile(agent.filePath);
+      for (const entry of agentEntries) {
+        aggregator.processEntry(entry, agent);
+      }
+    } catch {
+      // Skip agents that can't be parsed
+    }
   }
 
   const agentNodes = aggregator.getAgentTree(session.sessionId);
@@ -408,7 +437,7 @@ async function displayTreeJson(session: SessionInfo, metrics: SessionMetrics): P
     sessionId: session.sessionId,
     project: session.projectName,
     tree: serializeNode(rootNode),
-    totalAgents: metrics.agentCount + 1,
+    totalAgents: agents.length + 1, // +1 for main
     totalCost: metrics.cost.total,
   };
 

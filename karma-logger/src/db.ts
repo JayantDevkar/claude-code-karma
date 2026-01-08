@@ -208,6 +208,12 @@ export class KarmaDB {
       this.migrateAgentsTableWithFKConstraints();
       this.db.prepare('INSERT INTO schema_version (version, applied_at) VALUES (?, ?)').run(2, new Date().toISOString());
     }
+
+    // Migration v3: Add activity table for persistent activity buffer (FLAW-006)
+    if ((version.v ?? 0) < 3) {
+      this.migrateAddActivityTable();
+      this.db.prepare('INSERT INTO schema_version (version, applied_at) VALUES (?, ?)').run(3, new Date().toISOString());
+    }
   }
 
   /**
@@ -275,6 +281,27 @@ export class KarmaDB {
 
     // Re-enable foreign keys
     this.db.pragma('foreign_keys = ON');
+  }
+
+  /**
+   * Migration v3: Add activity table for persistent activity buffer (FLAW-006)
+   */
+  private migrateAddActivityTable(): void {
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS activity (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT NOT NULL,
+        timestamp TEXT NOT NULL,
+        tool TEXT NOT NULL,
+        type TEXT NOT NULL,
+        agent_id TEXT,
+        model TEXT,
+        FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_activity_session ON activity(session_id);
+      CREATE INDEX IF NOT EXISTS idx_activity_timestamp ON activity(timestamp);
+    `);
   }
 
   /**
@@ -628,6 +655,171 @@ export class KarmaDB {
       .sort((a, b) => b[1] - a[1])
       .slice(0, limit)
       .map(([tool, count]) => ({ tool, count }));
+  }
+
+  // ============================================
+  // Activity Methods (FLAW-006)
+  // ============================================
+
+  /**
+   * Save a single activity entry to the database
+   */
+  saveActivity(entry: ActivityEntry): void {
+    const stmt = this.db.prepare(`
+      INSERT INTO activity (session_id, timestamp, tool, type, agent_id, model)
+      VALUES (@sessionId, @timestamp, @tool, @type, @agentId, @model)
+    `);
+
+    stmt.run({
+      sessionId: entry.sessionId,
+      timestamp: entry.timestamp.toISOString(),
+      tool: entry.tool,
+      type: entry.type,
+      agentId: entry.agentId ?? null,
+      model: entry.model ?? null,
+    });
+  }
+
+  /**
+   * Save multiple activity entries in a single transaction (batch insert)
+   */
+  saveActivityBatch(entries: ActivityEntry[]): number {
+    if (entries.length === 0) return 0;
+
+    const stmt = this.db.prepare(`
+      INSERT INTO activity (session_id, timestamp, tool, type, agent_id, model)
+      VALUES (@sessionId, @timestamp, @tool, @type, @agentId, @model)
+    `);
+
+    const insertMany = this.db.transaction((items: ActivityEntry[]) => {
+      for (const entry of items) {
+        stmt.run({
+          sessionId: entry.sessionId,
+          timestamp: entry.timestamp.toISOString(),
+          tool: entry.tool,
+          type: entry.type,
+          agentId: entry.agentId ?? null,
+          model: entry.model ?? null,
+        });
+      }
+      return items.length;
+    });
+
+    return insertMany(entries);
+  }
+
+  /**
+   * Get recent activity for a session
+   * @param sessionId Session ID to filter by
+   * @param limit Maximum number of entries to return (default: 100)
+   */
+  getRecentActivity(sessionId: string, limit: number = 100): ActivityEntry[] {
+    const rows = this.db.prepare(`
+      SELECT
+        session_id as sessionId,
+        timestamp,
+        tool,
+        type,
+        agent_id as agentId,
+        model
+      FROM activity
+      WHERE session_id = ?
+      ORDER BY timestamp DESC
+      LIMIT ?
+    `).all(sessionId, limit) as Array<{
+      sessionId: string;
+      timestamp: string;
+      tool: string;
+      type: string;
+      agentId: string | null;
+      model: string | null;
+    }>;
+
+    // Convert to ActivityEntry and reverse to get chronological order
+    return rows.reverse().map(row => ({
+      sessionId: row.sessionId,
+      timestamp: new Date(row.timestamp),
+      tool: row.tool,
+      type: row.type as 'tool_call' | 'result',
+      agentId: row.agentId ?? undefined,
+      model: row.model ?? undefined,
+    }));
+  }
+
+  /**
+   * Get all activity across sessions (for replay after restart)
+   * @param limit Maximum number of entries to return (default: 1000)
+   * @param since Only return activity after this timestamp
+   */
+  getAllRecentActivity(limit: number = 1000, since?: Date): ActivityEntry[] {
+    let sql = `
+      SELECT
+        session_id as sessionId,
+        timestamp,
+        tool,
+        type,
+        agent_id as agentId,
+        model
+      FROM activity
+    `;
+    const params: unknown[] = [];
+
+    if (since) {
+      sql += ` WHERE timestamp >= ?`;
+      params.push(since.toISOString());
+    }
+
+    sql += ` ORDER BY timestamp DESC LIMIT ?`;
+    params.push(limit);
+
+    const rows = this.db.prepare(sql).all(...params) as Array<{
+      sessionId: string;
+      timestamp: string;
+      tool: string;
+      type: string;
+      agentId: string | null;
+      model: string | null;
+    }>;
+
+    // Convert and reverse to get chronological order
+    return rows.reverse().map(row => ({
+      sessionId: row.sessionId,
+      timestamp: new Date(row.timestamp),
+      tool: row.tool,
+      type: row.type as 'tool_call' | 'result',
+      agentId: row.agentId ?? undefined,
+      model: row.model ?? undefined,
+    }));
+  }
+
+  /**
+   * Delete activity older than a given date (cleanup)
+   * @param before Delete activity before this date
+   * @returns Number of rows deleted
+   */
+  deleteActivityBefore(before: Date): number {
+    const result = this.db.prepare(`
+      DELETE FROM activity WHERE timestamp < ?
+    `).run(before.toISOString());
+
+    return result.changes;
+  }
+
+  /**
+   * Get activity count for a session
+   */
+  getActivityCount(sessionId?: string): number {
+    if (sessionId) {
+      const row = this.db.prepare(`
+        SELECT COUNT(*) as count FROM activity WHERE session_id = ?
+      `).get(sessionId) as { count: number };
+      return row.count;
+    }
+
+    const row = this.db.prepare(`
+      SELECT COUNT(*) as count FROM activity
+    `).get() as { count: number };
+    return row.count;
   }
 
   /**
