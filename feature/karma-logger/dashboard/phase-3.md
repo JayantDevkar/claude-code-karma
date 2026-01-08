@@ -1,6 +1,6 @@
 # Phase 3: TUI AgentTree Component
 
-**Status:** Pending
+**Status:** Complete
 **Depends On:** Phase 1 (TUI Core Setup)
 **Blocks:** Phase 4
 
@@ -255,10 +255,10 @@ describe('AgentTree', () => {
 
 ## Acceptance
 
-- [ ] AgentTree.tsx created
-- [ ] useAgentTree.ts hook created
-- [ ] Tree indentation correct
-- [ ] Status indicators working
-- [ ] Progress bar displays
-- [ ] Empty state handled
-- [ ] Tests pass
+- [x] AgentTree.tsx created
+- [x] useAgentTree.ts hook created
+- [x] Tree indentation correct
+- [x] Status indicators working
+- [x] Progress bar displays
+- [x] Empty state handled
+- [x] Tests pass

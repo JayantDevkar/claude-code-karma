@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import chalk from 'chalk';
 import type { CommandContext } from './types.js';
 import { startTUI } from './tui/index.js';
+import { statusCommand } from './commands/status.js';
 
 /**
  * Creates and configures the CLI program
@@ -20,13 +21,19 @@ export function createProgram(): Command {
   program
     .command('status')
     .description('Show current session metrics')
-    .action((_options, cmd) => {
+    .option('-p, --project <name>', 'Show status for specific project')
+    .option('-a, --all', 'Show all active sessions')
+    .option('-j, --json', 'Output as JSON')
+    .action(async (options, cmd) => {
       const ctx = getContext(cmd);
       if (ctx.verbose) {
         console.log(chalk.gray('Running in verbose mode'));
       }
-      console.log(chalk.yellow('karma status: Not implemented'));
-      console.log(chalk.gray('This command will be implemented in Phase 4'));
+      await statusCommand({
+        project: options.project,
+        all: options.all,
+        json: options.json,
+      });
     });
 
   // Watch command with --ui flag

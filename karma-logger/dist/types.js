@@ -1,5 +1,6 @@
 /**
  * Core TypeScript interfaces for karma-logger
+ * Phase 1: JSONL Parser types based on actual Claude Code log format
  */
 /**
  * Default Claude pricing (as of 2024)

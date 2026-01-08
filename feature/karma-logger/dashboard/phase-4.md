@@ -1,6 +1,6 @@
 # Phase 4: TUI Sparkline, Keyboard & Command
 
-**Status:** Pending
+**Status:** Complete
 **Depends On:** Phase 1, 2, 3
 **Blocks:** Phase 5 (optional), CLI integration
 
@@ -315,11 +315,11 @@ describe('useKeyboard', () => {
 
 ## Acceptance
 
-- [ ] Sparkline.tsx created and renders chart
-- [ ] StatusBar.tsx shows keyboard hints
-- [ ] useKeyboard.ts handles all shortcuts
-- [ ] useTokenFlow.ts tracks 60s rolling window
-- [ ] App.tsx integrates all components
-- [ ] `karma watch --ui` command works
-- [ ] All keyboard shortcuts functional
-- [ ] Tests pass
+- [x] Sparkline.tsx created and renders chart
+- [x] StatusBar.tsx shows keyboard hints
+- [x] useKeyboard.ts handles all shortcuts
+- [x] useTokenFlow.ts tracks 60s rolling window
+- [x] App.tsx integrates all components
+- [x] `karma watch --ui` command works
+- [x] All keyboard shortcuts functional
+- [x] Tests pass
