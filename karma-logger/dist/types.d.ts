@@ -154,4 +154,33 @@ export interface ActivityEntry {
     agentId?: string;
     model?: string;
 }
+/**
+ * Aggregated project metrics for historical dashboard
+ */
+export interface ProjectSummary {
+    projectName: string;
+    sessionCount: number;
+    activeDays: number;
+    totalTokensIn: number;
+    totalTokensOut: number;
+    totalCost: number;
+    lastActivity: string;
+}
+/**
+ * Project detail with summary and sessions list
+ */
+export interface ProjectDetail {
+    summary: ProjectSummary;
+    sessions: import('./db.js').SessionRecord[];
+}
+/**
+ * Daily metrics rollup for trend charts
+ */
+export interface DailyMetric {
+    day: string;
+    tokensIn: number;
+    tokensOut: number;
+    cost: number;
+    sessions: number;
+}
 //# sourceMappingURL=types.d.ts.map

@@ -3,6 +3,93 @@
  * Real-time metrics visualization with SSE
  */
 
+class SSEConnection {
+  constructor(url, handlers) {
+    this.url = url;
+    this.handlers = handlers;
+    this.eventSource = null;
+    this.retryCount = 0;
+    this.maxRetries = 5;
+    this.retryDelay = 1000; // exponential backoff from 1s
+    this.lastDataTime = null;
+  }
+
+  connect({ resetRetries = false } = {}) {
+    if (resetRetries) {
+      this.retryCount = 0;
+      this.retryDelay = 1000;
+    }
+
+    if (this.eventSource) {
+      this.eventSource.close();
+      this.eventSource = null;
+    }
+
+    this.handlers?.onState?.('reconnecting');
+
+    const es = new EventSource(this.url);
+    this.eventSource = es;
+
+    es.onopen = () => {
+      this.retryCount = 0;
+      this.retryDelay = 1000;
+      this.handlers?.onState?.('connected');
+      this.handlers?.onBanner?.({ type: 'hide' });
+    };
+
+    es.onerror = () => {
+      try {
+        es.close();
+      } catch {
+        // ignore
+      }
+      this.eventSource = null;
+      this.handleDisconnect();
+    };
+
+    const markData = () => {
+      this.lastDataTime = new Date();
+      this.handlers?.onData?.(this.lastDataTime);
+    };
+
+    // Some servers emit default message events; we treat them as "data seen".
+    es.onmessage = () => markData();
+
+    // Custom event handlers are attached by caller (Petite-Vue app)
+    this.handlers?.attach?.(es, markData);
+  }
+
+  handleDisconnect() {
+    if (this.retryCount < this.maxRetries) {
+      this.handlers?.onState?.('reconnecting');
+      this.handlers?.onBanner?.({ type: 'reconnecting', lastDataTime: this.lastDataTime });
+
+      const delay = this.retryDelay;
+      this.retryCount += 1;
+      this.retryDelay = Math.min(this.retryDelay * 2, 30000);
+
+      setTimeout(() => this.connect(), delay);
+      return;
+    }
+
+    this.handlers?.onState?.('error');
+    this.handlers?.onBanner?.({ type: 'retry', lastDataTime: this.lastDataTime });
+  }
+
+  retry() {
+    this.retryCount = 0;
+    this.retryDelay = 1000;
+    this.connect();
+  }
+
+  close() {
+    if (this.eventSource) {
+      this.eventSource.close();
+      this.eventSource = null;
+    }
+  }
+}
+
 // Agent Node Component (registered via v-scope in template)
 function AgentNode(props) {
   return {
@@ -22,6 +109,16 @@ PetiteVue.createApp({
   // State
   sessionId: null,
   connected: false,
+  connectionState: 'disconnected', // connected | reconnecting | disconnected | error
+  connectionTitle: 'Disconnected',
+  bannerDismissed: false,
+  banner: {
+    visible: false,
+    className: 'error-banner--warning',
+    icon: '⚠',
+    message: '',
+    showRetry: false
+  },
   currentView: 'live',
   selectedProject: null,
   projects: [],
@@ -42,6 +139,8 @@ PetiteVue.createApp({
   sessions: [],
   chartManager: null,
   eventSource: null,
+  sseConnection: null,
+  lastDataTime: null,
   // History view state
   historyChart: null,
   historyProject: '',
@@ -59,31 +158,30 @@ PetiteVue.createApp({
     this.chartManager = new ChartManager('chart', {
       maxDataPoints: window.CHART_DATA_RETENTION_POINTS || 3600
     });
-    this.connectSSE();
+    this.connectSSE({ resetRetries: true });
     this.fetchInitialData();
   },
 
   // SSE Connection
-  connectSSE() {
-    if (this.eventSource) {
-      this.eventSource.close();
+  connectSSE({ resetRetries = false } = {}) {
+    if (!this.sseConnection) {
+      this.sseConnection = new SSEConnection('/events', {
+        onState: (state) => this.setConnectionState(state),
+        onData: (dt) => { this.lastDataTime = dt; },
+        onBanner: (payload) => this.handleSSEBanner(payload),
+        attach: (es, markData) => this.attachSSEHandlers(es, markData)
+      });
     }
 
-    this.eventSource = new EventSource('/events');
+    // Backward-compat: keep eventSource updated for destroy()
+    this.sseConnection.connect({ resetRetries });
+    this.eventSource = this.sseConnection.eventSource;
+  },
 
-    this.eventSource.onopen = () => {
-      console.log('SSE connected');
-      this.connected = true;
-    };
-
-    this.eventSource.onerror = (err) => {
-      console.error('SSE error:', err);
-      this.connected = false;
-      // EventSource auto-reconnects
-    };
-
+  attachSSEHandlers(es, markData) {
     // Handle init event
-    this.eventSource.addEventListener('init', (event) => {
+    es.addEventListener('init', (event) => {
+      markData();
       try {
         const data = JSON.parse(event.data);
         console.log('Init data:', data);
@@ -106,7 +204,8 @@ PetiteVue.createApp({
     });
 
     // Handle metrics updates
-    this.eventSource.addEventListener('metrics', (event) => {
+    es.addEventListener('metrics', (event) => {
+      markData();
       try {
         const data = JSON.parse(event.data);
         this.updateMetrics(data);
@@ -117,7 +216,8 @@ PetiteVue.createApp({
     });
 
     // Handle agents updates
-    this.eventSource.addEventListener('agents', (event) => {
+    es.addEventListener('agents', (event) => {
+      markData();
       try {
         const data = JSON.parse(event.data);
         this.agentTree = data;
@@ -127,7 +227,8 @@ PetiteVue.createApp({
     });
 
     // Handle session start
-    this.eventSource.addEventListener('session:start', (event) => {
+    es.addEventListener('session:start', (event) => {
+      markData();
       try {
         const data = JSON.parse(event.data);
         this.sessionId = data.sessionId;
@@ -217,6 +318,97 @@ PetiteVue.createApp({
   formatCost(cents) {
     if (cents == null) return '$0.00';
     return '$' + (cents / 100).toFixed(4);
+  },
+
+  // Phase 1: metric card numeric cost (icon provides "$")
+  formatCostNumber(cents) {
+    if (cents == null) return '0.0000';
+    return (cents / 100).toFixed(4);
+  },
+
+  // Phase 3 (structure): connection + banner helpers
+  setConnectionState(state) {
+    this.connectionState = state;
+    this.connected = state === 'connected';
+    if (state === 'connected') {
+      this.bannerDismissed = false;
+    }
+    const titles = {
+      connected: 'Connected',
+      reconnecting: 'Reconnecting...',
+      disconnected: 'Disconnected',
+      error: 'Connection failed'
+    };
+    this.connectionTitle = titles[state] || state;
+  },
+
+  showBanner({ type, message, showRetry }) {
+    const classes = {
+      warning: 'error-banner--warning',
+      error: 'error-banner--error',
+      info: 'error-banner--info'
+    };
+    const icons = {
+      warning: '⚠',
+      error: '✕',
+      info: 'ℹ'
+    };
+    this.banner = {
+      visible: true,
+      className: classes[type] || classes.warning,
+      icon: icons[type] || icons.warning,
+      message: message || 'Something went wrong',
+      showRetry: Boolean(showRetry)
+    };
+  },
+
+  hideBanner() {
+    this.banner.visible = false;
+  },
+
+  dismissBanner() {
+    this.bannerDismissed = true;
+    this.hideBanner();
+  },
+
+  retrySSE() {
+    this.hideBanner();
+    this.setConnectionState('reconnecting');
+    this.sseConnection?.retry();
+  },
+
+  handleSSEBanner(payload) {
+    if (!payload || payload.type === 'hide') {
+      this.hideBanner();
+      return;
+    }
+
+    if (payload.type === 'reconnecting') {
+      if (this.bannerDismissed) return;
+      this.showBanner({
+        type: 'warning',
+        message: 'Connection lost · Reconnecting...',
+        showRetry: false
+      });
+      return;
+    }
+
+    if (payload.type === 'retry') {
+      const ago = payload.lastDataTime ? this.formatTimeAgo(payload.lastDataTime) : 'unknown';
+      this.showBanner({
+        type: 'warning',
+        message: `Connection lost · Last data: ${ago}`,
+        showRetry: true
+      });
+    }
+  },
+
+  formatTimeAgo(date) {
+    const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
+    if (seconds < 0) return '0s ago';
+    if (seconds < 60) return `${seconds}s ago`;
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+    return `${Math.floor(seconds / 3600)}h ago`;
   },
 
   formatRelativeTime(iso) {
@@ -373,9 +565,7 @@ PetiteVue.createApp({
 
   // Cleanup
   destroy() {
-    if (this.eventSource) {
-      this.eventSource.close();
-    }
+    this.sseConnection?.close();
     if (this.chartManager) {
       this.chartManager.destroy();
     }

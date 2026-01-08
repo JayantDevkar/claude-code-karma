@@ -16,40 +16,65 @@
 </head>
 <body>
   <div id="app" @vue:mounted="init">
-    <!-- Header -->
-    <header class="dashboard-header">
-      <div class="header-left">
-        <h1>Karma Dashboard</h1>
-        <span class="session-id" v-if="sessionId">Session: {{ sessionId.slice(0, 8) }}...</span>
+    <!-- Compact Header (Phase 1) -->
+    <header class="header--compact">
+      <div class="header__brand">
+        <span class="header__logo" aria-hidden="true">◈</span>
+        <span class="header__title">Karma</span>
       </div>
-      <div class="header-right">
-        <span :class="['status-badge', connected ? 'connected' : 'disconnected']">
-          {{ connected ? 'Connected' : 'Disconnected' }}
-        </span>
-      </div>
+
+      <span class="header__session" v-if="sessionId">{{ sessionId.slice(0, 8) }}</span>
+
+      <nav class="header__nav" aria-label="Views">
+        <button class="nav-tab" data-view="live" :class="{ 'is-active': currentView === 'live' }" @click="switchView('live')">Live</button>
+        <button class="nav-tab" data-view="projects" :class="{ 'is-active': currentView === 'projects' }" @click="switchView('projects')">Projects</button>
+        <button class="nav-tab" data-view="history" :class="{ 'is-active': currentView === 'history' }" @click="switchView('history')">History</button>
+      </nav>
+
+      <span class="connection-status" :data-state="connectionState" :title="connectionTitle">
+        <span class="connection-status__dot" aria-hidden="true"></span>
+      </span>
     </header>
 
-    <nav class="view-tabs">
-      <button class="tab" :class="{ active: currentView === 'live' }" @click="switchView('live')">Live</button>
-      <button class="tab" :class="{ active: currentView === 'projects' }" @click="switchView('projects')">Projects</button>
-      <button class="tab" :class="{ active: currentView === 'history' }" @click="switchView('history')">History</button>
-    </nav>
+    <!-- Connection / Error Banner (Phase 3, structure in place) -->
+    <div class="error-banner" :class="banner.className" role="alert" v-show="banner.visible">
+      <span class="error-banner__icon" aria-hidden="true">{{ banner.icon }}</span>
+      <span class="error-banner__message">{{ banner.message }}</span>
+      <button class="error-banner__action btn btn--small" v-show="banner.showRetry" @click="retrySSE">Retry</button>
+      <button class="error-banner__dismiss" aria-label="Dismiss" @click="dismissBanner">✕</button>
+    </div>
 
     <main class="container">
       <div id="live-view" class="view" v-show="currentView === 'live'">
       <!-- Metrics Cards -->
-      <section class="metrics-grid">
-        <article class="metric-card">
-          <div class="metric-label">Tokens In</div>
-          <div class="metric-value">{{ formatNumber(metrics.tokensIn) }}</div>
+      <section class="metrics-grid metrics-grid--4col">
+        <article class="metric-card metric-card--compact">
+          <div class="metric-card__header">
+            <span class="metric-card__icon" aria-hidden="true">▲</span>
+            <span class="metric-card__value">{{ formatNumber(metrics.tokensIn) }}</span>
+          </div>
+          <div class="metric-card__label">tokens in</div>
         </article>
-        <article class="metric-card">
-          <div class="metric-label">Tokens Out</div>
-          <div class="metric-value">{{ formatNumber(metrics.tokensOut) }}</div>
+        <article class="metric-card metric-card--compact">
+          <div class="metric-card__header">
+            <span class="metric-card__icon" aria-hidden="true">▼</span>
+            <span class="metric-card__value">{{ formatNumber(metrics.tokensOut) }}</span>
+          </div>
+          <div class="metric-card__label">tokens out</div>
         </article>
-        <article class="metric-card">
-          <div class="metric-label">Total Cost</div>
-          <div class="metric-value cost">{{ formatCost(metrics.cost) }}</div>
+        <article class="metric-card metric-card--compact">
+          <div class="metric-card__header">
+            <span class="metric-card__icon" aria-hidden="true">$</span>
+            <span class="metric-card__value">{{ formatCostNumber(metrics.cost) }}</span>
+          </div>
+          <div class="metric-card__label">session</div>
+        </article>
+        <article class="metric-card metric-card--compact">
+          <div class="metric-card__header">
+            <span class="metric-card__icon" aria-hidden="true">⚡</span>
+            <span class="metric-card__value">{{ formatNumber(metrics.agents) }}</span>
+          </div>
+          <div class="metric-card__label">agents</div>
         </article>
       </section>
 

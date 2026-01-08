@@ -361,6 +361,9 @@ export class MetricsAggregator extends EventEmitter {
    * Phase 5: Also creates AgentRadio instance when radio is enabled
    */
   registerAgent(agent: SessionInfo, parentSession: SessionInfo): void {
+    // Ensure parent session exists
+    this.getOrCreateSession(parentSession);
+
     // Track agent under its parent session
     const sessionAgents = this.sessionAgents.get(parentSession.sessionId) ?? new Set();
     sessionAgents.add(agent.sessionId);

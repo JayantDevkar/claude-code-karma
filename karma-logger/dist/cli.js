@@ -5,6 +5,7 @@ import { statusCommand } from './commands/status.js';
 import { watchCommand } from './commands/watch.js';
 import { reportCommand, syncSessionsToDB } from './commands/report.js';
 import { configShow, configSet, configGet, configReset, configList } from './commands/config.js';
+import { radioCommand } from './commands/radio.js';
 import { startServer } from './dashboard/index.js';
 import { LogWatcher } from './watcher.js';
 import { MetricsAggregator, connectWatcherToAggregator } from './aggregator.js';
@@ -244,6 +245,8 @@ Examples:
         const parentOpts = cmd.parent?.opts() ?? {};
         await configList(parentOpts);
     }));
+    // Radio command (Phase 3: Agent coordination)
+    program.addCommand(radioCommand);
     return program;
 }
 /**

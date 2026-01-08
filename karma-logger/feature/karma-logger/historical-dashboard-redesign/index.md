@@ -6,6 +6,24 @@
 
 ---
 
+## Implementation Status (this branch)
+
+**Implemented (2026-01-08)**:
+- **Phase 1**: Compact single-line header + denser 4-up metric cards
+- **Phase 2**: Hover/focus/active/disabled interaction states + reduced-motion support
+- **Phase 3**: Connection indicator + reconnect banner with exponential backoff + manual retry
+
+**Files touched for Phases 1–3** (actual implementation):
+- `src/dashboard/public/index.html`
+- `src/dashboard/public/style.css`
+- `src/dashboard/public/app.js`
+
+**Notes**:
+- Connection dot now reflects `connected/reconnecting/disconnected/error` via `connectionState` in `app.js`.
+- Banner UI is wired and dismissible; retry triggers a fresh SSE connect.
+
+---
+
 ## Phases
 
 | Phase | Focus | Files | Effort | Impact | Dependencies |
