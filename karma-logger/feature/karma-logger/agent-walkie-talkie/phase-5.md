@@ -7,7 +7,12 @@ Integrate walkie-talkie cache into karma-logger's existing architecture. Enable 
 ## Dependencies
 
 - **Phase 2**: AgentRadio (core communication)
-- **Phase 3**: Socket server running (optional, enhances integration)
+
+## Ownership
+
+**This phase OWNS the socket server.** Phase 3 CLI is a client only.
+- Socket server: `src/walkie-talkie/socket-server.ts` (defined here)
+- Socket client: `src/walkie-talkie/socket-client.ts` (Phase 3)
 
 ## Deliverables
 
@@ -69,6 +74,12 @@ class MetricsAggregator {
   // New: Get status from cache (faster than file parsing)
   getAgentStatus(agentId: string): AgentStatus | null {
     return this.cache?.get<AgentStatus>(`agent:${agentId}:status`) || null;
+  }
+
+  // New: Get all agent statuses (for TUI/dashboard)
+  getAgentStatuses(): Map<string, AgentStatus> {
+    if (!this.cache) return new Map();
+    return this.cache.getMany('agent:*:status') as Map<string, AgentStatus>;
   }
 
   // New: Subscribe to all status changes
@@ -263,15 +274,14 @@ function handleRadioRequest(request: RadioRequest, aggregator: MetricsAggregator
 // src/dashboard/api.ts additions
 
 export function setupRadioRoutes(app: Hono, aggregator: MetricsAggregator): void {
-  // Get all agent statuses
+  // Get all agent statuses (uses new getAgentStatuses method)
   app.get('/api/radio/agents', (c) => {
-    const cache = aggregator.getCache();
-    if (!cache) {
+    const statuses = aggregator.getAgentStatuses();
+    if (statuses.size === 0 && !aggregator.getCache()) {
       return c.json({ error: 'Radio not enabled' }, 503);
     }
 
-    const agents = cache.getMany('agent:*:status');
-    return c.json(Object.fromEntries(agents));
+    return c.json(Object.fromEntries(statuses));
   });
 
   // Get specific agent status
@@ -287,6 +297,7 @@ export function setupRadioRoutes(app: Hono, aggregator: MetricsAggregator): void
   });
 
   // Get agent hierarchy for session
+  // Key pattern: session:{sessionId}:agents stores agent IDs
   app.get('/api/radio/session/:id/tree', (c) => {
     const cache = aggregator.getCache();
     const sessionId = c.req.param('id');
@@ -297,6 +308,9 @@ export function setupRadioRoutes(app: Hono, aggregator: MetricsAggregator): void
     return c.json(tree);
   });
 }
+
+// Key pattern note: Agent statuses use `agent:{id}:status` (flat)
+// Session agent lists use `session:{sessionId}:agents` (scoped)
 
 function buildAgentTree(agentIds: string[], cache: CacheStore | null): AgentTreeNode[] {
   if (!cache) return [];

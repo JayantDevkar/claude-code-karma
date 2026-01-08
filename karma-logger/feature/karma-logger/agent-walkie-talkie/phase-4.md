@@ -4,24 +4,35 @@
 
 Provide ready-to-use Claude Code hook definitions that automatically broadcast agent status via `karma radio`.
 
-## Prerequisites (BLOCKING)
+## Prerequisites (BLOCKING - DO NOT IMPLEMENT UNTIL VALIDATED)
+
+**STATUS: UNVALIDATED** - Claude Code hook system has not been confirmed to work as specified.
 
 Before implementing this phase, the following MUST be validated:
 
-### Hook System Validation
-- [ ] Confirm Claude Code supports hook frontmatter in agent definitions
-- [ ] Verify environment variables are provided by Claude Code runtime:
+### Hook System Validation Checklist
+- [ ] **BLOCKER**: Confirm Claude Code supports hook frontmatter in agent definitions
+- [ ] **BLOCKER**: Verify environment variables are provided by Claude Code runtime:
   - `$TOOL_NAME`, `$TOOL_INPUT`, `$TOOL_OUTPUT`, `$TOOL_ERROR`
   - `$AGENT_ID`, `$SESSION_ID`, `$PARENT_SESSION_ID`
   - `$STOP_REASON`, `$AGENT_RESULT`
 - [ ] Test minimal hook execution end-to-end
 - [ ] Document hook execution model (sync/async, error handling)
+- [ ] Validation completed by: __________ (date)
+- [ ] Validated by: __________ (engineer name)
 
 ### Validation Steps
 1. Create test agent with single PreToolUse hook
 2. Run agent and verify hook command executes
 3. Confirm environment variables are populated
 4. Test hook failure behavior (does agent continue or abort?)
+5. **Document actual available env vars** (may differ from spec above)
+
+### If Validation Fails
+**Fall back to Manual Mode:** Agents call `karma radio` directly in prompts.
+- Skip hook templates entirely
+- Document as "manual mode" in README
+- Consider re-evaluating when Claude Code updates hook support
 
 **If hooks are not supported:** Fall back to explicit instrumentation (agents call `karma radio` directly in prompts). Document as "manual mode" vs future "hook mode".
 
@@ -301,7 +312,12 @@ describe('Hook templates', () => {
 
 - Lines of code: ~50 (YAML templates)
 - Documentation: ~200 lines
-- Risk: Medium (depends on unvalidated Claude Code hook system)
+- Risk: **HIGH** (depends on unvalidated Claude Code hook system)
+
+## Implementation Priority
+
+**DEFER this phase** until hook system is validated. Implement Phases 1, 2, 3, 5 first.
+Manual mode (agents calling `karma radio` in prompts) provides equivalent functionality without hook dependency.
 
 ## Troubleshooting
 
