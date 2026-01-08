@@ -9,7 +9,7 @@ import * as path from 'path';
 import * as os from 'os';
 import type { CostBreakdown } from './cost.js';
 import type { SessionMetrics, AgentMetrics } from './aggregator.js';
-import type { ActivityEntry } from './types.js';
+import type { ActivityEntry, ProjectSummary, ProjectDetail, DailyMetric } from './types.js';
 import {
   sessionMetricsToRecord,
   sessionRecordToMetrics,
@@ -820,6 +820,98 @@ export class KarmaDB {
       SELECT COUNT(*) as count FROM activity
     `).get() as { count: number };
     return row.count;
+  }
+
+  /**
+   * List all projects with aggregated metrics
+   * Returns projects sorted by last activity (most recent first)
+   */
+  listProjects(): ProjectSummary[] {
+    const rows = this.db.prepare(`
+      SELECT
+        project_name as projectName,
+        COUNT(*) as sessionCount,
+        COUNT(DISTINCT DATE(started_at)) as activeDays,
+        COALESCE(SUM(tokens_in), 0) as totalTokensIn,
+        COALESCE(SUM(tokens_out), 0) as totalTokensOut,
+        COALESCE(SUM(cost_total), 0) as totalCost,
+        MAX(started_at) as lastActivity
+      FROM sessions
+      GROUP BY project_name
+      ORDER BY lastActivity DESC
+    `).all() as ProjectSummary[];
+
+    return rows;
+  }
+
+  /**
+   * Get project summary with all sessions
+   * @param projectName The project name to look up
+   */
+  getProjectSummary(projectName: string): ProjectDetail | null {
+    // Get aggregated summary
+    const summary = this.db.prepare(`
+      SELECT
+        project_name as projectName,
+        COUNT(*) as sessionCount,
+        COUNT(DISTINCT DATE(started_at)) as activeDays,
+        COALESCE(SUM(tokens_in), 0) as totalTokensIn,
+        COALESCE(SUM(tokens_out), 0) as totalTokensOut,
+        COALESCE(SUM(cost_total), 0) as totalCost,
+        MAX(started_at) as lastActivity
+      FROM sessions
+      WHERE project_name = ?
+      GROUP BY project_name
+    `).get(projectName) as ProjectSummary | undefined;
+
+    if (!summary) return null;
+
+    // Get all sessions for this project
+    const sessions = this.db.prepare(`
+      SELECT
+        id, project_path as projectPath, project_name as projectName,
+        started_at as startedAt, ended_at as endedAt, models,
+        tokens_in as tokensIn, tokens_out as tokensOut,
+        cache_read_tokens as cacheReadTokens, cache_creation_tokens as cacheCreationTokens,
+        cost_total as costTotal, cost_input as costInput, cost_output as costOutput,
+        cost_cache_read as costCacheRead, cost_cache_creation as costCacheCreation,
+        agent_count as agentCount, tool_calls as toolCalls, tool_usage as toolUsage
+      FROM sessions
+      WHERE project_name = ?
+      ORDER BY started_at DESC
+    `).all(projectName) as SessionRecord[];
+
+    return { summary, sessions };
+  }
+
+  /**
+   * Get daily metrics rollup for trend charts
+   * @param projectName Optional project filter
+   * @param days Number of days to look back (default: 30)
+   */
+  getDailyMetrics(projectName?: string, days: number = 30): DailyMetric[] {
+    let sql = `
+      SELECT
+        DATE(started_at) as day,
+        COALESCE(SUM(tokens_in), 0) as tokensIn,
+        COALESCE(SUM(tokens_out), 0) as tokensOut,
+        COALESCE(SUM(cost_total), 0) as cost,
+        COUNT(*) as sessions
+      FROM sessions
+      WHERE started_at >= date('now', '-' || ? || ' days')
+    `;
+
+    const params: unknown[] = [days];
+
+    if (projectName) {
+      sql += ` AND project_name = ?`;
+      params.push(projectName);
+    }
+
+    sql += ` GROUP BY DATE(started_at) ORDER BY day`;
+
+    const rows = this.db.prepare(sql).all(...params) as DailyMetric[];
+    return rows;
   }
 
   /**

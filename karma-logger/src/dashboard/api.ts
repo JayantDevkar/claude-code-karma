@@ -1,11 +1,13 @@
 /**
  * API Route Handlers for Dashboard
  * Phase 5: REST endpoints for session metrics
+ * Phase 2 (Historical): Project and historical data endpoints
  */
 
 import { Hono } from 'hono';
 import type { MetricsAggregator } from '../aggregator.js';
 import { sseManager } from './sse.js';
+import { getDB } from '../db.js';
 
 /**
  * Create API routes bound to an aggregator
@@ -155,6 +157,79 @@ export function createApiRoutes(aggregator: MetricsAggregator): Hono {
       sessions: aggregator.getAllSessions().length,
       timestamp: new Date().toISOString(),
     });
+  });
+
+  // ============================================
+  // Historical Dashboard Routes (Phase 2)
+  // ============================================
+
+  /**
+   * GET /api/projects
+   * List all projects with aggregated metrics
+   */
+  api.get('/projects', (c) => {
+    try {
+      const db = getDB();
+      const projects = db.listProjects();
+      return c.json(projects);
+    } catch (err) {
+      console.error('Error listing projects:', err);
+      return c.json({ error: 'Internal error' }, 500);
+    }
+  });
+
+  /**
+   * GET /api/projects/:name
+   * Get project detail with sessions
+   */
+  api.get('/projects/:name', (c) => {
+    try {
+      const name = decodeURIComponent(c.req.param('name'));
+      const db = getDB();
+      const detail = db.getProjectSummary(name);
+      if (!detail) {
+        return c.json({ error: 'Project not found' }, 404);
+      }
+      return c.json(detail);
+    } catch (err) {
+      console.error('Error getting project:', err);
+      return c.json({ error: 'Internal error' }, 500);
+    }
+  });
+
+  /**
+   * GET /api/projects/:name/history
+   * Get daily metrics for a project
+   * Query: days (optional, default: 30)
+   */
+  api.get('/projects/:name/history', (c) => {
+    try {
+      const name = decodeURIComponent(c.req.param('name'));
+      const days = parseInt(c.req.query('days') || '30', 10) || 30;
+      const db = getDB();
+      const metrics = db.getDailyMetrics(name, days);
+      return c.json(metrics);
+    } catch (err) {
+      console.error('Error getting project history:', err);
+      return c.json({ error: 'Internal error' }, 500);
+    }
+  });
+
+  /**
+   * GET /api/totals/history
+   * Get daily metrics across all projects
+   * Query: days (optional, default: 30)
+   */
+  api.get('/totals/history', (c) => {
+    try {
+      const days = parseInt(c.req.query('days') || '30', 10) || 30;
+      const db = getDB();
+      const metrics = db.getDailyMetrics(undefined, days);
+      return c.json(metrics);
+    } catch (err) {
+      console.error('Error getting totals history:', err);
+      return c.json({ error: 'Internal error' }, 500);
+    }
   });
 
   return api;
