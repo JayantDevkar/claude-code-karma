@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
 import type { CommandContext } from './types.js';
+import { startTUI } from './tui/index.js';
 
 /**
  * Creates and configures the CLI program
@@ -15,7 +16,7 @@ export function createProgram(): Command {
     .option('-v, --verbose', 'Enable verbose output', false)
     .option('-c, --config <path>', 'Path to config file');
 
-  // Status command - placeholder for Phase 4
+  // Status command
   program
     .command('status')
     .description('Show current session metrics')
@@ -28,20 +29,31 @@ export function createProgram(): Command {
       console.log(chalk.gray('This command will be implemented in Phase 4'));
     });
 
-  // Watch command - placeholder for Phase 5
+  // Watch command with --ui flag
   program
     .command('watch')
     .description('Watch sessions in real-time')
-    .action((_options, cmd) => {
+    .option('-u, --ui', 'Launch interactive TUI dashboard', false)
+    .option('-s, --session <id>', 'Watch specific session')
+    .action((options, cmd) => {
       const ctx = getContext(cmd);
+
       if (ctx.verbose) {
         console.log(chalk.gray('Running in verbose mode'));
       }
-      console.log(chalk.yellow('karma watch: Not implemented'));
-      console.log(chalk.gray('This command will be implemented in Phase 5'));
+
+      if (options.ui) {
+        // Launch TUI dashboard
+        startTUI({ sessionId: options.session });
+        return;
+      }
+
+      // Default watch behavior (streaming output)
+      console.log(chalk.yellow('karma watch: Streaming mode not implemented'));
+      console.log(chalk.gray('Use --ui flag for interactive dashboard'));
     });
 
-  // Report command - placeholder for Phase 6
+  // Report command
   program
     .command('report')
     .description('Generate usage reports')
