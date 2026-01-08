@@ -28,11 +28,13 @@
     "node": ">=20.0.0"
   },
   "dependencies": {
+    "@hono/node-server": "^1.19.7",
     "@inkjs/ui": "^2.0.0",
     "asciichart": "^1.5.25",
     "chalk": "^5.6.2",
     "chokidar": "^5.0.0",
     "commander": "^14.0.2",
+    "hono": "^4.11.3",
     "ink": "^5.2.1",
     "ink-spinner": "^5.0.0",
     "react": "^18.3.1"
