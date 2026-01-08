@@ -1,6 +1,6 @@
 # Phase 4: `karma status` Command
 
-**Status:** Not Started
+**Status:** Complete
 **Estimated Effort:** Small
 **Dependencies:** Phase 3
 **Deliverable:** Working `karma status` command with formatted output
@@ -16,16 +16,16 @@ Implement the first user-facing command that displays current session metrics in
 ## Tasks
 
 ### 4.1 Create Status Command Handler
-- [ ] Create `src/commands/status.ts`
-- [ ] Wire up to Commander in `cli.ts`
-- [ ] Accept optional `--project` flag
-- [ ] Accept optional `--all` flag for all sessions
+- [x] Create `src/commands/status.ts`
+- [x] Wire up to Commander in `cli.ts`
+- [x] Accept optional `--project` flag
+- [x] Accept optional `--all` flag for all sessions
 
 ### 4.2 Implement Output Formatting
-- [ ] Install chalk for colors (if not already)
-- [ ] Create `src/format.ts` for display utilities
-- [ ] Format token counts (K/M suffixes)
-- [ ] Format costs (currency, 2 decimals)
+- [x] Install chalk for colors (if not already)
+- [x] Create `src/format.ts` for display utilities (reused from tui/utils)
+- [x] Format token counts (K/M suffixes)
+- [x] Format costs (currency, 2 decimals)
 
 ```typescript
 // src/format.ts
@@ -67,14 +67,14 @@ export function formatCost(cost: number): string {
 ```
 
 ### 4.4 Handle Edge Cases
-- [ ] No active session: Show helpful message
-- [ ] Multiple projects: List selection prompt
-- [ ] Stale session: Show warning
+- [x] No active session: Show helpful message
+- [x] Multiple projects: List selection via --all flag
+- [x] Stale session: Show warning indicator
 
 ### 4.5 Add Timing Display
-- [ ] Calculate session duration
-- [ ] Show "started X ago" relative time
-- [ ] Show last activity time
+- [x] Calculate session duration
+- [x] Show "started X ago" relative time
+- [x] Show last activity time (stale/active indicator)
 
 ---
 
