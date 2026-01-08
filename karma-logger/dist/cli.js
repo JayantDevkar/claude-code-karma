@@ -2,6 +2,10 @@ import { Command } from 'commander';
 import chalk from 'chalk';
 import { startTUI } from './tui/index.js';
 import { statusCommand } from './commands/status.js';
+import { watchCommand } from './commands/watch.js';
+import { startServer } from './dashboard/index.js';
+import { LogWatcher } from './watcher.js';
+import { MetricsAggregator, connectWatcherToAggregator } from './aggregator.js';
 /**
  * Creates and configures the CLI program
  */
@@ -31,25 +35,30 @@ export function createProgram() {
             json: options.json,
         });
     });
-    // Watch command with --ui flag
+    // Watch command with multiple modes
     program
         .command('watch')
         .description('Watch sessions in real-time')
         .option('-u, --ui', 'Launch interactive TUI dashboard', false)
-        .option('-s, --session <id>', 'Watch specific session')
-        .action((options, cmd) => {
+        .option('-p, --project <name>', 'Watch specific project')
+        .option('-c, --compact', 'Compact display mode', false)
+        .option('-a, --activity-only', 'Show only activity feed', false)
+        .action(async (options, cmd) => {
         const ctx = getContext(cmd);
         if (ctx.verbose) {
             console.log(chalk.gray('Running in verbose mode'));
         }
         if (options.ui) {
             // Launch TUI dashboard
-            startTUI({ sessionId: options.session });
+            startTUI({ sessionId: options.project });
             return;
         }
-        // Default watch behavior (streaming output)
-        console.log(chalk.yellow('karma watch: Streaming mode not implemented'));
-        console.log(chalk.gray('Use --ui flag for interactive dashboard'));
+        // Streaming watch mode
+        await watchCommand({
+            project: options.project,
+            compact: options.compact,
+            activityOnly: options.activityOnly,
+        });
     });
     // Report command
     program
@@ -62,6 +71,48 @@ export function createProgram() {
         }
         console.log(chalk.yellow('karma report: Not implemented'));
         console.log(chalk.gray('This command will be implemented in Phase 6'));
+    });
+    // Dashboard command (Phase 5)
+    program
+        .command('dashboard')
+        .description('Launch web dashboard for metrics visualization')
+        .option('-p, --port <number>', 'Port to run dashboard on', '3333')
+        .option('--no-open', 'Do not open browser automatically')
+        .action(async (options, cmd) => {
+        const ctx = getContext(cmd);
+        const port = parseInt(options.port, 10);
+        if (ctx.verbose) {
+            console.log(chalk.gray('Running in verbose mode'));
+            console.log(chalk.gray(`Dashboard port: ${port}`));
+        }
+        // Create watcher and aggregator
+        const watcher = new LogWatcher({ processExisting: true });
+        const aggregator = new MetricsAggregator();
+        connectWatcherToAggregator(watcher, aggregator);
+        // Start the watcher
+        watcher.watch();
+        // Start the dashboard server
+        try {
+            const server = await startServer({
+                port,
+                open: options.open,
+                watcher,
+                aggregator,
+            });
+            console.log(chalk.green(`\nDashboard running at http://localhost:${port}`));
+            console.log(chalk.gray('Press Ctrl+C to stop'));
+            // Handle graceful shutdown
+            process.on('SIGINT', async () => {
+                console.log(chalk.yellow('\nShutting down...'));
+                await server.stop();
+                watcher.stop();
+                process.exit(0);
+            });
+        }
+        catch (error) {
+            console.error(chalk.red('Failed to start dashboard:'), error);
+            process.exit(1);
+        }
     });
     return program;
 }
