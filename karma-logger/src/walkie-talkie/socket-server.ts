@@ -173,7 +173,16 @@ export function handleRadioRequest(
       case 'set-status': {
         const state = request.args.state as string;
         const metadata = request.args.metadata as Record<string, unknown> | undefined;
-        radio.setStatus(state as any, metadata);
+        const progress = request.args.progress as { tool?: string; percent?: number; message?: string; step?: string } | undefined;
+
+        // Use SetStatusOptions if progress is provided, otherwise use legacy metadata format
+        if (progress) {
+          radio.setStatus(state as any, { metadata, progress });
+        } else if (metadata) {
+          radio.setStatus(state as any, { metadata });
+        } else {
+          radio.setStatus(state as any);
+        }
         return { id: request.id, success: true };
       }
 

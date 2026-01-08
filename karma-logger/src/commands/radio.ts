@@ -119,11 +119,13 @@ function readJsonFile(filePath: string): unknown {
 
 /**
  * Handle set-status command
- * karma radio set-status <state> [--tool <name>] [--metadata <json>]
+ * karma radio set-status <state> [--tool <name>] [--metadata <json>] [--percent <num>] [--message <text>]
+ *
+ * Phase 3: Batch operations - supports setting status and progress in a single call
  */
 async function handleSetStatus(
   state: string,
-  options: { tool?: string; metadata?: string },
+  options: { tool?: string; metadata?: string; percent?: string; message?: string },
 ): Promise<void> {
   try {
     const env = getRadioEnv();
@@ -138,12 +140,32 @@ async function handleSetStatus(
       state: state as AgentState,
     };
 
-    if (options.tool) {
-      args.tool = options.tool;
-    }
-
     if (options.metadata) {
       args.metadata = parseJson(options.metadata, '--metadata');
+    }
+
+    // Phase 3: Batch operations - include progress if any progress flags provided
+    const hasProgressFlags = options.percent !== undefined || options.message !== undefined || options.tool !== undefined;
+    if (hasProgressFlags) {
+      const progress: ProgressUpdate = {};
+
+      if (options.tool) {
+        progress.tool = options.tool;
+      }
+
+      if (options.percent !== undefined) {
+        const percent = parseInt(options.percent, 10);
+        if (isNaN(percent) || percent < 0 || percent > 100) {
+          outputError('Invalid percent: must be a number between 0 and 100');
+        }
+        progress.percent = percent;
+      }
+
+      if (options.message) {
+        progress.message = options.message;
+      }
+
+      args.progress = progress;
     }
 
     const result = await client.send('set-status', args, env);
@@ -401,8 +423,10 @@ Examples:
   radio
     .command('set-status <state>')
     .description('Set agent status state (pending|active|waiting|completed|failed|cancelled)')
-    .option('-t, --tool <name>', 'Current tool being used')
+    .option('-t, --tool <name>', 'Current tool being used (also sets progress.tool)')
     .option('-m, --metadata <json>', 'Additional metadata as JSON')
+    .option('-p, --percent <num>', 'Progress percentage (0-100) - batch operation')
+    .option('--message <text>', 'Progress message - batch operation')
     .action(handleSetStatus);
 
   // report-progress

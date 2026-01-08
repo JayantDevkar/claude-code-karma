@@ -144,6 +144,15 @@ export interface AgentMessage {
 }
 
 /**
+ * Options for setStatus method
+ * Enables batch operations: set status + progress in a single call
+ */
+export interface SetStatusOptions {
+  metadata?: Record<string, unknown>;
+  progress?: ProgressUpdate;
+}
+
+/**
  * High-level API for agent-to-agent communication
  */
 export interface AgentRadio {
@@ -151,7 +160,7 @@ export interface AgentRadio {
   readonly sessionId: string;
   readonly parentId: string | null;
 
-  setStatus(state: AgentState, metadata?: Record<string, unknown>): void;
+  setStatus(state: AgentState, options?: SetStatusOptions | Record<string, unknown>): void;
   getStatus(): AgentStatus;
   getFullStatus(): AgentStatusWithProgress;
   reportProgress(progress: ProgressUpdate): void;

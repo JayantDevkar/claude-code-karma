@@ -12,6 +12,7 @@ import type {
   ProgressUpdate,
   AgentMessage,
   AgentDiscoveryOptions,
+  SetStatusOptions,
 } from './types.js';
 
 /** TTL constants in milliseconds */
@@ -84,9 +85,41 @@ export class AgentRadioImpl implements AgentRadio {
   }
 
   /**
-   * Set agent status state
+   * Set agent status state with optional progress update
+   * @param state The new agent state
+   * @param options Optional SetStatusOptions with metadata and progress, or legacy metadata object
    */
-  setStatus(state: AgentState, metadata?: Record<string, unknown>): void {
+  setStatus(state: AgentState, options?: SetStatusOptions | Record<string, unknown>): void {
+    // Handle both new SetStatusOptions and legacy metadata-only format
+    let metadata: Record<string, unknown> | undefined;
+    let progress: ProgressUpdate | undefined;
+
+    if (options) {
+      // Check if options is SetStatusOptions format
+      // SetStatusOptions.progress is a ProgressUpdate object (with tool/step/percent/message)
+      // SetStatusOptions.metadata is a Record<string, unknown>
+      // We detect SetStatusOptions by checking if 'progress' is an object with ProgressUpdate keys
+      // or if 'metadata' is an object and options has no other keys besides 'metadata' and 'progress'
+      const hasProgressObject = 'progress' in options &&
+        options.progress !== null &&
+        typeof options.progress === 'object' &&
+        !Array.isArray(options.progress);
+
+      const hasMetadataOnly = 'metadata' in options &&
+        options.metadata !== null &&
+        typeof options.metadata === 'object' &&
+        Object.keys(options).every(k => k === 'metadata' || k === 'progress');
+
+      if (hasProgressObject || hasMetadataOnly) {
+        const setStatusOptions = options as SetStatusOptions;
+        metadata = setStatusOptions.metadata;
+        progress = setStatusOptions.progress;
+      } else {
+        // Legacy format: treat entire options as metadata
+        metadata = options as Record<string, unknown>;
+      }
+    }
+
     if (metadata) {
       this.metadata = { ...this.metadata, ...metadata };
     }
@@ -106,6 +139,11 @@ export class AgentRadioImpl implements AgentRadio {
     };
 
     this.cache.set(`agent:${this.agentId}:status`, status, TTL.STATUS);
+
+    // If progress is provided, update it atomically with status
+    if (progress) {
+      this.reportProgress(progress);
+    }
   }
 
   /**

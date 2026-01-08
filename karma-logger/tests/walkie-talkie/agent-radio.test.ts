@@ -103,6 +103,88 @@ describe('AgentRadioImpl', () => {
   });
 
   // ============================================
+  // setStatus with Progress (Phase 3: Batch Operations)
+  // ============================================
+
+  describe('setStatus with progress (batch operations)', () => {
+    it('sets status without progress (backward compatible)', () => {
+      agent.setStatus('active');
+      expect(agent.getStatus().state).toBe('active');
+      expect(cache.get('agent:agent-1:progress')).toBeNull();
+    });
+
+    it('sets status with progress atomically', () => {
+      agent.setStatus('active', {
+        progress: { tool: 'Read', percent: 50, message: 'Reading files...' },
+      });
+
+      expect(agent.getStatus().state).toBe('active');
+
+      const progress = cache.get('agent:agent-1:progress');
+      expect(progress).toEqual({
+        tool: 'Read',
+        percent: 50,
+        message: 'Reading files...',
+      });
+    });
+
+    it('merges metadata and sets progress', () => {
+      agent.setStatus('active', {
+        metadata: { phase: 1, tool: 'Read' },
+        progress: { percent: 25 },
+      });
+
+      const status = agent.getStatus();
+      expect(status.state).toBe('active');
+      expect(status.metadata).toEqual({ phase: 1, tool: 'Read' });
+
+      const progress = cache.get('agent:agent-1:progress');
+      expect(progress).toEqual({ percent: 25 });
+    });
+
+    it('progress flags are optional', () => {
+      // Only metadata, no progress
+      agent.setStatus('active', { metadata: { key: 'value' } });
+      expect(agent.getStatus().metadata).toEqual({ key: 'value' });
+      expect(cache.get('agent:agent-1:progress')).toBeNull();
+
+      // Only progress, no metadata
+      const agent2 = new AgentRadioImpl(
+        cache, 'agent-2', 'session-2', 'root-session-1',
+        null, 'session', 'test-agent', 'claude-sonnet-4',
+      );
+      agent2.setStatus('active', { progress: { percent: 75 } });
+      expect(cache.get('agent:agent-2:progress')).toEqual({ percent: 75 });
+      agent2.destroy();
+    });
+
+    it('getFullStatus returns combined status and progress from batch operation', () => {
+      agent.setStatus('active', {
+        metadata: { task: 'testing' },
+        progress: { tool: 'Bash', percent: 50, message: 'Running tests...' },
+      });
+
+      const fullStatus = agent.getFullStatus();
+      expect(fullStatus.state).toBe('active');
+      expect(fullStatus.metadata).toEqual({ task: 'testing' });
+      expect(fullStatus.progress).toEqual({
+        tool: 'Bash',
+        percent: 50,
+        message: 'Running tests...',
+      });
+    });
+
+    it('maintains backward compatibility with legacy metadata format', () => {
+      // Legacy format: passing metadata object directly
+      agent.setStatus('active', { phase: 1, step: 'init' });
+
+      const status = agent.getStatus();
+      expect(status.state).toBe('active');
+      expect(status.metadata).toEqual({ phase: 1, step: 'init' });
+    });
+  });
+
+  // ============================================
   // Progress
   // ============================================
 
