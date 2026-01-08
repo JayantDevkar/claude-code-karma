@@ -2,6 +2,7 @@
  * Metrics Aggregator for Claude Code sessions
  * Phase 3: In-memory metrics store with real-time aggregation
  * Phase 6.1: Session lifecycle management (FLAW-005)
+ * Phase 5 (Walkie-Talkie): Radio integration for real-time agent status
  */
 
 import { EventEmitter } from 'events';
@@ -9,6 +10,9 @@ import type { LogEntry, TokenUsage, ActivityEntry } from './types.js';
 import { calculateCost, addCosts, emptyCostBreakdown, type CostBreakdown } from './cost.js';
 import type { SessionInfo } from './discovery.js';
 import type { LogWatcher } from './watcher.js';
+import type { CacheStore, AgentRadio, AgentStatus } from './walkie-talkie/types.js';
+import { MemoryCacheStore } from './walkie-talkie/cache-store.js';
+import { AgentRadioImpl } from './walkie-talkie/agent-radio.js';
 
 // Re-export ActivityEntry for consumers
 export type { ActivityEntry } from './types.js';
@@ -150,9 +154,22 @@ export interface MetricsAggregatorEvents {
 const DEFAULT_ACTIVITY_BUFFER_SIZE = 1000;
 
 /**
+ * Options for MetricsAggregator constructor
+ */
+export interface AggregatorOptions {
+  /** Maximum size of the activity buffer (default: 1000) */
+  activityBufferSize?: number;
+  /** Enable walkie-talkie radio support for real-time agent status */
+  enableRadio?: boolean;
+  /** Custom socket path for radio server (default: /tmp/karma-radio.sock) */
+  radioSocketPath?: string;
+}
+
+/**
  * Metrics aggregator that accumulates usage across sessions and agents
  * Extends EventEmitter for session lifecycle events
  * Phase 6.3: Activity buffer for persistent activity tracking (FLAW-006)
+ * Phase 5 (Walkie-Talkie): Radio integration for real-time agent status
  */
 export class MetricsAggregator extends EventEmitter {
   private sessions: Map<string, SessionMetrics> = new Map();
@@ -163,9 +180,33 @@ export class MetricsAggregator extends EventEmitter {
   private activityBuffer: ActivityEntry[] = [];
   private activityBufferMaxSize: number;
 
-  constructor(options?: { activityBufferSize?: number }) {
+  // Walkie-Talkie Radio Support (Phase 5)
+  private cache: CacheStore | null = null;
+  private agentRadios: Map<string, AgentRadio> = new Map();
+  private radioStatusCallbacks: Set<(agentId: string, status: AgentStatus) => void> = new Set();
+  private radioUnsubscriber: (() => void) | null = null;
+
+  constructor(options: AggregatorOptions = {}) {
     super();
-    this.activityBufferMaxSize = options?.activityBufferSize ?? DEFAULT_ACTIVITY_BUFFER_SIZE;
+    this.activityBufferMaxSize = options.activityBufferSize ?? DEFAULT_ACTIVITY_BUFFER_SIZE;
+
+    // Initialize radio if enabled
+    if (options.enableRadio) {
+      this.cache = new MemoryCacheStore();
+
+      // Subscribe to all agent status changes and forward to callbacks
+      this.radioUnsubscriber = this.cache.subscribe('agent:*:status', (key, value) => {
+        const agentId = key.split(':')[1];
+        const status = value as AgentStatus;
+        for (const callback of this.radioStatusCallbacks) {
+          try {
+            callback(agentId, status);
+          } catch (error) {
+            // Ignore callback errors
+          }
+        }
+      });
+    }
   }
 
   // ============================================
@@ -317,6 +358,7 @@ export class MetricsAggregator extends EventEmitter {
 
   /**
    * Register a new agent spawning
+   * Phase 5: Also creates AgentRadio instance when radio is enabled
    */
   registerAgent(agent: SessionInfo, parentSession: SessionInfo): void {
     // Track agent under its parent session
@@ -332,6 +374,23 @@ export class MetricsAggregator extends EventEmitter {
 
     // Create agent metrics
     this.getOrCreateAgent(agent);
+
+    // Create radio instance if enabled
+    if (this.cache) {
+      // Note: SessionInfo doesn't have model; we'll use 'unknown' and update later from log entries
+      const radio = new AgentRadioImpl(
+        this.cache,
+        agent.sessionId,
+        agent.sessionId,
+        parentSession.sessionId,
+        agent.parentSessionId ?? null,
+        agent.parentSessionId ? 'agent' : 'session',
+        agent.agentType ?? 'unknown',
+        'unknown' // Model will be determined from log entries
+      );
+      radio.setStatus('active');
+      this.agentRadios.set(agent.sessionId, radio);
+    }
   }
 
   /**
@@ -570,6 +629,7 @@ export class MetricsAggregator extends EventEmitter {
   /**
    * Remove ended sessions from memory to free up resources
    * Returns the number of sessions cleared
+   * Phase 5: Also cleans up agent radios for ended sessions
    */
   clearEndedSessions(): number {
     const endedSessionIds: string[] = [];
@@ -589,6 +649,13 @@ export class MetricsAggregator extends EventEmitter {
       if (agentIds) {
         for (const agentId of agentIds) {
           this.agents.delete(agentId);
+
+          // Clean up radio for this agent
+          const radio = this.agentRadios.get(agentId);
+          if (radio) {
+            radio.destroy();
+            this.agentRadios.delete(agentId);
+          }
         }
         this.sessionAgents.delete(sessionId);
       }
@@ -615,6 +682,110 @@ export class MetricsAggregator extends EventEmitter {
         toolsUsed: Array.from(a.toolsUsed),
       })),
     };
+  }
+
+  // ============================================
+  // Walkie-Talkie Radio Methods (Phase 5)
+  // ============================================
+
+  /**
+   * Get agent status from cache (faster than file parsing)
+   * @param agentId The agent ID to look up
+   * @returns AgentStatus or null if not found
+   */
+  getAgentStatus(agentId: string): AgentStatus | null {
+    return this.cache?.get<AgentStatus>(`agent:${agentId}:status`) ?? null;
+  }
+
+  /**
+   * Get all agent statuses (for TUI/dashboard)
+   * @returns Map of agentId to AgentStatus
+   */
+  getAgentStatuses(): Map<string, AgentStatus> {
+    if (!this.cache) return new Map();
+    const raw = this.cache.getMany('agent:*:status');
+    const result = new Map<string, AgentStatus>();
+    for (const [key, value] of raw) {
+      const agentId = key.split(':')[1];
+      result.set(agentId, value as AgentStatus);
+    }
+    return result;
+  }
+
+  /**
+   * Subscribe to all agent status changes
+   * @param callback Function called when any agent status changes
+   * @returns Unsubscribe function
+   */
+  onAgentStatusChange(
+    callback: (agentId: string, status: AgentStatus) => void
+  ): () => void {
+    if (!this.cache) return () => {};
+
+    this.radioStatusCallbacks.add(callback);
+
+    return () => {
+      this.radioStatusCallbacks.delete(callback);
+    };
+  }
+
+  /**
+   * Get radio instance for a specific agent
+   * @param agentId The agent ID
+   * @returns AgentRadio instance or null if not found
+   */
+  getAgentRadio(agentId: string): AgentRadio | null {
+    return this.agentRadios.get(agentId) ?? null;
+  }
+
+  /**
+   * Get the cache store instance (for direct queries)
+   * @returns CacheStore instance or null if radio not enabled
+   */
+  getCache(): CacheStore | null {
+    return this.cache;
+  }
+
+  /**
+   * Check if radio is enabled
+   * @returns true if radio support is enabled
+   */
+  isRadioEnabled(): boolean {
+    return this.cache !== null;
+  }
+
+  /**
+   * Destroy the aggregator and clean up all resources
+   * Phase 5: Includes radio cleanup
+   */
+  destroy(): void {
+    // Clean up all agent radios
+    for (const radio of this.agentRadios.values()) {
+      radio.destroy();
+    }
+    this.agentRadios.clear();
+
+    // Clean up radio subscriptions
+    if (this.radioUnsubscriber) {
+      this.radioUnsubscriber();
+      this.radioUnsubscriber = null;
+    }
+    this.radioStatusCallbacks.clear();
+
+    // Clean up cache
+    if (this.cache) {
+      this.cache.destroy();
+      this.cache = null;
+    }
+
+    // Clear all data
+    this.sessions.clear();
+    this.agents.clear();
+    this.sessionAgents.clear();
+    this.activityBuffer = [];
+
+    // Remove all event listeners
+    this.removeAllListeners();
   }
 }
 

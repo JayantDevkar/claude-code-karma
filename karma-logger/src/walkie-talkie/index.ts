@@ -3,6 +3,7 @@
  * Phase 1: Core cache store for agent communication
  * Phase 2: Agent radio for status and messaging
  * Phase 3: Radio CLI socket client
+ * Phase 5: Socket server for aggregator integration
  */
 
 export { MemoryCacheStore } from './cache-store.js';
@@ -15,6 +16,12 @@ export {
   createRadioClient,
   getDefaultSocketPath,
 } from './socket-client.js';
+export {
+  startRadioServer,
+  handleRadioRequest,
+  getDefaultRadioSocketPath,
+  type RadioServerOptions,
+} from './socket-server.js';
 
 export type {
   CacheStore,

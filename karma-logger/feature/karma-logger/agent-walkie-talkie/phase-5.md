@@ -421,17 +421,36 @@ describe('Dashboard Radio API', () => {
 
 ## Acceptance Criteria
 
-- [ ] `karma watch` shows radio status updates in real-time
-- [ ] Socket server accepts `karma radio` CLI connections
-- [ ] Dashboard API exposes /api/radio/* endpoints
-- [ ] SSE broadcasts agent status changes
-- [ ] TUI displays radio-powered agent tree
-- [ ] No breaking changes to existing functionality
-- [ ] Radio can be disabled via flag if needed
-- [ ] Radio cleanup runs on session end
-- [ ] Socket permissions set to owner-only (Unix)
-- [ ] Socket timeout prevents hung connections
-- [ ] registerAgent() returns void (not AgentMetrics)
+- [x] `karma watch` shows radio status updates in real-time
+- [x] Socket server accepts `karma radio` CLI connections
+- [x] Dashboard API exposes /api/radio/* endpoints
+- [x] SSE broadcasts agent status changes
+- [x] TUI displays radio-powered agent tree
+- [x] No breaking changes to existing functionality
+- [x] Radio can be disabled via flag if needed
+- [x] Radio cleanup runs on session end
+- [x] Socket permissions set to owner-only (Unix)
+- [x] Socket timeout prevents hung connections
+- [x] registerAgent() returns void (not AgentMetrics)
+
+## Implementation Status: COMPLETE (2026-01-08)
+
+### Files Created
+- `src/walkie-talkie/socket-server.ts` - Unix socket server for CLI connections
+- `src/tui/hooks/useAgentRadio.ts` - React hooks for TUI integration
+- `tests/walkie-talkie/integration.test.ts` - Integration tests
+
+### Files Enhanced
+- `src/aggregator.ts` - Added radio support with cache, radios, and callbacks
+- `src/commands/watch.ts` - Added radio server startup and event handling
+- `src/dashboard/api.ts` - Added /api/radio/* endpoints
+- `src/dashboard/sse.ts` - Added radio event broadcasts
+- `src/walkie-talkie/index.ts` - Added socket-server exports
+- `src/tui/hooks/index.ts` - Added useAgentRadio exports
+
+### Deviations from Spec
+1. **Model field**: `SessionInfo` type doesn't have `model` property; using `'unknown'` placeholder
+2. **SSE data**: Simplified `data: status` instead of `data: { agentId, ...status }` to avoid duplication (status already contains agentId)
 
 ## Migration Notes
 

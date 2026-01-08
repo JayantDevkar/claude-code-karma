@@ -6,11 +6,11 @@ Fast key:value cache communication layer for agent coordination.
 
 | Phase | Focus | Deliverables | Dependencies | Status |
 |-------|-------|--------------|--------------|--------|
-| 1 | Core Cache | `cache-store.ts` + tests | None | Ready |
-| 2 | Agent Radio | `agent-radio.ts` + tests | Phase 1 | Ready |
-| 3 | CLI Tool | `karma radio` commands + socket-client | Phase 2, 5 | Ready |
+| 1 | Core Cache | `cache-store.ts` + tests | None | **COMPLETE** |
+| 2 | Agent Radio | `agent-radio.ts` + tests | Phase 1 | **COMPLETE** |
+| 3 | CLI Tool | `karma radio` commands + socket-client | Phase 2, 5 | **COMPLETE** |
 | 4 | Hook Templates | YAML frontmatter examples | Phase 3 | **DEFERRED** |
-| 5 | Aggregator Integration | Enhanced `aggregator.ts` + socket-server | Phase 2 | Ready |
+| 5 | Aggregator Integration | Enhanced `aggregator.ts` + socket-server | Phase 2 | **COMPLETE** |
 
 **Implementation Order:** 1 → 2 → 5 → 3 → 4 (Phase 4 deferred until hook system validated)
 

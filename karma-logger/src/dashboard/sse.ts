@@ -1,10 +1,12 @@
 /**
  * SSE Manager for real-time dashboard updates
  * Phase 5: Server-Sent Events streaming
+ * Phase 5 (Walkie-Talkie): Radio event broadcasts for agent status
  */
 
 import type { MetricsAggregator } from '../aggregator.js';
 import type { LogWatcher } from '../watcher.js';
+import type { AgentStatus } from '../walkie-talkie/types.js';
 
 interface SSEClient {
   id: string;
@@ -24,6 +26,8 @@ export class SSEManager {
   private aggregator: MetricsAggregator | null = null;
   private watcher: LogWatcher | null = null;
   private sessionId: string | null = null;
+  private radioStatusUnsubscriber: (() => void) | null = null;
+  private radioProgressUnsubscriber: (() => void) | null = null;
 
   /**
    * Connect to a watcher and aggregator for real-time updates
@@ -73,6 +77,41 @@ export class SSEManager {
         },
       });
     });
+
+    // Subscribe to radio events if radio is enabled
+    this.setupRadioSubscriptions(aggregator);
+  }
+
+  /**
+   * Setup radio event subscriptions for broadcasting agent status
+   * Phase 5 (Walkie-Talkie)
+   */
+  private setupRadioSubscriptions(aggregator: MetricsAggregator): void {
+    // Subscribe to agent status changes
+    this.radioStatusUnsubscriber = aggregator.onAgentStatusChange(
+      (agentId: string, status: AgentStatus) => {
+        // Note: status already contains agentId, so we just pass status directly
+        this.broadcast({
+          type: 'agent:status',
+          data: status,
+        });
+      }
+    );
+
+    // Subscribe to progress updates via cache
+    const cache = aggregator.getCache();
+    if (cache) {
+      this.radioProgressUnsubscriber = cache.subscribe(
+        'agent:*:progress',
+        (key: string, value: unknown) => {
+          const agentId = key.split(':')[1];
+          this.broadcast({
+            type: 'agent:progress',
+            data: { agentId, ...(value as object) },
+          });
+        }
+      );
+    }
   }
 
   /**
@@ -146,6 +185,17 @@ export class SSEManager {
    * Disconnect all clients and stop listening
    */
   disconnect(): void {
+    // Clean up radio subscriptions
+    if (this.radioStatusUnsubscriber) {
+      this.radioStatusUnsubscriber();
+      this.radioStatusUnsubscriber = null;
+    }
+    if (this.radioProgressUnsubscriber) {
+      this.radioProgressUnsubscriber();
+      this.radioProgressUnsubscriber = null;
+    }
+
+    // Close all client connections
     for (const client of this.clients.values()) {
       try {
         client.controller.close();
