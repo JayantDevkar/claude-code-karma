@@ -23,7 +23,16 @@
         <span class="header__title">Karma</span>
       </div>
 
-      <span class="header__session" v-if="sessionId">{{ sessionId.slice(0, 8) }}</span>
+      <!-- Project Selector (Live View Context) -->
+      <div class="header__context" v-if="currentView === 'live'">
+        <select class="header__project-select" v-model="liveProject" @change="onLiveProjectChange" title="Select project to monitor">
+          <option value="">All Projects</option>
+          <option v-for="p in projects" :key="p.projectName" :value="p.projectName">{{ p.projectName }}</option>
+        </select>
+        <span class="header__session-badge" v-if="liveSessionId" :title="liveSessionId">
+          {{ liveSessionId.slice(0, 8) }}
+        </span>
+      </div>
 
       <nav class="header__nav" aria-label="Views">
         <button class="nav-tab" data-view="live" :class="{ 'is-active': currentView === 'live' }" @click="switchView('live')">Live</button>
@@ -45,7 +54,31 @@
     </div>
 
     <main class="container">
-      <div id="live-view" class="view" v-show="currentView === 'live'">
+      <div id="live-view" class="view view--live" v-show="currentView === 'live'">
+      <!-- Session Sidebar -->
+      <aside class="live-sidebar" v-if="liveProject">
+        <h4 class="live-sidebar__title">Sessions</h4>
+        <div class="live-sidebar__list">
+          <button
+            v-for="s in projectSessions"
+            :key="s.id"
+            class="live-sidebar__session"
+            :class="{ 'is-active': liveSessionId === s.id }"
+            @click="selectLiveSession(s.id)"
+            :title="s.id"
+          >
+            <span class="live-sidebar__session-status" :class="{ 'is-running': isSessionActive(s) }"></span>
+            <span class="live-sidebar__session-id">{{ s.id.slice(0, 8) }}</span>
+            <span class="live-sidebar__session-cost">{{ formatCost(s.cost) }}</span>
+          </button>
+        </div>
+        <div class="live-sidebar__hint" v-if="projectSessions.length === 0">
+          No sessions for this project
+        </div>
+      </aside>
+
+      <!-- Main Content -->
+      <div class="live-content">
       <!-- Metrics Cards -->
       <section class="metrics-grid metrics-grid--4col">
         <article class="metric-card metric-card--compact">
@@ -195,7 +228,8 @@
           </p>
         </div>
       </section>
-      </div>
+      </div><!-- end live-content -->
+      </div><!-- end live-view -->
 
       <div id="projects-view" class="view" v-show="currentView === 'projects'">
         <div class="view-header">

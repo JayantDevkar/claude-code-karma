@@ -201,6 +201,12 @@ PetiteVue.createApp({
   dateRange: 30,
   expandedAgents: {},
   allAgentsExpanded: false,
+  
+  // === Live View Project/Session State ===
+  liveProject: '', // Selected project for live view (empty = all)
+  liveSessionId: null, // Currently viewing session
+  projectSessions: [], // Sessions for selected project
+
   metrics: {
     tokensIn: 0,
     tokensOut: 0,
@@ -255,6 +261,18 @@ PetiteVue.createApp({
       projects: new LoadingState('project-list'),
       chart: new LoadingState('chart')
     };
+
+    // Restore saved project preference for live view
+    this.liveProject = localStorage.getItem('karma-live-project') || '';
+
+    // Fetch projects first (needed for live view dropdown)
+    this.fetchProjects().then(() => {
+      // If saved project no longer exists, clear it
+      if (this.liveProject && !this.projects.find(p => p.projectName === this.liveProject)) {
+        this.liveProject = '';
+        localStorage.removeItem('karma-live-project');
+      }
+    });
 
     this.connectSSE({ resetRetries: true });
     this.fetchInitialData();
@@ -331,6 +349,29 @@ PetiteVue.createApp({
         const data = JSON.parse(event.data);
         console.log('Init data:', data);
 
+        if (data.sessions) {
+          // Filter sessions by project if set
+          let sessions = data.sessions;
+          if (this.liveProject) {
+            sessions = sessions.filter(s => s.projectName === this.liveProject);
+          }
+          
+          this.sessions = data.sessions; // Keep all sessions
+          this.projectSessions = sessions; // Filtered for live view
+          
+          if (sessions.length > 0) {
+            // Use the most recent session for the selected project
+            const targetSession = sessions[0];
+            this.sessionId = targetSession.id;
+            this.liveSessionId = targetSession.id;
+            // Fetch agents for this session
+            this.fetchSessionData(targetSession.id);
+          } else {
+            this.liveSessionId = null;
+            this.agentsLoading = false;
+          }
+        }
+
         if (data.metrics) {
           this.updateMetrics(data.metrics);
           // Phase 4: seed sparklines with initial totals once
@@ -342,15 +383,6 @@ PetiteVue.createApp({
           this.updateSparklineAndTrend('tokensOut', this.metrics.tokensOut);
           this.updateSparklineAndTrend('cost', this.metrics.cost);
           this.updateSparklineAndTrend('agentCount', this.metrics.agents);
-        }
-
-        if (data.sessions) {
-          this.sessions = data.sessions;
-          if (data.sessions.length > 0) {
-            this.sessionId = data.sessions[0].id;
-            // Fetch agents for this session
-            this.fetchSessionData(data.sessions[0].id);
-          }
         }
       } catch (err) {
         console.error('Failed to parse init event:', err);
@@ -397,10 +429,19 @@ PetiteVue.createApp({
       markData();
       try {
         const data = JSON.parse(event.data);
-        this.sessionId = data.sessionId;
-        // Refresh sessions list and refetch session data with agents
-        this.fetchSessions();
-        this.fetchSessionData(data.sessionId);
+        
+        // Check if this session matches our project filter
+        const matchesFilter = !this.liveProject || data.projectName === this.liveProject;
+        
+        if (matchesFilter) {
+          this.sessionId = data.sessionId;
+          this.liveSessionId = data.sessionId;
+          // Fetch agents for this session
+          this.fetchSessionData(data.sessionId);
+        }
+        
+        // Always refresh the sessions list
+        this.fetchProjectSessions();
       } catch (err) {
         console.error('Failed to parse session:start event:', err);
       }
@@ -591,6 +632,10 @@ PetiteVue.createApp({
   // View switching
   switchView(view) {
     this.currentView = view;
+    if (view === 'live') {
+      // Refresh live view data
+      this.refreshLiveView();
+    }
     if (view === 'projects') {
       this.fetchProjects();
     }
@@ -599,6 +644,82 @@ PetiteVue.createApp({
       this.fetchProjects(); // Ensure projects dropdown is populated
       this.updateHistory();
     }
+  },
+
+  // === Live View Project/Session Methods ===
+  onLiveProjectChange() {
+    // Save preference
+    if (this.liveProject) {
+      localStorage.setItem('karma-live-project', this.liveProject);
+    } else {
+      localStorage.removeItem('karma-live-project');
+    }
+    
+    // Refresh the live view with new project filter
+    this.refreshLiveView();
+  },
+
+  async refreshLiveView() {
+    // Fetch sessions filtered by project
+    await this.fetchProjectSessions();
+    
+    // If we have sessions, select the most recent one
+    if (this.projectSessions.length > 0) {
+      const mostRecent = this.projectSessions[0];
+      this.selectLiveSession(mostRecent.id);
+    } else {
+      // No sessions for this project
+      this.liveSessionId = null;
+      this.agentTree = [];
+      this.agentsLoading = false;
+      this.resetMetrics();
+    }
+  },
+
+  async fetchProjectSessions() {
+    try {
+      let url = '/api/sessions?limit=20';
+      const res = await fetch(url);
+      const data = await res.json();
+      let sessions = data.sessions || [];
+      
+      // Filter by project if selected
+      if (this.liveProject) {
+        sessions = sessions.filter(s => s.projectName === this.liveProject);
+      }
+      
+      this.projectSessions = sessions;
+      this.sessions = sessions; // Also update the main sessions list
+    } catch (err) {
+      console.error('Failed to fetch project sessions:', err);
+      this.projectSessions = [];
+    }
+  },
+
+  selectLiveSession(sessionId) {
+    this.liveSessionId = sessionId;
+    this.fetchSessionData(sessionId);
+  },
+
+  isSessionActive(session) {
+    // Consider a session active if it had activity in the last 5 minutes
+    if (!session.lastActivity) return false;
+    const lastActivity = new Date(session.lastActivity);
+    const fiveMinutesAgo = Date.now() - (5 * 60 * 1000);
+    return lastActivity.getTime() > fiveMinutesAgo;
+  },
+
+  resetMetrics() {
+    this.metrics = {
+      tokensIn: 0,
+      tokensOut: 0,
+      cost: 0,
+      cacheRead: 0,
+      cacheCreation: 0,
+      toolCalls: 0,
+      sessions: 0,
+      agents: 0
+    };
   },
 
   async fetchProjects() {
