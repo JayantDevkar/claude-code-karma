@@ -63,7 +63,7 @@ Mark phases as completed by updating this table:
 | 2 | Complete | 2026-01-08 | 2026-01-08 | Log discovery + file watcher with 10 tests |
 | 3 | Complete | 2026-01-08 | 2026-01-08 | Metrics aggregator + cost calc with 37 tests |
 | 4 | Complete | 2026-01-08 | 2026-01-08 | `karma status` with --project, --all, --json flags |
-| 5 | Not Started | - | - | - |
+| 5 | Complete | 2026-01-08 | 2026-01-08 | `karma watch` streaming mode with activity feed |
 | 6 | Not Started | - | - | - |
 | 7 | Not Started | - | - | - |
 

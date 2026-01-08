@@ -1,6 +1,6 @@
 # Phase 5: `karma watch` Command
 
-**Status:** Not Started
+**Status:** Complete
 **Estimated Effort:** Medium
 **Dependencies:** Phase 4
 **Deliverable:** Real-time streaming display of session activity
@@ -16,16 +16,16 @@ Implement a live-updating watch mode that displays session activity as it happen
 ## Tasks
 
 ### 5.1 Create Watch Command Handler
-- [ ] Create `src/commands/watch.ts`
-- [ ] Wire up to Commander in `cli.ts`
-- [ ] Handle Ctrl+C gracefully
-- [ ] Cleanup watchers on exit
+- [x] Create `src/commands/watch.ts`
+- [x] Wire up to Commander in `cli.ts`
+- [x] Handle Ctrl+C gracefully
+- [x] Cleanup watchers on exit
 
 ### 5.2 Implement Live Output
-- [ ] Clear screen on start
-- [ ] Update display on new entries
-- [ ] Show running totals
-- [ ] Display activity feed
+- [x] Clear screen on start
+- [x] Update display on new entries
+- [x] Show running totals
+- [x] Display activity feed
 
 ### 5.3 Design Watch Layout
 ```
@@ -53,15 +53,15 @@ Press Ctrl+C to exit
 ```
 
 ### 5.4 Extract Tool Information
-- [ ] Parse tool names from entries
-- [ ] Show tool parameters (truncated)
-- [ ] Color-code by tool type
+- [x] Parse tool names from entries
+- [x] Show tool parameters (truncated)
+- [x] Color-code by tool type
 
 ### 5.5 Build Agent Tree Display
-- [ ] ASCII tree rendering
-- [ ] Show agent type and model
-- [ ] Indicate active agents
-- [ ] Show per-agent cost
+- [x] ASCII tree rendering
+- [x] Show agent type and model
+- [x] Indicate active agents
+- [x] Show per-agent cost
 
 ```typescript
 // src/format.ts
@@ -82,16 +82,16 @@ export function renderAgentTree(tree: AgentTreeNode): string[] {
 ```
 
 ### 5.6 Implement Screen Updates
-- [ ] Use ANSI escape codes for cursor control
-- [ ] Partial screen updates (not full clear)
-- [ ] Smooth scrolling for activity log
-- [ ] Handle terminal resize
+- [x] Use ANSI escape codes for cursor control
+- [x] Partial screen updates (not full clear)
+- [x] Smooth scrolling for activity log
+- [ ] Handle terminal resize (future enhancement)
 
 ### 5.7 Activity Ring Buffer
-- [ ] Keep last N activity entries
-- [ ] Format activity log lines
-- [ ] Show timestamps
-- [ ] Indicate hierarchy with indentation
+- [x] Keep last N activity entries
+- [x] Format activity log lines
+- [x] Show timestamps
+- [x] Indicate hierarchy with indentation
 
 ---
 
