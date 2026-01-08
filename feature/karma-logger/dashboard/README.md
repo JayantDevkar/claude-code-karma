@@ -2,19 +2,42 @@
 
 **Source:** [DASHBOARD_MVP_PLAN.md](../../../karma-logger/DASHBOARD_MVP_PLAN.md)
 **Strategy:** TUI-first, Web-second
+**Status:** ✅ MVP Complete
 
 ---
 
 ## Phase Overview
 
-| Phase | Name | Deliverable | Dependencies |
-|-------|------|-------------|--------------|
-| [1](./phase-1.md) | TUI Core Setup | Ink scaffold, base App, layout | CLI Core |
-| [2](./phase-2.md) | TUI MetricsCard | Token/cost display boxes | Phase 1 |
-| [3](./phase-3.md) | TUI AgentTree | Hierarchy visualization | Phase 1 |
-| [4](./phase-4.md) | TUI Sparkline & Commands | Charts, keyboard, `karma watch --ui` | Phase 1-3 |
-| [5](./phase-5.md) | Web Server & SSE | Hono, SSE, API routes | Phase 1-4 |
-| [6](./phase-6.md) | Web Dashboard UI | Charts, UI, `karma dashboard` | Phase 5 |
+| Phase | Name | Deliverable | Status | Commit |
+|-------|------|-------------|--------|--------|
+| [1](./phase-1.md) | TUI Core Setup | Ink scaffold, base App, layout | ✅ Complete | `ec07228` |
+| [2](./phase-2.md) | TUI MetricsCard | Token/cost display boxes | ✅ Complete | `0cdfbab` |
+| [3](./phase-3.md) | TUI AgentTree | Hierarchy visualization | ✅ Complete | `00e8adc` |
+| [4](./phase-4.md) | TUI Sparkline & Commands | Charts, keyboard, `karma watch --ui` | ✅ Complete | `00e8adc` |
+| [5](./phase-5.md) | Web Server & SSE | Hono, SSE, API routes | ✅ Complete | `b75e60c`, `88108fc` |
+| [6](./phase-6.md) | Web Dashboard UI | Charts, UI, `karma dashboard` | ✅ Complete | `1483262` |
+
+---
+
+## Commit History
+
+### Phase 1: TUI Core Setup
+- `ec07228` feat(karma-logger): Implement Phase 1 TUI Core Setup
+
+### Phase 2: TUI MetricsCard
+- `0cdfbab` feat(karma-logger): Complete Phase 2 TUI MetricsCard implementation
+
+### Phase 3 & 4: TUI AgentTree + Sparkline & Commands
+- `00e8adc` feat(karma-logger): Complete Phase 3 & 4 TUI implementation
+- `e6fd2b8` feat(karma-logger): Implement Phase 4 TUI Sparkline & Commands
+
+### Phase 5: Web Server & SSE
+- `b75e60c` feat(karma-logger): Implement Phase 5 Web Server & SSE
+- `88108fc` feat(karma-logger): Add dashboard CLI command and tests
+- `5842a52` feat(karma-logger): Implement Phase 5 streaming watch command
+
+### Phase 6: Web Dashboard UI
+- `1483262` feat(karma-logger): Implement Phase 6 Web Dashboard UI
 
 ---
 
