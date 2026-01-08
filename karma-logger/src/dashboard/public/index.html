@@ -60,12 +60,25 @@
       <section class="agents-section">
         <h2>Agent Hierarchy</h2>
         <div class="agent-tree" v-if="agentTree.length > 0">
-          <agent-node
-            v-for="agent in agentTree"
-            :key="agent.id"
-            :agent="agent"
-            :depth="0"
-          ></agent-node>
+          <template v-for="agent in agentTree" :key="agent.id">
+            <div class="agent-node">
+              <span class="agent-icon">●</span>
+              <span class="agent-id">{{ agent.id ? agent.id.slice(0, 7) : 'unknown' }}</span>
+              <span class="agent-type">{{ agent.type || 'agent' }}</span>
+              <span class="agent-model">({{ agent.model || 'unknown' }})</span>
+              <span class="agent-cost">{{ formatCost(agent.metrics?.cost?.total || 0) }}</span>
+            </div>
+            <template v-if="agent.children && agent.children.length > 0">
+              <div v-for="child in agent.children" :key="child.id" class="agent-node" style="margin-left: 20px;">
+                <span class="agent-connector"></span>
+                <span class="agent-icon">●</span>
+                <span class="agent-id">{{ child.id ? child.id.slice(0, 7) : 'unknown' }}</span>
+                <span class="agent-type">{{ child.type || 'agent' }}</span>
+                <span class="agent-model">({{ child.model || 'unknown' }})</span>
+                <span class="agent-cost">{{ formatCost(child.metrics?.cost?.total || 0) }}</span>
+              </div>
+            </template>
+          </template>
         </div>
         <div v-else class="empty-state">
           No agents spawned yet
@@ -107,26 +120,6 @@
       <p>Karma Logger - Real-time Claude Code metrics</p>
     </footer>
   </div>
-
-  <!-- Agent Node Component Template -->
-  <template id="agent-node-template">
-    <div class="agent-node" :style="{ marginLeft: depth * 20 + 'px' }">
-      <span class="agent-connector" v-if="depth > 0"></span>
-      <span class="agent-icon">&#9679;</span>
-      <span class="agent-id">{{ agent.id.slice(0, 7) }}</span>
-      <span class="agent-type">{{ agent.type || 'agent' }}</span>
-      <span class="agent-model">({{ agent.model || 'unknown' }})</span>
-      <span class="agent-cost">{{ formatCost(agent.metrics?.cost?.total || 0) }}</span>
-      <div v-if="agent.children && agent.children.length > 0">
-        <agent-node
-          v-for="child in agent.children"
-          :key="child.id"
-          :agent="child"
-          :depth="depth + 1"
-        ></agent-node>
-      </div>
-    </div>
-  </template>
 
   <!-- uPlot -->
   <script src="https://unpkg.com/uplot@1.6.30/dist/uPlot.iife.min.js"></script>

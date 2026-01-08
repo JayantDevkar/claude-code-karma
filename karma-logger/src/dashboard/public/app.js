@@ -3,10 +3,9 @@
  * Real-time metrics visualization with SSE
  */
 
-// Agent Node Component
+// Agent Node Component (registered via v-scope in template)
 function AgentNode(props) {
   return {
-    $template: '#agent-node-template',
     agent: props.agent,
     depth: props.depth || 0,
     formatCost(cents) {
@@ -18,6 +17,8 @@ function AgentNode(props) {
 
 // Main App
 PetiteVue.createApp({
+  // Make AgentNode available for nested components
+  AgentNode,
   // State
   sessionId: null,
   connected: false,
@@ -282,9 +283,7 @@ PetiteVue.createApp({
       this.chart.destroy();
     }
   }
-})
-.component('AgentNode', AgentNode)
-.mount('#app');
+}).mount('#app');
 
 // Handle window resize for chart
 let resizeTimeout;
