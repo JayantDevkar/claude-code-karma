@@ -234,3 +234,41 @@ export interface AgentDiscoveryOptions {
   filter?: 'children' | 'siblings' | 'parent' | 'all';
   status?: AgentState;
 }
+
+// ============================================
+// Phase 4: Subscription-Based Wait Types
+// ============================================
+
+/** Subscribe to agent status changes */
+export interface SubscribeMessage {
+  type: 'subscribe';
+  agentId: string;
+  targetState: AgentState;
+}
+
+/** Unsubscribe from notifications */
+export interface UnsubscribeMessage {
+  type: 'unsubscribe';
+  subscriptionId: string;
+}
+
+/** Subscription confirmed */
+export interface SubscribedMessage {
+  type: 'subscribed';
+  subscriptionId: string;
+}
+
+/** Status change notification */
+export interface NotificationMessage {
+  type: 'notification';
+  subscriptionId: string;
+  status: AgentStatus;
+}
+
+/** Keep-alive ping */
+export interface KeepAliveMessage {
+  type: 'keep-alive';
+}
+
+/** Server push message types */
+export type ServerPushMessage = SubscribedMessage | NotificationMessage | KeepAliveMessage;

@@ -10,6 +10,7 @@ import {
   RadioServerNotRunningError,
   RadioTimeoutError,
   RadioServerError,
+  SubscriptionError,
   createRadioClient,
 } from '../walkie-talkie/socket-client.js';
 import type { RadioEnv, AgentState, AgentStatus, ProgressUpdate } from '../walkie-talkie/types.js';
@@ -233,15 +234,19 @@ async function handlePublishResult(jsonFile: string): Promise<void> {
 
 /**
  * Handle wait-for command
- * karma radio wait-for <agent-id> <state> [--timeout <ms>]
+ * karma radio wait-for <agent-id> <state> [--timeout <ms>] [--poll]
+ *
+ * Phase 4: Uses subscription-based notifications by default for efficient waiting.
+ * Use --poll flag to fall back to polling mode if needed.
  */
 async function handleWaitFor(
   agentId: string,
   state: string,
-  options: { timeout?: string },
+  options: { timeout?: string; poll?: boolean },
 ): Promise<void> {
   try {
-    const env = getRadioEnv();
+    // Note: We don't need env for subscription-based wait, but validate anyway
+    getRadioEnv();
     const client = createRadioClient();
 
     const validStates: AgentState[] = ['pending', 'active', 'waiting', 'completed', 'failed', 'cancelled'];
@@ -249,25 +254,28 @@ async function handleWaitFor(
       outputError(`Invalid state: ${state}. Valid states: ${validStates.join(', ')}`);
     }
 
-    const args: Record<string, unknown> = {
-      targetAgentId: agentId,
-      state: state as AgentState,
-    };
-
+    // Parse timeout (default: 30000ms)
+    let timeoutMs = 30000;
     if (options.timeout) {
       const timeout = parseInt(options.timeout, 10);
       if (isNaN(timeout) || timeout <= 0) {
         outputError('Invalid timeout: must be a positive number');
       }
-      args.timeoutMs = timeout;
+      timeoutMs = timeout;
     }
 
-    const result = await client.send<AgentStatus>('wait-for', args, env);
-    outputJson({ success: true, status: result });
+    // Phase 4: Use subscription-based wait by default, poll as fallback
+    const usePoll = options.poll ?? false;
+    const result = await client.waitForAgent(agentId, state as AgentState, timeoutMs, usePoll);
+    outputJson({ success: true, status: result, mode: usePoll ? 'poll' : 'subscription' });
   } catch (error) {
     if (error instanceof RadioTimeoutError) {
       // wait-for timeout is a failure, not an error
       outputJson({ success: false, error: 'Timeout waiting for agent state' }, EXIT_FAILURE);
+    }
+    if (error instanceof SubscriptionError) {
+      // Subscription failed
+      outputJson({ success: false, error: `Subscription error: ${error.message}` }, EXIT_FAILURE);
     }
     handleRadioError(error);
   }
@@ -447,8 +455,9 @@ Examples:
   // wait-for
   radio
     .command('wait-for <agent-id> <state>')
-    .description('Wait for agent to reach state')
+    .description('Wait for agent to reach state (uses subscription-based notifications by default)')
     .option('--timeout <ms>', 'Timeout in milliseconds (default: 30000)')
+    .option('--poll', 'Use polling mode instead of subscription-based notifications')
     .action(handleWaitFor);
 
   // send

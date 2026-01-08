@@ -1,8 +1,10 @@
 # Phase 4: Subscription-Based Wait
 
+**Status:** IMPLEMENTED
+**Implemented:** 2026-01-08
 **Priority:** Future
 **Complexity:** High
-**Estimated Files:** 5-7
+**Files Modified:** 6
 
 ## Problem Statement
 
@@ -124,11 +126,11 @@ describe('Subscription-based wait', () => {
 
 ## Acceptance Criteria
 
-- [ ] `wait-for` receives instant notification (no polling delay)
-- [ ] Connection stays open for duration of wait
-- [ ] Keep-alive prevents socket timeout
-- [ ] Graceful degradation if subscription fails (fall back to polling)
-- [ ] Resource cleanup on timeout/cancel
+- [x] `wait-for` receives instant notification (no polling delay)
+- [x] Connection stays open for duration of wait
+- [x] Keep-alive prevents socket timeout (30s interval)
+- [x] Graceful degradation if subscription fails (fall back to polling)
+- [x] Resource cleanup on timeout/cancel
 
 ## Risks
 
@@ -144,3 +146,50 @@ describe('Subscription-based wait', () => {
 ## Rollback
 
 Add `--poll` flag to fall back to polling behavior.
+
+---
+
+## Implementation Summary (2026-01-08)
+
+### Files Modified
+
+| File | Lines Added | Changes |
+|------|-------------|---------|
+| `src/walkie-talkie/types.ts` | +38 | Added 6 subscription message types |
+| `src/walkie-talkie/socket-server.ts` | +296 | Added SubscriptionManager class |
+| `src/walkie-talkie/socket-client.ts` | +323 | Added `waitForAgent()` with subscription mode |
+| `src/commands/radio.ts` | +33 | Added `--poll` flag support |
+| `src/walkie-talkie/index.ts` | +11 | Exported new types and classes |
+| `tests/walkie-talkie/subscription.test.ts` | NEW | 13 test cases |
+
+### Key Components
+
+1. **SubscriptionManager** (socket-server.ts)
+   - Tracks subscriptions by ID and by socket
+   - Sends keep-alive every 30s
+   - Extends socket timeout to 5min for subscription connections
+   - Auto-cleanup on disconnect/timeout/error
+   - Immediate notification if already in target state
+
+2. **RadioClient.waitForAgent()** (socket-client.ts)
+   - `usePoll: false` (default) - Uses server push notifications
+   - `usePoll: true` - Falls back to 500ms polling
+   - Graceful degradation if subscription fails
+   - Added `SubscriptionError` error class
+
+3. **CLI wait-for command** (radio.ts)
+   - Default: subscription mode
+   - `--poll` flag: forces polling mode
+   - Output includes `mode: 'subscription' | 'poll'`
+
+### Test Coverage
+
+All 160 walkie-talkie tests pass including 13 new subscription tests:
+- Notification on target state reached
+- Immediate notification if already in state
+- Timeout handling
+- Multiple concurrent subscriptions
+- Cleanup on disconnect
+- Keep-alive mechanism
+- Poll mode fallback
+- Graceful degradation
