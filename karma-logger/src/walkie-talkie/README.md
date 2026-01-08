@@ -149,8 +149,11 @@ karma radio publish-result ./result.json
 karma radio get-status                  # Self
 karma radio get-status --agent other-1  # Specific agent
 
-# Wait for agent
+# Wait for agent (subscription-based, instant notifications)
 karma radio wait-for agent-2 completed --timeout 30000
+
+# Wait for agent (polling fallback)
+karma radio wait-for agent-2 completed --timeout 30000 --poll
 
 # Messaging
 karma radio send agent-2 '{"type": "request"}'
@@ -289,7 +292,7 @@ hooks:
 - **Socket path**: `/tmp/karma-radio.sock` (Unix) or named pipe (Windows)
 - **Message size limit**: 64KB max per message
 - **Connection limit**: 10 max concurrent connections
-- **Timeout**: 5s per request
+- **Timeout**: 5s per request (5min for subscription connections)
 
 ## Performance Characteristics
 
@@ -313,8 +316,9 @@ npm test -- --run tests/walkie-talkie/integration.test.ts
 
 **Test coverage:**
 - CacheStore: 50 tests (CRUD, TTL, patterns, pub/sub, edge cases)
-- AgentRadio: 29 tests (status, progress, family, messaging)
+- AgentRadio: 39 tests (status, progress, family, messaging, discovery)
 - RadioClient: 34 tests (connection, timeout, concurrent requests)
+- Subscription: 13 tests (notifications, keep-alive, cleanup, fallback)
 - Integration: 24 tests (aggregator, socket server, API)
 
 ## File Structure
@@ -336,6 +340,7 @@ tests/walkie-talkie/
 ├── cache-store.test.ts
 ├── agent-radio.test.ts
 ├── radio-client.test.ts
+├── subscription.test.ts
 └── integration.test.ts
 ```
 
@@ -347,7 +352,6 @@ tests/walkie-talkie/
 
 ## Known Limitations
 
-- `wait-for` is currently polling-based, not true subscription
 - Pattern matching uses `*` for single-segment only (no `**` for multi-segment)
 - No persistence; cache clears on restart
 - No distributed mode; single-process only

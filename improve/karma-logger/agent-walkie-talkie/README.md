@@ -6,10 +6,10 @@ Atomic improvement phases for the karma-logger walkie-talkie system, derived fro
 
 | Phase | Name | Priority | Complexity | Status |
 |-------|------|----------|------------|--------|
-| 1 | [Agent Discovery](./phase-1-agent-discovery.md) | High | Medium | Planned |
-| 2 | [Status + Progress Consolidation](./phase-2-status-progress-consolidation.md) | Medium | Low | Planned |
-| 3 | [Batch Operations](./phase-3-batch-operations.md) | Low | Low | Planned |
-| 4 | [Subscription-Based Wait](./phase-4-subscription-based-wait.md) | Future | High | Planned |
+| 1 | [Agent Discovery](./phase-1-agent-discovery.md) | High | Medium | **DONE** |
+| 2 | [Status + Progress Consolidation](./phase-2-status-progress-consolidation.md) | Medium | Low | **DONE** |
+| 3 | [Batch Operations](./phase-3-batch-operations.md) | Low | Low | **DONE** |
+| 4 | [Subscription-Based Wait](./phase-4-subscription-based-wait.md) | Future | High | **DONE** |
 | 5 | [Metadata Schema Validation](./phase-5-metadata-schema-validation.md) | Low | Medium | Planned |
 | 6 | [Cache Persistence](./phase-6-cache-persistence.md) | Future | High | Planned |
 
@@ -49,12 +49,12 @@ Status persistence bug was fixed before these phases:
 
 ## Success Metrics
 
-| Metric | Target |
-|--------|--------|
-| CLI calls per agent lifecycle | Reduce from 4-5 to 2-3 |
-| Agent discovery capability | Yes (currently No) |
-| Wait latency (P99) | <100ms (currently ~1s polling) |
-| Crash recovery | Restore state (currently lost) |
+| Metric | Target | Status |
+|--------|--------|--------|
+| CLI calls per agent lifecycle | Reduce from 4-5 to 2-3 | ✅ Phase 3 |
+| Agent discovery capability | Yes (currently No) | ✅ Phase 1 |
+| Wait latency (P99) | <100ms (was ~1s polling) | ✅ Phase 4 |
+| Crash recovery | Restore state (currently lost) | Pending (Phase 6) |
 
 ## Testing Strategy
 
