@@ -13,7 +13,10 @@ import type {
   AgentMessage,
   AgentDiscoveryOptions,
   SetStatusOptions,
+  ValidationMode,
+  ValidationResult,
 } from './types.js';
+import { schemaRegistry, validateMetadata } from './schema-registry.js';
 
 /** TTL constants in milliseconds */
 const TTL = {
@@ -93,27 +96,33 @@ export class AgentRadioImpl implements AgentRadio {
     // Handle both new SetStatusOptions and legacy metadata-only format
     let metadata: Record<string, unknown> | undefined;
     let progress: ProgressUpdate | undefined;
+    let validationMode: ValidationMode = 'none';
 
     if (options) {
       // Check if options is SetStatusOptions format
       // SetStatusOptions.progress is a ProgressUpdate object (with tool/step/percent/message)
       // SetStatusOptions.metadata is a Record<string, unknown>
+      // SetStatusOptions.validateMetadata is a ValidationMode string
       // We detect SetStatusOptions by checking if 'progress' is an object with ProgressUpdate keys
-      // or if 'metadata' is an object and options has no other keys besides 'metadata' and 'progress'
+      // or if 'metadata' is an object and options has no other keys besides 'metadata', 'progress', and 'validateMetadata'
       const hasProgressObject = 'progress' in options &&
         options.progress !== null &&
         typeof options.progress === 'object' &&
         !Array.isArray(options.progress);
 
+      const hasValidateMetadata = 'validateMetadata' in options &&
+        typeof options.validateMetadata === 'string';
+
       const hasMetadataOnly = 'metadata' in options &&
         options.metadata !== null &&
         typeof options.metadata === 'object' &&
-        Object.keys(options).every(k => k === 'metadata' || k === 'progress');
+        Object.keys(options).every(k => k === 'metadata' || k === 'progress' || k === 'validateMetadata');
 
-      if (hasProgressObject || hasMetadataOnly) {
+      if (hasProgressObject || hasMetadataOnly || hasValidateMetadata) {
         const setStatusOptions = options as SetStatusOptions;
         metadata = setStatusOptions.metadata;
         progress = setStatusOptions.progress;
+        validationMode = setStatusOptions.validateMetadata ?? 'none';
       } else {
         // Legacy format: treat entire options as metadata
         metadata = options as Record<string, unknown>;
@@ -122,6 +131,11 @@ export class AgentRadioImpl implements AgentRadio {
 
     if (metadata) {
       this.metadata = { ...this.metadata, ...metadata };
+    }
+
+    // Phase 5: Validate metadata if validation mode is enabled
+    if (validationMode !== 'none') {
+      validateMetadata(this.agentType, this.metadata, validationMode, schemaRegistry);
     }
 
     const status: AgentStatus = {

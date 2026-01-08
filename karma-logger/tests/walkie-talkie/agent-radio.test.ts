@@ -650,3 +650,130 @@ describe('AgentRadio interface compliance', () => {
     cache.destroy();
   });
 });
+
+// ============================================
+// Phase 5: Schema Validation in setStatus
+// ============================================
+
+describe('setStatus with schema validation', () => {
+  let cache: MemoryCacheStore;
+  let consoleWarnSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    cache = new MemoryCacheStore();
+    consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    cache.destroy();
+    consoleWarnSpy.mockRestore();
+  });
+
+  it('validates metadata in warn mode without throwing', () => {
+    const agent = new AgentRadioImpl(
+      cache, 'agent-1', 'session-1', 'root-session-1',
+      null, 'session', 'task', 'claude-sonnet-4',
+    );
+
+    // Missing taskId should warn but not throw
+    expect(() => {
+      agent.setStatus('active', {
+        metadata: { projectId: 'project-1' },
+        validateMetadata: 'warn',
+      });
+    }).not.toThrow();
+
+    expect(consoleWarnSpy).toHaveBeenCalled();
+    agent.destroy();
+  });
+
+  it('throws in strict mode for invalid metadata', () => {
+    const agent = new AgentRadioImpl(
+      cache, 'agent-1', 'session-1', 'root-session-1',
+      null, 'session', 'task', 'claude-sonnet-4',
+    );
+
+    // Missing taskId should throw in strict mode
+    expect(() => {
+      agent.setStatus('active', {
+        metadata: { projectId: 'project-1' },
+        validateMetadata: 'strict',
+      });
+    }).toThrow('Metadata validation failed');
+
+    agent.destroy();
+  });
+
+  it('accepts valid metadata in strict mode', () => {
+    const agent = new AgentRadioImpl(
+      cache, 'agent-1', 'session-1', 'root-session-1',
+      null, 'session', 'task', 'claude-sonnet-4',
+    );
+
+    expect(() => {
+      agent.setStatus('active', {
+        metadata: { taskId: 'task-123', projectId: 'project-1' },
+        validateMetadata: 'strict',
+      });
+    }).not.toThrow();
+
+    expect(agent.getStatus().metadata).toEqual({
+      taskId: 'task-123',
+      projectId: 'project-1',
+    });
+
+    agent.destroy();
+  });
+
+  it('skips validation in none mode (default)', () => {
+    const agent = new AgentRadioImpl(
+      cache, 'agent-1', 'session-1', 'root-session-1',
+      null, 'session', 'task', 'claude-sonnet-4',
+    );
+
+    // Missing taskId should not throw in none mode
+    expect(() => {
+      agent.setStatus('active', {
+        metadata: { projectId: 'project-1' },
+        validateMetadata: 'none',
+      });
+    }).not.toThrow();
+
+    expect(consoleWarnSpy).not.toHaveBeenCalled();
+    agent.destroy();
+  });
+
+  it('validates against explore schema for explore agent type', () => {
+    const agent = new AgentRadioImpl(
+      cache, 'agent-1', 'session-1', 'root-session-1',
+      null, 'session', 'explore', 'claude-sonnet-4',
+    );
+
+    // Missing goal should throw in strict mode
+    expect(() => {
+      agent.setStatus('active', {
+        metadata: { scope: 'directory' },
+        validateMetadata: 'strict',
+      });
+    }).toThrow('Missing required field: goal');
+
+    agent.destroy();
+  });
+
+  it('allows unknown agent types without validation errors', () => {
+    const agent = new AgentRadioImpl(
+      cache, 'agent-1', 'session-1', 'root-session-1',
+      null, 'session', 'custom-agent', 'claude-sonnet-4',
+    );
+
+    // Unknown agent type should not throw even in strict mode
+    expect(() => {
+      agent.setStatus('active', {
+        metadata: { anyField: 'any-value' },
+        validateMetadata: 'strict',
+      });
+    }).not.toThrow();
+
+    agent.destroy();
+  });
+});

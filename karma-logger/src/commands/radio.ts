@@ -13,7 +13,7 @@ import {
   SubscriptionError,
   createRadioClient,
 } from '../walkie-talkie/socket-client.js';
-import type { RadioEnv, AgentState, AgentStatus, ProgressUpdate } from '../walkie-talkie/types.js';
+import type { RadioEnv, AgentState, AgentStatus, ProgressUpdate, ValidationMode } from '../walkie-talkie/types.js';
 
 // ============================================
 // Exit Codes
@@ -120,13 +120,14 @@ function readJsonFile(filePath: string): unknown {
 
 /**
  * Handle set-status command
- * karma radio set-status <state> [--tool <name>] [--metadata <json>] [--percent <num>] [--message <text>]
+ * karma radio set-status <state> [--tool <name>] [--metadata <json>] [--percent <num>] [--message <text>] [--validate <mode>]
  *
  * Phase 3: Batch operations - supports setting status and progress in a single call
+ * Phase 5: Added --validate flag for metadata schema validation
  */
 async function handleSetStatus(
   state: string,
-  options: { tool?: string; metadata?: string; percent?: string; message?: string },
+  options: { tool?: string; metadata?: string; percent?: string; message?: string; validate?: string },
 ): Promise<void> {
   try {
     const env = getRadioEnv();
@@ -143,6 +144,15 @@ async function handleSetStatus(
 
     if (options.metadata) {
       args.metadata = parseJson(options.metadata, '--metadata');
+    }
+
+    // Phase 5: Handle validation mode
+    if (options.validate) {
+      const validModes: ValidationMode[] = ['none', 'warn', 'strict'];
+      if (!validModes.includes(options.validate as ValidationMode)) {
+        outputError(`Invalid validate mode: ${options.validate}. Valid modes: ${validModes.join(', ')}`);
+      }
+      args.validateMetadata = options.validate as ValidationMode;
     }
 
     // Phase 3: Batch operations - include progress if any progress flags provided
@@ -435,6 +445,7 @@ Examples:
     .option('-m, --metadata <json>', 'Additional metadata as JSON')
     .option('-p, --percent <num>', 'Progress percentage (0-100) - batch operation')
     .option('--message <text>', 'Progress message - batch operation')
+    .option('--validate <mode>', 'Metadata validation mode (none|warn|strict)')
     .action(handleSetStatus);
 
   // report-progress

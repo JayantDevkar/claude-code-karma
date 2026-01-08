@@ -1,5 +1,6 @@
 # Phase 5: Metadata Schema Validation
 
+**Status:** ✅ COMPLETED (2026-01-08)
 **Priority:** Low
 **Complexity:** Medium
 **Estimated Files:** 4-5
@@ -120,11 +121,11 @@ describe('SchemaRegistry', () => {
 
 ## Acceptance Criteria
 
-- [ ] Schema registry can register custom schemas
-- [ ] Built-in schemas for common agent types
-- [ ] `--validate warn|strict` flag on CLI
-- [ ] Backward compatible (no validation by default)
-- [ ] Clear error messages for validation failures
+- [x] Schema registry can register custom schemas
+- [x] Built-in schemas for common agent types
+- [x] `--validate warn|strict` flag on CLI
+- [x] Backward compatible (no validation by default)
+- [x] Clear error messages for validation failures
 
 ## Configuration
 
@@ -151,3 +152,32 @@ None - can be implemented independently.
 ## Rollback
 
 Validation is opt-in; disable by not using `--validate`.
+
+## Implementation Notes (2026-01-08)
+
+### Files Created/Modified
+
+| File | Status |
+|------|--------|
+| `src/walkie-talkie/schema-registry.ts` | Created |
+| `src/walkie-talkie/types.ts` | Modified (added ValidationMode, MetadataSchema, etc.) |
+| `src/walkie-talkie/agent-radio.ts` | Modified (integrated schema validation) |
+| `src/commands/radio.ts` | Modified (added --validate flag) |
+| `src/walkie-talkie/index.ts` | Modified (exported SchemaRegistry) |
+| `tests/walkie-talkie/schema-registry.test.ts` | Created (51 tests) |
+
+### Test Results
+
+```
+✓ tests/walkie-talkie/schema-registry.test.ts (51 tests) 9ms
+Test Files  1 passed (1)
+Tests       51 passed (51)
+```
+
+### Features Implemented
+
+1. **SchemaRegistry class** with register/validate/getSchema methods
+2. **Built-in schemas** for 'task' and 'explore' agent types
+3. **Three validation modes**: none (default), warn, strict
+4. **CLI integration**: `--validate <mode>` flag on set-status
+5. **Type safety**: Full TypeScript types for schemas and validation results

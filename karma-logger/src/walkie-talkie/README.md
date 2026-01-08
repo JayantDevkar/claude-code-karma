@@ -276,6 +276,42 @@ hooks:
         karma radio set-status completed
 ```
 
+## Schema Validation (Phase 5)
+
+Optional metadata validation for type safety:
+
+```typescript
+import { SchemaRegistry } from './walkie-talkie/schema-registry.js';
+
+const registry = new SchemaRegistry();
+
+// Register custom schema
+registry.register({
+  agentType: 'my-agent',
+  required: ['task_id'],
+  properties: {
+    task_id: { type: 'string' },
+    priority: { type: 'number' }
+  }
+});
+
+// Validate metadata
+const result = registry.validate('my-agent', { task_id: '123' });
+// { valid: true, errors: [] }
+```
+
+**Built-in schemas:** `task`, `explore`
+
+**Validation modes:**
+- `none` (default): No validation
+- `warn`: Log warning, allow operation
+- `strict`: Reject invalid metadata
+
+**CLI usage:**
+```bash
+karma radio set-status active --metadata '{"tool":"Read"}' --validate strict
+```
+
 ## TTL Strategy
 
 | Data Type | TTL | Rationale |
@@ -319,27 +355,30 @@ npm test -- --run tests/walkie-talkie/integration.test.ts
 - AgentRadio: 39 tests (status, progress, family, messaging, discovery)
 - RadioClient: 34 tests (connection, timeout, concurrent requests)
 - Subscription: 13 tests (notifications, keep-alive, cleanup, fallback)
+- SchemaRegistry: 51 tests (validation, types, modes, built-in schemas)
 - Integration: 24 tests (aggregator, socket server, API)
 
 ## File Structure
 
 ```
 src/walkie-talkie/
-├── index.ts          # Public exports
-├── types.ts          # TypeScript interfaces
-├── cache-store.ts    # CacheStore implementation
-├── agent-radio.ts    # AgentRadio implementation
-├── socket-server.ts  # Unix socket server (IPC)
-├── socket-client.ts  # Unix socket client (CLI)
-└── README.md         # This file
+├── index.ts           # Public exports
+├── types.ts           # TypeScript interfaces
+├── cache-store.ts     # CacheStore implementation
+├── agent-radio.ts     # AgentRadio implementation
+├── schema-registry.ts # Schema validation (Phase 5)
+├── socket-server.ts   # Unix socket server (IPC)
+├── socket-client.ts   # Unix socket client (CLI)
+└── README.md          # This file
 
 src/commands/
-└── radio.ts          # CLI command implementation
+└── radio.ts           # CLI command implementation
 
 tests/walkie-talkie/
 ├── cache-store.test.ts
 ├── agent-radio.test.ts
 ├── radio-client.test.ts
+├── schema-registry.test.ts
 ├── subscription.test.ts
 └── integration.test.ts
 ```

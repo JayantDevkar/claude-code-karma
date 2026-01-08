@@ -4,7 +4,7 @@
  * Phase 2: Agent radio for status and messaging
  * Phase 3: Radio CLI socket client
  * Phase 4: Subscription-based wait for agent status
- * Phase 5: Socket server for aggregator integration
+ * Phase 5: Socket server for aggregator integration + Metadata Schema Validation
  */
 
 export { MemoryCacheStore } from './cache-store.js';
@@ -26,6 +26,14 @@ export {
   type RadioServerOptions,
   type RadioServer,
 } from './socket-server.js';
+// Phase 5: Schema Registry exports
+export {
+  SchemaRegistry,
+  schemaRegistry,
+  validateMetadata,
+  TASK_AGENT_SCHEMA,
+  EXPLORE_AGENT_SCHEMA,
+} from './schema-registry.js';
 
 export type {
   CacheStore,
@@ -47,4 +55,10 @@ export type {
   NotificationMessage,
   KeepAliveMessage,
   ServerPushMessage,
+  // Phase 5: Schema Validation types
+  MetadataSchema,
+  MetadataPropertyType,
+  MetadataPropertySpec,
+  ValidationResult,
+  ValidationMode,
 } from './types.js';

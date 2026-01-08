@@ -146,10 +146,13 @@ export interface AgentMessage {
 /**
  * Options for setStatus method
  * Enables batch operations: set status + progress in a single call
+ * Phase 5: Added validateMetadata option for schema validation
  */
 export interface SetStatusOptions {
   metadata?: Record<string, unknown>;
   progress?: ProgressUpdate;
+  /** Validation mode for metadata (none|warn|strict). Default: none */
+  validateMetadata?: ValidationMode;
 }
 
 /**
@@ -272,3 +275,50 @@ export interface KeepAliveMessage {
 
 /** Server push message types */
 export type ServerPushMessage = SubscribedMessage | NotificationMessage | KeepAliveMessage;
+
+// ============================================
+// Phase 5: Metadata Schema Validation Types
+// ============================================
+
+/**
+ * Property type specification for metadata fields
+ */
+export type MetadataPropertyType = 'string' | 'number' | 'boolean' | 'object' | 'array';
+
+/**
+ * Property specification in a metadata schema
+ */
+export interface MetadataPropertySpec {
+  type: MetadataPropertyType;
+  description?: string;
+}
+
+/**
+ * Schema definition for agent metadata
+ */
+export interface MetadataSchema {
+  /** Agent type this schema applies to */
+  agentType: string;
+  /** List of required property names */
+  required?: string[];
+  /** Property type specifications */
+  properties?: Record<string, MetadataPropertySpec>;
+}
+
+/**
+ * Result of metadata validation
+ */
+export interface ValidationResult {
+  /** Whether validation passed */
+  valid: boolean;
+  /** List of validation error messages */
+  errors: string[];
+}
+
+/**
+ * Validation mode for metadata
+ * - none: No validation (default, backward compatible)
+ * - warn: Validate and log warnings, but don't fail
+ * - strict: Validate and throw on failure
+ */
+export type ValidationMode = 'none' | 'warn' | 'strict';
