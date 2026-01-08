@@ -80,6 +80,8 @@ PetiteVue.createApp({
           this.sessions = data.sessions;
           if (data.sessions.length > 0) {
             this.sessionId = data.sessions[0].id;
+            // Fetch agents for this session
+            this.fetchSessionData(data.sessions[0].id);
           }
         }
       } catch (err) {
@@ -113,8 +115,9 @@ PetiteVue.createApp({
       try {
         const data = JSON.parse(event.data);
         this.sessionId = data.sessionId;
-        // Refresh sessions list
+        // Refresh sessions list and refetch session data with agents
         this.fetchSessions();
+        this.fetchSessionData(data.sessionId);
       } catch (err) {
         console.error('Failed to parse session:start event:', err);
       }
@@ -122,30 +125,15 @@ PetiteVue.createApp({
   },
 
   // Fetch initial data from REST API
+  // Note: Agent data is fetched via SSE init event to ensure consistency
   async fetchInitialData() {
     try {
-      // Fetch current session
-      const sessionRes = await fetch('/api/session');
-      const sessionData = await sessionRes.json();
-
-      if (sessionData.sessionId) {
-        this.sessionId = sessionData.sessionId;
-        if (sessionData.metrics) {
-          this.updateMetrics(sessionData.metrics);
-        }
-        if (sessionData.agents) {
-          this.agentTree = sessionData.agents;
-        }
-      }
-
-      // Fetch all sessions
-      await this.fetchSessions();
-
-      // Fetch totals
+      // Fetch totals for aggregate metrics
       const totalsRes = await fetch('/api/totals');
       const totals = await totalsRes.json();
       this.updateMetrics(totals);
 
+      // Sessions and agents are handled by SSE init event
     } catch (err) {
       console.error('Failed to fetch initial data:', err);
     }
@@ -158,6 +146,24 @@ PetiteVue.createApp({
       this.sessions = data.sessions || [];
     } catch (err) {
       console.error('Failed to fetch sessions:', err);
+    }
+  },
+
+  // Fetch session data including agents for a specific session
+  async fetchSessionData(sessionId) {
+    try {
+      const res = await fetch(`/api/session/${sessionId}`);
+      const data = await res.json();
+      if (data.sessionId) {
+        if (data.metrics) {
+          this.updateMetrics(data.metrics);
+        }
+        if (data.agents) {
+          this.agentTree = data.agents;
+        }
+      }
+    } catch (err) {
+      console.error('Failed to fetch session data:', err);
     }
   },
 

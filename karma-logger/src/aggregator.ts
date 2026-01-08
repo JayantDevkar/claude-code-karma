@@ -369,6 +369,10 @@ export class MetricsAggregator extends EventEmitter {
         session.parentSessionId ?? session.sessionId,
         session.parentSessionId
       );
+      // Use agent type from session if available
+      if (session.agentType) {
+        metrics.agentType = session.agentType;
+      }
       this.agents.set(session.sessionId, metrics);
     }
 

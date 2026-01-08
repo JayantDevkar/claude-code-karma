@@ -19,6 +19,10 @@ export interface SessionInfo {
   modifiedAt: Date;
   isAgent: boolean;
   parentSessionId?: string;
+  /** Agent type extracted from parent's Task tool call (e.g., "Explore", "general-purpose") */
+  agentType?: string;
+  /** Agent description from parent's Task tool call */
+  agentDescription?: string;
 }
 
 /**
@@ -274,10 +278,12 @@ export async function discoverProjects(logsDir?: string): Promise<ProjectInfo[]>
 /**
  * Get all agent files for a session
  * Checks both legacy (subdirectory) and new (project-level agent-*) patterns
+ * Optionally extracts agent types from parent session's Task tool calls
  */
 export async function getSessionAgents(
   projectPath: string,
-  sessionId: string
+  sessionId: string,
+  options?: { includeAgentTypes?: boolean }
 ): Promise<SessionInfo[]> {
   const logsDir = findClaudeLogsDir();
   const agents: SessionInfo[] = [];
@@ -327,6 +333,28 @@ export async function getSessionAgents(
       }
     } catch {
       // Skip if directory not readable
+    }
+  }
+
+  // Extract agent types from parent session's Task tool calls
+  if (options?.includeAgentTypes && agents.length > 0) {
+    try {
+      const { extractAgentSpawns } = await import('./parser.js');
+      const parentSessionPath = join(logsDir, projectPath, `${sessionId}.jsonl`);
+      
+      if (existsSync(parentSessionPath)) {
+        const spawns = await extractAgentSpawns(parentSessionPath);
+        
+        for (const agent of agents) {
+          const spawnInfo = spawns.get(agent.sessionId);
+          if (spawnInfo) {
+            agent.agentType = spawnInfo.subagentType;
+            agent.agentDescription = spawnInfo.description;
+          }
+        }
+      }
+    } catch {
+      // Failed to extract agent types, continue without them
     }
   }
 

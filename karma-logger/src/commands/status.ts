@@ -359,8 +359,8 @@ async function displayTree(session: SessionInfo, metrics: SessionMetrics): Promi
     aggregator.processEntry(entry, session);
   }
 
-  // Load agent files (same pattern as dashboard preload - fixes empty tree)
-  const agents = await getSessionAgents(session.projectPath, session.sessionId);
+  // Load agent files with types (same pattern as dashboard preload - fixes empty tree)
+  const agents = await getSessionAgents(session.projectPath, session.sessionId, { includeAgentTypes: true });
   for (const agent of agents) {
     try {
       aggregator.registerAgent(agent, session);
@@ -402,8 +402,8 @@ async function displayTreeJson(session: SessionInfo, metrics: SessionMetrics): P
     aggregator.processEntry(entry, session);
   }
 
-  // Load agent files (same pattern as dashboard preload)
-  const agents = await getSessionAgents(session.projectPath, session.sessionId);
+  // Load agent files with types (same pattern as dashboard preload)
+  const agents = await getSessionAgents(session.projectPath, session.sessionId, { includeAgentTypes: true });
   for (const agent of agents) {
     try {
       aggregator.registerAgent(agent, session);

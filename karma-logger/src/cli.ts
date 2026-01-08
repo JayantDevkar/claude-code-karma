@@ -176,8 +176,8 @@ Examples:
             aggregator.processEntry(entry, session);
           }
           
-          // Load agents for this session
-          const agents = await getSessionAgents(session.projectPath, session.sessionId);
+          // Load agents for this session (with types for better display)
+          const agents = await getSessionAgents(session.projectPath, session.sessionId, { includeAgentTypes: true });
           for (const agent of agents) {
             try {
               // Register the agent
