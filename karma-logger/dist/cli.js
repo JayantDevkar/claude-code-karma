@@ -4,9 +4,11 @@ import { startTUI } from './tui/index.js';
 import { statusCommand } from './commands/status.js';
 import { watchCommand } from './commands/watch.js';
 import { reportCommand, syncSessionsToDB } from './commands/report.js';
+import { configShow, configSet, configGet, configReset, configList } from './commands/config.js';
 import { startServer } from './dashboard/index.js';
 import { LogWatcher } from './watcher.js';
 import { MetricsAggregator, connectWatcherToAggregator } from './aggregator.js';
+import { withErrorHandler } from './errors.js';
 /**
  * Creates and configures the CLI program
  */
@@ -17,7 +19,16 @@ export function createProgram() {
         .description('Track Claude Code session metrics and costs')
         .version('0.1.0')
         .option('-v, --verbose', 'Enable verbose output', false)
-        .option('-c, --config <path>', 'Path to config file');
+        .option('-c, --config <path>', 'Path to config file')
+        .addHelpText('after', `
+Examples:
+  $ karma status              Show current session metrics
+  $ karma watch               Watch sessions in real-time
+  $ karma report --since 7d   View last 7 days of history
+  $ karma config              Show configuration
+
+Documentation: https://github.com/anthropics/karma-logger
+`);
     // Status command
     program
         .command('status')
@@ -25,6 +36,13 @@ export function createProgram() {
         .option('-p, --project <name>', 'Show status for specific project')
         .option('-a, --all', 'Show all active sessions')
         .option('-j, --json', 'Output as JSON')
+        .addHelpText('after', `
+Examples:
+  $ karma status                  Show current project session
+  $ karma status --all            Show all active sessions
+  $ karma status -p myproject     Show specific project
+  $ karma status --json           Output as JSON
+`)
         .action(async (options, cmd) => {
         const ctx = getContext(cmd);
         if (ctx.verbose) {
@@ -44,6 +62,13 @@ export function createProgram() {
         .option('-p, --project <name>', 'Watch specific project')
         .option('-c, --compact', 'Compact display mode', false)
         .option('-a, --activity-only', 'Show only activity feed', false)
+        .addHelpText('after', `
+Examples:
+  $ karma watch                   Stream mode with live metrics
+  $ karma watch --ui              Interactive TUI dashboard
+  $ karma watch --compact         Compact streaming view
+  $ karma watch --activity-only   Show only tool activity feed
+`)
         .action(async (options, cmd) => {
         const ctx = getContext(cmd);
         if (ctx.verbose) {
@@ -71,6 +96,13 @@ export function createProgram() {
         .option('-j, --json', 'Output as JSON')
         .option('--csv', 'Output as CSV')
         .option('--sync', 'Sync current sessions to database first')
+        .addHelpText('after', `
+Examples:
+  $ karma report                  List recent sessions
+  $ karma report <session-id>     Show details for a session
+  $ karma report --since 7d       Sessions from last 7 days
+  $ karma report --sync --csv     Sync and export to CSV
+`)
         .action(async (sessionId, options, cmd) => {
         const ctx = getContext(cmd);
         if (ctx.verbose) {
@@ -132,6 +164,42 @@ export function createProgram() {
             process.exit(1);
         }
     });
+    // Config command (Phase 7)
+    const configCmd = program
+        .command('config')
+        .description('Manage karma configuration')
+        .option('-j, --json', 'Output as JSON')
+        .action(withErrorHandler(async (options) => {
+        await configShow(options);
+    }));
+    configCmd
+        .command('get <key>')
+        .description('Get a configuration value')
+        .action(withErrorHandler(async (key, options, cmd) => {
+        const parentOpts = cmd.parent?.opts() ?? {};
+        await configGet(key, parentOpts);
+    }));
+    configCmd
+        .command('set <key> <value>')
+        .description('Set a configuration value')
+        .action(withErrorHandler(async (key, value, options, cmd) => {
+        const parentOpts = cmd.parent?.opts() ?? {};
+        await configSet(key, value, parentOpts);
+    }));
+    configCmd
+        .command('reset')
+        .description('Reset configuration to defaults')
+        .action(withErrorHandler(async (options, cmd) => {
+        const parentOpts = cmd.parent?.opts() ?? {};
+        await configReset(parentOpts);
+    }));
+    configCmd
+        .command('list')
+        .description('List available configuration keys')
+        .action(withErrorHandler(async (options, cmd) => {
+        const parentOpts = cmd.parent?.opts() ?? {};
+        await configList(parentOpts);
+    }));
     return program;
 }
 /**

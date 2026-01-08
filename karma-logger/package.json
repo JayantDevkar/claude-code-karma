@@ -1,29 +1,48 @@
 {
   "name": "karma-logger",
   "version": "0.1.0",
-  "description": "CLI tool for tracking Claude Code session metrics and costs",
+  "description": "Local metrics and cost tracking for Claude Code sessions",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
     "karma": "dist/index.js"
   },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "tsc",
     "dev": "tsx src/index.ts",
+    "start": "tsx src/index.ts",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
     "clean": "rm -rf dist",
-    "prepublishOnly": "npm run build"
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run typecheck && npm run test && npm run build"
   },
   "keywords": [
     "claude",
     "claude-code",
+    "anthropic",
     "metrics",
     "cost-tracking",
-    "cli"
+    "cli",
+    "ai",
+    "llm"
   ],
   "author": "",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/anthropics/karma-logger.git"
+  },
+  "bugs": {
+    "url": "https://github.com/anthropics/karma-logger/issues"
+  },
+  "homepage": "https://github.com/anthropics/karma-logger#readme",
   "engines": {
     "node": ">=20.0.0"
   },

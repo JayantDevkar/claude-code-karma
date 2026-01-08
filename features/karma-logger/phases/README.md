@@ -65,7 +65,7 @@ Mark phases as completed by updating this table:
 | 4 | Complete | 2026-01-08 | 2026-01-08 | `karma status` with --project, --all, --json flags |
 | 5 | Complete | 2026-01-08 | 2026-01-08 | `karma watch` streaming mode with activity feed |
 | 6 | Complete | 2026-01-08 | 2026-01-08 | SQLite persistence + `karma report` with JSON/CSV |
-| 7 | Not Started | - | - | - |
+| 7 | Complete | 2026-01-08 | 2026-01-08 | Config system, error handling, docs, npm-ready |
 
 ## Quick Reference
 
