@@ -130,6 +130,59 @@ describe('AgentRadioImpl', () => {
   });
 
   // ============================================
+  // Full Status (Status + Progress)
+  // ============================================
+
+  describe('getFullStatus', () => {
+    it('returns status only when no progress reported', () => {
+      agent.setStatus('active');
+
+      const fullStatus = agent.getFullStatus();
+      expect(fullStatus.state).toBe('active');
+      expect(fullStatus.agentId).toBe('agent-1');
+      expect(fullStatus.progress).toBeUndefined();
+    });
+
+    it('includes progress when progress has been reported', () => {
+      agent.setStatus('active');
+      agent.reportProgress({ tool: 'Bash', percent: 50, message: 'Running tests...' });
+
+      const fullStatus = agent.getFullStatus();
+      expect(fullStatus.state).toBe('active');
+      expect(fullStatus.progress).toEqual({
+        tool: 'Bash',
+        percent: 50,
+        message: 'Running tests...',
+      });
+    });
+
+    it('returns latest progress update', () => {
+      agent.setStatus('active');
+      agent.reportProgress({ tool: 'Read', percent: 25 });
+      agent.reportProgress({ tool: 'Edit', percent: 75, message: 'Almost done' });
+
+      const fullStatus = agent.getFullStatus();
+      expect(fullStatus.progress).toEqual({
+        tool: 'Edit',
+        percent: 75,
+        message: 'Almost done',
+      });
+    });
+
+    it('progress becomes undefined after TTL expires', () => {
+      agent.setStatus('active');
+      agent.reportProgress({ percent: 50 });
+
+      expect(agent.getFullStatus().progress).not.toBeUndefined();
+
+      vi.advanceTimersByTime(60001);
+
+      expect(agent.getFullStatus().progress).toBeUndefined();
+      expect(agent.getFullStatus().state).toBe('active');
+    });
+  });
+
+  // ============================================
   // Results
   // ============================================
 
@@ -497,6 +550,7 @@ describe('AgentRadio interface compliance', () => {
     expect(agentRadio.parentId).toBeNull();
     expect(typeof agentRadio.setStatus).toBe('function');
     expect(typeof agentRadio.getStatus).toBe('function');
+    expect(typeof agentRadio.getFullStatus).toBe('function');
     expect(typeof agentRadio.reportProgress).toBe('function');
     expect(typeof agentRadio.publishResult).toBe('function');
     expect(typeof agentRadio.onAgentStatus).toBe('function');

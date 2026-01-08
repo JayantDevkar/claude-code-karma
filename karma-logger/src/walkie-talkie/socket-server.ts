@@ -184,7 +184,25 @@ export function handleRadioRequest(
 
       case 'get-status': {
         const targetId = (request.args.agentId as string) || agentId;
+        const includeProgress = request.args.includeProgress as boolean;
+
+        if (includeProgress && targetId === agentId) {
+          // Use getFullStatus for self with progress
+          const fullStatus = radio.getFullStatus();
+          return { id: request.id, success: true, data: fullStatus };
+        }
+
+        // For other agents or when not including progress, use cache directly
         const status = cache.get<AgentStatus>(`agent:${targetId}:status`);
+
+        if (includeProgress && status) {
+          // Manually attach progress for other agents
+          const progress = cache.get(`agent:${targetId}:progress`);
+          if (progress) {
+            return { id: request.id, success: true, data: { ...status, progress } };
+          }
+        }
+
         return { id: request.id, success: true, data: status };
       }
 

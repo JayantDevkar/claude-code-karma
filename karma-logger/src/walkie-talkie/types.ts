@@ -127,6 +127,14 @@ export interface ProgressUpdate {
 }
 
 /**
+ * Combined status with optional progress
+ * Used when querying full agent state in a single request
+ */
+export interface AgentStatusWithProgress extends AgentStatus {
+  progress?: ProgressUpdate;
+}
+
+/**
  * Message in agent inbox
  */
 export interface AgentMessage {
@@ -145,6 +153,7 @@ export interface AgentRadio {
 
   setStatus(state: AgentState, metadata?: Record<string, unknown>): void;
   getStatus(): AgentStatus;
+  getFullStatus(): AgentStatusWithProgress;
   reportProgress(progress: ProgressUpdate): void;
   publishResult(result: unknown): void;
   onAgentStatus(agentId: string, cb: (status: AgentStatus) => void): () => void;

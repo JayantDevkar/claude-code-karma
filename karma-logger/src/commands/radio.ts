@@ -303,9 +303,9 @@ async function handleListen(options: {
 
 /**
  * Handle get-status command
- * karma radio get-status [--agent <id>]
+ * karma radio get-status [--agent <id>] [--include-progress]
  */
-async function handleGetStatus(options: { agent?: string }): Promise<void> {
+async function handleGetStatus(options: { agent?: string; includeProgress?: boolean }): Promise<void> {
   try {
     const env = getRadioEnv();
     const client = createRadioClient();
@@ -314,6 +314,10 @@ async function handleGetStatus(options: { agent?: string }): Promise<void> {
 
     if (options.agent) {
       args.agentId = options.agent;
+    }
+
+    if (options.includeProgress) {
+      args.includeProgress = true;
     }
 
     const result = await client.send<AgentStatus | AgentStatus[]>('get-status', args, env);
@@ -442,6 +446,7 @@ Examples:
     .command('get-status')
     .description('Get agent status')
     .option('-a, --agent <id>', 'Get status for specific agent (default: self)')
+    .option('-p, --include-progress', 'Include latest progress update in response')
     .action(handleGetStatus);
 
   // list-agents

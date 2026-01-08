@@ -8,6 +8,7 @@ import type {
   AgentRadio,
   AgentState,
   AgentStatus,
+  AgentStatusWithProgress,
   ProgressUpdate,
   AgentMessage,
   AgentDiscoveryOptions,
@@ -128,6 +129,21 @@ export class AgentRadioImpl implements AgentRadio {
         metadata: this.metadata,
       };
     }
+    return status;
+  }
+
+  /**
+   * Get current agent status with progress included
+   * Combines status and latest progress in a single response
+   */
+  getFullStatus(): AgentStatusWithProgress {
+    const status = this.getStatus();
+    const progress = this.cache.get<ProgressUpdate>(`agent:${this.agentId}:progress`);
+
+    if (progress) {
+      return { ...status, progress };
+    }
+
     return status;
   }
 
