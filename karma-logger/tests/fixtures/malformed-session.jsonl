@@ -1,0 +1,4 @@
+{"type":"user","uuid":"a1111111-1111-1111-1111-111111111111","parentUuid":null,"sessionId":"test-session-002","timestamp":"2026-01-08T10:00:00.000Z","message":{"role":"user","content":"First message"}}
+not valid json at all
+{"incomplete json
+{"type":"assistant","uuid":"b2222222-2222-2222-2222-222222222222","parentUuid":"a1111111-1111-1111-1111-111111111111","sessionId":"test-session-002","timestamp":"2026-01-08T10:00:05.000Z","message":{"model":"claude-sonnet-4-20250514","id":"msg_test1","type":"message","role":"assistant","content":[{"type":"text","text":"Valid message after malformed lines"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":50,"output_tokens":25,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}
