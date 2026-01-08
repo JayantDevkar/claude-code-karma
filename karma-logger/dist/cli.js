@@ -3,6 +3,7 @@ import chalk from 'chalk';
 import { startTUI } from './tui/index.js';
 import { statusCommand } from './commands/status.js';
 import { watchCommand } from './commands/watch.js';
+import { reportCommand, syncSessionsToDB } from './commands/report.js';
 import { startServer } from './dashboard/index.js';
 import { LogWatcher } from './watcher.js';
 import { MetricsAggregator, connectWatcherToAggregator } from './aggregator.js';
@@ -62,15 +63,32 @@ export function createProgram() {
     });
     // Report command
     program
-        .command('report')
-        .description('Generate usage reports')
-        .action((_options, cmd) => {
+        .command('report [sessionId]')
+        .description('View session history and reports')
+        .option('-p, --project <name>', 'Filter by project name')
+        .option('-s, --since <date>', 'Show sessions since date (e.g., "7d", "2026-01-01")')
+        .option('-l, --limit <number>', 'Number of sessions to show', '10')
+        .option('-j, --json', 'Output as JSON')
+        .option('--csv', 'Output as CSV')
+        .option('--sync', 'Sync current sessions to database first')
+        .action(async (sessionId, options, cmd) => {
         const ctx = getContext(cmd);
         if (ctx.verbose) {
             console.log(chalk.gray('Running in verbose mode'));
         }
-        console.log(chalk.yellow('karma report: Not implemented'));
-        console.log(chalk.gray('This command will be implemented in Phase 6'));
+        // Optionally sync before reporting
+        if (options.sync) {
+            console.log(chalk.dim('Syncing sessions...'));
+            await syncSessionsToDB();
+        }
+        await reportCommand({
+            sessionId,
+            project: options.project,
+            since: options.since,
+            limit: parseInt(options.limit, 10),
+            json: options.json,
+            csv: options.csv,
+        });
     });
     // Dashboard command (Phase 5)
     program

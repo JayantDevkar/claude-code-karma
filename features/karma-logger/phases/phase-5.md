@@ -93,6 +93,16 @@ export function renderAgentTree(tree: AgentTreeNode): string[] {
 - [x] Show timestamps
 - [x] Indicate hierarchy with indentation
 
+### 5.8 Web Dashboard UI (Phase 6 Extension)
+- [x] Create `src/dashboard/public/index.html` with Pico CSS, uPlot, Petite-Vue
+- [x] Create `src/dashboard/public/style.css` with dark theme
+- [x] Create `src/dashboard/public/app.js` with SSE integration
+- [x] Update `src/dashboard/server.ts` for static file serving
+- [x] Real-time metrics display (tokens in/out, cost)
+- [x] Token usage chart with uPlot
+- [x] Agent tree visualization
+- [x] Recent sessions table
+
 ---
 
 ## Command Interface
@@ -109,6 +119,15 @@ karma watch --compact
 
 # Activity only (no tree)
 karma watch --activity-only
+
+# Launch web dashboard
+karma dashboard
+
+# Web dashboard on custom port
+karma dashboard --port 8080
+
+# Web dashboard without auto-opening browser
+karma dashboard --no-open
 ```
 
 ---

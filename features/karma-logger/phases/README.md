@@ -64,7 +64,7 @@ Mark phases as completed by updating this table:
 | 3 | Complete | 2026-01-08 | 2026-01-08 | Metrics aggregator + cost calc with 37 tests |
 | 4 | Complete | 2026-01-08 | 2026-01-08 | `karma status` with --project, --all, --json flags |
 | 5 | Complete | 2026-01-08 | 2026-01-08 | `karma watch` streaming mode with activity feed |
-| 6 | Not Started | - | - | - |
+| 6 | Complete | 2026-01-08 | 2026-01-08 | SQLite persistence + `karma report` with JSON/CSV |
 | 7 | Not Started | - | - | - |
 
 ## Quick Reference
