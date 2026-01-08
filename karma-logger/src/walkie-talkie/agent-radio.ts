@@ -10,6 +10,7 @@ import type {
   AgentStatus,
   ProgressUpdate,
   AgentMessage,
+  AgentDiscoveryOptions,
 } from './types.js';
 
 /** TTL constants in milliseconds */
@@ -239,6 +240,49 @@ export class AgentRadioImpl implements AgentRadio {
     }
 
     return result;
+  }
+
+  /**
+   * List agents with optional filtering
+   * @param options Filter options: children, siblings, parent, all; and status filter
+   * @returns Array of agent statuses
+   */
+  listAgents(options?: AgentDiscoveryOptions): AgentStatus[] {
+    const filter = options?.filter ?? 'all';
+    const statusFilter = options?.status;
+
+    let agents: AgentStatus[] = [];
+
+    switch (filter) {
+      case 'children':
+        agents = Array.from(this.getChildStatuses().values());
+        break;
+      case 'siblings':
+        agents = Array.from(this.getSiblingStatuses().values());
+        break;
+      case 'parent':
+        const parent = this.getParentStatus();
+        agents = parent ? [parent] : [];
+        break;
+      case 'all':
+      default:
+        // Get all agents in session
+        const sessionAgents = this.cache.get<string[]>(`session:${this.rootSessionId}:agents`) ?? [];
+        for (const agentId of sessionAgents) {
+          const status = this.cache.get<AgentStatus>(`agent:${agentId}:status`);
+          if (status) {
+            agents.push(status);
+          }
+        }
+        break;
+    }
+
+    // Apply status filter if provided
+    if (statusFilter) {
+      agents = agents.filter(a => a.state === statusFilter);
+    }
+
+    return agents;
   }
 
   /**

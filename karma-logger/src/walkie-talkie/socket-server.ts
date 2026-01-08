@@ -10,7 +10,7 @@ import * as net from 'node:net';
 import * as fs from 'node:fs';
 import type { Server } from 'node:net';
 import type { MetricsAggregator } from '../aggregator.js';
-import type { RadioRequest, RadioResponse, AgentStatus } from './types.js';
+import type { RadioRequest, RadioResponse, AgentStatus, AgentState } from './types.js';
 
 /** Default socket path for Unix */
 const DEFAULT_SOCKET_PATH = '/tmp/karma-radio.sock';
@@ -233,6 +233,13 @@ export function handleRadioRequest(
         const result = request.args.result;
         radio.publishResult(result);
         return { id: request.id, success: true };
+      }
+
+      case 'list-agents': {
+        const filter = request.args.filter as 'children' | 'siblings' | 'parent' | 'all' | undefined;
+        const status = request.args.status as AgentState | undefined;
+        const agents = radio.listAgents({ filter, status });
+        return { id: request.id, success: true, data: agents };
       }
 
       default:

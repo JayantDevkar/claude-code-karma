@@ -153,6 +153,7 @@ export interface AgentRadio {
   getParentStatus(): AgentStatus | null;
   getChildStatuses(): Map<string, AgentStatus>;
   getSiblingStatuses(): Map<string, AgentStatus>;
+  listAgents(options?: AgentDiscoveryOptions): AgentStatus[];
   waitForAgent(agentId: string, state: AgentState, timeoutMs?: number): Promise<AgentStatus>;
   send(targetAgentId: string, message: unknown): void;
   onMessage(cb: (fromAgentId: string, message: unknown) => void): () => void;
@@ -173,7 +174,8 @@ export type RadioCommand =
   | 'send'
   | 'listen'
   | 'get-status'
-  | 'publish-result';
+  | 'publish-result'
+  | 'list-agents';
 
 /**
  * Environment context for radio requests
@@ -205,4 +207,12 @@ export interface RadioResponse {
   success: boolean;
   data?: unknown;
   error?: string;
+}
+
+/**
+ * Options for agent discovery
+ */
+export interface AgentDiscoveryOptions {
+  filter?: 'children' | 'siblings' | 'parent' | 'all';
+  status?: AgentState;
 }

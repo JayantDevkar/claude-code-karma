@@ -323,6 +323,42 @@ async function handleGetStatus(options: { agent?: string }): Promise<void> {
   }
 }
 
+/**
+ * Handle list-agents command
+ * karma radio list-agents [--children] [--siblings] [--parent] [--status <state>]
+ */
+async function handleListAgents(options: {
+  children?: boolean;
+  siblings?: boolean;
+  parent?: boolean;
+  status?: string;
+}): Promise<void> {
+  try {
+    const env = getRadioEnv();
+    const client = createRadioClient();
+
+    let filter: 'children' | 'siblings' | 'parent' | 'all' = 'all';
+    if (options.children) filter = 'children';
+    else if (options.siblings) filter = 'siblings';
+    else if (options.parent) filter = 'parent';
+
+    const args: Record<string, unknown> = { filter };
+
+    if (options.status) {
+      const validStates: AgentState[] = ['pending', 'active', 'waiting', 'completed', 'failed', 'cancelled'];
+      if (!validStates.includes(options.status as AgentState)) {
+        outputError(`Invalid status: ${options.status}. Valid states: ${validStates.join(', ')}`);
+      }
+      args.status = options.status;
+    }
+
+    const result = await client.send<AgentStatus[]>('list-agents', args, env);
+    outputJson({ success: true, agents: result });
+  } catch (error) {
+    handleRadioError(error);
+  }
+}
+
 // ============================================
 // Command Builder
 // ============================================
@@ -407,6 +443,16 @@ Examples:
     .description('Get agent status')
     .option('-a, --agent <id>', 'Get status for specific agent (default: self)')
     .action(handleGetStatus);
+
+  // list-agents
+  radio
+    .command('list-agents')
+    .description('List agents in session')
+    .option('--children', 'List only child agents')
+    .option('--siblings', 'List only sibling agents')
+    .option('--parent', 'Get parent agent only')
+    .option('-s, --status <state>', 'Filter by agent status (pending|active|waiting|completed|failed|cancelled)')
+    .action(handleListAgents);
 
   return radio;
 }
