@@ -1,6 +1,7 @@
 /**
  * karma watch command
  * Phase 5: Real-time streaming display of session activity
+ * Phase 6.2: Automatic persistence from watch mode (FLAW-004)
  */
 
 import chalk from 'chalk';
@@ -14,6 +15,7 @@ import {
 } from '../discovery.js';
 import type { LogEntry } from '../types.js';
 import { formatNumber, formatCost } from '../tui/utils/format.js';
+import { getDB, closeDB } from '../db.js';
 
 /**
  * Watch command options
@@ -22,7 +24,18 @@ export interface WatchOptions {
   project?: string;
   compact?: boolean;
   activityOnly?: boolean;
+  persist?: boolean;  // Default true, set false with --no-persist
 }
+
+/**
+ * Default auto-persistence interval in milliseconds (30 seconds)
+ */
+const AUTO_PERSIST_INTERVAL_MS = 30_000;
+
+/**
+ * Inactivity threshold for session detection in milliseconds (5 minutes)
+ */
+const INACTIVITY_THRESHOLD_MS = 300_000;
 
 /**
  * Activity entry for the ring buffer
@@ -407,6 +420,133 @@ class WatchDisplay {
 }
 
 /**
+ * WatchPersistence handles automatic session persistence to SQLite
+ * Implements FLAW-004: Automatic persistence from watch mode
+ */
+class WatchPersistence {
+  private aggregator: MetricsAggregator;
+  private enabled: boolean;
+  private persistInterval: ReturnType<typeof setInterval> | null = null;
+  private sessionId: string;
+  private persistCount = 0;
+
+  constructor(aggregator: MetricsAggregator, sessionId: string, enabled = true) {
+    this.aggregator = aggregator;
+    this.sessionId = sessionId;
+    this.enabled = enabled;
+  }
+
+  /**
+   * Start automatic persistence
+   */
+  start(): void {
+    if (!this.enabled) return;
+
+    // Wire up session lifecycle events
+    this.aggregator.on('session:ended', (session: SessionMetrics) => {
+      this.persistSession(session);
+    });
+
+    this.aggregator.on('session:inactive', (sessionIds: string[]) => {
+      // End inactive sessions and persist them
+      for (const id of sessionIds) {
+        this.aggregator.endSession(id);
+      }
+    });
+
+    // Start periodic auto-persistence
+    this.persistInterval = setInterval(() => {
+      this.persistActiveSessions();
+    }, AUTO_PERSIST_INTERVAL_MS);
+  }
+
+  /**
+   * Stop automatic persistence and cleanup
+   */
+  stop(): void {
+    if (this.persistInterval) {
+      clearInterval(this.persistInterval);
+      this.persistInterval = null;
+    }
+  }
+
+  /**
+   * Persist a single session to the database
+   */
+  private persistSession(session: SessionMetrics): void {
+    if (!this.enabled) return;
+
+    try {
+      const db = getDB();
+      db.saveSessionMetrics(session);
+
+      // Save agents for this session
+      const agents = this.aggregator.getSessionAgents(session.sessionId);
+      for (const agent of agents) {
+        db.saveAgentMetrics(agent);
+      }
+
+      this.persistCount++;
+    } catch (error) {
+      // Silent fail for persistence errors during watch
+      // The data will still be persisted on next sync
+    }
+  }
+
+  /**
+   * Persist all active sessions (called periodically)
+   */
+  private persistActiveSessions(): void {
+    if (!this.enabled) return;
+
+    // Check for inactive sessions first
+    this.aggregator.detectInactiveSessions(INACTIVITY_THRESHOLD_MS);
+
+    // Persist all active sessions
+    const activeSessions = this.aggregator.getActiveSessions();
+    for (const session of activeSessions) {
+      this.persistSession(session);
+    }
+  }
+
+  /**
+   * Final persist before shutdown - handles all sessions
+   */
+  async persistBeforeExit(): Promise<void> {
+    if (!this.enabled) return;
+
+    try {
+      // Detect and end inactive sessions
+      const inactiveSessions = this.aggregator.detectInactiveSessions(INACTIVITY_THRESHOLD_MS);
+      for (const id of inactiveSessions) {
+        this.aggregator.endSession(id);
+      }
+
+      // Persist all remaining sessions (both active and ended)
+      const allSessions = this.aggregator.getAllSessions();
+      for (const session of allSessions) {
+        this.persistSession(session);
+      }
+
+      // Close database connection
+      closeDB();
+    } catch (error) {
+      // Silent fail on shutdown
+    }
+  }
+
+  /**
+   * Get persistence statistics
+   */
+  getStats(): { persistCount: number; enabled: boolean } {
+    return {
+      persistCount: this.persistCount,
+      enabled: this.enabled,
+    };
+  }
+}
+
+/**
  * Extract activity info from a log entry
  */
 function extractActivity(entry: LogEntry, session: SessionInfo): ActivityEntry | null {
@@ -469,6 +609,10 @@ export async function watchCommand(options: WatchOptions): Promise<void> {
   const aggregator = new MetricsAggregator();
   connectWatcherToAggregator(watcher, aggregator);
 
+  // Create persistence handler (enabled by default, disabled with --no-persist)
+  const persistEnabled = options.persist !== false;
+  const persistence = new WatchPersistence(aggregator, session.sessionId, persistEnabled);
+
   // Create display
   const display = new WatchDisplay({
     projectName: session.projectName,
@@ -514,15 +658,25 @@ export async function watchCommand(options: WatchOptions): Promise<void> {
     }
   });
 
-  // Handle graceful shutdown
+  // Handle graceful shutdown with persistence
   const cleanup = async () => {
     display.cleanup();
+
+    // Stop periodic persistence
+    persistence.stop();
+
+    // Persist all sessions before exit
+    await persistence.persistBeforeExit();
+
     await watcher.stop();
     process.exit(0);
   };
 
   process.on('SIGINT', cleanup);
   process.on('SIGTERM', cleanup);
+
+  // Start persistence (periodic auto-save and event listeners)
+  persistence.start();
 
   // Start watching
   display.start();

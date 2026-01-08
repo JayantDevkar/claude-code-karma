@@ -50,7 +50,8 @@ export function claudeLogsDirExists(): boolean {
  *
  * Patterns:
  * - Main session: <project-path>/<session-id>.jsonl
- * - Agent file: <project-path>/<session-id>/<agent-id>.jsonl
+ * - Agent file (legacy): <project-path>/<session-id>/<agent-id>.jsonl
+ * - Agent file (new): <project-path>/agent-<agent-id>.jsonl
  */
 export function parseSessionPath(filePath: string, logsDir: string): SessionInfo | null {
   const relativePath = relative(logsDir, filePath);
@@ -60,8 +61,9 @@ export function parseSessionPath(filePath: string, logsDir: string): SessionInfo
 
   const filename = basename(filePath, '.jsonl');
   const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const agentPattern = /^agent-[0-9a-f]{7}$/i;
 
-  // Agent file: project/session-id/agent-id.jsonl
+  // Agent file (legacy): project/session-id/agent-id.jsonl
   if (parts.length >= 3 && uuidPattern.test(parts[parts.length - 2])) {
     const projectPath = parts.slice(0, -2).join('/');
     const parentSessionId = parts[parts.length - 2];
@@ -73,6 +75,21 @@ export function parseSessionPath(filePath: string, logsDir: string): SessionInfo
       modifiedAt: new Date(),
       isAgent: true,
       parentSessionId,
+    };
+  }
+
+  // Agent file (new pattern): project/agent-<agentId>.jsonl
+  // Note: parentSessionId will be extracted from file content later
+  if (agentPattern.test(filename)) {
+    const projectPath = parts.slice(0, -1).join('/');
+    return {
+      sessionId: filename.replace('agent-', ''), // Use agent ID as session ID
+      projectPath,
+      projectName: extractProjectName(projectPath),
+      filePath,
+      modifiedAt: new Date(),
+      isAgent: true,
+      // parentSessionId will be set when we read the file
     };
   }
 
@@ -256,33 +273,94 @@ export async function discoverProjects(logsDir?: string): Promise<ProjectInfo[]>
 
 /**
  * Get all agent files for a session
+ * Checks both legacy (subdirectory) and new (project-level agent-*) patterns
  */
 export async function getSessionAgents(
   projectPath: string,
   sessionId: string
 ): Promise<SessionInfo[]> {
   const logsDir = findClaudeLogsDir();
-  const agentDir = join(logsDir, projectPath, sessionId);
-
-  if (!existsSync(agentDir)) {
-    return [];
-  }
-
-  const files = await findJsonlFiles(agentDir);
   const agents: SessionInfo[] = [];
 
-  for (const filePath of files) {
-    const info = parseSessionPath(filePath, logsDir);
-    if (info && info.isAgent) {
-      try {
-        const stats = await stat(filePath);
-        info.modifiedAt = stats.mtime;
-        agents.push(info);
-      } catch {
-        // Skip inaccessible
+  // Check legacy pattern: project/session-id/agent.jsonl
+  const agentDir = join(logsDir, projectPath, sessionId);
+  if (existsSync(agentDir)) {
+    const files = await findJsonlFiles(agentDir);
+    for (const filePath of files) {
+      const info = parseSessionPath(filePath, logsDir);
+      if (info && info.isAgent) {
+        try {
+          const stats = await stat(filePath);
+          info.modifiedAt = stats.mtime;
+          agents.push(info);
+        } catch {
+          // Skip inaccessible
+        }
       }
     }
   }
 
+  // Check new pattern: project/agent-*.jsonl files that belong to this session
+  const projectDir = join(logsDir, projectPath);
+  if (existsSync(projectDir)) {
+    try {
+      const entries = await readdir(projectDir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (entry.isFile() && entry.name.startsWith('agent-') && entry.name.endsWith('.jsonl')) {
+          const filePath = join(projectDir, entry.name);
+          // Read first line to check sessionId
+          const parentId = await extractParentSessionId(filePath);
+          if (parentId === sessionId) {
+            const info = parseSessionPath(filePath, logsDir);
+            if (info) {
+              info.parentSessionId = parentId;
+              try {
+                const stats = await stat(filePath);
+                info.modifiedAt = stats.mtime;
+                agents.push(info);
+              } catch {
+                // Skip inaccessible
+              }
+            }
+          }
+        }
+      }
+    } catch {
+      // Skip if directory not readable
+    }
+  }
+
   return agents.sort((a, b) => b.modifiedAt.getTime() - a.modifiedAt.getTime());
+}
+
+/**
+ * Extract parent session ID from an agent file's first line
+ */
+export async function extractParentSessionId(filePath: string): Promise<string | null> {
+  try {
+    const { createReadStream } = await import('node:fs');
+    const { createInterface } = await import('node:readline');
+
+    const rl = createInterface({
+      input: createReadStream(filePath),
+      crlfDelay: Infinity,
+    });
+
+    for await (const line of rl) {
+      try {
+        const parsed = JSON.parse(line);
+        if (parsed.sessionId) {
+          rl.close();
+          return parsed.sessionId;
+        }
+      } catch {
+        // Skip malformed lines
+      }
+      break; // Only check first line
+    }
+    rl.close();
+  } catch {
+    // File not readable
+  }
+  return null;
 }

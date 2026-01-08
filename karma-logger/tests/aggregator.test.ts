@@ -323,6 +323,211 @@ describe('MetricsAggregator', () => {
       expect(exported.sessions[0].toolUsage).toBeInstanceOf(Array);
     });
   });
+
+  // ============================================
+  // Session Lifecycle Management Tests (FLAW-005)
+  // ============================================
+
+  describe('session status tracking', () => {
+    it('initializes new sessions with active status', () => {
+      const session = createMockSessionInfo();
+      aggregator.processEntry(createMockEntry(), session);
+
+      const metrics = aggregator.getSessionMetrics(session.sessionId);
+      expect(metrics?.status).toBe('active');
+      expect(metrics?.endedAt).toBeUndefined();
+    });
+  });
+
+  describe('endSession', () => {
+    it('marks session as ended with timestamp', () => {
+      const session = createMockSessionInfo();
+      aggregator.processEntry(createMockEntry(), session);
+
+      const result = aggregator.endSession(session.sessionId);
+
+      expect(result).toBe(true);
+      const metrics = aggregator.getSessionMetrics(session.sessionId);
+      expect(metrics?.status).toBe('ended');
+      expect(metrics?.endedAt).toBeInstanceOf(Date);
+    });
+
+    it('returns false for non-existent session', () => {
+      const result = aggregator.endSession('non-existent-session');
+      expect(result).toBe(false);
+    });
+
+    it('returns true when ending already-ended session (idempotent)', () => {
+      const session = createMockSessionInfo();
+      aggregator.processEntry(createMockEntry(), session);
+
+      aggregator.endSession(session.sessionId);
+      const result = aggregator.endSession(session.sessionId);
+
+      expect(result).toBe(true);
+    });
+
+    it('emits session:ended event', () => {
+      const session = createMockSessionInfo();
+      aggregator.processEntry(createMockEntry(), session);
+
+      let emittedSession: unknown = null;
+      aggregator.on('session:ended', (s) => {
+        emittedSession = s;
+      });
+
+      aggregator.endSession(session.sessionId);
+
+      expect(emittedSession).toBeDefined();
+      expect((emittedSession as { sessionId: string }).sessionId).toBe(session.sessionId);
+    });
+  });
+
+  describe('detectInactiveSessions', () => {
+    it('detects sessions inactive beyond threshold', () => {
+      const session = createMockSessionInfo();
+      // Process an entry to create the session
+      aggregator.processEntry(createMockEntry(), session);
+
+      // Manually backdate lastActivity to simulate inactivity
+      // (lastActivity only moves forward from entry timestamps, so we need to
+      // simulate time passing by adjusting the timestamp directly)
+      const metrics = aggregator.getSessionMetrics(session.sessionId);
+      if (metrics) {
+        metrics.lastActivity = new Date(Date.now() - 600000); // 10 minutes ago
+      }
+
+      const inactive = aggregator.detectInactiveSessions(300000); // 5 min threshold
+
+      expect(inactive).toContain(session.sessionId);
+    });
+
+    it('does not include recently active sessions', () => {
+      const session = createMockSessionInfo();
+      const recentEntry = createMockEntry({
+        timestamp: new Date(), // now
+      });
+      aggregator.processEntry(recentEntry, session);
+
+      const inactive = aggregator.detectInactiveSessions(300000);
+
+      expect(inactive).not.toContain(session.sessionId);
+    });
+
+    it('does not include ended sessions', () => {
+      const session = createMockSessionInfo();
+      aggregator.processEntry(createMockEntry(), session);
+
+      // Backdate lastActivity
+      const metrics = aggregator.getSessionMetrics(session.sessionId);
+      if (metrics) {
+        metrics.lastActivity = new Date(Date.now() - 600000);
+      }
+
+      aggregator.endSession(session.sessionId);
+
+      const inactive = aggregator.detectInactiveSessions(300000);
+
+      expect(inactive).not.toContain(session.sessionId);
+    });
+
+    it('emits session:inactive event when sessions detected', () => {
+      const session = createMockSessionInfo();
+      aggregator.processEntry(createMockEntry(), session);
+
+      // Backdate lastActivity
+      const metrics = aggregator.getSessionMetrics(session.sessionId);
+      if (metrics) {
+        metrics.lastActivity = new Date(Date.now() - 600000);
+      }
+
+      let emittedIds: string[] = [];
+      aggregator.on('session:inactive', (ids) => {
+        emittedIds = ids;
+      });
+
+      aggregator.detectInactiveSessions(300000);
+
+      expect(emittedIds).toContain(session.sessionId);
+    });
+  });
+
+  describe('getActiveSessions', () => {
+    it('returns only active sessions', () => {
+      const session1 = createMockSessionInfo({ sessionId: 'active-1' });
+      const session2 = createMockSessionInfo({ sessionId: 'ended-1' });
+
+      aggregator.processEntry(createMockEntry({ sessionId: 'active-1' }), session1);
+      aggregator.processEntry(createMockEntry({ sessionId: 'ended-1' }), session2);
+      aggregator.endSession('ended-1');
+
+      const active = aggregator.getActiveSessions();
+
+      expect(active).toHaveLength(1);
+      expect(active[0].sessionId).toBe('active-1');
+    });
+  });
+
+  describe('getEndedSessions', () => {
+    it('returns only ended sessions', () => {
+      const session1 = createMockSessionInfo({ sessionId: 'active-1' });
+      const session2 = createMockSessionInfo({ sessionId: 'ended-1' });
+
+      aggregator.processEntry(createMockEntry({ sessionId: 'active-1' }), session1);
+      aggregator.processEntry(createMockEntry({ sessionId: 'ended-1' }), session2);
+      aggregator.endSession('ended-1');
+
+      const ended = aggregator.getEndedSessions();
+
+      expect(ended).toHaveLength(1);
+      expect(ended[0].sessionId).toBe('ended-1');
+    });
+  });
+
+  describe('clearEndedSessions', () => {
+    it('removes ended sessions from memory', () => {
+      const session1 = createMockSessionInfo({ sessionId: 'active-1' });
+      const session2 = createMockSessionInfo({ sessionId: 'ended-1' });
+
+      aggregator.processEntry(createMockEntry({ sessionId: 'active-1' }), session1);
+      aggregator.processEntry(createMockEntry({ sessionId: 'ended-1' }), session2);
+      aggregator.endSession('ended-1');
+
+      const cleared = aggregator.clearEndedSessions();
+
+      expect(cleared).toBe(1);
+      expect(aggregator.getAllSessions()).toHaveLength(1);
+      expect(aggregator.getSessionMetrics('ended-1')).toBeUndefined();
+      expect(aggregator.getSessionMetrics('active-1')).toBeDefined();
+    });
+
+    it('removes associated agents when clearing ended sessions', () => {
+      const parentSession = createMockSessionInfo({ sessionId: 'parent-ended' });
+      const agent = createMockSessionInfo({
+        sessionId: 'agent-child',
+        isAgent: true,
+        parentSessionId: 'parent-ended',
+      });
+
+      aggregator.processEntry(createMockEntry({ sessionId: 'parent-ended' }), parentSession);
+      aggregator.registerAgent(agent, parentSession);
+      aggregator.endSession('parent-ended');
+
+      aggregator.clearEndedSessions();
+
+      expect(aggregator.getSessionMetrics('parent-ended')).toBeUndefined();
+      expect(aggregator.getAgentMetrics('agent-child')).toBeUndefined();
+    });
+
+    it('returns 0 when no ended sessions exist', () => {
+      const session = createMockSessionInfo();
+      aggregator.processEntry(createMockEntry(), session);
+
+      const cleared = aggregator.clearEndedSessions();
+
+      expect(cleared).toBe(0);
+    });
+  });
 });
 
 describe('connectWatcherToAggregator', () => {

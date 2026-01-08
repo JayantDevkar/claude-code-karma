@@ -70,12 +70,14 @@ Examples:
     .option('-p, --project <name>', 'Watch specific project')
     .option('-c, --compact', 'Compact display mode', false)
     .option('-a, --activity-only', 'Show only activity feed', false)
+    .option('--no-persist', 'Disable automatic persistence to SQLite')
     .addHelpText('after', `
 Examples:
   $ karma watch                   Stream mode with live metrics
   $ karma watch --ui              Interactive TUI dashboard
   $ karma watch --compact         Compact streaming view
   $ karma watch --activity-only   Show only tool activity feed
+  $ karma watch --no-persist      Disable auto-save to database
 `)
     .action(async (options, cmd) => {
       const ctx = getContext(cmd);
@@ -95,6 +97,7 @@ Examples:
         project: options.project,
         compact: options.compact,
         activityOnly: options.activityOnly,
+        persist: options.persist,
       });
     });
 
@@ -157,7 +160,49 @@ Examples:
       const aggregator = new MetricsAggregator();
       connectWatcherToAggregator(watcher, aggregator);
 
-      // Start the watcher
+      // Pre-populate aggregator with recent sessions (for immediate display)
+      const { discoverSessions, getSessionAgents } = await import('./discovery.js');
+      const { parseSessionFile } = await import('./parser.js');
+      
+      const sessions = await discoverSessions();
+      const recentSessions = sessions.filter(s => !s.isAgent).slice(0, 10);
+      
+      let agentCount = 0;
+      for (const session of recentSessions) {
+        try {
+          // Load main session entries
+          const entries = await parseSessionFile(session.filePath);
+          for (const entry of entries) {
+            aggregator.processEntry(entry, session);
+          }
+          
+          // Load agents for this session
+          const agents = await getSessionAgents(session.projectPath, session.sessionId);
+          for (const agent of agents) {
+            try {
+              // Register the agent
+              aggregator.registerAgent(agent, session);
+              
+              // Load agent entries
+              const agentEntries = await parseSessionFile(agent.filePath);
+              for (const entry of agentEntries) {
+                aggregator.processEntry(entry, agent);
+              }
+              agentCount++;
+            } catch {
+              // Skip agents that can't be parsed
+            }
+          }
+        } catch (err) {
+          // Skip sessions that can't be parsed
+        }
+      }
+
+      if (ctx.verbose) {
+        console.log(chalk.gray(`Pre-loaded ${recentSessions.length} sessions, ${agentCount} agents`));
+      }
+
+      // Start the watcher for real-time updates
       watcher.watch();
 
       // Start the dashboard server

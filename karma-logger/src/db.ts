@@ -9,6 +9,7 @@ import * as path from 'path';
 import * as os from 'os';
 import type { CostBreakdown } from './cost.js';
 import type { SessionMetrics, AgentMetrics } from './aggregator.js';
+import type { ActivityEntry } from './types.js';
 import {
   sessionMetricsToRecord,
   sessionRecordToMetrics,
@@ -77,6 +78,19 @@ export interface SessionSummary {
   tokensIn: number;
   tokensOut: number;
   agentCount: number;
+}
+
+/**
+ * Activity record for database storage (FLAW-006)
+ */
+export interface ActivityRecord {
+  id: number;
+  sessionId: string;
+  timestamp: string; // ISO 8601
+  tool: string;
+  type: string; // 'tool_call' | 'result'
+  agentId: string | null;
+  model: string | null;
 }
 
 /**

@@ -170,3 +170,20 @@ export interface CommandContext {
   verbose: boolean;
   configPath?: string;
 }
+
+// ============================================
+// Activity Tracking Types (FLAW-006)
+// ============================================
+
+/**
+ * Activity entry for persistent activity buffer
+ * Tracks tool calls and results for replay after restart
+ */
+export interface ActivityEntry {
+  timestamp: Date;
+  sessionId: string;
+  tool: string;
+  type: 'tool_call' | 'result';
+  agentId?: string;
+  model?: string;
+}

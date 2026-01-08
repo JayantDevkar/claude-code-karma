@@ -89,6 +89,8 @@ export function sessionRecordToMetrics(record: SessionRecord): SessionMetrics {
     projectName: record.projectName,
     startedAt: new Date(record.startedAt),
     lastActivity: record.endedAt ? new Date(record.endedAt) : new Date(record.startedAt),
+    endedAt: record.endedAt ? new Date(record.endedAt) : undefined,
+    status: record.endedAt ? 'ended' : 'active',
     tokensIn: record.tokensIn,
     tokensOut: record.tokensOut,
     cacheReadTokens: record.cacheReadTokens,

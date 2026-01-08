@@ -117,6 +117,8 @@ async function buildSessionMetrics(session: SessionInfo): Promise<SessionMetrics
       projectName: session.projectName,
       startedAt: session.modifiedAt,
       lastActivity: session.modifiedAt,
+      endedAt: undefined,
+      status: 'active',
       tokensIn: 0,
       tokensOut: 0,
       cacheReadTokens: 0,

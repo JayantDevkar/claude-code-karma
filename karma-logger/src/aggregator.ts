@@ -1,12 +1,22 @@
 /**
  * Metrics Aggregator for Claude Code sessions
  * Phase 3: In-memory metrics store with real-time aggregation
+ * Phase 6.1: Session lifecycle management (FLAW-005)
  */
 
-import type { LogEntry, TokenUsage } from './types.js';
+import { EventEmitter } from 'events';
+import type { LogEntry, TokenUsage, ActivityEntry } from './types.js';
 import { calculateCost, addCosts, emptyCostBreakdown, type CostBreakdown } from './cost.js';
 import type { SessionInfo } from './discovery.js';
 import type { LogWatcher } from './watcher.js';
+
+// Re-export ActivityEntry for consumers
+export type { ActivityEntry } from './types.js';
+
+/**
+ * Session status for lifecycle management
+ */
+export type SessionStatus = 'active' | 'ended';
 
 /**
  * Aggregated metrics for a session
@@ -17,6 +27,8 @@ export interface SessionMetrics {
   projectName: string;
   startedAt: Date;
   lastActivity: Date;
+  endedAt?: Date;
+  status: SessionStatus;
   tokensIn: number;
   tokensOut: number;
   cacheReadTokens: number;
@@ -84,6 +96,8 @@ function createEmptySessionMetrics(sessionId: string, projectPath: string, proje
     projectName,
     startedAt: new Date(),
     lastActivity: new Date(),
+    endedAt: undefined,
+    status: 'active',
     tokensIn: 0,
     tokensOut: 0,
     cacheReadTokens: 0,
@@ -122,12 +136,99 @@ function createEmptyAgentMetrics(agentId: string, sessionId: string, parentId?: 
 }
 
 /**
- * Metrics aggregator that accumulates usage across sessions and agents
+ * Events emitted by MetricsAggregator
  */
-export class MetricsAggregator {
+export interface MetricsAggregatorEvents {
+  'session:ended': (session: SessionMetrics) => void;
+  'session:inactive': (sessionIds: string[]) => void;
+  'activity': (entry: ActivityEntry) => void;
+}
+
+/**
+ * Default maximum size for in-memory activity buffer (ring buffer style)
+ */
+const DEFAULT_ACTIVITY_BUFFER_SIZE = 1000;
+
+/**
+ * Metrics aggregator that accumulates usage across sessions and agents
+ * Extends EventEmitter for session lifecycle events
+ * Phase 6.3: Activity buffer for persistent activity tracking (FLAW-006)
+ */
+export class MetricsAggregator extends EventEmitter {
   private sessions: Map<string, SessionMetrics> = new Map();
   private agents: Map<string, AgentMetrics> = new Map();
   private sessionAgents: Map<string, Set<string>> = new Map(); // sessionId -> agentIds
+
+  // Activity buffer (FLAW-006)
+  private activityBuffer: ActivityEntry[] = [];
+  private activityBufferMaxSize: number;
+
+  constructor(options?: { activityBufferSize?: number }) {
+    super();
+    this.activityBufferMaxSize = options?.activityBufferSize ?? DEFAULT_ACTIVITY_BUFFER_SIZE;
+  }
+
+  // ============================================
+  // Activity Buffer Methods (FLAW-006)
+  // ============================================
+
+  /**
+   * Record an activity entry to the in-memory ring buffer
+   * Emits 'activity' event when recorded
+   */
+  recordActivity(entry: ActivityEntry): void {
+    this.activityBuffer.push(entry);
+
+    // Ring buffer: remove oldest if exceeding max size
+    if (this.activityBuffer.length > this.activityBufferMaxSize) {
+      this.activityBuffer.shift();
+    }
+
+    this.emit('activity', entry);
+  }
+
+  /**
+   * Get recent activity entries
+   * @param limit Maximum number of entries to return (default: all)
+   * @param sessionId Optional filter by session ID
+   */
+  getRecentActivity(limit?: number, sessionId?: string): ActivityEntry[] {
+    let entries = this.activityBuffer;
+
+    if (sessionId) {
+      entries = entries.filter(e => e.sessionId === sessionId);
+    }
+
+    if (limit !== undefined && limit > 0) {
+      return entries.slice(-limit);
+    }
+
+    return [...entries];
+  }
+
+  /**
+   * Get activity count in buffer
+   */
+  getActivityCount(): number {
+    return this.activityBuffer.length;
+  }
+
+  /**
+   * Clear activity buffer (useful after persistence)
+   */
+  clearActivityBuffer(): void {
+    this.activityBuffer = [];
+  }
+
+  /**
+   * Get and clear activity buffer atomically
+   * Used for batch persistence
+   */
+  drainActivityBuffer(): ActivityEntry[] {
+    const entries = this.activityBuffer;
+    this.activityBuffer = [];
+    return entries;
+  }
 
   /**
    * Process a new log entry
@@ -391,6 +492,105 @@ export class MetricsAggregator {
     this.sessions.clear();
     this.agents.clear();
     this.sessionAgents.clear();
+  }
+
+  // ============================================
+  // Session Lifecycle Management (FLAW-005)
+  // ============================================
+
+  /**
+   * End a session by setting its endedAt timestamp and status
+   * Emits 'session:ended' event with the session data
+   */
+  endSession(sessionId: string): boolean {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      return false;
+    }
+
+    // Already ended - no-op
+    if (session.status === 'ended') {
+      return true;
+    }
+
+    session.endedAt = new Date();
+    session.status = 'ended';
+
+    this.emit('session:ended', session);
+    return true;
+  }
+
+  /**
+   * Detect sessions that haven't had activity within the threshold period
+   * @param thresholdMs Inactivity threshold in milliseconds (default: 5 minutes)
+   * @returns Array of session IDs that are inactive
+   */
+  detectInactiveSessions(thresholdMs: number = 300000): string[] {
+    const now = Date.now();
+    const inactiveSessions: string[] = [];
+
+    for (const session of this.sessions.values()) {
+      // Only check active sessions
+      if (session.status !== 'active') {
+        continue;
+      }
+
+      const timeSinceActivity = now - session.lastActivity.getTime();
+      if (timeSinceActivity > thresholdMs) {
+        inactiveSessions.push(session.sessionId);
+      }
+    }
+
+    // Emit event if inactive sessions detected
+    if (inactiveSessions.length > 0) {
+      this.emit('session:inactive', inactiveSessions);
+    }
+
+    return inactiveSessions;
+  }
+
+  /**
+   * Get all active sessions (status === 'active')
+   */
+  getActiveSessions(): SessionMetrics[] {
+    return Array.from(this.sessions.values()).filter(s => s.status === 'active');
+  }
+
+  /**
+   * Get all ended sessions (status === 'ended')
+   */
+  getEndedSessions(): SessionMetrics[] {
+    return Array.from(this.sessions.values()).filter(s => s.status === 'ended');
+  }
+
+  /**
+   * Remove ended sessions from memory to free up resources
+   * Returns the number of sessions cleared
+   */
+  clearEndedSessions(): number {
+    const endedSessionIds: string[] = [];
+
+    for (const session of this.sessions.values()) {
+      if (session.status === 'ended') {
+        endedSessionIds.push(session.sessionId);
+      }
+    }
+
+    for (const sessionId of endedSessionIds) {
+      // Remove session
+      this.sessions.delete(sessionId);
+
+      // Remove associated agents
+      const agentIds = this.sessionAgents.get(sessionId);
+      if (agentIds) {
+        for (const agentId of agentIds) {
+          this.agents.delete(agentId);
+        }
+        this.sessionAgents.delete(sessionId);
+      }
+    }
+
+    return endedSessionIds.length;
   }
 
   /**
