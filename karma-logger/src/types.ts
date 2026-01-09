@@ -187,3 +187,39 @@ export interface ActivityEntry {
   agentId?: string;
   model?: string;
 }
+
+// ============================================
+// Historical Dashboard Types (Phase 1)
+// ============================================
+
+/**
+ * Aggregated project metrics for historical dashboard
+ */
+export interface ProjectSummary {
+  projectName: string;
+  sessionCount: number;
+  activeDays: number;
+  totalTokensIn: number;
+  totalTokensOut: number;
+  totalCost: number;
+  lastActivity: string; // ISO 8601
+}
+
+/**
+ * Project detail with summary and sessions list
+ */
+export interface ProjectDetail {
+  summary: ProjectSummary;
+  sessions: import('./db.js').SessionRecord[];
+}
+
+/**
+ * Daily metrics rollup for trend charts
+ */
+export interface DailyMetric {
+  day: string;       // YYYY-MM-DD
+  tokensIn: number;
+  tokensOut: number;
+  cost: number;
+  sessions: number;
+}

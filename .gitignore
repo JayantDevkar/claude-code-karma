@@ -15,10 +15,15 @@ out/
 *.swp
 *.swo
 *~
-
+.playwright*
 # OS files
 .DS_Store
 Thumbs.db
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
 
 # Logs
 *.log

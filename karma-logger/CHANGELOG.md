@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Radio & Subagent Watcher**
+  - Auto-start subagent watcher in dashboard when radio enabled (HIGH priority)
+  - Filter warmup agents from user-facing agent status lists
+  - Add depth tracking to AgentStatus for proper hierarchy visualization
+  - Verify TTL mismatch fix was already implemented via refreshSessionTTL()
+
+### Changed
+
+- `src/dashboard/server.ts` - Initialize subagent watcher on radio startup
+- `src/walkie-talkie/subagent-watcher.ts` - Warmup agent filtering and depth field
+- `src/walkie-talkie/agent-radio.ts` - Depth computation for agent hierarchy
+- `flaws/radio/2026-01-09.md` - Marked all radio issues as [FIXED]
+
 ## [0.1.0] - 2026-01-08
 
 ### Added

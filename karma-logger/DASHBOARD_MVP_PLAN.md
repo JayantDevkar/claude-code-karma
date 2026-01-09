@@ -1,8 +1,10 @@
 # Karma Logger Dashboard MVP Plan
 
 **Date:** 2026-01-08
-**Status:** Planning
+**Status:** IMPLEMENTED
 **Depends On:** MVP_PLAN.md (CLI Core)
+
+**Note:** Both Phase 1 (TUI Dashboard) and Phase 2 (Web Dashboard) are complete. Phase 5 (Walkie-Talkie radio integration) is also implemented with auto-starting subagent watcher bridge.
 
 ---
 
@@ -274,24 +276,31 @@ Client-side (CDN, no install):
 ## Implementation Phases
 
 ### Phase 1: TUI Dashboard
-- [ ] Install Ink and dependencies
-- [ ] Create base App component with layout
-- [ ] Implement MetricsCard component
-- [ ] Build AgentTree component
-- [ ] Add Sparkline for token flow
-- [ ] Wire up keyboard navigation
-- [ ] Integrate with existing aggregator
-- [ ] Add `karma watch --ui` command
+- [x] Install Ink and dependencies
+- [x] Create base App component with layout
+- [x] Implement MetricsCard component
+- [x] Build AgentTree component
+- [x] Add Sparkline for token flow
+- [x] Wire up keyboard navigation
+- [x] Integrate with existing aggregator
+- [x] Add `karma watch --ui` command
 
 ### Phase 2: Web Dashboard
-- [ ] Set up Hono server
-- [ ] Create HTML template with Pico CSS
-- [ ] Implement SSE endpoint
-- [ ] Add API routes for session data
-- [ ] Build uPlot charts
-- [ ] Create agent tree visualization
-- [ ] Add session history table
-- [ ] Implement `karma dashboard` command
+- [x] Set up Hono server
+- [x] Create HTML template with Pico CSS
+- [x] Implement SSE endpoint
+- [x] Add API routes for session data
+- [x] Build uPlot charts
+- [x] Create agent tree visualization
+- [x] Add session history table
+- [x] Implement `karma dashboard` command
+
+### Phase 5 (Bonus): Walkie-Talkie Radio Integration
+- [x] Radio socket server integration
+- [x] Subagent watcher bridge (auto-start on dashboard)
+- [x] Agent status SSE events
+- [x] Agent hierarchy tree API
+- [x] Frontend radio panel (Agent Status Panel)
 
 ---
 

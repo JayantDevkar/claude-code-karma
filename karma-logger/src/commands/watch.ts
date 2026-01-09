@@ -3,9 +3,11 @@
  * Phase 5: Real-time streaming display of session activity
  * Phase 6.2: Automatic persistence from watch mode (FLAW-004)
  * Phase 6.3: Persistent activity buffer (FLAW-006)
+ * Phase 5 (Walkie-Talkie): Radio server integration for real-time agent status
  */
 
 import chalk from 'chalk';
+import type { Server } from 'node:net';
 import type { SessionMetrics, AgentTreeNode } from '../aggregator.js';
 import { MetricsAggregator, connectWatcherToAggregator } from '../aggregator.js';
 import { LogWatcher } from '../watcher.js';
@@ -17,6 +19,8 @@ import {
 import type { LogEntry, ActivityEntry } from '../types.js';
 import { formatNumber, formatCost } from '../tui/utils/format.js';
 import { getDB, closeDB } from '../db.js';
+import { startRadioServer } from '../walkie-talkie/socket-server.js';
+import type { AgentStatus } from '../walkie-talkie/types.js';
 
 /**
  * Watch command options
@@ -25,7 +29,9 @@ export interface WatchOptions {
   project?: string;
   compact?: boolean;
   activityOnly?: boolean;
-  persist?: boolean;  // Default true, set false with --no-persist
+  persist?: boolean;       // Default true, set false with --no-persist
+  radio?: boolean;         // Enable radio server (default: true)
+  persistRadio?: boolean;  // Enable radio cache persistence
 }
 
 /**
@@ -657,8 +663,43 @@ export async function watchCommand(options: WatchOptions): Promise<void> {
     processExisting: true,
   });
 
-  const aggregator = new MetricsAggregator();
+  // Create aggregator with radio enabled by default
+  const radioEnabled = options.radio !== false;
+  const aggregator = new MetricsAggregator({
+    enableRadio: radioEnabled,
+    persistRadio: options.persistRadio ?? false,
+  });
   connectWatcherToAggregator(watcher, aggregator);
+
+  // Initialize radio (restores persistent cache if enabled)
+  if (aggregator.isRadioEnabled()) {
+    const result = await aggregator.initRadio();
+    if (result.keysRestored) {
+      console.log(chalk.dim(`Restored ${result.keysRestored} radio keys`));
+    }
+  }
+
+  // Start radio server if enabled
+  let radioServer: Server | null = null;
+  if (aggregator.isRadioEnabled()) {
+    try {
+      radioServer = startRadioServer(aggregator);
+      console.log(chalk.dim('Radio server started at /tmp/karma-radio.sock'));
+    } catch (error) {
+      console.warn(chalk.yellow('Failed to start radio server:'), (error as Error).message);
+    }
+  }
+
+  // Subscribe to radio status changes for streaming mode
+  if (aggregator.isRadioEnabled() && !options.activityOnly) {
+    aggregator.onAgentStatusChange((agentId: string, status: AgentStatus) => {
+      // In streaming mode without TUI, print status updates
+      // This will be overridden by the display in TUI mode
+      if (!options.compact) {
+        console.log(chalk.dim(`[${status.state}]`), `Agent ${agentId.slice(0, 8)} (${status.agentType})`);
+      }
+    });
+  }
 
   // Create persistence handler (enabled by default, disabled with --no-persist)
   const persistEnabled = options.persist !== false;
@@ -720,11 +761,20 @@ export async function watchCommand(options: WatchOptions): Promise<void> {
   const cleanup = async () => {
     display.cleanup();
 
+    // Close radio server if running
+    if (radioServer) {
+      radioServer.close();
+      radioServer = null;
+    }
+
     // Stop periodic persistence
     persistence.stop();
 
     // Persist all sessions before exit
     await persistence.persistBeforeExit();
+
+    // Destroy aggregator (cleans up radio, creates final snapshot if persistent)
+    await aggregator.destroy();
 
     await watcher.stop();
     process.exit(0);

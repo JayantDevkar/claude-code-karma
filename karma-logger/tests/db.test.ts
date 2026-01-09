@@ -452,6 +452,219 @@ describe('KarmaDB', () => {
       expect(detail).toBeNull();
     });
   });
+
+  describe('listProjects', () => {
+    it('returns empty array when no sessions', () => {
+      const projects = db.listProjects();
+      expect(projects).toEqual([]);
+    });
+
+    it('returns aggregated metrics per project', () => {
+      db.saveSession(createMockSession({
+        sessionId: 's1',
+        projectName: 'project-a',
+        tokensIn: 1000,
+        tokensOut: 500,
+        cost: { inputCost: 0.01, outputCost: 0.02, cacheReadCost: 0, cacheCreationCost: 0, total: 0.03, model: 'test' },
+      }));
+      db.saveSession(createMockSession({
+        sessionId: 's2',
+        projectName: 'project-a',
+        tokensIn: 2000,
+        tokensOut: 1000,
+        cost: { inputCost: 0.02, outputCost: 0.04, cacheReadCost: 0, cacheCreationCost: 0, total: 0.06, model: 'test' },
+      }));
+      db.saveSession(createMockSession({
+        sessionId: 's3',
+        projectName: 'project-b',
+        tokensIn: 500,
+        tokensOut: 250,
+        cost: { inputCost: 0.005, outputCost: 0.01, cacheReadCost: 0, cacheCreationCost: 0, total: 0.015, model: 'test' },
+      }));
+
+      const projects = db.listProjects();
+      expect(projects.length).toBe(2);
+
+      const projectA = projects.find(p => p.projectName === 'project-a');
+      expect(projectA?.sessionCount).toBe(2);
+      expect(projectA?.totalTokensIn).toBe(3000);
+      expect(projectA?.totalTokensOut).toBe(1500);
+      expect(projectA?.totalCost).toBeCloseTo(0.09, 4);
+
+      const projectB = projects.find(p => p.projectName === 'project-b');
+      expect(projectB?.sessionCount).toBe(1);
+      expect(projectB?.totalTokensIn).toBe(500);
+    });
+
+    it('orders by last activity descending', () => {
+      db.saveSession(createMockSession({
+        sessionId: 's1',
+        projectName: 'older-project',
+        startedAt: new Date('2026-01-01T10:00:00Z'),
+      }));
+      db.saveSession(createMockSession({
+        sessionId: 's2',
+        projectName: 'newer-project',
+        startedAt: new Date('2026-01-05T10:00:00Z'),
+      }));
+
+      const projects = db.listProjects();
+      expect(projects[0].projectName).toBe('newer-project');
+      expect(projects[1].projectName).toBe('older-project');
+    });
+
+    it('counts active days correctly', () => {
+      // Same project, different days
+      db.saveSession(createMockSession({
+        sessionId: 's1',
+        projectName: 'test-project',
+        startedAt: new Date('2026-01-01T10:00:00Z'),
+      }));
+      db.saveSession(createMockSession({
+        sessionId: 's2',
+        projectName: 'test-project',
+        startedAt: new Date('2026-01-01T15:00:00Z'), // Same day
+      }));
+      db.saveSession(createMockSession({
+        sessionId: 's3',
+        projectName: 'test-project',
+        startedAt: new Date('2026-01-02T10:00:00Z'), // Different day
+      }));
+
+      const projects = db.listProjects();
+      expect(projects[0].activeDays).toBe(2); // Only 2 distinct days
+      expect(projects[0].sessionCount).toBe(3); // But 3 sessions
+    });
+  });
+
+  describe('getProjectSummary', () => {
+    it('returns null for non-existent project', () => {
+      const detail = db.getProjectSummary('non-existent');
+      expect(detail).toBeNull();
+    });
+
+    it('returns summary and sessions for project', () => {
+      db.saveSession(createMockSession({
+        sessionId: 's1',
+        projectName: 'my-project',
+        tokensIn: 1000,
+      }));
+      db.saveSession(createMockSession({
+        sessionId: 's2',
+        projectName: 'my-project',
+        tokensIn: 2000,
+      }));
+
+      const detail = db.getProjectSummary('my-project');
+      expect(detail).not.toBeNull();
+      expect(detail?.summary.projectName).toBe('my-project');
+      expect(detail?.summary.sessionCount).toBe(2);
+      expect(detail?.summary.totalTokensIn).toBe(3000);
+      expect(detail?.sessions.length).toBe(2);
+    });
+
+    it('sessions are ordered by started_at descending', () => {
+      db.saveSession(createMockSession({
+        sessionId: 's1',
+        projectName: 'my-project',
+        startedAt: new Date('2026-01-01T10:00:00Z'),
+      }));
+      db.saveSession(createMockSession({
+        sessionId: 's2',
+        projectName: 'my-project',
+        startedAt: new Date('2026-01-05T10:00:00Z'),
+      }));
+
+      const detail = db.getProjectSummary('my-project');
+      expect(detail?.sessions[0].id).toBe('s2'); // More recent first
+      expect(detail?.sessions[1].id).toBe('s1');
+    });
+  });
+
+  describe('getDailyMetrics', () => {
+    it('returns empty array when no sessions', () => {
+      const metrics = db.getDailyMetrics();
+      expect(metrics).toEqual([]);
+    });
+
+    it('aggregates metrics by day', () => {
+      // Two sessions on same day
+      db.saveSession(createMockSession({
+        sessionId: 's1',
+        projectName: 'test',
+        startedAt: new Date('2026-01-05T10:00:00Z'),
+        tokensIn: 1000,
+        tokensOut: 500,
+        cost: { inputCost: 0.01, outputCost: 0.02, cacheReadCost: 0, cacheCreationCost: 0, total: 0.03, model: 'test' },
+      }));
+      db.saveSession(createMockSession({
+        sessionId: 's2',
+        projectName: 'test',
+        startedAt: new Date('2026-01-05T15:00:00Z'),
+        tokensIn: 2000,
+        tokensOut: 1000,
+        cost: { inputCost: 0.02, outputCost: 0.04, cacheReadCost: 0, cacheCreationCost: 0, total: 0.06, model: 'test' },
+      }));
+      // One session on different day
+      db.saveSession(createMockSession({
+        sessionId: 's3',
+        projectName: 'test',
+        startedAt: new Date('2026-01-06T10:00:00Z'),
+        tokensIn: 500,
+        tokensOut: 250,
+        cost: { inputCost: 0.005, outputCost: 0.01, cacheReadCost: 0, cacheCreationCost: 0, total: 0.015, model: 'test' },
+      }));
+
+      const metrics = db.getDailyMetrics(undefined, 30);
+      expect(metrics.length).toBe(2);
+
+      const day1 = metrics.find(m => m.day === '2026-01-05');
+      expect(day1?.tokensIn).toBe(3000);
+      expect(day1?.tokensOut).toBe(1500);
+      expect(day1?.sessions).toBe(2);
+      expect(day1?.cost).toBeCloseTo(0.09, 4);
+
+      const day2 = metrics.find(m => m.day === '2026-01-06');
+      expect(day2?.tokensIn).toBe(500);
+      expect(day2?.sessions).toBe(1);
+    });
+
+    it('filters by project name', () => {
+      db.saveSession(createMockSession({
+        sessionId: 's1',
+        projectName: 'project-a',
+        startedAt: new Date('2026-01-05T10:00:00Z'),
+        tokensIn: 1000,
+      }));
+      db.saveSession(createMockSession({
+        sessionId: 's2',
+        projectName: 'project-b',
+        startedAt: new Date('2026-01-05T10:00:00Z'),
+        tokensIn: 2000,
+      }));
+
+      const metrics = db.getDailyMetrics('project-a', 30);
+      expect(metrics.length).toBe(1);
+      expect(metrics[0].tokensIn).toBe(1000);
+    });
+
+    it('orders by day ascending', () => {
+      db.saveSession(createMockSession({
+        sessionId: 's1',
+        projectName: 'test',
+        startedAt: new Date('2026-01-05T10:00:00Z'),
+      }));
+      db.saveSession(createMockSession({
+        sessionId: 's2',
+        projectName: 'test',
+        startedAt: new Date('2026-01-03T10:00:00Z'),
+      }));
+
+      const metrics = db.getDailyMetrics(undefined, 30);
+      expect(metrics[0].day).toBe('2026-01-03'); // Earlier day first
+      expect(metrics[1].day).toBe('2026-01-05');
+    });
+  });
 });
 
 // Helper functions to create mock data

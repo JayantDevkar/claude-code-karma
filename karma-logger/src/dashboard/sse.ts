@@ -1,10 +1,13 @@
 /**
  * SSE Manager for real-time dashboard updates
  * Phase 5: Server-Sent Events streaming
+ * Phase 5 (Walkie-Talkie): Radio event broadcasts for agent status
  */
 
 import type { MetricsAggregator } from '../aggregator.js';
 import type { LogWatcher } from '../watcher.js';
+import type { AgentStatus } from '../walkie-talkie/types.js';
+import { RUNNING_THRESHOLD_MS } from './config.js';
 
 interface SSEClient {
   id: string;
@@ -24,6 +27,8 @@ export class SSEManager {
   private aggregator: MetricsAggregator | null = null;
   private watcher: LogWatcher | null = null;
   private sessionId: string | null = null;
+  private radioStatusUnsubscriber: (() => void) | null = null;
+  private radioProgressUnsubscriber: (() => void) | null = null;
 
   /**
    * Connect to a watcher and aggregator for real-time updates
@@ -61,6 +66,19 @@ export class SSEManager {
         type: 'agents',
         data: tree,
       });
+
+      // Also broadcast individual spawn event for animation
+      this.broadcast({
+        type: 'agent:spawn',
+        data: {
+          agentId: agent.sessionId,
+          sessionId: parent.sessionId,
+          parentId: agent.parentSessionId || null,
+          type: agent.agentType || 'unknown',
+          model: 'unknown', // Will be updated when first entry is processed
+          spawnedAt: new Date().toISOString(),
+        },
+      });
     });
 
     watcher.on('session:start', (session) => {
@@ -70,9 +88,58 @@ export class SSEManager {
           sessionId: session.sessionId,
           projectName: session.projectName,
           projectPath: session.projectPath,
+          startedAt: new Date().toISOString(),
+          isRunning: true,
         },
       });
     });
+
+    // Listen for session ended events
+    aggregator.on('session:ended', (session) => {
+      this.broadcast({
+        type: 'session:end',
+        data: {
+          sessionId: session.sessionId,
+          endedAt: session.endedAt?.toISOString(),
+          finalCost: session.cost.total,
+        },
+      });
+    });
+
+    // Subscribe to radio events if radio is enabled
+    this.setupRadioSubscriptions(aggregator);
+  }
+
+  /**
+   * Setup radio event subscriptions for broadcasting agent status
+   * Phase 5 (Walkie-Talkie)
+   */
+  private setupRadioSubscriptions(aggregator: MetricsAggregator): void {
+    // Subscribe to agent status changes
+    this.radioStatusUnsubscriber = aggregator.onAgentStatusChange(
+      (agentId: string, status: AgentStatus) => {
+        // Note: status already contains agentId, so we just pass status directly
+        this.broadcast({
+          type: 'agent:status',
+          data: status,
+        });
+      }
+    );
+
+    // Subscribe to progress updates via cache
+    const cache = aggregator.getCache();
+    if (cache) {
+      this.radioProgressUnsubscriber = cache.subscribe(
+        'agent:*:progress',
+        (key: string, value: unknown) => {
+          const agentId = key.split(':')[1];
+          this.broadcast({
+            type: 'agent:progress',
+            data: { agentId, ...(value as object) },
+          });
+        }
+      );
+    }
   }
 
   /**
@@ -104,6 +171,7 @@ export class SSEManager {
         if (this.aggregator) {
           const totals = this.aggregator.getTotals();
           const sessions = this.aggregator.getAllSessions();
+          const now = Date.now();
 
           const initMessage = `event: init\ndata: ${JSON.stringify({
             metrics: {
@@ -116,14 +184,24 @@ export class SSEManager {
               sessions: totals.sessions,
               agents: totals.agents,
             },
-            sessions: sessions.map(s => ({
-              id: s.sessionId,
-              projectName: s.projectName,
-              tokensIn: s.tokensIn,
-              tokensOut: s.tokensOut,
-              cost: s.cost.total,
-              agentCount: s.agentCount,
-            })),
+            sessions: sessions.map(s => {
+              // Session is running if status is active and had recent activity
+              const isRunning = s.status === 'active' && 
+                (now - s.lastActivity.getTime()) < RUNNING_THRESHOLD_MS;
+              return {
+                id: s.sessionId,
+                projectName: s.projectName,
+                tokensIn: s.tokensIn,
+                tokensOut: s.tokensOut,
+                cost: s.cost.total,
+                agentCount: s.agentCount,
+                startedAt: s.startedAt.toISOString(),
+                lastActivity: s.lastActivity.toISOString(),
+                endedAt: s.endedAt?.toISOString(),
+                isRunning,
+                status: s.status,
+              };
+            }),
           })}\n\n`;
 
           controller.enqueue(new TextEncoder().encode(initMessage));
@@ -146,6 +224,17 @@ export class SSEManager {
    * Disconnect all clients and stop listening
    */
   disconnect(): void {
+    // Clean up radio subscriptions
+    if (this.radioStatusUnsubscriber) {
+      this.radioStatusUnsubscriber();
+      this.radioStatusUnsubscriber = null;
+    }
+    if (this.radioProgressUnsubscriber) {
+      this.radioProgressUnsubscriber();
+      this.radioProgressUnsubscriber = null;
+    }
+
+    // Close all client connections
     for (const client of this.clients.values()) {
       try {
         client.controller.close();

@@ -6,6 +6,7 @@ import { statusCommand } from './commands/status.js';
 import { watchCommand } from './commands/watch.js';
 import { reportCommand, syncSessionsToDB } from './commands/report.js';
 import { configShow, configSet, configGet, configReset, configList } from './commands/config.js';
+import { radioCommand } from './commands/radio.js';
 import { startServer } from './dashboard/index.js';
 import { LogWatcher } from './watcher.js';
 import { MetricsAggregator, connectWatcherToAggregator } from './aggregator.js';
@@ -71,6 +72,7 @@ Examples:
     .option('-c, --compact', 'Compact display mode', false)
     .option('-a, --activity-only', 'Show only activity feed', false)
     .option('--no-persist', 'Disable automatic persistence to SQLite')
+    .option('--persist-radio', 'Enable radio cache persistence to ~/.karma/radio/')
     .addHelpText('after', `
 Examples:
   $ karma watch                   Stream mode with live metrics
@@ -78,6 +80,7 @@ Examples:
   $ karma watch --compact         Compact streaming view
   $ karma watch --activity-only   Show only tool activity feed
   $ karma watch --no-persist      Disable auto-save to database
+  $ karma watch --persist-radio   Enable persistent radio cache
 `)
     .action(async (options, cmd) => {
       const ctx = getContext(cmd);
@@ -98,6 +101,7 @@ Examples:
         compact: options.compact,
         activityOnly: options.activityOnly,
         persist: options.persist,
+        persistRadio: options.persistRadio,
       });
     });
 
@@ -146,6 +150,8 @@ Examples:
     .description('Launch web dashboard for metrics visualization')
     .option('-p, --port <number>', 'Port to run dashboard on', '3333')
     .option('--no-open', 'Do not open browser automatically')
+    .option('--radio', 'Enable radio agent coordination', false)
+    .option('--persist-radio', 'Enable persistent radio cache with WAL + snapshots', false)
     .action(async (options, cmd) => {
       const ctx = getContext(cmd);
       const port = parseInt(options.port, 10);
@@ -153,12 +159,29 @@ Examples:
       if (ctx.verbose) {
         console.log(chalk.gray('Running in verbose mode'));
         console.log(chalk.gray(`Dashboard port: ${port}`));
+        if (options.radio) {
+          console.log(chalk.gray('Radio enabled'));
+        }
+        if (options.persistRadio) {
+          console.log(chalk.gray('Radio persistence enabled'));
+        }
       }
 
       // Create watcher and aggregator
       const watcher = new LogWatcher({ processExisting: true });
-      const aggregator = new MetricsAggregator();
+      const aggregator = new MetricsAggregator({
+        enableRadio: options.radio || options.persistRadio,
+        persistRadio: options.persistRadio,
+      });
       connectWatcherToAggregator(watcher, aggregator);
+
+      // Initialize radio persistence (restore from WAL/snapshot if enabled)
+      if (options.persistRadio) {
+        const stats = await aggregator.initRadio();
+        if (ctx.verbose && (stats.keysRestored || stats.walEntriesReplayed)) {
+          console.log(chalk.gray(`Restored ${stats.keysRestored ?? 0} keys, replayed ${stats.walEntriesReplayed ?? 0} WAL entries`));
+        }
+      }
 
       // Pre-populate aggregator with recent sessions (for immediate display)
       const { discoverSessions, getSessionAgents } = await import('./discovery.js');
@@ -212,6 +235,8 @@ Examples:
           open: options.open,
           watcher,
           aggregator,
+          radio: options.radio || options.persistRadio,
+          persistRadio: options.persistRadio,
         });
 
         console.log(chalk.green(`\nDashboard running at http://localhost:${port}`));
@@ -221,7 +246,8 @@ Examples:
         process.on('SIGINT', async () => {
           console.log(chalk.yellow('\nShutting down...'));
           await server.stop();
-          watcher.stop();
+          await watcher.stop();
+          await aggregator.destroy();
           process.exit(0);
         });
       } catch (error) {
@@ -270,6 +296,9 @@ Examples:
       const parentOpts = cmd.parent?.opts() ?? {};
       await configList(parentOpts);
     }));
+
+  // Radio command (Phase 3: Agent coordination)
+  program.addCommand(radioCommand);
 
   return program;
 }
