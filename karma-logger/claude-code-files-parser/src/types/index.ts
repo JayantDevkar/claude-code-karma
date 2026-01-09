@@ -1,11 +1,5 @@
-// Claude Code Files Parser
-// Streaming parser for Claude Code JSONL session logs
-
-export const VERSION = '0.1.0';
-
-// Types
+// Raw types (as found in JSONL)
 export type {
-  // Raw
   RawTokenUsage,
   ThinkingBlock,
   ToolUseBlock,
@@ -14,8 +8,11 @@ export type {
   UserMessage,
   AssistantMessage,
   RawLogEntry,
-  // Normalized
+} from './raw.js';
+
+// Normalized types (after parsing)
+export type {
   TokenUsage,
   LogEntry,
   ParsedSession,
-} from './types/index.js';
+} from './normalized.js';
