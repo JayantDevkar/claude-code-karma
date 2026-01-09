@@ -175,6 +175,14 @@ Examples:
       });
       connectWatcherToAggregator(watcher, aggregator);
 
+      // Initialize radio persistence (restore from WAL/snapshot if enabled)
+      if (options.persistRadio) {
+        const stats = await aggregator.initRadio();
+        if (ctx.verbose && (stats.keysRestored || stats.walEntriesReplayed)) {
+          console.log(chalk.gray(`Restored ${stats.keysRestored ?? 0} keys, replayed ${stats.walEntriesReplayed ?? 0} WAL entries`));
+        }
+      }
+
       // Pre-populate aggregator with recent sessions (for immediate display)
       const { discoverSessions, getSessionAgents } = await import('./discovery.js');
       const { parseSessionFile } = await import('./parser.js');
