@@ -41,8 +41,11 @@ karma dashboard
 # Custom port
 karma dashboard --port 8080
 
-# Disable auto-open browser
+# Disable auto-open browser (browser won't auto-open)
 karma dashboard --no-open
+
+# Enable radio agent coordination
+karma dashboard --radio
 ```
 
 ---
@@ -117,6 +120,8 @@ src/dashboard/
 
 ## API Endpoints
 
+### Core Metrics Endpoints
+
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/` | GET | Dashboard HTML |
@@ -126,6 +131,14 @@ src/dashboard/
 | `/api/sessions` | GET | All session history |
 | `/api/totals` | GET | Aggregate totals |
 | `/api/health` | GET | Health check |
+
+### Radio Agent Coordination Endpoints (--radio flag)
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/radio/agents` | GET | All agent statuses |
+| `/api/radio/agent/:id` | GET | Specific agent status |
+| `/api/radio/session/:id/tree` | GET | Agent hierarchy tree for session |
 
 ---
 
@@ -153,6 +166,29 @@ data: {"agentId":"xyz","parentId":"abc","model":"haiku"}
 
 ---
 
+## Radio Agent Coordination
+
+When `--radio` or `--persist-radio` flags are enabled:
+
+1. **Radio Socket Server** starts at `/tmp/karma-radio.sock`
+2. **Subagent Watcher** auto-starts to bridge Claude Code's JSONL files → Radio
+3. Agent statuses flow to frontend via SSE (`agent:status`, `agent:progress` events)
+4. Hierarchical agent tree visualized in Agent Status Panel
+
+### Usage
+
+```bash
+# Enable radio for real-time agent tracking
+karma dashboard --radio
+
+# Enable radio with persistent cache (WAL + snapshots)
+karma dashboard --persist-radio
+```
+
+See [FRONTEND_RADIO_GUIDE.md](docs/FRONTEND_RADIO_GUIDE.md) for detailed radio integration documentation.
+
+---
+
 ## Configuration
 
 ### Environment Variables
@@ -161,20 +197,23 @@ data: {"agentId":"xyz","parentId":"abc","model":"haiku"}
 |----------|---------|-------------|
 | `KARMA_PORT` | `3333` | Web dashboard port |
 | `KARMA_HOST` | `localhost` | Web dashboard host |
+| `DEBUG` | (unset) | Enable debug logs: `DEBUG=subagent-watcher` for watcher logs |
 
 ### CLI Options
 
 ```bash
 # TUI options
 karma watch --ui [options]
-  -p, --project <name>    Filter by project
-  -c, --compact           Compact display mode
-  --activity-only         Show only active sessions
+  -p, --project <name>      Filter by project
+  -c, --compact             Compact display mode
+  --activity-only           Show only active sessions
 
 # Web options
 karma dashboard [options]
-  -p, --port <number>     Port (default: 3333)
-  --no-open               Don't auto-open browser
+  -p, --port <number>       Port (default: 3333)
+  --no-open                 Don't auto-open browser
+  --radio                   Enable radio agent coordination
+  --persist-radio           Enable persistent radio cache (WAL + snapshots)
 ```
 
 ---

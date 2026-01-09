@@ -271,17 +271,51 @@ karma radio list-agents --parent
 
 # Filter by state
 karma radio list-agents --status active
+
+# View agent hierarchy as ASCII tree
+karma radio tree
+karma radio tree --session <session-id>
+karma radio tree --json
 ```
+
+### Subagent Discovery (JSONL-based)
+
+These commands discover subagents created by Claude Code's Task tool by scanning JSONL files:
+
+```bash
+# One-shot scan of subagents
+karma radio scan
+karma radio scan --json
+
+# Combined view of radio agents + JSONL subagents
+karma radio summary
+karma radio summary --json
+
+# Live monitoring of subagents
+karma radio watch-subagents
+karma radio watch-subagents --json    # One-shot mode
+karma radio watch-subagents --interval 500  # Poll every 500ms
+```
+
+**Note:** Subagents discovered from JSONL files are separate from radio-registered agents. They don't appear in `tree` command since they don't register via hooks.
 
 ### Waiting for Agents
 
 ```bash
-# Wait for agent to complete (subscription-based, instant notification)
+# Wait for single agent (subscription-based, instant notification)
 karma radio wait-for agent-123 completed --timeout 30000
 
 # Fallback to polling mode
 karma radio wait-for agent-123 completed --timeout 30000 --poll
+
+# Wait for multiple agents to reach a state (parallel)
+karma radio wait-for-all agent-1 agent-2 agent-3 completed --timeout 60000
+
+# Wait for all children to reach a state
+karma radio wait-for-children completed --timeout 60000
 ```
+
+**Note:** `wait-for-all` and `wait-for-children` wait for all agents in parallel with a shared timeout. If any agent times out, the command returns failure with a list of which agents succeeded/failed.
 
 ### Messaging
 

@@ -198,10 +198,33 @@ karma radio wait-for agent-2 completed --timeout 30000
 # Wait for agent (polling fallback)
 karma radio wait-for agent-2 completed --timeout 30000 --poll
 
+# Batch wait for multiple agents
+karma radio wait-for-all agent-1 agent-2 agent-3 completed --timeout 60000
+
+# Wait for all children to complete
+karma radio wait-for-children completed --timeout 60000
+
 # Messaging
 karma radio send agent-2 '{"type": "request"}'
 karma radio listen
 karma radio listen --agent agent-2
+
+# Subagent discovery (inference from JSONL files)
+karma radio scan                        # One-shot scan of subagents
+karma radio scan --json                 # JSON output
+karma radio summary                     # Combined radio + JSONL view
+karma radio watch-subagents             # Live monitoring of subagents
+karma radio watch-subagents --json      # One-shot JSON output
+karma radio watch-subagents --interval 500
+
+# Hierarchy visualization
+karma radio list-agents                 # All agents
+karma radio list-agents --children      # Child agents only
+karma radio list-agents --siblings      # Sibling agents only
+karma radio list-agents --parent        # Parent agent only
+karma radio tree                        # ASCII tree visualization of agent hierarchy
+karma radio tree --session <id>         # Tree for specific session
+karma radio tree --json                 # JSON tree output
 ```
 
 **Exit Codes:**
@@ -219,7 +242,12 @@ agent:{agentId}:progress  → ProgressUpdate (TTL: 1 min)
 agent:{agentId}:result    → unknown        (TTL: 10 min)
 agent:{agentId}:inbox     → AgentMessage[] (TTL: 5 min)
 session:{sessionId}:agents → string[]      (TTL: 1 hour)
+parent:{parentId}:children → string[]      (TTL: 1 hour, internal reverse index)
 ```
+
+**Internal keys** (for hierarchy optimization):
+- `parent:{parentId}:children` - Reverse index for O(1) child lookup, automatically maintained
+- Pattern matching uses `*` for single-segment matching (no colons matched)
 
 ## Data Types
 
@@ -244,6 +272,9 @@ interface AgentStatus {
   agentType: string;
   model: string;
   metadata: Record<string, unknown>;
+  childrenCount?: number;         // Number of direct children
+  hasChildren?: boolean;          // Quick check for children existence
+  depth?: number;                 // Hierarchy depth (0 = root)
 }
 ```
 

@@ -4,7 +4,13 @@ This guide documents the frontend components for visualizing agent status from t
 
 ## Overview
 
-The karma dashboard integrates with the walkie-talkie radio system to provide real-time visualization of agent status, progress, and hierarchies. When the dashboard is started with `--radio` flag, it connects to the radio socket server and displays agent status in the Agent Status Panel.
+The karma dashboard integrates with the walkie-talkie radio system to provide real-time visualization of agent status, progress, and hierarchies. When the dashboard is started with `--radio` flag, it:
+
+1. Connects to the radio socket server
+2. Auto-starts the **subagent watcher** to bridge JSONL files from Claude Code → Radio (solves missing KARMA_* env vars for Task-spawned subagents)
+3. Displays agent status in the Agent Status Panel
+
+This enables real-time tracking of all agents, including those spawned by Claude Code's Task tool without environment variable configuration.
 
 ## Agent Status Panel
 
@@ -296,9 +302,49 @@ Returns the agent hierarchy tree for a session.
 ]
 ```
 
-## Integration with Hooks
+## Subagent Watcher Bridge
 
-To enable agent status reporting from Claude Code sessions, configure hooks in `.claude/hooks.yaml`:
+The dashboard automatically starts a subagent watcher when `--radio` is enabled. This bridges Claude Code's subagent JSONL files to the radio system.
+
+### How It Works
+
+When Claude Code's Task tool spawns subagents, they typically don't have `KARMA_*` environment variables set. The subagent watcher:
+
+1. Monitors subagent JSONL files in `~/.claude/` (every 2 seconds)
+2. Infers agent status from file timestamps and content
+3. Registers agents with the radio system automatically
+4. Sends `agent:status` and `agent:progress` SSE events
+
+### Configuration
+
+The subagent watcher is enabled automatically when you use:
+
+```bash
+karma dashboard --radio
+# or
+karma dashboard --persist-radio
+```
+
+No additional configuration needed. All subagents will be tracked without requiring hooks or env vars.
+
+### Debug Mode
+
+To see subagent watcher logs:
+
+```bash
+DEBUG=subagent-watcher karma dashboard --radio
+```
+
+Output includes:
+- File discovery and monitoring
+- Status inference from JSONL content
+- Radio registration events
+
+---
+
+## Integration with Hooks (Optional)
+
+To enable agent status reporting from Claude Code sessions via hooks (complementary to subagent watcher), configure hooks in `.claude/hooks.yaml`:
 
 ```yaml
 hooks:
