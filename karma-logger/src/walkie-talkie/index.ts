@@ -5,6 +5,7 @@
  * Phase 3: Radio CLI socket client
  * Phase 4: Subscription-based wait for agent status
  * Phase 5: Socket server for aggregator integration + Metadata Schema Validation
+ * Phase 6: Cache persistence (6.1: Write-Ahead Log, 6.2: Snapshot, 6.3: Recovery)
  */
 
 export { MemoryCacheStore } from './cache-store.js';
@@ -34,6 +35,15 @@ export {
   TASK_AGENT_SCHEMA,
   EXPLORE_AGENT_SCHEMA,
 } from './schema-registry.js';
+// Phase 6.1: Write-Ahead Log exports
+export { WriteAheadLog } from './wal.js';
+export type { WALEntry, WALOptions } from './wal.js';
+// Phase 6.2: Snapshot mechanism exports
+export { SnapshotManager } from './snapshot.js';
+export type { SnapshotMeta, SnapshotEntry, SnapshotData } from './snapshot.js';
+// Phase 6.3: Persistent Cache Store exports
+export { PersistentCacheStore } from './persistent-cache.js';
+export type { PersistentCacheOptions } from './persistent-cache.js';
 
 export type {
   CacheStore,

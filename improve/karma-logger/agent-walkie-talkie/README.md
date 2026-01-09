@@ -11,7 +11,7 @@ Atomic improvement phases for the karma-logger walkie-talkie system, derived fro
 | 3 | [Batch Operations](./phase-3-batch-operations.md) | Low | Low | **DONE** |
 | 4 | [Subscription-Based Wait](./phase-4-subscription-based-wait.md) | Future | High | **DONE** |
 | 5 | [Metadata Schema Validation](./phase-5-metadata-schema-validation.md) | Low | Medium | **DONE** |
-| 6 | [Cache Persistence](./phase-6-cache-persistence.md) | Future | High | Planned |
+| 6 | [Cache Persistence](./phase-6-subphases.md) | Future | High | **DONE** |
 
 ## Recommended Implementation Order
 
@@ -54,7 +54,7 @@ Status persistence bug was fixed before these phases:
 | CLI calls per agent lifecycle | Reduce from 4-5 to 2-3 | ✅ Phase 3 |
 | Agent discovery capability | Yes (currently No) | ✅ Phase 1 |
 | Wait latency (P99) | <100ms (was ~1s polling) | ✅ Phase 4 |
-| Crash recovery | Restore state (currently lost) | Pending (Phase 6) |
+| Crash recovery | Restore state (currently lost) | ✅ Phase 6 |
 
 ## Testing Strategy
 

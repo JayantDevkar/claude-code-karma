@@ -29,8 +29,9 @@ export interface WatchOptions {
   project?: string;
   compact?: boolean;
   activityOnly?: boolean;
-  persist?: boolean;  // Default true, set false with --no-persist
-  radio?: boolean;    // Enable radio server (default: true)
+  persist?: boolean;       // Default true, set false with --no-persist
+  radio?: boolean;         // Enable radio server (default: true)
+  persistRadio?: boolean;  // Enable radio cache persistence
 }
 
 /**
@@ -666,8 +667,17 @@ export async function watchCommand(options: WatchOptions): Promise<void> {
   const radioEnabled = options.radio !== false;
   const aggregator = new MetricsAggregator({
     enableRadio: radioEnabled,
+    persistRadio: options.persistRadio ?? false,
   });
   connectWatcherToAggregator(watcher, aggregator);
+
+  // Initialize radio (restores persistent cache if enabled)
+  if (aggregator.isRadioEnabled()) {
+    const result = await aggregator.initRadio();
+    if (result.keysRestored) {
+      console.log(chalk.dim(`Restored ${result.keysRestored} radio keys`));
+    }
+  }
 
   // Start radio server if enabled
   let radioServer: Server | null = null;
@@ -763,8 +773,8 @@ export async function watchCommand(options: WatchOptions): Promise<void> {
     // Persist all sessions before exit
     await persistence.persistBeforeExit();
 
-    // Destroy aggregator (cleans up radio)
-    aggregator.destroy();
+    // Destroy aggregator (cleans up radio, creates final snapshot if persistent)
+    await aggregator.destroy();
 
     await watcher.stop();
     process.exit(0);

@@ -6,12 +6,15 @@
  */
 
 import { EventEmitter } from 'events';
+import * as os from 'os';
+import * as path from 'path';
 import type { LogEntry, TokenUsage, ActivityEntry } from './types.js';
 import { calculateCost, addCosts, emptyCostBreakdown, type CostBreakdown } from './cost.js';
 import type { SessionInfo } from './discovery.js';
 import type { LogWatcher } from './watcher.js';
 import type { CacheStore, AgentRadio, AgentStatus } from './walkie-talkie/types.js';
 import { MemoryCacheStore } from './walkie-talkie/cache-store.js';
+import { PersistentCacheStore } from './walkie-talkie/persistent-cache.js';
 import { AgentRadioImpl } from './walkie-talkie/agent-radio.js';
 
 // Re-export ActivityEntry for consumers
@@ -163,6 +166,8 @@ export interface AggregatorOptions {
   enableRadio?: boolean;
   /** Custom socket path for radio server (default: /tmp/karma-radio.sock) */
   radioSocketPath?: string;
+  /** Enable persistence for radio cache (stores at ~/.karma/radio/) */
+  persistRadio?: boolean;
 }
 
 /**
@@ -192,7 +197,18 @@ export class MetricsAggregator extends EventEmitter {
 
     // Initialize radio if enabled
     if (options.enableRadio) {
-      this.cache = new MemoryCacheStore();
+      if (options.persistRadio) {
+        // Use persistent cache store for durability
+        const karmaDir = path.join(os.homedir(), '.karma', 'radio');
+        this.cache = new PersistentCacheStore({
+          walPath: path.join(karmaDir, 'wal.log'),
+          snapshotPath: path.join(karmaDir, 'snapshot.json'),
+          snapshotInterval: 60000, // 1 minute
+        });
+        // Note: restore() must be called via initRadio() after construction
+      } else {
+        this.cache = new MemoryCacheStore();
+      }
 
       // Subscribe to all agent status changes and forward to callbacks
       this.radioUnsubscriber = this.cache.subscribe('agent:*:status', (key, value) => {
@@ -692,6 +708,18 @@ export class MetricsAggregator extends EventEmitter {
   // ============================================
 
   /**
+   * Initialize radio (call after construction if using persistent cache)
+   * Restores cache state from disk if persistRadio is enabled
+   * @returns Statistics about restored data, or empty object if not using persistent cache
+   */
+  async initRadio(): Promise<{ keysRestored?: number; walEntriesReplayed?: number }> {
+    if (this.cache instanceof PersistentCacheStore) {
+      return await this.cache.restore();
+    }
+    return {};
+  }
+
+  /**
    * Get agent status from cache (faster than file parsing)
    * @param agentId The agent ID to look up
    * @returns AgentStatus or null if not found
@@ -802,8 +830,9 @@ export class MetricsAggregator extends EventEmitter {
   /**
    * Destroy the aggregator and clean up all resources
    * Phase 5: Includes radio cleanup
+   * Phase 6.4: Now async to support persistent cache cleanup
    */
-  destroy(): void {
+  async destroy(): Promise<void> {
     // Clean up all agent radios
     for (const radio of this.agentRadios.values()) {
       radio.destroy();
@@ -817,9 +846,19 @@ export class MetricsAggregator extends EventEmitter {
     }
     this.radioStatusCallbacks.clear();
 
-    // Clean up cache
+    // Clean up cache - create final snapshot if using persistent cache
     if (this.cache) {
-      this.cache.destroy();
+      if (this.cache instanceof PersistentCacheStore) {
+        try {
+          await this.cache.snapshot();
+          await this.cache.close();
+        } catch (err) {
+          // Warn but don't fail shutdown
+          console.warn('Failed to persist radio cache on shutdown:', err);
+        }
+      } else {
+        this.cache.destroy();
+      }
       this.cache = null;
     }
 
