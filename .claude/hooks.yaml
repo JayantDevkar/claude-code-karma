@@ -29,45 +29,57 @@ hooks:
   # Reads session_id and tool_name from stdin JSON
   PreToolUse:
     - command: |
+        LOG="/tmp/karma-hooks.log"
         INPUT=$(cat)
         export KARMA_SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // empty')
         export KARMA_AGENT_ID=$(echo "$INPUT" | jq -r '.session_id // empty')
         TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // "unknown"')
+        echo "[$(date '+%H:%M:%S')] PreToolUse: session=$KARMA_SESSION_ID tool=$TOOL_NAME" >> "$LOG"
         if [ -n "$KARMA_SESSION_ID" ]; then
-          karma radio set-status active --message "Using $TOOL_NAME" 2>/dev/null || true
+          RESULT=$(karma radio set-status active --message "Using $TOOL_NAME" 2>&1) || true
+          echo "[$(date '+%H:%M:%S')]   -> radio result: $RESULT" >> "$LOG"
         fi
       timeout: 5000
 
   # Report completion after each tool use
   PostToolUse:
     - command: |
+        LOG="/tmp/karma-hooks.log"
         INPUT=$(cat)
         export KARMA_SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // empty')
         export KARMA_AGENT_ID=$(echo "$INPUT" | jq -r '.session_id // empty')
         TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // "unknown"')
+        echo "[$(date '+%H:%M:%S')] PostToolUse: session=$KARMA_SESSION_ID tool=$TOOL_NAME" >> "$LOG"
         if [ -n "$KARMA_SESSION_ID" ]; then
-          karma radio report-progress --percent 0 --message "Completed $TOOL_NAME" 2>/dev/null || true
+          RESULT=$(karma radio report-progress --percent 0 --message "Completed $TOOL_NAME" 2>&1) || true
+          echo "[$(date '+%H:%M:%S')]   -> radio result: $RESULT" >> "$LOG"
         fi
       timeout: 5000
 
   # Report session start
   SessionStart:
     - command: |
+        LOG="/tmp/karma-hooks.log"
         INPUT=$(cat)
         export KARMA_SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // empty')
         export KARMA_AGENT_ID=$(echo "$INPUT" | jq -r '.session_id // empty')
+        echo "[$(date '+%H:%M:%S')] SessionStart: session=$KARMA_SESSION_ID" >> "$LOG"
         if [ -n "$KARMA_SESSION_ID" ]; then
-          karma radio set-status pending --message "Session started" 2>/dev/null || true
+          RESULT=$(karma radio set-status pending --message "Session started" 2>&1) || true
+          echo "[$(date '+%H:%M:%S')]   -> radio result: $RESULT" >> "$LOG"
         fi
       timeout: 5000
 
   # Report session end
   Stop:
     - command: |
+        LOG="/tmp/karma-hooks.log"
         INPUT=$(cat)
         export KARMA_SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // empty')
         export KARMA_AGENT_ID=$(echo "$INPUT" | jq -r '.session_id // empty')
+        echo "[$(date '+%H:%M:%S')] Stop: session=$KARMA_SESSION_ID" >> "$LOG"
         if [ -n "$KARMA_SESSION_ID" ]; then
-          karma radio set-status completed --message "Session completed" 2>/dev/null || true
+          RESULT=$(karma radio set-status completed --message "Session completed" 2>&1) || true
+          echo "[$(date '+%H:%M:%S')]   -> radio result: $RESULT" >> "$LOG"
         fi
       timeout: 5000
