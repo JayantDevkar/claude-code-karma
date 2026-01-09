@@ -65,6 +65,19 @@ export class SSEManager {
         type: 'agents',
         data: tree,
       });
+
+      // Also broadcast individual spawn event for animation
+      this.broadcast({
+        type: 'agent:spawn',
+        data: {
+          agentId: agent.sessionId,
+          sessionId: parent.sessionId,
+          parentId: agent.parentSessionId || null,
+          type: agent.agentType || 'unknown',
+          model: 'unknown', // Will be updated when first entry is processed
+          spawnedAt: new Date().toISOString(),
+        },
+      });
     });
 
     watcher.on('session:start', (session) => {
@@ -74,6 +87,20 @@ export class SSEManager {
           sessionId: session.sessionId,
           projectName: session.projectName,
           projectPath: session.projectPath,
+          startedAt: new Date().toISOString(),
+          isRunning: true,
+        },
+      });
+    });
+
+    // Listen for session ended events
+    aggregator.on('session:ended', (session) => {
+      this.broadcast({
+        type: 'session:end',
+        data: {
+          sessionId: session.sessionId,
+          endedAt: session.endedAt?.toISOString(),
+          finalCost: session.cost.total,
         },
       });
     });
@@ -143,6 +170,8 @@ export class SSEManager {
         if (this.aggregator) {
           const totals = this.aggregator.getTotals();
           const sessions = this.aggregator.getAllSessions();
+          const now = Date.now();
+          const RUNNING_THRESHOLD_MS = 30000; // 30 seconds
 
           const initMessage = `event: init\ndata: ${JSON.stringify({
             metrics: {
@@ -155,14 +184,24 @@ export class SSEManager {
               sessions: totals.sessions,
               agents: totals.agents,
             },
-            sessions: sessions.map(s => ({
-              id: s.sessionId,
-              projectName: s.projectName,
-              tokensIn: s.tokensIn,
-              tokensOut: s.tokensOut,
-              cost: s.cost.total,
-              agentCount: s.agentCount,
-            })),
+            sessions: sessions.map(s => {
+              // Session is running if status is active and had recent activity
+              const isRunning = s.status === 'active' && 
+                (now - s.lastActivity.getTime()) < RUNNING_THRESHOLD_MS;
+              return {
+                id: s.sessionId,
+                projectName: s.projectName,
+                tokensIn: s.tokensIn,
+                tokensOut: s.tokensOut,
+                cost: s.cost.total,
+                agentCount: s.agentCount,
+                startedAt: s.startedAt.toISOString(),
+                lastActivity: s.lastActivity.toISOString(),
+                endedAt: s.endedAt?.toISOString(),
+                isRunning,
+                status: s.status,
+              };
+            }),
           })}\n\n`;
 
           controller.enqueue(new TextEncoder().encode(initMessage));

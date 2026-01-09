@@ -76,6 +76,10 @@ export function createApiRoutes(aggregator: MetricsAggregator): Hono {
     }
 
     const tree = aggregator.getAgentTree(sessionId);
+    const now = Date.now();
+    const RUNNING_THRESHOLD_MS = 30000;
+    const isRunning = session.status === 'active' && 
+      (now - session.lastActivity.getTime()) < RUNNING_THRESHOLD_MS;
 
     return c.json({
       sessionId: session.sessionId,
@@ -92,6 +96,9 @@ export function createApiRoutes(aggregator: MetricsAggregator): Hono {
       agents: tree,
       startedAt: session.startedAt.toISOString(),
       lastActivity: session.lastActivity.toISOString(),
+      endedAt: session.endedAt?.toISOString(),
+      isRunning,
+      status: session.status,
       models: Array.from(session.models),
       toolUsage: Object.fromEntries(session.toolUsage),
     });
@@ -100,10 +107,26 @@ export function createApiRoutes(aggregator: MetricsAggregator): Hono {
   /**
    * GET /api/sessions
    * List all sessions (historical data)
+   * Query: limit (default: 10), filter (all|active|completed)
    */
   api.get('/sessions', (c) => {
     const limit = parseInt(c.req.query('limit') || '10', 10);
-    const sessions = aggregator.getAllSessions();
+    const filter = c.req.query('filter') || 'all';
+    const now = Date.now();
+    const RUNNING_THRESHOLD_MS = 30000; // 30 seconds
+    
+    let sessions = aggregator.getAllSessions();
+
+    // Apply filter
+    if (filter === 'active') {
+      sessions = sessions.filter(s => 
+        s.status === 'active' && (now - s.lastActivity.getTime()) < RUNNING_THRESHOLD_MS
+      );
+    } else if (filter === 'completed') {
+      sessions = sessions.filter(s => 
+        s.status === 'ended' || (now - s.lastActivity.getTime()) >= RUNNING_THRESHOLD_MS
+      );
+    }
 
     // Sort by last activity, most recent first
     const sorted = sessions
@@ -111,19 +134,26 @@ export function createApiRoutes(aggregator: MetricsAggregator): Hono {
       .slice(0, limit);
 
     return c.json({
-      sessions: sorted.map((s) => ({
-        id: s.sessionId,
-        projectName: s.projectName,
-        projectPath: s.projectPath,
-        agentCount: s.agentCount,
-        tokensTotal: s.tokensIn + s.tokensOut,
-        tokensIn: s.tokensIn,
-        tokensOut: s.tokensOut,
-        cost: s.cost.total,
-        startedAt: s.startedAt.toISOString(),
-        lastActivity: s.lastActivity.toISOString(),
-        models: Array.from(s.models),
-      })),
+      sessions: sorted.map((s) => {
+        const isRunning = s.status === 'active' && 
+          (now - s.lastActivity.getTime()) < RUNNING_THRESHOLD_MS;
+        return {
+          id: s.sessionId,
+          projectName: s.projectName,
+          projectPath: s.projectPath,
+          agentCount: s.agentCount,
+          tokensTotal: s.tokensIn + s.tokensOut,
+          tokensIn: s.tokensIn,
+          tokensOut: s.tokensOut,
+          cost: s.cost.total,
+          startedAt: s.startedAt.toISOString(),
+          lastActivity: s.lastActivity.toISOString(),
+          endedAt: s.endedAt?.toISOString(),
+          isRunning,
+          status: s.status,
+          models: Array.from(s.models),
+        };
+      }),
       total: sessions.length,
     });
   });

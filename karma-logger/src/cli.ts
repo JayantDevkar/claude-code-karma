@@ -72,6 +72,7 @@ Examples:
     .option('-c, --compact', 'Compact display mode', false)
     .option('-a, --activity-only', 'Show only activity feed', false)
     .option('--no-persist', 'Disable automatic persistence to SQLite')
+    .option('--persist-radio', 'Enable radio cache persistence to ~/.karma/radio/')
     .addHelpText('after', `
 Examples:
   $ karma watch                   Stream mode with live metrics
@@ -79,6 +80,7 @@ Examples:
   $ karma watch --compact         Compact streaming view
   $ karma watch --activity-only   Show only tool activity feed
   $ karma watch --no-persist      Disable auto-save to database
+  $ karma watch --persist-radio   Enable persistent radio cache
 `)
     .action(async (options, cmd) => {
       const ctx = getContext(cmd);
@@ -99,6 +101,7 @@ Examples:
         compact: options.compact,
         activityOnly: options.activityOnly,
         persist: options.persist,
+        persistRadio: options.persistRadio,
       });
     });
 
