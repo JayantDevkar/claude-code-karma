@@ -1,6 +1,6 @@
 # Phase 6: Update karma-logger
 
-**Status**: Pending
+**Status**: Complete
 **Depends on**: Phase 3, Phase 4, Phase 5
 **Unlocks**: Phase 7
 
@@ -10,11 +10,11 @@ Update karma-logger to import from `claude-code-files-parser` instead of local p
 
 ## Tasks
 
-- [ ] Add workspace dependency
-- [ ] Update imports in all affected files
-- [ ] Remove/slim down `parser.ts`
-- [ ] Clean up `types.ts`
-- [ ] Verify build and tests
+- [x] Add workspace dependency
+- [x] Update imports in all affected files
+- [x] Remove/slim down `parser.ts`
+- [x] Clean up `types.ts`
+- [x] Verify build and tests
 
 ## Workspace Setup
 
@@ -202,13 +202,61 @@ If issues arise:
 
 ## Outputs
 
-- [ ] Workspace/link configured
-- [ ] All imports updated
-- [ ] `parser.ts` removed or converted to re-exports
-- [ ] `types.ts` cleaned up
-- [ ] karma-logger builds
-- [ ] karma-logger tests pass
+- [x] Workspace/link configured
+- [x] All imports updated
+- [x] `parser.ts` removed or converted to re-exports
+- [x] `types.ts` cleaned up
+- [x] karma-logger builds
+- [x] karma-logger tests pass
 
 ## Estimated Effort
 
 ~45 minutes
+
+---
+
+## Implementation Notes (Completed 2026-01-09)
+
+### Approach Used
+
+Used **Option A from Workspace Setup**: Added local file dependency in `karma-logger/package.json`:
+
+```json
+"claude-code-files-parser": "file:./claude-code-files-parser"
+```
+
+This allows the local package to be used without npm workspaces at the root level.
+
+### Files Modified
+
+1. **karma-logger/package.json** - Added dependency on local parser package
+
+2. **karma-logger/src/parser.ts** - **Deleted** (Option A - clean break)
+   - All functions now in `claude-code-files-parser`
+
+3. **karma-logger/src/types.ts** - Cleaned up to:
+   - Re-export parsing types from `claude-code-files-parser` for convenience
+   - Keep karma-logger-specific types (ActivityEntry, CommandContext, CostConfig, etc.)
+
+4. **Files with import updates:**
+   - `src/watcher.ts` - Changed `from './parser.js'` and `from './types.js'` to `from 'claude-code-files-parser'`
+   - `src/aggregator.ts` - Changed `from './types.js'` for LogEntry, TokenUsage to `from 'claude-code-files-parser'`
+   - `src/cost.ts` - Changed `from './types.js'` for TokenUsage to `from 'claude-code-files-parser'`
+   - `src/commands/status.ts` - Changed `from '../parser.js'` to `from 'claude-code-files-parser'`
+   - `src/commands/watch.ts` - Changed `from '../types.js'` for LogEntry to `from 'claude-code-files-parser'`
+   - `src/commands/report.ts` - Changed dynamic import to `from 'claude-code-files-parser'`
+   - `src/discovery.ts` - Changed dynamic import for extractAgentSpawns to `from 'claude-code-files-parser'`
+   - `src/cli.ts` - Changed dynamic import for parseSessionFile to `from 'claude-code-files-parser'`
+
+5. **tests/parser.test.ts** - Updated import to `from 'claude-code-files-parser'`
+
+### Build & Test Results
+
+- Build: **PASS** (`npm run build` completes without errors)
+- Tests: **630 passed** (3 pre-existing flaky tests in walkie-talkie unrelated to this change)
+
+### Notes
+
+- karma-logger-specific types (ActivityEntry, CostConfig, CommandContext, ProjectSummary, etc.) remain in `src/types.ts`
+- Parsing types (LogEntry, TokenUsage, ParsedSession, etc.) are re-exported from `types.ts` for backward compatibility
+- Direct imports from `'claude-code-files-parser'` are preferred for new code

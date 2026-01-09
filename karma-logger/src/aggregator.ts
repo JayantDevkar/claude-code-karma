@@ -8,7 +8,8 @@
 import { EventEmitter } from 'events';
 import * as os from 'os';
 import * as path from 'path';
-import type { LogEntry, TokenUsage, ActivityEntry } from './types.js';
+import type { LogEntry, TokenUsage } from 'claude-code-files-parser';
+import type { ActivityEntry } from './types.js';
 import { calculateCost, addCosts, emptyCostBreakdown, type CostBreakdown } from './cost.js';
 import type { SessionInfo } from './discovery.js';
 import type { LogWatcher } from './watcher.js';

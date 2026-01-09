@@ -1,0 +1,2 @@
+{"type":"user","uuid":"u1","parentUuid":null,"sessionId":"test-session","timestamp":"2025-01-09T10:00:00Z","message":{"role":"user","content":"Hello"}}
+{"type":"assistant","uuid":"a1","parentUuid":"u1","sessionId":"test-session","timestamp":"2025-01-09T10:00:05Z","message":{"model":"claude-3-opus","id":"msg_1","type":"message","role":"assistant","content":[{"type":"text","text":"Hi there!"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":10,"output_tokens":5}}}

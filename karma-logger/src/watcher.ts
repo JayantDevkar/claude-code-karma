@@ -12,8 +12,7 @@ import chokidar from 'chokidar';
 import type { FSWatcher } from 'chokidar';
 
 import { findClaudeLogsDir, parseSessionPath, type SessionInfo } from './discovery.js';
-import { isValidEntry, normalizeEntry } from './parser.js';
-import type { LogEntry } from './types.js';
+import { isValidEntry, normalizeEntry, type LogEntry } from 'claude-code-files-parser';
 
 /**
  * Events emitted by LogWatcher

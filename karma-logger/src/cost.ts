@@ -10,7 +10,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import type { TokenUsage } from './types.js';
+import type { TokenUsage } from 'claude-code-files-parser';
 
 /**
  * Pricing per 1 million tokens for each model

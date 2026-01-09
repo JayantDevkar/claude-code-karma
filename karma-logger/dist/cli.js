@@ -169,7 +169,7 @@ Examples:
         }
         // Pre-populate aggregator with recent sessions (for immediate display)
         const { discoverSessions, getSessionAgents } = await import('./discovery.js');
-        const { parseSessionFile } = await import('./parser.js');
+        const { parseSessionFile } = await import('claude-code-files-parser');
         const sessions = await discoverSessions();
         const recentSessions = sessions.filter(s => !s.isAgent).slice(0, 10);
         let agentCount = 0;

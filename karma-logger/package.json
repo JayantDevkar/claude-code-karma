@@ -47,6 +47,7 @@
     "node": ">=20.0.0"
   },
   "dependencies": {
+    "claude-code-files-parser": "file:./claude-code-files-parser",
     "@hono/node-server": "^1.19.7",
     "@inkjs/ui": "^2.0.0",
     "asciichart": "^1.5.25",

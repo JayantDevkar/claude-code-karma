@@ -14,7 +14,7 @@ import {
   getSessionAgents,
   type SessionInfo,
 } from '../discovery.js';
-import { parseSessionFile } from '../parser.js';
+import { parseSessionFile } from 'claude-code-files-parser';
 import { formatNumber, formatCost, formatDuration } from '../tui/utils/format.js';
 
 /**

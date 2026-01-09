@@ -339,7 +339,7 @@ export async function getSessionAgents(
   // Extract agent types from parent session's Task tool calls
   if (options?.includeAgentTypes && agents.length > 0) {
     try {
-      const { extractAgentSpawns } = await import('./parser.js');
+      const { extractAgentSpawns } = await import('claude-code-files-parser');
       const parentSessionPath = join(logsDir, projectPath, `${sessionId}.jsonl`);
       
       if (existsSync(parentSessionPath)) {

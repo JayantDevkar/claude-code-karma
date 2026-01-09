@@ -357,7 +357,7 @@ export async function reportCommand(options: ReportOptions): Promise<void> {
  */
 export async function syncSessionsToDB(): Promise<void> {
   const { discoverProjects } = await import('../discovery.js');
-  const { parseSessionFile } = await import('../parser.js');
+  const { parseSessionFile } = await import('claude-code-files-parser');
   const { MetricsAggregator } = await import('../aggregator.js');
 
   const db = getDB();

@@ -1,134 +1,41 @@
 /**
  * Core TypeScript interfaces for karma-logger
- * Phase 1: JSONL Parser types based on actual Claude Code log format
+ *
+ * Parsing-related types are exported from 'claude-code-files-parser' package.
+ * This file contains karma-logger specific types for aggregation, persistence, and UI.
  */
 
 // ============================================
-// Raw JSONL Entry Types (as found in logs)
+// Re-exports from claude-code-files-parser
 // ============================================
 
 /**
- * Token usage from Claude API response
+ * Re-export parsing types for convenience.
+ * Consumers can also import directly from 'claude-code-files-parser'.
  */
-export interface RawTokenUsage {
-  input_tokens: number;
-  output_tokens: number;
-  cache_read_input_tokens?: number;
-  cache_creation_input_tokens?: number;
-  cache_creation?: {
-    ephemeral_5m_input_tokens?: number;
-    ephemeral_1h_input_tokens?: number;
-  };
-  service_tier?: string;
-}
-
-/**
- * Content block types in assistant messages
- */
-export interface ThinkingBlock {
-  type: 'thinking';
-  thinking: string;
-  signature?: string;
-}
-
-export interface ToolUseBlock {
-  type: 'tool_use';
-  id: string;
-  name: string;
-  input: Record<string, unknown>;
-}
-
-export interface TextBlock {
-  type: 'text';
-  text: string;
-}
-
-export type ContentBlock = ThinkingBlock | ToolUseBlock | TextBlock;
-
-/**
- * Message structure for user entries
- */
-export interface UserMessage {
-  role: 'user';
-  content: string;
-}
-
-/**
- * Message structure for assistant entries
- */
-export interface AssistantMessage {
-  model: string;
-  id: string;
-  type: 'message';
-  role: 'assistant';
-  content: ContentBlock[];
-  stop_reason: string | null;
-  stop_sequence: string | null;
-  usage: RawTokenUsage;
-}
-
-/**
- * Raw log entry from Claude Code JSONL files
- */
-export interface RawLogEntry {
-  type: 'user' | 'assistant' | 'file-history-snapshot' | 'summary';
-  uuid: string;
-  parentUuid: string | null;
-  sessionId: string;
-  timestamp: string;
-  cwd?: string;
-  version?: string;
-  gitBranch?: string;
-  isSidechain?: boolean;
-  userType?: 'external' | 'internal';
-  message?: UserMessage | AssistantMessage;
-  requestId?: string;
-}
+export type {
+  // Raw types
+  RawTokenUsage,
+  ThinkingBlock,
+  ToolUseBlock,
+  TextBlock,
+  ContentBlock,
+  UserMessage,
+  AssistantMessage,
+  RawLogEntry,
+  // Normalized types
+  TokenUsage,
+  LogEntry,
+  ParsedSession,
+} from 'claude-code-files-parser';
 
 // ============================================
-// Normalized Types (for internal use)
+// Karma-Logger Specific Types
 // ============================================
 
 /**
- * Normalized token usage for aggregation
- */
-export interface TokenUsage {
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadTokens: number;
-  cacheCreationTokens: number;
-}
-
-/**
- * Parsed and normalized log entry
- */
-export interface LogEntry {
-  type: 'user' | 'assistant';
-  uuid: string;
-  parentUuid: string | null;
-  sessionId: string;
-  timestamp: Date;
-  model?: string;
-  usage?: TokenUsage;
-  toolCalls: string[];
-  hasThinking: boolean;
-}
-
-/**
- * Parsed session with all entries and metadata
- */
-export interface ParsedSession {
-  sessionId: string;
-  projectPath: string;
-  entries: LogEntry[];
-  startTime: Date;
-  endTime: Date;
-  models: Set<string>;
-  totalUsage: TokenUsage;
-}
-
-/**
- * Aggregated metrics for a session
+ * Aggregated metrics for a session (legacy type from types.ts)
+ * Note: aggregator.ts defines a more complete SessionMetrics interface
  */
 export interface SessionMetrics {
   sessionId: string;

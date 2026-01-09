@@ -16,7 +16,8 @@ import {
   getLatestSession,
   type SessionInfo,
 } from '../discovery.js';
-import type { LogEntry, ActivityEntry } from '../types.js';
+import type { LogEntry } from 'claude-code-files-parser';
+import type { ActivityEntry } from '../types.js';
 import { formatNumber, formatCost } from '../tui/utils/format.js';
 import { getDB, closeDB } from '../db.js';
 import { startRadioServer } from '../walkie-talkie/socket-server.js';

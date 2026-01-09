@@ -1,0 +1,2 @@
+{"type":"user","uuid":"u1","parentUuid":null,"sessionId":"test-session","timestamp":"2025-01-09T10:00:00Z","message":{"role":"user","content":"Read file.txt"}}
+{"type":"assistant","uuid":"a1","parentUuid":"u1","sessionId":"test-session","timestamp":"2025-01-09T10:00:05Z","message":{"model":"claude-3-opus","id":"msg_1","type":"message","role":"assistant","content":[{"type":"tool_use","id":"tool_1","name":"Read","input":{"file_path":"file.txt"}}],"stop_reason":"tool_use","stop_sequence":null,"usage":{"input_tokens":20,"output_tokens":15,"cache_read_input_tokens":5}}}

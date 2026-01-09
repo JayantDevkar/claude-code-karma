@@ -1,6 +1,8 @@
 /**
  * Core TypeScript interfaces for karma-logger
- * Phase 1: JSONL Parser types based on actual Claude Code log format
+ *
+ * Parsing-related types are exported from 'claude-code-files-parser' package.
+ * This file contains karma-logger specific types for aggregation, persistence, and UI.
  */
 /**
  * Default Claude pricing (as of 2024)

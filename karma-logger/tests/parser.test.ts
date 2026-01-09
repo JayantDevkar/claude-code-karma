@@ -15,7 +15,7 @@ import {
   buildHierarchy,
   getModels,
   getToolUsageCounts,
-} from '../src/parser.js';
+} from 'claude-code-files-parser';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const fixturesDir = join(__dirname, 'fixtures');
