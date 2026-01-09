@@ -30,6 +30,8 @@ karma-logger is a CLI tool and dashboard that monitors Claude Code sessions in r
 - **Multiple interfaces** - CLI, streaming watch mode, interactive TUI, and web dashboard
 - **Offline-first** - All data stays local in SQLite
 - **Extensible pricing** - Override model pricing via config files
+- **Agent coordination (Walkie-Talkie)** - Real-time agent status tracking, inter-agent messaging, and parent-child hierarchy via Unix socket IPC
+- **Persistent cache** - Optional WAL + snapshot persistence for agent state that survives restarts
 
 ---
 
@@ -250,25 +252,43 @@ Each line is a JSON object:
 Browser connects to http://localhost:3333
                     │
                     ▼
-┌─────────────────────────────────────────┐
-│      Hono Server (server.ts)            │
-├─────────────────────────────────────────┤
-│ GET /              → Static HTML        │
-│ GET /events        → SSE stream         │
-│ GET /api/session   → Current session    │
-│ GET /api/sessions  → Session list       │
-│ GET /api/totals    → Aggregate metrics  │
-│ GET /api/health    → Health check       │
-└─────────────────────────────────────────┘
+┌───────────────────────────────────────────────┐
+│          Hono Server (server.ts)              │
+├───────────────────────────────────────────────┤
+│ GET /                   → Static HTML                │
+│ GET /events             → SSE stream                 │
+├──────────────────────────────────────────────────────┤
+│ Session APIs:                                        │
+│ GET /api/session             → Current session       │
+│ GET /api/session/:id         → Session by ID         │
+│ GET /api/sessions            → Session list          │
+├──────────────────────────────────────────────────────┤
+│ Project APIs:                                        │
+│ GET /api/projects            → List all projects     │
+│ GET /api/projects/:name      → Project details       │
+│ GET /api/projects/:name/history → Session history    │
+├──────────────────────────────────────────────────────┤
+│ Metrics APIs:                                        │
+│ GET /api/totals              → Aggregate metrics     │
+│ GET /api/totals/history      → Metrics over time     │
+│ GET /api/health              → Health check          │
+├──────────────────────────────────────────────────────┤
+│ Radio APIs (Walkie-Talkie):                          │
+│ GET /api/radio/agents        → All agent statuses    │
+│ GET /api/radio/agent/:id     → Single agent status   │
+│ GET /api/radio/session/:id/tree → Agent hierarchy    │
+└───────────────────────────────────────────────┘
                     │
                     │ Real-time updates
                     ▼
-┌─────────────────────────────────────────┐
-│      SSEManager (sse.ts)                │
-│  • Listens to LogWatcher events         │
-│  • Broadcasts to all connected clients  │
-│  • Events: metrics, agents, session     │
-└─────────────────────────────────────────┘
+┌───────────────────────────────────────────────┐
+│          SSEManager (sse.ts)                  │
+│  • Listens to LogWatcher events               │
+│  • Broadcasts to all connected clients        │
+│  • Events: init, metrics, agents, agent:spawn │
+│    session:start, session:end, agent:status,  │
+│    agent:progress                             │
+└───────────────────────────────────────────────┘
 ```
 
 ---
@@ -343,6 +363,7 @@ karma watch --ui              # Interactive TUI
 karma watch --compact         # Compact view
 karma watch --activity-only   # Tool activity feed only
 karma watch --no-persist      # Disable auto-save to SQLite
+karma watch --persist-radio   # Enable persistent radio cache (WAL + snapshots)
 ```
 
 ### `karma report`
@@ -379,6 +400,33 @@ karma config set <key> <val>  # Set a value
 karma config reset            # Reset to defaults
 karma config list             # List available keys
 ```
+
+### `karma radio`
+
+Agent coordination via Walkie-Talkie IPC system.
+
+```bash
+# Status management
+karma radio set-status <status>       # Set agent status (idle/working/waiting/done/error)
+karma radio get-status                # Get current agent status
+karma radio list-agents               # List all registered agents
+
+# Progress and results
+karma radio report-progress <pct>     # Report progress (0-100) with optional message
+karma radio publish-result <data>     # Publish agent result as JSON
+
+# Inter-agent communication
+karma radio send <target> <msg>       # Send message to another agent
+karma radio listen                    # Listen for incoming messages
+karma radio wait-for <agent> <status> # Wait for agent to reach status
+```
+
+**Required Environment Variables:**
+- `KARMA_AGENT_ID` - Unique agent identifier
+- `KARMA_SESSION_ID` - Session identifier
+- `KARMA_PARENT_ID` - Parent agent ID (optional)
+- `KARMA_AGENT_TYPE` - Agent type (e.g., "code-reviewer")
+- `KARMA_MODEL` - Model being used (e.g., "sonnet")
 
 ---
 
@@ -436,6 +484,8 @@ Override model pricing in `~/.karma/pricing.json` or `.karma-pricing.json` (proj
 | `~/.karma/karma.db` | SQLite database |
 | `~/.karma/config.json` | Configuration file |
 | `~/.karma/pricing.json` | Custom pricing (optional) |
+| `~/.karma/radio/wal.log` | Radio WAL transaction log (optional) |
+| `~/.karma/radio/snapshot.json` | Radio cache snapshot (optional) |
 
 ### Database Schema
 
@@ -520,7 +570,8 @@ karma-logger/
 │   │   ├── status.ts
 │   │   ├── watch.ts
 │   │   ├── report.ts
-│   │   └── config.ts
+│   │   ├── config.ts
+│   │   └── radio.ts          # Agent coordination CLI
 │   │
 │   ├── dashboard/            # Web dashboard
 │   │   ├── index.ts          # Dashboard entry point
@@ -536,11 +587,16 @@ karma-logger/
 │   ├── walkie-talkie/         # Agent coordination (KV cache + IPC)
 │   │   ├── index.ts
 │   │   ├── types.ts
-│   │   ├── cache-store.ts
-│   │   ├── agent-radio.ts
-│   │   ├── socket-server.ts
-│   │   ├── socket-client.ts
-│   │   └── README.md          # Walkie-Talkie docs
+│   │   ├── cache-store.ts     # In-memory KV with TTL & pub/sub
+│   │   ├── persistent-cache.ts # WAL + snapshot persistence
+│   │   ├── agent-radio.ts     # High-level agent coordination API
+│   │   ├── socket-server.ts   # Unix domain socket server
+│   │   ├── socket-client.ts   # Unix domain socket client
+│   │   ├── schema-registry.ts # Type validation for metadata
+│   │   ├── wal.ts             # Write-Ahead Log
+│   │   ├── snapshot.ts        # Snapshot management
+│   │   ├── README.md          # Walkie-Talkie docs
+│   │   └── SETUP.md           # Deployment/integration guide
 │   │
 │   └── tui/                  # Terminal UI (Ink/React)
 │       ├── index.ts          # TUI entry point
@@ -570,7 +626,20 @@ karma-logger/
 │   ├── converters.test.ts
 │   ├── commands/
 │   ├── dashboard/
+│   │   ├── server.test.ts
+│   │   ├── sse.test.ts
+│   │   └── api-historical.test.ts
 │   ├── tui/
+│   ├── walkie-talkie/        # Agent coordination tests
+│   │   ├── cache-store.test.ts
+│   │   ├── persistent-cache.test.ts
+│   │   ├── agent-radio.test.ts
+│   │   ├── schema-registry.test.ts
+│   │   ├── socket/radio-client.test.ts
+│   │   ├── integration.test.ts
+│   │   ├── wal.test.ts
+│   │   ├── snapshot.test.ts
+│   │   └── subscription.test.ts
 │   └── fixtures/             # Test JSONL files
 │
 ├── scripts/                  # Development utilities
