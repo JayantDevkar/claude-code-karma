@@ -114,6 +114,12 @@ export interface AgentStatus {
   agentType: string;
   model: string;
   metadata: Record<string, unknown>;
+  /** Number of direct children */
+  childrenCount?: number;
+  /** Quick check for children existence */
+  hasChildren?: boolean;
+  /** Hierarchy depth (0 = root) */
+  depth?: number;
 }
 
 /**

@@ -24,6 +24,20 @@ import type {
   CacheStore,
 } from './types.js';
 
+// ============================================
+// Phase 4+: Wildcard Subscription Types
+// ============================================
+
+/**
+ * Subscribe to any child of a parent reaching a specific state
+ * Pattern: parent:{parentId}:children:*:status
+ */
+export interface WildcardSubscribeMessage {
+  type: 'wildcard-subscribe';
+  parentId: string;
+  targetState: AgentState;
+}
+
 /** Default socket path for Unix */
 const DEFAULT_SOCKET_PATH = '/tmp/karma-radio.sock';
 
@@ -58,11 +72,23 @@ interface Subscription {
 }
 
 /**
+ * Wildcard subscription entry for monitoring all children of a parent
+ */
+interface WildcardSubscription {
+  id: string;
+  parentId: string;
+  targetState: AgentState;
+  socket: Socket;
+  unsubscribe: () => void;
+}
+
+/**
  * Manages subscriptions for agent status changes
  * Handles pub/sub with CacheStore and pushes notifications to clients
  */
 export class SubscriptionManager {
   private subscriptions: Map<string, Subscription> = new Map();
+  private wildcardSubscriptions: Map<string, WildcardSubscription> = new Map();
   private socketSubscriptions: Map<Socket, Set<string>> = new Map();
   private keepAliveIntervals: Map<Socket, ReturnType<typeof setInterval>> = new Map();
   private cache: CacheStore;
@@ -134,12 +160,107 @@ export class SubscriptionManager {
   }
 
   /**
+   * Subscribe to any child of a parent reaching a specific state
+   * Pattern: parent:{parentId}:children:*:status
+   * @param socket Client socket to send notifications to
+   * @param message Wildcard subscribe message with parentId and targetState
+   * @returns Subscription ID
+   */
+  wildcardSubscribe(socket: Socket, message: WildcardSubscribeMessage): string {
+    const subscriptionId = randomUUID();
+    const { parentId, targetState } = message;
+
+    // Check if any existing children are already in target state
+    const childKeys = this.cache.keys(`agent:*:status`);
+    for (const key of childKeys) {
+      const status = this.cache.get<AgentStatus>(key);
+      if (status?.parentId === parentId && status?.state === targetState) {
+        // Immediately notify - a child is already in target state
+        const notification: NotificationMessage = {
+          type: 'notification',
+          subscriptionId,
+          status,
+        };
+        socket.write(JSON.stringify(notification) + '\n');
+        return subscriptionId;
+      }
+    }
+
+    // Subscribe to all agent status updates and filter for children of parentId
+    const unsubscribe = this.cache.subscribe(`agent:*:status`, (key, value) => {
+      const status = value as AgentStatus;
+      if (status?.parentId === parentId && status?.state === targetState) {
+        // Child reached target state - notify and cleanup
+        const notification: NotificationMessage = {
+          type: 'notification',
+          subscriptionId,
+          status,
+        };
+        socket.write(JSON.stringify(notification) + '\n');
+        this.unsubscribeWildcard(subscriptionId);
+      }
+    });
+
+    // Store wildcard subscription
+    const subscription: WildcardSubscription = {
+      id: subscriptionId,
+      parentId,
+      targetState,
+      socket,
+      unsubscribe,
+    };
+    this.wildcardSubscriptions.set(subscriptionId, subscription);
+
+    // Track subscriptions by socket for cleanup
+    if (!this.socketSubscriptions.has(socket)) {
+      this.socketSubscriptions.set(socket, new Set());
+      // Start keep-alive for this socket
+      this.startKeepAlive(socket);
+    }
+    this.socketSubscriptions.get(socket)!.add(subscriptionId);
+
+    // Extend socket timeout for subscription connections
+    socket.setTimeout(SUBSCRIPTION_SOCKET_TIMEOUT_MS);
+
+    return subscriptionId;
+  }
+
+  /**
+   * Unsubscribe from wildcard notifications
+   * @param subscriptionId Wildcard subscription to remove
+   */
+  unsubscribeWildcard(subscriptionId: string): void {
+    const subscription = this.wildcardSubscriptions.get(subscriptionId);
+    if (!subscription) {
+      return;
+    }
+
+    // Call cache unsubscribe
+    subscription.unsubscribe();
+
+    // Remove from tracking maps
+    this.wildcardSubscriptions.delete(subscriptionId);
+    const socketSubs = this.socketSubscriptions.get(subscription.socket);
+    if (socketSubs) {
+      socketSubs.delete(subscriptionId);
+      if (socketSubs.size === 0) {
+        this.socketSubscriptions.delete(subscription.socket);
+        this.stopKeepAlive(subscription.socket);
+      }
+    }
+  }
+
+  /**
    * Unsubscribe from notifications
    * @param subscriptionId Subscription to remove
    */
   unsubscribe(subscriptionId: string): void {
     const subscription = this.subscriptions.get(subscriptionId);
     if (!subscription) {
+      // Check if it's a wildcard subscription
+      if (this.wildcardSubscriptions.has(subscriptionId)) {
+        this.unsubscribeWildcard(subscriptionId);
+      }
       return;
     }
 
@@ -168,12 +289,17 @@ export class SubscriptionManager {
       return;
     }
 
-    // Unsubscribe all subscriptions for this socket
+    // Unsubscribe all subscriptions for this socket (both regular and wildcard)
     for (const subscriptionId of subscriptionIds) {
       const subscription = this.subscriptions.get(subscriptionId);
       if (subscription) {
         subscription.unsubscribe();
         this.subscriptions.delete(subscriptionId);
+      }
+      const wildcardSubscription = this.wildcardSubscriptions.get(subscriptionId);
+      if (wildcardSubscription) {
+        wildcardSubscription.unsubscribe();
+        this.wildcardSubscriptions.delete(subscriptionId);
       }
     }
 
@@ -215,11 +341,18 @@ export class SubscriptionManager {
     }
     this.keepAliveIntervals.clear();
 
-    // Unsubscribe all subscriptions
+    // Unsubscribe all regular subscriptions
     for (const subscription of this.subscriptions.values()) {
       subscription.unsubscribe();
     }
     this.subscriptions.clear();
+
+    // Unsubscribe all wildcard subscriptions
+    for (const subscription of this.wildcardSubscriptions.values()) {
+      subscription.unsubscribe();
+    }
+    this.wildcardSubscriptions.clear();
+
     this.socketSubscriptions.clear();
   }
 
@@ -227,7 +360,14 @@ export class SubscriptionManager {
    * Get count of active subscriptions (for stats/testing)
    */
   getSubscriptionCount(): number {
-    return this.subscriptions.size;
+    return this.subscriptions.size + this.wildcardSubscriptions.size;
+  }
+
+  /**
+   * Get count of active wildcard subscriptions (for stats/testing)
+   */
+  getWildcardSubscriptionCount(): number {
+    return this.wildcardSubscriptions.size;
   }
 }
 
@@ -313,6 +453,12 @@ export function startRadioServer(
             continue;
           }
 
+          // Phase 4+: Handle wildcard subscription messages
+          if (parsed.type === 'wildcard-subscribe') {
+            handleWildcardSubscribeMessage(socket, parsed as WildcardSubscribeMessage, subscriptionManager);
+            continue;
+          }
+
           if (parsed.type === 'unsubscribe') {
             handleUnsubscribeMessage(parsed as UnsubscribeMessage, subscriptionManager);
             continue;
@@ -383,6 +529,35 @@ function handleSubscribeMessage(
   }
 
   const subscriptionId = subscriptionManager.subscribe(socket, message);
+
+  // Send subscription confirmation
+  const confirmed: SubscribedMessage = {
+    type: 'subscribed',
+    subscriptionId,
+  };
+  socket.write(JSON.stringify(confirmed) + '\n');
+}
+
+/**
+ * Handle wildcard subscribe message for Phase 4+ child monitoring
+ * Pattern: parent:{parentId}:children:*:status
+ */
+function handleWildcardSubscribeMessage(
+  socket: Socket,
+  message: WildcardSubscribeMessage,
+  subscriptionManager?: SubscriptionManager
+): void {
+  if (!subscriptionManager) {
+    const errorResponse: RadioResponse = {
+      id: 'wildcard-subscribe-error',
+      success: false,
+      error: 'Subscriptions not available (radio not enabled)',
+    };
+    socket.write(JSON.stringify(errorResponse) + '\n');
+    return;
+  }
+
+  const subscriptionId = subscriptionManager.wildcardSubscribe(socket, message);
 
   // Send subscription confirmation
   const confirmed: SubscribedMessage = {

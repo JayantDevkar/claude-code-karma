@@ -307,10 +307,26 @@ export function createApiRoutes(aggregator: MetricsAggregator): Hono {
       return c.json({ error: 'Radio not enabled' }, 503);
     }
 
-    const agents = cache.get<string[]>(`session:${sessionId}:agents`) || [];
-    const tree = buildAgentTree(agents, cache);
+    const agentIds = cache.get<string[]>(`session:${sessionId}:agents`) || [];
 
-    return c.json(tree);
+    // Handle case where session has no agents
+    if (agentIds.length === 0) {
+      return c.json({
+        sessionId,
+        tree: [],
+        totalAgents: 0,
+        maxDepth: 0,
+      });
+    }
+
+    const { tree, maxDepth } = buildAgentTree(agentIds, cache);
+
+    return c.json({
+      sessionId,
+      tree,
+      totalAgents: agentIds.length,
+      maxDepth,
+    });
   });
 
   return api;
@@ -320,19 +336,23 @@ export function createApiRoutes(aggregator: MetricsAggregator): Hono {
  * Agent tree node for hierarchy display
  */
 interface AgentTreeNode {
-  agentId: string;
-  sessionId: string;
-  state: string;
-  agentType: string;
-  model: string;
-  parentId: string | null;
+  agent: AgentStatus;
   children: AgentTreeNode[];
+  depth: number;
+}
+
+/**
+ * Result of building agent tree
+ */
+interface AgentTreeResult {
+  tree: AgentTreeNode[];
+  maxDepth: number;
 }
 
 /**
  * Build agent hierarchy tree from agent IDs
  */
-function buildAgentTree(agentIds: string[], cache: CacheStore): AgentTreeNode[] {
+function buildAgentTree(agentIds: string[], cache: CacheStore): AgentTreeResult {
   const statuses: AgentStatus[] = [];
 
   for (const id of agentIds) {
@@ -342,20 +362,31 @@ function buildAgentTree(agentIds: string[], cache: CacheStore): AgentTreeNode[] 
     }
   }
 
-  const roots = statuses.filter(s => !s.parentId);
+  // If no valid statuses found, return empty tree
+  if (statuses.length === 0) {
+    return { tree: [], maxDepth: 0 };
+  }
 
-  function buildNode(status: AgentStatus): AgentTreeNode {
+  let maxDepth = 0;
+
+  // Find root agents (those without a parent or whose parent is not in this session)
+  const agentIdSet = new Set(agentIds);
+  const roots = statuses.filter(s => !s.parentId || !agentIdSet.has(s.parentId));
+
+  function buildNode(status: AgentStatus, depth: number): AgentTreeNode {
+    if (depth > maxDepth) {
+      maxDepth = depth;
+    }
+
     const children = statuses.filter(s => s.parentId === status.agentId);
     return {
-      agentId: status.agentId,
-      sessionId: status.sessionId,
-      state: status.state,
-      agentType: status.agentType,
-      model: status.model,
-      parentId: status.parentId,
-      children: children.map(buildNode),
+      agent: status,
+      children: children.map(child => buildNode(child, depth + 1)),
+      depth,
     };
   }
 
-  return roots.map(buildNode);
+  const tree = roots.map(root => buildNode(root, 0));
+
+  return { tree, maxDepth };
 }

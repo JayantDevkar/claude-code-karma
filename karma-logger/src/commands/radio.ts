@@ -14,6 +14,16 @@ import {
   createRadioClient,
 } from '../walkie-talkie/socket-client.js';
 import type { RadioEnv, AgentState, AgentStatus, ProgressUpdate, ValidationMode } from '../walkie-talkie/types.js';
+import {
+  createSubagentWatcher,
+  scanSubagents,
+  formatAgentsTable,
+  formatAgentsJson,
+  type SubagentInfo,
+} from '../walkie-talkie/subagent-watcher.js';
+import { homedir } from 'node:os';
+import { join, basename } from 'node:path';
+import { existsSync, readdirSync } from 'node:fs';
 
 // ============================================
 // Exit Codes
@@ -27,12 +37,47 @@ export const EXIT_FAILURE = 1;
 export const EXIT_ERROR = 2;
 
 // ============================================
+// ID Validation
+// ============================================
+
+/**
+ * Regex pattern for valid agent/session IDs
+ * Accepts UUIDs, alphanumeric strings with hyphens/underscores, or prefixed IDs
+ * Examples: "a1b2c3d4-e5f6-7890-abcd-ef1234567890", "agent_123", "session-abc"
+ */
+const VALID_ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/;
+
+/**
+ * Validate an ID format
+ * @param id The ID to validate
+ * @param fieldName Name of the field for error messages
+ * @throws Error if ID is invalid
+ */
+function validateId(id: string, fieldName: string): void {
+  if (!id || typeof id !== 'string') {
+    throw new Error(`${fieldName} is required and must be a string`);
+  }
+  if (id.length === 0) {
+    throw new Error(`${fieldName} cannot be empty`);
+  }
+  if (id.length > 64) {
+    throw new Error(`${fieldName} is too long (max 64 characters): ${id.slice(0, 20)}...`);
+  }
+  if (!VALID_ID_PATTERN.test(id)) {
+    throw new Error(
+      `${fieldName} has invalid format: "${id}". ` +
+      `IDs must start with alphanumeric and contain only letters, numbers, hyphens, and underscores.`
+    );
+  }
+}
+
+// ============================================
 // Environment Variables
 // ============================================
 
 /**
  * Read required environment variables for agent context
- * @throws Error if required variables are missing
+ * @throws Error if required variables are missing or invalid
  */
 function getRadioEnv(): RadioEnv {
   const agentId = process.env.KARMA_AGENT_ID;
@@ -45,10 +90,19 @@ function getRadioEnv(): RadioEnv {
     throw new Error(`Missing required environment variables: ${missing.join(', ')}`);
   }
 
+  // Validate ID formats
+  validateId(agentId, 'KARMA_AGENT_ID');
+  validateId(sessionId, 'KARMA_SESSION_ID');
+
+  const parentId = process.env.KARMA_PARENT_ID;
+  if (parentId) {
+    validateId(parentId, 'KARMA_PARENT_ID');
+  }
+
   return {
     agentId,
     sessionId,
-    parentId: process.env.KARMA_PARENT_ID,
+    parentId,
     agentType: process.env.KARMA_AGENT_TYPE,
     model: process.env.KARMA_MODEL,
   };
@@ -259,6 +313,13 @@ async function handleWaitFor(
     getRadioEnv();
     const client = createRadioClient();
 
+    // Validate agent ID format
+    try {
+      validateId(agentId, 'agent-id');
+    } catch (validationError) {
+      outputError((validationError as Error).message);
+    }
+
     const validStates: AgentState[] = ['pending', 'active', 'waiting', 'completed', 'failed', 'cancelled'];
     if (!validStates.includes(state as AgentState)) {
       outputError(`Invalid state: ${state}. Valid states: ${validStates.join(', ')}`);
@@ -287,6 +348,179 @@ async function handleWaitFor(
       // Subscription failed
       outputJson({ success: false, error: `Subscription error: ${error.message}` }, EXIT_FAILURE);
     }
+    handleRadioError(error);
+  }
+}
+
+/**
+ * Handle wait-for-all command
+ * karma radio wait-for-all <agent-ids...> <state> [--timeout <ms>]
+ *
+ * Wait for multiple agents to reach the specified state.
+ * Returns when ALL agents have reached the target state.
+ */
+async function handleWaitForAll(
+  agentIds: string[],
+  options: { timeout?: string },
+): Promise<void> {
+  try {
+    getRadioEnv();
+    const client = createRadioClient();
+
+    // Need at least 2 arguments: agent IDs and state
+    if (agentIds.length < 2) {
+      outputError('Usage: wait-for-all <agent1> <agent2> [...] <state>');
+    }
+
+    // Last argument is the state
+    const state = agentIds[agentIds.length - 1];
+    const agents = agentIds.slice(0, -1);
+
+    // Validate all agent IDs
+    for (const agentId of agents) {
+      try {
+        validateId(agentId, `agent-id "${agentId}"`);
+      } catch (validationError) {
+        outputError((validationError as Error).message);
+      }
+    }
+
+    const validStates: AgentState[] = ['pending', 'active', 'waiting', 'completed', 'failed', 'cancelled'];
+    if (!validStates.includes(state as AgentState)) {
+      outputError(`Invalid state: ${state}. Valid states: ${validStates.join(', ')}`);
+    }
+
+    // Parse timeout (default: 60000ms for batch operations)
+    let timeoutMs = 60000;
+    if (options.timeout) {
+      const timeout = parseInt(options.timeout, 10);
+      if (isNaN(timeout) || timeout <= 0) {
+        outputError('Invalid timeout: must be a positive number');
+      }
+      timeoutMs = timeout;
+    }
+
+    // Wait for all agents concurrently
+    const startTime = Date.now();
+    const results: Array<{ agentId: string; status: AgentStatus }> = [];
+    const errors: Array<{ agentId: string; error: string }> = [];
+
+    await Promise.all(
+      agents.map(async (agentId) => {
+        try {
+          const remainingTime = Math.max(1000, timeoutMs - (Date.now() - startTime));
+          const status = await client.waitForAgent(agentId, state as AgentState, remainingTime, false);
+          results.push({ agentId, status });
+        } catch (err) {
+          if (err instanceof RadioTimeoutError) {
+            errors.push({ agentId, error: 'timeout' });
+          } else {
+            errors.push({ agentId, error: (err as Error).message });
+          }
+        }
+      })
+    );
+
+    if (errors.length > 0) {
+      outputJson({
+        success: false,
+        completed: results,
+        failed: errors,
+        message: `${errors.length} of ${agents.length} agents did not reach state "${state}"`,
+      }, EXIT_FAILURE);
+    }
+
+    outputJson({
+      success: true,
+      agents: results,
+      state,
+      elapsed: Date.now() - startTime,
+    });
+  } catch (error) {
+    handleRadioError(error);
+  }
+}
+
+/**
+ * Handle wait-for-children command
+ * karma radio wait-for-children <state> [--timeout <ms>]
+ *
+ * Wait for all child agents to reach the specified state.
+ */
+async function handleWaitForChildren(
+  state: string,
+  options: { timeout?: string },
+): Promise<void> {
+  try {
+    const env = getRadioEnv();
+    const client = createRadioClient();
+
+    const validStates: AgentState[] = ['pending', 'active', 'waiting', 'completed', 'failed', 'cancelled'];
+    if (!validStates.includes(state as AgentState)) {
+      outputError(`Invalid state: ${state}. Valid states: ${validStates.join(', ')}`);
+    }
+
+    // Parse timeout (default: 60000ms for batch operations)
+    let timeoutMs = 60000;
+    if (options.timeout) {
+      const timeout = parseInt(options.timeout, 10);
+      if (isNaN(timeout) || timeout <= 0) {
+        outputError('Invalid timeout: must be a positive number');
+      }
+      timeoutMs = timeout;
+    }
+
+    // First, get list of children
+    const children = await client.send<AgentStatus[]>('list-agents', { filter: 'children' }, env);
+
+    if (children.length === 0) {
+      outputJson({ success: true, agents: [], message: 'No child agents found' });
+    }
+
+    // Wait for all children to reach the target state
+    const startTime = Date.now();
+    const results: Array<{ agentId: string; status: AgentStatus }> = [];
+    const errors: Array<{ agentId: string; error: string }> = [];
+
+    await Promise.all(
+      children.map(async (child) => {
+        try {
+          // Check if already in target state
+          if (child.state === state) {
+            results.push({ agentId: child.agentId, status: child });
+            return;
+          }
+
+          const remainingTime = Math.max(1000, timeoutMs - (Date.now() - startTime));
+          const status = await client.waitForAgent(child.agentId, state as AgentState, remainingTime, false);
+          results.push({ agentId: child.agentId, status });
+        } catch (err) {
+          if (err instanceof RadioTimeoutError) {
+            errors.push({ agentId: child.agentId, error: 'timeout' });
+          } else {
+            errors.push({ agentId: child.agentId, error: (err as Error).message });
+          }
+        }
+      })
+    );
+
+    if (errors.length > 0) {
+      outputJson({
+        success: false,
+        completed: results,
+        failed: errors,
+        message: `${errors.length} of ${children.length} children did not reach state "${state}"`,
+      }, EXIT_FAILURE);
+    }
+
+    outputJson({
+      success: true,
+      agents: results,
+      state,
+      childCount: children.length,
+      elapsed: Date.now() - startTime,
+    });
+  } catch (error) {
     handleRadioError(error);
   }
 }
@@ -404,6 +638,336 @@ async function handleListAgents(options: {
 }
 
 // ============================================
+// Subagent Watcher Handlers
+// ============================================
+
+/**
+ * Find subagents directory for a session
+ */
+function findSubagentsDir(sessionId: string): string | null {
+  const projectsDir = join(homedir(), '.claude', 'projects');
+
+  if (!existsSync(projectsDir)) {
+    return null;
+  }
+
+  // Search all projects for the session
+  const projects = readdirSync(projectsDir);
+  for (const project of projects) {
+    const projectDir = join(projectsDir, project);
+    const sessionDir = join(projectDir, sessionId, 'subagents');
+    if (existsSync(sessionDir)) {
+      return sessionDir;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Handle watch-subagents command
+ * karma radio watch-subagents [--json] [--interval <ms>]
+ *
+ * Monitors Claude Code subagent JSONL files and reports status to radio
+ */
+async function handleWatchSubagents(options: {
+  json?: boolean;
+  interval?: string;
+}): Promise<void> {
+  try {
+    const env = getRadioEnv();
+    const pollInterval = options.interval ? parseInt(options.interval, 10) : 1000;
+
+    if (options.json) {
+      // One-shot JSON output
+      const subagentsDir = findSubagentsDir(env.sessionId);
+      if (!subagentsDir) {
+        outputJson({ success: true, agents: [], message: 'No subagents directory found' });
+      }
+      const agents = scanSubagents(subagentsDir!);
+      outputJson({ success: true, ...formatAgentsJson(agents) });
+    }
+
+    // Live watch mode
+    console.log(`Watching subagents for session ${env.sessionId}...`);
+    console.log('Press Ctrl+C to stop\n');
+
+    const watcher = createSubagentWatcher({
+      sessionId: env.sessionId,
+      pollInterval,
+      reportToRadio: true,
+      onUpdate: (agents) => {
+        // Clear screen and redraw
+        console.clear();
+        console.log(`Watching subagents for session ${env.sessionId}`);
+        console.log(`Last update: ${new Date().toLocaleTimeString()}`);
+        console.log(formatAgentsTable(agents));
+      },
+    });
+
+    watcher.start();
+
+    // Handle Ctrl+C
+    process.on('SIGINT', () => {
+      watcher.stop();
+      console.log('\nStopped watching');
+      process.exit(0);
+    });
+
+    // Keep running
+    await new Promise(() => {});
+  } catch (error) {
+    handleRadioError(error);
+  }
+}
+
+/**
+ * Handle summary command
+ * karma radio summary
+ *
+ * Shows summary of all agents in current session
+ */
+async function handleSummary(options: { json?: boolean }): Promise<void> {
+  try {
+    const env = getRadioEnv();
+
+    // Get subagents from JSONL files
+    const subagentsDir = findSubagentsDir(env.sessionId);
+    let subagents = new Map<string, SubagentInfo>();
+    if (subagentsDir) {
+      subagents = scanSubagents(subagentsDir);
+    }
+
+    // Also try to get agents from radio server
+    let radioAgents: AgentStatus[] = [];
+    try {
+      const client = createRadioClient();
+      radioAgents = await client.send<AgentStatus[]>('list-agents', { filter: 'all' }, env);
+    } catch {
+      // Server may not be running
+    }
+
+    if (options.json) {
+      outputJson({
+        success: true,
+        sessionId: env.sessionId,
+        radioAgents: radioAgents.length,
+        subagents: formatAgentsJson(subagents),
+      });
+    }
+
+    // Pretty print
+    console.log(`\nSession: ${env.sessionId}`);
+    console.log(`Radio agents: ${radioAgents.length}`);
+    console.log(`Subagents (from JSONL): ${subagents.size}`);
+
+    if (subagents.size > 0) {
+      const summary = formatAgentsJson(subagents) as { byState: Record<string, number> };
+      console.log(`\nBy state:`);
+      for (const [state, count] of Object.entries(summary.byState)) {
+        if (count > 0) {
+          console.log(`  ${state}: ${count}`);
+        }
+      }
+      console.log(formatAgentsTable(subagents));
+    }
+
+    process.exit(0);
+  } catch (error) {
+    handleRadioError(error);
+  }
+}
+
+/**
+ * Handle scan command (one-shot subagent scan)
+ * karma radio scan [--json]
+ */
+async function handleScan(options: { json?: boolean }): Promise<void> {
+  try {
+    const env = getRadioEnv();
+
+    const subagentsDir = findSubagentsDir(env.sessionId);
+    if (!subagentsDir) {
+      if (options.json) {
+        outputJson({ success: true, agents: [], message: 'No subagents directory found' });
+      }
+      console.log('No subagents directory found for session:', env.sessionId);
+      process.exit(0);
+    }
+
+    const agents = scanSubagents(subagentsDir);
+
+    if (options.json) {
+      outputJson({ success: true, ...formatAgentsJson(agents) });
+    }
+
+    console.log(formatAgentsTable(agents));
+    process.exit(0);
+  } catch (error) {
+    handleRadioError(error);
+  }
+}
+
+// ============================================
+// Tree Visualization Types
+// ============================================
+
+/** Node in the agent tree hierarchy */
+interface TreeNode {
+  agentId: string;
+  state: AgentState;
+  agentType: string;
+  model: string;
+  children: TreeNode[];
+}
+
+/**
+ * Build tree structure from flat agent list
+ */
+function buildAgentTree(agents: AgentStatus[]): TreeNode[] {
+  const nodeMap = new Map<string, TreeNode>();
+  const roots: TreeNode[] = [];
+
+  // First pass: create all nodes
+  for (const agent of agents) {
+    nodeMap.set(agent.agentId, {
+      agentId: agent.agentId,
+      state: agent.state,
+      agentType: agent.agentType || 'unknown',
+      model: agent.model || 'unknown',
+      children: [],
+    });
+  }
+
+  // Second pass: build parent-child relationships
+  for (const agent of agents) {
+    const node = nodeMap.get(agent.agentId)!;
+    if (agent.parentId && nodeMap.has(agent.parentId)) {
+      nodeMap.get(agent.parentId)!.children.push(node);
+    } else {
+      // No parent or parent not found - this is a root
+      roots.push(node);
+    }
+  }
+
+  return roots;
+}
+
+/**
+ * Format tree as ASCII art
+ */
+function formatTree(roots: TreeNode[], options: { json?: boolean } = {}): string {
+  if (options.json) {
+    return JSON.stringify({ success: true, tree: roots }, null, 2);
+  }
+
+  const lines: string[] = [];
+  const stateIcons: Record<AgentState, string> = {
+    pending: '[P]',
+    active: '[A]',
+    waiting: '[W]',
+    completed: '[C]',
+    failed: '[F]',
+    cancelled: '[X]',
+  };
+
+  function renderNode(node: TreeNode, prefix: string, isLast: boolean): void {
+    const connector = isLast ? '\\-- ' : '|-- ';
+    const stateIcon = stateIcons[node.state] || '[?]';
+    const shortId = node.agentId.length > 8 ? node.agentId.slice(0, 8) : node.agentId;
+    const shortModel = node.model.replace('claude-', '').slice(0, 15);
+
+    lines.push(`${prefix}${connector}${stateIcon} ${shortId} (${node.agentType}, ${shortModel})`);
+
+    const childPrefix = prefix + (isLast ? '    ' : '|   ');
+    for (let i = 0; i < node.children.length; i++) {
+      renderNode(node.children[i], childPrefix, i === node.children.length - 1);
+    }
+  }
+
+  if (roots.length === 0) {
+    return 'No agents found in session';
+  }
+
+  lines.push('Agent Hierarchy:');
+  lines.push('');
+
+  for (let i = 0; i < roots.length; i++) {
+    const root = roots[i];
+    const stateIcon = stateIcons[root.state] || '[?]';
+    const shortId = root.agentId.length > 8 ? root.agentId.slice(0, 8) : root.agentId;
+    const shortModel = root.model.replace('claude-', '').slice(0, 15);
+
+    lines.push(`${stateIcon} ${shortId} (${root.agentType}, ${shortModel})`);
+
+    for (let j = 0; j < root.children.length; j++) {
+      renderNode(root.children[j], '', j === root.children.length - 1);
+    }
+
+    if (i < roots.length - 1) {
+      lines.push('');
+    }
+  }
+
+  lines.push('');
+  lines.push('Legend: [P]=pending [A]=active [W]=waiting [C]=completed [F]=failed [X]=cancelled');
+
+  return lines.join('\n');
+}
+
+/**
+ * Handle tree command
+ * karma radio tree [--session <id>] [--json]
+ *
+ * Displays agent hierarchy as an ASCII tree
+ */
+async function handleTree(options: { session?: string; json?: boolean }): Promise<void> {
+  try {
+    const env = getRadioEnv();
+    const client = createRadioClient();
+
+    // Use provided session or current session
+    const sessionId = options.session || env.sessionId;
+
+    // Validate session ID if provided
+    if (options.session) {
+      try {
+        validateId(options.session, '--session');
+      } catch (validationError) {
+        outputError((validationError as Error).message);
+      }
+    }
+
+    // Get all agents in the session
+    const agents = await client.send<AgentStatus[]>('list-agents', { filter: 'all' }, {
+      ...env,
+      sessionId,
+    });
+
+    // Build tree structure
+    const tree = buildAgentTree(agents);
+
+    if (options.json) {
+      outputJson({
+        success: true,
+        sessionId,
+        agentCount: agents.length,
+        tree,
+      });
+    }
+
+    // Pretty print the tree
+    console.log(`\nSession: ${sessionId}`);
+    console.log(`Total agents: ${agents.length}`);
+    console.log('');
+    console.log(formatTree(tree));
+    process.exit(0);
+  } catch (error) {
+    handleRadioError(error);
+  }
+}
+
+// ============================================
 // Command Builder
 // ============================================
 
@@ -471,6 +1035,20 @@ Examples:
     .option('--poll', 'Use polling mode instead of subscription-based notifications')
     .action(handleWaitFor);
 
+  // wait-for-all (batch wait)
+  radio
+    .command('wait-for-all <agent-ids...>')
+    .description('Wait for multiple agents to reach a state. Last argument is the target state.')
+    .option('--timeout <ms>', 'Timeout in milliseconds (default: 60000)')
+    .action(handleWaitForAll);
+
+  // wait-for-children (batch wait for all children)
+  radio
+    .command('wait-for-children <state>')
+    .description('Wait for all child agents to reach the specified state')
+    .option('--timeout <ms>', 'Timeout in milliseconds (default: 60000)')
+    .action(handleWaitForChildren);
+
   // send
   radio
     .command('send <target-agent-id> <message-json>')
@@ -502,6 +1080,36 @@ Examples:
     .option('--parent', 'Get parent agent only')
     .option('-s, --status <state>', 'Filter by agent status (pending|active|waiting|completed|failed|cancelled)')
     .action(handleListAgents);
+
+  // watch-subagents (inference-based tracking)
+  radio
+    .command('watch-subagents')
+    .description('Watch subagents via JSONL file monitoring (inference-based)')
+    .option('-j, --json', 'Output JSON and exit (one-shot mode)')
+    .option('-i, --interval <ms>', 'Poll interval in milliseconds (default: 1000)')
+    .action(handleWatchSubagents);
+
+  // scan (one-shot subagent scan)
+  radio
+    .command('scan')
+    .description('Scan subagents from JSONL files (one-shot)')
+    .option('-j, --json', 'Output as JSON')
+    .action(handleScan);
+
+  // summary
+  radio
+    .command('summary')
+    .description('Show summary of all agents in session')
+    .option('-j, --json', 'Output as JSON')
+    .action(handleSummary);
+
+  // tree (hierarchy visualization)
+  radio
+    .command('tree')
+    .description('Display agent hierarchy as an ASCII tree')
+    .option('-s, --session <id>', 'Show tree for specific session (default: current)')
+    .option('-j, --json', 'Output as JSON')
+    .action(handleTree);
 
   return radio;
 }

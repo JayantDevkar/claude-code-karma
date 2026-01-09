@@ -76,14 +76,25 @@ export class AgentRadioImpl implements AgentRadio {
   }
 
   /**
-   * Register this agent in the session's agent list
+   * Register this agent in the session's agent list and parent's children list
    */
   private registerInSession(): void {
-    const key = `session:${this.rootSessionId}:agents`;
-    const agents = this.cache.get<string[]>(key) ?? [];
+    // Register in session agents list
+    const sessionKey = `session:${this.rootSessionId}:agents`;
+    const agents = this.cache.get<string[]>(sessionKey) ?? [];
     if (!agents.includes(this.agentId)) {
       agents.push(this.agentId);
-      this.cache.set(key, agents, TTL.SESSION_AGENTS);
+      this.cache.set(sessionKey, agents, TTL.SESSION_AGENTS);
+    }
+
+    // Register in parent's children list (reverse index for O(1) child lookup)
+    if (this.parentId && this.parentType === 'agent') {
+      const parentChildrenKey = `parent:${this.parentId}:children`;
+      const children = this.cache.get<string[]>(parentChildrenKey) ?? [];
+      if (!children.includes(this.agentId)) {
+        children.push(this.agentId);
+        this.cache.set(parentChildrenKey, children, TTL.SESSION_AGENTS);
+      }
     }
   }
 
@@ -154,9 +165,32 @@ export class AgentRadioImpl implements AgentRadio {
 
     this.cache.set(`agent:${this.agentId}:status`, status, TTL.STATUS);
 
+    // Refresh SESSION_AGENTS TTL to keep session alive while agents are active
+    this.refreshSessionTTL();
+
     // If progress is provided, update it atomically with status
     if (progress) {
       this.reportProgress(progress);
+    }
+  }
+
+  /**
+   * Refresh SESSION_AGENTS TTL to prevent expiration while agents are active
+   */
+  private refreshSessionTTL(): void {
+    const sessionKey = `session:${this.rootSessionId}:agents`;
+    const agents = this.cache.get<string[]>(sessionKey);
+    if (agents) {
+      this.cache.set(sessionKey, agents, TTL.SESSION_AGENTS);
+    }
+
+    // Also refresh parent's children list TTL
+    if (this.parentId && this.parentType === 'agent') {
+      const parentChildrenKey = `parent:${this.parentId}:children`;
+      const children = this.cache.get<string[]>(parentChildrenKey);
+      if (children) {
+        this.cache.set(parentChildrenKey, children, TTL.SESSION_AGENTS);
+      }
     }
   }
 
@@ -272,14 +306,18 @@ export class AgentRadioImpl implements AgentRadio {
 
   /**
    * Get all child agent statuses
+   * Uses parent→children reverse index for O(1) child lookup
    */
   getChildStatuses(): Map<string, AgentStatus> {
     const result = new Map<string, AgentStatus>();
-    const sessionAgents = this.cache.get<string[]>(`session:${this.rootSessionId}:agents`) ?? [];
 
-    for (const agentId of sessionAgents) {
+    // Use the parent→children reverse index for O(1) lookup
+    const parentChildrenKey = `parent:${this.agentId}:children`;
+    const childIds = this.cache.get<string[]>(parentChildrenKey) ?? [];
+
+    for (const agentId of childIds) {
       const status = this.cache.get<AgentStatus>(`agent:${agentId}:status`);
-      if (status && status.parentId === this.agentId) {
+      if (status) {
         result.set(agentId, status);
       }
     }
@@ -448,6 +486,50 @@ export class AgentRadioImpl implements AgentRadio {
       unsubscribe();
     }
     this.unsubscribers = [];
+
+    // Remove from session agents list
+    const sessionKey = `session:${this.rootSessionId}:agents`;
+    const sessionAgents = this.cache.get<string[]>(sessionKey);
+    if (sessionAgents) {
+      const filteredAgents = sessionAgents.filter(id => id !== this.agentId);
+      if (filteredAgents.length > 0) {
+        this.cache.set(sessionKey, filteredAgents, TTL.SESSION_AGENTS);
+      } else {
+        this.cache.delete(sessionKey);
+      }
+    }
+
+    // Remove from parent's children list
+    if (this.parentId && this.parentType === 'agent') {
+      const parentChildrenKey = `parent:${this.parentId}:children`;
+      const children = this.cache.get<string[]>(parentChildrenKey);
+      if (children) {
+        const filteredChildren = children.filter(id => id !== this.agentId);
+        if (filteredChildren.length > 0) {
+          this.cache.set(parentChildrenKey, filteredChildren, TTL.SESSION_AGENTS);
+        } else {
+          this.cache.delete(parentChildrenKey);
+        }
+      }
+
+      // Notify parent of child destruction by sending a message
+      const destructionMessage = {
+        type: 'child_destroyed',
+        childAgentId: this.agentId,
+        timestamp: new Date().toISOString(),
+      };
+      const parentInboxKey = `agent:${this.parentId}:inbox`;
+      const parentInbox = this.cache.get<AgentMessage[]>(parentInboxKey) ?? [];
+      parentInbox.push({
+        fromAgentId: this.agentId,
+        message: destructionMessage,
+        timestamp: new Date().toISOString(),
+      });
+      this.cache.set(parentInboxKey, parentInbox, TTL.INBOX);
+    }
+
+    // Clean up this agent's own children list (if any)
+    this.cache.delete(`parent:${this.agentId}:children`);
 
     // Clean up agent data
     this.cache.delete(`agent:${this.agentId}:status`);
