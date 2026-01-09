@@ -224,6 +224,10 @@ PetiteVue.createApp({
     sessions: 0,
     agents: 0
   },
+  // Session-specific metrics (separate from aggregate)
+  sessionMetrics: null,
+  // Metrics context: 'aggregate' (all/project) or 'session' (single session selected)
+  metricsContext: 'aggregate',
   // Phase 4: sparkline + trend state
   metricsBuffer: null,
   sparklines: null,
@@ -580,7 +584,19 @@ PetiteVue.createApp({
       const data = await res.json();
       if (data.sessionId) {
         if (data.metrics) {
-          this.updateMetrics(data.metrics);
+          // Store session-specific metrics separately
+          this.sessionMetrics = {
+            tokensIn: data.metrics.tokensIn || 0,
+            tokensOut: data.metrics.tokensOut || 0,
+            cost: data.metrics.cost || 0,
+            cacheRead: data.metrics.cacheRead || 0,
+            cacheCreation: data.metrics.cacheCreation || 0,
+            toolCalls: data.metrics.toolCalls || 0,
+            sessions: 1,
+            agents: data.agents?.length || 0
+          };
+          // Switch to session context
+          this.metricsContext = 'session';
         }
         if (data.agents) {
           this.agentTree = data.agents;
@@ -820,6 +836,9 @@ PetiteVue.createApp({
       sessions: 0,
       agents: 0
     };
+    // Reset session context
+    this.sessionMetrics = null;
+    this.metricsContext = 'aggregate';
   },
 
   // === Phase 1: Session Lifecycle Methods ===
@@ -829,6 +848,37 @@ PetiteVue.createApp({
     if (this.sessionFilter === 'active') return this.activeSessions;
     if (this.sessionFilter === 'completed') return this.completedSessions;
     return [...this.activeSessions, ...this.completedSessions];
+  },
+
+  // Computed: sessions to display in stats (respects project filter)
+  get displaySessions() {
+    // When a project is selected, show only that project's sessions
+    if (this.liveProject) {
+      return this.sessions.filter(s => s.projectName === this.liveProject);
+    }
+    // Otherwise show all sessions
+    return this.sessions;
+  },
+
+  // Computed: metrics to display (session-specific or aggregate)
+  get displayMetrics() {
+    // When a specific session is selected and we have its metrics, show those
+    if (this.metricsContext === 'session' && this.sessionMetrics) {
+      return this.sessionMetrics;
+    }
+    // Otherwise show aggregate metrics
+    return this.metrics;
+  },
+
+  // Computed: label for metrics context
+  get metricsLabel() {
+    if (this.metricsContext === 'session' && this.liveSessionId) {
+      return 'session';
+    }
+    if (this.liveProject) {
+      return 'project';
+    }
+    return 'total';
   },
 
   // Categorize sessions into active/completed

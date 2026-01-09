@@ -10,6 +10,7 @@ import type { MetricsAggregator } from '../aggregator.js';
 import { sseManager } from './sse.js';
 import { getDB } from '../db.js';
 import type { AgentStatus, CacheStore } from '../walkie-talkie/types.js';
+import { RUNNING_THRESHOLD_MS } from './config.js';
 
 /**
  * Create API routes bound to an aggregator
@@ -77,8 +78,7 @@ export function createApiRoutes(aggregator: MetricsAggregator): Hono {
 
     const tree = aggregator.getAgentTree(sessionId);
     const now = Date.now();
-    const RUNNING_THRESHOLD_MS = 30000;
-    const isRunning = session.status === 'active' && 
+    const isRunning = session.status === 'active' &&
       (now - session.lastActivity.getTime()) < RUNNING_THRESHOLD_MS;
 
     return c.json({
@@ -113,8 +113,7 @@ export function createApiRoutes(aggregator: MetricsAggregator): Hono {
     const limit = parseInt(c.req.query('limit') || '10', 10);
     const filter = c.req.query('filter') || 'all';
     const now = Date.now();
-    const RUNNING_THRESHOLD_MS = 30000; // 30 seconds
-    
+
     let sessions = aggregator.getAllSessions();
 
     // Apply filter

@@ -225,7 +225,7 @@ describe('Dashboard Server', () => {
       // The dashboard now serves static HTML from public/index.html
       expect(html).toContain('Karma Dashboard');
       expect(html).toContain('Tokens In');
-      expect(html).toContain('Recent Sessions');
+      expect(html).toContain('Session Stats');
     });
   });
 

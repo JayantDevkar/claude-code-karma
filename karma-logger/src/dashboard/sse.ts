@@ -7,6 +7,7 @@
 import type { MetricsAggregator } from '../aggregator.js';
 import type { LogWatcher } from '../watcher.js';
 import type { AgentStatus } from '../walkie-talkie/types.js';
+import { RUNNING_THRESHOLD_MS } from './config.js';
 
 interface SSEClient {
   id: string;
@@ -171,7 +172,6 @@ export class SSEManager {
           const totals = this.aggregator.getTotals();
           const sessions = this.aggregator.getAllSessions();
           const now = Date.now();
-          const RUNNING_THRESHOLD_MS = 30000; // 30 seconds
 
           const initMessage = `event: init\ndata: ${JSON.stringify({
             metrics: {

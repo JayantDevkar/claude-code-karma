@@ -56,7 +56,7 @@
     <main class="container">
       <div id="live-view" class="view view--live" v-show="currentView === 'live'">
       <!-- Session Sidebar -->
-      <aside class="live-sidebar" v-if="liveProject">
+      <aside class="live-sidebar" v-if="liveProject || sessions.length > 0">
         <header class="live-sidebar__header">
           <h4 class="live-sidebar__title">Sessions</h4>
           <select class="live-sidebar__filter" v-model="sessionFilter" @change="onSessionFilterChange">
@@ -128,7 +128,7 @@
         <article class="metric-card metric-card--compact">
           <div class="metric-card__header">
             <span class="metric-card__icon" aria-hidden="true">▲</span>
-            <span class="metric-card__value">{{ formatNumber(metrics.tokensIn) }}</span>
+            <span class="metric-card__value">{{ formatNumber(displayMetrics.tokensIn) }}</span>
           </div>
           <div class="metric-card__label">Tokens In</div>
           <div class="metric-card__footer">
@@ -139,7 +139,7 @@
         <article class="metric-card metric-card--compact">
           <div class="metric-card__header">
             <span class="metric-card__icon" aria-hidden="true">▼</span>
-            <span class="metric-card__value">{{ formatNumber(metrics.tokensOut) }}</span>
+            <span class="metric-card__value">{{ formatNumber(displayMetrics.tokensOut) }}</span>
           </div>
           <div class="metric-card__label">Tokens Out</div>
           <div class="metric-card__footer">
@@ -150,9 +150,9 @@
         <article class="metric-card metric-card--compact">
           <div class="metric-card__header">
             <span class="metric-card__icon" aria-hidden="true">$</span>
-            <span class="metric-card__value">{{ formatCostNumber(metrics.cost) }}</span>
+            <span class="metric-card__value">{{ formatCostNumber(displayMetrics.cost) }}</span>
           </div>
-          <div class="metric-card__label">session</div>
+          <div class="metric-card__label">{{ metricsLabel }}</div>
           <div class="metric-card__footer">
             <canvas class="sparkline" id="cost-sparkline" width="60" height="20" aria-hidden="true"></canvas>
             <span class="trend" :class="trends.cost.cls">{{ trends.cost.text }}</span>
@@ -161,7 +161,7 @@
         <article class="metric-card metric-card--compact">
           <div class="metric-card__header">
             <span class="metric-card__icon" aria-hidden="true">⚡</span>
-            <span class="metric-card__value">{{ formatNumber(metrics.agents) }}</span>
+            <span class="metric-card__value">{{ formatNumber(displayMetrics.agents) }}</span>
           </div>
           <div class="metric-card__label">agents</div>
           <div class="metric-card__footer">
@@ -258,22 +258,22 @@
       </section>
 
       <!-- Session Summary Stats (replaces redundant table) -->
-      <section class="session-summary" v-if="sessions.length > 0">
+      <section class="session-summary" v-if="displaySessions.length > 0">
         <div class="session-summary__header">
           <h3>Session Stats</h3>
-          <span class="session-summary__count">{{ sessions.length }} sessions</span>
+          <span class="session-summary__count">{{ displaySessions.length }} sessions</span>
         </div>
         <div class="session-summary__grid">
           <div class="session-summary__stat">
-            <span class="session-summary__stat-value">{{ formatNumber(sessions.reduce((a, s) => a + (s.tokensIn || 0) + (s.tokensOut || 0), 0)) }}</span>
+            <span class="session-summary__stat-value">{{ formatNumber(displaySessions.reduce((a, s) => a + (s.tokensIn || 0) + (s.tokensOut || 0), 0)) }}</span>
             <span class="session-summary__stat-label">Total Tokens</span>
           </div>
           <div class="session-summary__stat">
-            <span class="session-summary__stat-value">{{ formatCost(sessions.reduce((a, s) => a + (s.cost || 0), 0)) }}</span>
+            <span class="session-summary__stat-value">{{ formatCost(displaySessions.reduce((a, s) => a + (s.cost || 0), 0)) }}</span>
             <span class="session-summary__stat-label">Total Cost</span>
           </div>
           <div class="session-summary__stat">
-            <span class="session-summary__stat-value">{{ sessions.reduce((a, s) => a + (s.agentCount || 0), 0) }}</span>
+            <span class="session-summary__stat-value">{{ displaySessions.reduce((a, s) => a + (s.agentCount || 0), 0) }}</span>
             <span class="session-summary__stat-label">Agents Used</span>
           </div>
         </div>
