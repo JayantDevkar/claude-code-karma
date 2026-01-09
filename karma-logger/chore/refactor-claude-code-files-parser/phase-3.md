@@ -1,6 +1,6 @@
 # Phase 3: Extract Parser Core
 
-**Status**: Pending
+**Status**: Complete
 **Depends on**: Phase 2
 **Parallel with**: Phase 4, Phase 5
 **Unlocks**: Phase 6
@@ -11,11 +11,11 @@ Extract the core streaming JSONL parser and normalization functions.
 
 ## Tasks
 
-- [ ] Create `src/parser.ts` - Streaming JSONL parser
-- [ ] Create `src/normalize.ts` - Entry normalization
-- [ ] Create `src/guards.ts` - Type guard functions
-- [ ] Update `src/index.ts` exports
-- [ ] Verify build
+- [x] Create `src/parser.ts` - Streaming JSONL parser
+- [x] Create `src/normalize.ts` - Entry normalization
+- [x] Create `src/guards.ts` - Type guard functions
+- [x] Update `src/index.ts` exports
+- [x] Verify build
 
 ## Source Mapping
 
@@ -283,11 +283,11 @@ npm run build
 
 ## Outputs
 
-- [ ] `src/parser.ts` created
-- [ ] `src/normalize.ts` created
-- [ ] `src/guards.ts` created
-- [ ] All functions exported from `index.ts`
-- [ ] Build passes
+- [x] `src/parser.ts` created
+- [x] `src/normalize.ts` created
+- [x] `src/guards.ts` created
+- [x] All functions exported from `index.ts`
+- [x] Build passes
 
 ## Estimated Effort
 

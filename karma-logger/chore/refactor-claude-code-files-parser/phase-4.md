@@ -1,6 +1,6 @@
 # Phase 4: Extract Extractors
 
-**Status**: Pending
+**Status**: Complete
 **Depends on**: Phase 2
 **Parallel with**: Phase 3, Phase 5
 **Unlocks**: Phase 6
@@ -11,12 +11,12 @@ Extract content extraction functions into dedicated modules.
 
 ## Tasks
 
-- [ ] Create `src/extractors/tool-calls.ts`
-- [ ] Create `src/extractors/thinking.ts`
-- [ ] Create `src/extractors/agents.ts`
-- [ ] Create `src/extractors/index.ts`
-- [ ] Update `src/index.ts` exports
-- [ ] Verify build
+- [x] Create `src/extractors/tool-calls.ts`
+- [x] Create `src/extractors/thinking.ts`
+- [x] Create `src/extractors/agents.ts`
+- [x] Create `src/extractors/index.ts`
+- [x] Update `src/index.ts` exports
+- [x] Verify build
 
 ## Source Mapping
 
@@ -219,12 +219,12 @@ npm run build
 
 ## Outputs
 
-- [ ] `src/extractors/tool-calls.ts` created
-- [ ] `src/extractors/thinking.ts` created
-- [ ] `src/extractors/agents.ts` created
-- [ ] `src/extractors/index.ts` created
-- [ ] All functions exported from main `index.ts`
-- [ ] Build passes
+- [x] `src/extractors/tool-calls.ts` created
+- [x] `src/extractors/thinking.ts` created
+- [x] `src/extractors/agents.ts` created
+- [x] `src/extractors/index.ts` created
+- [x] All functions exported from main `index.ts`
+- [x] Build passes
 
 ## Estimated Effort
 
