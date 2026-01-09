@@ -11,6 +11,7 @@ Walkie-Talkie enables agents to communicate status, progress, and messages witho
 - **Inter-agent messaging** - Direct communication between agents
 - **Progress reporting** - Granular progress updates for long-running tasks
 - **Zero-polling architecture** - Pub/sub notifications eliminate polling loops
+- **Optional persistence** - Cache survives process restarts with WAL + snapshots
 
 ## Architecture
 
@@ -34,8 +35,11 @@ Walkie-Talkie enables agents to communicate status, progress, and messages witho
            │                                    │
            ▼                                    ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                        CacheStore                                │
-│            (in-memory KV with TTL, pattern matching, pub/sub)    │
+│                    CacheStore (interface)                        │
+│          ┌─────────────────┬─────────────────────────┐          │
+│          │ MemoryCacheStore│  PersistentCacheStore   │          │
+│          │   (in-memory)   │   (WAL + Snapshots)     │          │
+│          └─────────────────┴─────────────────────────┘          │
 └─────────────────────────────────────────────────────────────────┘
                                 │
                                 ▼
@@ -73,6 +77,45 @@ const unsubscribe = cache.subscribe('agent:*:status', (key, value) => {
 // Cleanup
 cache.destroy(); // Clears intervals and subscriptions
 ```
+
+### PersistentCacheStore (`persistent-cache.ts`)
+
+Durable cache store that survives process restarts using Write-Ahead Log (WAL) and periodic snapshots.
+
+```typescript
+import { PersistentCacheStore } from './walkie-talkie/persistent-cache.js';
+
+const cache = new PersistentCacheStore({
+  walPath: '/path/to/wal.log',
+  snapshotPath: '/path/to/snapshot.json',
+  snapshotInterval: 60000,  // Auto-snapshot every 60s (default)
+  fsync: false,             // Set true for stronger durability
+});
+
+// Restore state from disk (call once at startup)
+const { keysRestored, walEntriesReplayed } = await cache.restore();
+console.log(`Restored ${keysRestored} keys, replayed ${walEntriesReplayed} WAL entries`);
+
+// Use like MemoryCacheStore - all operations are automatically persisted
+cache.set('agent:a1:status', { state: 'active' }, 300000);
+cache.delete('agent:a1:status');
+
+// Manual snapshot (also happens automatically)
+await cache.snapshot();
+
+// Graceful shutdown
+await cache.close();
+```
+
+**Storage location:** `~/.karma/radio/`
+- `wal.log` - Write-ahead log (append-only)
+- `snapshot.json` - Periodic full cache dump
+
+**Recovery algorithm:**
+1. Load snapshot if exists
+2. Replay WAL entries after snapshot timestamp
+3. Recalculate TTLs (expired entries are skipped)
+4. Start periodic snapshot timer
 
 ### AgentRadio (`agent-radio.ts`)
 
@@ -220,7 +263,17 @@ interface ProgressUpdate {
 Enable radio support when creating the aggregator:
 
 ```typescript
+// Basic radio (in-memory, clears on restart)
 const aggregator = new MetricsAggregator({ enableRadio: true });
+
+// With persistence (survives restarts)
+const aggregator = new MetricsAggregator({
+  enableRadio: true,
+  persistRadio: true  // Stores in ~/.karma/radio/
+});
+
+// Initialize radio (required for persistent mode)
+await aggregator.initRadio();
 
 // Agents are automatically registered when discovered
 // Access radio instances
@@ -233,6 +286,9 @@ aggregator.onAgentStatusChange((agentId, status) => {
 
 // Get all statuses (for dashboard API)
 const statuses = aggregator.getAgentStatuses();
+
+// Graceful shutdown (creates final snapshot if persistent)
+await aggregator.destroy();
 ```
 
 ## Dashboard Integration
@@ -253,7 +309,7 @@ GET /api/radio/agent/:id      → Single agent status
 GET /api/radio/session/:id/tree → Agent hierarchy tree
 ```
 
-## Hook Integration (Phase 4 - Deferred)
+## Hook Integration
 
 Example Claude Code hook configuration:
 
@@ -276,7 +332,7 @@ hooks:
         karma radio set-status completed
 ```
 
-## Schema Validation (Phase 5)
+## Schema Validation
 
 Optional metadata validation for type safety:
 
@@ -312,6 +368,48 @@ const result = registry.validate('my-agent', { task_id: '123' });
 karma radio set-status active --metadata '{"tool":"Read"}' --validate strict
 ```
 
+## Cache Persistence
+
+Enable persistence to survive process restarts:
+
+```bash
+# Watch mode with persistence
+karma watch --persist-radio
+
+# Data stored in ~/.karma/radio/
+#   wal.log        - Write-ahead log
+#   snapshot.json  - Periodic snapshots
+```
+
+**How it works:**
+1. **Write-Ahead Log (WAL)**: Every `set()` and `delete()` is appended to a log file
+2. **Snapshots**: Full cache dump every 60 seconds (configurable)
+3. **Recovery**: On startup, load snapshot + replay WAL entries
+4. **TTL handling**: Expired entries are skipped during recovery
+
+**Programmatic usage:**
+
+```typescript
+import { PersistentCacheStore } from './walkie-talkie/persistent-cache.js';
+
+const cache = new PersistentCacheStore({
+  walPath: '~/.karma/radio/wal.log',
+  snapshotPath: '~/.karma/radio/snapshot.json',
+  snapshotInterval: 60000,  // 60 seconds
+  fsync: false,             // Set true for stronger guarantees
+});
+
+// Restore on startup
+await cache.restore();
+
+// Use normally - persistence is automatic
+cache.set('key', 'value');
+
+// Graceful shutdown
+await cache.snapshot();  // Final snapshot
+await cache.close();     // Close WAL
+```
+
 ## TTL Strategy
 
 | Data Type | TTL | Rationale |
@@ -336,43 +434,51 @@ karma radio set-status active --metadata '{"tool":"Read"}' --validate strict
 - **Memory**: ~500 bytes per agent status
 - **Latency**: <1ms p99 for all cache operations
 - **Pub/sub**: Synchronous delivery, subscriber errors isolated
+- **WAL append**: <5ms overhead (fire-and-forget, async)
+- **Snapshot**: Background, non-blocking
 
 ## Testing
 
 ```bash
 # Run all walkie-talkie tests
-npm test -- --run tests/walkie-talkie/
+npm test -- tests/walkie-talkie/
 
 # Individual test files
-npm test -- --run tests/walkie-talkie/cache-store.test.ts
-npm test -- --run tests/walkie-talkie/agent-radio.test.ts
-npm test -- --run tests/walkie-talkie/radio-client.test.ts
-npm test -- --run tests/walkie-talkie/integration.test.ts
+npm test -- tests/walkie-talkie/cache-store.test.ts
+npm test -- tests/walkie-talkie/agent-radio.test.ts
+npm test -- tests/walkie-talkie/radio-client.test.ts
+npm test -- tests/walkie-talkie/persistent-cache.test.ts
 ```
 
-**Test coverage:**
+**Test coverage (313 tests total):**
 - CacheStore: 50 tests (CRUD, TTL, patterns, pub/sub, edge cases)
-- AgentRadio: 39 tests (status, progress, family, messaging, discovery)
+- AgentRadio: 45 tests (status, progress, family, messaging, discovery)
 - RadioClient: 34 tests (connection, timeout, concurrent requests)
 - Subscription: 13 tests (notifications, keep-alive, cleanup, fallback)
 - SchemaRegistry: 51 tests (validation, types, modes, built-in schemas)
 - Integration: 24 tests (aggregator, socket server, API)
+- WAL: 33 tests (append, read, truncate, corruption handling)
+- Snapshot: 26 tests (save, load, atomic writes, TTL preservation)
+- PersistentCache: 37 tests (restore, recovery, TTL recalculation)
 
 ## File Structure
 
 ```
 src/walkie-talkie/
-├── index.ts           # Public exports
-├── types.ts           # TypeScript interfaces
-├── cache-store.ts     # CacheStore implementation
-├── agent-radio.ts     # AgentRadio implementation
-├── schema-registry.ts # Schema validation (Phase 5)
-├── socket-server.ts   # Unix socket server (IPC)
-├── socket-client.ts   # Unix socket client (CLI)
-└── README.md          # This file
+├── index.ts             # Public exports
+├── types.ts             # TypeScript interfaces
+├── cache-store.ts       # MemoryCacheStore implementation
+├── persistent-cache.ts  # PersistentCacheStore (WAL + Snapshot)
+├── wal.ts               # Write-Ahead Log
+├── snapshot.ts          # Snapshot Manager
+├── agent-radio.ts       # AgentRadio implementation
+├── schema-registry.ts   # Schema validation
+├── socket-server.ts     # Unix socket server (IPC)
+├── socket-client.ts     # Unix socket client (CLI)
+└── README.md            # This file
 
 src/commands/
-└── radio.ts           # CLI command implementation
+└── radio.ts             # CLI command implementation
 
 tests/walkie-talkie/
 ├── cache-store.test.ts
@@ -380,22 +486,32 @@ tests/walkie-talkie/
 ├── radio-client.test.ts
 ├── schema-registry.test.ts
 ├── subscription.test.ts
-└── integration.test.ts
+├── integration.test.ts
+├── wal.test.ts
+├── snapshot.test.ts
+└── persistent-cache.test.ts
 ```
 
-## Migration Path
+## Implementation Phases
 
-1. **Opt-in** (current): `karma watch --enable-radio`
-2. **Default-on**: Radio enabled by default, `--disable-radio` to opt out
-3. **Always-on**: Radio as standard feature
+All phases are complete:
+
+| Phase | Name | Description | Status |
+|-------|------|-------------|--------|
+| 1 | Agent Discovery | List all agents in a session | Done |
+| 2 | Status + Progress | Consolidated status/progress API | Done |
+| 3 | Batch Operations | Multi-key operations | Done |
+| 4 | Subscription Wait | Zero-polling wait-for-agent | Done |
+| 5 | Schema Validation | Metadata type safety | Done |
+| 6 | Cache Persistence | WAL + Snapshots for durability | Done |
 
 ## Known Limitations
 
 - Pattern matching uses `*` for single-segment only (no `**` for multi-segment)
-- No persistence; cache clears on restart
 - No distributed mode; single-process only
+- Persistence is opt-in (`--persist-radio` flag)
 
 ## Related Documentation
 
-- [Phase Documentation](../../feature/agent-walkie-talkie/plan/v0.md)
+- [Phase Documentation](../../../improve/karma-logger/agent-walkie-talkie/)
 - [Karma Logger README](../../README.md)
