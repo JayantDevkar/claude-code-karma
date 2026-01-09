@@ -1,0 +1,73 @@
+# Karma Radio Hook Configuration for Claude Code
+#
+# This file configures Claude Code hooks to report agent status to the karma radio system.
+# Copy this file to your project's .claude/hooks.yaml to enable real-time agent monitoring.
+#
+# Prerequisites:
+# - karma-logger installed globally (npm link)
+# - karma dashboard running with --radio flag
+# - jq installed for JSON parsing (brew install jq)
+#
+# Claude Code Hook Input Format (JSON via stdin):
+# {
+#   "session_id": "abc123",
+#   "tool_name": "Write",      // PreToolUse/PostToolUse only
+#   "tool_input": {...},       // PreToolUse/PostToolUse only
+#   "cwd": "/path/to/project"
+# }
+#
+# Valid States:
+# - pending: Agent registered but not yet active
+# - active: Agent is actively processing
+# - waiting: Agent blocked on dependency
+# - completed: Agent finished successfully
+# - failed: Agent encountered an error
+# - cancelled: Agent was cancelled
+
+hooks:
+  # Report when tool execution starts
+  # Reads session_id and tool_name from stdin JSON
+  PreToolUse:
+    - command: |
+        INPUT=$(cat)
+        export KARMA_SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // empty')
+        export KARMA_AGENT_ID=$(echo "$INPUT" | jq -r '.session_id // empty')
+        TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // "unknown"')
+        if [ -n "$KARMA_SESSION_ID" ]; then
+          karma radio set-status active --message "Using $TOOL_NAME" 2>/dev/null || true
+        fi
+      timeout: 5000
+
+  # Report completion after each tool use
+  PostToolUse:
+    - command: |
+        INPUT=$(cat)
+        export KARMA_SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // empty')
+        export KARMA_AGENT_ID=$(echo "$INPUT" | jq -r '.session_id // empty')
+        TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // "unknown"')
+        if [ -n "$KARMA_SESSION_ID" ]; then
+          karma radio report-progress --percent 0 --message "Completed $TOOL_NAME" 2>/dev/null || true
+        fi
+      timeout: 5000
+
+  # Report session start
+  SessionStart:
+    - command: |
+        INPUT=$(cat)
+        export KARMA_SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // empty')
+        export KARMA_AGENT_ID=$(echo "$INPUT" | jq -r '.session_id // empty')
+        if [ -n "$KARMA_SESSION_ID" ]; then
+          karma radio set-status pending --message "Session started" 2>/dev/null || true
+        fi
+      timeout: 5000
+
+  # Report session end
+  Stop:
+    - command: |
+        INPUT=$(cat)
+        export KARMA_SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // empty')
+        export KARMA_AGENT_ID=$(echo "$INPUT" | jq -r '.session_id // empty')
+        if [ -n "$KARMA_SESSION_ID" ]; then
+          karma radio set-status completed --message "Session completed" 2>/dev/null || true
+        fi
+      timeout: 5000
