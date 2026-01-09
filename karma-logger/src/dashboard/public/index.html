@@ -57,23 +57,67 @@
       <div id="live-view" class="view view--live" v-show="currentView === 'live'">
       <!-- Session Sidebar -->
       <aside class="live-sidebar" v-if="liveProject">
-        <h4 class="live-sidebar__title">Sessions</h4>
-        <div class="live-sidebar__list">
-          <button
-            v-for="s in projectSessions"
-            :key="s.id"
-            class="live-sidebar__session"
-            :class="{ 'is-active': liveSessionId === s.id }"
-            @click="selectLiveSession(s.id)"
-            :title="s.id"
-          >
-            <span class="live-sidebar__session-status" :class="{ 'is-running': isSessionActive(s) }"></span>
-            <span class="live-sidebar__session-id">{{ s.id.slice(0, 8) }}</span>
-            <span class="live-sidebar__session-cost">{{ formatCost(s.cost) }}</span>
-          </button>
+        <header class="live-sidebar__header">
+          <h4 class="live-sidebar__title">Sessions</h4>
+          <select class="live-sidebar__filter" v-model="sessionFilter" @change="onSessionFilterChange">
+            <option value="all">All</option>
+            <option value="active">Active</option>
+            <option value="completed">Completed</option>
+          </select>
+        </header>
+        
+        <!-- Active Sessions -->
+        <div class="live-sidebar__section" v-if="sessionFilter !== 'completed' && activeSessions.length > 0">
+          <div class="live-sidebar__section-header">● Active</div>
+          <div class="live-sidebar__list">
+            <button
+              v-for="s in activeSessions.filter(x => !liveProject || x.projectName === liveProject)"
+              :key="s.id"
+              class="live-sidebar__session session-row--running"
+              :class="{ 'is-active': liveSessionId === s.id }"
+              @click="selectLiveSession(s.id)"
+              :title="s.id"
+            >
+              <div class="live-sidebar__session-id">
+                <span>{{ s.id.slice(0, 8) }}</span>
+                <span class="live-sidebar__session-cost">{{ formatCost(s.cost) }}</span>
+              </div>
+              <div class="live-sidebar__session-meta">
+                <span class="live-sidebar__session-agents" v-if="s.agentCount">{{ s.agentCount }} agents</span>
+                <span class="live-sidebar__session-duration">{{ formatDuration(getSessionDuration(s.id)) }}</span>
+              </div>
+            </button>
+          </div>
         </div>
-        <div class="live-sidebar__hint" v-if="projectSessions.length === 0">
-          No sessions for this project
+        
+        <!-- Completed Sessions -->
+        <div class="live-sidebar__section" v-if="sessionFilter !== 'active' && completedSessions.length > 0">
+          <div class="live-sidebar__section-header" v-if="sessionFilter === 'all'">Completed</div>
+          <div class="live-sidebar__list">
+            <button
+              v-for="s in completedSessions.filter(x => !liveProject || x.projectName === liveProject).slice(0, 10)"
+              :key="s.id"
+              class="live-sidebar__session"
+              :class="{ 'is-active': liveSessionId === s.id }"
+              @click="selectLiveSession(s.id)"
+              :title="s.id"
+            >
+              <div class="live-sidebar__session-id">
+                <span>{{ s.id.slice(0, 8) }}</span>
+                <span class="live-sidebar__session-cost">{{ formatCost(s.cost) }}</span>
+              </div>
+              <div class="live-sidebar__session-meta">
+                <span class="live-sidebar__session-agents" v-if="s.agentCount">{{ s.agentCount }} agents</span>
+                <span class="live-sidebar__session-time">{{ formatTimeAgo(new Date(s.endedAt || s.lastActivity)) }}</span>
+              </div>
+            </button>
+          </div>
+        </div>
+        
+        <div class="live-sidebar__hint" v-if="filteredSessions.length === 0">
+          <span v-if="sessionFilter === 'active'">No active sessions</span>
+          <span v-else-if="sessionFilter === 'completed'">No completed sessions</span>
+          <span v-else>No sessions for this project</span>
         </div>
       </aside>
 
@@ -129,17 +173,18 @@
 
       <!-- Token Chart -->
       <section class="chart-section">
-        <h2>Token Usage Over Time</h2>
+        <header class="chart-section__header">
+          <h2>Token Usage</h2>
+          <div class="chart-section__legend" v-if="chartManager && chartManager.hasData">
+            <span class="legend-item legend-item--in">▲ Input</span>
+            <span class="legend-item legend-item--out">▼ Output</span>
+          </div>
+        </header>
         <div id="chart" class="chart-container view-container">
-          <div class="empty-state">
-            <span class="empty-state__icon" aria-hidden="true">⚡</span>
-            <h3 class="empty-state__title">Waiting for connection</h3>
-            <p class="empty-state__message">
-              The dashboard will update automatically when a session starts.
-            </p>
-            <div class="empty-state__tip">
-              <span class="empty-state__tip-label">Tip:</span>
-              Keep this tab open while coding to see live metrics.
+          <div class="empty-state empty-state--compact" v-if="!chartManager || !chartManager.hasData">
+            <div class="empty-state__inline">
+              <span class="empty-state__icon--small" aria-hidden="true">📊</span>
+              <span class="empty-state__inline-text">Chart updates when activity is detected</span>
             </div>
           </div>
         </div>
@@ -150,7 +195,13 @@
         <section class="agent-tree">
           <header class="agent-tree__header">
             <h3 class="title-section">Agents</h3>
-            <span class="agent-tree__counter">{{ agentExpandedCount }}/{{ agentExpandableCount }} expanded</span>
+            <div class="agent-tree__meta">
+              <span class="agent-tree__running-count" v-if="runningAgentCount > 0">
+                <span class="running-dot"></span>
+                {{ runningAgentCount }} running
+              </span>
+              <span class="agent-tree__counter">{{ totalAgentCount }} total</span>
+            </div>
           </header>
 
           <div class="agent-tree__list agent-tree__list--skeleton" role="tree" v-show="agentsLoading">
@@ -165,7 +216,7 @@
               v-for="row in agentRows"
               :key="row.id"
               class="agent-node"
-              :class="[{ 'is-expanded': row.isExpanded, 'is-running': row.isRunning }, `agent-node--depth-${row.depth}`]"
+              :class="[{ 'is-expanded': row.isExpanded, 'is-running': row.isRunning, 'is-new': row.isNew }, `agent-node--depth-${row.depth}`]"
               role="treeitem"
               :aria-expanded="row.hasChildren ? String(row.isExpanded) : null"
               :data-depth="row.depth"
@@ -176,6 +227,9 @@
               <span class="agent-node__indicator" aria-hidden="true">{{ row.indicator }}</span>
               <span class="agent-node__model" :class="`agent-node__model--${row.modelClass}`">{{ row.modelText }}</span>
               <span class="agent-node__type">{{ row.typeText }}</span>
+              <span class="agent-node__status" :class="row.isRunning ? 'agent-node__status--running' : 'agent-node__status--done'">
+                {{ row.statusIcon }} {{ row.statusText }}
+              </span>
               <span class="agent-node__cost">{{ formatCostCompact(row.costCents) }}</span>
               <span class="agent-node__tokens">{{ formatTokens(row.tokensTotal) }}</span>
             </div>
@@ -195,37 +249,25 @@
         </section>
       </section>
 
-      <!-- Recent Sessions -->
-      <section class="sessions-section">
-        <h2>Recent Sessions</h2>
-        <div v-if="sessions.length > 0" class="sessions-table-wrapper">
-          <table class="sessions-table">
-            <thead>
-              <tr>
-                <th>Session ID</th>
-                <th>Project</th>
-                <th>Agents</th>
-                <th>Tokens</th>
-                <th>Cost</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="session in sessions" :key="session.id">
-                <td class="session-id-cell">{{ session.id.slice(0, 8) }}...</td>
-                <td>{{ session.projectName || 'Unknown' }}</td>
-                <td>{{ session.agentCount || 0 }}</td>
-                <td>{{ formatNumber((session.tokensIn || 0) + (session.tokensOut || 0)) }}</td>
-                <td class="cost">{{ formatCost(session.cost || 0) }}</td>
-              </tr>
-            </tbody>
-          </table>
+      <!-- Session Summary Stats (replaces redundant table) -->
+      <section class="session-summary" v-if="sessions.length > 0">
+        <div class="session-summary__header">
+          <h3>Session Stats</h3>
+          <span class="session-summary__count">{{ sessions.length }} sessions</span>
         </div>
-        <div v-else class="empty-state">
-          <span class="empty-state__icon" aria-hidden="true">📊</span>
-          <h3 class="empty-state__title">No sessions recorded</h3>
-          <p class="empty-state__message">
-            Start using Claude Code to see your session metrics and costs here.
-          </p>
+        <div class="session-summary__grid">
+          <div class="session-summary__stat">
+            <span class="session-summary__stat-value">{{ formatNumber(sessions.reduce((a, s) => a + (s.tokensIn || 0) + (s.tokensOut || 0), 0)) }}</span>
+            <span class="session-summary__stat-label">Total Tokens</span>
+          </div>
+          <div class="session-summary__stat">
+            <span class="session-summary__stat-value">{{ formatCost(sessions.reduce((a, s) => a + (s.cost || 0), 0)) }}</span>
+            <span class="session-summary__stat-label">Total Cost</span>
+          </div>
+          <div class="session-summary__stat">
+            <span class="session-summary__stat-value">{{ sessions.reduce((a, s) => a + (s.agentCount || 0), 0) }}</span>
+            <span class="session-summary__stat-label">Agents Used</span>
+          </div>
         </div>
       </section>
       </div><!-- end live-content -->

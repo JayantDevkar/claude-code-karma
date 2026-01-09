@@ -206,6 +206,13 @@ PetiteVue.createApp({
   liveProject: '', // Selected project for live view (empty = all)
   liveSessionId: null, // Currently viewing session
   projectSessions: [], // Sessions for selected project
+  
+  // === Phase 1: Active Sessions Panel State ===
+  activeSessions: [],        // Sessions with isRunning = true
+  completedSessions: [],     // Sessions with isRunning = false
+  sessionFilter: 'all',      // all | active | completed
+  sessionDurations: {},      // { sessionId: durationMs } - live counters
+  durationInterval: null,    // Interval handle for duration updates
 
   metrics: {
     tokensIn: 0,
@@ -350,6 +357,12 @@ PetiteVue.createApp({
         console.log('Init data:', data);
 
         if (data.sessions) {
+          // Categorize sessions into active/completed
+          this.categorizeSessions(data.sessions);
+          
+          // Start duration counters
+          this.startDurationCounters();
+          
           // Filter sessions by project if set
           let sessions = data.sessions;
           if (this.liveProject) {
@@ -430,6 +443,24 @@ PetiteVue.createApp({
       try {
         const data = JSON.parse(event.data);
         
+        // Add to active sessions
+        const newSession = {
+          id: data.sessionId,
+          projectName: data.projectName,
+          startedAt: data.startedAt,
+          isRunning: true,
+          status: 'active',
+          cost: 0,
+          agentCount: 0,
+          tokensIn: 0,
+          tokensOut: 0
+        };
+        
+        // Add to active sessions and start tracking duration
+        this.activeSessions.unshift(newSession);
+        const started = new Date(data.startedAt).getTime();
+        this.sessionDurations[data.sessionId] = Date.now() - started;
+        
         // Check if this session matches our project filter
         const matchesFilter = !this.liveProject || data.projectName === this.liveProject;
         
@@ -440,10 +471,57 @@ PetiteVue.createApp({
           this.fetchSessionData(data.sessionId);
         }
         
-        // Always refresh the sessions list
+        // Refresh the sessions list
         this.fetchProjectSessions();
       } catch (err) {
         console.error('Failed to parse session:start event:', err);
+      }
+    });
+
+    // Handle session end (Phase 1)
+    es.addEventListener('session:end', (event) => {
+      markData();
+      try {
+        const data = JSON.parse(event.data);
+        this.markSessionCompleted(data.sessionId, data.endedAt, data.finalCost);
+      } catch (err) {
+        console.error('Failed to parse session:end event:', err);
+      }
+    });
+
+    // Handle agent spawn (Phase 3 prep)
+    es.addEventListener('agent:spawn', (event) => {
+      markData();
+      try {
+        const data = JSON.parse(event.data);
+        
+        // Only process if viewing this session
+        if (data.sessionId !== this.liveSessionId) return;
+        
+        // Find if agent already exists in tree
+        const existing = this.agentTree.find(a => a.id === data.agentId);
+        if (existing) return;
+        
+        // Add new agent with animation flag
+        const newAgent = {
+          id: data.agentId,
+          parent_id: data.parentId,
+          type: data.type,
+          model: data.model,
+          started_at: data.spawnedAt,
+          isNew: true,
+          metrics: { cost: { total: 0 }, tokensIn: 0, tokensOut: 0 }
+        };
+        
+        this.agentTree.push(newAgent);
+        
+        // Clear animation flag after 2s
+        setTimeout(() => {
+          const agent = this.agentTree.find(a => a.id === data.agentId);
+          if (agent) agent.isNew = false;
+        }, 2000);
+      } catch (err) {
+        console.error('Failed to parse agent:spawn event:', err);
       }
     });
   },
@@ -722,6 +800,91 @@ PetiteVue.createApp({
     };
   },
 
+  // === Phase 1: Session Lifecycle Methods ===
+  
+  // Computed: filtered sessions based on sessionFilter
+  get filteredSessions() {
+    if (this.sessionFilter === 'active') return this.activeSessions;
+    if (this.sessionFilter === 'completed') return this.completedSessions;
+    return [...this.activeSessions, ...this.completedSessions];
+  },
+
+  // Categorize sessions into active/completed
+  categorizeSessions(sessions) {
+    this.activeSessions = sessions.filter(s => s.isRunning);
+    this.completedSessions = sessions.filter(s => !s.isRunning);
+    
+    // Update durations for active sessions
+    for (const session of this.activeSessions) {
+      if (!this.sessionDurations[session.id]) {
+        const started = new Date(session.startedAt).getTime();
+        this.sessionDurations[session.id] = Date.now() - started;
+      }
+    }
+  },
+
+  // Start duration counters for active sessions
+  startDurationCounters() {
+    if (this.durationInterval) {
+      clearInterval(this.durationInterval);
+    }
+    
+    this.durationInterval = setInterval(() => {
+      const now = Date.now();
+      for (const session of this.activeSessions) {
+        const started = new Date(session.startedAt).getTime();
+        this.sessionDurations[session.id] = now - started;
+      }
+    }, 1000);
+  },
+
+  // Stop duration counters
+  stopDurationCounters() {
+    if (this.durationInterval) {
+      clearInterval(this.durationInterval);
+      this.durationInterval = null;
+    }
+  },
+
+  // Format duration in ms to human readable
+  formatDuration(ms) {
+    if (!ms || ms < 0) return '0s';
+    const seconds = Math.floor(ms / 1000);
+    if (seconds < 60) return `${seconds}s`;
+    const minutes = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    if (minutes < 60) return `${minutes}m ${secs.toString().padStart(2, '0')}s`;
+    const hours = Math.floor(minutes / 60);
+    const mins = minutes % 60;
+    return `${hours}h ${mins.toString().padStart(2, '0')}m`;
+  },
+
+  // Get duration for a session
+  getSessionDuration(sessionId) {
+    return this.sessionDurations[sessionId] || 0;
+  },
+
+  // Handle session filter change
+  onSessionFilterChange() {
+    // Filter change just updates the view via computed property
+  },
+
+  // Move session from active to completed
+  markSessionCompleted(sessionId, endedAt, finalCost) {
+    const idx = this.activeSessions.findIndex(s => s.id === sessionId);
+    if (idx !== -1) {
+      const session = this.activeSessions.splice(idx, 1)[0];
+      session.isRunning = false;
+      session.endedAt = endedAt;
+      session.cost = finalCost;
+      session.status = 'ended';
+      this.completedSessions.unshift(session);
+      
+      // Remove from duration tracking
+      delete this.sessionDurations[sessionId];
+    }
+  },
+
   async fetchProjects() {
     try {
       this.projectsLoading = true;
@@ -824,6 +987,10 @@ PetiteVue.createApp({
           hasChildren,
           isExpanded,
           isRunning,
+          isNew: node.isNew || false, // Animation flag from spawn event
+          // Phase 2: Status display
+          statusIcon: isRunning ? '⟳' : '✓',
+          statusText: isRunning ? 'running' : 'done',
           modelClass: this.getModelClass(node.model),
           modelText: this.getModelShort(node.model),
           typeText: node.type || node.agent_type || 'unknown',
@@ -869,6 +1036,16 @@ PetiteVue.createApp({
     };
     walk(roots);
     return expanded;
+  },
+
+  // Phase 2: Running agent count
+  get runningAgentCount() {
+    return this.agentRows.filter(r => r.isRunning).length;
+  },
+
+  // Phase 2: Total agent count
+  get totalAgentCount() {
+    return this.agentRows.length;
   },
 
   buildAgentTree(agents) {
@@ -952,6 +1129,7 @@ PetiteVue.createApp({
   // Cleanup
   destroy() {
     this.sseConnection?.close();
+    this.stopDurationCounters();
     if (this.chartManager) {
       this.chartManager.destroy();
     }

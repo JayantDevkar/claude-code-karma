@@ -1353,3 +1353,694 @@ main.container {
     display: none;
   }
 }
+
+/* ======================================== */
+/* Phase 1: Session Lifecycle Styles        */
+/* ======================================== */
+
+/* Sidebar Header with Filter */
+.live-sidebar__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+  padding: 0 0.25rem;
+}
+
+.live-sidebar__filter {
+  padding: 0.125rem 0.375rem;
+  font-size: 0.6875rem;
+  background: var(--bg-hover);
+  border: 1px solid var(--border-color);
+  border-radius: 3px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.live-sidebar__filter:hover {
+  border-color: var(--primary);
+}
+
+.live-sidebar__filter:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+/* Section Headers */
+.live-sidebar__section {
+  margin-bottom: 0.75rem;
+}
+
+.live-sidebar__section-header {
+  font-size: 0.625rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 0.5rem 0 0.25rem 0.25rem;
+}
+
+/* Session Status Indicators */
+.session-status {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.session-status--running {
+  background: var(--primary);
+  animation: status-pulse 2s infinite;
+}
+
+.session-status--completed {
+  background: var(--text-muted);
+}
+
+/* Session Row States */
+.session-row--running {
+  background: rgba(16, 185, 129, 0.08);
+  border-left: 3px solid var(--primary);
+}
+
+.live-sidebar__session {
+  display: grid;
+  grid-template-columns: 12px 60px 1fr auto;
+  gap: 0.375rem;
+  align-items: center;
+}
+
+.live-sidebar__session-agents {
+  font-size: 0.625rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.live-sidebar__session-duration {
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  color: var(--primary);
+  white-space: nowrap;
+}
+
+.live-sidebar__session-time {
+  font-size: 0.625rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* ======================================== */
+/* Phase 2: Agent Running Indicators        */
+/* ======================================== */
+
+/* Agent Tree Meta (header right side) */
+.agent-tree__meta {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.agent-tree__running-count {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.75rem;
+  color: var(--primary);
+  font-weight: 500;
+}
+
+.running-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--primary);
+  animation: status-pulse 2s infinite;
+}
+
+/* Agent Node Grid - Updated to include status column */
+.agent-node {
+  display: grid;
+  grid-template-columns: auto auto auto 1fr auto auto auto;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.375rem 1rem;
+  transition: background var(--transition-fast);
+  cursor: pointer;
+}
+
+/* Agent Status Badge */
+.agent-node__status {
+  font-size: 0.6875rem;
+  padding: 0.125rem 0.5rem;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.agent-node__status--running {
+  color: var(--primary);
+  background: rgba(16, 185, 129, 0.15);
+}
+
+.agent-node__status--done {
+  color: var(--text-muted);
+  background: rgba(100, 116, 139, 0.1);
+}
+
+/* Running agent pulse animation */
+.agent-node.is-running {
+  animation: agent-pulse 2s infinite;
+}
+
+@keyframes agent-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.85; }
+}
+
+/* New agent spawn animation (Phase 3) */
+.agent-node.is-new {
+  animation: agent-appear 0.5s ease-out;
+}
+
+@keyframes agent-appear {
+  0% {
+    opacity: 0;
+    transform: translateX(-20px);
+    background: rgba(16, 185, 129, 0.3);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+    background: transparent;
+  }
+}
+
+/* Reduce motion preference */
+@media (prefers-reduced-motion: reduce) {
+  .agent-node.is-running,
+  .agent-node.is-new,
+  .session-status--running,
+  .running-dot {
+    animation: none;
+  }
+}
+
+/* ======================================== */
+/* Session Summary (replaces redundant table) */
+/* ======================================== */
+
+.session-summary {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.session-summary__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+.session-summary__header h3 {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.session-summary__count {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.session-summary__grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+}
+
+.session-summary__stat {
+  text-align: center;
+  padding: 0.5rem;
+  background: var(--bg-dark);
+  border-radius: 6px;
+}
+
+.session-summary__stat-value {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: var(--primary);
+  margin-bottom: 0.25rem;
+}
+
+.session-summary__stat-label {
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* ======================================== */
+/* Improved Chart Section                   */
+/* ======================================== */
+
+.chart-section__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.chart-section__header h2 {
+  margin: 0;
+}
+
+.chart-section__legend {
+  display: flex;
+  gap: 1rem;
+}
+
+.legend-item {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.legend-item--in {
+  color: #22c55e;
+}
+
+.legend-item--out {
+  color: #3b82f6;
+}
+
+/* Compact empty state for chart */
+.empty-state--compact {
+  min-height: 80px;
+  padding: 1rem;
+}
+
+.empty-state__inline {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  justify-content: center;
+}
+
+.empty-state__icon--small {
+  font-size: 1.25rem;
+  color: var(--text-muted);
+}
+
+.empty-state__inline-text {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+}
+
+/* ======================================== */
+/* Improved Session Sidebar                 */
+/* ======================================== */
+
+.live-sidebar__session {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.5rem 0.625rem;
+  border-radius: 6px;
+  transition: all var(--transition-fast);
+  border-left: 3px solid transparent;
+  position: relative;
+}
+
+.live-sidebar__session:hover {
+  background: var(--bg-hover);
+}
+
+.live-sidebar__session.is-active {
+  background: rgba(16, 185, 129, 0.1);
+  border-left-color: var(--primary);
+}
+
+.session-row--running {
+  background: rgba(16, 185, 129, 0.05);
+}
+
+.session-status {
+  position: absolute;
+  left: -8px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.live-sidebar__session-id {
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.live-sidebar__session-id > span:first-child {
+  color: var(--text-primary);
+}
+
+.live-sidebar__session-meta {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.live-sidebar__session-agents {
+  font-size: 0.625rem;
+  color: var(--text-muted);
+  padding: 0.125rem 0.375rem;
+  background: var(--bg-dark);
+  border-radius: 3px;
+}
+
+.live-sidebar__session-cost {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--primary);
+}
+
+.live-sidebar__session-duration,
+.live-sidebar__session-time {
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  color: var(--text-muted);
+}
+
+/* ======================================== */
+/* Improved Agent Tree                      */
+/* ======================================== */
+
+.agent-tree {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.agent-tree__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.875rem 1rem;
+  border-bottom: 1px solid var(--border-color);
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.agent-tree__header .title-section {
+  margin: 0;
+  font-size: 0.875rem;
+}
+
+.agent-tree__meta {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.agent-tree__running-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.75rem;
+  color: var(--primary);
+  font-weight: 600;
+  padding: 0.25rem 0.5rem;
+  background: rgba(16, 185, 129, 0.1);
+  border-radius: 4px;
+}
+
+.agent-tree__list {
+  padding: 0.375rem 0;
+}
+
+/* Improved agent node styling */
+.agent-node {
+  display: grid;
+  grid-template-columns: auto auto auto 1fr auto auto auto;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  transition: background var(--transition-fast);
+  border-left: 3px solid transparent;
+  margin-left: 2px;
+}
+
+.agent-node:hover {
+  background: var(--bg-hover);
+}
+
+.agent-node.is-running {
+  border-left-color: var(--primary);
+  background: rgba(16, 185, 129, 0.05);
+}
+
+.agent-node.is-running::before {
+  display: none; /* Remove old indicator */
+}
+
+.agent-node__connector {
+  color: var(--text-muted);
+  white-space: pre;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  opacity: 0.5;
+}
+
+.agent-node__model {
+  padding: 0.1875rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.agent-node__model--opus {
+  color: #a78bfa;
+  background: rgba(167, 139, 250, 0.15);
+}
+
+.agent-node__model--sonnet {
+  color: #60a5fa;
+  background: rgba(96, 165, 250, 0.15);
+}
+
+.agent-node__model--haiku {
+  color: #34d399;
+  background: rgba(52, 211, 153, 0.15);
+}
+
+.agent-node__type {
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 150px;
+}
+
+.agent-node__status {
+  font-size: 0.6875rem;
+  padding: 0.1875rem 0.5rem;
+  border-radius: 4px;
+  font-weight: 500;
+}
+
+.agent-node__status--running {
+  color: var(--primary);
+  background: rgba(16, 185, 129, 0.15);
+}
+
+.agent-node__status--done {
+  color: var(--text-muted);
+  background: transparent;
+}
+
+.agent-node__cost {
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--primary);
+  text-align: right;
+  min-width: 55px;
+}
+
+.agent-node__tokens {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  text-align: right;
+  min-width: 40px;
+}
+
+/* ======================================== */
+/* Improved Metric Cards                    */
+/* ======================================== */
+
+.metrics-grid--4col {
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem;
+}
+
+.metric-card--compact {
+  padding: 1rem;
+  border-radius: 8px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  transition: all var(--transition-normal);
+}
+
+.metric-card--compact:hover {
+  border-color: var(--primary);
+  transform: translateY(-1px);
+}
+
+.metric-card__header {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin-bottom: 0.375rem;
+}
+
+.metric-card__icon {
+  font-size: 1rem;
+  color: var(--primary);
+  opacity: 0.9;
+}
+
+.metric-card__value {
+  font-family: var(--font-mono);
+  font-size: 1.625rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+
+.metric-card__label {
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.metric-card__footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  margin-top: 0.75rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid rgba(51, 65, 85, 0.5);
+  gap: 0.5rem;
+}
+
+.metric-card__footer .sparkline {
+  opacity: 0.3;
+}
+
+.metric-card__footer .trend {
+  font-size: 0.625rem;
+  padding: 0.125rem 0.375rem;
+}
+
+/* ======================================== */
+/* Layout Improvements                      */
+/* ======================================== */
+
+.view--live {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 1.5rem;
+}
+
+.view--live:not(:has(.live-sidebar)) {
+  grid-template-columns: 1fr;
+}
+
+.live-sidebar {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 0.875rem;
+  height: fit-content;
+  position: sticky;
+  top: 60px;
+  max-height: calc(100vh - 80px);
+  overflow-y: auto;
+}
+
+.live-sidebar::-webkit-scrollbar {
+  width: 4px;
+}
+
+.live-sidebar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.live-sidebar::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 2px;
+}
+
+.live-sidebar__section {
+  margin-bottom: 1rem;
+}
+
+.live-sidebar__section:last-child {
+  margin-bottom: 0;
+}
+
+.live-sidebar__section-header {
+  font-size: 0.625rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin: 0.75rem 0 0.5rem 0.25rem;
+  padding-bottom: 0.25rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+/* Responsive improvements */
+@media (max-width: 1024px) {
+  .view--live {
+    grid-template-columns: 180px 1fr;
+    gap: 1rem;
+  }
+  
+  .metrics-grid--4col {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 768px) {
+  .view--live {
+    grid-template-columns: 1fr;
+  }
+  
+  .live-sidebar {
+    display: none;
+  }
+  
+  .metrics-grid--4col {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .session-summary__grid {
+    grid-template-columns: 1fr;
+    gap: 0.5rem;
+  }
+}
