@@ -114,5 +114,92 @@ hooks:
 
 ---
 
+## Python Models
+
+Type-safe Pydantic models are available in `models.py` for parsing and validating hook data.
+
+### Installation
+
+```bash
+pip install pydantic
+```
+
+### Quick Start
+
+```python
+import json
+import sys
+from models import parse_hook_event, PreToolUseHook
+
+# Parse any hook event from stdin
+data = json.loads(sys.stdin.read())
+hook = parse_hook_event(data)
+
+# Type-narrow based on hook type
+if isinstance(hook, PreToolUseHook):
+    print(f"Tool: {hook.tool_name}")
+    print(f"Input: {hook.tool_input}")
+```
+
+### Available Classes
+
+| Class | Hook Type | Key Fields |
+|-------|-----------|------------|
+| `BaseHook` | All | `session_id`, `transcript_path`, `cwd`, `permission_mode` |
+| `PreToolUseHook` | PreToolUse | `tool_name`, `tool_use_id`, `tool_input` |
+| `PostToolUseHook` | PostToolUse | `tool_name`, `tool_use_id`, `tool_input`, `tool_response` |
+| `UserPromptSubmitHook` | UserPromptSubmit | `prompt` |
+| `SessionStartHook` | SessionStart | `source` |
+| `SessionEndHook` | SessionEnd | `reason` |
+| `StopHook` | Stop | `stop_hook_active` |
+| `SubagentStopHook` | SubagentStop | `stop_hook_active` |
+| `PreCompactHook` | PreCompact | `trigger`, `custom_instructions` |
+| `PermissionRequestHook` | PermissionRequest | `notification_type`, `message` |
+| `NotificationHook` | Notification | `notification_type` |
+
+### Output Models
+
+For hooks that return JSON responses:
+
+```python
+from models import PreToolUseOutput, StopOutput, PermissionRequestOutput
+
+# Auto-approve a tool
+output = PreToolUseOutput(
+    hook_specific_output={
+        "permissionDecision": "allow",
+        "permissionDecisionReason": "Trusted directory"
+    }
+)
+print(output.model_dump_json())
+```
+
+### Forward Compatibility
+
+Models use `extra="allow"` to accept unknown fields, ensuring future schema changes don't break existing code:
+
+```python
+# Future fields are preserved
+data["new_field_2026"] = "some_value"
+hook = parse_hook_event(data)
+assert hook.new_field_2026 == "some_value"
+```
+
+### Running Tests
+
+```bash
+pytest test_models.py -v
+```
+
+113 tests covering:
+- Base hook validation
+- All 10 hook types (parametrized)
+- Parser dispatch function
+- Forward compatibility
+- Output models
+- JSON serialization round-trips
+
+---
+
 *Last updated: January 2025*
 *Claude Code version: Latest*
