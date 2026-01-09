@@ -77,10 +77,22 @@ The dashboard displays agent status cards when radio is enabled.
 
 ## Acceptance Criteria
 
-- [ ] E2E testing documented in SETUP.md
-- [ ] Frontend components documented
-- [ ] README updated with radio dashboard features
-- [ ] All code changes have corresponding docs
+- [x] E2E testing documented in SETUP.md
+- [x] Frontend components documented
+- [ ] README updated with radio dashboard features (deferred - existing README already documents features)
+- [x] All code changes have corresponding docs
+
+**Completed:** Documentation created
+
+**Documentation Files:**
+- `karma-logger/src/walkie-talkie/SETUP.md` - Added E2E Testing section with Quick Verification, API Endpoint Testing, Full Lifecycle Test, Parent-Child Agent Test, and Hook Integration
+- `karma-logger/docs/FRONTEND_RADIO_GUIDE.md` - Created comprehensive frontend documentation including Agent Status Panel, SSE Events, State Colors, Agent Card Structure, Progress Bar, API Endpoints, and Accessibility
+
+**Documentation Highlights:**
+- Correct state mapping documented (pending/active/completed vs. idle/working/done)
+- Complete SSE event reference with data structures
+- Full state color table with CSS classes and hex values
+- Integration examples with hooks configuration
 
 ## Milestone: Bridge Integration Complete
 

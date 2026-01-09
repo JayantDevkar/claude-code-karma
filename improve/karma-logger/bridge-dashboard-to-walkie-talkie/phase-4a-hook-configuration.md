@@ -67,10 +67,17 @@ hooks:
 
 ## Acceptance Criteria
 
-- [ ] Hooks file syntax valid
-- [ ] Environment variables correctly templated
-- [ ] Timeouts prevent blocking Claude Code
-- [ ] `on_error: ignore` prevents failures from breaking session
+- [x] Hooks file syntax valid
+- [x] Environment variables correctly templated
+- [x] Timeouts prevent blocking Claude Code
+- [x] `on_error: ignore` prevents failures from breaking session
+
+**Completed:** Hook configuration created at `karma-logger/examples/.claude/hooks.yaml`
+
+**Implementation Notes:**
+- Uses correct states from radio types: `pending`, `active`, `waiting`, `completed`, `failed`, `cancelled`
+- All hooks include full environment variable set
+- Error suppression with `2>/dev/null || true` pattern for graceful degradation
 
 ## Testing
 

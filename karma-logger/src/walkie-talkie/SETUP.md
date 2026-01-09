@@ -494,6 +494,98 @@ process.on('SIGTERM', async () => {
 
 ---
 
+## End-to-End Testing
+
+This section covers testing the complete flow from CLI commands through to dashboard visualization.
+
+### Quick Verification
+
+1. Start dashboard with radio:
+   ```bash
+   karma dashboard --radio
+   ```
+
+2. Simulate agent lifecycle in another terminal:
+   ```bash
+   export KARMA_AGENT_ID="test-agent"
+   export KARMA_SESSION_ID="test-session"
+
+   karma radio set-status pending
+   karma radio set-status active --message "Processing"
+   karma radio report-progress --percent 50
+   karma radio set-status completed
+   ```
+
+3. Verify dashboard shows agent status updates in the Agent Status Panel.
+
+### API Endpoint Testing
+
+Test the REST API endpoints:
+
+```bash
+# List all registered agents
+curl http://localhost:3333/api/radio/agents
+
+# Get session hierarchy tree
+curl http://localhost:3333/api/radio/session/test-session/tree
+```
+
+### Full Lifecycle Test
+
+```bash
+# Terminal 1: Start dashboard with radio
+karma dashboard --radio
+
+# Terminal 2: Simulate complete agent lifecycle
+export KARMA_AGENT_ID="agent-001"
+export KARMA_SESSION_ID="session-test"
+export KARMA_AGENT_TYPE="test-agent"
+export KARMA_MODEL="sonnet"
+
+karma radio set-status pending
+sleep 1
+karma radio set-status active --message "Processing task"
+karma radio report-progress --percent 25 --message "Step 1 complete"
+sleep 1
+karma radio report-progress --percent 50 --message "Step 2 complete"
+sleep 1
+karma radio report-progress --percent 75 --message "Step 3 complete"
+sleep 1
+karma radio report-progress --percent 100 --message "Finishing"
+karma radio set-status completed
+
+# Verify in browser: agent card appears, progress updates, completes
+```
+
+### Parent-Child Agent Test
+
+```bash
+# Parent agent
+export KARMA_AGENT_ID="parent-001"
+export KARMA_SESSION_ID="session-test"
+karma radio set-status active
+
+# Child agent
+export KARMA_AGENT_ID="child-001"
+export KARMA_PARENT_ID="parent-001"
+karma radio set-status active
+
+# Verify tree structure in API
+curl http://localhost:3333/api/radio/session/session-test/tree
+```
+
+### Hook Integration
+
+For Claude Code integration, copy the example hooks configuration:
+
+```bash
+cp karma-logger/examples/.claude/hooks.yaml /your/project/.claude/hooks.yaml
+```
+
+See [Hook Configuration](#hook-configuration) section for details.
+
+---
+
 ## Next Steps
 
 1. **Start the server**: `karma watch --persist-radio`
