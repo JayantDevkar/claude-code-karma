@@ -65,10 +65,10 @@ renderAgentPanel() {
 
 ## Acceptance Criteria
 
-- [ ] SSE events logged to console
-- [ ] Agent state stored in app object
-- [ ] No JS errors on event receive
-- [ ] Events parsed correctly
+- [x] SSE events logged to console
+- [x] Agent state stored in app object
+- [x] No JS errors on event receive
+- [x] Events parsed correctly
 
 ## Testing
 

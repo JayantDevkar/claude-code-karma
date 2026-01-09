@@ -494,14 +494,14 @@ PetiteVue.createApp({
       markData();
       try {
         const data = JSON.parse(event.data);
-        
+
         // Only process if viewing this session
         if (data.sessionId !== this.liveSessionId) return;
-        
+
         // Find if agent already exists in tree
         const existing = this.agentTree.find(a => a.id === data.agentId);
         if (existing) return;
-        
+
         // Add new agent with animation flag
         const newAgent = {
           id: data.agentId,
@@ -512,9 +512,9 @@ PetiteVue.createApp({
           isNew: true,
           metrics: { cost: { total: 0 }, tokensIn: 0, tokensOut: 0 }
         };
-        
+
         this.agentTree.push(newAgent);
-        
+
         // Clear animation flag after 2s
         setTimeout(() => {
           const agent = this.agentTree.find(a => a.id === data.agentId);
@@ -522,6 +522,28 @@ PetiteVue.createApp({
         }, 2000);
       } catch (err) {
         console.error('Failed to parse agent:spawn event:', err);
+      }
+    });
+
+    // Phase 3: Handle agent status updates from walkie-talkie
+    es.addEventListener('agent:status', (event) => {
+      markData();
+      try {
+        const data = JSON.parse(event.data);
+        this.handleAgentStatus(data.agentId, data.status);
+      } catch (err) {
+        console.error('Failed to parse agent:status:', err);
+      }
+    });
+
+    // Phase 3: Handle agent progress updates from walkie-talkie
+    es.addEventListener('agent:progress', (event) => {
+      markData();
+      try {
+        const data = JSON.parse(event.data);
+        this.handleAgentProgress(data.agentId, data.progress);
+      } catch (err) {
+        console.error('Failed to parse agent:progress:', err);
       }
     });
   },
@@ -1124,6 +1146,64 @@ PetiteVue.createApp({
   formatCostCompact(cents) {
     const c = typeof cents === 'number' ? cents : 0;
     return '$' + (c / 100).toFixed(2);
+  },
+
+  // === Phase 3: Agent Status Panel Methods (walkie-talkie bridge) ===
+
+  handleAgentStatus(agentId, status) {
+    console.log(`Agent ${agentId} status: ${status.state}`);
+    this.agentStatuses = this.agentStatuses || {};
+    this.agentStatuses[agentId] = status;
+    this.renderAgentPanel();
+  },
+
+  handleAgentProgress(agentId, progress) {
+    console.log(`Agent ${agentId} progress: ${progress.percent}%`);
+    this.agentProgress = this.agentProgress || {};
+    this.agentProgress[agentId] = progress;
+    this.renderAgentPanel();
+  },
+
+  renderAgentPanel() {
+    const panel = document.getElementById('agent-panel');
+    const container = document.getElementById('agent-cards');
+
+    if (!panel || !container) return;
+
+    const statuses = this.agentStatuses || {};
+    const progress = this.agentProgress || {};
+
+    if (Object.keys(statuses).length === 0) {
+      panel.classList.add('hidden');
+      return;
+    }
+
+    panel.classList.remove('hidden');
+    container.innerHTML = Object.entries(statuses)
+      .map(([id, status]) => this.renderAgentCard(id, status, progress[id]))
+      .join('');
+  },
+
+  renderAgentCard(agentId, status, progress) {
+    const stateClass = `agent-state-${status.state}`;
+    const progressBar = progress
+      ? `<div class="progress-bar"><div class="progress-fill" style="width:${progress.percent}%"></div></div>`
+      : '';
+
+    return `
+      <div class="agent-card ${stateClass}">
+        <div class="agent-header">
+          <span class="agent-id">${agentId}</span>
+          <span class="agent-state">${status.state}</span>
+        </div>
+        ${status.message ? `<div class="agent-message">${status.message}</div>` : ''}
+        ${progressBar}
+        <div class="agent-meta">
+          <span>${status.model || 'unknown'}</span>
+          <span>${status.agentType || 'agent'}</span>
+        </div>
+      </div>
+    `;
   },
 
   // Cleanup

@@ -2030,17 +2030,195 @@ main.container {
   .view--live {
     grid-template-columns: 1fr;
   }
-  
+
   .live-sidebar {
     display: none;
   }
-  
+
   .metrics-grid--4col {
     grid-template-columns: repeat(2, 1fr);
   }
-  
+
   .session-summary__grid {
     grid-template-columns: 1fr;
     gap: 0.5rem;
+  }
+}
+
+/* ======================================== */
+/* Phase 3: Agent Status Panel              */
+/* (walkie-talkie bridge visualization)     */
+/* ======================================== */
+
+/* Agent Panel Container */
+.agent-panel {
+  margin-top: 2rem;
+  padding: 1.25rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+}
+
+.agent-panel.hidden {
+  display: none;
+}
+
+.agent-panel h2 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0 0 1rem 0;
+}
+
+/* Agent Cards Grid */
+.agent-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1rem;
+}
+
+/* Individual Agent Card */
+.agent-card {
+  padding: 1rem;
+  border-radius: 6px;
+  border-left: 4px solid var(--state-color, var(--text-muted));
+  background: var(--bg-dark);
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.agent-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+/* Agent Card Header */
+.agent-card .agent-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.agent-card .agent-id {
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.agent-card .agent-state {
+  font-size: 0.6875rem;
+  padding: 0.125rem 0.5rem;
+  border-radius: 4px;
+  background: var(--state-color, var(--text-muted));
+  color: #fff;
+  text-transform: uppercase;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+
+/* Agent Message */
+.agent-card .agent-message {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  margin-bottom: 0.5rem;
+  line-height: 1.4;
+}
+
+/* Agent Metadata */
+.agent-card .agent-meta {
+  display: flex;
+  gap: 1rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+/* Progress Bar */
+.agent-card .progress-bar {
+  height: 4px;
+  background: var(--border-color);
+  border-radius: 2px;
+  margin: 0.75rem 0;
+  overflow: hidden;
+}
+
+.agent-card .progress-fill {
+  height: 100%;
+  background: var(--primary);
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+/* State Colors */
+.agent-state-idle {
+  --state-color: #6b7280;
+}
+
+.agent-state-working {
+  --state-color: #3b82f6;
+}
+
+.agent-state-waiting {
+  --state-color: #f59e0b;
+}
+
+.agent-state-done {
+  --state-color: #10b981;
+}
+
+.agent-state-error {
+  --state-color: #ef4444;
+}
+
+.agent-state-active {
+  --state-color: #3b82f6;
+}
+
+.agent-state-thinking {
+  --state-color: #8b5cf6;
+}
+
+.agent-state-tool_use {
+  --state-color: #06b6d4;
+}
+
+/* State-specific badge backgrounds */
+.agent-state-idle .agent-state {
+  background: #6b7280;
+}
+
+.agent-state-working .agent-state,
+.agent-state-active .agent-state {
+  background: #3b82f6;
+}
+
+.agent-state-waiting .agent-state {
+  background: #f59e0b;
+}
+
+.agent-state-done .agent-state {
+  background: #10b981;
+}
+
+.agent-state-error .agent-state {
+  background: #ef4444;
+}
+
+.agent-state-thinking .agent-state {
+  background: #8b5cf6;
+}
+
+.agent-state-tool_use .agent-state {
+  background: #06b6d4;
+}
+
+/* Responsive Agent Panel */
+@media (max-width: 768px) {
+  .agent-cards {
+    grid-template-columns: 1fr;
+  }
+
+  .agent-panel {
+    padding: 1rem;
   }
 }

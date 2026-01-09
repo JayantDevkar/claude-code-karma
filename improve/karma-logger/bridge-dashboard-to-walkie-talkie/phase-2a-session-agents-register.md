@@ -1,6 +1,6 @@
 # Phase 2a: Populate Session Agents Cache on Register
 
-> **Priority:** High | **Complexity:** Low | **Type:** Code Implementation
+> **Priority:** High | **Complexity:** Low | **Type:** Code Implementation | **Status:** ✅ COMPLETED
 
 ## Objective
 
@@ -32,10 +32,25 @@ if (this.cache) {
 
 ## Acceptance Criteria
 
-- [ ] `session:{id}:agents` populated on agent registration
-- [ ] No duplicate agent IDs in list
-- [ ] TTL set appropriately (1 hour default)
-- [ ] Works with both memory and persistent cache
+- [x] `session:{id}:agents` populated on agent registration
+- [x] No duplicate agent IDs in list
+- [x] TTL set appropriately (1 hour default)
+- [x] Works with both memory and persistent cache
+
+## Implementation Notes
+
+**Completed:** 2026-01-09
+
+Code added to `src/aggregator.ts` in `registerAgent()` method (lines 413-419):
+```typescript
+// Phase 2a: Populate session agents cache
+const sessionKey = `session:${parentSession.sessionId}:agents`;
+const agents = this.cache.get<string[]>(sessionKey) || [];
+if (!agents.includes(agent.sessionId)) {
+  agents.push(agent.sessionId);
+  this.cache.set(sessionKey, agents, 3600000); // 1 hour TTL
+}
+```
 
 ## Testing
 

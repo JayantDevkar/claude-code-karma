@@ -1,6 +1,6 @@
 # Phase 2b: Remove Agent from Session Cache on Unregister
 
-> **Priority:** High | **Complexity:** Low | **Type:** Code Implementation
+> **Priority:** High | **Complexity:** Low | **Type:** Code Implementation | **Status:** ✅ COMPLETED
 
 ## Objective
 
@@ -37,10 +37,46 @@ if (this.cache) {
 
 ## Acceptance Criteria
 
-- [ ] Agent removed from session list on unregister
-- [ ] Empty session lists cleaned up (key deleted)
-- [ ] Completed/failed agents properly removed
-- [ ] No memory leaks in cache
+- [x] Agent removed from session list on unregister
+- [x] Empty session lists cleaned up (key deleted)
+- [x] Completed/failed agents properly removed
+- [x] No memory leaks in cache
+
+## Implementation Notes
+
+**Completed:** 2026-01-09
+
+New method `unregisterAgent(agentId: string)` added to `src/aggregator.ts` (lines 423-450):
+```typescript
+/**
+ * Unregister an agent and remove from session cache
+ * Phase 2b: Remove agent from session agents cache
+ */
+unregisterAgent(agentId: string): void {
+  // Phase 2b: Remove from session agents cache
+  if (this.cache) {
+    const radio = this.agentRadios.get(agentId);
+    if (radio) {
+      const sessionKey = `session:${radio.sessionId}:agents`;
+      const agents = this.cache.get<string[]>(sessionKey) || [];
+      const filtered = agents.filter(id => id !== agentId);
+      if (filtered.length > 0) {
+        this.cache.set(sessionKey, filtered, 3600000);
+      } else {
+        this.cache.delete(sessionKey);
+      }
+    }
+  }
+
+  // Clean up radio instance
+  const radio = this.agentRadios.get(agentId);
+  if (radio) {
+    radio.setStatus('completed');
+    radio.destroy();
+    this.agentRadios.delete(agentId);
+  }
+}
+```
 
 ## Testing
 

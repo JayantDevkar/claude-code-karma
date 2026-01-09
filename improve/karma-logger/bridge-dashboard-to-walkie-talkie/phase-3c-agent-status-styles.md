@@ -106,10 +106,10 @@ Add CSS styles for agent status cards with state-based coloring.
 
 ## Acceptance Criteria
 
-- [ ] Cards have distinct colors per state
-- [ ] Progress bar animates smoothly
-- [ ] Responsive grid layout works
-- [ ] Consistent with existing dashboard theme
+- [x] Cards have distinct colors per state
+- [x] Progress bar animates smoothly
+- [x] Responsive grid layout works
+- [x] Consistent with existing dashboard theme
 
 ## Milestone: Phase 3 Complete
 

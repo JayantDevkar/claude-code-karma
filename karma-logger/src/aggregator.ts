@@ -409,6 +409,43 @@ export class MetricsAggregator extends EventEmitter {
       );
       radio.setStatus('active');
       this.agentRadios.set(agent.sessionId, radio);
+
+      // Phase 2a: Populate session agents cache
+      const sessionKey = `session:${parentSession.sessionId}:agents`;
+      const agents = this.cache.get<string[]>(sessionKey) || [];
+      if (!agents.includes(agent.sessionId)) {
+        agents.push(agent.sessionId);
+        this.cache.set(sessionKey, agents, 3600000); // 1 hour TTL
+      }
+    }
+  }
+
+  /**
+   * Unregister an agent and remove from session cache
+   * Phase 2b: Remove agent from session agents cache
+   */
+  unregisterAgent(agentId: string): void {
+    // Phase 2b: Remove from session agents cache
+    if (this.cache) {
+      const radio = this.agentRadios.get(agentId);
+      if (radio) {
+        const sessionKey = `session:${radio.sessionId}:agents`;
+        const agents = this.cache.get<string[]>(sessionKey) || [];
+        const filtered = agents.filter(id => id !== agentId);
+        if (filtered.length > 0) {
+          this.cache.set(sessionKey, filtered, 3600000);
+        } else {
+          this.cache.delete(sessionKey);
+        }
+      }
+    }
+
+    // Clean up radio instance
+    const radio = this.agentRadios.get(agentId);
+    if (radio) {
+      radio.setStatus('completed');
+      radio.destroy();
+      this.agentRadios.delete(agentId);
     }
   }
 

@@ -75,11 +75,11 @@ renderAgentCard(agentId, status, progress) {
 
 ## Acceptance Criteria
 
-- [ ] Panel hidden when no agents
-- [ ] Cards render for each agent
-- [ ] State displayed with visual indicator
-- [ ] Progress bar shows percentage
-- [ ] Panel updates in real-time
+- [x] Panel hidden when no agents
+- [x] Cards render for each agent
+- [x] State displayed with visual indicator
+- [x] Progress bar shows percentage
+- [x] Panel updates in real-time
 
 ## Testing
 

@@ -12,14 +12,14 @@ Phase 1: Wire Socket Server (Backend Plumbing) ✅ COMPLETED
 ├── 1c: Cleanup on shutdown        [Low] ✅
 └── 1d: Add --radio CLI flag       [Low] ✅
 
-Phase 2: Session Agent Tracking (Cache Population)
-├── 2a: Register agents in cache   [Low]
-└── 2b: Unregister agents          [Low]
+Phase 2: Session Agent Tracking (Cache Population) ✅ COMPLETED
+├── 2a: Register agents in cache   [Low] ✅
+└── 2b: Unregister agents          [Low] ✅
 
-Phase 3: Frontend Visualization (UI Implementation)
-├── 3a: SSE event handlers         [Medium]
-├── 3b: Agent status panel HTML    [Medium]
-└── 3c: CSS styles                 [Low]
+Phase 3: Frontend Visualization (UI Implementation) ✅ COMPLETED
+├── 3a: SSE event handlers         [Medium] ✅
+├── 3b: Agent status panel HTML    [Medium] ✅
+└── 3c: CSS styles                 [Low] ✅
 
 Phase 4: End-to-End Testing (Validation)
 ├── 4a: Hook configuration         [Medium]
