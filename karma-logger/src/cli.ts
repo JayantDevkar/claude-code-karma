@@ -150,6 +150,8 @@ Examples:
     .description('Launch web dashboard for metrics visualization')
     .option('-p, --port <number>', 'Port to run dashboard on', '3333')
     .option('--no-open', 'Do not open browser automatically')
+    .option('--radio', 'Enable radio agent coordination', false)
+    .option('--persist-radio', 'Enable persistent radio cache with WAL + snapshots', false)
     .action(async (options, cmd) => {
       const ctx = getContext(cmd);
       const port = parseInt(options.port, 10);
@@ -157,11 +159,20 @@ Examples:
       if (ctx.verbose) {
         console.log(chalk.gray('Running in verbose mode'));
         console.log(chalk.gray(`Dashboard port: ${port}`));
+        if (options.radio) {
+          console.log(chalk.gray('Radio enabled'));
+        }
+        if (options.persistRadio) {
+          console.log(chalk.gray('Radio persistence enabled'));
+        }
       }
 
       // Create watcher and aggregator
       const watcher = new LogWatcher({ processExisting: true });
-      const aggregator = new MetricsAggregator();
+      const aggregator = new MetricsAggregator({
+        enableRadio: options.radio || options.persistRadio,
+        persistRadio: options.persistRadio,
+      });
       connectWatcherToAggregator(watcher, aggregator);
 
       // Pre-populate aggregator with recent sessions (for immediate display)
@@ -216,6 +227,8 @@ Examples:
           open: options.open,
           watcher,
           aggregator,
+          radio: options.radio || options.persistRadio,
+          persistRadio: options.persistRadio,
         });
 
         console.log(chalk.green(`\nDashboard running at http://localhost:${port}`));
@@ -225,7 +238,8 @@ Examples:
         process.on('SIGINT', async () => {
           console.log(chalk.yellow('\nShutting down...'));
           await server.stop();
-          watcher.stop();
+          await watcher.stop();
+          await aggregator.destroy();
           process.exit(0);
         });
       } catch (error) {

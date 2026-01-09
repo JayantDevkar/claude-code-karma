@@ -1,6 +1,7 @@
 /**
  * Hono Web Server for Dashboard
  * Phase 5/6: Main server with SSE, API routes, and static file serving
+ * Phase 1 (Bridge): Radio socket server integration for agent coordination
  */
 
 import { Hono } from 'hono';
@@ -8,10 +9,15 @@ import { cors } from 'hono/cors';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import type { Server } from 'node:net';
 import { createApiRoutes } from './api.js';
 import { sseManager, SSEManager } from './sse.js';
+import { startRadioServer } from '../walkie-talkie/socket-server.js';
 import type { MetricsAggregator } from '../aggregator.js';
 import type { LogWatcher } from '../watcher.js';
+
+// Module-level socket server reference for cleanup
+let socketServer: Server | null = null;
 
 // Get the directory of this file (works in both src and dist)
 const __filename = fileURLToPath(import.meta.url);
@@ -36,6 +42,10 @@ export interface ServerOptions {
   watcher?: LogWatcher;
   aggregator?: MetricsAggregator;
   sessionId?: string;
+  /** Enable radio agent coordination (default: false) */
+  radio?: boolean;
+  /** Enable persistent radio cache with WAL + snapshots (default: false) */
+  persistRadio?: boolean;
 }
 
 interface ServerInstance {
@@ -152,6 +162,16 @@ export async function startServer(options: ServerOptions = {}): Promise<ServerIn
   // Connect SSE manager to watcher/aggregator
   sseManager.connect(options.watcher, options.aggregator, options.sessionId);
 
+  // Start radio socket server if radio is enabled on the aggregator
+  if (options.aggregator.isRadioEnabled()) {
+    try {
+      socketServer = startRadioServer(options.aggregator);
+      console.log('Radio socket server started at /tmp/karma-radio.sock');
+    } catch (error) {
+      console.warn('Failed to start radio socket server:', (error as Error).message);
+    }
+  }
+
   // Create app
   const app = createApp(options.aggregator);
 
@@ -178,6 +198,11 @@ export async function startServer(options: ServerOptions = {}): Promise<ServerIn
     server,
     sseManager,
     stop: async () => {
+      // Clean up socket server first
+      if (socketServer) {
+        socketServer.close();
+        socketServer = null;
+      }
       sseManager.disconnect();
       if (server && typeof server.close === 'function') {
         server.close();
