@@ -13,11 +13,13 @@ import type { Server } from 'node:net';
 import { createApiRoutes } from './api.js';
 import { sseManager, SSEManager } from './sse.js';
 import { startRadioServer } from '../walkie-talkie/socket-server.js';
+import { createSubagentWatcher } from '../walkie-talkie/subagent-watcher.js';
 import type { MetricsAggregator } from '../aggregator.js';
 import type { LogWatcher } from '../watcher.js';
 
-// Module-level socket server reference for cleanup
+// Module-level references for cleanup
 let socketServer: Server | null = null;
+let subagentWatcher: ReturnType<typeof createSubagentWatcher> | null = null;
 
 // Get the directory of this file (works in both src and dist)
 const __filename = fileURLToPath(import.meta.url);
@@ -167,6 +169,30 @@ export async function startServer(options: ServerOptions = {}): Promise<ServerIn
     try {
       socketServer = startRadioServer(options.aggregator);
       console.log('Radio socket server started at /tmp/karma-radio.sock');
+
+      // Auto-start subagent watcher to bridge JSONL files → Radio
+      // This solves the issue where Claude Code's Task tool spawns subagents
+      // without KARMA_* environment variables
+      if (options.sessionId) {
+        try {
+          subagentWatcher = createSubagentWatcher({
+            sessionId: options.sessionId,
+            pollInterval: 2000, // Poll every 2 seconds (less aggressive than CLI)
+            reportToRadio: true,
+            onUpdate: (agents) => {
+              const debugMode = process.env.DEBUG?.includes('subagent-watcher');
+              if (debugMode) {
+                console.log(`[subagent-watcher] Updated ${agents.size} subagents`);
+              }
+            },
+          });
+          subagentWatcher.start();
+          console.log('Subagent watcher bridge started (JSONL → Radio)');
+        } catch (watcherError) {
+          // Non-fatal: subagent watching is a convenience feature
+          console.warn('Failed to start subagent watcher:', (watcherError as Error).message);
+        }
+      }
     } catch (error) {
       console.warn('Failed to start radio socket server:', (error as Error).message);
     }
@@ -198,7 +224,13 @@ export async function startServer(options: ServerOptions = {}): Promise<ServerIn
     server,
     sseManager,
     stop: async () => {
-      // Clean up socket server first
+      // Clean up subagent watcher first
+      if (subagentWatcher) {
+        subagentWatcher.stop();
+        subagentWatcher = null;
+        console.log('Subagent watcher stopped');
+      }
+      // Clean up socket server
       if (socketServer) {
         socketServer.close();
         socketServer = null;

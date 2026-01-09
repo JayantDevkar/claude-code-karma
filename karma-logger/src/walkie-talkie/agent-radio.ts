@@ -44,6 +44,7 @@ export class AgentRadioImpl implements AgentRadio {
   private readonly agentType: string;
   private readonly model: string;
   private readonly cache: CacheStore;
+  private readonly depth: number;
   private unsubscribers: Array<() => void> = [];
   private startedAt: string;
   private metadata: Record<string, unknown> = {};
@@ -67,6 +68,14 @@ export class AgentRadioImpl implements AgentRadio {
     this.agentType = agentType;
     this.model = model;
     this.startedAt = new Date().toISOString();
+
+    // Compute hierarchy depth: session children are depth 0, agent children are parent depth + 1
+    if (parentType === 'session' || !parentId) {
+      this.depth = 0;
+    } else {
+      const parentStatus = cache.get<AgentStatus>(`agent:${parentId}:status`);
+      this.depth = (parentStatus?.depth ?? 0) + 1;
+    }
 
     // Register in session agents list
     this.registerInSession();
@@ -161,6 +170,7 @@ export class AgentRadioImpl implements AgentRadio {
       agentType: this.agentType,
       model: this.model,
       metadata: this.metadata,
+      depth: this.depth,
     };
 
     this.cache.set(`agent:${this.agentId}:status`, status, TTL.STATUS);
@@ -213,6 +223,7 @@ export class AgentRadioImpl implements AgentRadio {
         agentType: this.agentType,
         model: this.model,
         metadata: this.metadata,
+        depth: this.depth,
       };
     }
     return status;
