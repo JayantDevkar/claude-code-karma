@@ -10,8 +10,8 @@ claude-karma/
 │   ├── main.py             # Entry point
 │   ├── routers/            # API route handlers
 │   └── models/             # Python Pydantic models
-├── web/                    # SvelteKit frontend (port 5173)
-│   └── frontend/           # Svelte 5 + Tailwind CSS
+├── frontend/               # SvelteKit frontend (port 5173)
+│                           # Svelte 5 + Tailwind CSS
 └── captain-hook/           # Claude Code hooks library
 ```
 
@@ -19,12 +19,6 @@ claude-karma/
 
 - **Python 3.10+** (for API)
 - **Node.js 18+** (for frontend)
-- **pnpm** (for frontend package management)
-
-```bash
-# Install pnpm if not already installed
-npm install -g pnpm
-```
 
 ## Quick Start
 
@@ -59,9 +53,9 @@ curl http://localhost:8000/health
 ### 3. Start Frontend (Terminal 2)
 
 ```bash
-cd web/frontend
-pnpm install
-pnpm dev
+cd frontend
+npm install
+npm run dev
 ```
 
 The frontend will be available at http://localhost:5173
@@ -100,19 +94,19 @@ pytest tests/api/
 ### Frontend Development
 
 ```bash
-cd web/frontend
+cd frontend
 
 # Dev server with hot reload
-pnpm dev
+npm run dev
 
 # Type check
-pnpm check
+npm run check
 
 # Lint
-pnpm lint
+npm run lint
 
 # Build for production
-pnpm build
+npm run build
 ```
 
 ## Submodule Branches
@@ -121,8 +115,8 @@ The repository uses specific branches for each submodule:
 
 | Submodule | Branch | Repository |
 |-----------|--------|------------|
-| `api/` | `refactor/delete-react-frontend` | dot-claude-files-parser |
-| `web/` | `refactor/move-frontend` | ClaudeDashboard |
+| `api/` | `main` | dot-claude-files-parser |
+| `frontend/` | `main` | ClaudeDashboard |
 | `captain-hook/` | `main` | captain-hook |
 
 To update submodules to latest:
@@ -138,8 +132,7 @@ git submodule update --remote
 
 ### Frontend won't start
 - Ensure Node.js 18+ is installed: `node --version`
-- Ensure pnpm is installed: `pnpm --version`
-- Clear node_modules and reinstall: `rm -rf node_modules && pnpm install`
+- Clear node_modules and reinstall: `cd frontend && rm -rf node_modules && npm install`
 
 ### Empty dashboard
 - The API reads from `~/.claude/projects/` - ensure you have Claude Code sessions
