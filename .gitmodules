@@ -1,6 +1,7 @@
 [submodule "captain-hook"]
 	path = captain-hook
 	url = https://github.com/JayantDevkar/captain-hook.git
+	branch = main
 [submodule "api"]
 	path = api
 	url = https://github.com/JayantDevkar/dot-claude-files-parser.git
