@@ -128,79 +128,77 @@ git submodule update --remote
 
 Enable real-time session monitoring on the dashboard by installing Claude Code hooks.
 
-### 1. Copy the hook script
+### 1. Install the tracker script
 
 ```bash
-# Create hooks directory
-mkdir -p ~/.claude/hooks
+# Create bin directory if it doesn't exist
+mkdir -p ~/.local/bin
 
 # Copy the tracker script
-cp api/scripts/live_session_tracker.py ~/.claude/hooks/
-chmod +x ~/.claude/hooks/live_session_tracker.py
+cp api/scripts/live_session_tracker.py ~/.local/bin/claude-karma-tracker
+chmod +x ~/.local/bin/claude-karma-tracker
 ```
 
-### 2. Configure Claude Code settings
+### 2. Configure hooks (choose one method)
 
-Add the following to your `~/.claude/settings.json`:
+#### Option A: Project-level hooks (recommended)
+
+Copy the hooks configuration to your project's `.claude/` directory:
+
+```bash
+# In any project you want to track
+mkdir -p .claude
+cp /path/to/claude-karma/api/scripts/hooks.yaml .claude/hooks.yaml
+```
+
+The `hooks.yaml` file:
+
+```yaml
+hooks:
+  SessionStart:
+    - command: |
+        cat | python3 ~/.local/bin/claude-karma-tracker
+      timeout: 2000
+
+  UserPromptSubmit:
+    - command: |
+        cat | python3 ~/.local/bin/claude-karma-tracker
+      timeout: 2000
+
+  PostToolUse:
+    - command: |
+        cat | python3 ~/.local/bin/claude-karma-tracker
+      timeout: 2000
+
+  Notification:
+    - command: |
+        cat | python3 ~/.local/bin/claude-karma-tracker
+      timeout: 2000
+
+  Stop:
+    - command: |
+        cat | python3 ~/.local/bin/claude-karma-tracker
+      timeout: 2000
+
+  SessionEnd:
+    - command: |
+        cat | python3 ~/.local/bin/claude-karma-tracker
+      timeout: 2000
+```
+
+#### Option B: Global hooks
+
+Add to `~/.claude/settings.json` to track all projects:
 
 ```json
 {
   "hooks": {
-    "SessionStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 ~/.claude/hooks/live_session_tracker.py",
-            "timeout": 5000
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 ~/.claude/hooks/live_session_tracker.py",
-            "timeout": 5000
-          }
-        ]
-      }
-    ],
-    "Notification": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 ~/.claude/hooks/live_session_tracker.py",
-            "timeout": 5000
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 ~/.claude/hooks/live_session_tracker.py",
-            "timeout": 5000
-          }
-        ]
-      }
-    ],
-    "SessionEnd": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 ~/.claude/hooks/live_session_tracker.py",
-            "timeout": 5000
-          }
-        ]
-      }
-    ]
+    "SessionStart": [{ "command": "cat | python3 ~/.local/bin/claude-karma-tracker", "timeout": 2000 }],
+    "UserPromptSubmit": [{ "command": "cat | python3 ~/.local/bin/claude-karma-tracker", "timeout": 2000 }],
+    "PostToolUse": [{ "command": "cat | python3 ~/.local/bin/claude-karma-tracker", "timeout": 2000 }],
+    "Notification": [{ "command": "cat | python3 ~/.local/bin/claude-karma-tracker", "timeout": 2000 }],
+    "Stop": [{ "command": "cat | python3 ~/.local/bin/claude-karma-tracker", "timeout": 2000 }],
+    "SessionEnd": [{ "command": "cat | python3 ~/.local/bin/claude-karma-tracker", "timeout": 2000 }]
   }
 }
 ```
@@ -215,12 +213,36 @@ Session state files are stored in `~/.claude_karma/live-sessions/`.
 
 | State | Meaning | Dashboard Color |
 |-------|---------|-----------------|
-| `active` | Session actively running | 🟢 Green (pulsing) |
-| `idle` | No activity for 30s-5min | 🟡 Yellow |
-| `waiting` | Waiting for user input | 🔵 Blue |
-| `stopped` | Agent finished, session open | ⚪ Gray |
-| `stale` | No activity for 5+ min | 🔴 Red |
-| `ended` | Session terminated | ⚫ Dimmed |
+| `LIVE` | Session actively running (tool execution) | 🟢 Green (pulsing) |
+| `WAITING` | Claude needs user input (permission dialog) | 🔵 Blue |
+| `STOPPED` | Agent finished, session still open | ⚪ Gray |
+| `STALE` | User has been idle for 60+ seconds | 🟡 Yellow/Amber |
+| `ENDED` | Session terminated | ⚫ Dimmed |
+
+### Hook → State Mapping
+
+| Hook | State | Condition |
+|------|-------|-----------|
+| `SessionStart` | LIVE | Always |
+| `UserPromptSubmit` | LIVE | User submitted a prompt |
+| `PostToolUse` | LIVE | Tool execution completed |
+| `Notification` | WAITING | When `permission_prompt` (needs input) |
+| `Notification` | STALE | When `idle_prompt` (user idle 60s+) |
+| `Stop` | STOPPED | Agent finished naturally |
+| `SessionEnd` | ENDED | Session terminated |
+
+### Troubleshooting
+
+**Verify state files are being created:**
+```bash
+ls ~/.claude_karma/live-sessions/
+cat ~/.claude_karma/live-sessions/*.json | jq .
+```
+
+**Watch for real-time changes:**
+```bash
+watch -n1 'cat ~/.claude_karma/live-sessions/*.json 2>/dev/null | jq -s .'
+```
 
 ---
 
