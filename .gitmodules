@@ -9,4 +9,4 @@
 [submodule "frontend"]
 	path = frontend
 	url = https://github.com/the-non-expert/ClaudeDashboard.git
-	branch = edits/command-palette
+	branch = fixes/history-ui
