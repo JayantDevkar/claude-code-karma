@@ -124,6 +124,106 @@ To update submodules to latest:
 git submodule update --remote
 ```
 
+## Live Sessions Tracking (Optional)
+
+Enable real-time session monitoring on the dashboard by installing Claude Code hooks.
+
+### 1. Copy the hook script
+
+```bash
+# Create hooks directory
+mkdir -p ~/.claude/hooks
+
+# Copy the tracker script
+cp api/scripts/live_session_tracker.py ~/.claude/hooks/
+chmod +x ~/.claude/hooks/live_session_tracker.py
+```
+
+### 2. Configure Claude Code settings
+
+Add the following to your `~/.claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/live_session_tracker.py",
+            "timeout": 5000
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/live_session_tracker.py",
+            "timeout": 5000
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/live_session_tracker.py",
+            "timeout": 5000
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/live_session_tracker.py",
+            "timeout": 5000
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/live_session_tracker.py",
+            "timeout": 5000
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+### 3. Verify it works
+
+Start a new Claude Code session and check the dashboard homepage - you should see your session appear in the "Live Sessions" terminal widget.
+
+Session state files are stored in `~/.claude_karma/live-sessions/`.
+
+### Session States
+
+| State | Meaning | Dashboard Color |
+|-------|---------|-----------------|
+| `active` | Session actively running | 🟢 Green (pulsing) |
+| `idle` | No activity for 30s-5min | 🟡 Yellow |
+| `waiting` | Waiting for user input | 🔵 Blue |
+| `stopped` | Agent finished, session open | ⚪ Gray |
+| `stale` | No activity for 5+ min | 🔴 Red |
+| `ended` | Session terminated | ⚫ Dimmed |
+
+---
+
 ## Troubleshooting
 
 ### API won't start

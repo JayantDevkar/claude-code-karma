@@ -12,9 +12,9 @@ claude-karma/
 │   └── plane-task-orchestrator/ # Sequential task delegation
 │
 ├── karma-logger/            # Session metrics and agent coordination
-│   ├── CLI commands         # status, watch, report, dashboard, radio
+│   ├── CLI commands         # status, watch, report, dashboard
 │   ├── Web dashboard        # Real-time metrics visualization
-│   └── Walkie-Talkie IPC    # Unix socket agent coordination
+│   └── Live sessions        # Hook-based session state tracking
 │
 ├── captain-hooks/           # Claude Code hooks reference
 │   ├── Hook documentation   # All 10 hook types documented
@@ -35,7 +35,7 @@ Local metrics and cost tracking for Claude Code sessions. Features:
 - Real-time token usage and cost monitoring
 - Session history with SQLite persistence
 - Interactive TUI and web dashboard
-- Walkie-Talkie IPC for agent coordination
+- Live session state tracking via Claude Code hooks
 - Subagent tracking via JSONL inference
 
 ```bash
@@ -66,14 +66,19 @@ See [philosophy/](./philosophy/) for agent development guidelines:
    cd karma-logger && npm install && npm link
    ```
 
-2. **Enable hooks (optional):**
+2. **Enable live session tracking (optional):**
    ```bash
-   cp .claude/hooks.yaml ~/.claude/hooks.yaml
+   # Install the session tracker script
+   cp api/scripts/live_session_tracker.py ~/.local/bin/claude-karma-tracker
+   chmod +x ~/.local/bin/claude-karma-tracker
+
+   # Copy hooks configuration to your project
+   cp api/scripts/hooks.yaml .claude/hooks.yaml
    ```
 
 3. **Start monitoring:**
    ```bash
-   karma dashboard --radio
+   karma dashboard
    ```
 
 ## Integration with Plane
