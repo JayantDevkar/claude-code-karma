@@ -9,4 +9,4 @@
 [submodule "frontend"]
 	path = frontend
 	url = https://github.com/the-non-expert/ClaudeDashboard.git
-	branch = fixes/history-ui
+	branch = fixes/breadcrumbs-timeline
