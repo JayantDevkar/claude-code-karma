@@ -227,6 +227,20 @@ Plane MCP tools for project management:
 - `mcp__plane-project-task-manager__retrieve_work_item`
 - `mcp__plane-project-task-manager__update_work_item`
 
+## Browser Automation
+
+Use `agent-browser` CLI (Vercel) for browser automation instead of Playwright MCP. It's more token-efficient and optimized for LLM usage.
+
+```bash
+agent-browser open <url>       # Navigate to page
+agent-browser snapshot -i      # Get interactive elements with refs (@e1, @e2)
+agent-browser click @e1        # Click element by ref
+agent-browser fill @e2 "text"  # Fill input field
+agent-browser close            # Close browser
+```
+
+Workflow: `open` → `snapshot -i` → interact via refs → re-snapshot after changes → `close`
+
 ## Development Workflow
 
 1. **API changes**: Modify `api/models/` or `api/routers/`, run tests with `pytest`
