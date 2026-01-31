@@ -1,3 +1,6 @@
+# OMC state
+.omc/
+
 # Dependencies
 node_modules/
 
