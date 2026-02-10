@@ -10,3 +10,7 @@
 	path = frontend
 	url = https://github.com/the-non-expert/ClaudeDashboard.git
 	branch = main
+[submodule "claude-root"]
+	path = claude-root
+	url = https://github.com/JayantDevkar/claude-root.git
+	branch = feature/infra-node-deployment-state-agnostic
