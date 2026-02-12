@@ -1,6 +1,9 @@
 # OMC state
 .omc/
 
+# Claude Code local config
+.claude/
+
 # Dependencies
 node_modules/
 
