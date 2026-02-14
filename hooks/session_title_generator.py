@@ -7,29 +7,15 @@ and generates a concise title. Prefers git commit messages when
 available (free, no LLM). Falls back to Claude Haiku via
 `claude -p --no-session-persistence` to avoid creating bloat sessions.
 
-Logs title generation metadata into the live session state file
-at ~/.claude_karma/live-sessions/{slug}.json for observability.
 """
 
 import json
 import os
+import re
 import subprocess
 import sys
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Tuple
-
-# Reuse atomic write and slug extraction from live_session_tracker
-from live_session_tracker import (
-    extract_slug_from_jsonl,
-    read_existing_state,
-    write_state_atomic,
-    get_state_path_by_slug,
-    get_state_path_by_session_id,
-)
-
-# Config
-import re
 
 API_BASE = os.environ.get("CLAUDE_KARMA_API", "http://localhost:8000")
 MAX_PROMPT_LENGTH = 500
@@ -50,41 +36,6 @@ def _strip_system_tags(text: str) -> str:
     return cleaned.strip()
 
 
-def log_title_generation(
-    session_id: str,
-    slug: Optional[str],
-    title: Optional[str],
-    source: str,
-    api_posted: bool,
-    error: Optional[str] = None,
-) -> None:
-    """Write title generation metadata into the live session state file."""
-    now = datetime.now(timezone.utc).isoformat()
-
-    # Find the existing state file
-    existing_path, existing = read_existing_state(slug, session_id)
-
-    if not existing_path:
-        # No live session file — use slug or session_id to create path
-        if slug:
-            existing_path = get_state_path_by_slug(slug)
-        else:
-            existing_path = get_state_path_by_session_id(session_id)
-
-    def update_fn(state: dict) -> dict:
-        state["title_generation"] = {
-            "title": title,
-            "source": source,  # "git", "haiku", "fallback", or "skipped"
-            "api_posted": api_posted,
-            "generated_at": now,
-        }
-        if error:
-            state["title_generation"]["error"] = error
-        state["updated_at"] = now
-        return state
-
-    write_state_atomic(existing_path, update_fn)
-
 
 def main():
     try:
@@ -97,34 +48,25 @@ def main():
     cwd = data.get("cwd", "")
     reason = data.get("reason", "")
 
-    # Extract slug for state file lookup
-    slug = extract_slug_from_jsonl(transcript_path) if transcript_path else None
-
     # Skip if no transcript or if cleared (not meaningful sessions)
     if not transcript_path or not Path(transcript_path).exists():
-        log_title_generation(session_id, slug, None, "skipped", False, "no transcript")
         return
     if reason in ("clear",):
-        log_title_generation(session_id, slug, None, "skipped", False, f"reason={reason}")
         return
 
     # Extract context from JSONL
     initial_prompt, first_response = extract_session_context(transcript_path)
     if not initial_prompt:
-        log_title_generation(session_id, slug, None, "skipped", False, "no initial prompt")
         return
 
     # Get git commits during session
     git_context = get_git_context(cwd, transcript_path)
 
-    # Generate title via Haiku
+    # Generate title
     title, source = generate_title(initial_prompt, first_response, git_context)
 
     if title:
-        api_posted = post_title(session_id, title)
-        log_title_generation(session_id, slug, title, source, api_posted)
-    else:
-        log_title_generation(session_id, slug, None, "failed", False, "generation returned None")
+        post_title(session_id, title)
 
 
 def extract_session_context(transcript_path: str) -> Tuple[Optional[str], Optional[str]]:
@@ -180,9 +122,6 @@ def get_git_context(cwd: str, transcript_path: str) -> Optional[str]:
         return None
 
     try:
-        mtime = Path(transcript_path).stat().st_mtime
-        start_time = datetime.fromtimestamp(mtime, tz=timezone.utc)
-
         result = subprocess.run(
             ["git", "log", "--oneline", "--since=1 hour ago", "--no-merges", "-10"],
             cwd=cwd,
