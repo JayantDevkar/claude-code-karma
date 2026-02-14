@@ -3,13 +3,12 @@
 Session title generator hook for Claude Karma.
 
 Fires on SessionEnd, reads the session JSONL, extracts context,
-calls Claude Haiku to generate a concise title, then POSTs it
-to the Claude Karma API.
+and generates a concise title. Prefers git commit messages when
+available (free, no LLM). Falls back to Claude Haiku via
+`claude -p --no-session-persistence` to avoid creating bloat sessions.
 
 Logs title generation metadata into the live session state file
 at ~/.claude_karma/live-sessions/{slug}.json for observability.
-
-Cost: ~$0.001 per session using Claude Haiku.
 """
 
 import json
@@ -75,7 +74,7 @@ def log_title_generation(
     def update_fn(state: dict) -> dict:
         state["title_generation"] = {
             "title": title,
-            "source": source,  # "haiku", "fallback", or "skipped"
+            "source": source,  # "git", "haiku", "fallback", or "skipped"
             "api_posted": api_posted,
             "generated_at": now,
         }
@@ -204,16 +203,32 @@ def generate_title(
     first_response: Optional[str],
     git_context: Optional[str],
 ) -> Tuple[Optional[str], str]:
-    """Generate a concise session title via claude CLI (headless mode).
+    """Generate a concise session title.
 
-    Uses `claude -p` with haiku model — free with Max subscription.
-    Returns (title, source) where source is 'haiku' or 'fallback'.
+    Priority:
+    1. Git commit messages (if available) — free, no LLM needed
+    2. Claude Haiku via `claude -p` with --no-session-persistence to avoid bloat
+    3. Fallback: truncated initial prompt
+
+    Returns (title, source) where source is 'git', 'haiku', or 'fallback'.
     """
+    # 1. Use most recent git commit message as title if available
+    if git_context:
+        # git_context is "hash msg\nhash msg\n..." — take the first (most recent) line
+        first_commit = git_context.split("\n")[0].strip()
+        if first_commit:
+            # Strip the short hash prefix (e.g. "a1b2c3d fix: something" → "fix: something")
+            parts = first_commit.split(" ", 1)
+            title = parts[1] if len(parts) > 1 else parts[0]
+            words = title.split()
+            if len(words) > TITLE_MAX_WORDS:
+                title = " ".join(words[:TITLE_MAX_WORDS])
+            return title, "git"
+
+    # 2. Fall back to Haiku (with --no-session-persistence to avoid session bloat)
     parts = [f"User asked: {initial_prompt}"]
     if first_response:
         parts.append(f"Assistant did: {first_response}")
-    if git_context:
-        parts.append(f"Git commits: {git_context}")
     context = "\n".join(parts)
 
     prompt = f"""Generate a concise 5-{TITLE_MAX_WORDS} word title for this coding session.
@@ -229,7 +244,7 @@ Title:"""
         env.pop("CLAUDECODE", None)  # Allow nested claude invocation
 
         result = subprocess.run(
-            ["claude", "-p", prompt, "--model", "haiku", "--output-format", "text"],
+            ["claude", "-p", prompt, "--model", "haiku", "--no-session-persistence", "--output-format", "text"],
             capture_output=True,
             text=True,
             timeout=12,
@@ -247,7 +262,7 @@ Title:"""
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
         pass
 
-    # Fallback: truncated initial prompt
+    # 3. Fallback: truncated initial prompt
     fallback = initial_prompt[:60]
     if len(initial_prompt) > 60:
         fallback += "..."
