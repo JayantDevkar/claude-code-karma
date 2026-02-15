@@ -26,6 +26,9 @@ out/
 .DS_Store
 Thumbs.db
 
+# Screenshots/images
+*.png
+
 # Python
 __pycache__/
 *.pyc
