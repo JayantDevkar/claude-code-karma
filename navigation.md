@@ -8,7 +8,7 @@
 
 The home screen is the central hub. It offers two navigation mechanisms:
 
-1. **Navigation Grid** — 9 cards linking to top-level sections
+1. **Navigation Grid** — 11 cards linking to top-level sections
 2. **Live Sessions Panel** — quick access to active sessions
 
 | Card | Route | Purpose |
@@ -20,9 +20,11 @@ The home screen is the central hub. It offers two navigation mechanisms:
 | Skills | `/skills` | Global skill/tool usage |
 | Agents | `/agents` | Global agent usage |
 | Tools | `/tools` | MCP tool usage |
+| Hooks | `/hooks` | Hook scripts & event registrations |
 | Plugins | `/plugins` | Plugin management |
 | Settings | `/settings` | User configuration |
 | Archived | `/archived` | Archived sessions |
+| About | `/about` | Project documentation viewer |
 
 ---
 
@@ -30,7 +32,7 @@ The home screen is the central hub. It offers two navigation mechanisms:
 
 Present on **all pages except home**. Sticky top header with:
 
-- **Desktop**: Inline links — Projects, Sessions, Plans, Agents, Skills, Tools, Plugins, Analytics, Archived
+- **Desktop**: Inline links — Projects, Sessions, Plans, Agents, Skills, Tools, Hooks, Plugins, Analytics, Archived
 - **Mobile**: Hamburger menu with same links
 - **Settings**: Gear icon (top-right, always visible)
 - **Brand**: "Claude Karma" links back to `/`
@@ -105,6 +107,15 @@ Present on **all pages except home**. Sticky top header with:
         └── /tools/[server_name]/[tool_name]  Tool detail (stats, trend chart, sessions)
 ```
 
+### Hooks
+
+```
+/hooks                                 Hook overview (timeline & sources views, stats)
+  ├── /hooks/[event_type]              Event type detail (schema info, registered scripts, related events)
+  ├── /hooks/sources/[source_id]       Source detail (coverage matrix, registered scripts)
+  └── /hooks/scripts/[filename]        Script detail (syntax-highlighted source, metadata)
+```
+
 ### Plugins
 
 ```
@@ -126,6 +137,12 @@ Present on **all pages except home**. Sticky top header with:
 /archived                              Archived sessions list (client-side search/filter)
 ```
 
+### About
+
+```
+/about                                 Project documentation viewer (doc selector, rendered markdown)
+```
+
 ---
 
 ## Cross-Cutting Patterns
@@ -138,6 +155,10 @@ Interior pages show a breadcrumb trail:
 Dashboard > Projects > [Project Name] > Agents
 Dashboard > Plans > [Plan Name]
 Dashboard > Plugins > [Plugin Name] > Skills > [Skill Path]
+Dashboard > Hooks > [Event Type]
+Dashboard > Hooks > Sources > [Source Name]
+Dashboard > Hooks > Scripts > [Filename]
+Dashboard > About
 Dashboard > Settings
 ```
 
@@ -147,9 +168,11 @@ Filters persist via URL search params for shareability and back-button support:
 
 | Param | Used On | Example |
 |-------|---------|---------|
-| `search` | Projects, Sessions, Agents, Archived | `?search=karma` |
+| `search` | Projects, Sessions, Agents, Archived, Agent detail, Skill detail, Tool/Server detail | `?search=karma` |
 | `tab` | Project detail | `?tab=agents` |
-| `filter` | Analytics | `?filter=7days` |
+| `filter` | Analytics, Agent detail, Skill detail, Tool/Server detail | `?filter=7days` |
+| `scope` | Agent detail, Skill detail | `?scope=all` |
+| `status` | Agent detail | `?status=active` |
 | `project` | Sessions, Plans | `?project=project_slug` |
 | `branch` | Plans | `?branch=main` |
 | `page`, `per_page` | Sessions, Plans, Agents | `?page=2&per_page=24` |
@@ -198,8 +221,12 @@ Each section has a dedicated skeleton displayed during navigation transitions (e
 │             └► /skills/[...path]
 ├─► /plans ───► /plans/[slug]
 ├─► /tools ──► /tools/[server_name] ──► /tools/[server_name]/[tool_name]
+├─► /hooks ──┬► /hooks/[event_type]
+│            ├► /hooks/sources/[source_id]
+│            └► /hooks/scripts/[filename]
 ├─► /plugins ─► /plugins/[name] ─► /plugins/[id]/skills ─► /plugins/[id]/skills/[...path]
 ├─► /analytics
 ├─► /archived
+├─► /about
 └─► /settings
 ```
