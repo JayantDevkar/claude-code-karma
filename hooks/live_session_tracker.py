@@ -34,6 +34,7 @@ Slug-based tracking:
 """
 
 import json
+import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -57,6 +58,23 @@ except ImportError:
     HAS_MSVCRT = False
 
 LIVE_SESSIONS_DIR = Path.home() / ".claude_karma" / "live-sessions"
+
+
+def resolve_git_root(cwd: str) -> str | None:
+    """Resolve git root from cwd. Returns None if not in a git repo."""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()
+    except (subprocess.TimeoutExpired, OSError):
+        pass
+    return None
 
 
 def write_state_atomic(path: Path, update_fn: Callable[[dict], dict]) -> None:
@@ -306,6 +324,7 @@ def write_state(
     hook_data: dict,
     slug: str | None = None,
     end_reason: str | None = None,
+    git_root: str | None = None,
 ) -> None:
     """
     Write session state to disk using atomic file locking.
@@ -345,6 +364,8 @@ def write_state(
             "updated_at": now,
             "started_at": existing.get("started_at", now),
             "end_reason": end_reason,
+            # Preserve git_root from existing state, or use newly provided value
+            "git_root": git_root or existing.get("git_root"),
         }
 
         # Preserve session history if resuming
@@ -391,7 +412,10 @@ def main() -> None:
         # New or resumed session - mark as STARTING
         # For resumed sessions, slug will be available from existing JSONL
         # For new sessions, slug won't be available yet (JSONL doesn't exist)
-        write_state(session_id, "STARTING", data, slug=slug)
+        # Resolve git root once at session start for submodule→parent mapping
+        cwd = data.get("cwd", "")
+        git_root = resolve_git_root(cwd) if cwd else None
+        write_state(session_id, "STARTING", data, slug=slug, git_root=git_root)
 
     elif hook_name == "UserPromptSubmit":
         # User submitted a prompt - mark as LIVE (actively processing)
