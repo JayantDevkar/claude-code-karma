@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <title>Claude Karma</title>
+  <!-- Outer orbit ring -->
+  <circle cx="64" cy="64" r="52" fill="none" stroke="#7c3aed" stroke-width="6" opacity="0.3"/>
+  <!-- Middle orbit ring (tilted effect via ellipse) -->
+  <ellipse cx="64" cy="64" rx="38" ry="52" fill="none" stroke="#7c3aed" stroke-width="5" opacity="0.5" transform="rotate(30 64 64)"/>
+  <!-- Inner orbit ring -->
+  <ellipse cx="64" cy="64" rx="52" ry="28" fill="none" stroke="#7c3aed" stroke-width="5" opacity="0.7" transform="rotate(-20 64 64)"/>
+  <!-- Center core -->
+  <circle cx="64" cy="64" r="16" fill="#7c3aed"/>
+  <!-- Orbiting dots -->
+  <circle cx="64" cy="12" r="6" fill="#a78bfa"/>
+  <circle cx="110" cy="80" r="5" fill="#a78bfa"/>
+  <circle cx="24" cy="90" r="4" fill="#c4b5fd"/>
+</svg>

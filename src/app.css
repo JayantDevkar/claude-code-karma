@@ -1,0 +1,815 @@
+@import 'tailwindcss';
+
+@theme {
+	--font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+	--font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+/* ============================================
+   DESIGN SYSTEM TOKENS
+   ============================================ */
+
+:root {
+	/* Typography */
+	--font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+	--font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+	/* Light Mode Colors (Cool Slate Foundation) */
+	--bg-base: #ffffff;
+	--bg-subtle: #f8fafc;
+	--bg-muted: #f1f5f9;
+
+	--text-primary: #0f172a;
+	--text-secondary: #475569;
+	--text-muted: #64748b;
+	--text-faint: #94a3b8;
+
+	--border: rgba(0, 0, 0, 0.08);
+	--border-subtle: rgba(0, 0, 0, 0.05);
+
+	/* Missing tokens (referenced but were undefined) */
+	--accent-primary: var(--accent);
+	--border-hover: rgba(0, 0, 0, 0.12);
+	--radius-xs: 2px;
+	--duration-normal: 300ms;
+
+	/* RGB values for opacity control in gradients */
+	--accent-rgb: 124, 58, 237;
+	--success-rgb: 16, 185, 129;
+	--warning-rgb: 245, 158, 11;
+	--error-rgb: 239, 68, 68;
+	--info-rgb: 59, 130, 246;
+
+	/* Accent (Violet - Claude brand) */
+	--accent: #7c3aed;
+	--accent-hover: #6d28d9;
+	--accent-subtle: rgba(124, 58, 237, 0.1);
+	--accent-muted: rgba(124, 58, 237, 0.05);
+
+	/* Semantic Colors */
+	--success: #10b981;
+	--success-subtle: rgba(16, 185, 129, 0.1);
+
+	--error: #ef4444;
+	--error-subtle: rgba(239, 68, 68, 0.1);
+
+	--warning: #f59e0b;
+	--warning-subtle: rgba(245, 158, 11, 0.1);
+
+	--info: #3b82f6;
+	--info-subtle: rgba(59, 130, 246, 0.1);
+
+	/* Model Family Colors */
+	--model-opus: #7c3aed;
+	--model-opus-subtle: rgba(124, 58, 237, 0.1);
+	--model-sonnet: #3b82f6;
+	--model-sonnet-subtle: rgba(59, 130, 246, 0.1);
+	--model-haiku: #10b981;
+	--model-haiku-subtle: rgba(16, 185, 129, 0.1);
+
+	/* Event Type Colors */
+	--event-prompt: #2563eb;
+	--event-prompt-subtle: rgba(37, 99, 235, 0.18);
+	--event-tool: #059669;
+	--event-tool-subtle: rgba(5, 150, 105, 0.18);
+	--event-subagent: #7c3aed;
+	--event-subagent-subtle: rgba(124, 58, 237, 0.18);
+	--event-thinking: #d97706;
+	--event-thinking-subtle: rgba(217, 119, 6, 0.18);
+	--event-response: #475569;
+	--event-response-subtle: rgba(71, 85, 105, 0.18);
+	--event-todo: #6d28d9;
+	--event-todo-subtle: rgba(109, 40, 217, 0.18);
+	--event-plan: #0891b2;
+	--event-plan-subtle: rgba(8, 145, 178, 0.18);
+	--event-builtin: #64748b;
+	--event-builtin-subtle: rgba(100, 116, 139, 0.18);
+	--event-command: #14b8a6;
+	--event-command-subtle: rgba(20, 184, 166, 0.18);
+
+	/* Data Visualization Palette */
+	--data-primary: var(--accent);
+	--data-secondary: var(--info);
+	--data-tertiary: var(--success);
+	--data-quaternary: var(--warning);
+	--data-quinary: var(--error);
+
+	/* Navigation Card Colors (for icon backgrounds) */
+	--nav-blue: #3b82f6;
+	--nav-blue-subtle: rgba(59, 130, 246, 0.08);
+	--nav-green: #10b981;
+	--nav-green-subtle: rgba(16, 185, 129, 0.08);
+	--nav-orange: #f97316;
+	--nav-orange-subtle: rgba(249, 115, 22, 0.08);
+	--nav-purple: #8b5cf6;
+	--nav-purple-subtle: rgba(139, 92, 246, 0.08);
+	--nav-gray: #64748b;
+	--nav-gray-subtle: rgba(100, 116, 139, 0.08);
+	--nav-red: #f43f5e;
+	--nav-red-subtle: rgba(244, 63, 94, 0.08);
+	--nav-teal: #0891b2;
+	--nav-teal-subtle: rgba(8, 145, 178, 0.1);
+	--nav-yellow: #ca8a04;
+	--nav-yellow-subtle: rgba(202, 138, 4, 0.08);
+	--nav-violet: #db2777;
+	--nav-violet-subtle: rgba(219, 39, 119, 0.1);
+	--nav-indigo: #6366f1;
+	--nav-indigo-subtle: rgba(99, 102, 241, 0.1);
+	--nav-amber: #d97706;
+	--nav-amber-subtle: rgba(217, 119, 6, 0.08);
+
+	/* Live Session Status Background Tints (subtle card backgrounds) */
+	--status-starting-bg: rgba(139, 92, 246, 0.05);
+	--status-active-bg: rgba(16, 185, 129, 0.05);
+	--status-idle-bg: rgba(245, 158, 11, 0.05);
+	--status-waiting-bg: rgba(59, 130, 246, 0.05);
+	--status-stopped-bg: rgba(100, 116, 139, 0.03);
+	--status-ended-bg: rgba(148, 163, 184, 0.03);
+	--status-stale-bg: rgba(239, 68, 68, 0.05);
+
+	/* Subagent Type Colors (light mode - vibrant, high contrast) */
+	--subagent-explore: #0284c7;
+	--subagent-explore-subtle: rgba(2, 132, 199, 0.12);
+	--subagent-plan: #ca8a04;
+	--subagent-plan-subtle: rgba(202, 138, 4, 0.12);
+	--subagent-bash: #16a34a;
+	--subagent-bash-subtle: rgba(22, 163, 74, 0.12);
+	--subagent-default: #7c3aed;
+	--subagent-default-subtle: rgba(124, 58, 237, 0.12);
+	/* Claude Tax - internal overhead agents (warmup, cache priming) - rust orange */
+	--subagent-claude-tax: #c2410c;
+	--subagent-claude-tax-subtle: rgba(194, 65, 12, 0.12);
+	/* System Agents - auto-spawned by Claude Code for internal operations */
+	--subagent-acompact: #475569; /* Slate - context compaction/cleanup */
+	--subagent-acompact-subtle: rgba(71, 85, 105, 0.12);
+	--subagent-prompt-suggestion: #6366f1; /* Indigo - AI-powered suggestions */
+	--subagent-prompt-suggestion-subtle: rgba(99, 102, 241, 0.12);
+	/* OKLCH params for plugin identity colors (hue set per-plugin in JS) */
+	--plugin-l: 0.5;
+	--plugin-c: 0.14;
+	--plugin-l-subtle: 0.96;
+	--plugin-c-subtle: 0.025;
+
+	/* Scope category colors (fixed) */
+	--scope-project: #d97706;
+	--scope-project-subtle: rgba(217, 119, 6, 0.12);
+	--scope-user: #0d9488;
+	--scope-user-subtle: rgba(13, 148, 136, 0.12);
+
+	/* Spacing (4px Grid) */
+	--spacing-1: 4px;
+	--spacing-2: 8px;
+	--spacing-3: 12px;
+	--spacing-4: 16px;
+	--spacing-5: 20px;
+	--spacing-6: 24px;
+	--spacing-8: 32px;
+	--spacing-12: 48px;
+
+	/* Border Radius (Sharp System) */
+	--radius-sm: 4px;
+	--radius-md: 6px;
+	--radius-lg: 8px;
+
+	/* Extended Shadow System */
+	--shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+	--shadow-md: 0 2px 8px rgba(0, 0, 0, 0.08);
+	--shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.12);
+	--shadow-elevated: 0 0 0 0.5px var(--border), 0 4px 12px rgba(0, 0, 0, 0.12);
+
+	/* Animation */
+	--duration-fast: 150ms;
+	--duration-base: 200ms;
+	--ease: cubic-bezier(0.25, 1, 0.5, 1);
+
+	/* Focus Ring (Keyboard Accessibility) */
+	--focus-ring-width: 2px;
+	--focus-ring-offset: 2px;
+	--focus-ring-color: var(--accent);
+}
+
+/* ============================================
+   KEYBOARD ACCESSIBILITY - FOCUS SYSTEM
+   ============================================ */
+
+/* Global focus styles for interactive elements */
+a:focus-visible,
+button:focus-visible,
+[role='button']:focus-visible,
+[tabindex='0']:focus-visible {
+	outline: none;
+	box-shadow:
+		0 0 0 var(--focus-ring-offset) var(--bg-base),
+		0 0 0 calc(var(--focus-ring-offset) + var(--focus-ring-width)) var(--focus-ring-color);
+	border-radius: var(--radius-md);
+}
+
+/* Focus styles for form inputs - enhance existing border */
+input:focus,
+textarea:focus,
+select:focus {
+	outline: none;
+	border-color: var(--accent) !important;
+	box-shadow: 0 0 0 3px var(--accent-subtle) !important;
+}
+
+/* High contrast mode support */
+@media (forced-colors: active) {
+	a:focus-visible,
+	button:focus-visible,
+	[role='button']:focus-visible,
+	[tabindex='0']:focus-visible {
+		outline: 2px solid CanvasText;
+		outline-offset: 2px;
+	}
+}
+
+/* Utility class for components needing explicit focus ring */
+.focus-ring {
+	outline: none;
+}
+.focus-ring:focus-visible {
+	box-shadow:
+		0 0 0 var(--focus-ring-offset) var(--bg-base),
+		0 0 0 calc(var(--focus-ring-offset) + var(--focus-ring-width)) var(--focus-ring-color);
+	border-radius: var(--radius-md);
+}
+
+/* ============================================
+   DARK MODE TOKENS
+   ============================================ */
+
+:root[data-theme='dark'] {
+	/* Background (dark slate) */
+	--bg-base: #0f1419;
+	--bg-subtle: #1a1f26;
+	--bg-muted: #242b35;
+
+	/* Text (soft off-white, easier on eyes) */
+	--text-primary: #e2e8f0;
+	--text-secondary: #a1a1aa;
+	--text-muted: #71717a;
+	--text-faint: #52525b;
+
+	/* Borders (white-based for dark bg) */
+	--border: rgba(255, 255, 255, 0.08);
+	--border-subtle: rgba(255, 255, 255, 0.05);
+	--border-hover: rgba(255, 255, 255, 0.15);
+
+	/* Accent (lighter for dark mode) */
+	--accent: #a78bfa;
+	--accent-hover: #c4b5fd;
+	--accent-subtle: rgba(167, 139, 250, 0.15);
+	--accent-muted: rgba(167, 139, 250, 0.08);
+	--accent-primary: var(--accent);
+
+	/* RGB values for dark mode */
+	--accent-rgb: 167, 139, 250;
+	--success-rgb: 52, 211, 153;
+	--warning-rgb: 251, 191, 36;
+	--error-rgb: 248, 113, 113;
+	--info-rgb: 96, 165, 250;
+
+	/* Semantic (adjusted for contrast) */
+	--success: #34d399;
+	--success-subtle: rgba(52, 211, 153, 0.15);
+	--error: #f87171;
+	--error-subtle: rgba(248, 113, 113, 0.15);
+	--warning: #fbbf24;
+	--warning-subtle: rgba(251, 191, 36, 0.15);
+	--info: #60a5fa;
+	--info-subtle: rgba(96, 165, 250, 0.15);
+
+	/* Model Colors (lighter for dark mode) */
+	--model-opus: #a78bfa;
+	--model-opus-subtle: rgba(167, 139, 250, 0.2);
+	--model-sonnet: #60a5fa;
+	--model-sonnet-subtle: rgba(96, 165, 250, 0.2);
+	--model-haiku: #34d399;
+	--model-haiku-subtle: rgba(52, 211, 153, 0.2);
+
+	/* Event Colors (lighter) */
+	--event-prompt: #60a5fa;
+	--event-prompt-subtle: rgba(96, 165, 250, 0.32);
+	--event-tool: #34d399;
+	--event-tool-subtle: rgba(52, 211, 153, 0.32);
+	--event-subagent: #a78bfa;
+	--event-subagent-subtle: rgba(167, 139, 250, 0.32);
+	--event-thinking: #fbbf24;
+	--event-thinking-subtle: rgba(251, 191, 36, 0.32);
+	--event-response: #94a3b8;
+	--event-response-subtle: rgba(148, 163, 184, 0.32);
+	--event-todo: #a78bfa;
+	--event-todo-subtle: rgba(167, 139, 250, 0.32);
+	--event-plan: #22d3ee;
+	--event-plan-subtle: rgba(34, 211, 238, 0.32);
+	--event-builtin: #94a3b8;
+	--event-builtin-subtle: rgba(148, 163, 184, 0.32);
+	--event-command: #2dd4bf;
+	--event-command-subtle: rgba(45, 212, 191, 0.32);
+
+	/* Navigation Colors */
+	--nav-blue: #60a5fa;
+	--nav-blue-subtle: rgba(96, 165, 250, 0.15);
+	--nav-green: #34d399;
+	--nav-green-subtle: rgba(52, 211, 153, 0.15);
+	--nav-orange: #fb923c;
+	--nav-orange-subtle: rgba(251, 146, 60, 0.15);
+	--nav-purple: #a78bfa;
+	--nav-purple-subtle: rgba(167, 139, 250, 0.15);
+	--nav-gray: #94a3b8;
+	--nav-gray-subtle: rgba(148, 163, 184, 0.15);
+	--nav-red: #fb7185;
+	--nav-red-subtle: rgba(251, 113, 133, 0.15);
+	--nav-teal: #22d3ee;
+	--nav-teal-subtle: rgba(34, 211, 238, 0.18);
+	--nav-yellow: #fbbf24;
+	--nav-yellow-subtle: rgba(251, 191, 36, 0.15);
+	--nav-violet: #f472b6;
+	--nav-violet-subtle: rgba(244, 114, 182, 0.18);
+	--nav-indigo: #818cf8;
+	--nav-indigo-subtle: rgba(129, 140, 248, 0.18);
+	--nav-amber: #fbbf24;
+	--nav-amber-subtle: rgba(251, 191, 36, 0.15);
+
+	/* Live Session Status Background Tints (dark mode - slightly higher opacity) */
+	--status-starting-bg: rgba(167, 139, 250, 0.08);
+	--status-active-bg: rgba(52, 211, 153, 0.08);
+	--status-idle-bg: rgba(251, 191, 36, 0.08);
+	--status-waiting-bg: rgba(96, 165, 250, 0.08);
+	--status-stopped-bg: rgba(148, 163, 184, 0.05);
+	--status-ended-bg: rgba(148, 163, 184, 0.04);
+	--status-stale-bg: rgba(248, 113, 113, 0.08);
+
+	/* Shadows (deeper for dark mode) */
+	--shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+	--shadow-md: 0 2px 8px rgba(0, 0, 0, 0.4);
+	--shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.5);
+	--shadow-elevated: 0 0 0 0.5px var(--border), 0 4px 12px rgba(0, 0, 0, 0.4);
+
+	/* OKLCH params for plugin identity colors (dark mode) */
+	--plugin-l: 0.75;
+	--plugin-c: 0.13;
+	--plugin-l-subtle: 0.23;
+	--plugin-c-subtle: 0.04;
+
+	/* Scope category colors (dark mode) */
+	--scope-project: #fbbf24;
+	--scope-project-subtle: rgba(251, 191, 36, 0.2);
+	--scope-user: #2dd4bf;
+	--scope-user-subtle: rgba(45, 212, 191, 0.2);
+}
+
+/* System preference fallback */
+@media (prefers-color-scheme: dark) {
+	:root:not([data-theme='light']) {
+		--bg-base: #0f1419;
+		--bg-subtle: #1a1f26;
+		--bg-muted: #242b35;
+		--text-primary: #e2e8f0;
+		--text-secondary: #a1a1aa;
+		--text-muted: #71717a;
+		--text-faint: #52525b;
+		--border: rgba(255, 255, 255, 0.08);
+		--border-subtle: rgba(255, 255, 255, 0.05);
+		--border-hover: rgba(255, 255, 255, 0.15);
+		--accent: #a78bfa;
+		--accent-hover: #c4b5fd;
+		--accent-subtle: rgba(167, 139, 250, 0.15);
+		--accent-muted: rgba(167, 139, 250, 0.08);
+		--accent-primary: var(--accent);
+		--success: #34d399;
+		--success-subtle: rgba(52, 211, 153, 0.15);
+		--error: #f87171;
+		--error-subtle: rgba(248, 113, 113, 0.15);
+		--warning: #fbbf24;
+		--warning-subtle: rgba(251, 191, 36, 0.15);
+		--info: #60a5fa;
+		--info-subtle: rgba(96, 165, 250, 0.15);
+		--model-opus: #a78bfa;
+		--model-opus-subtle: rgba(167, 139, 250, 0.2);
+		--model-sonnet: #60a5fa;
+		--model-sonnet-subtle: rgba(96, 165, 250, 0.2);
+		--model-haiku: #34d399;
+		--model-haiku-subtle: rgba(52, 211, 153, 0.2);
+		--event-prompt: #60a5fa;
+		--event-prompt-subtle: rgba(96, 165, 250, 0.25);
+		--event-tool: #34d399;
+		--event-tool-subtle: rgba(52, 211, 153, 0.25);
+		--event-subagent: #a78bfa;
+		--event-subagent-subtle: rgba(167, 139, 250, 0.25);
+		--event-thinking: #fbbf24;
+		--event-thinking-subtle: rgba(251, 191, 36, 0.25);
+		--event-response: #94a3b8;
+		--event-response-subtle: rgba(148, 163, 184, 0.25);
+		--event-todo: #a78bfa;
+		--event-todo-subtle: rgba(167, 139, 250, 0.25);
+		--event-plan: #22d3ee;
+		--event-plan-subtle: rgba(34, 211, 238, 0.25);
+		--event-builtin: #94a3b8;
+		--event-builtin-subtle: rgba(148, 163, 184, 0.25);
+		--event-command: #2dd4bf;
+		--event-command-subtle: rgba(45, 212, 191, 0.25);
+		--nav-blue: #60a5fa;
+		--nav-blue-subtle: rgba(96, 165, 250, 0.15);
+		--nav-green: #34d399;
+		--nav-green-subtle: rgba(52, 211, 153, 0.15);
+		--nav-orange: #fb923c;
+		--nav-orange-subtle: rgba(251, 146, 60, 0.15);
+		--nav-purple: #a78bfa;
+		--nav-purple-subtle: rgba(167, 139, 250, 0.15);
+		--nav-gray: #94a3b8;
+		--nav-gray-subtle: rgba(148, 163, 184, 0.15);
+		--nav-red: #fb7185;
+		--nav-red-subtle: rgba(251, 113, 133, 0.15);
+		--nav-teal: #22d3ee;
+		--nav-teal-subtle: rgba(34, 211, 238, 0.18);
+		--nav-yellow: #fbbf24;
+		--nav-yellow-subtle: rgba(251, 191, 36, 0.15);
+		--nav-violet: #f472b6;
+		--nav-violet-subtle: rgba(244, 114, 182, 0.18);
+		--nav-indigo: #818cf8;
+		--nav-indigo-subtle: rgba(129, 140, 248, 0.18);
+		--nav-amber: #fbbf24;
+		--nav-amber-subtle: rgba(251, 191, 36, 0.15);
+		/* Live Session Status Background Tints (dark mode) */
+		--status-starting-bg: rgba(167, 139, 250, 0.08);
+		--status-active-bg: rgba(52, 211, 153, 0.08);
+		--status-idle-bg: rgba(251, 191, 36, 0.08);
+		--status-waiting-bg: rgba(96, 165, 250, 0.08);
+		--status-stopped-bg: rgba(148, 163, 184, 0.05);
+		--status-ended-bg: rgba(148, 163, 184, 0.04);
+		--status-stale-bg: rgba(248, 113, 113, 0.08);
+		/* Subagent Type Colors (dark mode - lighter for contrast) */
+		--subagent-explore: #22d3ee;
+		--subagent-explore-subtle: rgba(34, 211, 238, 0.2);
+		--subagent-plan: #fbbf24;
+		--subagent-plan-subtle: rgba(251, 191, 36, 0.2);
+		--subagent-bash: #34d399;
+		--subagent-bash-subtle: rgba(52, 211, 153, 0.2);
+		--subagent-default: #a78bfa;
+		--subagent-default-subtle: rgba(167, 139, 250, 0.2);
+		/* Claude Tax - internal overhead agents (warmup, cache priming) - rust orange */
+		--subagent-claude-tax: #fb923c;
+		--subagent-claude-tax-subtle: rgba(251, 146, 60, 0.2);
+		/* System Agents - auto-spawned by Claude Code for internal operations (dark mode) */
+		--subagent-acompact: #94a3b8; /* Slate - context compaction/cleanup */
+		--subagent-acompact-subtle: rgba(148, 163, 184, 0.2);
+		--subagent-prompt-suggestion: #a5b4fc; /* Indigo - AI-powered suggestions */
+		--subagent-prompt-suggestion-subtle: rgba(165, 180, 252, 0.2);
+		/* OKLCH params for plugin identity colors (dark mode) */
+		--plugin-l: 0.75;
+		--plugin-c: 0.13;
+		--plugin-l-subtle: 0.23;
+		--plugin-c-subtle: 0.04;
+
+		/* Scope category colors (dark mode) */
+		--scope-project: #fbbf24;
+		--scope-project-subtle: rgba(251, 191, 36, 0.2);
+		--scope-user: #2dd4bf;
+		--scope-user-subtle: rgba(45, 212, 191, 0.2);
+		--shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+		--shadow-md: 0 2px 8px rgba(0, 0, 0, 0.4);
+		--shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.5);
+		--shadow-elevated: 0 0 0 0.5px var(--border), 0 4px 12px rgba(0, 0, 0, 0.4);
+	}
+}
+
+body {
+	font-family: var(--font-sans);
+	background-color: var(--bg-base);
+	color: var(--text-primary);
+	font-variant-numeric: tabular-nums;
+}
+
+/* Markdown Preview Styles */
+.markdown-preview {
+	@apply leading-relaxed;
+	color: var(--text-primary);
+}
+
+.markdown-preview h1 {
+	@apply text-2xl font-semibold mt-8 mb-4 tracking-tight pb-2;
+	color: var(--text-primary);
+	border-bottom: 1px solid var(--border);
+}
+
+.markdown-preview h2 {
+	@apply text-xl font-semibold mt-8 mb-3 tracking-tight;
+	color: var(--text-primary);
+}
+
+.markdown-preview h3 {
+	@apply text-lg font-medium mt-6 mb-2;
+	color: var(--text-primary);
+}
+
+.markdown-preview p {
+	@apply mb-4 leading-7;
+	color: var(--text-secondary);
+}
+
+.markdown-preview ul {
+	@apply list-disc list-outside ml-5 mb-4 space-y-1;
+	color: var(--text-secondary);
+}
+
+.markdown-preview ol {
+	@apply list-decimal list-outside ml-5 mb-4 space-y-1;
+	color: var(--text-secondary);
+}
+
+.markdown-preview li {
+	@apply pl-1;
+}
+
+.markdown-preview code {
+	@apply font-mono text-sm px-1.5 py-0.5 rounded;
+	background-color: var(--bg-muted);
+	color: var(--text-primary);
+	border: 1px solid var(--border-subtle);
+}
+
+.markdown-preview pre {
+	@apply p-4 rounded-lg overflow-auto mb-6;
+	background-color: var(--bg-subtle);
+	border: 1px solid var(--border);
+}
+
+.markdown-preview pre code {
+	@apply p-0 border-none block;
+	background-color: transparent;
+	color: var(--text-primary);
+}
+
+.markdown-preview blockquote {
+	@apply pl-4 py-1 my-6 italic rounded-r-lg;
+	border-left: 4px solid var(--accent);
+	color: var(--text-muted);
+	background-color: var(--accent-muted);
+}
+
+.markdown-preview a {
+	@apply hover:underline font-medium decoration-1 underline-offset-2;
+	color: var(--accent);
+}
+
+.markdown-preview strong {
+	@apply font-semibold;
+	color: var(--text-primary);
+}
+
+.markdown-preview hr {
+	@apply my-8;
+	border-color: var(--border);
+}
+
+/* Table Styles */
+.markdown-preview table {
+	@apply w-full mb-6 text-sm;
+	border-collapse: collapse;
+	border: 1px solid var(--border);
+	border-radius: var(--radius-md);
+	overflow: hidden;
+}
+
+.markdown-preview thead {
+	background-color: var(--bg-subtle);
+}
+
+.markdown-preview th {
+	@apply px-4 py-2.5 text-left font-semibold;
+	color: var(--text-primary);
+	border-bottom: 2px solid var(--border);
+}
+
+.markdown-preview td {
+	@apply px-4 py-2.5;
+	color: var(--text-secondary);
+	border-bottom: 1px solid var(--border-subtle);
+}
+
+.markdown-preview tr:last-child td {
+	border-bottom: none;
+}
+
+.markdown-preview tbody tr:nth-child(even) {
+	background-color: var(--bg-subtle);
+}
+
+.markdown-preview tbody tr:hover {
+	background-color: var(--accent-muted);
+}
+
+.markdown-preview table code {
+	@apply text-xs;
+}
+
+/* Task List Styles (Checkboxes) */
+.markdown-preview input[type='checkbox'] {
+	@apply mr-2 rounded;
+	accent-color: var(--accent);
+}
+
+.markdown-preview ul:has(input[type='checkbox']),
+.markdown-preview li:has(> input[type='checkbox']) {
+	@apply list-none ml-0;
+}
+
+/* Definition List Styles */
+.markdown-preview dl {
+	@apply mb-4;
+}
+
+.markdown-preview dt {
+	@apply font-semibold mt-4;
+	color: var(--text-primary);
+}
+
+.markdown-preview dd {
+	@apply ml-4 mb-2;
+	color: var(--text-secondary);
+}
+
+/* Image Styles */
+.markdown-preview img {
+	@apply max-w-full h-auto rounded-lg my-4;
+	border: 1px solid var(--border);
+}
+
+/* Nested List Spacing */
+.markdown-preview li > ul,
+.markdown-preview li > ol {
+	@apply mt-1 mb-0;
+}
+
+/* ============================================
+   VIM-STYLE LIST NAVIGATION
+   ============================================ */
+
+/* Vim selection highlight - distinct from focus */
+[data-list-item][data-vim-selected='true'] {
+	background-color: var(--accent-subtle) !important;
+	outline: 2px solid var(--accent);
+	outline-offset: -2px;
+	border-radius: var(--radius-md);
+}
+
+/* Smooth transition for vim selection */
+[data-list-item] {
+	transition:
+		outline 150ms ease,
+		background-color 150ms ease;
+}
+
+/* ============================================
+   SKELETON LOADING SYSTEM
+   ============================================ */
+
+/* Shimmer animation keyframes */
+@keyframes skeleton-shimmer {
+	0% {
+		background-position: -200% 0;
+	}
+	100% {
+		background-position: 200% 0;
+	}
+}
+
+/* Base skeleton shimmer class */
+.skeleton-shimmer {
+	background: linear-gradient(
+		90deg,
+		var(--bg-muted) 0%,
+		var(--bg-subtle) 50%,
+		var(--bg-muted) 100%
+	);
+	background-size: 200% 100%;
+	animation: skeleton-shimmer 1.5s ease-in-out infinite;
+}
+
+/* Reduced motion support for accessibility */
+@media (prefers-reduced-motion: reduce) {
+	.skeleton-shimmer {
+		animation: none;
+		background: var(--bg-muted);
+	}
+}
+
+/* ============================================
+   ENHANCED UI UTILITIES
+   ============================================ */
+
+/* Gradient text utility */
+.gradient-text {
+	color: var(--accent); /* Fallback for browsers without background-clip support */
+	background: linear-gradient(135deg, var(--accent) 0%, #a78bfa 100%);
+	-webkit-background-clip: text;
+	-webkit-text-fill-color: transparent;
+	background-clip: text;
+}
+
+/* Card lift effect */
+.hover-lift-lg {
+	transition:
+		transform 300ms var(--ease),
+		box-shadow 300ms var(--ease);
+}
+.hover-lift-lg:hover {
+	transform: translateY(-4px);
+	box-shadow: var(--shadow-lg);
+}
+
+/* Subtle glow effect - uses design system color variable for dark mode support */
+.glow-accent {
+	box-shadow: 0 0 20px rgba(var(--accent-rgb), 0.12);
+}
+
+/* Stagger children animation */
+@keyframes fade-in-up {
+	from {
+		opacity: 0;
+		transform: translateY(10px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+
+/* Results update animation - subtle fade and highlight */
+@keyframes results-update {
+	0% {
+		opacity: 0.5;
+	}
+	50% {
+		opacity: 1;
+		background-color: var(--accent-muted);
+	}
+	100% {
+		opacity: 1;
+		background-color: transparent;
+	}
+}
+
+.animate-results-update {
+	animation: results-update 0.4s ease-out;
+}
+
+.stagger-children > * {
+	animation: fade-in-up 0.4s ease-out backwards;
+}
+.stagger-children > *:nth-child(1) {
+	animation-delay: 0ms;
+}
+.stagger-children > *:nth-child(2) {
+	animation-delay: 50ms;
+}
+.stagger-children > *:nth-child(3) {
+	animation-delay: 100ms;
+}
+.stagger-children > *:nth-child(4) {
+	animation-delay: 150ms;
+}
+.stagger-children > *:nth-child(5) {
+	animation-delay: 200ms;
+}
+.stagger-children > *:nth-child(6) {
+	animation-delay: 250ms;
+}
+.stagger-children > *:nth-child(7) {
+	animation-delay: 300ms;
+}
+.stagger-children > *:nth-child(8) {
+	animation-delay: 350ms;
+}
+.stagger-children > *:nth-child(9) {
+	animation-delay: 400ms;
+}
+.stagger-children > *:nth-child(10) {
+	animation-delay: 450ms;
+}
+
+/* Reduced motion support for new animations */
+@media (prefers-reduced-motion: reduce) {
+	.hover-lift-lg {
+		transition: none;
+	}
+	.hover-lift-lg:hover {
+		transform: none;
+	}
+	.stagger-children > * {
+		animation: none;
+	}
+	/* Disable blur effects for users who prefer reduced motion */
+	.blur-3xl {
+		filter: none !important;
+	}
+}
+
+/* Search highlighting */
+.search-highlight {
+	background: color-mix(in srgb, var(--warning) 30%, transparent);
+	border-radius: 2px;
+	padding: 0 1px;
+}
