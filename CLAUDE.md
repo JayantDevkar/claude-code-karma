@@ -9,8 +9,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Quick Start
 
 ```bash
-# Initialize submodules
-git submodule update --init --recursive
+# Clone (no submodule init needed — this is a monorepo)
+git clone https://github.com/JayantDevkar/claude-karma.git
+cd claude-karma
 
 # Start API (terminal 1)
 cd api
@@ -26,7 +27,7 @@ Open http://localhost:5173 to view the dashboard.
 
 ## Repository Structure
 
-This is a monorepo with three git submodules:
+This is a monorepo with all components in a single repository:
 
 ```
 claude-karma/
@@ -39,7 +40,7 @@ claude-karma/
     └── plan_approval.py           # Handles ExitPlanMode permission requests
 ```
 
-Each submodule has its own `CLAUDE.md` with module-specific guidance.
+Each directory has its own `CLAUDE.md` with module-specific guidance.
 
 ## Commands
 
@@ -86,13 +87,6 @@ npm run build         # Production build
 ```bash
 cd captain-hook
 pytest tests/test_models.py -v
-```
-
-### Submodules
-
-```bash
-git submodule update --init --recursive  # Initialize
-git submodule update --remote            # Update to latest
 ```
 
 ## Architecture
@@ -250,7 +244,7 @@ Workflow: `open` → `snapshot -i` → interact via refs → re-snapshot after c
 1. **API changes**: Modify `api/models/` or `api/routers/`, run tests with `pytest`
 2. **Frontend changes**: Modify `frontend/src/`, type-check with `npm run check`
 3. **Hook changes**: Modify `captain-hook/`, test with `pytest tests/test_models.py`
-4. **Commit submodule changes**: Commit in submodule first, then update parent repo
+4. **Commit changes**: All changes committed directly in this monorepo
 
 ## Known Claude Code Bugs
 
