@@ -1,0 +1,347 @@
+"""
+SQLite schema definitions and migration support.
+
+All tables use CREATE TABLE IF NOT EXISTS for idempotent schema creation.
+A schema_version table tracks applied migrations for future upgrades.
+"""
+
+import logging
+import sqlite3
+
+logger = logging.getLogger(__name__)
+
+SCHEMA_VERSION = 8
+
+SCHEMA_SQL = """
+-- Schema versioning
+CREATE TABLE IF NOT EXISTS schema_version (
+    version INTEGER PRIMARY KEY,
+    applied_at TEXT DEFAULT (datetime('now'))
+);
+
+-- Core session metadata (replaces sessions-index.json + in-memory aggregation)
+CREATE TABLE IF NOT EXISTS sessions (
+    uuid TEXT PRIMARY KEY,
+    slug TEXT,
+    project_encoded_name TEXT NOT NULL,
+    project_path TEXT,
+    start_time TEXT,
+    end_time TEXT,
+    message_count INTEGER DEFAULT 0,
+    duration_seconds REAL,
+    input_tokens INTEGER DEFAULT 0,
+    output_tokens INTEGER DEFAULT 0,
+    cache_creation_tokens INTEGER DEFAULT 0,
+    cache_read_tokens INTEGER DEFAULT 0,
+    total_cost REAL DEFAULT 0,
+    initial_prompt TEXT,
+    git_branch TEXT,
+    models_used TEXT,
+    session_titles TEXT,
+    is_continuation_marker INTEGER DEFAULT 0,
+    was_compacted INTEGER DEFAULT 0,
+    compaction_count INTEGER DEFAULT 0,
+    file_snapshot_count INTEGER DEFAULT 0,
+    subagent_count INTEGER DEFAULT 0,
+    jsonl_mtime REAL NOT NULL,
+    jsonl_size INTEGER DEFAULT 0,
+    session_source TEXT,
+    source_encoded_name TEXT,
+    indexed_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_encoded_name);
+CREATE INDEX IF NOT EXISTS idx_sessions_start ON sessions(start_time DESC);
+CREATE INDEX IF NOT EXISTS idx_sessions_slug ON sessions(slug);
+CREATE INDEX IF NOT EXISTS idx_sessions_branch ON sessions(project_encoded_name, git_branch);
+CREATE INDEX IF NOT EXISTS idx_sessions_mtime ON sessions(jsonl_mtime);
+
+-- Full-text search (FTS5)
+-- This is an external content FTS5 table (content=sessions) that mirrors the sessions table.
+-- Triggers below keep it in sync with INSERT, UPDATE, DELETE operations on sessions.
+-- If the FTS index becomes out of sync with the sessions table, rebuild with:
+--   INSERT INTO sessions_fts(sessions_fts) VALUES('rebuild');
+CREATE VIRTUAL TABLE IF NOT EXISTS sessions_fts USING fts5(
+    uuid,
+    slug,
+    initial_prompt,
+    session_titles,
+    project_path,
+    content=sessions,
+    content_rowid=rowid
+);
+
+-- Triggers to keep FTS in sync with sessions table
+CREATE TRIGGER IF NOT EXISTS sessions_fts_insert AFTER INSERT ON sessions BEGIN
+    INSERT INTO sessions_fts(rowid, uuid, slug, initial_prompt, session_titles, project_path)
+    VALUES (new.rowid, new.uuid, new.slug, new.initial_prompt, new.session_titles, new.project_path);
+END;
+
+CREATE TRIGGER IF NOT EXISTS sessions_fts_delete AFTER DELETE ON sessions BEGIN
+    INSERT INTO sessions_fts(sessions_fts, rowid, uuid, slug, initial_prompt, session_titles, project_path)
+    VALUES ('delete', old.rowid, old.uuid, old.slug, old.initial_prompt, old.session_titles, old.project_path);
+END;
+
+CREATE TRIGGER IF NOT EXISTS sessions_fts_update AFTER UPDATE ON sessions BEGIN
+    INSERT INTO sessions_fts(sessions_fts, rowid, uuid, slug, initial_prompt, session_titles, project_path)
+    VALUES ('delete', old.rowid, old.uuid, old.slug, old.initial_prompt, old.session_titles, old.project_path);
+    INSERT INTO sessions_fts(rowid, uuid, slug, initial_prompt, session_titles, project_path)
+    VALUES (new.rowid, new.uuid, new.slug, new.initial_prompt, new.session_titles, new.project_path);
+END;
+
+-- Tool usage per session (denormalized for fast aggregation)
+CREATE TABLE IF NOT EXISTS session_tools (
+    session_uuid TEXT NOT NULL,
+    tool_name TEXT NOT NULL,
+    count INTEGER DEFAULT 1,
+    PRIMARY KEY (session_uuid, tool_name),
+    FOREIGN KEY (session_uuid) REFERENCES sessions(uuid) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_tools_name ON session_tools(tool_name);
+
+-- Skill usage per session
+CREATE TABLE IF NOT EXISTS session_skills (
+    session_uuid TEXT NOT NULL,
+    skill_name TEXT NOT NULL,
+    count INTEGER DEFAULT 1,
+    PRIMARY KEY (session_uuid, skill_name),
+    FOREIGN KEY (session_uuid) REFERENCES sessions(uuid) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_skills_name ON session_skills(skill_name);
+
+-- Command usage per session (user-authored slash commands without ':' prefix)
+CREATE TABLE IF NOT EXISTS session_commands (
+    session_uuid TEXT NOT NULL,
+    command_name TEXT NOT NULL,
+    count INTEGER DEFAULT 1,
+    PRIMARY KEY (session_uuid, command_name),
+    FOREIGN KEY (session_uuid) REFERENCES sessions(uuid) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_commands_name ON session_commands(command_name);
+
+-- Subagent invocations (replaces AgentUsageIndex)
+CREATE TABLE IF NOT EXISTS subagent_invocations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_uuid TEXT NOT NULL,
+    agent_id TEXT NOT NULL,
+    subagent_type TEXT,
+    input_tokens INTEGER DEFAULT 0,
+    output_tokens INTEGER DEFAULT 0,
+    cost_usd REAL DEFAULT 0,
+    duration_seconds REAL DEFAULT 0,
+    started_at TEXT,
+    FOREIGN KEY (session_uuid) REFERENCES sessions(uuid) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_subagent_session ON subagent_invocations(session_uuid);
+CREATE INDEX IF NOT EXISTS idx_subagent_type ON subagent_invocations(subagent_type);
+CREATE INDEX IF NOT EXISTS idx_subagent_type_time ON subagent_invocations(subagent_type, started_at DESC);
+
+-- Tool usage per subagent invocation
+CREATE TABLE IF NOT EXISTS subagent_tools (
+    invocation_id INTEGER NOT NULL,
+    tool_name TEXT NOT NULL,
+    count INTEGER DEFAULT 1,
+    PRIMARY KEY (invocation_id, tool_name),
+    FOREIGN KEY (invocation_id) REFERENCES subagent_invocations(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_subagent_tools_invocation ON subagent_tools(invocation_id);
+
+-- Skill usage per subagent invocation
+CREATE TABLE IF NOT EXISTS subagent_skills (
+    invocation_id INTEGER NOT NULL,
+    skill_name TEXT NOT NULL,
+    count INTEGER DEFAULT 1,
+    PRIMARY KEY (invocation_id, skill_name),
+    FOREIGN KEY (invocation_id) REFERENCES subagent_invocations(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_subagent_skills_invocation ON subagent_skills(invocation_id);
+CREATE INDEX IF NOT EXISTS idx_subagent_skills_name ON subagent_skills(skill_name);
+
+-- Command usage per subagent invocation
+CREATE TABLE IF NOT EXISTS subagent_commands (
+    invocation_id INTEGER NOT NULL,
+    command_name TEXT NOT NULL,
+    count INTEGER DEFAULT 1,
+    PRIMARY KEY (invocation_id, command_name),
+    FOREIGN KEY (invocation_id) REFERENCES subagent_invocations(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_subagent_commands_invocation ON subagent_commands(invocation_id);
+CREATE INDEX IF NOT EXISTS idx_subagent_commands_name ON subagent_commands(command_name);
+
+-- Message UUID to session mapping (for fast continuation lookup)
+CREATE TABLE IF NOT EXISTS message_uuids (
+    message_uuid TEXT PRIMARY KEY,
+    session_uuid TEXT NOT NULL,
+    FOREIGN KEY (session_uuid) REFERENCES sessions(uuid) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_message_session ON message_uuids(session_uuid);
+
+-- Session leaf_uuid references (for chain detection via leaf_uuid)
+CREATE TABLE IF NOT EXISTS session_leaf_refs (
+    session_uuid TEXT NOT NULL,
+    leaf_uuid TEXT NOT NULL,
+    PRIMARY KEY (session_uuid, leaf_uuid),
+    FOREIGN KEY (session_uuid) REFERENCES sessions(uuid) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_leaf_refs_leaf ON session_leaf_refs(leaf_uuid);
+
+-- Project summary (derived, for fast project listing)
+CREATE TABLE IF NOT EXISTS projects (
+    encoded_name TEXT PRIMARY KEY,
+    project_path TEXT,
+    slug TEXT,
+    display_name TEXT,
+    session_count INTEGER DEFAULT 0,
+    last_activity TEXT,
+    updated_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_slug ON projects(slug);
+"""
+
+
+def ensure_schema(conn: sqlite3.Connection) -> None:
+    """
+    Create tables and indexes if they don't exist.
+
+    Idempotent — safe to call on every startup.
+    """
+    # Check current version
+    try:
+        row = conn.execute("SELECT MAX(version) FROM schema_version").fetchone()
+        current_version = row[0] if row and row[0] else 0
+    except sqlite3.OperationalError:
+        # Table doesn't exist yet
+        current_version = 0
+
+    if current_version >= SCHEMA_VERSION:
+        logger.debug("Schema is up to date (version %d)", current_version)
+        return
+
+    logger.info(
+        "Applying schema version %d (current: %d)",
+        SCHEMA_VERSION,
+        current_version,
+    )
+
+    # Enable foreign keys
+    conn.execute("PRAGMA foreign_keys=ON")
+
+    if current_version == 0:
+        # Fresh install: apply full schema
+        conn.executescript(SCHEMA_SQL)
+    else:
+        # Incremental migrations
+        if current_version < 2:
+            logger.info("Migrating v1 → v2: adding subagent_tools table")
+            conn.executescript("""
+                CREATE TABLE IF NOT EXISTS subagent_tools (
+                    invocation_id INTEGER NOT NULL,
+                    tool_name TEXT NOT NULL,
+                    count INTEGER DEFAULT 1,
+                    PRIMARY KEY (invocation_id, tool_name),
+                    FOREIGN KEY (invocation_id) REFERENCES subagent_invocations(id) ON DELETE CASCADE
+                );
+                CREATE INDEX IF NOT EXISTS idx_subagent_tools_invocation ON subagent_tools(invocation_id);
+            """)
+
+        if current_version < 3:
+            logger.info("Migrating v2 → v3: adding message_uuids table")
+            conn.executescript("""
+                CREATE TABLE IF NOT EXISTS message_uuids (
+                    message_uuid TEXT PRIMARY KEY,
+                    session_uuid TEXT NOT NULL,
+                    FOREIGN KEY (session_uuid) REFERENCES sessions(uuid) ON DELETE CASCADE
+                );
+                CREATE INDEX IF NOT EXISTS idx_message_session ON message_uuids(session_uuid);
+            """)
+
+        if current_version < 4:
+            logger.info("Migrating v3 → v4: adding session_leaf_refs table")
+            conn.executescript("""
+                CREATE TABLE IF NOT EXISTS session_leaf_refs (
+                    session_uuid TEXT NOT NULL,
+                    leaf_uuid TEXT NOT NULL,
+                    PRIMARY KEY (session_uuid, leaf_uuid),
+                    FOREIGN KEY (session_uuid) REFERENCES sessions(uuid) ON DELETE CASCADE
+                );
+                CREATE INDEX IF NOT EXISTS idx_leaf_refs_leaf ON session_leaf_refs(leaf_uuid);
+            """)
+
+        if current_version < 5:
+            logger.info("Migrating v4 → v5: adding message_uuid index for chain BFS joins")
+            conn.executescript("""
+                CREATE INDEX IF NOT EXISTS idx_message_uuid ON message_uuids(message_uuid);
+            """)
+
+        if current_version < 6:
+            logger.info("Migrating v5 → v6: adding slug/display_name to projects")
+            existing_cols = {r[1] for r in conn.execute("PRAGMA table_info(projects)").fetchall()}
+            if "slug" not in existing_cols:
+                conn.execute("ALTER TABLE projects ADD COLUMN slug TEXT")
+            if "display_name" not in existing_cols:
+                conn.execute("ALTER TABLE projects ADD COLUMN display_name TEXT")
+            conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_slug ON projects(slug)")
+
+        if current_version < 7:
+            logger.info("Migrating v6 → v7: worktree consolidation + session_source")
+            existing_cols = {r[1] for r in conn.execute("PRAGMA table_info(sessions)").fetchall()}
+            if "session_source" not in existing_cols:
+                conn.execute("ALTER TABLE sessions ADD COLUMN session_source TEXT")
+            if "source_encoded_name" not in existing_cols:
+                conn.execute("ALTER TABLE sessions ADD COLUMN source_encoded_name TEXT")
+
+            # Delete worktree sessions and projects (forces re-index under real project)
+            conn.execute(
+                "DELETE FROM sessions WHERE project_encoded_name LIKE '%claude-worktrees%'"
+            )
+            conn.execute("DELETE FROM projects WHERE encoded_name LIKE '%claude-worktrees%'")
+
+        if current_version < 8:
+            logger.info("Migrating v7 → v8: adding subagent_skills and subagent_commands tables")
+            conn.executescript("""
+                CREATE TABLE IF NOT EXISTS subagent_skills (
+                    invocation_id INTEGER NOT NULL,
+                    skill_name TEXT NOT NULL,
+                    count INTEGER DEFAULT 1,
+                    PRIMARY KEY (invocation_id, skill_name),
+                    FOREIGN KEY (invocation_id) REFERENCES subagent_invocations(id) ON DELETE CASCADE
+                );
+                CREATE INDEX IF NOT EXISTS idx_subagent_skills_invocation ON subagent_skills(invocation_id);
+                CREATE INDEX IF NOT EXISTS idx_subagent_skills_name ON subagent_skills(skill_name);
+
+                CREATE TABLE IF NOT EXISTS subagent_commands (
+                    invocation_id INTEGER NOT NULL,
+                    command_name TEXT NOT NULL,
+                    count INTEGER DEFAULT 1,
+                    PRIMARY KEY (invocation_id, command_name),
+                    FOREIGN KEY (invocation_id) REFERENCES subagent_invocations(id) ON DELETE CASCADE
+                );
+                CREATE INDEX IF NOT EXISTS idx_subagent_commands_invocation ON subagent_commands(invocation_id);
+                CREATE INDEX IF NOT EXISTS idx_subagent_commands_name ON subagent_commands(command_name);
+            """)
+            # Force re-index of subagent data so skills/commands get populated
+            conn.execute("DELETE FROM subagent_tools")
+            conn.execute("DELETE FROM subagent_invocations")
+            # Nudge mtime so the indexer picks up sessions with subagents
+            conn.execute(
+                "UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1 WHERE subagent_count > 0"
+            )
+
+    # Record version
+    conn.execute(
+        "INSERT OR REPLACE INTO schema_version (version) VALUES (?)",
+        (SCHEMA_VERSION,),
+    )
+    conn.commit()
+
+    logger.info("Schema version %d applied successfully", SCHEMA_VERSION)

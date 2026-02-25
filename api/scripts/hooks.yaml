@@ -1,0 +1,62 @@
+# Live Session Tracking Hooks for Claude Karma
+#
+# This file configures Claude Code hooks for live session state tracking.
+# Sessions are tracked in ~/.claude_karma/live-sessions/{session_id}.json
+#
+# Setup:
+#   1. Copy live_session_tracker.py to a permanent location:
+#      cp api/scripts/live_session_tracker.py ~/.local/bin/claude-karma-tracker
+#      chmod +x ~/.local/bin/claude-karma-tracker
+#
+#   2. Copy this hooks.yaml to your project:
+#      cp api/scripts/hooks.yaml .claude/hooks.yaml
+#
+# States:
+#   LIVE - Session actively running (tool execution, prompt processing)
+#   WAITING - Waiting for user input (idle prompt, elicitation dialog)
+#   STOPPED - Agent finished but session still open
+#   ENDED - Session terminated
+#
+# Prerequisites:
+#   - Python 3.10+ with standard library
+
+hooks:
+  SessionStart:
+    - command: |
+        cat | python3 ~/.local/bin/claude-karma-tracker
+      timeout: 2000
+
+  UserPromptSubmit:
+    - command: |
+        cat | python3 ~/.local/bin/claude-karma-tracker
+      timeout: 2000
+
+  PostToolUse:
+    - command: |
+        cat | python3 ~/.local/bin/claude-karma-tracker
+      timeout: 2000
+
+  Notification:
+    - command: |
+        cat | python3 ~/.local/bin/claude-karma-tracker
+      timeout: 2000
+
+  Stop:
+    - command: |
+        cat | python3 ~/.local/bin/claude-karma-tracker
+      timeout: 2000
+
+  SubagentStart:
+    - command: |
+        cat | python3 ~/.local/bin/claude-karma-tracker
+      timeout: 2000
+
+  SubagentStop:
+    - command: |
+        cat | python3 ~/.local/bin/claude-karma-tracker
+      timeout: 2000
+
+  SessionEnd:
+    - command: |
+        cat | python3 ~/.local/bin/claude-karma-tracker
+      timeout: 2000
