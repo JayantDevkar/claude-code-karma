@@ -1,15 +1,20 @@
-name: Tests
+name: API Tests
 
 on:
   push:
-    branches: [main, master]
+    branches: [main]
+    paths: ['api/**']
   pull_request:
-    branches: [main, master]
+    branches: [main]
+    paths: ['api/**']
 
 jobs:
   test:
     name: Python Tests
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: api
     strategy:
       fail-fast: false
       matrix:
@@ -23,6 +28,7 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           cache: "pip"
+          cache-dependency-path: api/requirements.txt
 
       - name: Install dependencies
         run: |
@@ -37,14 +43,17 @@ jobs:
         uses: codecov/codecov-action@v4
         if: matrix.python-version == '3.11'
         with:
-          file: ./coverage.xml
+          file: ./api/coverage.xml
           fail_ci_if_error: false
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
   api-test:
-    name: API Tests
+    name: API Integration Tests
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: api
     strategy:
       fail-fast: false
       matrix:
@@ -58,6 +67,7 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           cache: "pip"
+          cache-dependency-path: api/requirements.txt
 
       - name: Install dependencies
         run: |
@@ -73,6 +83,9 @@ jobs:
   lint:
     name: Python Lint
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: api
     steps:
       - uses: actions/checkout@v4
 
@@ -81,6 +94,7 @@ jobs:
         with:
           python-version: "3.11"
           cache: "pip"
+          cache-dependency-path: api/requirements.txt
 
       - name: Install dependencies
         run: |
