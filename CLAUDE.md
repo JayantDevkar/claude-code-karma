@@ -175,6 +175,12 @@ Project (entry point)
 | `/agents` | Global agents view |
 | `/analytics` | Global analytics |
 | `/history` | File history |
+| `/hooks` | Hooks browser |
+| `/plugins` | Plugins browser |
+| `/tools` | Tools browser |
+| `/sessions` | Global sessions browser |
+| `/archived` | Archived sessions |
+| `/about` | About page |
 | `/settings` | User settings |
 | `/skills` | Global skills view |
 

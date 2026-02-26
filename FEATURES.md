@@ -583,8 +583,12 @@ Configure your Claude Code environment.
 | **Agents** | Agent usage analytics, categories, detail views |
 | **Skills** | Usage analytics, file browser, skill details |
 | **Plans** | Plan browser, search, project/branch filters |
+| **Hooks** | Hook scripts browser, event tracking, activity logs |
+| **Plugins** | MCP plugins browser, status display |
+| **Tools** | Tool usage analytics and details |
 | **Settings** | Retention, permissions, plugins, advanced config |
 | **Archived** | View archived sessions, restore options |
+| **About** | Project information and documentation |
 
 ---
 

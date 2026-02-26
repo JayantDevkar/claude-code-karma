@@ -24,7 +24,7 @@ Verify you have the required tools:
 
 ```bash
 # Required
-python3 --version    # 3.10+
+python3 --version    # 3.9+
 node --version       # 18+
 npm --version        # 7+
 git --version        # any version
@@ -38,7 +38,7 @@ claude --version     # Claude CLI (any version)
 
 | Tool | Minimum | Required? | Why |
 |------|---------|-----------|-----|
-| Python | 3.10+ | Yes | API backend runs on Python |
+| Python | 3.9+ | Yes | API backend runs on Python |
 | Node.js | 18+ | Yes | Frontend build system |
 | npm | 7+ | Yes | Frontend package manager |
 | Git | Any | Yes | Clone repository |
@@ -79,11 +79,13 @@ All three files must exist.
 **Install dependencies:**
 ```bash
 # Option A: System Python (fastest)
+pip install -e ".[dev]"
 pip install -r requirements.txt
 
 # Option B: Virtual environment (recommended for isolation)
 python3 -m venv venv
 source venv/bin/activate  # or: venv\Scripts\activate on Windows
+pip install -e ".[dev]"
 pip install -r requirements.txt
 ```
 
@@ -105,10 +107,23 @@ curl http://localhost:8000/health
 
 Expected response:
 ```json
-{"status": "healthy", "sqlite": {"ready": true, "session_count": <number>}}
+{
+  "status": "healthy",
+  "sqlite": {
+    "ready": true,
+    "db_size_kb": <number>,
+    "session_count": <number>,
+    "invocation_count": <number>,
+    "fragmentation_pct": <number>,
+    "last_sync": <timestamp|null>,
+    "reindex_interval": 300
+  }
+}
 ```
 
 The `session_count` should match the number of Claude Code sessions you have. If it's 0, ensure you have sessions in `~/.claude/projects/`.
+
+> **Note:** `GET /` returns a simple liveness probe (`{"status": "ok", "service": "claude-karma-api"}`). Use `GET /health` for detailed SQLite stats.
 
 **To disable SQLite** (slower but functional):
 ```bash
@@ -174,8 +189,13 @@ Open http://localhost:5173 in your browser. You should see the Claude Karma home
 | Skill usage analytics | `/skills` | Works |
 | Analytics dashboard | `/analytics` | Works |
 | Plans browser | `/plans` | Works |
+| Hooks browser | `/hooks` | Works |
+| Plugins browser | `/plugins` | Works |
+| Tools browser | `/tools` | Works |
+| Sessions browser | `/sessions` | Works |
+| Archived sessions | `/archived` | Works |
+| About page | `/about` | Works |
 | Settings management | `/settings` | Works |
-| Archived sessions | Via filters | Works |
 | Command palette | Ctrl+K | Works |
 
 **Features that require hooks (next tiers):**
@@ -692,10 +712,15 @@ CLAUDE_KARMA_LOG_LEVEL=DEBUG uvicorn main:app --reload --port 8000
 | `CLAUDE_KARMA_CACHE_PROJECTS_LIST` | `30` | Projects list |
 | `CLAUDE_KARMA_CACHE_PROJECT_DETAIL` | `60` | Project details |
 | `CLAUDE_KARMA_CACHE_SESSION_DETAIL` | `60` | Session details |
-| `CLAUDE_KARMA_CACHE_LIVE_SESSIONS` | `5` | Live sessions (short for real-time) |
-| `CLAUDE_KARMA_CACHE_ANALYTICS` | `120` | Analytics data |
-| `CLAUDE_KARMA_CACHE_AGENT_USAGE` | `300` | Agent usage |
 | `CLAUDE_KARMA_CACHE_FILE_ACTIVITY` | `300` | File activity |
+| `CLAUDE_KARMA_CACHE_ANALYTICS` | `120` | Analytics data |
+| `CLAUDE_KARMA_CACHE_AGENTS_LIST` | `30` | Agents list |
+| `CLAUDE_KARMA_CACHE_AGENTS_DETAIL` | `60` | Agent details |
+| `CLAUDE_KARMA_CACHE_SKILLS_LIST` | `30` | Skills list |
+| `CLAUDE_KARMA_CACHE_SKILLS_DETAIL` | `60` | Skill details |
+| `CLAUDE_KARMA_CACHE_LIVE_SESSIONS` | `5` | Live sessions (short for real-time) |
+| `CLAUDE_KARMA_CACHE_AGENT_USAGE` | `300` | Agent usage analytics |
+| `CLAUDE_KARMA_CACHE_AGENT_USAGE_REVALIDATE` | `600` | Stale-while-revalidate for agent usage |
 
 **File Size Limits:**
 
@@ -704,18 +729,23 @@ CLAUDE_KARMA_LOG_LEVEL=DEBUG uvicorn main:app --reload --port 8000
 | `CLAUDE_KARMA_MAX_AGENT_SIZE` | `100000` | Max agent markdown size (bytes) |
 | `CLAUDE_KARMA_MAX_SKILL_SIZE` | `1000000` | Max skill file size (bytes) |
 
-**In-Memory Cache:**
+**SQLite & Background Tasks:**
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `CLAUDE_KARMA_CACHE_MAX_SIZE` | `1000` | Max entries in bounded caches |
-| `CLAUDE_KARMA_CACHE_TTL` | `3600` | TTL for cached entries (seconds) |
+| `CLAUDE_KARMA_REINDEX_INTERVAL_SECONDS` | `300` | Seconds between periodic SQLite re-index runs (0 to disable) |
+| `CLAUDE_KARMA_RECONCILER_ENABLED` | `true` | Enable live session reconciler background task |
+| `CLAUDE_KARMA_RECONCILER_CHECK_INTERVAL` | `60` | Seconds between reconciler checks |
+| `CLAUDE_KARMA_RECONCILER_IDLE_THRESHOLD` | `120` | Seconds of idle before considering reconciliation |
 
 **CORS & Production:**
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `CLAUDE_KARMA_CORS_ORIGINS` | `["http://localhost:5173"]` | CORS allowed origins (JSON array) |
+| `CLAUDE_KARMA_CORS_ORIGINS` | `["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:3001", "http://127.0.0.1:3001"]` | CORS allowed origins (JSON array) |
+| `CLAUDE_KARMA_CORS_ALLOW_CREDENTIALS` | `true` | Allow credentials in CORS |
+| `CLAUDE_KARMA_CORS_ALLOW_METHODS` | `["GET","POST","PUT","DELETE","OPTIONS"]` | Allowed HTTP methods |
+| `CLAUDE_KARMA_CORS_ALLOW_HEADERS` | `["Content-Type","Authorization"]` | Allowed request headers |
 
 ### Frontend (SvelteKit)
 
@@ -826,7 +856,7 @@ Run through this after setup to confirm everything works.
 **Symptom:** `uvicorn main:app` fails or hangs
 
 ```bash
-# Check Python version (must be 3.10+)
+# Check Python version (must be 3.9+)
 python3 --version
 
 # Verify requirements installed
@@ -933,6 +963,12 @@ touch ~/.claude_karma/test.txt && rm ~/.claude_karma/test.txt
 
 # 3. Force reindex (API must be running)
 curl -X POST http://localhost:8000/admin/reindex
+
+# 3b. Rebuild full-text search index
+curl -X POST http://localhost:8000/admin/rebuild-fts
+
+# 3c. Reclaim disk space
+curl -X POST http://localhost:8000/admin/vacuum
 
 # 4. Nuclear option: delete and rebuild
 rm ~/.claude_karma/metadata.db*
