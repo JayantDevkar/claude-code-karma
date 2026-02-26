@@ -1156,7 +1156,7 @@ class McpServer(BaseModel):
 
     name: str = Field(..., description="Server identifier (e.g., 'coderoots')")
     display_name: str = Field(..., description="Human-readable name (e.g., 'Coderoots')")
-    source: str = Field(..., description="Server source: 'plugin' or 'standalone'")
+    source: str = Field(..., description="Server source: 'plugin', 'standalone', or 'builtin'")
     plugin_name: Optional[str] = Field(None, description="Plugin name if source is 'plugin'")
     tool_count: int = Field(0, description="Number of distinct tools")
     total_calls: int = Field(0, description="Total invocations across all tools")

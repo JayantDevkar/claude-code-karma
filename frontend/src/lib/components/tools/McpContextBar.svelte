@@ -3,9 +3,10 @@
 		mainCalls: number;
 		subagentCalls: number;
 		compact?: boolean;
+		accentColor?: string;
 	}
 
-	let { mainCalls, subagentCalls, compact = false }: Props = $props();
+	let { mainCalls, subagentCalls, compact = false, accentColor = 'var(--accent)' }: Props = $props();
 
 	let total = $derived(mainCalls + subagentCalls);
 	let mainPct = $derived(total > 0 ? Math.round((mainCalls / total) * 100) : 0);
@@ -18,10 +19,10 @@
 			? 'text-[10px]'
 			: 'text-xs'} text-[var(--text-muted)]"
 	>
-		<span class="inline-block w-2 h-2 rounded-full" style="background-color: var(--accent);"
+		<span class="inline-block w-2 h-2 rounded-full" style="background-color: {accentColor};"
 		></span>
 		<span>main {mainPct}%</span>
-		<span class="inline-block w-2 h-2 rounded-full" style="background-color: var(--nav-teal);"
+		<span class="inline-block w-2 h-2 rounded-full" style="background-color: var(--accent);"
 		></span>
 		<span>sub {subPct}%</span>
 	</div>

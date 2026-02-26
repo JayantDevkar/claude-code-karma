@@ -484,7 +484,7 @@
 						firstUsed={detail.first_used}
 						lastUsed={detail.last_used}
 						sessions={detail.sessions}
-						subagentColor={accentColor}
+						accentColor={accentColor}
 					/>
 
 					<!-- Related Plugin -->
@@ -560,6 +560,7 @@
 											<McpContextBar
 												mainCalls={tool.main_calls}
 												subagentCalls={tool.subagent_calls}
+												accentColor={accentColor}
 												compact
 											/>
 											<span

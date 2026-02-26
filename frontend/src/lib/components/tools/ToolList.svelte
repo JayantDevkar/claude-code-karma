@@ -3,7 +3,8 @@
 	import { formatDistanceToNow } from 'date-fns';
 	import { API_BASE } from '$lib/config';
 	import UsageAnalytics from '$lib/components/charts/UsageAnalytics.svelte';
-	import { getServerColorVars } from '$lib/utils/mcp';
+	import McpServerIcon from '$lib/components/tools/McpServerIcon.svelte';
+	import { getServerColorVars, parseBuiltinTool } from '$lib/utils/mcp';
 	import type { McpToolsOverview, McpServer } from '$lib/api-types';
 
 	interface Props {
@@ -51,10 +52,10 @@
 		<div
 			class="text-center py-20 bg-[var(--bg-subtle)] rounded-2xl border border-dashed border-[var(--border)]"
 		>
-			<Cable class="mx-auto text-[var(--text-muted)] mb-3" size={48} />
-			<p class="text-[var(--text-secondary)] font-medium">No MCP servers found</p>
+			<Wrench class="mx-auto text-[var(--text-muted)] mb-3" size={48} />
+			<p class="text-[var(--text-secondary)] font-medium">No tools found</p>
 			<p class="text-sm text-[var(--text-muted)] mt-1">
-				MCP tool usage will appear once tools are used in sessions
+				Tool usage will appear once tools are used in sessions
 			</p>
 		</div>
 	{:else}
@@ -74,7 +75,7 @@
 							style:background-color="var(--server-subtle)"
 							style:color={colorVars.color}
 						>
-							<Cable size={20} strokeWidth={2} />
+							<McpServerIcon serverName={server.name} size={20} />
 						</div>
 						{#if server.plugin_name}
 							<div
@@ -143,6 +144,10 @@
 			itemLabel="Tools"
 			colorIndex={4}
 			itemLinkFn={(name) => {
+				const builtin = parseBuiltinTool(name);
+				if (builtin) {
+					return `/tools/${encodeURIComponent(builtin.server)}/${encodeURIComponent(builtin.shortName)}`;
+				}
 				const stripped = name.startsWith('mcp__') ? name.slice(5) : name;
 				const lastSep = stripped.lastIndexOf('__');
 				if (lastSep > 0) {
@@ -153,6 +158,7 @@
 				return `/tools/${encodeURIComponent(stripped)}`;
 			}}
 			itemDisplayFn={(name) => {
+				if (parseBuiltinTool(name)) return name;
 				const stripped = name.startsWith('mcp__') ? name.slice(5) : name;
 				return stripped.replaceAll('__', ' / ').replaceAll('_', ' ');
 			}}

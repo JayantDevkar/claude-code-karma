@@ -1712,6 +1712,247 @@ def _mcp_time_filter(period: str) -> tuple[str, dict]:
     return "s.start_time >= :cutoff", params
 
 
+# ---------------------------------------------------------------------------
+# Built-in tool categories (virtual "servers" for non-MCP tools)
+# ---------------------------------------------------------------------------
+
+BUILTIN_TOOL_CATEGORIES: dict[str, list[str]] = {
+    "builtin-file-ops": ["Read", "Write", "Edit", "Glob", "Grep", "NotebookEdit"],
+    "builtin-execution": ["Bash", "KillShell"],
+    "builtin-agents": [
+        "Task", "TaskCreate", "TaskUpdate", "TaskOutput", "TaskList",
+        "TaskGet", "TaskStop", "SendMessage", "TeamCreate", "TeamDelete",
+    ],
+    "builtin-planning": [
+        "TodoWrite", "EnterPlanMode", "ExitPlanMode", "Skill", "AskUserQuestion",
+        "EnterWorktree",
+    ],
+    "builtin-web": ["WebFetch", "WebSearch"],
+    "builtin-tools": ["ToolSearch", "ReadMcpResourceTool", "ListMcpResourcesTool"],
+}
+
+BUILTIN_CATEGORY_DISPLAY: dict[str, str] = {
+    "builtin-file-ops": "File Operations",
+    "builtin-execution": "Execution",
+    "builtin-agents": "Agent Coordination",
+    "builtin-planning": "Planning & Workflow",
+    "builtin-web": "Web Access",
+    "builtin-tools": "Tool Discovery",
+}
+
+# Reverse lookup: tool_name -> category
+_BUILTIN_TOOL_TO_CATEGORY: dict[str, str] = {
+    tool: cat
+    for cat, tools in BUILTIN_TOOL_CATEGORIES.items()
+    for tool in tools
+}
+
+
+def query_builtin_tools_overview(
+    conn: sqlite3.Connection,
+    project: Optional[str] = None,
+    period: str = "all",
+) -> dict:
+    """
+    Aggregate built-in tool usage across virtual server categories.
+
+    Returns dict with same shape as query_mcp_tools_overview:
+    {total_servers, total_tools, total_calls, total_sessions, servers: [...]}
+    """
+    from collections import defaultdict
+
+    all_builtin_names = list(_BUILTIN_TOOL_TO_CATEGORY.keys())
+    placeholders = ",".join(f":t{i}" for i in range(len(all_builtin_names)))
+    params: dict = {f"t{i}": name for i, name in enumerate(all_builtin_names)}
+
+    conditions = [f"st.tool_name IN ({placeholders})"]
+
+    if project:
+        conditions.append("s.project_encoded_name = :project")
+        params["project"] = project
+
+    time_clause, time_params = _mcp_time_filter(period)
+    if time_clause:
+        conditions.append(time_clause)
+        params.update(time_params)
+
+    where = "WHERE " + " AND ".join(conditions)
+
+    # 1. Main session tool usage
+    main_rows = conn.execute(
+        f"""SELECT
+            st.tool_name,
+            SUM(st.count) as total_count,
+            COUNT(DISTINCT st.session_uuid) as session_count
+        FROM session_tools st
+        JOIN sessions s ON st.session_uuid = s.uuid
+        {where}
+        GROUP BY st.tool_name""",
+        params,
+    ).fetchall()
+
+    # 2. Subagent tool usage
+    sub_conditions = [f"sat.tool_name IN ({placeholders})"]
+    sub_params: dict = {f"t{i}": name for i, name in enumerate(all_builtin_names)}
+    if project:
+        sub_conditions.append("s.project_encoded_name = :project")
+        sub_params["project"] = project
+    sub_time_clause, sub_time_params = _mcp_time_filter(period)
+    if sub_time_clause:
+        sub_conditions.append(sub_time_clause)
+        sub_params.update(sub_time_params)
+    sub_where = "WHERE " + " AND ".join(sub_conditions)
+
+    sub_rows = conn.execute(
+        f"""SELECT
+            sat.tool_name,
+            SUM(sat.count) as total_count,
+            COUNT(DISTINCT si.session_uuid) as session_count
+        FROM subagent_tools sat
+        JOIN subagent_invocations si ON sat.invocation_id = si.id
+        JOIN sessions s ON si.session_uuid = s.uuid
+        {sub_where}
+        GROUP BY sat.tool_name""",
+        sub_params,
+    ).fetchall()
+
+    # Combine into tool_data
+    tool_data: dict[str, dict] = defaultdict(
+        lambda: {"main_count": 0, "sub_count": 0, "main_sessions": 0, "sub_sessions": 0}
+    )
+    for row in main_rows:
+        tool_data[row["tool_name"]]["main_count"] = row["total_count"]
+        tool_data[row["tool_name"]]["main_sessions"] = row["session_count"]
+    for row in sub_rows:
+        tool_data[row["tool_name"]]["sub_count"] = row["total_count"]
+        tool_data[row["tool_name"]]["sub_sessions"] = row["session_count"]
+
+    # 3. Time bounds per category
+    time_rows = conn.execute(
+        f"""SELECT
+            st.tool_name,
+            MIN(s.start_time) as first_used,
+            MAX(s.start_time) as last_used
+        FROM session_tools st
+        JOIN sessions s ON st.session_uuid = s.uuid
+        {where}
+        GROUP BY st.tool_name""",
+        params,
+    ).fetchall()
+    tool_time_bounds = {row["tool_name"]: (row["first_used"], row["last_used"]) for row in time_rows}
+
+    # Group by category
+    servers: dict[str, dict] = defaultdict(
+        lambda: {
+            "tools": [],
+            "total_calls": 0,
+            "main_calls": 0,
+            "subagent_calls": 0,
+            "first_used": None,
+            "last_used": None,
+        }
+    )
+
+    for tool_name, data in tool_data.items():
+        category = _BUILTIN_TOOL_TO_CATEGORY.get(tool_name)
+        if not category:
+            continue
+
+        total = data["main_count"] + data["sub_count"]
+        servers[category]["tools"].append(
+            {
+                "name": tool_name,
+                "full_name": tool_name,
+                "calls": total,
+                "session_count": data["main_sessions"],
+                "main_calls": data["main_count"],
+                "subagent_calls": data["sub_count"],
+            }
+        )
+        servers[category]["total_calls"] += total
+        servers[category]["main_calls"] += data["main_count"]
+        servers[category]["subagent_calls"] += data["sub_count"]
+
+        # Update time bounds for category
+        bounds = tool_time_bounds.get(tool_name, (None, None))
+        if bounds[0]:
+            cur_first = servers[category]["first_used"]
+            if cur_first is None or bounds[0] < cur_first:
+                servers[category]["first_used"] = bounds[0]
+        if bounds[1]:
+            cur_last = servers[category]["last_used"]
+            if cur_last is None or bounds[1] > cur_last:
+                servers[category]["last_used"] = bounds[1]
+
+    # Session counts per category
+    for cat_name, cat_tools in BUILTIN_TOOL_CATEGORIES.items():
+        if cat_name not in servers:
+            continue
+        cat_placeholders = ",".join(f":ct{i}" for i in range(len(cat_tools)))
+        cat_params: dict = {f"ct{i}": t for i, t in enumerate(cat_tools)}
+        cat_conditions = [f"st.tool_name IN ({cat_placeholders})"]
+        if project:
+            cat_conditions.append("s.project_encoded_name = :project")
+            cat_params["project"] = project
+        if time_clause:
+            cat_conditions.append(time_clause)
+            cat_params.update(time_params)
+        cat_where = "WHERE " + " AND ".join(cat_conditions)
+
+        sc_row = conn.execute(
+            f"""SELECT COUNT(DISTINCT st.session_uuid) as cnt
+            FROM session_tools st
+            JOIN sessions s ON st.session_uuid = s.uuid
+            {cat_where}""",
+            cat_params,
+        ).fetchone()
+        servers[cat_name]["session_count"] = sc_row["cnt"] if sc_row else 0
+
+    # Build result
+    server_list = []
+    total_tools = 0
+    total_calls = 0
+
+    for cat_name, sdata in sorted(
+        servers.items(), key=lambda x: x[1]["total_calls"], reverse=True
+    ):
+        tools_sorted = sorted(sdata["tools"], key=lambda t: t["calls"], reverse=True)
+        total_tools += len(tools_sorted)
+        total_calls += sdata["total_calls"]
+
+        server_list.append(
+            {
+                "name": cat_name,
+                "tool_count": len(tools_sorted),
+                "total_calls": sdata["total_calls"],
+                "session_count": sdata.get("session_count", 0),
+                "main_calls": sdata["main_calls"],
+                "subagent_calls": sdata["subagent_calls"],
+                "first_used": sdata["first_used"],
+                "last_used": sdata["last_used"],
+                "tools": tools_sorted,
+            }
+        )
+
+    # Total distinct sessions across all builtin tools
+    total_session_row = conn.execute(
+        f"""SELECT COUNT(DISTINCT st.session_uuid) as cnt
+        FROM session_tools st
+        JOIN sessions s ON st.session_uuid = s.uuid
+        {where}""",
+        params,
+    ).fetchone()
+    total_sessions = total_session_row["cnt"] if total_session_row else 0
+
+    return {
+        "total_servers": len(server_list),
+        "total_tools": total_tools,
+        "total_calls": total_calls,
+        "total_sessions": total_sessions,
+        "servers": server_list,
+    }
+
+
 def query_mcp_tools_overview(
     conn: sqlite3.Connection,
     project: Optional[str] = None,
@@ -2336,6 +2577,118 @@ def query_mcp_tool_usage_trend(
     }
 
 
+def query_builtin_tool_usage_trend(
+    conn: sqlite3.Connection,
+    project: Optional[str] = None,
+    period: str = "month",
+) -> dict:
+    """
+    Aggregate built-in tool usage with daily trend data.
+
+    Returns dict with total, by_item, trend, first_used, last_used
+    matching UsageTrendResponse schema.
+    """
+    from collections import defaultdict
+    from datetime import timedelta
+
+    all_builtin_names = list(_BUILTIN_TOOL_TO_CATEGORY.keys())
+    placeholders = ",".join(f":t{i}" for i in range(len(all_builtin_names)))
+    params: dict = {f"t{i}": name for i, name in enumerate(all_builtin_names)}
+
+    now = datetime.now(timezone.utc)
+    cutoff = None
+    if period == "week":
+        cutoff = now - timedelta(days=7)
+    elif period == "month":
+        cutoff = now - timedelta(days=30)
+    elif period == "quarter":
+        cutoff = now - timedelta(days=90)
+
+    conditions = [f"st.tool_name IN ({placeholders})"]
+    if project:
+        conditions.append("s.project_encoded_name = :project")
+        params["project"] = project
+    if cutoff:
+        conditions.append("s.start_time >= :cutoff")
+        params["cutoff"] = cutoff.isoformat()
+
+    where = "WHERE " + " AND ".join(conditions)
+
+    # Main session tool counts
+    main_rows = conn.execute(
+        f"""SELECT st.tool_name, SUM(st.count) as total_count
+        FROM session_tools st
+        JOIN sessions s ON st.session_uuid = s.uuid
+        {where}
+        GROUP BY st.tool_name
+        ORDER BY total_count DESC""",
+        params,
+    ).fetchall()
+
+    # Subagent tool counts
+    sub_placeholders = ",".join(f":st{i}" for i in range(len(all_builtin_names)))
+    sub_params: dict = {f"st{i}": name for i, name in enumerate(all_builtin_names)}
+    sub_conditions = [f"sat.tool_name IN ({sub_placeholders})"]
+    if project:
+        sub_conditions.append("s.project_encoded_name = :project")
+        sub_params["project"] = project
+    if cutoff:
+        sub_conditions.append("s.start_time >= :cutoff")
+        sub_params["cutoff"] = cutoff.isoformat()
+    sub_where = "WHERE " + " AND ".join(sub_conditions)
+
+    sub_rows = conn.execute(
+        f"""SELECT sat.tool_name, SUM(sat.count) as total_count
+        FROM subagent_tools sat
+        JOIN subagent_invocations si ON sat.invocation_id = si.id
+        JOIN sessions s ON si.session_uuid = s.uuid
+        {sub_where}
+        GROUP BY sat.tool_name""",
+        sub_params,
+    ).fetchall()
+
+    # Combine main + sub counts per tool
+    tool_counts: dict[str, int] = defaultdict(int)
+    for row in main_rows:
+        tool_counts[row["tool_name"]] += row["total_count"]
+    for row in sub_rows:
+        tool_counts[row["tool_name"]] += row["total_count"]
+
+    by_item = dict(sorted(tool_counts.items(), key=lambda x: x[1], reverse=True))
+    total = sum(by_item.values())
+
+    # Daily trend
+    trend_rows = conn.execute(
+        f"""SELECT DATE(s.start_time) as date, SUM(st.count) as count
+        FROM session_tools st
+        JOIN sessions s ON st.session_uuid = s.uuid
+        {where}
+        AND s.start_time IS NOT NULL
+        GROUP BY DATE(s.start_time)
+        ORDER BY date""",
+        params,
+    ).fetchall()
+
+    trend = [{"date": row["date"], "count": row["count"]} for row in trend_rows]
+
+    # First/last used
+    time_row = conn.execute(
+        f"""SELECT MIN(s.start_time) as first_used, MAX(s.start_time) as last_used
+        FROM session_tools st
+        JOIN sessions s ON st.session_uuid = s.uuid
+        {where}""",
+        params,
+    ).fetchone()
+
+    return {
+        "total": total,
+        "by_item": by_item,
+        "trend": trend,
+        "first_used": time_row["first_used"] if time_row else None,
+        "last_used": time_row["last_used"] if time_row else None,
+    }
+
+
 def query_mcp_tool_detail(
     conn: sqlite3.Connection,
     server_name: str,
@@ -2584,6 +2937,537 @@ def query_sessions_by_mcp_tool(
         sessions.append(session)
 
     return {"sessions": sessions, "total": total}
+
+
+# ---------------------------------------------------------------------------
+# Built-in tool queries
+# ---------------------------------------------------------------------------
+
+
+def _builtin_tool_placeholders(
+    tool_names: list[str], prefix: str = "bt"
+) -> tuple[str, dict]:
+    """Build IN-clause placeholders and params for a list of tool names."""
+    placeholders = ",".join(f":{prefix}{i}" for i in range(len(tool_names)))
+    params = {f"{prefix}{i}": name for i, name in enumerate(tool_names)}
+    return placeholders, params
+
+
+def _builtin_session_rows_to_list(rows: list) -> list[dict]:
+    """Convert session rows with has_main/has_sub/agent_ids to session dicts."""
+    sessions = []
+    for row in rows:
+        session = dict(row)
+        has_main = session.pop("has_main")
+        has_sub = session.pop("has_sub")
+        if has_main and has_sub:
+            session["tool_source"] = "both"
+        elif has_sub:
+            session["tool_source"] = "subagent"
+        else:
+            session["tool_source"] = "main"
+        agent_ids_str = session.pop("agent_ids")
+        session["subagent_agent_ids"] = agent_ids_str.split(",") if agent_ids_str else []
+        session["models_used"] = _parse_json_list(session.get("models_used"))
+        session["session_titles"] = _parse_json_list(session.get("session_titles"))
+        session["git_branches"] = [session["git_branch"]] if session.get("git_branch") else []
+        sessions.append(session)
+    return sessions
+
+
+def query_builtin_server_detail(
+    conn: sqlite3.Connection,
+    category_name: str,
+    project: Optional[str] = None,
+    period: str = "all",
+) -> dict | None:
+    """Aggregate tool usage for a builtin category. Returns same shape as query_mcp_server_detail."""
+    from collections import defaultdict
+
+    tool_names = BUILTIN_TOOL_CATEGORIES.get(category_name)
+    if not tool_names:
+        return None
+
+    placeholders, params = _builtin_tool_placeholders(tool_names)
+    conditions = [f"st.tool_name IN ({placeholders})"]
+
+    if project:
+        conditions.append("s.project_encoded_name = :project")
+        params["project"] = project
+
+    time_clause, time_params = _mcp_time_filter(period)
+    if time_clause:
+        conditions.append(time_clause)
+        params.update(time_params)
+
+    where = "WHERE " + " AND ".join(conditions)
+
+    # Main session tools
+    main_rows = conn.execute(
+        f"""SELECT st.tool_name, SUM(st.count) as total_count,
+            COUNT(DISTINCT st.session_uuid) as session_count
+        FROM session_tools st
+        JOIN sessions s ON st.session_uuid = s.uuid
+        {where}
+        GROUP BY st.tool_name""",
+        params,
+    ).fetchall()
+
+    # Subagent tools
+    sub_placeholders, sub_params = _builtin_tool_placeholders(tool_names, "sbt")
+    sub_conditions = [f"sat.tool_name IN ({sub_placeholders})"]
+    if project:
+        sub_conditions.append("s.project_encoded_name = :project")
+        sub_params["project"] = project
+    sub_time_clause, sub_time_params = _mcp_time_filter(period)
+    if sub_time_clause:
+        sub_conditions.append(sub_time_clause)
+        sub_params.update(sub_time_params)
+    sub_where = "WHERE " + " AND ".join(sub_conditions)
+
+    sub_rows = conn.execute(
+        f"""SELECT sat.tool_name, SUM(sat.count) as total_count
+        FROM subagent_tools sat
+        JOIN subagent_invocations si ON sat.invocation_id = si.id
+        JOIN sessions s ON si.session_uuid = s.uuid
+        {sub_where}
+        GROUP BY sat.tool_name""",
+        sub_params,
+    ).fetchall()
+
+    if not main_rows and not sub_rows:
+        return None
+
+    # Combine
+    tool_data: dict[str, dict] = defaultdict(lambda: {"main": 0, "sub": 0, "sessions": 0})
+    for row in main_rows:
+        tool_data[row["tool_name"]]["main"] = row["total_count"]
+        tool_data[row["tool_name"]]["sessions"] = row["session_count"]
+    for row in sub_rows:
+        tool_data[row["tool_name"]]["sub"] = row["total_count"]
+
+    tools = []
+    total_calls = 0
+    main_calls = 0
+    subagent_calls = 0
+    for tool_name, data in tool_data.items():
+        mc = data["main"]
+        sc = data["sub"]
+        tools.append(
+            {
+                "name": tool_name,
+                "full_name": tool_name,
+                "calls": mc + sc,
+                "session_count": data["sessions"],
+                "main_calls": mc,
+                "subagent_calls": sc,
+            }
+        )
+        total_calls += mc + sc
+        main_calls += mc
+        subagent_calls += sc
+
+    tools.sort(key=lambda t: t["calls"], reverse=True)
+
+    # Session count and time bounds
+    meta_row = conn.execute(
+        f"""SELECT COUNT(DISTINCT st.session_uuid) as session_count,
+            MIN(s.start_time) as first_used, MAX(s.start_time) as last_used
+        FROM session_tools st
+        JOIN sessions s ON st.session_uuid = s.uuid
+        {where}""",
+        params,
+    ).fetchone()
+
+    return {
+        "name": category_name,
+        "tool_count": len(tools),
+        "total_calls": total_calls,
+        "session_count": meta_row["session_count"] if meta_row else 0,
+        "main_calls": main_calls,
+        "subagent_calls": subagent_calls,
+        "first_used": meta_row["first_used"] if meta_row else None,
+        "last_used": meta_row["last_used"] if meta_row else None,
+        "tools": tools,
+    }
+
+
+def query_builtin_server_trend(
+    conn: sqlite3.Connection,
+    category_name: str,
+    project: Optional[str] = None,
+    period: str = "all",
+) -> list[dict]:
+    """Daily usage trend for a builtin category. Returns list of {date, calls, sessions, ...}."""
+    tool_names = BUILTIN_TOOL_CATEGORIES.get(category_name)
+    if not tool_names:
+        return []
+
+    placeholders, params = _builtin_tool_placeholders(tool_names)
+    conditions = [f"st.tool_name IN ({placeholders})", "s.start_time IS NOT NULL"]
+
+    if project:
+        conditions.append("s.project_encoded_name = :project")
+        params["project"] = project
+
+    time_clause, time_params = _mcp_time_filter(period)
+    if time_clause:
+        conditions.append(time_clause)
+        params.update(time_params)
+
+    where = "WHERE " + " AND ".join(conditions)
+
+    main_rows = conn.execute(
+        f"""SELECT DATE(s.start_time) as date,
+            SUM(st.count) as calls,
+            COUNT(DISTINCT st.session_uuid) as sessions
+        FROM session_tools st
+        JOIN sessions s ON st.session_uuid = s.uuid
+        {where}
+        GROUP BY DATE(s.start_time)""",
+        params,
+    ).fetchall()
+
+    # Subagent calls per day
+    sub_placeholders, sub_params = _builtin_tool_placeholders(tool_names, "sbt")
+    sub_conditions = [f"sat.tool_name IN ({sub_placeholders})", "s.start_time IS NOT NULL"]
+    if project:
+        sub_conditions.append("s.project_encoded_name = :project")
+        sub_params["project"] = project
+    sub_time_clause, sub_time_params = _mcp_time_filter(period)
+    if sub_time_clause:
+        sub_conditions.append(sub_time_clause)
+        sub_params.update(sub_time_params)
+    sub_where = "WHERE " + " AND ".join(sub_conditions)
+
+    sub_rows = conn.execute(
+        f"""SELECT DATE(s.start_time) as date,
+            SUM(sat.count) as calls,
+            COUNT(DISTINCT si.session_uuid) as sessions
+        FROM subagent_tools sat
+        JOIN subagent_invocations si ON sat.invocation_id = si.id
+        JOIN sessions s ON si.session_uuid = s.uuid
+        {sub_where}
+        GROUP BY DATE(s.start_time)""",
+        sub_params,
+    ).fetchall()
+
+    # Merge by date
+    date_map: dict = {}
+    for row in main_rows:
+        d = row["date"]
+        date_map[d] = {"main_calls": row["calls"], "sub_calls": 0, "sessions": row["sessions"]}
+    for row in sub_rows:
+        d = row["date"]
+        if d not in date_map:
+            date_map[d] = {"main_calls": 0, "sub_calls": 0, "sessions": 0}
+        date_map[d]["sub_calls"] = row["calls"]
+        date_map[d]["sessions"] = max(date_map[d]["sessions"], row["sessions"])
+
+    return [
+        {
+            "date": d,
+            "calls": date_map[d]["main_calls"] + date_map[d]["sub_calls"],
+            "sessions": date_map[d]["sessions"],
+            "main_calls": date_map[d]["main_calls"],
+            "subagent_calls": date_map[d]["sub_calls"],
+        }
+        for d in sorted(date_map)
+    ]
+
+
+def query_builtin_tool_detail(
+    conn: sqlite3.Connection,
+    category_name: str,
+    tool_name: str,
+    project: Optional[str] = None,
+    period: str = "all",
+) -> dict | None:
+    """Detailed stats for a single builtin tool. Returns same shape as query_mcp_tool_detail."""
+    # Verify tool belongs to category
+    cat_tools = BUILTIN_TOOL_CATEGORIES.get(category_name, [])
+    if tool_name not in cat_tools:
+        return None
+
+    conditions = ["st.tool_name = :tool_name"]
+    params: dict = {"tool_name": tool_name}
+
+    if project:
+        conditions.append("s.project_encoded_name = :project")
+        params["project"] = project
+
+    time_clause, time_params = _mcp_time_filter(period)
+    if time_clause:
+        conditions.append(time_clause)
+        params.update(time_params)
+
+    where = "WHERE " + " AND ".join(conditions)
+
+    # Main session stats
+    main_row = conn.execute(
+        f"""SELECT COALESCE(SUM(st.count), 0) as total_count,
+            COUNT(DISTINCT st.session_uuid) as session_count,
+            MIN(s.start_time) as first_used,
+            MAX(s.start_time) as last_used
+        FROM session_tools st
+        JOIN sessions s ON st.session_uuid = s.uuid
+        {where}""",
+        params,
+    ).fetchone()
+
+    # Subagent stats
+    sub_conditions = ["sat.tool_name = :tool_name"]
+    sub_params: dict = {"tool_name": tool_name}
+    if project:
+        sub_conditions.append("s.project_encoded_name = :project")
+        sub_params["project"] = project
+    sub_time_clause, sub_time_params = _mcp_time_filter(period)
+    if sub_time_clause:
+        sub_conditions.append(sub_time_clause)
+        sub_params.update(sub_time_params)
+    sub_where = "WHERE " + " AND ".join(sub_conditions)
+
+    sub_row = conn.execute(
+        f"""SELECT COALESCE(SUM(sat.count), 0) as total_count
+        FROM subagent_tools sat
+        JOIN subagent_invocations si ON sat.invocation_id = si.id
+        JOIN sessions s ON si.session_uuid = s.uuid
+        {sub_where}""",
+        sub_params,
+    ).fetchone()
+
+    main_calls = main_row["total_count"] or 0 if main_row else 0
+    sub_calls = sub_row["total_count"] or 0 if sub_row else 0
+
+    if main_calls == 0 and sub_calls == 0:
+        return None
+
+    # Daily trend — main
+    trend_conditions = list(conditions) + ["s.start_time IS NOT NULL"]
+    trend_where = "WHERE " + " AND ".join(trend_conditions)
+
+    trend_rows = conn.execute(
+        f"""SELECT DATE(s.start_time) as date,
+            SUM(st.count) as calls,
+            COUNT(DISTINCT st.session_uuid) as sessions
+        FROM session_tools st
+        JOIN sessions s ON st.session_uuid = s.uuid
+        {trend_where}
+        GROUP BY DATE(s.start_time)""",
+        params,
+    ).fetchall()
+
+    # Daily trend — subagent
+    sub_trend_conditions = list(sub_conditions) + ["s.start_time IS NOT NULL"]
+    sub_trend_where = "WHERE " + " AND ".join(sub_trend_conditions)
+
+    sub_trend_rows = conn.execute(
+        f"""SELECT DATE(s.start_time) as date,
+            SUM(sat.count) as calls
+        FROM subagent_tools sat
+        JOIN subagent_invocations si ON sat.invocation_id = si.id
+        JOIN sessions s ON si.session_uuid = s.uuid
+        {sub_trend_where}
+        GROUP BY DATE(s.start_time)""",
+        sub_params,
+    ).fetchall()
+
+    # Merge trend
+    trend_map: dict = {}
+    for r in trend_rows:
+        trend_map[r["date"]] = {"main_calls": r["calls"], "sub_calls": 0, "sessions": r["sessions"]}
+    for r in sub_trend_rows:
+        d = r["date"]
+        if d not in trend_map:
+            trend_map[d] = {"main_calls": 0, "sub_calls": 0, "sessions": 0}
+        trend_map[d]["sub_calls"] = r["calls"]
+
+    trend = [
+        {
+            "date": d,
+            "calls": trend_map[d]["main_calls"] + trend_map[d]["sub_calls"],
+            "sessions": trend_map[d]["sessions"],
+            "main_calls": trend_map[d]["main_calls"],
+            "subagent_calls": trend_map[d]["sub_calls"],
+        }
+        for d in sorted(trend_map)
+    ]
+
+    return {
+        "name": tool_name,
+        "full_name": tool_name,
+        "server_name": category_name,
+        "main_calls": main_calls,
+        "subagent_calls": sub_calls,
+        "total_calls": main_calls + sub_calls,
+        "session_count": main_row["session_count"] or 0 if main_row else 0,
+        "first_used": main_row["first_used"] if main_row else None,
+        "last_used": main_row["last_used"] if main_row else None,
+        "trend": trend,
+    }
+
+
+def query_sessions_by_builtin_server(
+    conn: sqlite3.Connection,
+    category_name: str,
+    project: Optional[str] = None,
+    period: str = "all",
+    limit: int = 20,
+    offset: int = 0,
+) -> dict:
+    """Paginated session list for a builtin category. Returns {sessions, total}."""
+    tool_names = BUILTIN_TOOL_CATEGORIES.get(category_name)
+    if not tool_names:
+        return {"sessions": [], "total": 0}
+
+    placeholders, params = _builtin_tool_placeholders(tool_names)
+
+    main_conditions = [f"st.tool_name IN ({placeholders})"]
+    sub_placeholders, sub_extra = _builtin_tool_placeholders(tool_names, "sbt")
+    sub_conditions = [f"sat.tool_name IN ({sub_placeholders})"]
+
+    # Merge sub_extra into params (different prefix, no collision)
+    params.update(sub_extra)
+
+    if project:
+        main_conditions.append("s.project_encoded_name = :project")
+        sub_conditions.append("s.project_encoded_name = :project")
+        params["project"] = project
+
+    time_clause, time_params = _mcp_time_filter(period)
+    if time_clause:
+        main_conditions.append(time_clause)
+        sub_conditions.append(time_clause)
+        params.update(time_params)
+
+    main_where = "WHERE " + " AND ".join(main_conditions)
+    sub_where = "WHERE " + " AND ".join(sub_conditions)
+
+    cte_sql = f"""
+    WITH target_sessions AS (
+        SELECT st.session_uuid, 1 as has_main, 0 as has_sub, NULL as agent_id
+        FROM session_tools st
+        JOIN sessions s ON st.session_uuid = s.uuid
+        {main_where}
+
+        UNION ALL
+
+        SELECT si.session_uuid, 0 as has_main, 1 as has_sub, si.agent_id
+        FROM subagent_tools sat
+        JOIN subagent_invocations si ON sat.invocation_id = si.id
+        JOIN sessions s ON si.session_uuid = s.uuid
+        {sub_where}
+    ),
+    aggregated_sessions AS (
+        SELECT session_uuid,
+            MAX(has_main) as has_main,
+            MAX(has_sub) as has_sub,
+            GROUP_CONCAT(DISTINCT agent_id) as agent_ids
+        FROM target_sessions
+        GROUP BY session_uuid
+    )
+    """
+
+    total = conn.execute(
+        f"""{cte_sql}
+        SELECT COUNT(*) FROM aggregated_sessions""",
+        params,
+    ).fetchone()[0]
+
+    params["limit"] = limit
+    params["offset"] = offset
+
+    rows = conn.execute(
+        f"""{cte_sql}
+        SELECT
+            s.uuid, s.slug, s.project_encoded_name, s.project_path,
+            s.message_count, s.start_time, s.end_time, s.duration_seconds,
+            s.models_used, s.subagent_count, s.initial_prompt,
+            s.git_branch, s.session_titles,
+            agg.has_main, agg.has_sub, agg.agent_ids
+        FROM sessions s
+        JOIN aggregated_sessions agg ON s.uuid = agg.session_uuid
+        ORDER BY s.start_time DESC
+        LIMIT :limit OFFSET :offset""",
+        params,
+    ).fetchall()
+
+    return {"sessions": _builtin_session_rows_to_list(rows), "total": total}
+
+
+def query_sessions_by_builtin_tool(
+    conn: sqlite3.Connection,
+    tool_name: str,
+    project: Optional[str] = None,
+    period: str = "all",
+    limit: int = 20,
+    offset: int = 0,
+) -> dict:
+    """Paginated session list for a specific builtin tool. Returns {sessions, total}."""
+    conditions = []
+    params: dict = {"full_name": tool_name}
+
+    if project:
+        conditions.append("s.project_encoded_name = :project")
+        params["project"] = project
+
+    time_clause, time_params = _mcp_time_filter(period)
+    if time_clause:
+        conditions.append(time_clause)
+        params.update(time_params)
+
+    where = "WHERE " + " AND ".join(conditions) if conditions else ""
+
+    cte_sql = f"""
+    WITH target_sessions AS (
+        SELECT st.session_uuid, 1 as has_main, 0 as has_sub, NULL as agent_id
+        FROM session_tools st
+        JOIN sessions s ON st.session_uuid = s.uuid
+        {where} {"AND" if where else "WHERE"} st.tool_name = :full_name
+
+        UNION ALL
+
+        SELECT si.session_uuid, 0 as has_main, 1 as has_sub, si.agent_id
+        FROM subagent_tools sat
+        JOIN subagent_invocations si ON sat.invocation_id = si.id
+        JOIN sessions s ON si.session_uuid = s.uuid
+        {where} {"AND" if where else "WHERE"} sat.tool_name = :full_name
+    ),
+    aggregated_sessions AS (
+        SELECT session_uuid,
+            MAX(has_main) as has_main,
+            MAX(has_sub) as has_sub,
+            GROUP_CONCAT(DISTINCT agent_id) as agent_ids
+        FROM target_sessions
+        GROUP BY session_uuid
+    )
+    """
+
+    total = conn.execute(
+        f"""{cte_sql}
+        SELECT COUNT(*) FROM aggregated_sessions""",
+        params,
+    ).fetchone()[0]
+
+    params["limit"] = limit
+    params["offset"] = offset
+
+    rows = conn.execute(
+        f"""{cte_sql}
+        SELECT
+            s.uuid, s.slug, s.project_encoded_name, s.project_path,
+            s.message_count, s.start_time, s.end_time, s.duration_seconds,
+            s.models_used, s.subagent_count, s.initial_prompt,
+            s.git_branch, s.session_titles,
+            agg.has_main, agg.has_sub, agg.agent_ids
+        FROM sessions s
+        JOIN aggregated_sessions agg ON s.uuid = agg.session_uuid
+        ORDER BY s.start_time DESC
+        LIMIT :limit OFFSET :offset""",
+        params,
+    ).fetchall()
+
+    return {"sessions": _builtin_session_rows_to_list(rows), "total": total}
 
 
 # ---------------------------------------------------------------------------
