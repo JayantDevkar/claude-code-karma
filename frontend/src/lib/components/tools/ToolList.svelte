@@ -4,7 +4,7 @@
 	import { API_BASE } from '$lib/config';
 	import UsageAnalytics from '$lib/components/charts/UsageAnalytics.svelte';
 	import McpServerIcon from '$lib/components/tools/McpServerIcon.svelte';
-	import { getServerColorVars, parseBuiltinTool } from '$lib/utils/mcp';
+	import { getServerColorVars, parseBuiltinTool, getToolItemChartHex } from '$lib/utils/mcp';
 	import type { McpToolsOverview, McpServer } from '$lib/api-types';
 
 	interface Props {
@@ -16,6 +16,8 @@
 	let overview = $state<McpToolsOverview | null>(null);
 	let loading = $state(true);
 	let error = $state<string | null>(null);
+	let hideBuiltin = $state(true);
+
 	$effect(() => {
 		fetchTools();
 	});
@@ -37,6 +39,12 @@
 			loading = false;
 		}
 	}
+
+	function isBuiltinTool(name: string): boolean {
+		return parseBuiltinTool(name) !== null;
+	}
+
+	let excludeFn = $derived(hideBuiltin ? isBuiltinTool : undefined);
 </script>
 
 <div class="space-y-6">
@@ -138,11 +146,31 @@
 
 	<!-- Tools Usage Trend Chart -->
 	<div class="mt-8">
+		<!-- Hide built-in toggle -->
+		<div class="flex items-center justify-end mb-4">
+			<label class="flex items-center gap-2 cursor-pointer select-none">
+				<span class="text-xs text-[var(--text-muted)]">Hide built-in tools</span>
+				<button
+					role="switch"
+					aria-checked={hideBuiltin}
+					onclick={() => (hideBuiltin = !hideBuiltin)}
+					class="relative inline-flex h-5 w-9 items-center rounded-full transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2"
+					style="background-color: {hideBuiltin ? 'var(--accent)' : 'var(--bg-muted)'};"
+				>
+					<span
+						class="inline-block h-3.5 w-3.5 rounded-full bg-white shadow-sm transition-transform duration-200"
+						style="transform: translateX({hideBuiltin ? '18px' : '3px'});"
+					></span>
+				</button>
+			</label>
+		</div>
+
 		<UsageAnalytics
 			endpoint="/tools/usage/trend"
 			{projectEncodedName}
 			itemLabel="Tools"
-			colorIndex={4}
+			colorFn={getToolItemChartHex}
+			excludeItemFn={excludeFn}
 			itemLinkFn={(name) => {
 				const builtin = parseBuiltinTool(name);
 				if (builtin) {

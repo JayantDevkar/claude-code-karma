@@ -248,10 +248,23 @@ def get_mcp_tool_usage_trend(
                 firsts = [d.get("first_used") for d in (mcp_data, builtin_data) if d.get("first_used")]
                 lasts = [d.get("last_used") for d in (mcp_data, builtin_data) if d.get("last_used")]
 
+                # Merge trend_by_item from both sources
+                merged_trend_by_item: dict[str, list] = {}
+                for item, points in mcp_data.get("trend_by_item", {}).items():
+                    merged_trend_by_item[item] = [
+                        UsageTrendItem(date=t["date"], count=t["count"]) for t in points
+                    ]
+                for item, points in builtin_data.get("trend_by_item", {}).items():
+                    merged_trend_by_item[item] = [
+                        UsageTrendItem(date=t["date"], count=t["count"]) for t in points
+                    ]
+                # No limit — frontend handles top-N display
+
                 return UsageTrendResponse(
                     total=mcp_data["total"] + builtin_data["total"],
                     by_item=merged_by_item,
                     trend=[UsageTrendItem(**t) for t in merged_trend],
+                    trend_by_item=merged_trend_by_item,
                     first_used=min(firsts) if firsts else None,
                     last_used=max(lasts) if lasts else None,
                 )

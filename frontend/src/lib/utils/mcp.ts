@@ -99,6 +99,18 @@ export function getServerChartHex(serverName: string, pluginName?: string | null
 	return serverChartHex[serverName] ?? '#14b8a6';
 }
 
+/**
+ * Get a hex color for a tool item name (as returned by by_item keys).
+ * Resolves builtin tools to their category color, MCP tools to their server color.
+ */
+export function getToolItemChartHex(toolName: string): string {
+	const builtin = parseBuiltinTool(toolName);
+	if (builtin) return getServerChartHex(builtin.server);
+	const mcp = parseMcpTool(toolName);
+	if (mcp) return getServerChartHex(mcp.server);
+	return '#14b8a6'; // fallback teal
+}
+
 /** Get color vars for a server, using plugin dynamic colors when available */
 export function getServerColorVars(
 	serverName: string,

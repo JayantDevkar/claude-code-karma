@@ -1198,6 +1198,7 @@ export interface UsageTrendResponse {
 	total: number;
 	by_item: Record<string, number>;
 	trend: UsageTrendItem[];
+	trend_by_item?: Record<string, UsageTrendItem[]>;
 	first_used: string | null;
 	last_used: string | null;
 }

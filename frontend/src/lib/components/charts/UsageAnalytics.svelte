@@ -11,14 +11,13 @@
 		Legend,
 		Tooltip
 	} from 'chart.js';
-	import { TrendingUp, Clock, Calendar } from 'lucide-svelte';
+	import { TrendingUp, Clock, Calendar, ChevronDown, ChevronUp } from 'lucide-svelte';
 	import { formatDistanceToNow } from 'date-fns';
 	import type { UsageTrendResponse } from '$lib/api-types';
 	import {
 		registerChartDefaults,
 		createResponsiveConfig,
 		createCommonScaleConfig,
-		chartColorPalette,
 		getThemeColors
 	} from './chartConfig';
 	import SegmentedControl from '$lib/components/ui/SegmentedControl.svelte';
@@ -42,29 +41,35 @@
 		projectEncodedName?: string;
 		/** Label for items (e.g. "Skills" or "Agents") */
 		itemLabel?: string;
-		/** Chart line color index from chartColorPalette */
-		colorIndex?: number;
+		/** Function that returns a hex color for an item name (for Chart.js canvas) */
+		colorFn?: (itemName: string) => string;
 		/** Link prefix for item names (e.g. "/skills/" or "/agents/usage/") */
 		itemLinkPrefix?: string;
 		/** Custom link generator function — overrides itemLinkPrefix when provided */
 		itemLinkFn?: (name: string) => string;
 		/** Custom display name formatter for items */
 		itemDisplayFn?: (name: string) => string;
+		/** Optional filter to exclude items (return true to exclude) */
+		excludeItemFn?: (name: string) => boolean;
 	}
+
+	const OTHERS_COLOR = '#9ca3af'; // gray-400
 
 	let {
 		endpoint,
 		projectEncodedName,
 		itemLabel = 'Items',
-		colorIndex = 0,
+		colorFn = () => '#7c3aed',
 		itemLinkPrefix,
 		itemLinkFn,
-		itemDisplayFn
+		itemDisplayFn,
+		excludeItemFn
 	}: Props = $props();
 
 	let data = $state<UsageTrendResponse | null>(null);
 	let loading = $state(true);
 	let error = $state<string | null>(null);
+	let expanded = $state(false);
 
 	type RangeKey = '7d' | '30d' | '90d';
 	let selectedRange = $state<RangeKey>('30d');
@@ -104,17 +109,39 @@
 		fetchTrend(selectedRange);
 	});
 
-	// Derived computations
-	let hasData = $derived(data !== null && data.total > 0);
+	// Derived computations — filter items through excludeItemFn
+	let filteredByItem = $derived.by(() => {
+		if (!data) return {};
+		if (!excludeItemFn) return data.by_item;
+		return Object.fromEntries(
+			Object.entries(data.by_item).filter(([name]) => !excludeItemFn(name))
+		);
+	});
+
+	let filteredTotal = $derived(
+		Object.values(filteredByItem).reduce((sum, count) => sum + count, 0)
+	);
+
+	let hasData = $derived(data !== null && filteredTotal > 0);
+
+	let visibleCount = $derived(expanded ? 10 : 5);
 
 	let topItems = $derived.by(() => {
-		if (!data) return [];
-		const entries = Object.entries(data.by_item)
+		const entries = Object.entries(filteredByItem)
 			.sort(([, a], [, b]) => b - a)
-			.slice(0, 8);
+			.slice(0, visibleCount);
 		const max = entries.length > 0 ? entries[0][1] : 1;
-		return entries.map(([name, count]) => ({ name, count, pct: (count / max) * 100 }));
+		return entries.map(([name, count]) => ({
+			name,
+			count,
+			pct: (count / max) * 100,
+			color: colorFn(name)
+		}));
 	});
+
+	let hasMoreItems = $derived(
+		Object.keys(filteredByItem).length > 5
+	);
 
 	let lastActiveLabel = $derived.by(() => {
 		if (!data?.last_used) return null;
@@ -141,16 +168,34 @@
 
 	let avgPerDay = $derived.by(() => {
 		if (!data || data.trend.length === 0) return 0;
-		const total = data.trend.reduce((sum, d) => sum + d.count, 0);
-		return Math.round((total / data.trend.length) * 10) / 10;
+		return Math.round((filteredTotal / data.trend.length) * 10) / 10;
 	});
 
-	// Chart
+	// Filter trend_by_item through excludeItemFn
+	let filteredTrendByItem = $derived.by(() => {
+		if (!data?.trend_by_item) return {};
+		if (!excludeItemFn) return data.trend_by_item;
+		return Object.fromEntries(
+			Object.entries(data.trend_by_item).filter(([name]) => !excludeItemFn(name))
+		);
+	});
+
+	// Chart data — recompute aggregate trend from filtered items when excluding
 	let filteredTrend = $derived.by(() => {
 		if (!data) return [];
-		return [...data.trend].sort(
+		const sorted = [...data.trend].sort(
 			(a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
 		);
+		if (!excludeItemFn || !data.trend_by_item) return sorted;
+
+		// Rebuild daily totals from only filtered items
+		const dailyTotals = new Map<string, number>();
+		for (const points of Object.values(filteredTrendByItem)) {
+			for (const p of points) {
+				dailyTotals.set(p.date, (dailyTotals.get(p.date) ?? 0) + p.count);
+			}
+		}
+		return sorted.map((d) => ({ date: d.date, count: dailyTotals.get(d.date) ?? 0 }));
 	});
 
 	let trendLabels = $derived(
@@ -160,12 +205,6 @@
 		})
 	);
 
-	let trendData = $derived(filteredTrend.map((d) => d.count));
-
-	let canvas: HTMLCanvasElement;
-	let chart: Chart | null = null;
-	const lineColor = chartColorPalette[colorIndex % chartColorPalette.length];
-
 	function hexToRgba(hex: string, alpha: number): string {
 		const r = parseInt(hex.slice(1, 3), 16);
 		const g = parseInt(hex.slice(3, 5), 16);
@@ -173,8 +212,99 @@
 		return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 	}
 
+	// Build chart datasets from trend_by_item
+	let chartDatasets = $derived.by(() => {
+		if (!data || !filteredTrend.length) return [];
+
+		const trendByItem = filteredTrendByItem;
+		const dateLabels = filteredTrend.map((d) => d.date);
+
+		// Get top N items (matching visible count), filtered
+		const itemNames = Object.entries(filteredByItem)
+			.sort(([, a], [, b]) => b - a)
+			.slice(0, visibleCount)
+			.map(([name]) => name);
+
+		const datasets: any[] = [];
+		const showPoints = filteredTrend.length <= 14;
+
+		// Per-item lines
+		for (const itemName of itemNames) {
+			const itemTrend = trendByItem[itemName] ?? [];
+			const dateMap = new Map(itemTrend.map((t) => [t.date, t.count]));
+			const itemData = dateLabels.map((d) => dateMap.get(d) ?? 0);
+			const hex = colorFn(itemName);
+
+			datasets.push({
+				label: itemDisplayFn ? itemDisplayFn(itemName) : itemName,
+				data: itemData,
+				borderColor: hex,
+				backgroundColor: hexToRgba(hex, 0.08),
+				fill: false,
+				tension: 0.4,
+				pointRadius: showPoints ? 2.5 : 0,
+				pointHoverRadius: 4,
+				pointBackgroundColor: hex,
+				borderWidth: 2
+			});
+		}
+
+		// "Others" line: aggregate trend minus top items
+		if (Object.keys(filteredByItem).length > visibleCount) {
+			const topTotals = dateLabels.map((date) => {
+				let sum = 0;
+				for (const itemName of itemNames) {
+					const itemTrend = trendByItem[itemName] ?? [];
+					const dateMap = new Map(itemTrend.map((t) => [t.date, t.count]));
+					sum += dateMap.get(date) ?? 0;
+				}
+				return sum;
+			});
+			const othersData = filteredTrend.map((d, i) => Math.max(0, d.count - topTotals[i]));
+			const hasOthers = othersData.some((v) => v > 0);
+
+			if (hasOthers) {
+				datasets.push({
+					label: 'Others',
+					data: othersData,
+					borderColor: OTHERS_COLOR,
+					backgroundColor: hexToRgba(OTHERS_COLOR, 0.05),
+					fill: false,
+					tension: 0.4,
+					pointRadius: 0,
+					pointHoverRadius: 3,
+					pointBackgroundColor: OTHERS_COLOR,
+					borderWidth: 1.5,
+					borderDash: [4, 3]
+				});
+			}
+		}
+
+		return datasets;
+	});
+
+	// Legend items for the mini legend
+	let legendItems = $derived.by(() => {
+		if (!data) return [];
+		const items = Object.entries(filteredByItem)
+			.sort(([, a], [, b]) => b - a)
+			.slice(0, visibleCount)
+			.map(([name]) => ({
+				name: itemDisplayFn ? itemDisplayFn(name) : name,
+				color: colorFn(name)
+			}));
+
+		if (Object.keys(filteredByItem).length > visibleCount) {
+			items.push({ name: 'Others', color: OTHERS_COLOR });
+		}
+		return items;
+	});
+
+	let canvas: HTMLCanvasElement;
+	let chart: Chart | null = null;
+
 	function createChart() {
-		if (!canvas || filteredTrend.length === 0) return;
+		if (!canvas || filteredTrend.length === 0 || chartDatasets.length === 0) return;
 
 		chart?.destroy();
 		registerChartDefaults();
@@ -184,21 +314,7 @@
 			type: 'line',
 			data: {
 				labels: trendLabels,
-				datasets: [
-					{
-						label: itemLabel,
-						data: trendData,
-						borderColor: lineColor,
-						backgroundColor: hexToRgba(lineColor, 0.15),
-						fill: true,
-						tension: 0.4,
-						pointRadius: filteredTrend.length <= 14 ? 3 : 0,
-						pointHoverRadius: 5,
-						pointBackgroundColor: lineColor,
-						pointBorderColor: colors.bgBase,
-						pointBorderWidth: 2
-					}
-				]
+				datasets: chartDatasets
 			},
 			options: {
 				...createResponsiveConfig(),
@@ -216,7 +332,8 @@
 						bodyColor: colors.textSecondary,
 						borderColor: colors.border,
 						borderWidth: 1,
-						displayColors: true
+						displayColors: true,
+						filter: (item) => item.raw !== 0
 					}
 				},
 				scales: createCommonScaleConfig()
@@ -232,22 +349,14 @@
 		chart?.destroy();
 	});
 
-	// Rebuild chart when data changes
+	// Rebuild chart when data or visible count changes
 	$effect(() => {
 		// eslint-disable-next-line @typescript-eslint/no-unused-expressions
-		filteredTrend;
+		chartDatasets;
 
-		if (canvas && filteredTrend.length > 0) {
-			if (chart) {
-				chart.data.labels = trendLabels;
-				chart.data.datasets[0].data = trendData;
-				const showPoints = filteredTrend.length <= 14;
-				// eslint-disable-next-line @typescript-eslint/no-explicit-any
-				(chart.data.datasets[0] as any).pointRadius = showPoints ? 3 : 0;
-				chart.update();
-			} else {
-				createChart();
-			}
+		if (canvas && chartDatasets.length > 0) {
+			// Always recreate since dataset count may change
+			createChart();
 		}
 	});
 </script>
@@ -291,7 +400,7 @@
 					<span class="text-xs font-medium">Total</span>
 				</div>
 				<p class="text-2xl font-bold text-[var(--text-primary)] tabular-nums">
-					{data.total.toLocaleString()}
+					{filteredTotal.toLocaleString()}
 				</p>
 			</div>
 
@@ -328,16 +437,23 @@
 						<h4 class="text-sm font-medium text-[var(--text-primary)]">
 							Activity Trend
 						</h4>
-						<span class="flex items-center gap-1.5 text-xs text-[var(--text-muted)]">
-							<span
-								class="inline-block w-2.5 h-2.5 rounded-sm"
-								style="background-color: {lineColor};"
-							></span>
-							{itemLabel}
-						</span>
 					</div>
 					<SegmentedControl options={rangeOptions} bind:value={selectedRange} size="sm" />
 				</div>
+				<!-- Mini legend -->
+				{#if legendItems.length > 0}
+					<div class="flex flex-wrap gap-x-4 gap-y-1 mb-3">
+						{#each legendItems as item}
+							<span class="flex items-center gap-1.5 text-xs text-[var(--text-muted)]">
+								<span
+									class="inline-block w-2 h-2 rounded-full flex-shrink-0"
+									style="background-color: {item.color};"
+								></span>
+								<span class="truncate max-w-[120px]">{item.name}</span>
+							</span>
+						{/each}
+					</div>
+				{/if}
 				<div class="h-[200px]">
 					<canvas bind:this={canvas}></canvas>
 				</div>
@@ -351,7 +467,7 @@
 					Top {itemLabel}
 				</h4>
 				<div class="space-y-3">
-					{#each topItems as { name, count, pct }, i}
+					{#each topItems as { name, count, pct, color }, i}
 						{@const displayName = itemDisplayFn ? itemDisplayFn(name) : name}
 						<div>
 							<div class="flex items-center justify-between text-sm mb-1">
@@ -360,6 +476,10 @@
 										href={itemLinkFn(name)}
 										class="text-[var(--text-secondary)] hover:text-[var(--accent)] truncate flex-1 mr-2 text-xs font-medium"
 									>
+										<span
+											class="inline-block w-2 h-2 rounded-full mr-1.5 align-middle"
+											style="background-color: {color};"
+										></span>
 										{displayName}
 									</a>
 								{:else if itemLinkPrefix}
@@ -367,12 +487,20 @@
 										href="{itemLinkPrefix}{encodeURIComponent(name)}"
 										class="text-[var(--text-secondary)] hover:text-[var(--accent)] truncate flex-1 mr-2 text-xs font-medium"
 									>
+										<span
+											class="inline-block w-2 h-2 rounded-full mr-1.5 align-middle"
+											style="background-color: {color};"
+										></span>
 										{displayName}
 									</a>
 								{:else}
 									<span
 										class="text-[var(--text-secondary)] truncate flex-1 mr-2 text-xs font-medium"
 									>
+										<span
+											class="inline-block w-2 h-2 rounded-full mr-1.5 align-middle"
+											style="background-color: {color};"
+										></span>
 										{displayName}
 									</span>
 								{/if}
@@ -384,13 +512,28 @@
 							<div class="h-1.5 bg-[var(--bg-muted)] rounded-full overflow-hidden">
 								<div
 									class="h-full rounded-full transition-all duration-500 ease-out"
-									style="width: {pct}%; background-color: {lineColor}; opacity: {1 -
-										i * 0.08};"
+									style="width: {pct}%; background-color: {color};"
 								></div>
 							</div>
 						</div>
 					{/each}
 				</div>
+
+				<!-- Show More / Show Less toggle -->
+				{#if hasMoreItems}
+					<button
+						onclick={() => (expanded = !expanded)}
+						class="flex items-center gap-1 mt-4 mx-auto text-xs text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors"
+					>
+						{#if expanded}
+							<ChevronUp size={14} />
+							Show less
+						{:else}
+							<ChevronDown size={14} />
+							Show more
+						{/if}
+					</button>
+				{/if}
 			</div>
 		{/if}
 	{/if}

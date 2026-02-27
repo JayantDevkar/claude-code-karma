@@ -1344,6 +1344,10 @@ class UsageTrendResponse(BaseModel):
     total: int = Field(0, description="Total usage count")
     by_item: dict[str, int] = Field(default_factory=dict, description="Item name -> usage count")
     trend: list[UsageTrendItem] = Field(default_factory=list, description="Daily usage trend")
+    trend_by_item: dict[str, list[UsageTrendItem]] = Field(
+        default_factory=dict,
+        description="Per-item daily trend for top items (item name -> daily counts)",
+    )
     first_used: Optional[datetime] = Field(None, description="First usage timestamp")
     last_used: Optional[datetime] = Field(None, description="Most recent usage timestamp")
 

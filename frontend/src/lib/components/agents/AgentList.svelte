@@ -6,6 +6,7 @@
 	import { listNavigation } from '$lib/actions/listNavigation';
 	import { API_BASE } from '$lib/config';
 	import UsageAnalytics from '$lib/components/charts/UsageAnalytics.svelte';
+	import { getSubagentChartHex } from '$lib/utils';
 
 	interface AgentSummary {
 		name: string;
@@ -234,7 +235,7 @@
 			endpoint="/agents/usage/trend"
 			{projectEncodedName}
 			itemLabel="Agents"
-			colorIndex={0}
+			colorFn={getSubagentChartHex}
 			itemLinkPrefix="/agents/"
 		/>
 	</div>

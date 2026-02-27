@@ -1342,6 +1342,28 @@ def query_skill_usage_trend(
 
     trend = [{"date": row["date"], "count": row["count"]} for row in trend_rows]
 
+    # Per-item daily trend
+    trend_by_item: dict[str, list[dict]] = {}
+    top_items = list(by_item.keys())
+    if top_items:
+        item_placeholders = ",".join(f":item{i}" for i in range(len(top_items)))
+        item_params = {**params, **{f"item{i}": name for i, name in enumerate(top_items)}}
+        item_trend_rows = conn.execute(
+            f"""SELECT sk.skill_name as item, DATE(s.start_time) as date, SUM(sk.count) as count
+            FROM session_skills sk
+            JOIN sessions s ON sk.session_uuid = s.uuid
+            {where}
+            {"AND" if where else "WHERE"} s.start_time IS NOT NULL
+            AND sk.skill_name IN ({item_placeholders})
+            GROUP BY sk.skill_name, DATE(s.start_time)
+            ORDER BY item, date""",
+            item_params,
+        ).fetchall()
+        for row in item_trend_rows:
+            trend_by_item.setdefault(row["item"], []).append(
+                {"date": row["date"], "count": row["count"]}
+            )
+
     # First/last used
     time_row = conn.execute(
         f"""SELECT MIN(s.start_time) as first_used, MAX(s.start_time) as last_used
@@ -1358,6 +1380,7 @@ def query_skill_usage_trend(
         "total": total,
         "by_item": by_item,
         "trend": trend,
+        "trend_by_item": trend_by_item,
         "first_used": first_used,
         "last_used": last_used,
     }
@@ -1434,6 +1457,28 @@ def query_agent_usage_trend(
 
     trend = [{"date": row["date"], "count": row["count"]} for row in trend_rows]
 
+    # Per-item daily trend for all items
+    trend_by_item: dict[str, list[dict]] = {}
+    top_items = list(by_item.keys())
+    if top_items:
+        item_placeholders = ",".join(f":item{i}" for i in range(len(top_items)))
+        item_params = {**params, **{f"item{i}": name for i, name in enumerate(top_items)}}
+        item_trend_rows = conn.execute(
+            f"""SELECT si.subagent_type as item, DATE(s.start_time) as date, COUNT(*) as count
+            FROM subagent_invocations si
+            JOIN sessions s ON si.session_uuid = s.uuid
+            {where}
+            AND s.start_time IS NOT NULL
+            AND si.subagent_type IN ({item_placeholders})
+            GROUP BY si.subagent_type, DATE(s.start_time)
+            ORDER BY item, date""",
+            item_params,
+        ).fetchall()
+        for row in item_trend_rows:
+            trend_by_item.setdefault(row["item"], []).append(
+                {"date": row["date"], "count": row["count"]}
+            )
+
     # First/last used
     time_row = conn.execute(
         f"""SELECT MIN(s.start_time) as first_used, MAX(s.start_time) as last_used
@@ -1450,6 +1495,7 @@ def query_agent_usage_trend(
         "total": total,
         "by_item": by_item,
         "trend": trend,
+        "trend_by_item": trend_by_item,
         "first_used": first_used,
         "last_used": last_used,
     }
@@ -2556,6 +2602,28 @@ def query_mcp_tool_usage_trend(
 
     trend = [{"date": row["date"], "count": row["count"]} for row in trend_rows]
 
+    # Per-item daily trend for MCP tools
+    trend_by_item: dict[str, list[dict]] = {}
+    top_items = list(by_item.keys())
+    if top_items:
+        item_placeholders = ",".join(f":item{i}" for i in range(len(top_items)))
+        item_params = {**params, **{f"item{i}": name for i, name in enumerate(top_items)}}
+        item_trend_rows = conn.execute(
+            f"""SELECT st.tool_name as item, DATE(s.start_time) as date, SUM(st.count) as count
+            FROM session_tools st
+            JOIN sessions s ON st.session_uuid = s.uuid
+            {where}
+            AND s.start_time IS NOT NULL
+            AND st.tool_name IN ({item_placeholders})
+            GROUP BY st.tool_name, DATE(s.start_time)
+            ORDER BY item, date""",
+            item_params,
+        ).fetchall()
+        for row in item_trend_rows:
+            trend_by_item.setdefault(row["item"], []).append(
+                {"date": row["date"], "count": row["count"]}
+            )
+
     # First/last used
     time_row = conn.execute(
         f"""SELECT MIN(s.start_time) as first_used, MAX(s.start_time) as last_used
@@ -2572,6 +2640,7 @@ def query_mcp_tool_usage_trend(
         "total": total,
         "by_item": by_item,
         "trend": trend,
+        "trend_by_item": trend_by_item,
         "first_used": first_used,
         "last_used": last_used,
     }
@@ -2671,6 +2740,28 @@ def query_builtin_tool_usage_trend(
 
     trend = [{"date": row["date"], "count": row["count"]} for row in trend_rows]
 
+    # Per-item daily trend for builtin tools
+    trend_by_item: dict[str, list[dict]] = {}
+    top_items = list(by_item.keys())
+    if top_items:
+        item_placeholders = ",".join(f":bi{i}" for i in range(len(top_items)))
+        item_params = {**params, **{f"bi{i}": name for i, name in enumerate(top_items)}}
+        item_trend_rows = conn.execute(
+            f"""SELECT st.tool_name as item, DATE(s.start_time) as date, SUM(st.count) as count
+            FROM session_tools st
+            JOIN sessions s ON st.session_uuid = s.uuid
+            {where}
+            AND s.start_time IS NOT NULL
+            AND st.tool_name IN ({item_placeholders})
+            GROUP BY st.tool_name, DATE(s.start_time)
+            ORDER BY item, date""",
+            item_params,
+        ).fetchall()
+        for row in item_trend_rows:
+            trend_by_item.setdefault(row["item"], []).append(
+                {"date": row["date"], "count": row["count"]}
+            )
+
     # First/last used
     time_row = conn.execute(
         f"""SELECT MIN(s.start_time) as first_used, MAX(s.start_time) as last_used
@@ -2684,6 +2775,7 @@ def query_builtin_tool_usage_trend(
         "total": total,
         "by_item": by_item,
         "trend": trend,
+        "trend_by_item": trend_by_item,
         "first_used": time_row["first_used"] if time_row else None,
         "last_used": time_row["last_used"] if time_row else None,
     }
