@@ -325,6 +325,7 @@ def write_state(
     slug: str | None = None,
     end_reason: str | None = None,
     git_root: str | None = None,
+    source: str | None = None,
 ) -> None:
     """
     Write session state to disk using atomic file locking.
@@ -366,6 +367,8 @@ def write_state(
             "end_reason": end_reason,
             # Preserve git_root from existing state, or use newly provided value
             "git_root": git_root or existing.get("git_root"),
+            # Preserve source from existing state, or use newly provided value
+            "source": source or existing.get("source"),
         }
 
         # Preserve session history if resuming
@@ -415,7 +418,8 @@ def main() -> None:
         # Resolve git root once at session start for submodule→parent mapping
         cwd = data.get("cwd", "")
         git_root = resolve_git_root(cwd) if cwd else None
-        write_state(session_id, "STARTING", data, slug=slug, git_root=git_root)
+        source = data.get("source")  # startup, resume, clear, compact
+        write_state(session_id, "STARTING", data, slug=slug, git_root=git_root, source=source)
 
     elif hook_name == "UserPromptSubmit":
         # User submitted a prompt - mark as LIVE (actively processing)

@@ -135,6 +135,11 @@ class LiveSessionState(BaseModel):
         None, description="Git repository root path (resolved from cwd at SessionStart)"
     )
 
+    # SessionStart source (startup, resume, clear, compact)
+    source: Optional[str] = Field(
+        None, description="SessionStart source: startup, resume, clear, compact"
+    )
+
     # Subagent tracking
     subagents: Dict[str, SubagentState] = Field(
         default_factory=dict, description="Active and completed subagents keyed by agent_id"
@@ -365,7 +370,7 @@ async def load_all_live_sessions_async(
         kept: List[LiveSessionState] = []
         for state in sessions:
             if (
-                state.state == SessionState.ENDED
+                state.state in (SessionState.ENDED, SessionState.STARTING)
                 and state.idle_seconds > auto_cleanup_seconds
             ):
                 # Delete the stale file
@@ -375,13 +380,13 @@ async def load_all_live_sessions_async(
                     state_file = live_dir / f"{identifier}.json"
                     if state_file.exists():
                         state_file.unlink()
-                        logger.debug(f"Auto-cleaned ended session: {identifier}")
+                        logger.debug(f"Auto-cleaned {state.state.value.lower()} session: {identifier}")
                     else:
                         # Fallback: try session_id-named file
                         state_file = live_dir / f"{state.session_id}.json"
                         if state_file.exists():
                             state_file.unlink()
-                            logger.debug(f"Auto-cleaned ended session: {state.session_id}")
+                            logger.debug(f"Auto-cleaned {state.state.value.lower()} session: {state.session_id}")
                 except OSError as e:
                     logger.warning(f"Failed to auto-clean session {state.session_id}: {e}")
                     kept.append(state)  # Keep if deletion fails
@@ -389,7 +394,7 @@ async def load_all_live_sessions_async(
                 kept.append(state)
         if len(kept) < len(sessions):
             logger.info(
-                f"Auto-cleaned {len(sessions) - len(kept)} old ended sessions "
+                f"Auto-cleaned {len(sessions) - len(kept)} old ended/starting sessions "
                 f"(kept {len(kept)})"
             )
         sessions = kept

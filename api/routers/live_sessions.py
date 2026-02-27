@@ -67,6 +67,9 @@ _project_sessions_cache: BoundedCache[dict] = BoundedCache(
 # Activity threshold (seconds)
 IDLE_THRESHOLD = 30  # Consider idle after 30s without activity
 
+# STARTING sessions older than this are silently ended (10 minutes)
+STARTING_TIMEOUT = 600
+
 
 # =============================================================================
 # Dependencies
@@ -104,7 +107,10 @@ def determine_status(state: LiveSessionState) -> SessionStatus:
     The frontend uses idle_seconds for progressive visual styling.
     """
     # STARTING - session began but no messages yet
+    # After STARTING_TIMEOUT, silently treat as ended (stuck session)
     if state.state == SessionState.STARTING:
+        if state.idle_seconds > STARTING_TIMEOUT:
+            return SessionStatus.ENDED
         return SessionStatus.STARTING
 
     # ENDED is terminal - session is done
@@ -553,14 +559,16 @@ async def cleanup_stuck_sessions(
     Delete live session files that are:
     1. IDLE status AND older than 75 minutes (sessions in LIVE state but inactive)
     2. ENDED with no transcript AND older than 5 minutes (ghost sessions)
+    3. STARTING state AND older than 10 minutes (stuck starting sessions)
 
-    Returns: {"deleted": N, "kept": N, "ghosts_deleted": N}
+    Returns: {"deleted": N, "kept": N, "ghosts_deleted": N, "starting_deleted": N}
     """
     states = await load_all_live_sessions_async()
 
     deleted = 0
     kept = 0
     ghosts_deleted = 0
+    starting_deleted = 0
 
     for state in states:
         status = determine_status(state)
@@ -589,13 +597,34 @@ async def cleanup_stuck_sessions(
                 logger.info(f"Cleaned up ghost session: {identifier} (no transcript, ended)")
             else:
                 kept += 1
+        # Clean up stuck STARTING sessions older than 10 minutes
+        # Note: determine_status() maps these to ENDED after STARTING_TIMEOUT,
+        # so this catches them via raw state check as defense-in-depth
+        elif (
+            state.state == SessionState.STARTING
+            and state.idle_seconds > STARTING_TIMEOUT
+        ):
+            identifier = state.slug or state.session_id
+            if delete_live_session(identifier):
+                starting_deleted += 1
+                logger.info(
+                    f"Cleaned up stuck starting session: {identifier} (idle: {int(state.idle_seconds)}s)"
+                )
+            else:
+                kept += 1
         else:
             kept += 1
 
     logger.info(
-        f"Session cleanup: deleted={deleted}, ghosts={ghosts_deleted}, kept={kept}"
+        f"Session cleanup: deleted={deleted}, ghosts={ghosts_deleted}, "
+        f"starting={starting_deleted}, kept={kept}"
     )
-    return {"deleted": deleted, "kept": kept, "ghosts_deleted": ghosts_deleted}
+    return {
+        "deleted": deleted,
+        "kept": kept,
+        "ghosts_deleted": ghosts_deleted,
+        "starting_deleted": starting_deleted,
+    }
 
 
 @router.post("/cleanup", status_code=200)
