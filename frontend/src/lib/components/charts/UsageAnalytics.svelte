@@ -2,6 +2,7 @@
 	import { onMount, onDestroy } from 'svelte';
 	import {
 		Chart,
+		type ChartDataset,
 		LineController,
 		LineElement,
 		PointElement,
@@ -239,7 +240,7 @@
 			})
 		);
 
-		const datasets: any[] = [];
+		const datasets: ChartDataset<'line'>[] = [];
 
 		// Per-item lines
 		for (const itemName of topItemNames) {
@@ -357,7 +358,13 @@
 		const hasDatasets = chartDatasets.length > 0;
 
 		if (canvas && hasDatasets) {
-			createChart();
+			if (chart) {
+				chart.data.labels = trendLabels;
+				chart.data.datasets = chartDatasets;
+				chart.update();
+			} else {
+				createChart();
+			}
 		} else if (chart) {
 			chart.destroy();
 			chart = null;
@@ -473,39 +480,28 @@
 				<div class="space-y-3">
 					{#each topItems as { name, count, pct, color }, i}
 						{@const displayName = itemDisplayFn ? itemDisplayFn(name) : name}
+						{@const href = itemLinkFn ? itemLinkFn(name) : itemLinkPrefix ? `${itemLinkPrefix}${encodeURIComponent(name)}` : null}
 						<div>
 							<div class="flex items-center justify-between text-sm mb-1">
-								{#if itemLinkFn}
+								{#snippet dotLabel()}
+									<span
+										class="inline-block w-2 h-2 rounded-full mr-1.5 align-middle flex-shrink-0"
+										style="background-color: {color};"
+									></span>
+									{displayName}
+								{/snippet}
+								{#if href}
 									<a
-										href={itemLinkFn(name)}
+										{href}
 										class="text-[var(--text-secondary)] hover:text-[var(--accent)] truncate flex-1 mr-2 text-xs font-medium"
 									>
-										<span
-											class="inline-block w-2 h-2 rounded-full mr-1.5 align-middle"
-											style="background-color: {color};"
-										></span>
-										{displayName}
-									</a>
-								{:else if itemLinkPrefix}
-									<a
-										href="{itemLinkPrefix}{encodeURIComponent(name)}"
-										class="text-[var(--text-secondary)] hover:text-[var(--accent)] truncate flex-1 mr-2 text-xs font-medium"
-									>
-										<span
-											class="inline-block w-2 h-2 rounded-full mr-1.5 align-middle"
-											style="background-color: {color};"
-										></span>
-										{displayName}
+										{@render dotLabel()}
 									</a>
 								{:else}
 									<span
 										class="text-[var(--text-secondary)] truncate flex-1 mr-2 text-xs font-medium"
 									>
-										<span
-											class="inline-block w-2 h-2 rounded-full mr-1.5 align-middle"
-											style="background-color: {color};"
-										></span>
-										{displayName}
+										{@render dotLabel()}
 									</span>
 								{/if}
 								<span

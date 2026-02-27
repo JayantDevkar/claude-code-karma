@@ -2645,28 +2645,18 @@ def query_builtin_tool_usage_trend(
     matching UsageTrendResponse schema.
     """
     from collections import defaultdict
-    from datetime import timedelta
 
     all_builtin_names = list(_BUILTIN_TOOL_TO_CATEGORY.keys())
-    placeholders = ",".join(f":t{i}" for i in range(len(all_builtin_names)))
-    params: dict = {f"t{i}": name for i, name in enumerate(all_builtin_names)}
-
-    now = datetime.now(timezone.utc)
-    cutoff = None
-    if period == "week":
-        cutoff = now - timedelta(days=7)
-    elif period == "month":
-        cutoff = now - timedelta(days=30)
-    elif period == "quarter":
-        cutoff = now - timedelta(days=90)
+    placeholders, params = _builtin_tool_placeholders(all_builtin_names, "t")
 
     conditions = [f"st.tool_name IN ({placeholders})"]
     if project:
         conditions.append("s.project_encoded_name = :project")
         params["project"] = project
-    if cutoff:
-        conditions.append("s.start_time >= :cutoff")
-        params["cutoff"] = cutoff.isoformat()
+    time_clause, time_params = _mcp_time_filter(period)
+    if time_clause:
+        conditions.append(time_clause)
+        params.update(time_params)
 
     where = "WHERE " + " AND ".join(conditions)
 
@@ -2682,15 +2672,15 @@ def query_builtin_tool_usage_trend(
     ).fetchall()
 
     # Subagent tool counts
-    sub_placeholders = ",".join(f":st{i}" for i in range(len(all_builtin_names)))
-    sub_params: dict = {f"st{i}": name for i, name in enumerate(all_builtin_names)}
+    sub_placeholders, sub_params = _builtin_tool_placeholders(all_builtin_names, "st")
     sub_conditions = [f"sat.tool_name IN ({sub_placeholders})"]
     if project:
         sub_conditions.append("s.project_encoded_name = :project")
         sub_params["project"] = project
-    if cutoff:
-        sub_conditions.append("s.start_time >= :cutoff")
-        sub_params["cutoff"] = cutoff.isoformat()
+    sub_time_clause, sub_time_params = _mcp_time_filter(period)
+    if sub_time_clause:
+        sub_conditions.append(sub_time_clause)
+        sub_params.update(sub_time_params)
     sub_where = "WHERE " + " AND ".join(sub_conditions)
 
     sub_rows = conn.execute(

@@ -4,6 +4,7 @@
 	import { API_BASE } from '$lib/config';
 	import UsageAnalytics from '$lib/components/charts/UsageAnalytics.svelte';
 	import McpServerIcon from '$lib/components/tools/McpServerIcon.svelte';
+	import Switch from '$lib/components/ui/Switch.svelte';
 	import {
 		getServerColorVars,
 		parseBuiltinTool,
@@ -153,22 +154,10 @@
 	<div class="mt-8">
 		<!-- Hide built-in toggle -->
 		<div class="flex items-center justify-end mb-4">
-			<div class="flex items-center gap-2 select-none">
-				<span id="hide-builtin-label" class="text-xs text-[var(--text-muted)]">Hide built-in tools</span>
-				<button
-					role="switch"
-					aria-checked={hideBuiltin}
-					aria-labelledby="hide-builtin-label"
-					onclick={() => (hideBuiltin = !hideBuiltin)}
-					class="relative inline-flex h-5 w-9 items-center rounded-full transition-colors duration-200 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2"
-					style="background-color: {hideBuiltin ? 'var(--accent)' : 'var(--bg-muted)'};"
-				>
-					<span
-						class="inline-block h-3.5 w-3.5 rounded-full bg-white shadow-sm transition-transform duration-200"
-						style="transform: translateX({hideBuiltin ? '18px' : '3px'});"
-					></span>
-				</button>
-			</div>
+			<label class="flex items-center gap-2 select-none text-xs text-[var(--text-muted)]">
+				Hide built-in tools
+				<Switch bind:checked={hideBuiltin} />
+			</label>
 		</div>
 
 		<UsageAnalytics

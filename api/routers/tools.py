@@ -182,8 +182,25 @@ def get_mcp_tools_overview(
                 all_servers = builtin_servers + mcp_servers
 
                 # Combined distinct session count across both builtin and MCP
+                from db.queries import _mcp_time_filter
+
+                cs_conditions: list[str] = []
+                cs_params: dict = {}
+                if project:
+                    cs_conditions.append("s.project_encoded_name = :project")
+                    cs_params["project"] = project
+                time_clause, time_params = _mcp_time_filter(period)
+                if time_clause:
+                    cs_conditions.append(time_clause)
+                    cs_params.update(time_params)
+                cs_where = ("WHERE " + " AND ".join(cs_conditions)) if cs_conditions else ""
+
                 combined_sessions_row = conn.execute(
-                    "SELECT COUNT(DISTINCT session_uuid) as cnt FROM session_tools"
+                    f"""SELECT COUNT(DISTINCT st.session_uuid) as cnt
+                    FROM session_tools st
+                    JOIN sessions s ON st.session_uuid = s.uuid
+                    {cs_where}""",
+                    cs_params,
                 ).fetchone()
                 combined_sessions = combined_sessions_row["cnt"] if combined_sessions_row else 0
 
