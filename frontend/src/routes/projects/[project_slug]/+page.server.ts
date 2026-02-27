@@ -2,7 +2,8 @@ import type {
 	Project,
 	BranchesData,
 	ProjectAnalytics,
-	ProjectArchivedResponse
+	ProjectArchivedResponse,
+	LiveSessionSummary
 } from '$lib/api-types';
 import { API_BASE } from '$lib/config';
 import { safeFetch, fetchWithFallback } from '$lib/utils/api-fetch';
@@ -48,7 +49,7 @@ export async function load({ params, fetch, url }) {
 
 	// Fetch project (required) and supplementary data (optional) in parallel
 	// Analytics is excluded - will be fetched client-side on-demand for better initial load performance
-	const [projectResult, branches, archived] = await Promise.all([
+	const [projectResult, branches, archived, liveSessions] = await Promise.all([
 		safeFetch<Project>(fetch, `${API_BASE}/projects/${params.project_slug}?${projectParams}`),
 		fetchWithFallback<BranchesData>(
 			fetch,
@@ -59,6 +60,11 @@ export async function load({ params, fetch, url }) {
 			fetch,
 			`${API_BASE}/history/archived/${params.project_slug}`,
 			emptyArchived
+		),
+		fetchWithFallback<LiveSessionSummary[]>(
+			fetch,
+			`${API_BASE}/live-sessions/project/${params.project_slug}`,
+			[]
 		)
 	]);
 
@@ -69,6 +75,7 @@ export async function load({ params, fetch, url }) {
 			branches: emptyBranches,
 			analytics: null,
 			archived: emptyArchived,
+			liveSessions: [] as LiveSessionSummary[],
 			pagination: { page, perPage },
 			error: `Project not found: ${projectResult.message}`,
 			analyticsUrlParams: { startTs, endTs, tzOffset }
@@ -80,6 +87,7 @@ export async function load({ params, fetch, url }) {
 		branches,
 		analytics: null, // Fetched client-side on-demand
 		archived,
+		liveSessions,
 		pagination: { page, perPage },
 		error: null,
 		// Pass analytics URL params for client-side fetch

@@ -46,10 +46,12 @@ def _has_newer_jsonl(project_dir: Path, session_mtime: float, own_stem: str) -> 
     return False
 
 
-def _mark_session_ended(state_file: Path, state_data: dict) -> None:
+def _mark_session_ended(
+    state_file: Path, state_data: dict, end_reason: str = "session_handoff"
+) -> None:
     """Update a state file to mark the session as ENDED via reconciler."""
     state_data["state"] = "ENDED"
-    state_data["end_reason"] = "session_handoff"
+    state_data["end_reason"] = end_reason
     state_data["last_hook"] = "Reconciler"
     state_data["updated_at"] = datetime.now(timezone.utc).isoformat()
 
@@ -73,7 +75,7 @@ def _reconcile_once(idle_threshold: int) -> int:
                 state_data = json.load(f)
 
             state = state_data.get("state", "")
-            if state not in ("LIVE", "STOPPED", "STALE"):
+            if state not in ("LIVE", "STOPPED", "STALE", "STARTING"):
                 continue
 
             # Check idle time
@@ -83,7 +85,19 @@ def _reconcile_once(idle_threshold: int) -> int:
 
             # Get transcript path and derive project dir
             transcript_path = state_data.get("transcript_path", "")
+
+            # STARTING sessions may have empty/missing transcript_path —
+            # if stuck past threshold, end them directly before transcript checks
             if not transcript_path:
+                if state == "STARTING":
+                    slug = state_data.get("slug", state_data.get("session_id", "unknown"))
+                    logger.info(
+                        "Reconciler: ended stuck starting session %s (idle %ds, no transcript path)",
+                        slug,
+                        int(session.idle_seconds),
+                    )
+                    _mark_session_ended(state_file, state_data, end_reason="stuck_starting")
+                    reconciled += 1
                 continue
 
             transcript = Path(transcript_path).expanduser()
@@ -95,6 +109,18 @@ def _reconcile_once(idle_threshold: int) -> int:
             # Get session's own mtime
             session_mtime = _get_session_mtime(transcript_path)
             if session_mtime is None:
+                # STARTING sessions may not have a transcript yet —
+                # if stuck past threshold, end them directly
+                # (idle_seconds >= idle_threshold is guaranteed by the early-continue above)
+                if state == "STARTING":
+                    slug = state_data.get("slug", state_data.get("session_id", "unknown"))
+                    logger.info(
+                        "Reconciler: ended stuck starting session %s (idle %ds, no transcript)",
+                        slug,
+                        int(session.idle_seconds),
+                    )
+                    _mark_session_ended(state_file, state_data, end_reason="stuck_starting")
+                    reconciled += 1
                 continue
 
             # Check for newer JSONL in same project directory
