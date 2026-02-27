@@ -421,17 +421,18 @@ export type PermissionMode =
 	| 'acceptEdits'
 	| 'plan'
 	| 'bypassPermissions'
-	| 'delegate'
 	| 'dontAsk';
 
 export interface PermissionsConfig {
 	allow?: string[];
+	deny?: string[];
 	defaultMode?: PermissionMode;
 }
 
 export interface StatusLineConfig {
-	type: 'command';
-	command: string;
+	type: 'command' | 'disabled';
+	command?: string;
+	padding?: number;
 }
 
 export interface ClaudeSettings {
@@ -440,7 +441,39 @@ export interface ClaudeSettings {
 	enabledPlugins?: Record<string, boolean>;
 	alwaysThinkingEnabled?: boolean;
 	cleanupPeriodDays?: number;
+	env?: Record<string, string>;
+	model?: string;
+	hooks?: Record<string, unknown>;
 }
+
+// Permission mode options with labels and descriptions for the settings UI
+export const PERMISSION_MODE_OPTIONS = [
+	{
+		label: 'Default',
+		value: 'default' as PermissionMode,
+		description: 'Prompts for permission on first use of each tool'
+	},
+	{
+		label: 'Auto-accept Edits',
+		value: 'acceptEdits' as PermissionMode,
+		description: 'Auto-approves file edits; other tools still prompt'
+	},
+	{
+		label: 'Plan Mode',
+		value: 'plan' as PermissionMode,
+		description: 'Read-only — Claude can analyze but not modify files or run commands'
+	},
+	{
+		label: 'Pre-approved Only',
+		value: 'dontAsk' as PermissionMode,
+		description: 'Auto-denies tools unless explicitly allowed in the list below'
+	},
+	{
+		label: 'Bypass All',
+		value: 'bypassPermissions' as PermissionMode,
+		description: 'Skips all permission checks. Only use in isolated environments'
+	}
+] as const;
 
 // Retention period options for the settings UI
 export const RETENTION_OPTIONS = [
