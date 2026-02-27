@@ -445,7 +445,6 @@
 
 	// Reactive copy of server-loaded live sessions (props are not reactive when mutated)
 	let liveSessions = $state<LiveSessionSummary[]>(data.liveSessions ?? []);
-	let livePollInterval: ReturnType<typeof setInterval> | null = null;
 
 	// Sync from props on navigation (project changes trigger new server load)
 	$effect(() => {
@@ -498,24 +497,27 @@
 		if (!browser || !project?.encoded_name) return;
 
 		const encodedName = project.encoded_name;
+		let cancelled = false;
+		let isFetching = false;
 
-		livePollInterval = setInterval(async () => {
+		const interval = setInterval(async () => {
+			if (cancelled || isFetching) return;
+			isFetching = true;
 			try {
 				const res = await fetch(`${API_BASE}/live-sessions/project/${encodedName}`);
-				if (res.ok) {
-					const sessions: LiveSessionSummary[] = await res.json();
-					liveSessions = sessions;
+				if (!cancelled && res.ok) {
+					liveSessions = await res.json();
 				}
 			} catch {
 				/* ignore polling errors */
+			} finally {
+				isFetching = false;
 			}
 		}, 30000);
 
 		return () => {
-			if (livePollInterval) {
-				clearInterval(livePollInterval);
-				livePollInterval = null;
-			}
+			cancelled = true;
+			clearInterval(interval);
 		};
 	});
 
@@ -564,7 +566,8 @@
 	});
 
 	// Computed: live status counts using shared utility
-	let liveStatusCounts = $derived(calculateLiveStatusCounts(liveSessions));
+	// Uses currentLiveSessions (3s poll via LiveSessionsSection) to stay in sync with LIVE NOW panel
+	let liveStatusCounts = $derived(calculateLiveStatusCounts(currentLiveSessions));
 
 	// Computed: count of completed (historical) sessions
 	// Use totalSessionCount (from project.session_count) instead of project.sessions.length
@@ -590,6 +593,7 @@
 		if (filters.status === 'completed') return [];
 
 		// Get ended sessions within 45-min timeout (from reactive liveSessions, refreshed by 30s poll)
+		// No project filter needed: liveSessions already scoped to this project via /live-sessions/project/{slug} API
 		let endedLive = liveSessions.filter(
 			(s) => s.status === 'ended' && shouldShowEndedStatus(s.updated_at)
 		);
