@@ -585,21 +585,10 @@ async def cleanup_stuck_sessions(
                 )
             else:
                 kept += 1
-        # Clean up ghost sessions (ENDED, no transcript, older than 5 minutes)
-        elif (
-            status == SessionStatus.ENDED
-            and not state.transcript_exists
-            and state.idle_seconds > GHOST_SESSION_THRESHOLD
-        ):
-            identifier = state.slug or state.session_id
-            if delete_live_session(identifier):
-                ghosts_deleted += 1
-                logger.info(f"Cleaned up ghost session: {identifier} (no transcript, ended)")
-            else:
-                kept += 1
         # Clean up stuck STARTING sessions older than 10 minutes
-        # Note: determine_status() maps these to ENDED after STARTING_TIMEOUT,
-        # so this catches them via raw state check as defense-in-depth
+        # Check raw state BEFORE ghost check — determine_status() maps these
+        # to ENDED after STARTING_TIMEOUT, so without this ordering they'd
+        # be misclassified as ghosts
         elif (
             state.state == SessionState.STARTING
             and state.idle_seconds > STARTING_TIMEOUT
@@ -610,6 +599,18 @@ async def cleanup_stuck_sessions(
                 logger.info(
                     f"Cleaned up stuck starting session: {identifier} (idle: {int(state.idle_seconds)}s)"
                 )
+            else:
+                kept += 1
+        # Clean up ghost sessions (ENDED, no transcript, older than 5 minutes)
+        elif (
+            status == SessionStatus.ENDED
+            and not state.transcript_exists
+            and state.idle_seconds > GHOST_SESSION_THRESHOLD
+        ):
+            identifier = state.slug or state.session_id
+            if delete_live_session(identifier):
+                ghosts_deleted += 1
+                logger.info(f"Cleaned up ghost session: {identifier} (no transcript, ended)")
             else:
                 kept += 1
         else:

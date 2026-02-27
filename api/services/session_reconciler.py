@@ -111,7 +111,8 @@ def _reconcile_once(idle_threshold: int) -> int:
             if session_mtime is None:
                 # STARTING sessions may not have a transcript yet —
                 # if stuck past threshold, end them directly
-                if state == "STARTING" and session.idle_seconds >= idle_threshold:
+                # (idle_seconds >= idle_threshold is guaranteed by the early-continue above)
+                if state == "STARTING":
                     slug = state_data.get("slug", state_data.get("session_id", "unknown"))
                     logger.info(
                         "Reconciler: ended stuck starting session %s (idle %ds, no transcript)",
