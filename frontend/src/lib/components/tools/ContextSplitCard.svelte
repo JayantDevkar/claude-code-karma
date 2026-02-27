@@ -9,7 +9,7 @@
 		firstUsed: string | null;
 		lastUsed: string | null;
 		sessions?: Array<{ start_time?: string | null }>;
-		subagentColor?: string;
+		accentColor?: string;
 	}
 
 	let {
@@ -19,7 +19,7 @@
 		firstUsed,
 		lastUsed,
 		sessions,
-		subagentColor = 'var(--nav-teal)'
+		accentColor = 'var(--nav-teal)'
 	}: Props = $props();
 
 	let mainPct = $derived(totalCalls > 0 ? Math.round((mainCalls / totalCalls) * 100) : 0);
@@ -56,14 +56,14 @@
 	<div class="flex h-5 rounded-full overflow-hidden bg-[var(--bg-muted)] shadow-inner">
 		<div
 			class="transition-all duration-300 ease-out flex items-center justify-center text-[10px] font-bold text-white"
-			style="width: {mainPct}%; background: linear-gradient(90deg, var(--accent) 0%, #a78bfa 100%);"
+			style="width: {mainPct}%; background: linear-gradient(90deg, {accentColor} 0%, color-mix(in srgb, {accentColor} 60%, white) 100%);"
 			title="Main: {mainCalls.toLocaleString()}"
 		>
 			{#if mainPct > 15}{mainPct}%{/if}
 		</div>
 		<div
 			class="transition-all duration-300 ease-out flex items-center justify-center text-[10px] font-bold text-white"
-			style="width: {subPct}%; background: linear-gradient(90deg, {subagentColor} 0%, color-mix(in srgb, {subagentColor} 60%, white) 100%);"
+			style="width: {subPct}%; background: linear-gradient(90deg, var(--accent) 0%, #a78bfa 100%);"
 			title="Subagent: {subagentCalls.toLocaleString()}"
 		>
 			{#if subPct > 15}{subPct}%{/if}
@@ -78,7 +78,7 @@
 	>
 		<span
 			class="w-3 h-3 rounded-full"
-			style="background: linear-gradient(135deg, var(--accent) 0%, #a78bfa 100%);"
+			style="background: linear-gradient(135deg, {accentColor} 0%, color-mix(in srgb, {accentColor} 60%, white) 100%);"
 		></span>
 		<div class="flex-1 min-w-0">
 			<div class="font-medium">Main Session</div>
@@ -92,7 +92,7 @@
 	>
 		<span
 			class="w-3 h-3 rounded-full"
-			style="background: linear-gradient(135deg, {subagentColor} 0%, color-mix(in srgb, {subagentColor} 60%, white) 100%);"
+			style="background: linear-gradient(135deg, var(--accent) 0%, #a78bfa 100%);"
 		></span>
 		<div class="flex-1 min-w-0">
 			<div class="font-medium">Subagent</div>

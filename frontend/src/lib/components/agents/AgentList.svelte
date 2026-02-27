@@ -6,6 +6,17 @@
 	import { listNavigation } from '$lib/actions/listNavigation';
 	import { API_BASE } from '$lib/config';
 	import UsageAnalytics from '$lib/components/charts/UsageAnalytics.svelte';
+	import Switch from '$lib/components/ui/Switch.svelte';
+	import { getSubagentChartHex } from '$lib/utils';
+
+	const BUILTIN_AGENTS = new Set([
+		'Explore', 'Plan', 'Bash',
+		'_prompt_suggestion', '_compact', '_warmup', '_teammate'
+	]);
+
+	function isBuiltinAgent(name: string): boolean {
+		return BUILTIN_AGENTS.has(name);
+	}
 
 	interface AgentSummary {
 		name: string;
@@ -22,9 +33,12 @@
 	let agents = $state<AgentSummary[]>([]);
 	let loading = $state(true);
 	let error = $state<string | null>(null);
+	let hideBuiltin = $state(true);
 	// Modal state
 	let showModal = $state(false);
 	let newAgentName = $state('');
+
+	let excludeFn = $derived(hideBuiltin ? isBuiltinAgent : undefined);
 
 	$effect(() => {
 		fetchAgents();
@@ -230,11 +244,20 @@
 
 	<!-- Agent Usage Trend Chart -->
 	<div class="mt-8">
+		<!-- Hide built-in toggle -->
+		<div class="flex items-center justify-end mb-4">
+			<label class="flex items-center gap-2 select-none text-xs text-[var(--text-muted)]">
+				Hide built-in agents
+				<Switch bind:checked={hideBuiltin} />
+			</label>
+		</div>
+
 		<UsageAnalytics
 			endpoint="/agents/usage/trend"
 			{projectEncodedName}
 			itemLabel="Agents"
-			colorIndex={0}
+			colorFn={getSubagentChartHex}
+			excludeItemFn={excludeFn}
 			itemLinkPrefix="/agents/"
 		/>
 	</div>

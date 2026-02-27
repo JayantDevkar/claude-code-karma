@@ -3,7 +3,14 @@
 	import { formatDistanceToNow } from 'date-fns';
 	import { API_BASE } from '$lib/config';
 	import UsageAnalytics from '$lib/components/charts/UsageAnalytics.svelte';
-	import { getServerColorVars } from '$lib/utils/mcp';
+	import McpServerIcon from '$lib/components/tools/McpServerIcon.svelte';
+	import Switch from '$lib/components/ui/Switch.svelte';
+	import {
+		getServerColorVars,
+		parseBuiltinTool,
+		parseMcpTool,
+		getToolItemChartHex
+	} from '$lib/utils/mcp';
 	import type { McpToolsOverview, McpServer } from '$lib/api-types';
 
 	interface Props {
@@ -15,6 +22,8 @@
 	let overview = $state<McpToolsOverview | null>(null);
 	let loading = $state(true);
 	let error = $state<string | null>(null);
+	let hideBuiltin = $state(true);
+
 	$effect(() => {
 		fetchTools();
 	});
@@ -36,6 +45,12 @@
 			loading = false;
 		}
 	}
+
+	function isBuiltinTool(name: string): boolean {
+		return parseBuiltinTool(name) !== null;
+	}
+
+	let excludeFn = $derived(hideBuiltin ? isBuiltinTool : undefined);
 </script>
 
 <div class="space-y-6">
@@ -51,10 +66,10 @@
 		<div
 			class="text-center py-20 bg-[var(--bg-subtle)] rounded-2xl border border-dashed border-[var(--border)]"
 		>
-			<Cable class="mx-auto text-[var(--text-muted)] mb-3" size={48} />
-			<p class="text-[var(--text-secondary)] font-medium">No MCP servers found</p>
+			<Wrench class="mx-auto text-[var(--text-muted)] mb-3" size={48} />
+			<p class="text-[var(--text-secondary)] font-medium">No tools found</p>
 			<p class="text-sm text-[var(--text-muted)] mt-1">
-				MCP tool usage will appear once tools are used in sessions
+				Tool usage will appear once tools are used in sessions
 			</p>
 		</div>
 	{:else}
@@ -74,7 +89,7 @@
 							style:background-color="var(--server-subtle)"
 							style:color={colorVars.color}
 						>
-							<Cable size={20} strokeWidth={2} />
+							<McpServerIcon serverName={server.name} size={20} />
 						</div>
 						{#if server.plugin_name}
 							<div
@@ -137,24 +152,39 @@
 
 	<!-- Tools Usage Trend Chart -->
 	<div class="mt-8">
+		<!-- Hide built-in toggle -->
+		<div class="flex items-center justify-end mb-4">
+			<label class="flex items-center gap-2 select-none text-xs text-[var(--text-muted)]">
+				Hide built-in tools
+				<Switch bind:checked={hideBuiltin} />
+			</label>
+		</div>
+
 		<UsageAnalytics
 			endpoint="/tools/usage/trend"
 			{projectEncodedName}
 			itemLabel="Tools"
-			colorIndex={4}
+			colorFn={getToolItemChartHex}
+			excludeItemFn={excludeFn}
 			itemLinkFn={(name) => {
-				const stripped = name.startsWith('mcp__') ? name.slice(5) : name;
-				const lastSep = stripped.lastIndexOf('__');
-				if (lastSep > 0) {
-					const server = stripped.slice(0, lastSep);
-					const tool = stripped.slice(lastSep + 2);
-					return `/tools/${encodeURIComponent(server)}/${encodeURIComponent(tool)}`;
+				const builtin = parseBuiltinTool(name);
+				if (builtin) {
+					return `/tools/${encodeURIComponent(builtin.server)}/${encodeURIComponent(builtin.shortName)}`;
 				}
-				return `/tools/${encodeURIComponent(stripped)}`;
+				const mcp = parseMcpTool(name);
+				if (mcp) {
+					return `/tools/${encodeURIComponent(mcp.server)}/${encodeURIComponent(mcp.shortName)}`;
+				}
+				return `/tools/${encodeURIComponent(name)}`;
 			}}
 			itemDisplayFn={(name) => {
-				const stripped = name.startsWith('mcp__') ? name.slice(5) : name;
-				return stripped.replaceAll('__', ' / ').replaceAll('_', ' ');
+				if (parseBuiltinTool(name)) return name;
+				const mcp = parseMcpTool(name);
+				if (mcp) {
+					const server = mcp.server.replace(/^plugin_/, '');
+					return `${server} / ${mcp.shortName}`.replaceAll('_', ' ');
+				}
+				return name.replaceAll('_', ' ');
 			}}
 		/>
 	</div>

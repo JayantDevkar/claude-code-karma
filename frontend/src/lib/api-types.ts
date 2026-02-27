@@ -1198,6 +1198,7 @@ export interface UsageTrendResponse {
 	total: number;
 	by_item: Record<string, number>;
 	trend: UsageTrendItem[];
+	trend_by_item?: Record<string, UsageTrendItem[]>;
 	first_used: string | null;
 	last_used: string | null;
 }
@@ -1336,7 +1337,7 @@ export interface McpToolSummary {
 export interface McpServer {
 	name: string;
 	display_name: string;
-	source: 'plugin' | 'standalone' | 'custom';
+	source: 'plugin' | 'standalone' | 'custom' | 'builtin';
 	plugin_name: string | null;
 	tool_count: number;
 	total_calls: number;
@@ -1407,7 +1408,7 @@ export interface McpToolDetail {
 	full_name: string;
 	server_name: string;
 	server_display_name: string;
-	source: 'plugin' | 'standalone';
+	source: 'plugin' | 'standalone' | 'builtin';
 	plugin_name: string | null;
 	calls: number;
 	main_calls: number;

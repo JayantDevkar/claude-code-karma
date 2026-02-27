@@ -158,7 +158,7 @@
 								style="background-color: {toolColor.color};"
 							></span>
 							<a
-								href="/tools/{tool.serverName}"
+								href="/tools/{encodeURIComponent(tool.serverName)}/{encodeURIComponent(tool.name)}"
 								class="font-medium text-[var(--text-primary)] hover:text-[var(--accent)] transition-colors"
 							>
 								{tool.name}

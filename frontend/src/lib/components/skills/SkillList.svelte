@@ -6,6 +6,7 @@
 	import { listNavigation } from '$lib/actions/listNavigation';
 	import { API_BASE } from '$lib/config';
 	import UsageAnalytics from '$lib/components/charts/UsageAnalytics.svelte';
+	import { getSkillChartHex } from '$lib/utils';
 
 	interface SkillItem {
 		name: string;
@@ -283,7 +284,7 @@
 				endpoint="/skills/usage/trend"
 				{projectEncodedName}
 				itemLabel="Skills"
-				colorIndex={2}
+				colorFn={getSkillChartHex}
 				itemLinkPrefix="/skills/"
 			/>
 		</div>

@@ -856,6 +856,39 @@ export function getPluginChartHex(pluginName: string): string {
 }
 
 /**
+ * Get a hex color for a subagent type, suitable for Chart.js canvas rendering.
+ * Uses middle-ground hex values that work in both light and dark themes.
+ */
+const SUBAGENT_CHART_HEX: Record<string, string> = {
+	Explore: '#0ea5e9',
+	Plan: '#eab308',
+	Bash: '#22c55e',
+	'Claude Tax': '#ea580c',
+	acompact: '#64748b',
+	aprompt_suggestion: '#818cf8'
+};
+
+export function getSubagentChartHex(type: string): string {
+	if (!type) return '#a78bfa'; // default violet
+	if (SUBAGENT_CHART_HEX[type]) return SUBAGENT_CHART_HEX[type];
+	// Plugin types (contains ':') — use plugin OKLCH hashing
+	const colonIndex = type.indexOf(':');
+	if (colonIndex !== -1) return getPluginChartHex(type.slice(0, colonIndex));
+	return '#a78bfa'; // fallback default
+}
+
+/**
+ * Get a hex color for a skill name, suitable for Chart.js canvas rendering.
+ * Plugin skills get OKLCH-hashed colors; file-based skills get accent.
+ */
+export function getSkillChartHex(skillName: string): string {
+	if (!skillName) return '#7c3aed'; // accent
+	const colonIndex = skillName.indexOf(':');
+	if (colonIndex !== -1) return getPluginChartHex(skillName.slice(0, colonIndex));
+	return '#7c3aed'; // accent for file-based skills
+}
+
+/**
  * Scope-aware color for entity categories.
  */
 export type EntityScope = 'builtin' | 'system' | 'plugin' | 'project' | 'user';

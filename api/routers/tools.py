@@ -12,11 +12,20 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Query, Request
 
 from db.queries import (
+    BUILTIN_CATEGORY_DISPLAY,
+    BUILTIN_TOOL_CATEGORIES,
+    query_builtin_server_detail,
+    query_builtin_server_trend,
+    query_builtin_tool_detail,
+    query_builtin_tool_usage_trend,
+    query_builtin_tools_overview,
     query_mcp_server_detail,
     query_mcp_server_trend,
     query_mcp_tool_detail,
     query_mcp_tool_usage_trend,
     query_mcp_tools_overview,
+    query_sessions_by_builtin_server,
+    query_sessions_by_builtin_tool,
     query_sessions_by_mcp_server,
     query_sessions_by_mcp_tool,
 )
@@ -56,6 +65,10 @@ def _server_display_name(server_name: str) -> str:
         "context7" -> "Context7"
         "filesystem" -> "Filesystem"
     """
+    # Built-in category display names
+    if server_name in BUILTIN_CATEGORY_DISPLAY:
+        return BUILTIN_CATEGORY_DISPLAY[server_name]
+
     name = server_name
     # Strip plugin_ prefix and deduplicate (plugin_github_github -> github)
     if name.startswith("plugin_"):
@@ -81,6 +94,8 @@ def _detect_source(server_name: str) -> tuple[str, Optional[str]]:
 
     Returns (source, plugin_name) tuple.
     """
+    if server_name.startswith("builtin-"):
+        return "builtin", None
     if server_name.startswith("plugin_"):
         # Extract plugin name: plugin_github_github -> github
         parts = server_name[len("plugin_") :].split("_")
@@ -158,16 +173,43 @@ def get_mcp_tools_overview(
 
         with sqlite_read() as conn:
             if conn is not None:
-                data = query_mcp_tools_overview(conn, project=project, period=period)
+                mcp_data = query_mcp_tools_overview(conn, project=project, period=period)
+                builtin_data = query_builtin_tools_overview(conn, project=project, period=period)
 
-                servers = [_build_server_schema(s) for s in data["servers"]]
+                mcp_servers = [_build_server_schema(s) for s in mcp_data["servers"]]
+                builtin_servers = [_build_server_schema(s) for s in builtin_data["servers"]]
+
+                all_servers = builtin_servers + mcp_servers
+
+                # Combined distinct session count across both builtin and MCP
+                from db.queries import _mcp_time_filter
+
+                cs_conditions: list[str] = []
+                cs_params: dict = {}
+                if project:
+                    cs_conditions.append("s.project_encoded_name = :project")
+                    cs_params["project"] = project
+                time_clause, time_params = _mcp_time_filter(period)
+                if time_clause:
+                    cs_conditions.append(time_clause)
+                    cs_params.update(time_params)
+                cs_where = ("WHERE " + " AND ".join(cs_conditions)) if cs_conditions else ""
+
+                combined_sessions_row = conn.execute(
+                    f"""SELECT COUNT(DISTINCT st.session_uuid) as cnt
+                    FROM session_tools st
+                    JOIN sessions s ON st.session_uuid = s.uuid
+                    {cs_where}""",
+                    cs_params,
+                ).fetchone()
+                combined_sessions = combined_sessions_row["cnt"] if combined_sessions_row else 0
 
                 return McpToolsOverview(
-                    total_servers=data["total_servers"],
-                    total_tools=data["total_tools"],
-                    total_calls=data["total_calls"],
-                    total_sessions=data["total_sessions"],
-                    servers=servers,
+                    total_servers=mcp_data["total_servers"] + builtin_data["total_servers"],
+                    total_tools=mcp_data["total_tools"] + builtin_data["total_tools"],
+                    total_calls=mcp_data["total_calls"] + builtin_data["total_calls"],
+                    total_sessions=combined_sessions,
+                    servers=all_servers,
                 )
     except sqlite3.Error as e:
         logger.warning("SQLite MCP tools overview query failed: %s", e)
@@ -200,13 +242,48 @@ def get_mcp_tool_usage_trend(
 
         with sqlite_read() as conn:
             if conn is not None:
-                data = query_mcp_tool_usage_trend(conn, project=project, period=period)
+                mcp_data = query_mcp_tool_usage_trend(conn, project=project, period=period)
+                builtin_data = query_builtin_tool_usage_trend(conn, project=project, period=period)
+
+                # Merge by_item (no key collisions: mcp__ vs bare names)
+                merged_by_item = {**mcp_data["by_item"], **builtin_data["by_item"]}
+                merged_by_item = dict(
+                    sorted(merged_by_item.items(), key=lambda x: x[1], reverse=True)
+                )
+
+                # Merge daily trends by date
+                trend_map: dict[str, int] = {}
+                for t in mcp_data["trend"]:
+                    trend_map[t["date"]] = trend_map.get(t["date"], 0) + t["count"]
+                for t in builtin_data["trend"]:
+                    trend_map[t["date"]] = trend_map.get(t["date"], 0) + t["count"]
+                merged_trend = [
+                    {"date": d, "count": c} for d, c in sorted(trend_map.items())
+                ]
+
+                # Earliest first_used, latest last_used
+                firsts = [d.get("first_used") for d in (mcp_data, builtin_data) if d.get("first_used")]
+                lasts = [d.get("last_used") for d in (mcp_data, builtin_data) if d.get("last_used")]
+
+                # Merge trend_by_item from both sources
+                merged_trend_by_item: dict[str, list] = {}
+                for item, points in mcp_data.get("trend_by_item", {}).items():
+                    merged_trend_by_item[item] = [
+                        UsageTrendItem(date=t["date"], count=t["count"]) for t in points
+                    ]
+                for item, points in builtin_data.get("trend_by_item", {}).items():
+                    merged_trend_by_item[item] = [
+                        UsageTrendItem(date=t["date"], count=t["count"]) for t in points
+                    ]
+                # No limit — frontend handles top-N display
+
                 return UsageTrendResponse(
-                    total=data["total"],
-                    by_item=data["by_item"],
-                    trend=[UsageTrendItem(**t) for t in data["trend"]],
-                    first_used=data.get("first_used"),
-                    last_used=data.get("last_used"),
+                    total=mcp_data["total"] + builtin_data["total"],
+                    by_item=merged_by_item,
+                    trend=[UsageTrendItem(**t) for t in merged_trend],
+                    trend_by_item=merged_trend_by_item,
+                    first_used=min(firsts) if firsts else None,
+                    last_used=max(lasts) if lasts else None,
                 )
     except sqlite3.Error as e:
         logger.warning("SQLite MCP tool usage trend query failed: %s", e)
@@ -235,27 +312,45 @@ def get_mcp_tool_detail(
 
         with sqlite_read() as conn:
             if conn is not None:
-                detail = query_mcp_tool_detail(
-                    conn, server_name, tool_name, project=project, period=period
-                )
+                is_builtin = server_name.startswith("builtin-")
+
+                if is_builtin:
+                    detail = query_builtin_tool_detail(
+                        conn, server_name, tool_name, project=project, period=period
+                    )
+                else:
+                    detail = query_mcp_tool_detail(
+                        conn, server_name, tool_name, project=project, period=period
+                    )
+
                 if detail is None:
                     raise HTTPException(
                         status_code=404,
-                        detail=f"MCP tool '{server_name}/{tool_name}' not found",
+                        detail=f"Tool '{server_name}/{tool_name}' not found",
                     )
 
                 full_name = detail["full_name"]
 
                 # Paginated sessions
                 p = paginate(detail["session_count"], page, per_page)
-                sessions_data = query_sessions_by_mcp_tool(
-                    conn,
-                    full_name,
-                    project=project,
-                    period=period,
-                    limit=p["per_page"],
-                    offset=p["offset"],
-                )
+                if is_builtin:
+                    sessions_data = query_sessions_by_builtin_tool(
+                        conn,
+                        tool_name,
+                        project=project,
+                        period=period,
+                        limit=p["per_page"],
+                        offset=p["offset"],
+                    )
+                else:
+                    sessions_data = query_sessions_by_mcp_tool(
+                        conn,
+                        full_name,
+                        project=project,
+                        period=period,
+                        limit=p["per_page"],
+                        offset=p["offset"],
+                    )
 
                 trend = [McpServerTrend(**t) for t in detail["trend"]]
                 sessions = [_build_session_summary(s) for s in sessions_data["sessions"]]
@@ -308,29 +403,54 @@ def get_mcp_server_detail(
 
         with sqlite_read() as conn:
             if conn is not None:
+                is_builtin = server_name.startswith("builtin-")
+
                 # Server detail (tools + aggregates)
-                detail = query_mcp_server_detail(conn, server_name, project=project, period=period)
+                if is_builtin:
+                    detail = query_builtin_server_detail(
+                        conn, server_name, project=project, period=period
+                    )
+                else:
+                    detail = query_mcp_server_detail(
+                        conn, server_name, project=project, period=period
+                    )
+
                 if detail is None:
                     raise HTTPException(
                         status_code=404,
-                        detail=f"MCP server '{server_name}' not found",
+                        detail=f"Server '{server_name}' not found",
                     )
 
                 # Daily trend
-                trend_data = query_mcp_server_trend(
-                    conn, server_name, project=project, period=period
-                )
+                if is_builtin:
+                    trend_data = query_builtin_server_trend(
+                        conn, server_name, project=project, period=period
+                    )
+                else:
+                    trend_data = query_mcp_server_trend(
+                        conn, server_name, project=project, period=period
+                    )
 
                 # Paginated sessions
                 p = paginate(detail["session_count"], page, per_page)
-                sessions_data = query_sessions_by_mcp_server(
-                    conn,
-                    server_name,
-                    project=project,
-                    period=period,
-                    limit=p["per_page"],
-                    offset=p["offset"],
-                )
+                if is_builtin:
+                    sessions_data = query_sessions_by_builtin_server(
+                        conn,
+                        server_name,
+                        project=project,
+                        period=period,
+                        limit=p["per_page"],
+                        offset=p["offset"],
+                    )
+                else:
+                    sessions_data = query_sessions_by_mcp_server(
+                        conn,
+                        server_name,
+                        project=project,
+                        period=period,
+                        limit=p["per_page"],
+                        offset=p["offset"],
+                    )
 
                 # Build response
                 source, plugin_name = _detect_source(server_name)

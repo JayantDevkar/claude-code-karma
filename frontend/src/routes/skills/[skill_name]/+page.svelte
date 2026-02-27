@@ -568,7 +568,7 @@
 						firstUsed={detail.first_used}
 						lastUsed={detail.last_used}
 						sessions={detail.sessions}
-						subagentColor={pluginColors.color}
+						accentColor={pluginColors.color}
 					/>
 				</div>
 

@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { Code, ChevronDown, ChevronUp, Cable } from 'lucide-svelte';
-	import { parseMcpTool } from '$lib/utils/mcp';
+	import { Code, ChevronDown, ChevronUp, Cable, Wrench } from 'lucide-svelte';
+	import { parseMcpTool, parseBuiltinTool } from '$lib/utils/mcp';
 	import type { ToolUsage } from '$lib/api-types';
 
 	interface Props {
@@ -67,12 +67,33 @@
 								</span>
 							</span>
 						{:else}
-							<span
-								class="text-sm font-mono text-[var(--text-primary)] truncate"
-								title={tool.tool_name}
-							>
-								{tool.tool_name}
-							</span>
+							{@const builtin = parseBuiltinTool(tool.tool_name)}
+							{#if builtin}
+								<span class="flex items-center gap-1.5 min-w-0 flex-1 truncate">
+									<a
+										href="/tools/{encodeURIComponent(builtin.server)}"
+										class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-[var(--nav-purple)]/10 text-[var(--nav-purple)] hover:bg-[var(--nav-purple)]/20 transition-colors flex-shrink-0"
+										title="View {builtin.server} in Tools"
+									>
+										<Wrench size={10} />
+										built-in
+									</a>
+									<a
+										href="/tools/{encodeURIComponent(builtin.server)}/{encodeURIComponent(builtin.shortName)}"
+										class="text-sm font-mono text-[var(--text-primary)] hover:text-[var(--accent)] truncate transition-colors"
+										title={tool.tool_name}
+									>
+										{builtin.shortName}
+									</a>
+								</span>
+							{:else}
+								<span
+									class="text-sm font-mono text-[var(--text-primary)] truncate"
+									title={tool.tool_name}
+								>
+									{tool.tool_name}
+								</span>
+							{/if}
 						{/if}
 						<span class="text-sm font-mono text-[var(--accent)] flex-shrink-0 ml-2"
 							>{tool.count}</span

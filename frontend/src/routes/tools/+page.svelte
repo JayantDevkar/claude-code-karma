@@ -28,7 +28,7 @@
 	// Client-side filter state
 	let searchQuery = $state('');
 	let viewMode = $state<'servers' | 'tools'>('servers');
-	let sourceFilter = $state<'all' | 'plugin' | 'standalone'>('all');
+	let sourceFilter = $state<'all' | 'plugin' | 'standalone' | 'builtin'>('all');
 
 	const viewOptions = [
 		{ label: 'By Server', value: 'servers' },
@@ -37,6 +37,7 @@
 
 	const sourceOptions = [
 		{ label: 'All', value: 'all' },
+		{ label: 'Built-in', value: 'builtin' },
 		{ label: 'Plugin', value: 'plugin' },
 		{ label: 'Standalone', value: 'standalone' }
 	];
@@ -161,11 +162,11 @@
 <div class="space-y-8">
 	<!-- Page Header -->
 	<PageHeader
-		title="MCP Tools"
-		icon={Cable}
+		title="Tools"
+		icon={Wrench}
 		iconColor="--nav-teal"
 		breadcrumbs={[{ label: 'Dashboard', href: '/' }, { label: 'Tools' }]}
-		subtitle="External integrations via Model Context Protocol"
+		subtitle="Built-in tools and external MCP integrations"
 	/>
 
 	<!-- Hero Stats -->
@@ -252,10 +253,10 @@
 		<div
 			class="text-center py-20 bg-[var(--bg-subtle)] rounded-2xl border border-dashed border-[var(--border)]"
 		>
-			<Cable class="mx-auto text-[var(--text-muted)] mb-3" size={48} />
-			<p class="text-[var(--text-secondary)] font-medium">No MCP tools found</p>
+			<Wrench class="mx-auto text-[var(--text-muted)] mb-3" size={48} />
+			<p class="text-[var(--text-secondary)] font-medium">No tools found</p>
 			<p class="text-sm text-[var(--text-muted)] mt-1">
-				MCP tool usage will appear here once you use Claude Code with MCP servers
+				Tool usage will appear here once you start using Claude Code
 			</p>
 		</div>
 	{:else if !hasFiltered}
@@ -333,6 +334,7 @@
 							<McpContextBar
 								mainCalls={server.main_calls}
 								subagentCalls={server.subagent_calls}
+								accentColor={colorVars.color}
 							/>
 							<a
 								href="/tools/{server.name}"

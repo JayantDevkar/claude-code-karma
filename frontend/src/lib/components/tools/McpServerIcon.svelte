@@ -9,7 +9,12 @@
 		HardDrive,
 		Microscope,
 		Plug,
-		BookOpen
+		BookOpen,
+		FileText,
+		Terminal,
+		Users,
+		ListChecks,
+		Search
 	} from 'lucide-svelte';
 
 	interface Props {
@@ -28,7 +33,13 @@
 		plugin_linear_linear: BarChart3,
 		filesystem: HardDrive,
 		analyzer: Microscope,
-		context7: BookOpen
+		context7: BookOpen,
+		'builtin-file-ops': FileText,
+		'builtin-execution': Terminal,
+		'builtin-agents': Users,
+		'builtin-planning': ListChecks,
+		'builtin-web': Globe,
+		'builtin-tools': Search
 	};
 
 	let IconComponent = $derived(iconMap[serverName] ?? Plug);

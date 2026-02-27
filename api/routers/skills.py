@@ -510,6 +510,10 @@ def get_skill_usage_trend(
                     total=data["total"],
                     by_item=data["by_item"],
                     trend=[UsageTrendItem(date=t["date"], count=t["count"]) for t in data["trend"]],
+                    trend_by_item={
+                        item: [UsageTrendItem(date=t["date"], count=t["count"]) for t in points]
+                        for item, points in data.get("trend_by_item", {}).items()
+                    },
                     first_used=data["first_used"],
                     last_used=data["last_used"],
                 )
