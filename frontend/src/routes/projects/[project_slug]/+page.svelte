@@ -437,30 +437,40 @@
 	});
 
 	// ==========================================================================
-	// Live Session Polling
+	// Live Session State (matching sessions page pattern)
 	// ==========================================================================
-	let liveSessionsMap = $state<Map<string, LiveSessionSummary>>(new Map());
+
+	// Track live sessions from the LiveSessionsSection component (for deduplication)
+	let currentLiveSessions = $state<LiveSessionSummary[]>([]);
+
+	// Reactive copy of server-loaded live sessions (props are not reactive when mutated)
+	let liveSessions = $state<LiveSessionSummary[]>(data.liveSessions ?? []);
 	let livePollInterval: ReturnType<typeof setInterval> | null = null;
-	let currentPollId = 0; // Track which poll "generation" we're on
-	let isFetchingLive = false;
-	let abortController: AbortController | null = null;
+
+	// Sync from props on navigation (project changes trigger new server load)
+	$effect(() => {
+		liveSessions = data.liveSessions ?? [];
+	});
+
+	// Create a Set of session identifiers that are currently live (for deduplication)
+	const liveSessionIdentifiers = $derived.by(() => {
+		const identifiers = new Set<string>();
+		for (const ls of currentLiveSessions) {
+			// Only exclude non-ended sessions from historical list
+			if (ls.status !== 'ended') {
+				if (ls.slug) identifiers.add(ls.slug);
+				if (ls.session_id) identifiers.add(ls.session_id);
+			}
+		}
+		return identifiers;
+	});
 
 	// Unified live session lookup using shared utility (slug-first strategy)
-	const getLiveSessionFn = $derived(createLiveSessionLookup(liveSessionsMap));
+	const getLiveSessionFn = $derived(createLiveSessionLookup(liveSessions));
 
-	// For backwards compatibility with existing code that uses uuid-only lookup
-	function getLiveSession(sessionUuid: string): LiveSessionSummary | null {
-		// Create a minimal session object to use the unified lookup
-		// Uses sessionsForFiltering to find sessions in the full list when lazy-loaded
-		const session = sessionsForFiltering.find((s) => s.uuid === sessionUuid);
-		if (session) return getLiveSessionFn(session);
-		// Fallback to direct map lookup for sessions not in the list
-		const live = liveSessionsMap.get(sessionUuid);
-		if (!live) return null;
-		if (live.status === 'ended' && !shouldShowEndedStatus(live.updated_at)) {
-			return null;
-		}
-		return live;
+	// Wrapper function for components that need function reference
+	function getLiveSession(session: SessionSummary): LiveSessionSummary | null {
+		return getLiveSessionFn(session);
 	}
 
 	// Unified historical session lookup using shared utility
@@ -476,59 +486,36 @@
 		return getHistoricalSessionFn(liveSession);
 	}
 
-	// Start/stop polling based on component lifecycle and project changes
+	// Handle live sessions updates from the LiveSessionsSection
+	function handleLiveSessionsChange(sessions: LiveSessionSummary[]) {
+		currentLiveSessions = sessions;
+	}
+
+	// 30s poll to refresh liveSessions (for Recently Ended + card overlays)
+	// Matches sessions page pattern: LiveSessionsSection handles fast 3s polling for LIVE NOW,
+	// this slower poll refreshes ended session data for card overlays
 	$effect(() => {
 		if (!browser || !project?.encoded_name) return;
 
-		// Increment poll ID to invalidate any in-flight requests from previous effect
-		const thisPollId = ++currentPollId;
-
-		// Clear stale data when project changes
-		liveSessionsMap = new Map();
-
-		// Abort any previous requests
-		if (abortController) abortController.abort();
-		abortController = new AbortController();
-
 		const encodedName = project.encoded_name;
 
-		async function fetchLiveSessions() {
-			if (isFetchingLive || thisPollId !== currentPollId) return;
-			isFetchingLive = true;
-
+		livePollInterval = setInterval(async () => {
 			try {
-				const res = await fetch(`${API_BASE}/live-sessions/project/${encodedName}`, {
-					signal: abortController?.signal
-				});
-				// Check if this poll generation is still current
-				if (thisPollId !== currentPollId) return;
+				const res = await fetch(`${API_BASE}/live-sessions/project/${encodedName}`);
 				if (res.ok) {
 					const sessions: LiveSessionSummary[] = await res.json();
-					liveSessionsMap = new Map(sessions.map((s) => [s.session_id, s]));
+					liveSessions = sessions;
 				}
-			} catch (e) {
-				if (e instanceof Error && e.name === 'AbortError') return;
-				console.error('Failed to fetch live sessions:', e);
-			} finally {
-				isFetchingLive = false;
+			} catch {
+				/* ignore polling errors */
 			}
-		}
+		}, 30000);
 
-		// Start polling
-		fetchLiveSessions();
-		livePollInterval = setInterval(fetchLiveSessions, 3000);
-
-		// Cleanup on unmount or project change
 		return () => {
 			if (livePollInterval) {
 				clearInterval(livePollInterval);
 				livePollInterval = null;
 			}
-			if (abortController) {
-				abortController.abort();
-				abortController = null;
-			}
-			liveSessionsMap = new Map();
 		};
 	});
 
@@ -577,9 +564,7 @@
 	});
 
 	// Computed: live status counts using shared utility
-	let liveStatusCounts = $derived(
-		calculateLiveStatusCounts(Array.from(liveSessionsMap.values()))
-	);
+	let liveStatusCounts = $derived(calculateLiveStatusCounts(liveSessions));
 
 	// Computed: count of completed (historical) sessions
 	// Use totalSessionCount (from project.session_count) instead of project.sessions.length
@@ -604,9 +589,8 @@
 		// Don't show when status is 'completed' (only historical)
 		if (filters.status === 'completed') return [];
 
-		// Get ended sessions within 45-min timeout
-		const allLive = Array.from(liveSessionsMap.values());
-		let endedLive = allLive.filter(
+		// Get ended sessions within 45-min timeout (from reactive liveSessions, refreshed by 30s poll)
+		let endedLive = liveSessions.filter(
 			(s) => s.status === 'ended' && shouldShowEndedStatus(s.updated_at)
 		);
 
@@ -653,7 +637,16 @@
 				new Date(a.liveSession.updated_at).getTime()
 		);
 
-		return pairs;
+		// Deduplicate by session UUID (multiple live sessions can map to the same historical session)
+		const seen = new Set<string>();
+		const deduped = pairs.filter((p) => {
+			if (seen.has(p.session.uuid)) return false;
+			seen.add(p.session.uuid);
+			return true;
+		});
+
+		// Cap to avoid overwhelming the section (e.g., after batch hook runs)
+		return deduped.slice(0, 12);
 	});
 
 	// Check if Recently Ended section should be visible
@@ -911,16 +904,11 @@
 		const recentlyEndedUuids = new Set(recentlyEndedSessions.map((pair) => pair.session.uuid));
 		sessions = sessions.filter((s) => !recentlyEndedUuids.has(s.uuid));
 
-		// Exclude sessions that are currently live (shown in LIVE NOW section) to avoid duplicates
-		// Only exclude non-ended live sessions - ended ones are handled by recentlyEndedSessions above
+		// Exclude sessions shown in LIVE NOW section (identity-based, matching sessions page)
 		sessions = sessions.filter((s) => {
-			const liveSession = getLiveSessionFn(s);
-			// If no live session data, keep it in the list
-			if (!liveSession) return true;
-			// If live session is ended, keep it (already handled by recentlyEnded filter)
-			if (liveSession.status === 'ended') return true;
-			// Otherwise it's an active live session - exclude from main list
-			return false;
+			if (s.slug && liveSessionIdentifiers.has(s.slug)) return false;
+			if (liveSessionIdentifiers.has(s.uuid)) return false;
+			return true;
 		});
 
 		return sessions.sort(
@@ -1216,6 +1204,7 @@
 						<!-- Live Sessions Section (matching sessions page) -->
 						{#if filters.status !== 'completed'}
 							<LiveSessionsSection
+								onSessionsChange={handleLiveSessionsChange}
 								searchQuery={searchTokens.join(' ')}
 								projectFilter={project.encoded_name}
 								statusFilter={filters.status}
@@ -1298,7 +1287,7 @@
 															showBranch={selectedBranchFilters.size ===
 																0}
 															liveSession={getLiveSession(
-																session.uuid
+																session
 															)}
 														/>
 													{/each}
@@ -1335,7 +1324,7 @@
 																0}
 															compact
 															liveSession={getLiveSession(
-																session.uuid
+																session
 															)}
 														/>
 													{/each}
