@@ -124,23 +124,34 @@
 
 	let hasData = $derived(data !== null && filteredTotal > 0);
 
-	let visibleCount = $derived(expanded ? 10 : 5);
+	const DEFAULT_VISIBLE = 5;
+	const EXPANDED_VISIBLE = 10;
+
+	let visibleCount = $derived(expanded ? EXPANDED_VISIBLE : DEFAULT_VISIBLE);
+
+	// Shared sorted top-N item names — consumed by topItems, legendItems, and chartDatasets
+	let topItemNames = $derived(
+		Object.entries(filteredByItem)
+			.sort(([, a], [, b]) => b - a)
+			.slice(0, visibleCount)
+			.map(([name]) => name)
+	);
 
 	let topItems = $derived.by(() => {
-		const entries = Object.entries(filteredByItem)
-			.sort(([, a], [, b]) => b - a)
-			.slice(0, visibleCount);
-		const max = entries.length > 0 ? entries[0][1] : 1;
-		return entries.map(([name, count]) => ({
-			name,
-			count,
-			pct: (count / max) * 100,
-			color: colorFn(name)
-		}));
+		const max = topItemNames.length > 0 ? filteredByItem[topItemNames[0]] : 1;
+		return topItemNames.map((name) => {
+			const count = filteredByItem[name];
+			return {
+				name,
+				count,
+				pct: (count / max) * 100,
+				color: colorFn(name)
+			};
+		});
 	});
 
 	let hasMoreItems = $derived(
-		Object.keys(filteredByItem).length > 5
+		Object.keys(filteredByItem).length > DEFAULT_VISIBLE
 	);
 
 	let lastActiveLabel = $derived.by(() => {
@@ -167,8 +178,8 @@
 	});
 
 	let avgPerDay = $derived.by(() => {
-		if (!data || data.trend.length === 0) return 0;
-		return Math.round((filteredTotal / data.trend.length) * 10) / 10;
+		if (!filteredTrend.length) return 0;
+		return Math.round((filteredTotal / filteredTrend.length) * 10) / 10;
 	});
 
 	// Filter trend_by_item through excludeItemFn
@@ -218,20 +229,21 @@
 
 		const trendByItem = filteredTrendByItem;
 		const dateLabels = filteredTrend.map((d) => d.date);
-
-		// Get top N items (matching visible count), filtered
-		const itemNames = Object.entries(filteredByItem)
-			.sort(([, a], [, b]) => b - a)
-			.slice(0, visibleCount)
-			.map(([name]) => name);
-
-		const datasets: any[] = [];
 		const showPoints = filteredTrend.length <= 14;
 
+		// Pre-build date maps once — shared by per-item lines and Others computation
+		const dateMaps = new Map(
+			topItemNames.map((name) => {
+				const points = trendByItem[name] ?? [];
+				return [name, new Map(points.map((t: { date: string; count: number }) => [t.date, t.count]))] as const;
+			})
+		);
+
+		const datasets: any[] = [];
+
 		// Per-item lines
-		for (const itemName of itemNames) {
-			const itemTrend = trendByItem[itemName] ?? [];
-			const dateMap = new Map(itemTrend.map((t) => [t.date, t.count]));
+		for (const itemName of topItemNames) {
+			const dateMap = dateMaps.get(itemName)!;
 			const itemData = dateLabels.map((d) => dateMap.get(d) ?? 0);
 			const hex = colorFn(itemName);
 
@@ -251,15 +263,9 @@
 
 		// "Others" line: aggregate trend minus top items
 		if (Object.keys(filteredByItem).length > visibleCount) {
-			const topTotals = dateLabels.map((date) => {
-				let sum = 0;
-				for (const itemName of itemNames) {
-					const itemTrend = trendByItem[itemName] ?? [];
-					const dateMap = new Map(itemTrend.map((t) => [t.date, t.count]));
-					sum += dateMap.get(date) ?? 0;
-				}
-				return sum;
-			});
+			const topTotals = dateLabels.map((date) =>
+				topItemNames.reduce((s, n) => s + (dateMaps.get(n)!.get(date) ?? 0), 0)
+			);
 			const othersData = filteredTrend.map((d, i) => Math.max(0, d.count - topTotals[i]));
 			const hasOthers = othersData.some((v) => v > 0);
 
@@ -275,7 +281,7 @@
 					pointHoverRadius: 3,
 					pointBackgroundColor: OTHERS_COLOR,
 					borderWidth: 1.5,
-					borderDash: [4, 3]
+					segment: { borderDash: () => [4, 3] }
 				});
 			}
 		}
@@ -283,16 +289,13 @@
 		return datasets;
 	});
 
-	// Legend items for the mini legend
+	// Legend items for the mini legend — derived from shared topItemNames
 	let legendItems = $derived.by(() => {
 		if (!data) return [];
-		const items = Object.entries(filteredByItem)
-			.sort(([, a], [, b]) => b - a)
-			.slice(0, visibleCount)
-			.map(([name]) => ({
-				name: itemDisplayFn ? itemDisplayFn(name) : name,
-				color: colorFn(name)
-			}));
+		const items = topItemNames.map((name) => ({
+			name: itemDisplayFn ? itemDisplayFn(name) : name,
+			color: colorFn(name)
+		}));
 
 		if (Object.keys(filteredByItem).length > visibleCount) {
 			items.push({ name: 'Others', color: OTHERS_COLOR });

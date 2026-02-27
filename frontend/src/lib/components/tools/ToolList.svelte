@@ -4,7 +4,12 @@
 	import { API_BASE } from '$lib/config';
 	import UsageAnalytics from '$lib/components/charts/UsageAnalytics.svelte';
 	import McpServerIcon from '$lib/components/tools/McpServerIcon.svelte';
-	import { getServerColorVars, parseBuiltinTool, getToolItemChartHex } from '$lib/utils/mcp';
+	import {
+		getServerColorVars,
+		parseBuiltinTool,
+		parseMcpTool,
+		getToolItemChartHex
+	} from '$lib/utils/mcp';
 	import type { McpToolsOverview, McpServer } from '$lib/api-types';
 
 	interface Props {
@@ -148,13 +153,14 @@
 	<div class="mt-8">
 		<!-- Hide built-in toggle -->
 		<div class="flex items-center justify-end mb-4">
-			<label class="flex items-center gap-2 cursor-pointer select-none">
-				<span class="text-xs text-[var(--text-muted)]">Hide built-in tools</span>
+			<div class="flex items-center gap-2 select-none">
+				<span id="hide-builtin-label" class="text-xs text-[var(--text-muted)]">Hide built-in tools</span>
 				<button
 					role="switch"
 					aria-checked={hideBuiltin}
+					aria-labelledby="hide-builtin-label"
 					onclick={() => (hideBuiltin = !hideBuiltin)}
-					class="relative inline-flex h-5 w-9 items-center rounded-full transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2"
+					class="relative inline-flex h-5 w-9 items-center rounded-full transition-colors duration-200 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2"
 					style="background-color: {hideBuiltin ? 'var(--accent)' : 'var(--bg-muted)'};"
 				>
 					<span
@@ -162,7 +168,7 @@
 						style="transform: translateX({hideBuiltin ? '18px' : '3px'});"
 					></span>
 				</button>
-			</label>
+			</div>
 		</div>
 
 		<UsageAnalytics
@@ -176,19 +182,17 @@
 				if (builtin) {
 					return `/tools/${encodeURIComponent(builtin.server)}/${encodeURIComponent(builtin.shortName)}`;
 				}
-				const stripped = name.startsWith('mcp__') ? name.slice(5) : name;
-				const lastSep = stripped.lastIndexOf('__');
-				if (lastSep > 0) {
-					const server = stripped.slice(0, lastSep);
-					const tool = stripped.slice(lastSep + 2);
-					return `/tools/${encodeURIComponent(server)}/${encodeURIComponent(tool)}`;
+				const mcp = parseMcpTool(name);
+				if (mcp) {
+					return `/tools/${encodeURIComponent(mcp.server)}/${encodeURIComponent(mcp.shortName)}`;
 				}
-				return `/tools/${encodeURIComponent(stripped)}`;
+				return `/tools/${encodeURIComponent(name)}`;
 			}}
 			itemDisplayFn={(name) => {
 				if (parseBuiltinTool(name)) return name;
-				const stripped = name.startsWith('mcp__') ? name.slice(5) : name;
-				return stripped.replaceAll('__', ' / ').replaceAll('_', ' ');
+				const mcp = parseMcpTool(name);
+				if (mcp) return `${mcp.server} / ${mcp.shortName}`.replaceAll('_', ' ');
+				return name.replaceAll('_', ' ');
 			}}
 		/>
 	</div>
