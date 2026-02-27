@@ -352,14 +352,15 @@
 		chart?.destroy();
 	});
 
-	// Rebuild chart when data or visible count changes
+	// Rebuild chart when datasets or filter changes
 	$effect(() => {
-		// eslint-disable-next-line @typescript-eslint/no-unused-expressions
-		chartDatasets;
+		const hasDatasets = chartDatasets.length > 0;
 
-		if (canvas && chartDatasets.length > 0) {
-			// Always recreate since dataset count may change
+		if (canvas && hasDatasets) {
 			createChart();
+		} else if (chart) {
+			chart.destroy();
+			chart = null;
 		}
 	});
 </script>

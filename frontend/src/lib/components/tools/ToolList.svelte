@@ -191,7 +191,10 @@
 			itemDisplayFn={(name) => {
 				if (parseBuiltinTool(name)) return name;
 				const mcp = parseMcpTool(name);
-				if (mcp) return `${mcp.server} / ${mcp.shortName}`.replaceAll('_', ' ');
+				if (mcp) {
+					const server = mcp.server.replace(/^plugin_/, '');
+					return `${server} / ${mcp.shortName}`.replaceAll('_', ' ');
+				}
 				return name.replaceAll('_', ' ');
 			}}
 		/>
