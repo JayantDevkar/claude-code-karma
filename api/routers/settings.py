@@ -1,7 +1,8 @@
 import json
 import logging
+from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
@@ -28,11 +29,42 @@ def _write_settings_sync(settings_path: Path, data: dict) -> None:
         json.dump(data, f, indent=2)
 
 
+class PermissionModeEnum(str, Enum):
+    default = "default"
+    acceptEdits = "acceptEdits"
+    plan = "plan"
+    bypassPermissions = "bypassPermissions"
+    dontAsk = "dontAsk"
+
+
+class PermissionsUpdate(BaseModel):
+    allow: Optional[List[str]] = None
+    deny: Optional[List[str]] = None
+    defaultMode: Optional[PermissionModeEnum] = None
+
+    model_config = {"extra": "allow"}
+
+
+class StatusLineUpdate(BaseModel):
+    type: Optional[str] = Field(None, pattern=r"^(command|disabled)$")
+    command: Optional[str] = None
+    padding: Optional[int] = Field(None, ge=0)
+
+    model_config = {"extra": "allow"}
+
+
 class ClaudeSettingsUpdate(BaseModel):
     cleanupPeriodDays: Optional[int] = Field(
         None,
         description="Days to keep sessions before cleanup. Default is 30. Set to 99999 to disable.",
+        ge=1,
     )
+    permissions: Optional[PermissionsUpdate] = None
+    statusLine: Optional[StatusLineUpdate] = None
+    enabledPlugins: Optional[Dict[str, bool]] = None
+    alwaysThinkingEnabled: Optional[bool] = None
+    env: Optional[Dict[str, str]] = None
+    model: Optional[str] = None
 
     model_config = {"extra": "allow"}
 

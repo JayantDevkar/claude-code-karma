@@ -4,14 +4,13 @@
 	import { onMount } from 'svelte';
 	import Switch from '$lib/components/ui/Switch.svelte';
 	import SelectDropdown from '$lib/components/ui/SelectDropdown.svelte';
-	import SegmentedControl from '$lib/components/ui/SegmentedControl.svelte';
 	import TextInput from '$lib/components/ui/TextInput.svelte';
 	import SettingsSection from '$lib/components/settings/SettingsSection.svelte';
 	import SettingItem from '$lib/components/settings/SettingItem.svelte';
 	import PermissionsList from '$lib/components/settings/PermissionsList.svelte';
 	import PageHeader from '$lib/components/layout/PageHeader.svelte';
 	import type { ClaudeSettings, PermissionMode } from '$lib/api-types';
-	import { RETENTION_OPTIONS } from '$lib/api-types';
+	import { RETENTION_OPTIONS, PERMISSION_MODE_OPTIONS } from '$lib/api-types';
 	import { API_BASE } from '$lib/config';
 
 	// State
@@ -28,6 +27,9 @@
 	let permissions = $derived(settings.permissions?.allow ?? []);
 	let plugins = $derived(Object.entries(settings.enabledPlugins ?? {}));
 	let statusLineCommand = $derived(settings.statusLine?.command ?? '');
+	let activePermissionDescription = $derived(
+		PERMISSION_MODE_OPTIONS.find((o) => o.value === permissionMode)?.description ?? ''
+	);
 
 	// Load settings on mount
 	onMount(async () => {
@@ -156,7 +158,7 @@
 			<SettingsSection title="General">
 				<SettingItem
 					title="Session Retention"
-					description="How long to keep session history before automatic cleanup."
+					description="Sessions inactive longer than this period are deleted when Claude Code starts. This removes JSONL transcripts from ~/.claude/projects/."
 					saving={savingField === 'cleanupPeriodDays'}
 					success={successField === 'cleanupPeriodDays' ? 'Saved' : null}
 				>
@@ -175,7 +177,7 @@
 
 				<SettingItem
 					title="Extended Thinking"
-					description="Enable 'always thinking' mode for deeper reasoning. Uses more tokens but produces more thorough responses."
+					description="Enable extended thinking by default for deeper reasoning. Increases latency and token cost but improves quality on complex tasks. Toggle per-session with Option+T."
 					saving={savingField === 'alwaysThinkingEnabled'}
 					success={successField === 'alwaysThinkingEnabled' ? 'Saved' : null}
 				>
@@ -193,23 +195,30 @@
 			<SettingsSection title="Permissions">
 				<SettingItem
 					title="Default Permission Mode"
-					description="How Claude handles permission requests for tools."
+					description="Controls how Claude handles tool permission requests at the start of each session."
 					saving={savingField === 'permissions'}
 					success={successField === 'permissions' ? 'Saved' : null}
 				>
 					{#snippet control()}
-						<SegmentedControl
-							options={[
-								{ label: 'Default', value: 'default' },
-								{ label: 'Ask Before Edits', value: 'acceptEdits' },
-								{ label: 'Bypass All', value: 'bypassPermissions' }
-							]}
+						<SelectDropdown
+							options={PERMISSION_MODE_OPTIONS.map((o) => ({
+								label: o.label,
+								value: o.value
+							}))}
 							value={permissionMode}
-							onchange={handlePermissionModeChange}
+							onchange={(v) => handlePermissionModeChange(String(v))}
 							disabled={savingField === 'permissions'}
 						/>
 					{/snippet}
 				</SettingItem>
+
+				{#if activePermissionDescription}
+					<div class="px-5 pb-3 -mt-2">
+						<p class="text-xs text-[var(--text-muted)] italic">
+							{activePermissionDescription}
+						</p>
+					</div>
+				{/if}
 
 				<div class="p-5">
 					<div class="space-y-1.5 mb-4">
@@ -217,7 +226,7 @@
 							Allowed Tools
 						</h3>
 						<p class="text-[13px] text-[var(--text-secondary)]">
-							MCP tools that are granted permission automatically.
+							Tools and commands that are granted permission automatically, without prompting.
 						</p>
 					</div>
 					<PermissionsList
@@ -230,8 +239,8 @@
 			</SettingsSection>
 
 			<!-- PLUGINS Section -->
-			{#if plugins.length > 0}
-				<SettingsSection title="Plugins">
+			<SettingsSection title="Plugins">
+				{#if plugins.length > 0}
 					{#each plugins as [pluginName, enabled]}
 						<SettingItem
 							title={pluginName}
@@ -248,15 +257,21 @@
 							{/snippet}
 						</SettingItem>
 					{/each}
-				</SettingsSection>
-			{/if}
+				{:else}
+					<div class="p-5">
+						<p class="text-sm text-[var(--text-muted)]">
+							No plugins installed. Install plugins with <code class="text-xs font-mono bg-[var(--bg-muted)] px-1.5 py-0.5 rounded">/install-plugin</code> in Claude Code.
+						</p>
+					</div>
+				{/if}
+			</SettingsSection>
 
 			<!-- ADVANCED Section -->
 			<SettingsSection title="Advanced">
 				<SettingItem
 					title="Status Line Command"
-					description="Custom script for status line display. Script must be executable and output a single line."
-					hint="Example: ~/.claude/statusline-command.sh"
+					description="Shell command that receives session JSON on stdin and prints a status line. Displayed at the bottom of Claude Code's terminal. Use /statusline in Claude Code to generate one automatically."
+					hint="Example: jq -r '.model.display_name' or path to a script"
 					saving={savingField === 'statusLine'}
 					success={successField === 'statusLine' ? 'Saved' : null}
 				>
