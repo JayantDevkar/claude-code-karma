@@ -439,7 +439,7 @@
 					{#each unusedDefinitions as def (def.name)}
 						{@const colorVars = getSubagentColorVars(def.name)}
 						<a
-							href="/agents/info/{encodeURIComponent(def.name)}"
+							href="/agents/{encodeURIComponent(def.name)}"
 							class="
 								group block
 								bg-[var(--bg-base)]
