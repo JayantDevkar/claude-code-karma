@@ -66,7 +66,9 @@
 	});
 
 	// Build breadcrumbs
+	// svelte-ignore state_referenced_locally
 	const filename = (data.path || '').split('/').pop() || '';
+	// svelte-ignore state_referenced_locally
 	const breadcrumbs = [
 		{ label: 'Dashboard', href: '/' },
 		{ label: 'Plugins', href: '/plugins' },

@@ -86,6 +86,7 @@
 	};
 
 	let currentTier = $derived(tierConfig[usageTier]);
+	let TierIcon = $derived(currentTier.icon);
 
 	// Build link for skill detail page
 	// Route is /skills/[skill_name] which fetches both skill info and sessions
@@ -130,8 +131,7 @@
 					style="background-color: {currentTier.bg};"
 					title="{currentTier.label} usage tier"
 				>
-					<svelte:component
-						this={currentTier.icon}
+					<TierIcon
 						size={12}
 						strokeWidth={2.5}
 						style="color: {currentTier.iconColor};"
@@ -158,22 +158,33 @@
 	<!-- Plugin source if applicable -->
 	{#if skill.plugin}
 		<div class="mb-4 relative z-10">
-			<a
-				href="/plugins/{encodeURIComponent(skill.plugin)}"
+			<span
+				role="link"
+				tabindex={0}
 				class="
 						inline-flex items-center gap-1.5 px-2 py-1
-						text-[10px] font-medium
+						text-[10px] font-medium cursor-pointer
 						text-[var(--text-muted)] hover:text-[var(--accent)]
 						bg-[var(--bg-subtle)] hover:bg-[var(--accent-subtle)]
 						rounded-full
 						transition-colors
 					"
-				onclick={(e) => e.stopPropagation()}
+				onclick={(e) => {
+					e.preventDefault();
+					e.stopPropagation();
+					window.location.href = `/plugins/${encodeURIComponent(skill.plugin!)}`;
+				}}
+				onkeydown={(e) => {
+					if (e.key === 'Enter') {
+						e.stopPropagation();
+						window.location.href = `/plugins/${encodeURIComponent(skill.plugin!)}`;
+					}
+				}}
 				title="View plugin: {skill.plugin}"
 			>
 				<Puzzle size={10} />
 				<span class="truncate max-w-[140px]">{skill.plugin}</span>
-			</a>
+			</span>
 		</div>
 	{:else}
 		<div class="mb-4"></div>

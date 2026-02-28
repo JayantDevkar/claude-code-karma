@@ -11,6 +11,7 @@
 	}
 	let { projectName, projectEncoded, plans, defaultExpanded = true }: Props = $props();
 
+	// svelte-ignore state_referenced_locally
 	let expanded = $state(defaultExpanded);
 </script>
 

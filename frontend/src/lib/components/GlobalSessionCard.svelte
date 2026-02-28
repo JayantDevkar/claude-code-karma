@@ -331,7 +331,7 @@
 			<div class="flex items-center gap-1.5 shrink-0">
 				{#if showSubagentBadge}
 					{#if subagentHref}
-						<!-- svelte-ignore a11y_no_static_element_interactions -->
+						<!-- svelte-ignore a11y_no_static_element_interactions node_invalid_placement_ssr -->
 						<a
 							href={subagentHref}
 							onclick={(e) => e.stopPropagation()}

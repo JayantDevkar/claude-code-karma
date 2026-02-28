@@ -444,6 +444,7 @@
 	let currentLiveSessions = $state<LiveSessionSummary[]>([]);
 
 	// Reactive copy of server-loaded live sessions (props are not reactive when mutated)
+	// svelte-ignore state_referenced_locally
 	let liveSessions = $state<LiveSessionSummary[]>(data.liveSessions ?? []);
 
 	// Sync from props on navigation (project changes trigger new server load)

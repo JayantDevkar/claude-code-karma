@@ -147,7 +147,7 @@
 	let trendSkillData = $derived(filteredTrend.map((d) => d.skill_invocations));
 	let trendMcpData = $derived(filteredTrend.map((d) => d.mcp_tool_calls));
 
-	let canvas: HTMLCanvasElement;
+	let canvas = $state<HTMLCanvasElement>();
 	let chart: Chart | null = null;
 
 	function createChart() {

@@ -371,11 +371,12 @@
 					accentColor={groupColors.color}
 				>
 					{#snippet icon()}
+						{@const GroupIcon = group.icon}
 						<div
 							class="p-1.5 rounded-md"
 							style="background-color: {groupColors.subtle}; color: {groupColors.color};"
 						>
-							<svelte:component this={group.icon} size={14} />
+							<GroupIcon size={14} />
 						</div>
 					{/snippet}
 					{#snippet metadata()}

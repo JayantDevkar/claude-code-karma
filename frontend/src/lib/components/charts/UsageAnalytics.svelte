@@ -304,7 +304,7 @@
 		return items;
 	});
 
-	let canvas: HTMLCanvasElement;
+	let canvas = $state<HTMLCanvasElement>();
 	let chart: Chart | null = null;
 
 	function createChart() {

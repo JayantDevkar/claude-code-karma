@@ -45,4 +45,4 @@
 	let IconComponent = $derived(iconMap[serverName] ?? Plug);
 </script>
 
-<svelte:component this={IconComponent} {size} strokeWidth={2} />
+<IconComponent {size} strokeWidth={2} />

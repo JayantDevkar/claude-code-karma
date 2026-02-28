@@ -144,6 +144,7 @@
 	}
 
 	// Make entity data mutable for live updates - initialize directly from props
+	// svelte-ignore state_referenced_locally
 	let entityData = $state<ConversationEntity | null>(initialEntity);
 
 	// Derive entity for read access
@@ -153,6 +154,7 @@
 	let timelineEvents = $state<TimelineEvent[]>(getInitialTimeline());
 	let fileActivities = $state<FileActivity[]>(getInitialFileActivity());
 	let toolsArray = $state<ToolUsage[]>(getInitialTools());
+	// svelte-ignore state_referenced_locally
 	let tasksArray = $state<Task[]>(initialTasks);
 
 	// Skills used - derived from entity (not live-updated separately)
@@ -173,6 +175,7 @@
 
 	// Track which session we've initialized for to detect navigation (use sessionSlug as identifier)
 	// Plain variable (not $state) to avoid reactive loop when read+written in $effect
+	// svelte-ignore state_referenced_locally
 	let initializedForSession: string | null = sessionSlug;
 
 	// Sync state when navigating to a different session (prop identity changes)

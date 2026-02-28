@@ -85,22 +85,33 @@
 	<!-- Plugin source if applicable -->
 	{#if agent.plugin_source}
 		<div class="mb-4">
-			<a
-				href="/plugins/{encodeURIComponent(agent.plugin_source)}"
+			<span
+				role="link"
+				tabindex={0}
 				class="
 					inline-flex items-center gap-1.5 px-2 py-1
-					text-[10px] font-medium
+					text-[10px] font-medium cursor-pointer
 					text-[var(--text-muted)] hover:text-[var(--accent)]
 					bg-[var(--bg-subtle)] hover:bg-[var(--accent-subtle)]
 					rounded-full
 					transition-colors
 				"
-				onclick={(e) => e.stopPropagation()}
+				onclick={(e) => {
+					e.preventDefault();
+					e.stopPropagation();
+					window.location.href = `/plugins/${encodeURIComponent(agent.plugin_source!)}`;
+				}}
+				onkeydown={(e) => {
+					if (e.key === 'Enter') {
+						e.stopPropagation();
+						window.location.href = `/plugins/${encodeURIComponent(agent.plugin_source!)}`;
+					}
+				}}
 				title="View plugin: {agent.plugin_source}"
 			>
 				<Puzzle size={10} />
 				<span class="truncate max-w-[140px]">{agent.plugin_source}</span>
-			</a>
+			</span>
 		</div>
 	{:else}
 		<div class="mb-4"></div>
