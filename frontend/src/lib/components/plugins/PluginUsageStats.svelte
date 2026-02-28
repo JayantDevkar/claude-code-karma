@@ -143,69 +143,139 @@
 		})
 	);
 
-	let trendAgentData = $derived(filteredTrend.map((d) => d.agent_runs));
-	let trendSkillData = $derived(filteredTrend.map((d) => d.skill_invocations));
-	let trendMcpData = $derived(filteredTrend.map((d) => d.mcp_tool_calls));
+	let trendDates = $derived(filteredTrend.map((d) => d.date));
+
+	// --- Per-item chart data ---
+
+	// Agent colors: purple spectrum
+	const agentColors = ['#7c3aed', '#8b5cf6', '#a78bfa', '#6d28d9', '#5b21b6', '#c4b5fd'];
+	// Skill colors: green/teal spectrum
+	const skillColors = ['#10b981', '#14b8a6', '#34d399', '#059669', '#047857', '#6ee7b7'];
+	// MCP colors: amber/orange spectrum
+	const mcpColors = ['#f59e0b', '#f97316', '#fbbf24', '#d97706', '#ea580c', '#fcd34d'];
+
+	interface ItemTrend {
+		name: string;
+		data: number[];
+		color: string;
+		category: 'agent' | 'skill' | 'mcp';
+	}
+
+	let itemTrends = $derived.by((): ItemTrend[] => {
+		const items: ItemTrend[] = [];
+
+		// Top agents by total count
+		const topAgentNames = Object.entries(usage.by_agent)
+			.sort(([, a], [, b]) => b - a)
+			.slice(0, 6)
+			.map(([name]) => name);
+
+		topAgentNames.forEach((name, i) => {
+			const daily = usage.by_agent_daily?.[name] ?? {};
+			const data = trendDates.map((date) => daily[date] ?? 0);
+			// Only include if has any non-zero values in this range
+			if (data.some((v) => v > 0)) {
+				items.push({ name, data, color: agentColors[i % agentColors.length], category: 'agent' });
+			}
+		});
+
+		// Top skills
+		const topSkillNames = Object.entries(usage.by_skill)
+			.sort(([, a], [, b]) => b - a)
+			.slice(0, 6)
+			.map(([name]) => name);
+
+		topSkillNames.forEach((name, i) => {
+			const daily = usage.by_skill_daily?.[name] ?? {};
+			const data = trendDates.map((date) => daily[date] ?? 0);
+			if (data.some((v) => v > 0)) {
+				items.push({ name, data, color: skillColors[i % skillColors.length], category: 'skill' });
+			}
+		});
+
+		// Top MCP tools
+		const topMcpNames = Object.entries(usage.by_mcp_tool ?? {})
+			.sort(([, a], [, b]) => b - a)
+			.slice(0, 6)
+			.map(([name]) => name);
+
+		topMcpNames.forEach((name, i) => {
+			const daily = usage.by_mcp_tool_daily?.[name] ?? {};
+			const data = trendDates.map((date) => daily[date] ?? 0);
+			if (data.some((v) => v > 0)) {
+				items.push({ name, data, color: mcpColors[i % mcpColors.length], category: 'mcp' });
+			}
+		});
+
+		return items;
+	});
+
+	// Legend items grouped by category
+	let legendItems = $derived.by(() => {
+		const groups: { category: string; icon: string; items: { name: string; color: string }[] }[] =
+			[];
+
+		const agents = itemTrends.filter((t) => t.category === 'agent');
+		const skills = itemTrends.filter((t) => t.category === 'skill');
+		const mcps = itemTrends.filter((t) => t.category === 'mcp');
+
+		if (agents.length > 0) {
+			groups.push({
+				category: 'Agents',
+				icon: 'bot',
+				items: agents.map((t) => ({ name: t.name, color: t.color }))
+			});
+		}
+		if (skills.length > 0) {
+			groups.push({
+				category: 'Skills',
+				icon: 'zap',
+				items: skills.map((t) => ({ name: t.name, color: t.color }))
+			});
+		}
+		if (mcps.length > 0) {
+			groups.push({
+				category: 'MCP Tools',
+				icon: 'wrench',
+				items: mcps.map((t) => ({ name: t.name, color: t.color }))
+			});
+		}
+
+		return groups;
+	});
 
 	let canvas = $state<HTMLCanvasElement>();
 	let chart: Chart | null = null;
 
 	function createChart() {
-		if (!canvas || filteredTrend.length === 0) return;
+		if (!canvas || filteredTrend.length === 0 || itemTrends.length === 0) return;
 
 		chart?.destroy();
 
 		registerChartDefaults();
 		const colors = getThemeColors();
+		const showPoints = filteredTrend.length <= 14;
+
+		const datasets = itemTrends.map((item) => ({
+			label: item.name,
+			data: item.data,
+			borderColor: item.color,
+			backgroundColor: 'transparent',
+			fill: false,
+			tension: 0.4,
+			borderWidth: 2,
+			pointRadius: showPoints ? 3 : 0,
+			pointHoverRadius: 5,
+			pointBackgroundColor: item.color,
+			pointBorderColor: colors.bgBase,
+			pointBorderWidth: 2
+		}));
 
 		chart = new Chart(canvas, {
 			type: 'line',
 			data: {
 				labels: trendLabels,
-				datasets: [
-					{
-						label: 'Agent Runs',
-						data: trendAgentData,
-						borderColor: chartColorPalette[0],
-						backgroundColor: 'rgba(124, 58, 237, 0.15)',
-						fill: true,
-						tension: 0.4,
-						pointRadius: filteredTrend.length <= 14 ? 3 : 0,
-						pointHoverRadius: 5,
-						pointBackgroundColor: chartColorPalette[0],
-						pointBorderColor: colors.bgBase,
-						pointBorderWidth: 2,
-						order: 2
-					},
-					{
-						label: 'Skill Invocations',
-						data: trendSkillData,
-						borderColor: chartColorPalette[2],
-						backgroundColor: 'rgba(16, 185, 129, 0.15)',
-						fill: true,
-						tension: 0.4,
-						pointRadius: filteredTrend.length <= 14 ? 3 : 0,
-						pointHoverRadius: 5,
-						pointBackgroundColor: chartColorPalette[2],
-						pointBorderColor: colors.bgBase,
-						pointBorderWidth: 2,
-						order: 2
-					},
-					{
-						label: 'MCP Tool Calls',
-						data: trendMcpData,
-						borderColor: chartColorPalette[4],
-						backgroundColor: 'rgba(245, 158, 11, 0.15)',
-						fill: true,
-						tension: 0.4,
-						pointRadius: filteredTrend.length <= 14 ? 3 : 0,
-						pointHoverRadius: 5,
-						pointBackgroundColor: chartColorPalette[4],
-						pointBorderColor: colors.bgBase,
-						pointBorderWidth: 2,
-						order: 1
-					}
-				]
+				datasets
 			},
 			options: {
 				...createResponsiveConfig(),
@@ -226,6 +296,7 @@
 						borderColor: colors.border,
 						borderWidth: 1,
 						displayColors: true,
+						filter: (item) => (item.raw as number) > 0,
 						callbacks: {
 							footer: (items) => {
 								const total = items.reduce(
@@ -241,7 +312,7 @@
 					...createCommonScaleConfig(),
 					y: {
 						...createCommonScaleConfig().y,
-						stacked: true
+						stacked: false
 					}
 				}
 			}
@@ -263,21 +334,11 @@
 		selectedRange;
 		// eslint-disable-next-line @typescript-eslint/no-unused-expressions
 		filteredTrend;
+		// eslint-disable-next-line @typescript-eslint/no-unused-expressions
+		itemTrends;
 
-		if (chart && canvas) {
-			chart.data.labels = trendLabels;
-			chart.data.datasets[0].data = trendAgentData;
-			chart.data.datasets[1].data = trendSkillData;
-			if (chart.data.datasets[2]) {
-				chart.data.datasets[2].data = trendMcpData;
-			}
-			// Toggle point visibility based on data density
-			const showPoints = filteredTrend.length <= 14;
-			for (const ds of chart.data.datasets) {
-				// eslint-disable-next-line @typescript-eslint/no-explicit-any
-				(ds as any).pointRadius = showPoints ? 3 : 0;
-			}
-			chart.update();
+		if (canvas) {
+			createChart();
 		}
 	});
 </script>
@@ -364,41 +425,36 @@
 		</div>
 
 		<!-- Activity Trend Chart -->
-		{#if usage.trend.length > 0}
+		{#if usage.trend.length > 0 && itemTrends.length > 0}
 			<div class="bg-[var(--bg-subtle)] rounded-xl p-4">
 				<div class="flex items-center justify-between mb-4">
-					<div class="flex items-center gap-4">
-						<h4 class="text-sm font-medium text-[var(--text-primary)]">
-							Activity Trend
-						</h4>
-						<!-- Legend -->
-						<div class="flex items-center gap-3 text-xs text-[var(--text-muted)]">
-							<span class="flex items-center gap-1.5">
-								<span
-									class="inline-block w-2.5 h-2.5 rounded-sm"
-									style="background-color: {chartColorPalette[0]};"
-								></span>
-								Agents
-							</span>
-							<span class="flex items-center gap-1.5">
-								<span
-									class="inline-block w-2.5 h-2.5 rounded-sm"
-									style="background-color: {chartColorPalette[2]};"
-								></span>
-								Skills
-							</span>
-							<span class="flex items-center gap-1.5">
-								<span
-									class="inline-block w-2.5 h-2.5 rounded-sm"
-									style="background-color: {chartColorPalette[4]};"
-								></span>
-								MCP Tools
-							</span>
-						</div>
-					</div>
+					<h4 class="text-sm font-medium text-[var(--text-primary)]">Activity Trend</h4>
 					<SegmentedControl options={rangeOptions} bind:value={selectedRange} size="sm" />
 				</div>
-				<div class="h-[200px]">
+
+				<!-- Grouped legend -->
+				<div class="flex flex-wrap gap-x-6 gap-y-2 mb-4">
+					{#each legendItems as group}
+						<div class="flex items-center gap-2">
+							<span class="text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-wider"
+								>{group.category}</span
+							>
+							<div class="flex items-center gap-2.5">
+								{#each group.items as item}
+									<span class="flex items-center gap-1 text-xs text-[var(--text-secondary)]">
+										<span
+											class="inline-block w-2 h-2 rounded-full"
+											style="background-color: {item.color};"
+										></span>
+										{item.name}
+									</span>
+								{/each}
+							</div>
+						</div>
+					{/each}
+				</div>
+
+				<div class="h-[220px]">
 					<canvas bind:this={canvas}></canvas>
 				</div>
 			</div>
@@ -437,8 +493,7 @@
 								>
 									<div
 										class="h-full rounded-full transition-all duration-500 ease-out"
-										style="width: {pct}%; background-color: {chartColorPalette[0]}; opacity: {1 -
-											i * 0.12};"
+										style="width: {pct}%; background-color: {agentColors[i % agentColors.length]};"
 									></div>
 								</div>
 							</div>
@@ -478,8 +533,7 @@
 								>
 									<div
 										class="h-full rounded-full transition-all duration-500 ease-out"
-										style="width: {pct}%; background-color: {chartColorPalette[2]}; opacity: {1 -
-											i * 0.12};"
+										style="width: {pct}%; background-color: {skillColors[i % skillColors.length]};"
 									></div>
 								</div>
 							</div>
@@ -535,8 +589,7 @@
 								>
 									<div
 										class="h-full rounded-full transition-all duration-500 ease-out"
-										style="width: {pct}%; background-color: {chartColorPalette[4]}; opacity: {1 -
-											i * 0.12};"
+										style="width: {pct}%; background-color: {mcpColors[i % mcpColors.length]};"
 									></div>
 								</div>
 							</div>

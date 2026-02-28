@@ -156,6 +156,7 @@ def _query_plugin_mcp_usage_sqlite(
 
     by_mcp_tool: Counter = Counter()
     daily_usage: dict[str, int] = defaultdict(int)
+    by_mcp_tool_daily: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
     total = 0
 
     for row in rows:
@@ -171,6 +172,7 @@ def _query_plugin_mcp_usage_sqlite(
             try:
                 date_key = datetime.fromisoformat(start_time).strftime("%Y-%m-%d")
                 daily_usage[date_key] += count
+                by_mcp_tool_daily[short][date_key] += count
             except (ValueError, TypeError):
                 pass
 
@@ -178,6 +180,7 @@ def _query_plugin_mcp_usage_sqlite(
         "total_mcp_tool_calls": total,
         "by_mcp_tool": dict(by_mcp_tool),
         "daily_usage": dict(daily_usage),
+        "by_mcp_tool_daily": {k: dict(v) for k, v in by_mcp_tool_daily.items()},
     }
 
 
@@ -257,6 +260,8 @@ def _query_plugin_usage_sqlite(
     by_skill = Counter()
     by_agent = Counter()
     daily_usage = defaultdict(lambda: {"agent_runs": 0, "skill_invocations": 0, "cost_usd": 0.0})
+    by_agent_daily: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    by_skill_daily: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
     total_skill_invocations = 0
     total_agent_runs = 0
     total_cost = 0.0
@@ -278,6 +283,7 @@ def _query_plugin_usage_sqlite(
         if start_time:
             date_key = start_time.strftime("%Y-%m-%d")
             daily_usage[date_key]["skill_invocations"] += count
+            by_skill_daily[skill_short][date_key] += count
 
             if first_used is None or start_time < first_used:
                 first_used = start_time
@@ -302,6 +308,7 @@ def _query_plugin_usage_sqlite(
             date_key = start_time.strftime("%Y-%m-%d")
             daily_usage[date_key]["agent_runs"] += 1
             daily_usage[date_key]["cost_usd"] += cost
+            by_agent_daily[agent_short][date_key] += 1
 
             if first_used is None or start_time < first_used:
                 first_used = start_time
@@ -314,6 +321,8 @@ def _query_plugin_usage_sqlite(
         "cost_usd": total_cost,
         "by_agent": dict(by_agent),
         "by_skill": dict(by_skill),
+        "by_agent_daily": {k: dict(v) for k, v in by_agent_daily.items()},
+        "by_skill_daily": {k: dict(v) for k, v in by_skill_daily.items()},
         "daily_usage": dict(daily_usage),
         "first_used": first_used,
         "last_used": last_used,
@@ -357,6 +366,9 @@ def _collect_plugin_usage_sync(period: str = "all") -> dict[str, dict]:
             "by_agent": Counter(),
             "by_skill": Counter(),
             "by_mcp_tool": Counter(),
+            "by_agent_daily": defaultdict(lambda: defaultdict(int)),
+            "by_skill_daily": defaultdict(lambda: defaultdict(int)),
+            "by_mcp_tool_daily": defaultdict(lambda: defaultdict(int)),
             "first_used": None,
             "last_used": None,
             "daily_usage": defaultdict(
@@ -411,6 +423,7 @@ def _collect_plugin_usage_sync(period: str = "all") -> dict[str, dict]:
                         skill_short = skill_name.split(":", 1)[1]
                         plugin_stats[plugin_name]["skill_invocations"] += count
                         plugin_stats[plugin_name]["by_skill"][skill_short] += count
+                        plugin_stats[plugin_name]["by_skill_daily"][skill_short][date_key] += count
                         plugin_stats[plugin_name]["daily_usage"][date_key]["skill_invocations"] += (
                             count
                         )
@@ -443,6 +456,7 @@ def _collect_plugin_usage_sync(period: str = "all") -> dict[str, dict]:
                                     agent_short = subagent_type.split(":", 1)[1]
                                     plugin_stats[plugin_name]["agent_runs"] += 1
                                     plugin_stats[plugin_name]["by_agent"][agent_short] += 1
+                                    plugin_stats[plugin_name]["by_agent_daily"][agent_short][date_key] += 1
                                     plugin_stats[plugin_name]["daily_usage"][date_key][
                                         "agent_runs"
                                     ] += 1
@@ -469,6 +483,7 @@ def _collect_plugin_usage_sync(period: str = "all") -> dict[str, dict]:
                                         tool_short = _extract_mcp_tool_short_name(block.name)
                                         plugin_stats[short]["mcp_tool_calls"] += 1
                                         plugin_stats[short]["by_mcp_tool"][tool_short] += 1
+                                        plugin_stats[short]["by_mcp_tool_daily"][tool_short][date_key] += 1
                                         plugin_stats[short]["daily_usage"][date_key][
                                             "mcp_tool_calls"
                                         ] += 1
@@ -511,6 +526,15 @@ def _collect_plugin_usage_sync(period: str = "all") -> dict[str, dict]:
         plugin_stats[plugin_name]["by_agent"] = dict(plugin_stats[plugin_name]["by_agent"])
         plugin_stats[plugin_name]["by_skill"] = dict(plugin_stats[plugin_name]["by_skill"])
         plugin_stats[plugin_name]["by_mcp_tool"] = dict(plugin_stats[plugin_name]["by_mcp_tool"])
+        plugin_stats[plugin_name]["by_agent_daily"] = {
+            k: dict(v) for k, v in plugin_stats[plugin_name]["by_agent_daily"].items()
+        }
+        plugin_stats[plugin_name]["by_skill_daily"] = {
+            k: dict(v) for k, v in plugin_stats[plugin_name]["by_skill_daily"].items()
+        }
+        plugin_stats[plugin_name]["by_mcp_tool_daily"] = {
+            k: dict(v) for k, v in plugin_stats[plugin_name]["by_mcp_tool_daily"].items()
+        }
         plugin_stats[plugin_name]["daily_usage"] = dict(plugin_stats[plugin_name]["daily_usage"])
 
     return dict(plugin_stats)
@@ -964,6 +988,9 @@ def get_plugin_usage(
                         by_agent=plugin_usage.get("by_agent", {}),
                         by_skill=plugin_usage.get("by_skill", {}),
                         by_mcp_tool=mcp_usage.get("by_mcp_tool", {}),
+                        by_agent_daily=plugin_usage.get("by_agent_daily", {}),
+                        by_skill_daily=plugin_usage.get("by_skill_daily", {}),
+                        by_mcp_tool_daily=mcp_usage.get("by_mcp_tool_daily", {}),
                         trend=trend,
                         first_used=plugin_usage.get("first_used"),
                         last_used=plugin_usage.get("last_used"),
@@ -998,6 +1025,9 @@ def get_plugin_usage(
         by_agent=plugin_usage.get("by_agent", {}),
         by_skill=plugin_usage.get("by_skill", {}),
         by_mcp_tool=plugin_usage.get("by_mcp_tool", {}),
+        by_agent_daily=plugin_usage.get("by_agent_daily", {}),
+        by_skill_daily=plugin_usage.get("by_skill_daily", {}),
+        by_mcp_tool_daily=plugin_usage.get("by_mcp_tool_daily", {}),
         trend=trend,
         first_used=plugin_usage.get("first_used"),
         last_used=plugin_usage.get("last_used"),

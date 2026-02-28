@@ -175,6 +175,9 @@
 						by_agent: {},
 						by_skill: {},
 						by_mcp_tool: {},
+						by_agent_daily: {},
+						by_skill_daily: {},
+						by_mcp_tool_daily: {},
 						trend: [],
 						first_used: null,
 						last_used: null

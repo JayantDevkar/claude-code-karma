@@ -1326,6 +1326,15 @@ class PluginUsageStats(BaseModel):
     by_mcp_tool: dict[str, int] = Field(
         default_factory=dict, description="MCP tool short name -> call count"
     )
+    by_agent_daily: dict[str, dict[str, int]] = Field(
+        default_factory=dict, description="Agent name -> {date -> count}"
+    )
+    by_skill_daily: dict[str, dict[str, int]] = Field(
+        default_factory=dict, description="Skill name -> {date -> count}"
+    )
+    by_mcp_tool_daily: dict[str, dict[str, int]] = Field(
+        default_factory=dict, description="MCP tool name -> {date -> count}"
+    )
     trend: list[DailyUsage] = Field(default_factory=list, description="Usage trend over time")
     first_used: Optional[datetime] = Field(None, description="First usage timestamp")
     last_used: Optional[datetime] = Field(None, description="Most recent usage timestamp")

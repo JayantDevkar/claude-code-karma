@@ -1277,6 +1277,9 @@ export interface PluginUsageStats {
 	by_agent: Record<string, number>;
 	by_skill: Record<string, number>;
 	by_mcp_tool: Record<string, number>;
+	by_agent_daily: Record<string, Record<string, number>>;
+	by_skill_daily: Record<string, Record<string, number>>;
+	by_mcp_tool_daily: Record<string, Record<string, number>>;
 	trend: DailyUsage[];
 	first_used: string | null;
 	last_used: string | null;
