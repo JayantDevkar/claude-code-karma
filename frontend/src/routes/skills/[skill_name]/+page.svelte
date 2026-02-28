@@ -32,7 +32,7 @@
 	import FiltersDropdown from '$lib/components/FiltersDropdown.svelte';
 	import FiltersBottomSheet from '$lib/components/FiltersBottomSheet.svelte';
 	import ActiveFilterChips from '$lib/components/ActiveFilterChips.svelte';
-	import { renderMarkdownEffect, cleanSkillName, getPluginColorVars, getPluginChartHex } from '$lib/utils';
+	import { renderMarkdownEffect, cleanSkillName, getPluginColorVars, getPluginChartHex, getProjectNameFromEncoded } from '$lib/utils';
 	import SkeletonBox from '$lib/components/skeleton/SkeletonBox.svelte';
 	import SkeletonText from '$lib/components/skeleton/SkeletonText.svelte';
 	import { SkeletonGlobalSessionCard } from '$lib/components/skeleton';
@@ -170,7 +170,7 @@
 			session_titles: s.session_titles,
 			project_encoded_name: s.project_encoded_name ?? undefined,
 			project_path: s.project_encoded_name ?? '',
-			project_name: s.project_encoded_name?.split('-').pop() ?? ''
+			project_name: getProjectNameFromEncoded(s.project_encoded_name ?? '')
 		};
 	}
 

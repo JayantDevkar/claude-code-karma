@@ -35,6 +35,7 @@
 	import FiltersBottomSheet from '$lib/components/FiltersBottomSheet.svelte';
 	import ActiveFilterChips from '$lib/components/ActiveFilterChips.svelte';
 	import { getServerColorVars, getServerChartHex } from '$lib/utils/mcp';
+	import { getProjectNameFromEncoded } from '$lib/utils';
 	import {
 		DEFAULT_FILTERS,
 		DEFAULT_SCOPE_SELECTION,
@@ -241,7 +242,7 @@
 			session_titles: s.session_titles,
 			project_encoded_name: s.project_encoded_name ?? undefined,
 			project_path: s.project_encoded_name ?? '',
-			project_name: s.project_encoded_name?.split('-').pop() ?? ''
+			project_name: getProjectNameFromEncoded(s.project_encoded_name ?? '')
 		};
 	}
 
