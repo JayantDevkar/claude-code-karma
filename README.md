@@ -3,7 +3,8 @@
 </p>
 
 <p align="center">
-  An open-source dashboard for monitoring and analyzing your Claude Code sessions — token usage, tool calls, session timelines, and live hooks, all in one place.
+  <strong>Your Claude Code sessions deserve more than a terminal.</strong><br />
+  A local-first, open-source dashboard that turns your <code>~/.claude/</code> data into a visual story — sessions, timelines, costs, and live activity, all on your machine.
 </p>
 
 <p align="center">
@@ -15,44 +16,51 @@
 
 <br />
 
+<!-- Hero screenshot -->
 <p align="center">
-  <img src="docs/screenshots/sessions.png" alt="Claude Code Karma — Sessions Browser" width="100%" />
+  <a href="docs/screenshots/sessions.png" target="_blank">
+    <img src="docs/screenshots/sessions.png" alt="Sessions Browser" width="100%" />
+  </a>
 </p>
+
+<!-- Gallery grid -->
+<p align="center">
+  <a href="docs/screenshots/session-timeline.png" target="_blank">
+    <img src="docs/screenshots/session-timeline.png" alt="Session Timeline" width="47%" />
+  </a>
+  &nbsp;
+  <a href="docs/screenshots/session-overview.png" target="_blank">
+    <img src="docs/screenshots/session-overview.png" alt="Session Overview" width="47%" />
+  </a>
+</p>
+<p align="center">
+  <a href="docs/screenshots/analytics.png" target="_blank">
+    <img src="docs/screenshots/analytics.png" alt="Analytics Dashboard" width="47%" />
+  </a>
+  &nbsp;
+  <a href="docs/screenshots/projects.png" target="_blank">
+    <img src="docs/screenshots/projects.png" alt="Projects" width="47%" />
+  </a>
+</p>
+
+## Why Claude Code Karma?
+
+If you use Claude Code, you already have a goldmine of data sitting in `~/.claude/` — every session, every tool call, every token. But it's all buried in JSONL files you'll never read.
+
+Claude Code Karma reads that local data and gives you a proper dashboard. No cloud. No accounts. No telemetry. Just your data, on your machine.
 
 ## Features
 
 - **Session Browser** — Browse all sessions across projects with live status, search, and filters
-- **Timeline View** — Chronological event timeline showing prompts, tool calls, thinking, and responses
+- **Timeline View** — Chronological event timeline showing tool calls, thinking blocks, and responses
 - **Live Sessions** — Real-time session monitoring via Claude Code hooks
 - **Analytics** — Token usage, costs, velocity trends, cache hit rates, and coding rhythm
 - **Subagent Tracking** — Monitor spawned agents and their activity within sessions
-- **Tool & Skill Analytics** — Track which tools and skills are most used across sessions
-- **Plans Browser** — View plans created during sessions and their execution status
-- **Hooks & Plugins** — Browse installed Claude Code hooks and plugins
+- **Tool & Skill Analytics** — Track which tools and skills are most used
+- **Plans Browser** — View implementation plans and their execution status
+- **Hooks & Plugins** — Browse installed Claude Code hooks and MCP plugins
 - **Command Palette** — Quick navigation with `Ctrl+K` / `Cmd+K`
-- **Session Search** — Full-text search across all session titles, prompts, and slugs
-- **File History** — Track file changes across sessions
-
-<details>
-<summary><strong>More screenshots</strong></summary>
-<br />
-
-### Session Timeline
-<img src="docs/screenshots/session-timeline.png" alt="Session Timeline" width="100%" />
-
-### Session Overview
-<img src="docs/screenshots/session-overview.png" alt="Session Overview" width="100%" />
-
-### Analytics
-<img src="docs/screenshots/analytics.png" alt="Analytics Dashboard" width="100%" />
-
-### Projects
-<img src="docs/screenshots/projects.png" alt="Projects Browser" width="100%" />
-
-### Home
-<img src="docs/screenshots/home.png" alt="Home Page" width="100%" />
-
-</details>
+- **Full-text Search** — Search across session titles, prompts, and slugs
 
 ## Quick Start
 
@@ -77,23 +85,14 @@ For detailed setup including live session tracking, see [SETUP.md](./SETUP.md).
 
 ## How It Works
 
+Claude Code already saves everything locally — sessions, tool calls, token counts — as JSONL files in `~/.claude/`. Claude Code Karma simply reads those files and serves them through a local dashboard.
+
 ```
-~/.claude/projects/{encoded-path}/{uuid}.jsonl
-    ↓
-API parses JSONL → Pydantic models
-    ↓
-FastAPI endpoints on port 8000
-    ↓
-SvelteKit dashboard on port 5173
+~/.claude/projects/  →  FastAPI (port 8000)  →  SvelteKit (port 5173)
+   your data              parses & serves          visualizes it
 ```
 
-Claude Code Karma reads Claude Code's local storage and presents it through an interactive dashboard:
-
-1. **Storage** — Claude Code writes session data to `~/.claude/projects/`
-2. **Parsing** — The API parses JSONL files into structured Pydantic models
-3. **Database** — Metadata is indexed in SQLite at `~/.claude_karma/metadata.db`
-4. **API** — FastAPI serves REST endpoints for querying session data
-5. **Frontend** — SvelteKit renders interactive visualizations
+Nothing leaves your machine. The API reads your local files, indexes metadata in a local SQLite database, and the frontend renders it all in the browser.
 
 ## Project Structure
 
