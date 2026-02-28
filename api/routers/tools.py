@@ -256,12 +256,12 @@ def get_mcp_tool_usage_trend(
                     trend_map[t["date"]] = trend_map.get(t["date"], 0) + t["count"]
                 for t in builtin_data["trend"]:
                     trend_map[t["date"]] = trend_map.get(t["date"], 0) + t["count"]
-                merged_trend = [
-                    {"date": d, "count": c} for d, c in sorted(trend_map.items())
-                ]
+                merged_trend = [{"date": d, "count": c} for d, c in sorted(trend_map.items())]
 
                 # Earliest first_used, latest last_used
-                firsts = [d.get("first_used") for d in (mcp_data, builtin_data) if d.get("first_used")]
+                firsts = [
+                    d.get("first_used") for d in (mcp_data, builtin_data) if d.get("first_used")
+                ]
                 lasts = [d.get("last_used") for d in (mcp_data, builtin_data) if d.get("last_used")]
 
                 # Merge trend_by_item from both sources

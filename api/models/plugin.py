@@ -82,14 +82,22 @@ class PluginInstallation(BaseModel):
     def days_since_installed(self) -> int:
         """Calculate days since initial installation."""
         now = datetime.now(timezone.utc)
-        installed = self.installed_at if self.installed_at.tzinfo else self.installed_at.replace(tzinfo=timezone.utc)
+        installed = (
+            self.installed_at
+            if self.installed_at.tzinfo
+            else self.installed_at.replace(tzinfo=timezone.utc)
+        )
         return (now - installed).days
 
     @property
     def days_since_updated(self) -> int:
         """Calculate days since last update."""
         now = datetime.now(timezone.utc)
-        updated = self.last_updated if self.last_updated.tzinfo else self.last_updated.replace(tzinfo=timezone.utc)
+        updated = (
+            self.last_updated
+            if self.last_updated.tzinfo
+            else self.last_updated.replace(tzinfo=timezone.utc)
+        )
         return (now - updated).days
 
 

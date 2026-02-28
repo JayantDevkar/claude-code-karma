@@ -146,7 +146,7 @@
 	<div
 		bind:this={containerRef}
 		onclick={handleContainerClick}
-		onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleContainerClick(); }}
+		onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') inputRef?.focus(); }}
 		role="group"
 		class="token-search-container group"
 		class:has-tokens={tokens.length > 0}
