@@ -16,30 +16,9 @@
 
 <br />
 
-<!-- Hero screenshot -->
 <p align="center">
-  <a href="docs/screenshots/sessions.png" target="_blank">
-    <img src="docs/screenshots/sessions.png" alt="Sessions Browser" width="100%" />
-  </a>
-</p>
-
-<!-- Gallery grid -->
-<p align="center">
-  <a href="docs/screenshots/session-timeline.png" target="_blank">
-    <img src="docs/screenshots/session-timeline.png" alt="Session Timeline" width="47%" />
-  </a>
-  &nbsp;
-  <a href="docs/screenshots/session-overview.png" target="_blank">
-    <img src="docs/screenshots/session-overview.png" alt="Session Overview" width="47%" />
-  </a>
-</p>
-<p align="center">
-  <a href="docs/screenshots/analytics.png" target="_blank">
-    <img src="docs/screenshots/analytics.png" alt="Analytics Dashboard" width="47%" />
-  </a>
-  &nbsp;
-  <a href="docs/screenshots/projects.png" target="_blank">
-    <img src="docs/screenshots/projects.png" alt="Projects" width="47%" />
+  <a href="docs/screenshots/home.png" target="_blank">
+    <img src="docs/screenshots/home.png" alt="Claude Code Karma Dashboard" width="100%" />
   </a>
 </p>
 
