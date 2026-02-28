@@ -91,6 +91,7 @@ def get_tool_description(tool_name: str) -> str:
         # Legacy/alternative tool names
         "Bash": "running commands",
         "Task": "spawning subagents",
+        "Agent": "spawning subagents",
     }
     return descriptions.get(tool_name, f"using {tool_name}")
 
@@ -102,7 +103,7 @@ def categorize_tools(tool_counts: Counter[str]) -> dict[str, List[Tuple[str, int
         "file_write": ["Write", "StrReplace", "Delete", "EditNotebook"],
         "execution": ["Shell", "Bash"],
         "search": ["Grep", "Glob", "SemanticSearch", "WebSearch"],
-        "agents": ["Task"],
+        "agents": ["Task", "Agent"],
         "other": ["TodoWrite", "SwitchMode", "CallMcpTool", "ReadLints"],
     }
 
@@ -202,7 +203,7 @@ def generate_activity_summary(session: Session) -> str:
         + tool_counts.get("EditNotebook", 0)
     )
     shell_count = tool_counts.get("Shell", 0) + tool_counts.get("Bash", 0)
-    subagent_count = tool_counts.get("Task", 0)
+    subagent_count = tool_counts.get("Task", 0) + tool_counts.get("Agent", 0)
 
     activities = []
     if read_count > 0:

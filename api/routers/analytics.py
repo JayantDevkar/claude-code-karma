@@ -351,7 +351,7 @@ EXPLORATION_TOOLS = {
     "ReadMcpResourceTool",
 }
 BUILDING_TOOLS = {"Write", "Edit", "NotebookEdit", "MultiEdit"}
-TESTING_TOOLS = {"Bash", "Task", "KillShell"}
+TESTING_TOOLS = {"Bash", "Task", "Agent", "KillShell"}
 
 
 def _calculate_work_mode_distribution(tools_used: dict) -> WorkModeDistribution:
