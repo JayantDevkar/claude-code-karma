@@ -14,7 +14,7 @@ export async function load({ fetch }) {
 	// This matches the tools page pattern (no pagination).
 	const [definitions, usage] = await Promise.all([
 		fetchWithFallback<AgentDefinition[]>(fetch, `${API_BASE}/agents`, []),
-		fetchWithFallback<AgentUsageListResponse>(fetch, `${API_BASE}/agents/usage`, {
+		fetchWithFallback<AgentUsageListResponse>(fetch, `${API_BASE}/agents/usage?per_page=100`, {
 			agents: [],
 			total: 0,
 			page: 1,
