@@ -456,7 +456,9 @@ def _collect_plugin_usage_sync(period: str = "all") -> dict[str, dict]:
                                     agent_short = subagent_type.split(":", 1)[1]
                                     plugin_stats[plugin_name]["agent_runs"] += 1
                                     plugin_stats[plugin_name]["by_agent"][agent_short] += 1
-                                    plugin_stats[plugin_name]["by_agent_daily"][agent_short][date_key] += 1
+                                    plugin_stats[plugin_name]["by_agent_daily"][agent_short][
+                                        date_key
+                                    ] += 1
                                     plugin_stats[plugin_name]["daily_usage"][date_key][
                                         "agent_runs"
                                     ] += 1
@@ -483,7 +485,9 @@ def _collect_plugin_usage_sync(period: str = "all") -> dict[str, dict]:
                                         tool_short = _extract_mcp_tool_short_name(block.name)
                                         plugin_stats[short]["mcp_tool_calls"] += 1
                                         plugin_stats[short]["by_mcp_tool"][tool_short] += 1
-                                        plugin_stats[short]["by_mcp_tool_daily"][tool_short][date_key] += 1
+                                        plugin_stats[short]["by_mcp_tool_daily"][tool_short][
+                                            date_key
+                                        ] += 1
                                         plugin_stats[short]["daily_usage"][date_key][
                                             "mcp_tool_calls"
                                         ] += 1
