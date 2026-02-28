@@ -24,10 +24,8 @@
     </filter>
   </defs>
 
-  <rect width="800" height="450" fill="url(#bg-gradient)" />
-
   <!-- Circuit lines -->
-  <g stroke="#6a3093" stroke-width="1" fill="none" opacity="0.3">
+  <g stroke="#a855f7" stroke-width="1" fill="none" opacity="0.2">
     <path d="M0,300 L100,300 L150,250 L300,250" />
     <path d="M0,320 L80,320 L130,270 L280,270" />
     <path d="M0,340 L60,340 L110,290 L260,290" />
@@ -35,8 +33,8 @@
     <path d="M500,100 L650,100 L700,50 L800,50" />
     <path d="M520,120 L670,120 L720,70 L800,70" />
     <path d="M540,140 L690,140 L740,90 L800,90" />
-    <circle cx="300" cy="250" r="3" fill="#6a3093" />
-    <circle cx="500" cy="100" r="3" fill="#6a3093" />
+    <circle cx="300" cy="250" r="3" fill="#a855f7" />
+    <circle cx="500" cy="100" r="3" fill="#a855f7" />
   </g>
 
   <!-- Logo group: orbits + infinity -->
@@ -71,7 +69,7 @@
 
   <!-- Text -->
   <g transform="translate(450, 210)">
-    <text x="0" y="0" font-family="system-ui, -apple-system, sans-serif" font-size="40" fill="white" opacity="0.9">Claude</text>
-    <text x="0" y="45" font-family="system-ui, -apple-system, sans-serif" font-size="40" fill="white" font-weight="bold">Code Karma</text>
+    <text x="0" y="0" font-family="system-ui, -apple-system, sans-serif" font-size="40" fill="#1e1b4b" opacity="0.9">Claude</text>
+    <text x="0" y="45" font-family="system-ui, -apple-system, sans-serif" font-size="40" fill="#1e1b4b" font-weight="bold">Code Karma</text>
   </g>
 </svg>
