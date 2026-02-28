@@ -36,6 +36,7 @@ from schemas import (
     ProjectBranchesResponse,
     ProjectChainsResponse,
     ProjectDetail,
+    ProjectMemoryResponse,
     ProjectSummary,
     SessionChainInfo,
     SessionChainInfoSummary,
@@ -1341,3 +1342,48 @@ def get_project_skills(
 
     # Sort: directories first, then files, alphabetically within each group
     return sorted(items, key=lambda x: (x.type == "file", x.name.lower()))
+
+
+# ============================================================================
+# Project Memory Endpoint
+# ============================================================================
+
+
+@router.get("/{encoded_name}/memory", response_model=ProjectMemoryResponse)
+@cacheable(max_age=30, stale_while_revalidate=60)
+async def get_project_memory(encoded_name: str, request: Request):
+    """
+    Get the MEMORY.md file for a project.
+
+    Returns the markdown content of the project's memory file stored at
+    ~/.claude/projects/{encoded_name}/memory/MEMORY.md
+    """
+    from config import settings
+
+    memory_dir = settings.projects_dir / encoded_name / "memory"
+    memory_file = memory_dir / "MEMORY.md"
+
+    if not memory_file.exists():
+        return ProjectMemoryResponse(
+            content="",
+            word_count=0,
+            size_bytes=0,
+            modified=datetime.now(timezone.utc),
+            exists=False,
+        )
+
+    try:
+        stat = memory_file.stat()
+        content = memory_file.read_text(encoding="utf-8")
+        word_count = len(content.split())
+
+        return ProjectMemoryResponse(
+            content=content,
+            word_count=word_count,
+            size_bytes=stat.st_size,
+            modified=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc),
+            exists=True,
+        )
+    except OSError as e:
+        logger.error(f"Error reading memory file for {encoded_name}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to read memory file")

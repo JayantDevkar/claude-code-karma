@@ -817,6 +817,21 @@ class PlanRelatedSession(BaseModel):
 
 
 # =============================================================================
+# Project Memory Schemas
+# =============================================================================
+
+
+class ProjectMemoryResponse(BaseModel):
+    """Response for a project's MEMORY.md file."""
+
+    content: str = Field(..., description="Full markdown content of MEMORY.md")
+    word_count: int = Field(0, description="Total word count")
+    size_bytes: int = Field(0, description="File size in bytes")
+    modified: datetime = Field(..., description="Last modification time")
+    exists: bool = Field(True, description="Whether the memory file exists")
+
+
+# =============================================================================
 # Live Session Schemas
 # =============================================================================
 

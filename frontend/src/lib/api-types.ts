@@ -922,6 +922,18 @@ export interface PlanStats {
 	newest_plan: string | null;
 }
 
+/**
+ * Response from /projects/{encoded_name}/memory endpoint.
+ * Contains the project's MEMORY.md content.
+ */
+export interface ProjectMemory {
+	content: string;
+	word_count: number;
+	size_bytes: number;
+	modified: string;
+	exists: boolean;
+}
+
 // ============================================================================
 // Sessions List Types (for /sessions/all endpoint)
 // ============================================================================

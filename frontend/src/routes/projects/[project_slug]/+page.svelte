@@ -23,7 +23,8 @@
 		X,
 		Archive,
 		LayoutGrid,
-		List
+		List,
+		Brain
 	} from 'lucide-svelte';
 	import { isToday, isYesterday, isThisWeek, isThisMonth } from 'date-fns';
 	import TabsTrigger from '$lib/components/ui/TabsTrigger.svelte';
@@ -37,6 +38,7 @@
 	import AgentList from '$lib/components/agents/AgentList.svelte';
 	import SkillList from '$lib/components/skills/SkillList.svelte';
 	import ToolList from '$lib/components/tools/ToolList.svelte';
+	import MemoryViewer from '$lib/components/memory/MemoryViewer.svelte';
 	import StatsGrid from '$lib/components/StatsGrid.svelte';
 	import ActiveBranches from '$lib/components/ActiveBranches.svelte';
 	import Pagination from '$lib/components/Pagination.svelte';
@@ -303,7 +305,7 @@
 	});
 
 	// Tab state - initialize from URL immediately (not deferred to onMount)
-	const validTabs = ['overview', 'analytics', 'agents', 'skills', 'tools', 'archived'];
+	const validTabs = ['overview', 'analytics', 'agents', 'skills', 'tools', 'memory', 'archived'];
 	const initialTab = $page.url.searchParams.get('tab');
 	let activeTab = $state(initialTab && validTabs.includes(initialTab) ? initialTab : 'overview');
 	let tabsReady = $state(false);
@@ -1030,6 +1032,7 @@
 					<TabsTrigger value="agents" icon={Bot}>Project Agents</TabsTrigger>
 					<TabsTrigger value="skills" icon={Wrench}>Project Skills</TabsTrigger>
 					<TabsTrigger value="tools" icon={Cable}>Project Tools</TabsTrigger>
+					<TabsTrigger value="memory" icon={Brain}>Project Memory</TabsTrigger>
 					<TabsTrigger value="analytics" icon={BarChart3}>Analytics</TabsTrigger>
 					{#if archived.total_sessions > 0}
 						<TabsTrigger value="archived" icon={Archive}>
@@ -1671,6 +1674,11 @@
 				<!-- Tools Tab -->
 				<Tabs.Content value="tools" class="animate-fade-in">
 					<ToolList projectEncodedName={project.encoded_name} />
+				</Tabs.Content>
+
+				<!-- Memory Tab -->
+				<Tabs.Content value="memory" class="animate-fade-in">
+					<MemoryViewer projectEncodedName={project.encoded_name} />
 				</Tabs.Content>
 
 				<!-- Archived Tab -->
