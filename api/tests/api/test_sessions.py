@@ -254,7 +254,7 @@ def get_subagents(uuid: str):
     for msg in session.iter_messages():
         if isinstance(msg, AssistantMessage):
             for block in msg.content_blocks:
-                if isinstance(block, ToolUseBlock) and block.name == "Task":
+                if isinstance(block, ToolUseBlock) and block.name in ("Task", "Agent"):
                     desc = block.input.get("description", "")[:100]
                     stype = block.input.get("subagent_type")  # None if missing
                     if desc and stype:

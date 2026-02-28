@@ -760,7 +760,7 @@ def get_tool_summary(block, working_dirs: list[str] | None = None) -> tuple[str,
     elif tool_name == "SemanticSearch":
         query = tool_input.get("query", "")
         return "Semantic search", query[:100] if query else None, {"query": query}
-    elif tool_name == "Task":
+    elif tool_name in ("Task", "Agent"):
         description = tool_input.get("description", "")
         subagent_type = tool_input.get("subagent_type")  # None if missing
         return (

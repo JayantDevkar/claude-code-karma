@@ -307,9 +307,8 @@
 		transition: background-color 0.3s ease;
 	}
 
-	/* Light mode: dark circular backdrop */
 	.logo-wrapper {
-		background: radial-gradient(circle, #1a1025 60%, transparent 100%);
+		background: radial-gradient(circle, #2d2240 55%, transparent 100%);
 	}
 
 	.logo-wrapper-lg {
@@ -326,17 +325,6 @@
 		.logo-wrapper-lg {
 			width: 6.5rem;
 			height: 6.5rem;
-		}
-	}
-
-	/* Dark mode: lighter moon-like sphere */
-	:global(:root[data-theme='dark']) .logo-wrapper {
-		background: radial-gradient(circle, #2d2240 55%, transparent 100%);
-	}
-
-	@media (prefers-color-scheme: dark) {
-		:global(:root:not([data-theme='light'])) .logo-wrapper {
-			background: radial-gradient(circle, #2d2240 55%, transparent 100%);
 		}
 	}
 </style>
