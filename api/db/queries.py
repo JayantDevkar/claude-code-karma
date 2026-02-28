@@ -1771,7 +1771,7 @@ BUILTIN_TOOL_CATEGORIES: dict[str, list[str]] = {
     "builtin-file-ops": ["Read", "Write", "Edit", "Glob", "Grep", "NotebookEdit"],
     "builtin-execution": ["Bash", "KillShell"],
     "builtin-agents": [
-        "Task", "TaskCreate", "TaskUpdate", "TaskOutput", "TaskList",
+        "Task", "Agent", "TaskCreate", "TaskUpdate", "TaskOutput", "TaskList",
         "TaskGet", "TaskStop", "SendMessage", "TeamCreate", "TeamDelete",
     ],
     "builtin-planning": [
