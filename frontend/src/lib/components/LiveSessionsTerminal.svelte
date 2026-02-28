@@ -84,7 +84,7 @@
 
 	function getProjectDisplayName(session: LiveSessionSummary): string {
 		// Use cwd which has proper path separators
-		// cwd: /Users/jayantdevkar/Documents/GitHub/claude-karma/frontend
+		// cwd: /Users/username/projects/claude-karma/frontend
 		// We want the git root name, not the subdirectory
 		const parts = session.cwd.split('/').filter(Boolean);
 

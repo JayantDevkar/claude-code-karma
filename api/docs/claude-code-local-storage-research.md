@@ -57,7 +57,7 @@ Claude Code encodes project paths by replacing `/` with `-`:
 
 | Original Path | Encoded Directory Name |
 |---------------|----------------------|
-| `/Users/jayantdevkar/Documents/GitHub/claude-karma` | `-Users-jayantdevkar-Documents-GitHub-claude-karma` |
+| `/Users/username/projects/claude-karma` | `-Users-username-projects-claude-karma` |
 | `/home/user/projects/myapp` | `-home-user-projects-myapp` |
 
 ### 2.2 Directory Contents
@@ -65,7 +65,7 @@ Claude Code encodes project paths by replacing `/` with `-`:
 Each project directory contains:
 
 ```
-~/.claude/projects/-Users-jayantdevkar-Documents-GitHub-claude-karma/
+~/.claude/projects/-Users-username-projects-claude-karma/
 ├── {session-uuid}.jsonl           # Main session transcript
 ├── {session-uuid}/                # Session-specific folder
 │   ├── tool-results/              # Large tool outputs
@@ -392,7 +392,7 @@ Local permission overrides:
 
 ### List all sessions for a project
 ```bash
-ls -la ~/.claude/projects/-Users-jayantdevkar-Documents-GitHub-claude-karma/*.jsonl
+ls -la ~/.claude/projects/-Users-username-projects-claude-karma/*.jsonl
 ```
 
 ### Count messages in a session

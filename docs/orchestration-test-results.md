@@ -66,7 +66,7 @@ Successfully validated the SOLID-refactored orchestration agent system. All 6 te
     "Create reference document"
   ],
   "file_references": [
-    "/Users/jayantdevkar/Documents/GitHub/claude-karma/docs/plane-orchestrator-test-task.md"
+    "/path/to/claude-karma/docs/plane-orchestrator-test-task.md"
   ],
   "parsing_confidence": "MEDIUM"
 }

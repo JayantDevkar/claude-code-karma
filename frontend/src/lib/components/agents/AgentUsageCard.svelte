@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
 	import { Bot, Clock, DollarSign, Play, FolderOpen, Puzzle } from 'lucide-svelte';
 	import { formatDistanceToNow } from 'date-fns';
 	import { formatCost, getSubagentColorVars, getScopeColorVars } from '$lib/utils';
@@ -99,12 +100,12 @@
 				onclick={(e) => {
 					e.preventDefault();
 					e.stopPropagation();
-					window.location.href = `/plugins/${encodeURIComponent(agent.plugin_source!)}`;
+					goto(`/plugins/${encodeURIComponent(agent.plugin_source!)}`);
 				}}
 				onkeydown={(e) => {
 					if (e.key === 'Enter') {
 						e.stopPropagation();
-						window.location.href = `/plugins/${encodeURIComponent(agent.plugin_source!)}`;
+						goto(`/plugins/${encodeURIComponent(agent.plugin_source!)}`);
 					}
 				}}
 				title="View plugin: {agent.plugin_source}"

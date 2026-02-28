@@ -38,7 +38,7 @@
 		loading = true;
 		error = null;
 		try {
-			const url = new URL('${API_BASE}/skills/content');
+			const url = new URL(`${API_BASE}/skills/content`);
 			url.searchParams.set('path', path);
 			if (projectEncodedName) url.searchParams.set('project', projectEncodedName);
 

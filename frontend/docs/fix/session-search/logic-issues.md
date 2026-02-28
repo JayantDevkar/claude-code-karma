@@ -23,8 +23,8 @@ When viewing the same project from different entry points:
 
 | View          | Displayed Count                  | Example                                                               |
 | ------------- | -------------------------------- | --------------------------------------------------------------------- |
-| Project Page  | "366 of 368 sessions"            | `/projects/-Users-jayantdevkar-Documents-GitHub-claude-karma`         |
-| Sessions Page | "Showing 1 - 50 of 344 sessions" | `/sessions?project=-Users-jayantdevkar-Documents-GitHub-claude-karma` |
+| Project Page  | "366 of 368 sessions"            | `/projects/-Users-username-projects-claude-karma`         |
+| Sessions Page | "Showing 1 - 50 of 344 sessions" | `/sessions?project=-Users-username-projects-claude-karma` |
 
 **Difference**: 368 total sessions (project) vs 344 total sessions (global)
 

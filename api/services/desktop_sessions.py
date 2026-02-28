@@ -206,7 +206,7 @@ def get_real_project_encoded_name(
                 if is_worktree_project(encoded_dir.name):
                     continue
                 # Check if encoded name ends with the project name
-                # e.g., "-Users-jayantdevkar-Documents-GitHub-claude-karma"
+                # e.g., "-Users-username-projects-claude-karma"
                 # ends with "-claude-karma" for project_name="claude-karma"
                 if encoded_dir.name.endswith("-" + project_name):
                     matches.append(encoded_dir.name)

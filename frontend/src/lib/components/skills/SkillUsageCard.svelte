@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
 	import { Zap, Flame, TrendingUp, Activity, Puzzle } from 'lucide-svelte';
 	import Badge from '$lib/components/ui/Badge.svelte';
 	import { getSkillColorVars, cleanSkillName } from '$lib/utils';
@@ -172,12 +173,12 @@
 				onclick={(e) => {
 					e.preventDefault();
 					e.stopPropagation();
-					window.location.href = `/plugins/${encodeURIComponent(skill.plugin!)}`;
+					goto(`/plugins/${encodeURIComponent(skill.plugin!)}`);
 				}}
 				onkeydown={(e) => {
 					if (e.key === 'Enter') {
 						e.stopPropagation();
-						window.location.href = `/plugins/${encodeURIComponent(skill.plugin!)}`;
+						goto(`/plugins/${encodeURIComponent(skill.plugin!)}`);
 					}
 				}}
 				title="View plugin: {skill.plugin}"
