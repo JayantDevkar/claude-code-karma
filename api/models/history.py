@@ -9,7 +9,7 @@ no longer exists.
 import json
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -42,7 +42,7 @@ class HistoryEntry:
             if not display.strip():
                 return None
 
-            timestamp = datetime.fromtimestamp(timestamp_ms / 1000)
+            timestamp = datetime.fromtimestamp(timestamp_ms / 1000, tz=timezone.utc)
 
             return cls(
                 display=display,

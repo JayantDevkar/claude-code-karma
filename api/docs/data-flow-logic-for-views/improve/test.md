@@ -1,4 +1,4 @@
-# Test Plan: Phase Verification for Claude Karma Improvements
+# Test Plan: Phase Verification for Claude Code Karma Improvements
 
 **Date**: January 2026
 **Author**: System Engineer

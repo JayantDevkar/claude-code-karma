@@ -74,6 +74,7 @@
 	let sessions = $state<LiveSessionSummary[]>([]);
 	let loading = $state(true);
 	let error = $state<string | null>(null);
+	// svelte-ignore state_referenced_locally
 	let collapsed = $state(initialCollapsed);
 	let collapsedInitialized = $state(false);
 
@@ -332,8 +333,12 @@
 {#if activeSessions.length > 0 || loading || (statusFilter !== 'completed' && hasActiveFilters)}
 	<div class="live-section mb-6">
 		<!-- Header -->
-		<button
+		<!-- svelte-ignore node_invalid_placement_ssr -->
+		<div
+			role="button"
+			tabindex={0}
 			onclick={() => (collapsed = !collapsed)}
+			onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); collapsed = !collapsed; } }}
 			class="live-header w-full"
 			aria-expanded={!collapsed}
 		>
@@ -381,7 +386,7 @@
 				{/if}
 				<span class="pulse-indicator" title="Polling every 1s"></span>
 			</div>
-		</button>
+		</div>
 
 		<!-- Content -->
 		{#if !collapsed}

@@ -75,7 +75,7 @@ Create a new REST API endpoint `/api/v1/user/preferences` with the following req
 
 **Instructions for Manual Creation:**
 1. Go to your Plane workspace
-2. Navigate to the Claude Karma project
+2. Navigate to the Claude Code Karma project
 3. Create new issue with the above details
 4. Copy the work item ID
 5. Run the orchestrator to fetch and process this task

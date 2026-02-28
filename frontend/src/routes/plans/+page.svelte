@@ -18,7 +18,9 @@
 	let { data } = $props();
 
 	// Client-side response state — starts from server data, updated by fetch
+	// svelte-ignore state_referenced_locally
 	let plansResponse = $state<PlanListResponse>(data.plansResponse);
+	// svelte-ignore state_referenced_locally
 	let projects = $state<Project[]>(data.projects);
 	let isLoading = $state(false);
 	let fetchController: AbortController | null = null;
@@ -39,12 +41,17 @@
 	});
 
 	// Pagination state
+	// svelte-ignore state_referenced_locally
 	let currentPage = $state(data.page || 1);
+	// svelte-ignore state_referenced_locally
 	let perPage = $state(data.perPage || 24);
 
 	// Filter state - initialize from server data
+	// svelte-ignore state_referenced_locally
 	let searchTokens = $state<string[]>(data.search ? paramToTokens(data.search) : []);
+	// svelte-ignore state_referenced_locally
 	let selectedProject = $state<string | null>(data.project || null);
+	// svelte-ignore state_referenced_locally
 	let selectedBranch = $state<string | null>(data.branch || null);
 	let showProjectDropdown = $state(false);
 	let showBranchDropdown = $state(false);
@@ -100,7 +107,11 @@
 		if (perPage !== 24) params.set('per_page', perPage.toString());
 
 		const newUrl = params.toString() ? `?${params}` : window.location.pathname;
-		replaceState(newUrl, {});
+		try {
+			replaceState(newUrl, {});
+		} catch {
+			// Router may not be initialized yet during SSR/hydration
+		}
 	}
 
 	// Client-side fetch for plans data

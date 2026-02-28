@@ -10,36 +10,26 @@
 		ChevronsDownUp,
 		ExternalLink
 	} from 'lucide-svelte';
-	import { page } from '$app/state';
 	import { listNavigation } from '$lib/actions/listNavigation';
 	import PageHeader from '$lib/components/layout/PageHeader.svelte';
 	import StatsGrid from '$lib/components/StatsGrid.svelte';
 	import SegmentedControl from '$lib/components/ui/SegmentedControl.svelte';
 	import CollapsibleGroup from '$lib/components/ui/CollapsibleGroup.svelte';
 	import SkillUsageCard from '$lib/components/skills/SkillUsageCard.svelte';
-	import SkillList from '$lib/components/skills/SkillList.svelte';
-	import { getSkillGroupColorVars } from '$lib/utils';
+	import SkillUsageTable from '$lib/components/skills/SkillUsageTable.svelte';
+	import UsageAnalytics from '$lib/components/charts/UsageAnalytics.svelte';
+	import { getSkillGroupColorVars, getSkillChartHex, cleanSkillName } from '$lib/utils';
 	import type { SkillUsage, StatItem } from '$lib/api-types';
 
 	// Server data
 	let { data } = $props();
 
-	// View state - default to "Usage Analytics"
-	let activeView = $state<'usage' | 'files'>('usage');
+	// View state — default to "By Category" grouped view
+	let activeView = $state<'groups' | 'table' | 'analytics'>('groups');
 
 	// Filter state
 	let searchQuery = $state('');
 	let selectedFilter = $state<'all' | 'plugin' | 'file'>('all');
-
-	// Read path from URL for Browse Files navigation
-	let urlPath = $derived(page.url.searchParams.get('path') || '');
-
-	// Auto-switch to files view when path param is present
-	$effect(() => {
-		if (urlPath) {
-			activeView = 'files';
-		}
-	});
 
 	// Filter options
 	const filterOptions = [
@@ -50,16 +40,17 @@
 
 	// View tab options
 	const viewTabs = [
-		{ label: 'Usage Analytics', value: 'usage' },
-		{ label: 'Browse Files', value: 'files' }
+		{ label: 'By Category', value: 'groups' },
+		{ label: 'All Skills', value: 'table' },
+		{ label: 'Usage Analytics', value: 'analytics' }
 	];
 
 	// Compute stats for hero section
 	let stats = $derived.by<StatItem[]>(() => {
 		const usage = data.usage || [];
 		const totalSkills = usage.length;
-		const totalUses = usage.reduce((sum, skill) => sum + skill.count, 0);
-		const pluginSkills = usage.filter((s) => s.is_plugin).length;
+		const totalUses = usage.reduce((sum: number, skill: SkillUsage) => sum + skill.count, 0);
+		const pluginSkills = usage.filter((s: SkillUsage) => s.is_plugin).length;
 
 		return [
 			{
@@ -89,16 +80,16 @@
 
 		// Filter by type
 		if (selectedFilter === 'plugin') {
-			skills = skills.filter((s) => s.is_plugin);
+			skills = skills.filter((s: SkillUsage) => s.is_plugin);
 		} else if (selectedFilter === 'file') {
-			skills = skills.filter((s) => !s.is_plugin);
+			skills = skills.filter((s: SkillUsage) => !s.is_plugin);
 		}
 
 		// Filter by search query
 		if (searchQuery.trim()) {
 			const query = searchQuery.toLowerCase();
 			skills = skills.filter(
-				(s) =>
+				(s: SkillUsage) =>
 					s.name.toLowerCase().includes(query) ||
 					(s.plugin && s.plugin.toLowerCase().includes(query))
 			);
@@ -222,7 +213,7 @@
 
 	// Calculate max usage for progress bars
 	let maxUsage = $derived(
-		filteredSkills.length > 0 ? Math.max(...filteredSkills.map((s) => s.count)) : 100
+		filteredSkills.length > 0 ? Math.max(...filteredSkills.map((s: SkillUsage) => s.count)) : 100
 	);
 
 	// Check if we have any skills
@@ -261,28 +252,23 @@
 		</div>
 	{/if}
 
-	<!-- View Tabs -->
-	<div class="flex items-center gap-4">
-		<SegmentedControl
-			options={viewTabs}
-			bind:value={activeView}
-			onchange={(value) => {
-				activeView = value as 'usage' | 'files';
-			}}
-		/>
-	</div>
+	<!-- Filters Row -->
+	<div
+		class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4"
+		use:listNavigation
+	>
+		<div class="flex items-center gap-3 flex-wrap">
+			<SegmentedControl
+				options={viewTabs}
+				bind:value={activeView}
+			/>
+			{#if activeView !== 'analytics'}
+				<SegmentedControl options={filterOptions} bind:value={selectedFilter} size="sm" />
+			{/if}
+		</div>
 
-	<!-- Usage Analytics View -->
-	{#if activeView === 'usage'}
-		<!-- Filters Row -->
-		<div
-			class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4"
-			use:listNavigation
-		>
-			<!-- Type Filter -->
-			<SegmentedControl options={filterOptions} bind:value={selectedFilter} />
-
-			<!-- Search and Expand/Collapse Controls -->
+		<!-- Search and Expand/Collapse Controls -->
+		{#if activeView !== 'analytics'}
 			<div class="flex items-center gap-3 w-full sm:w-auto">
 				<!-- Search Input -->
 				<div class="relative flex-1 sm:flex-initial">
@@ -310,7 +296,7 @@
 				</div>
 
 				<!-- Expand/Collapse All Toggle -->
-				{#if groupedSkills.length > 1}
+				{#if activeView === 'groups' && groupedSkills.length > 1}
 					<button
 						onclick={toggleAllGroups}
 						class="
@@ -337,97 +323,106 @@
 					</button>
 				{/if}
 			</div>
-		</div>
-
-		<!-- Content Area -->
-		{#if !hasSkills}
-			<!-- Empty State: No skills at all -->
-			<div
-				class="text-center py-20 bg-[var(--bg-subtle)] rounded-2xl border border-dashed border-[var(--border)]"
-			>
-				<Zap class="mx-auto text-[var(--text-muted)] mb-3" size={48} />
-				<p class="text-[var(--text-secondary)] font-medium">No skills found</p>
-				<p class="text-sm text-[var(--text-muted)] mt-1">
-					Skill usage data will appear here once you start using skills in Claude Code
-				</p>
-			</div>
-		{:else if !hasFilteredSkills}
-			<!-- Empty State: No matching results -->
-			<div
-				class="text-center py-20 bg-[var(--bg-subtle)] rounded-2xl border border-dashed border-[var(--border)]"
-			>
-				<Search class="mx-auto text-[var(--text-muted)] mb-3" size={48} />
-				<p class="text-[var(--text-secondary)] font-medium">No matching skills</p>
-				<p class="text-sm text-[var(--text-muted)] mt-1">
-					Try adjusting your search or filter
-				</p>
-			</div>
-		{:else}
-			<!-- Grouped Skill Display -->
-			<div class="space-y-4">
-				{#each groupedSkills as group (group.key)}
-					{@const groupColors = getSkillGroupColorVars(group.key)}
-					<CollapsibleGroup
-						title={group.label}
-						open={expandedGroups.has(group.key)}
-						onOpenChange={() => toggleGroup(group.key)}
-					>
-						{#snippet icon()}
-							<div
-								class="p-1.5 rounded-md"
-								style="background-color: {groupColors.subtle};"
-							>
-								{#if group.icon === Puzzle}
-									<Puzzle size={14} style="color: {groupColors.color};" />
-								{:else if group.icon === FolderOpen}
-									<FolderOpen size={14} style="color: {groupColors.color};" />
-								{:else}
-									<Zap size={14} style="color: {groupColors.color};" />
-								{/if}
-							</div>
-						{/snippet}
-						{#snippet metadata()}
-							<div class="flex items-center gap-3">
-								<span class="text-xs text-[var(--text-muted)] tabular-nums">
-									{group.skills.length} skill{group.skills.length !== 1
-										? 's'
-										: ''}
-								</span>
-								{#if group.pluginName}
-									<a
-										href="/plugins/{encodeURIComponent(group.pluginName)}"
-										class="
-											inline-flex items-center gap-1 px-2 py-0.5
-											text-[10px] font-medium
-											text-[var(--accent)] hover:text-[var(--text-primary)]
-											bg-[var(--accent-subtle)] hover:bg-[var(--bg-muted)]
-											rounded-full
-											transition-colors
-										"
-										onclick={(e) => e.stopPropagation()}
-										title="View plugin"
-									>
-										<Puzzle size={10} />
-										View plugin
-										<ExternalLink size={9} />
-									</a>
-								{/if}
-							</div>
-						{/snippet}
-
-						<div
-							class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 stagger-children"
-						>
-							{#each group.skills as skill (skill.name)}
-								<SkillUsageCard {skill} {maxUsage} />
-							{/each}
-						</div>
-					</CollapsibleGroup>
-				{/each}
-			</div>
 		{/if}
+	</div>
+
+	<!-- Content Area -->
+	{#if activeView === 'analytics'}
+		<!-- Usage Analytics View -->
+		<UsageAnalytics
+			endpoint="/skills/usage/trend"
+			itemLabel="Skills"
+			colorFn={getSkillChartHex}
+			itemLinkPrefix="/skills/"
+			itemDisplayFn={(name) => cleanSkillName(name, name.includes(':'))}
+		/>
+	{:else if !hasSkills}
+		<!-- Empty State: No skills at all -->
+		<div
+			class="text-center py-20 bg-[var(--bg-subtle)] rounded-2xl border border-dashed border-[var(--border)]"
+		>
+			<Zap class="mx-auto text-[var(--text-muted)] mb-3" size={48} />
+			<p class="text-[var(--text-secondary)] font-medium">No skills found</p>
+			<p class="text-sm text-[var(--text-muted)] mt-1">
+				Skill usage data will appear here once you start using skills in Claude Code
+			</p>
+		</div>
+	{:else if !hasFilteredSkills}
+		<!-- Empty State: No matching results -->
+		<div
+			class="text-center py-20 bg-[var(--bg-subtle)] rounded-2xl border border-dashed border-[var(--border)]"
+		>
+			<Search class="mx-auto text-[var(--text-muted)] mb-3" size={48} />
+			<p class="text-[var(--text-secondary)] font-medium">No matching skills</p>
+			<p class="text-sm text-[var(--text-muted)] mt-1">
+				Try adjusting your search or filter
+			</p>
+		</div>
+	{:else if activeView === 'table'}
+		<!-- Flat Table View -->
+		<SkillUsageTable skills={filteredSkills} />
 	{:else}
-		<!-- Browse Files View -->
-		<SkillList currentPath={urlPath} />
+		<!-- Grouped Skill Display (By Category) -->
+		<div class="space-y-4">
+			{#each groupedSkills as group (group.key)}
+				{@const groupColors = getSkillGroupColorVars(group.key)}
+				<CollapsibleGroup
+					title={group.label}
+					open={expandedGroups.has(group.key)}
+					onOpenChange={() => toggleGroup(group.key)}
+				>
+					{#snippet icon()}
+						<div
+							class="p-1.5 rounded-md"
+							style="background-color: {groupColors.subtle};"
+						>
+							{#if group.icon === Puzzle}
+								<Puzzle size={14} style="color: {groupColors.color};" />
+							{:else if group.icon === FolderOpen}
+								<FolderOpen size={14} style="color: {groupColors.color};" />
+							{:else}
+								<Zap size={14} style="color: {groupColors.color};" />
+							{/if}
+						</div>
+					{/snippet}
+					{#snippet metadata()}
+						<div class="flex items-center gap-3">
+							<span class="text-xs text-[var(--text-muted)] tabular-nums">
+								{group.skills.length} skill{group.skills.length !== 1
+									? 's'
+									: ''}
+							</span>
+							{#if group.pluginName}
+								<a
+									href="/plugins/{encodeURIComponent(group.pluginName)}"
+									class="
+										inline-flex items-center gap-1 px-2 py-0.5
+										text-[10px] font-medium
+										text-[var(--accent)] hover:text-[var(--text-primary)]
+										bg-[var(--accent-subtle)] hover:bg-[var(--bg-muted)]
+										rounded-full
+										transition-colors
+									"
+									onclick={(e) => e.stopPropagation()}
+									title="View plugin"
+								>
+									<Puzzle size={10} />
+									View plugin
+									<ExternalLink size={9} />
+								</a>
+							{/if}
+						</div>
+					{/snippet}
+
+					<div
+						class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 stagger-children"
+					>
+						{#each group.skills as skill (skill.name)}
+							<SkillUsageCard {skill} {maxUsage} />
+						{/each}
+					</div>
+				</CollapsibleGroup>
+			{/each}
+		</div>
 	{/if}
 </div>

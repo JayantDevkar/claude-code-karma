@@ -1,5 +1,5 @@
 /**
- * API Type Definitions for Claude Karma
+ * API Type Definitions for Claude Code Karma
  * These interfaces match the FastAPI backend response schemas
  */
 
@@ -102,6 +102,8 @@ export interface SkillUsage {
 	count: number;
 	is_plugin: boolean;
 	plugin: string | null;
+	last_used: string | null;
+	session_count: number;
 }
 
 export interface CommandUsage {

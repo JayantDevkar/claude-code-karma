@@ -1,8 +1,8 @@
-# Claude Karma — Overview
+# Claude Code Karma — Overview
 
-## What is Claude Karma?
+## What is Claude Code Karma?
 
-Claude Karma is a full-stack monitoring and analytics dashboard for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) sessions. It parses Claude Code's local storage (`~/.claude/`), extracts structured data from raw JSONL session files, and presents it through an interactive web dashboard.
+Claude Code Karma is a full-stack monitoring and analytics dashboard for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) sessions. It parses Claude Code's local storage (`~/.claude/`), extracts structured data from raw JSONL session files, and presents it through an interactive web dashboard.
 
 ## The Problem
 
@@ -14,7 +14,7 @@ Claude Code stores all session data locally as raw JSONL files scattered across 
 - Analyze tool usage patterns or agent behavior
 - Replay conversations or inspect timelines
 
-Claude Karma makes all of this accessible through a single dashboard.
+Claude Code Karma makes all of this accessible through a single dashboard.
 
 ## Who Is It For?
 
@@ -41,16 +41,16 @@ Claude Karma makes all of this accessible through a single dashboard.
 
 | Layer | Technology |
 |-------|-----------|
-| Backend | Python 3.10+, FastAPI, Pydantic 2.x, aiofiles |
+| Backend | Python 3.9+, FastAPI, Pydantic 2.x, aiofiles |
 | Frontend | SvelteKit 2, Svelte 5 (runes), Tailwind CSS 4, Chart.js 4, bits-ui |
 | Hooks | captain-hook (Pydantic models for Claude Code's 10 hook types) |
 | Tooling | ruff (Python), eslint/prettier (JS), pytest, vitest |
 
 ## Architecture
 
-Claude Karma is a monorepo with three git submodules:
+Claude Code Karma is a monorepo with all components in a single repository:
 
-| Submodule | Description | Port |
+| Directory | Description | Port |
 |-----------|-------------|------|
 | `api/` | FastAPI backend — parses JSONL, serves REST endpoints | 8000 |
 | `frontend/` | SvelteKit dashboard — visualizes session data | 5173 |
@@ -63,5 +63,5 @@ A `hooks/` directory contains production hook scripts that integrate with Claude
 - [Quick Start](quick-start.md) — Get up and running in 5 minutes
 - [Features](features.md) — Full feature showcase
 - [Architecture](architecture.md) — Technical deep dive
-- [Hooks Guide](hooks-guide.md) — Claude Code hooks and how Claude Karma uses them
+- [Hooks Guide](hooks-guide.md) — Claude Code hooks and how Claude Code Karma uses them
 - [API Reference](api-reference.md) — Complete endpoint documentation

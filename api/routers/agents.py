@@ -368,16 +368,11 @@ def get_single_agent_usage_trend(
 
         with sqlite_read() as conn:
             if conn is not None:
-                data = query_agent_usage_trend(
-                    conn, period=period, subagent_type=subagent_type
-                )
+                data = query_agent_usage_trend(conn, period=period, subagent_type=subagent_type)
                 return UsageTrendResponse(
                     total=data["total"],
                     by_item=data["by_item"],
-                    trend=[
-                        UsageTrendItem(date=t["date"], count=t["count"])
-                        for t in data["trend"]
-                    ],
+                    trend=[UsageTrendItem(date=t["date"], count=t["count"]) for t in data["trend"]],
                     trend_by_item={
                         item: [UsageTrendItem(date=t["date"], count=t["count"]) for t in points]
                         for item, points in data.get("trend_by_item", {}).items()

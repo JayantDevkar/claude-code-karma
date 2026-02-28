@@ -589,10 +589,7 @@ async def cleanup_stuck_sessions(
         # Check raw state BEFORE ghost check — determine_status() maps these
         # to ENDED after STARTING_TIMEOUT, so without this ordering they'd
         # be misclassified as ghosts
-        elif (
-            state.state == SessionState.STARTING
-            and state.idle_seconds > STARTING_TIMEOUT
-        ):
+        elif state.state == SessionState.STARTING and state.idle_seconds > STARTING_TIMEOUT:
             identifier = state.slug or state.session_id
             if delete_live_session(identifier):
                 starting_deleted += 1

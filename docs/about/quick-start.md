@@ -1,12 +1,12 @@
 # Quick Start
 
-Get Claude Karma running in under 5 minutes.
+Get Claude Code Karma running in under 5 minutes.
 
 ## Prerequisites
 
 | Requirement | Minimum Version |
 |-------------|----------------|
-| Python | 3.10+ |
+| Python | 3.9+ |
 | Node.js | 18+ |
 | npm | 7+ |
 | Git | 2.x |
@@ -16,21 +16,15 @@ You must also have Claude Code installed and have existing sessions in `~/.claud
 ## 1. Clone the Repository
 
 ```bash
-git clone --recursive https://github.com/JayantDevkar/claude-karma.git
+git clone https://github.com/JayantDevkar/claude-karma.git
 cd claude-karma
-```
-
-The `--recursive` flag initializes all three submodules (api, frontend, captain-hook). If you already cloned without it:
-
-```bash
-git submodule update --init --recursive
 ```
 
 ## 2. Start the API
 
 ```bash
 cd api
-pip install -r requirements.txt
+pip install -e ".[dev]" && pip install -r requirements.txt
 uvicorn main:app --reload --port 8000
 ```
 
@@ -60,7 +54,7 @@ Open [http://localhost:5173](http://localhost:5173) in your browser. You should 
 
 ## Optional: Enable Live Session Tracking
 
-Claude Karma includes hook scripts that track sessions in real time. To enable live tracking:
+Claude Code Karma includes hook scripts that track sessions in real time. To enable live tracking:
 
 1. Copy or symlink the hook scripts from `hooks/` to `~/.claude/hooks/`
 2. Register them in your Claude Code `settings.json`
@@ -72,5 +66,5 @@ See the [Hooks Guide](hooks-guide.md) for detailed setup instructions.
 ## Next Steps
 
 - [Features](features.md) — Explore the full feature set
-- [Architecture](architecture.md) — Understand how Claude Karma works
+- [Architecture](architecture.md) — Understand how Claude Code Karma works
 - [API Reference](api-reference.md) — Browse all API endpoints

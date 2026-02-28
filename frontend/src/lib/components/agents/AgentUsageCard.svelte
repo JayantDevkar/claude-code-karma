@@ -1,15 +1,18 @@
 <script lang="ts">
-	import { Bot, Clock, DollarSign, Play, FolderOpen, Puzzle } from 'lucide-svelte';
+	import { goto } from '$app/navigation';
+	import { Bot, Clock, Play, FolderOpen, Puzzle, Cpu } from 'lucide-svelte';
 	import { formatDistanceToNow } from 'date-fns';
-	import { formatCost, getSubagentColorVars, getScopeColorVars } from '$lib/utils';
+	import { formatTokens, getSubagentColorVars, getScopeColorVars, getUsageTier } from '$lib/utils';
 	import type { AgentUsageSummary } from '$lib/api-types';
+	import TierBadge from '$lib/components/ui/TierBadge.svelte';
 
 	interface Props {
 		agent: AgentUsageSummary;
+		maxRuns?: number;
 		class?: string;
 	}
 
-	let { agent, class: className = '' }: Props = $props();
+	let { agent, maxRuns = 100, class: className = '' }: Props = $props();
 
 	// Category display labels
 	const categoryLabels: Record<string, string> = {
@@ -40,6 +43,8 @@
 
 	// Build link to agent detail page
 	let detailHref = $derived(`/agents/${encodeURIComponent(agent.subagent_type)}`);
+
+	let tier = $derived(getUsageTier(agent.total_runs, maxRuns));
 </script>
 
 <a
@@ -67,12 +72,15 @@
 		>
 			<Bot size={22} strokeWidth={2.5} />
 		</div>
-		<span
-			class="px-2.5 py-1 rounded-full text-[10px] font-semibold uppercase tracking-wider"
-			style="background-color: {badgeColors.subtle}; color: {badgeColors.color};"
-		>
-			{categoryLabel}
-		</span>
+		<div class="flex items-center gap-2">
+			<TierBadge {tier} />
+			<span
+				class="px-2.5 py-1 rounded-full text-[10px] font-semibold uppercase tracking-wider"
+				style="background-color: {badgeColors.subtle}; color: {badgeColors.color};"
+			>
+				{categoryLabel}
+			</span>
+		</div>
 	</div>
 
 	<!-- Agent name -->
@@ -85,22 +93,33 @@
 	<!-- Plugin source if applicable -->
 	{#if agent.plugin_source}
 		<div class="mb-4">
-			<a
-				href="/plugins/{encodeURIComponent(agent.plugin_source)}"
+			<span
+				role="link"
+				tabindex={0}
 				class="
 					inline-flex items-center gap-1.5 px-2 py-1
-					text-[10px] font-medium
+					text-[10px] font-medium cursor-pointer
 					text-[var(--text-muted)] hover:text-[var(--accent)]
 					bg-[var(--bg-subtle)] hover:bg-[var(--accent-subtle)]
 					rounded-full
 					transition-colors
 				"
-				onclick={(e) => e.stopPropagation()}
+				onclick={(e) => {
+					e.preventDefault();
+					e.stopPropagation();
+					goto(`/plugins/${encodeURIComponent(agent.plugin_source!)}`);
+				}}
+				onkeydown={(e) => {
+					if (e.key === 'Enter') {
+						e.stopPropagation();
+						goto(`/plugins/${encodeURIComponent(agent.plugin_source!)}`);
+					}
+				}}
 				title="View plugin: {agent.plugin_source}"
 			>
 				<Puzzle size={10} />
 				<span class="truncate max-w-[140px]">{agent.plugin_source}</span>
-			</a>
+			</span>
 		</div>
 	{:else}
 		<div class="mb-4"></div>
@@ -122,22 +141,28 @@
 			<div class="h-1.5 bg-[var(--bg-subtle)] rounded-full overflow-hidden">
 				<div
 					class="h-full rounded-full transition-all duration-300"
-					style="width: {Math.min(
-						(agent.total_runs / 100) * 100,
-						100
-					)}%; background-color: {colorVars.color};"
+					style="width: {Math.min((agent.total_runs / maxRuns) * 100, 100)}%; background-color: {colorVars.color};"
 				></div>
 			</div>
 		</div>
 
-		<!-- Cost stat -->
+		<!-- Tokens in/out -->
 		<div class="flex items-center justify-between text-xs">
 			<div class="flex items-center gap-2 text-[var(--text-muted)]">
-				<DollarSign size={12} />
-				<span class="font-medium">Total Cost</span>
+				<Cpu size={12} />
+				<span class="font-medium">Tokens In</span>
 			</div>
 			<span class="text-sm font-semibold text-[var(--text-primary)] tabular-nums">
-				{formatCost(agent.total_cost_usd)}
+				{formatTokens(agent.total_input_tokens)}
+			</span>
+		</div>
+		<div class="flex items-center justify-between text-xs">
+			<div class="flex items-center gap-2 text-[var(--text-muted)]">
+				<Cpu size={12} />
+				<span class="font-medium">Tokens Out</span>
+			</div>
+			<span class="text-sm font-semibold text-[var(--text-primary)] tabular-nums">
+				{formatTokens(agent.total_output_tokens)}
 			</span>
 		</div>
 	</div>

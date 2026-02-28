@@ -1,0 +1,70 @@
+name: Feature Request
+description: Suggest a new feature or improvement for Claude Karma
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting a feature! Please describe what you'd like and why it would be useful.
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      description: Which part of Claude Karma would this affect?
+      options:
+        - API (new endpoint / data parsing)
+        - Frontend (new page / component / visualization)
+        - Captain Hook (new hook model support)
+        - Hook Scripts (new hook functionality)
+        - Analytics (new metrics / charts)
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or Use Case
+      description: What problem does this solve, or what use case does it enable?
+      placeholder: |
+        I often want to compare token usage across different projects, but currently
+        I have to manually check each project page separately.
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: How do you envision this working?
+      placeholder: |
+        A comparison view at /analytics/compare that lets you select 2-4 projects
+        and see side-by-side charts of token usage, session counts, and costs.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Have you considered any alternative approaches?
+
+  - type: dropdown
+    id: willing
+    attributes:
+      label: Would you be willing to contribute this?
+      options:
+        - "Yes, I'd like to implement this"
+        - "Yes, with some guidance"
+        - "No, but I'd love to see it"
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Any mockups, screenshots, examples, or references.

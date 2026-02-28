@@ -96,7 +96,7 @@ Raw observations from UI/UX evaluation conducted January 2026.
 
 - Back link: "← Back to projects"
 - Project name: "claude-root" (large, bold)
-- Path: "/Users/jayantdevkar/Documents/GitHub/claude-root" (muted)
+- Path: "/Users/username/projects/claude-root" (muted)
 
 #### Tab Navigation
 
@@ -269,13 +269,13 @@ Raw observations from UI/UX evaluation conducted January 2026.
 
 - Cards within groups show: Icon, name, path, session count, agent count
 - "Root" badge on root-level projects
-- Path shown truncated with `/Users/jayantdevkar/Documents/...` format
+- Path shown truncated with `/Users/username/projects/...` format
 
 #### Non-Git Projects Section
 
 - Section header: "Non-Git Projects (8)"
 - Grid layout: 3 columns
-- Projects listed: jayantdevkar, ClaudeRoots, Documents, coderoots, dexs, graph-db, lite, Downloads
+- Projects listed: example-user, project-a, Documents, project-b, project-c, project-d, project-e, Downloads
 
 ---
 

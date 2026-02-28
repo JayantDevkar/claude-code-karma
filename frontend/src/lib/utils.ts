@@ -1,5 +1,5 @@
 /**
- * Shared utility functions for Claude Karma
+ * Shared utility functions for Claude Code Karma
  */
 
 import type {
@@ -1047,6 +1047,57 @@ export function getSkillColorVars(
 		subtle: 'var(--accent-subtle)'
 	};
 }
+
+// ============================================
+// Usage Tier Utilities (shared by Skills, Agents, Tools)
+// ============================================
+
+export type UsageTier = 'low' | 'medium' | 'high' | 'very-high';
+
+export interface TierConfig {
+	bg: string;
+	darkBg: string;
+	iconColor: string;
+	label: string;
+}
+
+/**
+ * Determine usage tier based on count relative to max.
+ */
+export function getUsageTier(count: number, maxCount: number): UsageTier {
+	const pct = maxCount > 0 ? (count / maxCount) * 100 : 0;
+	if (pct >= 75) return 'very-high';
+	if (pct >= 50) return 'high';
+	if (pct >= 25) return 'medium';
+	return 'low';
+}
+
+export const tierConfigs: Record<UsageTier, TierConfig> = {
+	'very-high': {
+		bg: 'rgba(251, 191, 36, 0.08)',
+		darkBg: 'rgba(251, 191, 36, 0.12)',
+		iconColor: '#f59e0b',
+		label: 'Hot'
+	},
+	high: {
+		bg: 'rgba(34, 197, 94, 0.08)',
+		darkBg: 'rgba(34, 197, 94, 0.12)',
+		iconColor: '#22c55e',
+		label: 'Trending'
+	},
+	medium: {
+		bg: 'rgba(59, 130, 246, 0.08)',
+		darkBg: 'rgba(59, 130, 246, 0.12)',
+		iconColor: '#3b82f6',
+		label: 'Active'
+	},
+	low: {
+		bg: 'rgba(156, 163, 175, 0.05)',
+		darkBg: 'rgba(156, 163, 175, 0.08)',
+		iconColor: '#9ca3af',
+		label: 'Low'
+	}
+};
 
 // ============================================
 // Skill Name Utilities

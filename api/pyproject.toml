@@ -10,7 +10,7 @@ name = "claude-code-models"
 version = "0.1.0"
 description = "Pydantic models for parsing Claude Code local storage"
 readme = "README.md"
-license = {text = "MIT"}
+license = {text = "Apache-2.0"}
 requires-python = ">=3.9"
 dependencies = [
     "pydantic>=2.0",

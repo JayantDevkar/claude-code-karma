@@ -7,7 +7,7 @@
 
 ## Observed Session Files
 
-Project: `claude-karma` (`-Users-jayantdevkar-Documents-GitHub-claude-karma`)
+Project: `claude-karma` (`-Users-username-projects-claude-karma`)
 
 Four JSONL files share the slug `serene-meandering-scott`:
 
@@ -218,7 +218,7 @@ While there is no explicit `resumedFrom` or `previousSessionId` field, Claude Co
 
 ## Raw Data Locations
 
-- Session JSONL files: `~/.claude/projects/-Users-jayantdevkar-Documents-GitHub-claude-karma/*.jsonl`
+- Session JSONL files: `~/.claude/projects/-Users-username-projects-claude-karma/*.jsonl`
 - Live session tracking: `~/.claude_karma/live-sessions/*.json`
 - Subagent files: `~/.claude/projects/{project}/{session-uuid}/subagents/agent-*.jsonl`
 

@@ -1,4 +1,4 @@
-# Claude Karma API Setup
+# Claude Code Karma API Setup
 
 FastAPI backend for monitoring and analyzing Claude Code sessions.
 
@@ -45,7 +45,7 @@ ruff format .                               # Format
 
 ## Hook Configuration
 
-Claude Karma uses Claude Code hooks to track live session state and subagent activity.
+Claude Code Karma uses Claude Code hooks to track live session state and subagent activity.
 
 ### Install Hook Scripts
 
@@ -349,38 +349,3 @@ claude --version
 - **pytest** - Testing
 - **ruff** - Linting/formatting
 
-## Troubleshooting
-
-### API won't start
-
-```bash
-# Check Python version
-python3 --version  # Should be 3.10+
-
-# Reinstall dependencies
-pip install -r requirements.txt
-```
-
-### Empty projects list
-
-```bash
-# Check Claude Code sessions exist
-ls ~/.claude/projects/
-ls ~/.claude/projects/-Users-*/
-```
-
-### Port already in use
-
-```bash
-lsof -ti:8000 | xargs kill -9
-```
-
-## Dependencies
-
-- **FastAPI** - Web framework
-- **Pydantic 2.x** - Data validation
-- **uvicorn** - ASGI server
-- **aiofiles** - Async file I/O
-- **cachetools** - Response caching
-- **pytest** - Testing
-- **ruff** - Linting/formatting

@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document outlines the plan to implement a dedicated "Agent Session View" feature for Claude Karma. This view will allow users to explore individual subagent sessions with the same level of detail as the main session view.
+This document outlines the plan to implement a dedicated "Agent Session View" feature for Claude Code Karma. This view will allow users to explore individual subagent sessions with the same level of detail as the main session view.
 
 **Feature**: Agent Session View
 **Route**: `/projects/{encoded_name}/{session_slug}/agents/{agent_id}`

@@ -124,8 +124,8 @@
 										''}"
 								>
 									{#if item.icon}
-										<svelte:component
-											this={item.icon}
+										{@const ItemIcon = item.icon}
+										<ItemIcon
 											size={12}
 											strokeWidth={2}
 										/>
@@ -135,8 +135,8 @@
 							{:else}
 								<div class="flex items-center gap-1.5 {item.class || ''}">
 									{#if item.icon}
-										<svelte:component
-											this={item.icon}
+										{@const ItemIcon = item.icon}
+										<ItemIcon
 											size={12}
 											strokeWidth={2}
 										/>

@@ -619,7 +619,7 @@ toast.loading('Loading session data...');
 
 ## Summary
 
-This six-phase improvement plan transforms Claude Karma from a functional dashboard into a beautiful, accessible, and delightful analytics experience:
+This six-phase improvement plan transforms Claude Code Karma from a functional dashboard into a beautiful, accessible, and delightful analytics experience:
 
 | Phase | Focus | Key Deliverables |
 |-------|-------|------------------|

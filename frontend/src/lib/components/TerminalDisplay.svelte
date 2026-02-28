@@ -62,7 +62,7 @@
 	}
 
 	function startTypewriter(msgs: string[]) {
-		messageList = msgs.length > 0 ? msgs : ['Welcome to Claude Karma'];
+		messageList = msgs.length > 0 ? msgs : ['Welcome to Claude Code Karma'];
 		charIndex = 0;
 		currentMessage = '';
 		messageIndex = 0;
@@ -85,7 +85,7 @@
 	function buildMessages(stats: DashboardStats): string[] {
 		// No activity - show welcome messages
 		if (stats.period === 'none' || stats.sessions_count === 0) {
-			return ['Welcome to Claude Karma'];
+			return ['Welcome to Claude Code Karma'];
 		}
 
 		const msgs: string[] = [];

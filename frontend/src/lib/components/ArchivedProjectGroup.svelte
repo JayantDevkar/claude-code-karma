@@ -10,6 +10,7 @@
 	}
 
 	let { project, defaultExpanded = false }: Props = $props();
+	// svelte-ignore state_referenced_locally
 	let expanded = $state(defaultExpanded);
 
 	// Parse project name from encoded name to preserve hyphens (e.g., "claude-karma" not "karma")

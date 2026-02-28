@@ -234,11 +234,7 @@ class Agent(BaseModel):
 
                 # Extract skills/commands from Skill tool uses
                 for block in msg.content_blocks:
-                    if (
-                        isinstance(block, ToolUseBlock)
-                        and block.name == "Skill"
-                        and block.input
-                    ):
+                    if isinstance(block, ToolUseBlock) and block.name == "Skill" and block.input:
                         skill_name = block.input.get("skill")
                         if skill_name:
                             kind = classify_invocation(skill_name)

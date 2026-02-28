@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
 	import {
 		MessageSquare,
 		Users,
@@ -331,16 +332,19 @@
 			<div class="flex items-center gap-1.5 shrink-0">
 				{#if showSubagentBadge}
 					{#if subagentHref}
-						<!-- svelte-ignore a11y_no_static_element_interactions -->
-						<a
-							href={subagentHref}
-							onclick={(e) => e.stopPropagation()}
-							class="flex items-center gap-1 px-2 py-0.5 rounded-full border bg-[var(--bg-muted)] text-[var(--text-secondary)] border-[var(--border)] hover:bg-[var(--accent)] hover:text-white hover:border-[var(--accent)] transition-colors no-underline"
+						<button
+							type="button"
+							onclick={(e) => {
+								e.preventDefault();
+								e.stopPropagation();
+								goto(subagentHref);
+							}}
+							class="flex items-center gap-1 px-2 py-0.5 rounded-full border bg-[var(--bg-muted)] text-[var(--text-secondary)] border-[var(--border)] hover:bg-[var(--accent)] hover:text-white hover:border-[var(--accent)] transition-colors cursor-pointer"
 							title="View subagent"
 						>
 							<Bot size={10} strokeWidth={2} />
 							<span class="font-medium text-[11px]">{subagentLabel}</span>
-						</a>
+						</button>
 					{:else}
 						<div
 							class="flex items-center gap-1 px-2 py-0.5 rounded-full border bg-[var(--bg-muted)] text-[var(--text-secondary)] border-[var(--border)]"

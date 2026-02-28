@@ -1,5 +1,5 @@
 /**
- * WebMCP tool registration for Claude Karma Dashboard.
+ * WebMCP tool registration for Claude Code Karma Dashboard.
  *
  * Registers structured tools via navigator.modelContext (Chrome 146+)
  * so AI agents can query projects, search sessions, get analytics,
@@ -195,7 +195,7 @@ export function registerWebMCPTools(): void {
 	mc.registerTool({
 		name: 'navigate_to_page',
 		description:
-			'Navigate the Claude Karma dashboard to a specific page. Supports deep-linking to projects and sessions.',
+			'Navigate the Claude Code Karma dashboard to a specific page. Supports deep-linking to projects and sessions.',
 		inputSchema: {
 			type: 'object',
 			properties: {

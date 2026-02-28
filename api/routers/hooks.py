@@ -6,7 +6,7 @@ inspecting event schemas via captain-hook introspection, and viewing source deta
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -144,7 +144,7 @@ async def get_hook_script(
             try:
                 stat = script_path.stat()
                 size_bytes = stat.st_size
-                modified_at = datetime.fromtimestamp(stat.st_mtime)
+                modified_at = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc)
 
                 if size_bytes > 500_000:  # 500KB limit
                     error = "file_too_large"

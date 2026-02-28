@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Claude Karma** is a full-stack application for monitoring and analyzing Claude Code sessions. It parses Claude Code's local storage (`~/.claude/`) and visualizes session data through a web dashboard.
+**Claude Code Karma** is a full-stack application for monitoring and analyzing Claude Code sessions. It parses Claude Code's local storage (`~/.claude/`) and visualizes session data through a web dashboard.
 
 ## Quick Start
 

@@ -55,6 +55,23 @@
 		}
 	});
 
+	// Intercept clicks on .md links to navigate within the doc viewer
+	function handleContentClick(event: MouseEvent) {
+		const target = event.target as HTMLElement;
+		const anchor = target.closest('a');
+		if (!anchor) return;
+
+		const href = anchor.getAttribute('href');
+		if (!href || !href.endsWith('.md')) return;
+
+		// Check if this doc exists in our sidebar
+		const matchingDoc = data.docs?.find((d: any) => d.path === href);
+		if (matchingDoc) {
+			event.preventDefault();
+			selectedDoc = matchingDoc.path;
+		}
+	}
+
 	let selectedTitle = $derived(
 		data.docs?.find((d: any) => d.path === selectedDoc)?.title ?? 'Overview'
 	);
@@ -66,7 +83,7 @@
 		icon={BookOpen}
 		iconColor="--nav-red"
 		breadcrumbs={[{ label: 'Dashboard', href: '/' }, { label: 'About' }]}
-		subtitle="Documentation & guides for Claude Karma"
+		subtitle="Documentation & guides for Claude Code Karma"
 	/>
 
 	{#if data.error}
@@ -99,7 +116,9 @@
 			</nav>
 
 			<!-- Content Area -->
-			<div class="flex-1 min-w-0">
+			<!-- svelte-ignore a11y_click_events_have_key_events -->
+			<!-- svelte-ignore a11y_no_static_element_interactions -->
+			<div class="flex-1 min-w-0" onclick={handleContentClick}>
 				{#if isLoading}
 					<div class="flex items-center justify-center py-16">
 						<Loader2 size={24} class="animate-spin text-[var(--text-muted)]" />

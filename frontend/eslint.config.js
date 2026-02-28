@@ -144,6 +144,14 @@ export default [
 		}
 	},
 	prettier,
+	// Test files: relax strict typing rules for mocks and test helpers
+	{
+		files: ['src/tests/**/*.ts', 'src/**/*.test.ts', 'src/**/*.spec.ts'],
+		rules: {
+			'@typescript-eslint/no-explicit-any': 'off',
+			'@typescript-eslint/no-unused-vars': 'off'
+		}
+	},
 	{
 		ignores: [
 			'.svelte-kit/**',

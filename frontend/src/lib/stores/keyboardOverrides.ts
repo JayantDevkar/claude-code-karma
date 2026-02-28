@@ -12,7 +12,7 @@ interface KeyboardOverrideState {
 }
 
 function createKeyboardOverrideStore() {
-	const { subscribe, set, update } = writable<KeyboardOverrideState>({
+	const { subscribe, update } = writable<KeyboardOverrideState>({
 		ctrlK: null
 	});
 

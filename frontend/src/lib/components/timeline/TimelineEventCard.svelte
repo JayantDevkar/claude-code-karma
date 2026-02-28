@@ -145,9 +145,15 @@
 
 	function highlightText(text: string, query: string): string {
 		if (!query || !text) return text;
+		// Escape HTML entities first to prevent XSS
+		const safeText = text
+			.replace(/&/g, '&amp;')
+			.replace(/</g, '&lt;')
+			.replace(/>/g, '&gt;')
+			.replace(/"/g, '&quot;');
 		const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 		const regex = new RegExp(`(${escaped})`, 'gi');
-		return text.replace(regex, '<mark class="search-highlight">$1</mark>');
+		return safeText.replace(regex, '<mark class="search-highlight">$1</mark>');
 	}
 </script>
 
@@ -200,6 +206,7 @@
 	</div>
 
 	<!-- Content card -->
+	<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 	<div
 		class="
 			mb-4 flex-1 min-w-0 rounded-lg border border-l-[3px] bg-[var(--bg-subtle)] p-4 pl-5 transition-all duration-200

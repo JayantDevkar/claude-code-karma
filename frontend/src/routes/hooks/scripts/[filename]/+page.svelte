@@ -1,4 +1,5 @@
 <script lang="ts">
+	import DOMPurify from 'isomorphic-dompurify';
 	import {
 		FileCode,
 		Copy,
@@ -64,7 +65,7 @@
 </script>
 
 <svelte:head>
-	<title>{data.filename} - Hook Script - Claude Karma</title>
+	<title>{data.filename} - Hook Script - Claude Code Karma</title>
 </svelte:head>
 
 <div class="max-w-5xl mx-auto">
@@ -205,7 +206,7 @@
 				</div>
 			{:else if data.highlightedHtml}
 				<div class="shiki-container overflow-x-auto">
-					{@html data.highlightedHtml}
+					{@html DOMPurify.sanitize(data.highlightedHtml)}
 				</div>
 			{:else if detail.content}
 				<pre

@@ -1,4 +1,4 @@
-# Claude Karma Frontend
+# Claude Code Karma Frontend
 
 A production-ready SvelteKit application for analyzing Claude Code usage, built with Svelte 5, TypeScript, and Tailwind CSS v4.
 

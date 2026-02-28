@@ -417,6 +417,8 @@ def get_skill_usage(
                             "count": row["total_count"],
                             "is_plugin": is_plugin,
                             "plugin": plugin_name,
+                            "last_used": row.get("last_used"),
+                            "session_count": row.get("session_count", 0),
                         }
                     )
                 return results

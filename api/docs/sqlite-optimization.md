@@ -20,7 +20,7 @@ Comprehensive plan for replacing JSONL scanning with SQLite lookups across all A
 
 ## Background
 
-Claude Karma API parses Claude Code's local JSONL files to serve session data. Many endpoints currently scan **all** sessions across **all** projects on every request, parsing JSONL files to extract metadata that is already available in SQLite.
+Claude Code Karma API parses Claude Code's local JSONL files to serve session data. Many endpoints currently scan **all** sessions across **all** projects on every request, parsing JSONL files to extract metadata that is already available in SQLite.
 
 The SQLite index (`db/`) was introduced in commits `2a532b5` and `516290e` to cache session metadata. The indexer runs on startup in a background thread and incrementally syncs JSONL changes via mtime comparison.
 

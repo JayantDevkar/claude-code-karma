@@ -1,6 +1,6 @@
 # Features
 
-A comprehensive overview of everything Claude Karma provides.
+A comprehensive overview of everything Claude Code Karma provides.
 
 ---
 
@@ -86,7 +86,7 @@ Discover and track MCP (Model Context Protocol) tool usage. See which MCP server
 
 ## Dashboard Pages
 
-Claude Karma provides 12 dashboard pages:
+Claude Code Karma provides 12 dashboard pages:
 
 | Page | Description |
 |------|-------------|
@@ -109,7 +109,7 @@ Claude Karma provides 12 dashboard pages:
 
 ### Session Chains
 
-Claude Karma detects and links related sessions. When a session is resumed or continued, the chain is preserved so you can follow the full history of a task across multiple sessions. Detection uses `leaf_uuid` references and project slug matching.
+Claude Code Karma detects and links related sessions. When a session is resumed or continued, the chain is preserved so you can follow the full history of a task across multiple sessions. Detection uses `leaf_uuid` references and project slug matching.
 
 ### Compaction Detection
 

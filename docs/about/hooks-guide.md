@@ -1,6 +1,6 @@
 # Hooks Guide
 
-How Claude Code hooks work and how Claude Karma uses them for live tracking, title generation, and plan approval.
+How Claude Code hooks work and how Claude Code Karma uses them for live tracking, title generation, and plan approval.
 
 ---
 
@@ -8,7 +8,7 @@ How Claude Code hooks work and how Claude Karma uses them for live tracking, tit
 
 Hooks are scripts that Claude Code executes automatically when specific events occur during a session. They run synchronously in the Claude Code process and can either observe events passively or actively block them (returning `"deny"` to reject an action).
 
-Hooks are registered in Claude Code's `settings.json` and can be written in any language. Claude Karma's hooks are written in Python.
+Hooks are registered in Claude Code's `settings.json` and can be written in any language. Claude Code Karma's hooks are written in Python.
 
 ---
 
@@ -33,15 +33,15 @@ Claude Code defines 10 hook event types. The captain-hook library provides Pydan
 
 ---
 
-## Claude Karma's Production Hooks
+## Claude Code Karma's Production Hooks
 
-Claude Karma ships three hook scripts in the `hooks/` directory.
+Claude Code Karma ships three hook scripts in the `hooks/` directory.
 
 ### 1. live_session_tracker.py
 
 **Purpose:** Tracks session state in real time across 8 hook events.
 
-**Events handled:** SessionStart, SessionEnd, Stop, SubagentStop, PreToolUse, PostToolUse, UserPromptSubmit, Notification
+**Events handled:** SessionStart, SessionEnd, Stop, SubagentStart, SubagentStop, PostToolUse, UserPromptSubmit, Notification
 
 **State machine:**
 
@@ -87,7 +87,7 @@ When Claude Code enters plan mode and produces a plan, it fires a PermissionRequ
 
 ## captain-hook Library
 
-The `captain-hook/` submodule is a standalone Python library providing type-safe Pydantic models for all 10 hook types.
+The `captain-hook/` directory contains a standalone Python library providing type-safe Pydantic models for all 10 hook types.
 
 ### Usage
 
@@ -134,48 +134,110 @@ Add hook registrations to your Claude Code settings file (`~/.claude/settings.js
   "hooks": {
     "SessionStart": [
       {
-        "command": "python3 ~/.claude/hooks/live_session_tracker.py",
-        "timeout": 5000
-      }
-    ],
-    "SessionEnd": [
-      {
-        "command": "python3 ~/.claude/hooks/live_session_tracker.py",
-        "timeout": 5000
-      },
-      {
-        "command": "python3 ~/.claude/hooks/session_title_generator.py",
-        "timeout": 10000
-      }
-    ],
-    "Stop": [
-      {
-        "command": "python3 ~/.claude/hooks/live_session_tracker.py",
-        "timeout": 5000
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/live_session_tracker.py",
+            "timeout": 5000
+          }
+        ]
       }
     ],
     "UserPromptSubmit": [
       {
-        "command": "python3 ~/.claude/hooks/live_session_tracker.py",
-        "timeout": 5000
-      }
-    ],
-    "PreToolUse": [
-      {
-        "command": "python3 ~/.claude/hooks/live_session_tracker.py",
-        "timeout": 5000
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/live_session_tracker.py",
+            "timeout": 5000
+          }
+        ]
       }
     ],
     "PostToolUse": [
       {
-        "command": "python3 ~/.claude/hooks/live_session_tracker.py",
-        "timeout": 5000
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/live_session_tracker.py",
+            "timeout": 5000
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/live_session_tracker.py",
+            "timeout": 5000
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/live_session_tracker.py",
+            "timeout": 5000
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/live_session_tracker.py",
+            "timeout": 5000
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/live_session_tracker.py",
+            "timeout": 5000
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/live_session_tracker.py",
+            "timeout": 5000
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/session_title_generator.py",
+            "timeout": 15000
+          }
+        ]
       }
     ],
     "PermissionRequest": [
       {
-        "command": "python3 ~/.claude/hooks/plan_approval.py",
-        "timeout": 10000
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/plan_approval.py",
+            "timeout": 10000
+          }
+        ]
       }
     ]
   }
@@ -227,4 +289,4 @@ if __name__ == "__main__":
     main()
 ```
 
-See the [captain-hook README](https://github.com/JayantDevkar/captain-hook) for the full API reference.
+See the captain-hook README in the `captain-hook/` directory for the full API reference.

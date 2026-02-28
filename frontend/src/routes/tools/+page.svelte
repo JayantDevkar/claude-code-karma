@@ -20,19 +20,22 @@
 	import McpToolCard from '$lib/components/tools/McpToolCard.svelte';
 	import McpToolTable from '$lib/components/tools/McpToolTable.svelte';
 	import McpContextBar from '$lib/components/tools/McpContextBar.svelte';
-	import { getServerColorVars } from '$lib/utils/mcp';
+	import { getServerColorVars, getToolItemChartHex, parseBuiltinTool, parseMcpTool } from '$lib/utils/mcp';
+	import UsageAnalytics from '$lib/components/charts/UsageAnalytics.svelte';
+	import Switch from '$lib/components/ui/Switch.svelte';
 	import type { McpServer, StatItem } from '$lib/api-types';
 
 	let { data } = $props();
 
 	// Client-side filter state
 	let searchQuery = $state('');
-	let viewMode = $state<'servers' | 'tools'>('servers');
+	let viewMode = $state<'servers' | 'tools' | 'analytics'>('servers');
 	let sourceFilter = $state<'all' | 'plugin' | 'standalone' | 'builtin'>('all');
 
 	const viewOptions = [
 		{ label: 'By Server', value: 'servers' },
-		{ label: 'All Tools', value: 'tools' }
+		{ label: 'All Tools', value: 'tools' },
+		{ label: 'Usage Analytics', value: 'analytics' }
 	];
 
 	const sourceOptions = [
@@ -155,6 +158,26 @@
 		}
 	}
 
+	// Max calls across all tools (for tier badge computation)
+	let globalMaxCalls = $derived.by(() => {
+		let max = 0;
+		for (const server of data.overview.servers) {
+			for (const tool of server.tools) {
+				if (tool.calls > max) max = tool.calls;
+			}
+		}
+		return max || 100;
+	});
+
+	// Hide built-in tools toggle for analytics
+	let hideBuiltin = $state(true);
+
+	function isBuiltinTool(name: string): boolean {
+		return parseBuiltinTool(name) !== null;
+	}
+
+	let excludeFn = $derived(hideBuiltin ? isBuiltinTool : undefined);
+
 	let hasServers = $derived(data.overview.servers.length > 0);
 	let hasFiltered = $derived(filteredServers.length > 0);
 </script>
@@ -269,6 +292,40 @@
 				Try adjusting your search or source filter
 			</p>
 		</div>
+	{:else if viewMode === 'analytics'}
+		<!-- Usage Analytics View -->
+		<div class="flex items-center justify-end mb-4">
+			<label class="flex items-center gap-2 select-none text-xs text-[var(--text-muted)]">
+				Hide built-in tools
+				<Switch bind:checked={hideBuiltin} />
+			</label>
+		</div>
+		<UsageAnalytics
+			endpoint="/tools/usage/trend"
+			itemLabel="Tools"
+			colorFn={getToolItemChartHex}
+			excludeItemFn={excludeFn}
+			itemLinkFn={(name) => {
+				const builtin = parseBuiltinTool(name);
+				if (builtin) {
+					return `/tools/${encodeURIComponent(builtin.server)}/${encodeURIComponent(builtin.shortName)}`;
+				}
+				const mcp = parseMcpTool(name);
+				if (mcp) {
+					return `/tools/${encodeURIComponent(mcp.server)}/${encodeURIComponent(mcp.shortName)}`;
+				}
+				return `/tools/${encodeURIComponent(name)}`;
+			}}
+			itemDisplayFn={(name) => {
+				if (parseBuiltinTool(name)) return name;
+				const mcp = parseMcpTool(name);
+				if (mcp) {
+					const server = mcp.server.replace(/^plugin_/, '');
+					return `${server} / ${mcp.shortName}`.replaceAll('_', ' ');
+				}
+				return name.replaceAll('_', ' ');
+			}}
+		/>
 	{:else if viewMode === 'tools'}
 		<!-- Flat Table View -->
 		<McpToolTable servers={filteredServers} />
@@ -359,6 +416,7 @@
 									<McpToolCard
 										{tool}
 										serverTotalCalls={server.total_calls}
+										maxCalls={globalMaxCalls}
 										accentColor={colorVars.color}
 									/>
 								</a>

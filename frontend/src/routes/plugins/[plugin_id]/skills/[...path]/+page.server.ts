@@ -1,6 +1,5 @@
 import type { PageServerLoad } from './$types';
-
-const API_BASE = 'http://localhost:8000';
+import { API_BASE } from '$lib/config';
 
 export const load: PageServerLoad = async ({ params, fetch }) => {
 	const { plugin_id, path } = params;

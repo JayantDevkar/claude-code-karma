@@ -492,7 +492,10 @@ class Session(BaseModel):
     @property
     def has_file_history(self) -> bool:
         """Check if file history directory exists and has content."""
-        return self.file_history_dir.exists() and any(self.file_history_dir.iterdir())
+        try:
+            return self.file_history_dir.exists() and any(self.file_history_dir.iterdir())
+        except (PermissionError, OSError):
+            return False
 
     @property
     def has_subagents(self) -> bool:

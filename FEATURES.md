@@ -1,6 +1,6 @@
-# Claude Karma Features
+# Claude Code Karma Features
 
-> A comprehensive guide to all features available in the Claude Karma dashboard for monitoring and analyzing Claude Code sessions.
+> A comprehensive guide to all features available in the Claude Code Karma dashboard for monitoring and analyzing Claude Code sessions.
 
 ---
 
@@ -608,7 +608,7 @@ Configure your Claude Code environment.
 
 ## User Value Proposition
 
-Claude Karma provides **complete visibility** into your Claude Code sessions with:
+Claude Code Karma provides **complete visibility** into your Claude Code sessions with:
 
 1. **Real-time Monitoring** — See what Claude is doing right now
 2. **Historical Analysis** — Understand your coding patterns over time

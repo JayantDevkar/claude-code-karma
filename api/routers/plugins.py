@@ -633,7 +633,7 @@ def plugin_to_summary(
         if latest_installation.last_updated.tzinfo:
             days_since_update = (now - latest_installation.last_updated).days
         else:
-            days_since_update = (datetime.now() - latest_installation.last_updated).days
+            days_since_update = (datetime.now(timezone.utc) - latest_installation.last_updated).days
 
     # Get description
     description = get_plugin_description(plugin_name)

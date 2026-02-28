@@ -1,6 +1,6 @@
 # Architecture
 
-Technical overview of Claude Karma's system design, data flow, and key patterns.
+Technical overview of Claude Code Karma's system design, data flow, and key patterns.
 
 ---
 
@@ -68,16 +68,16 @@ Claude Code hook scripts fire during session events and write state to `~/.claud
 
 ```
 claude-karma/
-├── api/                    # Git submodule — FastAPI backend (Python)
+├── api/                    # FastAPI backend (Python)
 │   ├── models/             # Pydantic models for JSONL parsing
 │   ├── routers/            # FastAPI route handlers
 │   ├── tests/              # pytest test suite
 │   └── main.py             # Application entry point
-├── frontend/               # Git submodule — SvelteKit frontend (Svelte 5)
+├── frontend/               # SvelteKit frontend (Svelte 5)
 │   ├── src/routes/         # Page routes
 │   ├── src/lib/            # Shared components, stores, utils
 │   └── static/             # Static assets
-├── captain-hook/           # Git submodule — Pydantic hook models
+├── captain-hook/           # Pydantic hook models library
 │   ├── captain_hook/       # Library source
 │   └── tests/              # Model tests
 ├── hooks/                  # Production hook scripts
@@ -91,7 +91,7 @@ claude-karma/
 
 ## Claude Code Storage Locations
 
-Claude Karma reads from these locations on disk:
+Claude Code Karma reads from these locations on disk:
 
 | Data | Location |
 |------|----------|
@@ -155,7 +155,7 @@ Related sessions are detected via two mechanisms:
 
 ### Compaction Detection
 
-When Claude Code compacts a session's context window, it inserts a `SummaryMessage` containing the compressed history. Claude Karma detects these messages and flags the session as compacted in the UI.
+When Claude Code compacts a session's context window, it inserts a `SummaryMessage` containing the compressed history. Claude Code Karma detects these messages and flags the session as compacted in the UI.
 
 ### Async File I/O
 
@@ -174,7 +174,7 @@ The API uses `aiofiles` for non-blocking file reads. Since all data comes from t
 | File I/O | aiofiles | Non-blocking filesystem access |
 | Testing | pytest | Unit and integration tests |
 | Linting | ruff | Python linting and formatting |
-| Runtime | Python 3.10+ | Minimum supported version |
+| Runtime | Python 3.9+ | Minimum supported version |
 
 ### Frontend
 

@@ -43,7 +43,7 @@
 	}
 
 	// Truncate prompt for preview
-	const previewLength = compact ? 200 : 150;
+	const previewLength = $derived(compact ? 200 : 150);
 	const needsTruncation = $derived(prompt.display.length > previewLength);
 	const displayText = $derived(
 		expanded || !needsTruncation

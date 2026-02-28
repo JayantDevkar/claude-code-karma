@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
 	import { FileCode, ExternalLink } from 'lucide-svelte';
 	import type { HookScript } from '$lib/api-types';
 	import { getHookSourceColorVars } from '$lib/utils';
@@ -87,7 +88,7 @@
 				onclick={(e) => {
 					e.preventDefault();
 					e.stopPropagation();
-					window.location.href = `/hooks/${encodeURIComponent(eventType)}`;
+					goto(`/hooks/${encodeURIComponent(eventType)}`);
 				}}
 				class="
 					inline-flex items-center gap-1

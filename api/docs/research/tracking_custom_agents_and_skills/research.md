@@ -1,4 +1,4 @@
-# Research: Tracking Custom Agents and Skills in Claude Karma
+# Research: Tracking Custom Agents and Skills in Claude Code Karma
 
 **Date:** 2026-01-10
 **Requested by:** UI/UX Team
@@ -181,7 +181,7 @@ Parent Session JSONL
 
 ---
 
-## 4. Current Parsing Gap in Claude Karma
+## 4. Current Parsing Gap in Claude Code Karma
 
 ### 4.1 What Already Exists
 

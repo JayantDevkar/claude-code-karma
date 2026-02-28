@@ -1,5 +1,5 @@
 /**
- * Centralized configuration for Claude Karma frontend.
+ * Centralized configuration for Claude Code Karma frontend.
  *
  * API Base URL:
  * - Uses PUBLIC_API_URL environment variable if set

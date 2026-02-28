@@ -96,6 +96,7 @@
 	let { data: propsData }: { data: PageData } = $props();
 	// Create reactive local copy of data to allow client-side updates (reloadSessions)
 	// and ensure derived values track changes.
+	// svelte-ignore state_referenced_locally
 	let data = $state(propsData);
 
 	$effect(() => {
@@ -174,8 +175,10 @@
 	}
 
 	// Local state for filter inputs
+	// svelte-ignore state_referenced_locally
 	let searchTokens = $state<string[]>(paramToTokens(data.filters.search || ''));
 	// Resolve project filter: URL may contain slug, but internal state uses encoded_name
+	// svelte-ignore state_referenced_locally
 	let selectedProject = $state(
 		(() => {
 			const filterVal = data.filters.project || '';
@@ -185,12 +188,15 @@
 			return match ? match.encoded_name : filterVal;
 		})()
 	);
+	// svelte-ignore state_referenced_locally
 	let selectedBranchFilters = $state<Set<string>>(
 		new Set(data.filters.branch ? [data.filters.branch] : [])
 	);
+	// svelte-ignore state_referenced_locally
 	let scopeSelection = $state<SearchScopeSelection>(
 		apiToScopeSelection(data.filters.scope || 'both')
 	);
+	// svelte-ignore state_referenced_locally
 	let selectedStatus = $state<SessionStatusFilter>(data.filters.status || 'all');
 	let selectedDateRange = $state<SearchDateRange>('all');
 	let selectedLiveSubStatuses = $state<LiveSubStatus[]>([...ALL_LIVE_SUB_STATUSES]);
@@ -334,7 +340,13 @@
 		});
 
 		// Single replaceState call for all URL state (tick ensures reactive updates settled)
-		tick().then(() => replaceState(url.toString(), {}));
+		tick().then(() => {
+			try {
+				replaceState(url.toString(), {});
+			} catch {
+				// Router may not be initialized yet during SSR/hydration
+			}
+		});
 	});
 
 	// Compute live status counts using shared utility
@@ -1001,7 +1013,7 @@
 </script>
 
 <svelte:head>
-	<title>Sessions | Claude Karma</title>
+	<title>Sessions | Claude Code Karma</title>
 </svelte:head>
 
 <div use:listNavigation>

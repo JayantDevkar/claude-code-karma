@@ -13,7 +13,7 @@ Successfully validated the SOLID-refactored orchestration agent system. All 6 te
 ## Test Results
 
 ### Test 1: Fetch Current Work Items ✅
-**Command:** `fetch-plane-tasks agent to get all unstarted work items from Claude Karma project`
+**Command:** `fetch-plane-tasks agent to get all unstarted work items from Claude Code Karma project`
 
 **Expected:** Returns work_items array with CLAUDEKARM tickets in JSON format
 **Result:** PASSED
@@ -22,7 +22,7 @@ Successfully validated the SOLID-refactored orchestration agent system. All 6 te
 ```json
 {
   "project_id": "ba9f6b13-3f7a-4e5b-94d8-c234b6243719",
-  "project_name": "Claude Karma",
+  "project_name": "Claude Code Karma",
   "work_items": [
     {
       "identifier": "CLAUDEKARM-12",
@@ -66,7 +66,7 @@ Successfully validated the SOLID-refactored orchestration agent system. All 6 te
     "Create reference document"
   ],
   "file_references": [
-    "/Users/jayantdevkar/Documents/GitHub/claude-karma/docs/plane-orchestrator-test-task.md"
+    "/path/to/claude-karma/docs/plane-orchestrator-test-task.md"
   ],
   "parsing_confidence": "MEDIUM"
 }

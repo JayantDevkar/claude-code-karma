@@ -102,7 +102,7 @@ class LiveSessionState(BaseModel):
     Sessions are tracked by slug so resumed sessions update the same file.
     """
 
-    model_config = ConfigDict(frozen=True, extra="allow")
+    model_config = ConfigDict(frozen=True, extra="allow", ignored_types=(cached_property,))
 
     # Core identifiers
     session_id: str = Field(..., description="Current active session UUID")
@@ -380,13 +380,17 @@ async def load_all_live_sessions_async(
                     state_file = live_dir / f"{identifier}.json"
                     if state_file.exists():
                         state_file.unlink()
-                        logger.debug(f"Auto-cleaned {state.state.value.lower()} session: {identifier}")
+                        logger.debug(
+                            f"Auto-cleaned {state.state.value.lower()} session: {identifier}"
+                        )
                     else:
                         # Fallback: try session_id-named file
                         state_file = live_dir / f"{state.session_id}.json"
                         if state_file.exists():
                             state_file.unlink()
-                            logger.debug(f"Auto-cleaned {state.state.value.lower()} session: {state.session_id}")
+                            logger.debug(
+                                f"Auto-cleaned {state.state.value.lower()} session: {state.session_id}"
+                            )
                 except OSError as e:
                     logger.warning(f"Failed to auto-clean session {state.session_id}: {e}")
                     kept.append(state)  # Keep if deletion fails
