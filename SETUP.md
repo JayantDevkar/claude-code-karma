@@ -260,7 +260,7 @@ ls -la ~/.claude/hooks/live_session_tracker.py
 **What:** Register the tracker to listen for Claude Code events.
 **Why:** Tells Claude Code to call the tracker when sessions start, change state, or end.
 
-The tracker must be registered for **8 hook events** in `~/.claude/settings.json`:
+The tracker needs **8 of Claude Code's 13 hook events** registered in `~/.claude/settings.json`:
 
 | Hook Event | Tracks |
 |-----------|--------|
