@@ -1,8 +1,6 @@
-# claude-code-models
+# Claude Karma API
 
-Pydantic models for parsing and querying Claude Code's local storage (`~/.claude/`).
-
-Unlock insights into your Claude Code sessions: track token usage, analyze tool patterns, extract session timelines, and more.
+FastAPI backend for monitoring and analyzing Claude Code sessions. Parses Claude Code's local storage (`~/.claude/`) and exposes REST endpoints for the SvelteKit frontend dashboard.
 
 ## Features
 
@@ -18,13 +16,11 @@ Unlock insights into your Claude Code sessions: track token usage, analyze tool 
 Requires Python 3.9+ and Pydantic v2:
 
 ```bash
-# From source
-git clone https://github.com/yourusername/dot-claude-files-parser.git
-cd dot-claude-files-parser
-pip install -e .
-
-# Or just install dependencies
-pip install pydantic>=2.0
+# From the monorepo root
+git clone https://github.com/JayantDevkar/claude-karma.git
+cd claude-karma/api
+pip install -e ".[dev]"
+pip install -r requirements.txt
 ```
 
 ## Quick Start
@@ -162,4 +158,4 @@ ruff format .
 
 ## License
 
-MIT License — see [LICENSE](LICENSE) for details.
+Apache-2.0 License — see [LICENSE](LICENSE) for details.

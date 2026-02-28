@@ -102,7 +102,7 @@ class LiveSessionState(BaseModel):
     Sessions are tracked by slug so resumed sessions update the same file.
     """
 
-    model_config = ConfigDict(frozen=True, extra="allow")
+    model_config = ConfigDict(frozen=True, extra="allow", ignored_types=(cached_property,))
 
     # Core identifiers
     session_id: str = Field(..., description="Current active session UUID")

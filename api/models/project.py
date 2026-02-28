@@ -75,7 +75,7 @@ class Project(BaseModel):
         claude_projects_dir: Base ~/.claude/projects directory
     """
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, ignored_types=(cached_property,))
 
     path: str = Field(..., description="Original absolute project path (e.g., /Users/me/repo)")
     encoded_name: str = Field(..., description="Encoded directory name (e.g., -Users-me-repo)")
