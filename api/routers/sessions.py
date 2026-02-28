@@ -9,7 +9,7 @@ import json
 import logging
 import sqlite3
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -1177,10 +1177,10 @@ def get_session_tasks(
             if task_file.exists():
                 # Use file modification time
                 mtime = task_file.stat().st_mtime
-                updated_at = datetime.fromtimestamp(mtime)
+                updated_at = datetime.fromtimestamp(mtime, tz=timezone.utc)
             else:
                 # For reconstructed tasks, use session end time or current time
-                updated_at = session.end_time or datetime.now()
+                updated_at = session.end_time or datetime.now(timezone.utc)
 
             # Filter by since parameter if provided
             if since_dt and updated_at:

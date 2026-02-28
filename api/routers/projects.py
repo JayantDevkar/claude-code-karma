@@ -6,7 +6,7 @@ Phase 3: HTTP caching with Cache-Control headers.
 
 import logging
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
@@ -1231,7 +1231,7 @@ def get_project_agents(encoded_name: str, request: Request) -> list[AgentSummary
                     AgentSummary(
                         name=file_path.stem,
                         size_bytes=stat.st_size,
-                        modified_at=datetime.fromtimestamp(stat.st_mtime).astimezone(),
+                        modified_at=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc),
                     )
                 )
             except OSError:
@@ -1323,7 +1323,7 @@ def get_project_skills(
                             path=rel_path,
                             type=item_type,
                             size_bytes=stat.st_size,
-                            modified_at=datetime.fromtimestamp(stat.st_mtime).astimezone(),
+                            modified_at=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc),
                         )
                     )
                 else:

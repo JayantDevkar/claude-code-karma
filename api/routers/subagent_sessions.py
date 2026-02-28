@@ -313,7 +313,7 @@ def get_subagent_tasks(
     Returns:
         JSONResponse with list of TaskSchema items sorted by ID
     """
-    from datetime import datetime
+    from datetime import datetime, timezone
 
     result = find_subagent(encoded_name, session_uuid, agent_id)
     if not result:
@@ -337,7 +337,7 @@ def get_subagent_tasks(
     try:
         tasks = agent.list_tasks()
         # For subagent tasks (reconstructed from JSONL), use agent end time or current time
-        base_updated_at = agent.end_time or datetime.now()
+        base_updated_at = agent.end_time or datetime.now(timezone.utc)
 
         response_data = []
         for task in tasks:

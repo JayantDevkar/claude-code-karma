@@ -21,7 +21,7 @@ from __future__ import annotations
 import logging
 import platform
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -140,8 +140,8 @@ class Plan(BaseModel):
             return cls(
                 slug=slug,
                 content=content,
-                created=datetime.fromtimestamp(created_timestamp),
-                modified=datetime.fromtimestamp(stat.st_mtime),
+                created=datetime.fromtimestamp(created_timestamp, tz=timezone.utc),
+                modified=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc),
             )
         except (OSError, UnicodeDecodeError) as e:
             logger.warning(f"Failed to load plan from {path}: {e}")
