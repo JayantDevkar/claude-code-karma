@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/screenshots/banner.png" alt="Claude Code Karma" width="700" />
+  <img src="docs/screenshots/banner.png" alt="Claude Code Karma" width="480" />
 </p>
 
 <p align="center">
