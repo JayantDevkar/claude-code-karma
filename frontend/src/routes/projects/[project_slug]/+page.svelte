@@ -302,9 +302,10 @@
 		lastProjectEncodedName = currentName;
 	});
 
-	// Tab state - initialize from URL on mount
+	// Tab state - initialize from URL immediately (not deferred to onMount)
 	const validTabs = ['overview', 'analytics', 'agents', 'skills', 'tools', 'archived'];
-	let activeTab = $state('overview');
+	const initialTab = $page.url.searchParams.get('tab');
+	let activeTab = $state(initialTab && validTabs.includes(initialTab) ? initialTab : 'overview');
 	let tabsReady = $state(false);
 
 	// Fetch analytics client-side when analytics tab is activated
@@ -563,7 +564,11 @@
 		});
 
 		// Single replaceState call for all URL state — synchronous to avoid UI/URL lag
-		replaceState(url.toString(), {});
+		try {
+			replaceState(url.toString(), {});
+		} catch {
+			// Router may not be initialized yet during SSR/hydration
+		}
 	});
 
 	// Computed: live status counts using shared utility

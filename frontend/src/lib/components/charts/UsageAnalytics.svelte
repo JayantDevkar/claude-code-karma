@@ -386,6 +386,13 @@
 		{/if}
 	</div>
 
+	<!-- Range selector — always visible so users can switch ranges even when current range has no data -->
+	{#if !loading || data}
+		<div class="flex justify-end">
+			<SegmentedControl options={rangeOptions} bind:value={selectedRange} size="sm" />
+		</div>
+	{/if}
+
 	{#if loading && !data}
 		<div class="flex items-center justify-center py-12">
 			<div
@@ -397,9 +404,9 @@
 			class="text-center py-10 bg-[var(--bg-subtle)] rounded-xl border border-dashed border-[var(--border)]"
 		>
 			<TrendingUp size={28} class="mx-auto text-[var(--text-muted)] mb-2" />
-			<p class="text-sm text-[var(--text-secondary)]">No usage data yet</p>
+			<p class="text-sm text-[var(--text-secondary)]">No usage data for this period</p>
 			<p class="text-xs text-[var(--text-muted)] mt-1">
-				Usage analytics will appear once {itemLabel.toLowerCase()} are used in this project
+				Try a different time range, or usage will appear once {itemLabel.toLowerCase()} are used
 			</p>
 		</div>
 	{:else if data}
@@ -443,13 +450,10 @@
 		<!-- Trend chart -->
 		{#if data.trend.length > 0}
 			<div class="bg-[var(--bg-subtle)] rounded-xl p-4">
-				<div class="flex items-center justify-between mb-4">
-					<div class="flex items-center gap-3">
-						<h4 class="text-sm font-medium text-[var(--text-primary)]">
-							Activity Trend
-						</h4>
-					</div>
-					<SegmentedControl options={rangeOptions} bind:value={selectedRange} size="sm" />
+				<div class="mb-4">
+					<h4 class="text-sm font-medium text-[var(--text-primary)]">
+						Activity Trend
+					</h4>
 				</div>
 				<!-- Mini legend -->
 				{#if legendItems.length > 0}
