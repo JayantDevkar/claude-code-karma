@@ -28,6 +28,8 @@
 
 If you use Claude Code, you already have a goldmine of data sitting in `~/.claude/` — every session, every tool call, every token. But it's all buried in JSONL files you'll never read.
 
+> **⚠️ Important: Claude Code only retains session data for the last ~30 days by default.** Older JSONL files in `~/.claude/projects/` are automatically cleaned up by Claude Code. Since Claude Code Karma reads directly from those files, any sessions that Claude Code deletes will also disappear from the dashboard. There is currently no built-in way to preserve historical data beyond this retention window.
+
 Claude Code Karma reads that local data and gives you a proper dashboard. No cloud. No accounts. No telemetry. Just your data, on your machine.
 
 ## Features
