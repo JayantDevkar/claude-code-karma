@@ -142,10 +142,12 @@
 </script>
 
 <div class="token-search-wrapper {className}">
-	<!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
 		bind:this={containerRef}
 		onclick={handleContainerClick}
+		onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleContainerClick(); }}
+		role="group"
 		class="token-search-container group"
 		class:has-tokens={tokens.length > 0}
 		class:at-limit={isAtLimit}

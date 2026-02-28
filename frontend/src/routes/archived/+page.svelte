@@ -113,7 +113,7 @@
 			} else {
 				url.searchParams.delete('search');
 			}
-			history.replaceState(history.state, '', url.toString());
+			window.history.replaceState(window.history.state, '', url.toString());
 		}, 300);
 	}
 
@@ -122,7 +122,7 @@
 		if (browser) {
 			const url = new URL(window.location.href);
 			url.searchParams.delete('search');
-			history.replaceState(history.state, '', url.toString());
+			window.history.replaceState(window.history.state, '', url.toString());
 		}
 	}
 </script>

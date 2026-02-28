@@ -13,7 +13,6 @@ from fastapi import APIRouter, HTTPException, Query, Request
 
 from db.queries import (
     BUILTIN_CATEGORY_DISPLAY,
-    BUILTIN_TOOL_CATEGORIES,
     query_builtin_server_detail,
     query_builtin_server_trend,
     query_builtin_tool_detail,
