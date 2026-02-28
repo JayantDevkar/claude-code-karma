@@ -303,8 +303,8 @@
 
 	.scope-button:focus {
 		outline: none;
-		ring: 2px solid var(--accent);
-		ring-offset: 1px;
+		box-shadow: 0 0 0 2px var(--accent);
+		outline-offset: 1px;
 	}
 
 	.scope-button.desktop {
@@ -379,8 +379,8 @@
 
 	.status-button:focus {
 		outline: none;
-		ring: 2px solid var(--accent);
-		ring-offset: 1px;
+		box-shadow: 0 0 0 2px var(--accent);
+		outline-offset: 1px;
 	}
 
 	.status-button.desktop {
@@ -475,8 +475,8 @@
 
 	.substatus-button:focus {
 		outline: none;
-		ring: 2px solid var(--accent);
-		ring-offset: 1px;
+		box-shadow: 0 0 0 2px var(--accent);
+		outline-offset: 1px;
 	}
 
 	.substatus-button.desktop {
@@ -532,8 +532,8 @@
 
 	.date-button:focus {
 		outline: none;
-		ring: 2px solid var(--accent);
-		ring-offset: 1px;
+		box-shadow: 0 0 0 2px var(--accent);
+		outline-offset: 1px;
 	}
 
 	.date-button.desktop {

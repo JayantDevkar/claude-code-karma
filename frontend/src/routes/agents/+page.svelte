@@ -4,14 +4,13 @@
 		Search,
 		Play,
 		Clock,
-		DollarSign,
+		Cpu,
 		Puzzle,
 		Wrench,
 		FolderOpen,
 		ChevronsUpDown,
 		ChevronsDownUp,
-		ExternalLink,
-		Cpu
+		ExternalLink
 	} from 'lucide-svelte';
 	import { listNavigation } from '$lib/actions/listNavigation';
 	import PageHeader from '$lib/components/layout/PageHeader.svelte';
@@ -24,7 +23,7 @@
 	import Switch from '$lib/components/ui/Switch.svelte';
 	import type { AgentCategory, AgentUsageSummary, StatItem } from '$lib/api-types';
 	import {
-		formatCost,
+		formatTokens,
 		getSubagentColorVars,
 		getPluginColorVars,
 		getScopeColorVars,
@@ -75,10 +74,20 @@
 			color: 'blue'
 		},
 		{
-			title: 'Total Cost',
-			value: formatCost(data.usage.total_cost_usd),
-			icon: DollarSign,
+			title: 'Tokens In',
+			value: formatTokens(
+				data.usage.agents.reduce((sum, a) => sum + a.total_input_tokens, 0)
+			),
+			icon: Cpu,
 			color: 'green'
+		},
+		{
+			title: 'Tokens Out',
+			value: formatTokens(
+				data.usage.agents.reduce((sum, a) => sum + a.total_output_tokens, 0)
+			),
+			icon: Cpu,
+			color: 'orange'
 		}
 	]);
 
@@ -283,7 +292,7 @@
 				class="absolute -bottom-24 -left-24 w-64 h-64 bg-blue-500/3 rounded-full blur-3xl pointer-events-none"
 			></div>
 			<div class="relative">
-				<StatsGrid {stats} columns={3} />
+				<StatsGrid {stats} columns={4} />
 			</div>
 		</div>
 	{/if}

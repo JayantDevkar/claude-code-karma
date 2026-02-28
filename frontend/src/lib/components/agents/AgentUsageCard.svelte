@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { Bot, Clock, DollarSign, Play, FolderOpen, Puzzle } from 'lucide-svelte';
+	import { Bot, Clock, Play, FolderOpen, Puzzle, Cpu } from 'lucide-svelte';
 	import { formatDistanceToNow } from 'date-fns';
-	import { formatCost, getSubagentColorVars, getScopeColorVars, getUsageTier } from '$lib/utils';
+	import { formatTokens, getSubagentColorVars, getScopeColorVars, getUsageTier } from '$lib/utils';
 	import type { AgentUsageSummary } from '$lib/api-types';
 	import TierBadge from '$lib/components/ui/TierBadge.svelte';
 
@@ -146,14 +146,23 @@
 			</div>
 		</div>
 
-		<!-- Cost stat -->
+		<!-- Tokens in/out -->
 		<div class="flex items-center justify-between text-xs">
 			<div class="flex items-center gap-2 text-[var(--text-muted)]">
-				<DollarSign size={12} />
-				<span class="font-medium">Total Cost</span>
+				<Cpu size={12} />
+				<span class="font-medium">Tokens In</span>
 			</div>
 			<span class="text-sm font-semibold text-[var(--text-primary)] tabular-nums">
-				{formatCost(agent.total_cost_usd)}
+				{formatTokens(agent.total_input_tokens)}
+			</span>
+		</div>
+		<div class="flex items-center justify-between text-xs">
+			<div class="flex items-center gap-2 text-[var(--text-muted)]">
+				<Cpu size={12} />
+				<span class="font-medium">Tokens Out</span>
+			</div>
+			<span class="text-sm font-semibold text-[var(--text-primary)] tabular-nums">
+				{formatTokens(agent.total_output_tokens)}
 			</span>
 		</div>
 	</div>

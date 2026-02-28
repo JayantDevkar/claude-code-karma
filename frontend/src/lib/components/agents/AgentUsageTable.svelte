@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { AgentUsageSummary } from '$lib/api-types';
 	import { formatDistanceToNow } from 'date-fns';
-	import { formatCost, getSubagentColorVars } from '$lib/utils';
+	import { formatTokens, getSubagentColorVars } from '$lib/utils';
 
 	interface Props {
 		agents: AgentUsageSummary[];
@@ -10,7 +10,7 @@
 	let { agents }: Props = $props();
 
 	// Sort state
-	let sortKey = $state<'runs' | 'name' | 'category' | 'cost' | 'duration' | 'projects' | 'last'>(
+	let sortKey = $state<'runs' | 'name' | 'category' | 'tokens_in' | 'tokens_out' | 'duration' | 'projects' | 'last'>(
 		'runs'
 	);
 	let sortDir = $state<'asc' | 'desc'>('desc');
@@ -29,8 +29,11 @@
 				case 'category':
 					cmp = a.category.localeCompare(b.category);
 					break;
-				case 'cost':
-					cmp = a.total_cost_usd - b.total_cost_usd;
+				case 'tokens_in':
+					cmp = a.total_input_tokens - b.total_input_tokens;
+					break;
+				case 'tokens_out':
+					cmp = a.total_output_tokens - b.total_output_tokens;
 					break;
 				case 'duration':
 					cmp = a.avg_duration_seconds - b.avg_duration_seconds;
@@ -110,10 +113,20 @@
 					class="text-right px-4 py-3 font-medium text-[var(--text-secondary)] hidden md:table-cell"
 				>
 					<button
-						onclick={() => toggleSort('cost')}
+						onclick={() => toggleSort('tokens_in')}
 						class="hover:text-[var(--text-primary)] transition-colors"
 					>
-						Cost{sortIndicator('cost')}
+						Tokens In{sortIndicator('tokens_in')}
+					</button>
+				</th>
+				<th
+					class="text-right px-4 py-3 font-medium text-[var(--text-secondary)] hidden md:table-cell"
+				>
+					<button
+						onclick={() => toggleSort('tokens_out')}
+						class="hover:text-[var(--text-primary)] transition-colors"
+					>
+						Tokens Out{sortIndicator('tokens_out')}
 					</button>
 				</th>
 				<th
@@ -181,7 +194,12 @@
 					<td
 						class="px-4 py-3 text-right tabular-nums text-[var(--text-muted)] hidden md:table-cell"
 					>
-						{formatCost(agent.total_cost_usd)}
+						{formatTokens(agent.total_input_tokens)}
+					</td>
+					<td
+						class="px-4 py-3 text-right tabular-nums text-[var(--text-muted)] hidden md:table-cell"
+					>
+						{formatTokens(agent.total_output_tokens)}
 					</td>
 					<td
 						class="px-4 py-3 text-right tabular-nums text-[var(--text-muted)] hidden lg:table-cell"

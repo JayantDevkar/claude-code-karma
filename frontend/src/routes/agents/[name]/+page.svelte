@@ -5,7 +5,7 @@
 	import {
 		Bot,
 		Play,
-		DollarSign,
+		Cpu,
 		Clock,
 		FolderOpen,
 		Wrench,
@@ -39,7 +39,7 @@
 	import FiltersBottomSheet from '$lib/components/FiltersBottomSheet.svelte';
 	import ActiveFilterChips from '$lib/components/ActiveFilterChips.svelte';
 	import {
-		formatCost,
+		formatTokens,
 		formatDuration,
 		getSubagentColorVars,
 		getPluginChartHex,
@@ -343,10 +343,16 @@
 						color: 'blue'
 					},
 					{
-						title: 'Total Cost',
-						value: formatCost(data.detail.total_cost_usd),
-						icon: DollarSign,
+						title: 'Tokens In',
+						value: formatTokens(data.detail.total_input_tokens),
+						icon: Cpu,
 						color: 'green'
+					},
+					{
+						title: 'Tokens Out',
+						value: formatTokens(data.detail.total_output_tokens),
+						icon: Cpu,
+						color: 'teal'
 					},
 					{
 						title: 'Avg Duration',
@@ -499,7 +505,7 @@
 
 			<!-- Stats Grid -->
 			<div class="relative">
-				<StatsGrid {stats} columns={4} />
+				<StatsGrid {stats} columns={5} />
 			</div>
 		</div>
 	{:else}
@@ -762,10 +768,13 @@
 							<p
 								class="text-xs text-[var(--text-muted)] uppercase tracking-wider font-semibold mb-2"
 							>
-								Avg Cost/Run
+								Avg Tokens/Run
 							</p>
 							<p class="text-base font-semibold text-[var(--text-primary)]">
-								{formatCost(data.detail.total_cost_usd / data.detail.total_runs)}
+								{formatTokens(
+									(data.detail.total_input_tokens + data.detail.total_output_tokens) /
+										data.detail.total_runs
+								)}
 							</p>
 						</div>
 					</div>
