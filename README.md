@@ -1,6 +1,8 @@
 <p align="center">
-  <img src="docs/screenshots/logo.svg" alt="Claude Code Karma" width="480" />
+  <img src="docs/screenshots/banner.png" alt="Claude Code Karma" width="200" />
 </p>
+
+<h1 align="center">Claude Code Karma</h1>
 
 <p align="center">
   <strong>Your Claude Code sessions deserve more than a terminal.</strong><br />
