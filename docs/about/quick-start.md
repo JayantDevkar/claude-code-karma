@@ -16,21 +16,15 @@ You must also have Claude Code installed and have existing sessions in `~/.claud
 ## 1. Clone the Repository
 
 ```bash
-git clone --recursive https://github.com/JayantDevkar/claude-karma.git
+git clone https://github.com/JayantDevkar/claude-karma.git
 cd claude-karma
-```
-
-The `--recursive` flag initializes all three submodules (api, frontend, captain-hook). If you already cloned without it:
-
-```bash
-git submodule update --init --recursive
 ```
 
 ## 2. Start the API
 
 ```bash
 cd api
-pip install -r requirements.txt
+pip install -e ".[dev]" && pip install -r requirements.txt
 uvicorn main:app --reload --port 8000
 ```
 

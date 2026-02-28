@@ -68,16 +68,16 @@ Claude Code hook scripts fire during session events and write state to `~/.claud
 
 ```
 claude-karma/
-├── api/                    # Git submodule — FastAPI backend (Python)
+├── api/                    # FastAPI backend (Python)
 │   ├── models/             # Pydantic models for JSONL parsing
 │   ├── routers/            # FastAPI route handlers
 │   ├── tests/              # pytest test suite
 │   └── main.py             # Application entry point
-├── frontend/               # Git submodule — SvelteKit frontend (Svelte 5)
+├── frontend/               # SvelteKit frontend (Svelte 5)
 │   ├── src/routes/         # Page routes
 │   ├── src/lib/            # Shared components, stores, utils
 │   └── static/             # Static assets
-├── captain-hook/           # Git submodule — Pydantic hook models
+├── captain-hook/           # Pydantic hook models library
 │   ├── captain_hook/       # Library source
 │   └── tests/              # Model tests
 ├── hooks/                  # Production hook scripts

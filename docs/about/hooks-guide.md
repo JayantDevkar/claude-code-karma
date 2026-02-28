@@ -87,7 +87,7 @@ When Claude Code enters plan mode and produces a plan, it fires a PermissionRequ
 
 ## captain-hook Library
 
-The `captain-hook/` submodule is a standalone Python library providing type-safe Pydantic models for all 10 hook types.
+The `captain-hook/` directory contains a standalone Python library providing type-safe Pydantic models for all 10 hook types.
 
 ### Usage
 
@@ -227,4 +227,4 @@ if __name__ == "__main__":
     main()
 ```
 
-See the [captain-hook README](https://github.com/JayantDevkar/captain-hook) for the full API reference.
+See the captain-hook README in the `captain-hook/` directory for the full API reference.

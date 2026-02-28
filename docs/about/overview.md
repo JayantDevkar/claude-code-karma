@@ -48,9 +48,9 @@ Claude Karma makes all of this accessible through a single dashboard.
 
 ## Architecture
 
-Claude Karma is a monorepo with three git submodules:
+Claude Karma is a monorepo with all components in a single repository:
 
-| Submodule | Description | Port |
+| Directory | Description | Port |
 |-----------|-------------|------|
 | `api/` | FastAPI backend — parses JSONL, serves REST endpoints | 8000 |
 | `frontend/` | SvelteKit dashboard — visualizes session data | 5173 |
