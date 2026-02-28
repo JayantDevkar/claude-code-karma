@@ -16,24 +16,19 @@ import type {
 	LiveStatusCounts,
 	SessionSummary,
 	SessionWithContext,
-	BranchSummary,
 	BranchesData
 } from '$lib/api-types';
 import { ALL_LIVE_SUB_STATUSES, scopeSelectionToApi, apiToScopeSelection } from '$lib/api-types';
 import {
-	DEFAULT_FILTERS,
 	DEFAULT_SCOPE_SELECTION,
 	getFilterChips,
 	hasActiveFilters as checkHasActiveFilters,
-	getDateRangeTimestamps,
 	filterSessionsByQuery,
 	filterSessionsByStatus,
 	filterSessionsByDateRange,
 	filterSessionsByBranch,
 	createLiveSessionLookup,
 	calculateLiveStatusCounts,
-	createHistoricalSessionLookup,
-	shouldShowEndedStatus,
 	type LiveSessionLookupFn
 } from '$lib/search';
 import { API_BASE } from '$lib/config';
@@ -96,7 +91,6 @@ export function createSessionFilters(options: SessionFiltersOptions = {}) {
 	let allSessions = $state<FilterableSession[] | null>(null);
 	let isLoadingAllSessions = $state(false);
 	let branchesData = $state<BranchesData | null>(null);
-	let lastLoadedProject = $state<string | null>(null);
 
 	// AbortController for cancelling in-flight fetches
 	let fetchAbortController: AbortController | null = null;
@@ -208,7 +202,6 @@ export function createSessionFilters(options: SessionFiltersOptions = {}) {
 		allSessionsLoaded = false;
 		allSessions = null;
 		branchesData = null;
-		lastLoadedProject = null;
 	}
 
 	function toggleFiltersDropdown() {
@@ -265,7 +258,6 @@ export function createSessionFilters(options: SessionFiltersOptions = {}) {
 					project_path: projectData.path
 				}));
 				allSessionsLoaded = true;
-				lastLoadedProject = encodedName;
 			}
 
 			if (branchesRes.ok) {

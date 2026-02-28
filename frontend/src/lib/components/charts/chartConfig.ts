@@ -1,4 +1,4 @@
-import { Chart, type ChartConfiguration } from 'chart.js';
+import { Chart } from 'chart.js';
 
 /**
  * Register global Chart.js defaults for consistent styling across all charts

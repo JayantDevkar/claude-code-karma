@@ -71,7 +71,6 @@ export function listNavigation(node: HTMLElement, options: ListNavigationOptions
 		if (items.length === 0) return;
 
 		const now = Date.now();
-		const isSequence = now - lastKeyTime < 500;
 
 		switch (e.key) {
 			case 'j':

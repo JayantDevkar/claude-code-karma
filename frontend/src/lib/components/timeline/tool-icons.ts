@@ -20,7 +20,6 @@ import {
 	BrainIcon,
 	MessageCircleIcon,
 	MapIcon,
-	ZapIcon,
 	TerminalSquareIcon
 } from 'lucide-svelte';
 
