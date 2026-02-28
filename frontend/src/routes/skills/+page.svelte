@@ -216,6 +216,24 @@
 		filteredSkills.length > 0 ? Math.max(...filteredSkills.map((s: SkillUsage) => s.count)) : 100
 	);
 
+	// Build a plugin lookup from skill data for analytics filtering
+	let skillPluginMap = $derived.by(() => {
+		const map = new Map<string, boolean>();
+		for (const skill of (data.usage || [])) {
+			map.set(skill.name, skill.is_plugin);
+		}
+		return map;
+	});
+
+	let excludeFn = $derived.by(() => {
+		if (selectedFilter === 'all') return undefined;
+		if (selectedFilter === 'plugin') {
+			return (name: string) => skillPluginMap.get(name) !== true;
+		}
+		// 'file' — exclude plugin skills
+		return (name: string) => skillPluginMap.get(name) === true;
+	});
+
 	// Check if we have any skills
 	let hasSkills = $derived((data.usage || []).length > 0);
 	let hasFilteredSkills = $derived(filteredSkills.length > 0);
@@ -262,9 +280,7 @@
 				options={viewTabs}
 				bind:value={activeView}
 			/>
-			{#if activeView !== 'analytics'}
-				<SegmentedControl options={filterOptions} bind:value={selectedFilter} size="sm" />
-			{/if}
+			<SegmentedControl options={filterOptions} bind:value={selectedFilter} size="sm" />
 		</div>
 
 		<!-- Search and Expand/Collapse Controls -->
@@ -333,6 +349,7 @@
 			endpoint="/skills/usage/trend"
 			itemLabel="Skills"
 			colorFn={getSkillChartHex}
+			excludeItemFn={excludeFn}
 			itemLinkPrefix="/skills/"
 			itemDisplayFn={(name) => cleanSkillName(name, name.includes(':'))}
 		/>

@@ -22,7 +22,6 @@
 	import McpContextBar from '$lib/components/tools/McpContextBar.svelte';
 	import { getServerColorVars, getToolItemChartHex, parseBuiltinTool, parseMcpTool } from '$lib/utils/mcp';
 	import UsageAnalytics from '$lib/components/charts/UsageAnalytics.svelte';
-	import Switch from '$lib/components/ui/Switch.svelte';
 	import type { McpServer, StatItem } from '$lib/api-types';
 
 	let { data } = $props();
@@ -169,14 +168,21 @@
 		return max || 100;
 	});
 
-	// Hide built-in tools toggle for analytics
-	let hideBuiltin = $state(true);
+	// Build a source lookup from server data for analytics filtering
+	let toolSourceMap = $derived.by(() => {
+		const map = new Map<string, string>();
+		for (const server of data.overview.servers) {
+			for (const tool of server.tools) {
+				map.set(tool.full_name, server.source);
+			}
+		}
+		return map;
+	});
 
-	function isBuiltinTool(name: string): boolean {
-		return parseBuiltinTool(name) !== null;
-	}
-
-	let excludeFn = $derived(hideBuiltin ? isBuiltinTool : undefined);
+	let excludeFn = $derived.by(() => {
+		if (sourceFilter === 'all') return undefined;
+		return (name: string) => toolSourceMap.get(name) !== sourceFilter;
+	});
 
 	let hasServers = $derived(data.overview.servers.length > 0);
 	let hasFiltered = $derived(filteredServers.length > 0);
@@ -217,58 +223,60 @@
 			<SegmentedControl options={sourceOptions} bind:value={sourceFilter} size="sm" />
 		</div>
 
-		<div class="flex items-center gap-3 w-full sm:w-auto">
-			<div class="relative flex-1 sm:flex-initial">
-				<Search
-					class="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]"
-					size={16}
-				/>
-				<input
-					type="text"
-					bind:value={searchQuery}
-					placeholder="Search servers or tools..."
-					class="
-						pl-9 pr-4 py-2
-						bg-[var(--bg-base)]
-						border border-[var(--border)]
-						rounded-lg text-sm
-						focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20
-						w-full sm:w-64
-						transition-all
-						text-[var(--text-primary)]
-						placeholder:text-[var(--text-faint)]
-					"
-					data-search-input
-				/>
-			</div>
+		{#if viewMode !== 'analytics'}
+			<div class="flex items-center gap-3 w-full sm:w-auto">
+				<div class="relative flex-1 sm:flex-initial">
+					<Search
+						class="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]"
+						size={16}
+					/>
+					<input
+						type="text"
+						bind:value={searchQuery}
+						placeholder="Search servers or tools..."
+						class="
+							pl-9 pr-4 py-2
+							bg-[var(--bg-base)]
+							border border-[var(--border)]
+							rounded-lg text-sm
+							focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20
+							w-full sm:w-64
+							transition-all
+							text-[var(--text-primary)]
+							placeholder:text-[var(--text-faint)]
+						"
+						data-search-input
+					/>
+				</div>
 
-			{#if viewMode === 'servers' && filteredServers.length > 1}
-				<button
-					onclick={toggleAllGroups}
-					class="
-						flex items-center gap-1.5 px-3 py-2
-						text-sm font-medium
-						text-[var(--text-secondary)]
-						hover:text-[var(--text-primary)]
-						bg-[var(--bg-base)]
-						border border-[var(--border)]
-						rounded-lg
-						transition-all
-						hover:bg-[var(--bg-subtle)]
-						whitespace-nowrap
-					"
-					title={allExpanded ? 'Collapse all' : 'Expand all'}
-				>
-					{#if allExpanded}
-						<ChevronsDownUp size={16} />
-						<span class="hidden sm:inline">Collapse All</span>
-					{:else}
-						<ChevronsUpDown size={16} />
-						<span class="hidden sm:inline">Expand All</span>
-					{/if}
-				</button>
-			{/if}
-		</div>
+				{#if viewMode === 'servers' && filteredServers.length > 1}
+					<button
+						onclick={toggleAllGroups}
+						class="
+							flex items-center gap-1.5 px-3 py-2
+							text-sm font-medium
+							text-[var(--text-secondary)]
+							hover:text-[var(--text-primary)]
+							bg-[var(--bg-base)]
+							border border-[var(--border)]
+							rounded-lg
+							transition-all
+							hover:bg-[var(--bg-subtle)]
+							whitespace-nowrap
+						"
+						title={allExpanded ? 'Collapse all' : 'Expand all'}
+					>
+						{#if allExpanded}
+							<ChevronsDownUp size={16} />
+							<span class="hidden sm:inline">Collapse All</span>
+						{:else}
+							<ChevronsUpDown size={16} />
+							<span class="hidden sm:inline">Expand All</span>
+						{/if}
+					</button>
+				{/if}
+			</div>
+		{/if}
 	</div>
 
 	<!-- Content -->
@@ -294,12 +302,6 @@
 		</div>
 	{:else if viewMode === 'analytics'}
 		<!-- Usage Analytics View -->
-		<div class="flex items-center justify-end mb-4">
-			<label class="flex items-center gap-2 select-none text-xs text-[var(--text-muted)]">
-				Hide built-in tools
-				<Switch bind:checked={hideBuiltin} />
-			</label>
-		</div>
 		<UsageAnalytics
 			endpoint="/tools/usage/trend"
 			itemLabel="Tools"

@@ -20,7 +20,6 @@
 	import AgentUsageCard from '$lib/components/agents/AgentUsageCard.svelte';
 	import AgentUsageTable from '$lib/components/agents/AgentUsageTable.svelte';
 	import UsageAnalytics from '$lib/components/charts/UsageAnalytics.svelte';
-	import Switch from '$lib/components/ui/Switch.svelte';
 	import type { AgentCategory, AgentUsageSummary, StatItem } from '$lib/api-types';
 	import {
 		formatTokens,
@@ -251,19 +250,20 @@
 		return data.definitions.filter((d) => !usedNames.has(d.name));
 	});
 
-	// Hide built-in agents toggle for analytics
-	const BUILTIN_AGENTS = new Set([
-		'Explore', 'Plan', 'Bash',
-		'_prompt_suggestion', '_compact', '_warmup', '_teammate'
-	]);
+	// Build a category lookup from agent data for analytics filtering
+	// Key by subagent_type since that's what the trend API uses in by_item
+	let agentCategoryMap = $derived.by(() => {
+		const map = new Map<string, string>();
+		for (const agent of data.usage.agents) {
+			map.set(agent.subagent_type, agent.category);
+		}
+		return map;
+	});
 
-	let hideBuiltin = $state(true);
-
-	function isBuiltinAgent(name: string): boolean {
-		return BUILTIN_AGENTS.has(name);
-	}
-
-	let excludeFn = $derived(hideBuiltin ? isBuiltinAgent : undefined);
+	let excludeFn = $derived.by(() => {
+		if (selectedCategory === 'all') return undefined;
+		return (name: string) => agentCategoryMap.get(name) !== selectedCategory;
+	});
 
 	let hasAgents = $derived(data.usage.agents.length > 0 || unusedDefinitions.length > 0);
 	let hasFilteredAgents = $derived(filteredAgents.length > 0);
@@ -307,58 +307,60 @@
 			<SegmentedControl options={categoryOptions} bind:value={selectedCategory} size="sm" />
 		</div>
 
-		<div class="flex items-center gap-3 w-full sm:w-auto">
-			<div class="relative flex-1 sm:flex-initial">
-				<Search
-					class="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]"
-					size={16}
-				/>
-				<input
-					type="text"
-					bind:value={searchQuery}
-					placeholder="Search agents..."
-					class="
-						pl-9 pr-4 py-2
-						bg-[var(--bg-base)]
-						border border-[var(--border)]
-						rounded-lg text-sm
-						focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20
-						w-full sm:w-64
-						transition-all
-						text-[var(--text-primary)]
-						placeholder:text-[var(--text-faint)]
-					"
-					data-search-input
-				/>
-			</div>
+		{#if viewMode !== 'analytics'}
+			<div class="flex items-center gap-3 w-full sm:w-auto">
+				<div class="relative flex-1 sm:flex-initial">
+					<Search
+						class="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]"
+						size={16}
+					/>
+					<input
+						type="text"
+						bind:value={searchQuery}
+						placeholder="Search agents..."
+						class="
+							pl-9 pr-4 py-2
+							bg-[var(--bg-base)]
+							border border-[var(--border)]
+							rounded-lg text-sm
+							focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20
+							w-full sm:w-64
+							transition-all
+							text-[var(--text-primary)]
+							placeholder:text-[var(--text-faint)]
+						"
+						data-search-input
+					/>
+				</div>
 
-			{#if viewMode === 'agents' && groupedAgents.length > 1}
-				<button
-					onclick={toggleAllGroups}
-					class="
-						flex items-center gap-1.5 px-3 py-2
-						text-sm font-medium
-						text-[var(--text-secondary)]
-						hover:text-[var(--text-primary)]
-						bg-[var(--bg-base)]
-						border border-[var(--border)]
-						rounded-lg
-						transition-all
-						hover:bg-[var(--bg-subtle)]
-						whitespace-nowrap
-					"
-					title={allExpanded ? 'Collapse all groups' : 'Expand all groups'}
-				>
-					{#if allExpanded}
-						<ChevronsDownUp size={16} />
-						<span class="hidden sm:inline">Collapse All</span>
-					{:else}
-						<ChevronsUpDown size={16} />
-						<span class="hidden sm:inline">Expand All</span>
-					{/if}
-				</button>
-			{/if}
-		</div>
+				{#if viewMode === 'agents' && groupedAgents.length > 1}
+					<button
+						onclick={toggleAllGroups}
+						class="
+							flex items-center gap-1.5 px-3 py-2
+							text-sm font-medium
+							text-[var(--text-secondary)]
+							hover:text-[var(--text-primary)]
+							bg-[var(--bg-base)]
+							border border-[var(--border)]
+							rounded-lg
+							transition-all
+							hover:bg-[var(--bg-subtle)]
+							whitespace-nowrap
+						"
+						title={allExpanded ? 'Collapse all groups' : 'Expand all groups'}
+					>
+						{#if allExpanded}
+							<ChevronsDownUp size={16} />
+							<span class="hidden sm:inline">Collapse All</span>
+						{:else}
+							<ChevronsUpDown size={16} />
+							<span class="hidden sm:inline">Expand All</span>
+						{/if}
+					</button>
+				{/if}
+			</div>
+		{/if}
 	</div>
 
 	<!-- Content Area -->
@@ -384,12 +386,6 @@
 		</div>
 	{:else if viewMode === 'analytics'}
 		<!-- Usage Analytics View -->
-		<div class="flex items-center justify-end mb-4">
-			<label class="flex items-center gap-2 select-none text-xs text-[var(--text-muted)]">
-				Hide built-in agents
-				<Switch bind:checked={hideBuiltin} />
-			</label>
-		</div>
 		<UsageAnalytics
 			endpoint="/agents/usage/trend"
 			itemLabel="Agents"
