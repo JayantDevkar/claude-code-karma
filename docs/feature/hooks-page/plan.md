@@ -6,7 +6,7 @@
 
 ## Executive Summary
 
-Build a Hooks registry and awareness page in Claude Karma that shows users exactly what hooks are intercepting their Claude Code sessions — where they come from (manual, plugin, project), what events they fire on, which can block execution, and how they're configured. Unlike agents and skills (which have usage analytics from JSONL data), hooks are a **configuration-level feature** — the value is awareness and control, not analytics.
+Build a Hooks registry and awareness page in Claude Code Karma that shows users exactly what hooks are intercepting their Claude Code sessions — where they come from (manual, plugin, project), what events they fire on, which can block execution, and how they're configured. Unlike agents and skills (which have usage analytics from JSONL data), hooks are a **configuration-level feature** — the value is awareness and control, not analytics.
 
 ---
 

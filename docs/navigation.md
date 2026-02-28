@@ -1,6 +1,6 @@
 # Documentation Navigation
 
-Index of all documentation in the Claude Karma project.
+Index of all documentation in the Claude Code Karma project.
 
 ## Getting Started
 
@@ -19,11 +19,11 @@ General project documentation for users and contributors.
 
 | Document | Description |
 |----------|-------------|
-| [Overview](about/overview.md) | What Claude Karma is and why it exists |
+| [Overview](about/overview.md) | What Claude Code Karma is and why it exists |
 | [Quick Start](about/quick-start.md) | Get up and running fast |
 | [Features](about/features.md) | Detailed feature descriptions |
 | [Architecture](about/architecture.md) | System design and data flow |
-| [Hooks Guide](about/hooks-guide.md) | How Claude Code hooks work with Claude Karma |
+| [Hooks Guide](about/hooks-guide.md) | How Claude Code hooks work with Claude Code Karma |
 | [API Reference](about/api-reference.md) | REST API endpoint documentation |
 
 ## Feature Specs

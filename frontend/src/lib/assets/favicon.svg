@@ -1,15 +1,27 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
-  <title>Claude Karma</title>
-  <!-- Outer orbit ring -->
-  <circle cx="64" cy="64" r="52" fill="none" stroke="#7c3aed" stroke-width="6" opacity="0.3"/>
-  <!-- Middle orbit ring (tilted effect via ellipse) -->
-  <ellipse cx="64" cy="64" rx="38" ry="52" fill="none" stroke="#7c3aed" stroke-width="5" opacity="0.5" transform="rotate(30 64 64)"/>
-  <!-- Inner orbit ring -->
-  <ellipse cx="64" cy="64" rx="52" ry="28" fill="none" stroke="#7c3aed" stroke-width="5" opacity="0.7" transform="rotate(-20 64 64)"/>
-  <!-- Center core -->
-  <circle cx="64" cy="64" r="16" fill="#7c3aed"/>
-  <!-- Orbiting dots -->
-  <circle cx="64" cy="12" r="6" fill="#a78bfa"/>
-  <circle cx="110" cy="80" r="5" fill="#a78bfa"/>
-  <circle cx="24" cy="90" r="4" fill="#c4b5fd"/>
+  <title>Claude Code Karma</title>
+  <defs>
+    <linearGradient id="fg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#a855f7"/>
+      <stop offset="100%" style="stop-color:#7c3aed"/>
+    </linearGradient>
+    <filter id="g">
+      <feGaussianBlur stdDeviation="2" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <!-- Orbit rings -->
+  <ellipse cx="64" cy="64" rx="56" ry="30" fill="none" stroke="#a855f7" stroke-width="4" opacity="0.3" transform="rotate(-20 64 64)"/>
+  <ellipse cx="64" cy="64" rx="56" ry="30" fill="none" stroke="#a855f7" stroke-width="3.5" opacity="0.5" transform="rotate(10 64 64)"/>
+  <ellipse cx="64" cy="64" rx="56" ry="30" fill="none" stroke="#a855f7" stroke-width="3" opacity="0.25" transform="rotate(40 64 64)"/>
+  <!-- Infinity / karma symbol -->
+  <g filter="url(#g)" transform="translate(64,64)">
+    <path d="M0,0 C-14,-18 -38,-18 -38,0 C-38,18 -14,18 0,0 C14,-18 38,-18 38,0 C38,18 14,18 0,0 Z" fill="none" stroke="url(#fg)" stroke-width="7" stroke-linecap="round"/>
+    <path d="M0,0 C-14,-18 -38,-18 -38,0 C-38,18 -14,18 0,0 C14,-18 38,-18 38,0 C38,18 14,18 0,0 Z" fill="none" stroke="#e9d5ff" stroke-width="2.5" opacity="0.4"/>
+  </g>
+  <!-- Orbit dots -->
+  <circle cx="108" cy="48" r="5" fill="#a855f7" opacity="0.8"/>
+  <circle cx="20" cy="80" r="4" fill="#c4b5fd" opacity="0.7"/>
+  <circle cx="80" cy="18" r="3.5" fill="#a855f7" opacity="0.6"/>
+  <circle cx="48" cy="110" r="3.5" fill="#c4b5fd" opacity="0.5"/>
 </svg>

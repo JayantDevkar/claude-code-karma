@@ -8,7 +8,7 @@
 
 ## Executive Summary
 
-The Claude Karma frontend demonstrates a mature, well-architected SvelteKit application with modern Svelte 5 runes, comprehensive design tokens, and thoughtful UX patterns. The codebase shows strong fundamentals but has opportunities for improvement in code consolidation, consistency, and advanced UX features.
+The Claude Code Karma frontend demonstrates a mature, well-architected SvelteKit application with modern Svelte 5 runes, comprehensive design tokens, and thoughtful UX patterns. The codebase shows strong fundamentals but has opportunities for improvement in code consolidation, consistency, and advanced UX features.
 
 **Overall Rating: 8.2/10**
 

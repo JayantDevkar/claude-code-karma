@@ -1,12 +1,12 @@
-# Claude Karma Setup
+# Claude Code Karma Setup
 
-> Step-by-step guide for installing and configuring Claude Karma — a dashboard for monitoring and analyzing Claude Code sessions. Designed for both humans and AI agents (Claude Code, etc.).
+> Step-by-step guide for installing and configuring Claude Code Karma — a dashboard for monitoring and analyzing Claude Code sessions. Designed for both humans and AI agents (Claude Code, etc.).
 
 ---
 
 ## What You'll Get
 
-Claude Karma installs in **3 progressive tiers**. Start with the core dashboard, then add live monitoring and smart titles as needed.
+Claude Code Karma installs in **3 progressive tiers**. Start with the core dashboard, then add live monitoring and smart titles as needed.
 
 | Tier | Components | Dashboard Features | Installation Time |
 |------|-----------|-------------------|-------------------|
@@ -51,7 +51,7 @@ claude --version     # Claude CLI (any version)
 
 ### Step 1: Clone the Repository
 
-**What:** Download the Claude Karma repository.
+**What:** Download the Claude Code Karma repository.
 **Why:** Gets all components — API, frontend, and hook scripts — in one go.
 
 ```bash
@@ -164,7 +164,7 @@ PUBLIC_API_URL=http://localhost:8000
 ```
 
 **Verify:**
-Open http://localhost:5173 in your browser. You should see the Claude Karma home page with navigation cards (Projects, Analytics, Agents, etc.).
+Open http://localhost:5173 in your browser. You should see the Claude Code Karma home page with navigation cards (Projects, Analytics, Agents, etc.).
 
 > **Agent notes:** Confirm browser loads homepage. Check browser console for any errors. If CORS errors appear, verify API is running and accessible.
 
@@ -768,7 +768,7 @@ PUBLIC_API_URL=http://your-api-host:8000 npm run dev
 
 ## Directory Structure
 
-### Claude Karma Creates
+### Claude Code Karma Creates
 
 ```
 ~/.claude_karma/
@@ -779,7 +779,7 @@ PUBLIC_API_URL=http://your-api-host:8000 npm run dev
     {slug}.json            # One per active session
 ```
 
-### Claude Code Data (Read by Claude Karma)
+### Claude Code Data (Read by Claude Code Karma)
 
 ```
 ~/.claude/

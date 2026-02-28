@@ -1,6 +1,6 @@
 # Hooks Guide
 
-How Claude Code hooks work and how Claude Karma uses them for live tracking, title generation, and plan approval.
+How Claude Code hooks work and how Claude Code Karma uses them for live tracking, title generation, and plan approval.
 
 ---
 
@@ -8,7 +8,7 @@ How Claude Code hooks work and how Claude Karma uses them for live tracking, tit
 
 Hooks are scripts that Claude Code executes automatically when specific events occur during a session. They run synchronously in the Claude Code process and can either observe events passively or actively block them (returning `"deny"` to reject an action).
 
-Hooks are registered in Claude Code's `settings.json` and can be written in any language. Claude Karma's hooks are written in Python.
+Hooks are registered in Claude Code's `settings.json` and can be written in any language. Claude Code Karma's hooks are written in Python.
 
 ---
 
@@ -33,9 +33,9 @@ Claude Code defines 10 hook event types. The captain-hook library provides Pydan
 
 ---
 
-## Claude Karma's Production Hooks
+## Claude Code Karma's Production Hooks
 
-Claude Karma ships three hook scripts in the `hooks/` directory.
+Claude Code Karma ships three hook scripts in the `hooks/` directory.
 
 ### 1. live_session_tracker.py
 

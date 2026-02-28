@@ -83,7 +83,7 @@
 		icon={BookOpen}
 		iconColor="--nav-red"
 		breadcrumbs={[{ label: 'Dashboard', href: '/' }, { label: 'About' }]}
-		subtitle="Documentation & guides for Claude Karma"
+		subtitle="Documentation & guides for Claude Code Karma"
 	/>
 
 	{#if data.error}

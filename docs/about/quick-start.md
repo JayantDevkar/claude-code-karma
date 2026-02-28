@@ -1,6 +1,6 @@
 # Quick Start
 
-Get Claude Karma running in under 5 minutes.
+Get Claude Code Karma running in under 5 minutes.
 
 ## Prerequisites
 
@@ -54,7 +54,7 @@ Open [http://localhost:5173](http://localhost:5173) in your browser. You should 
 
 ## Optional: Enable Live Session Tracking
 
-Claude Karma includes hook scripts that track sessions in real time. To enable live tracking:
+Claude Code Karma includes hook scripts that track sessions in real time. To enable live tracking:
 
 1. Copy or symlink the hook scripts from `hooks/` to `~/.claude/hooks/`
 2. Register them in your Claude Code `settings.json`
@@ -66,5 +66,5 @@ See the [Hooks Guide](hooks-guide.md) for detailed setup instructions.
 ## Next Steps
 
 - [Features](features.md) — Explore the full feature set
-- [Architecture](architecture.md) — Understand how Claude Karma works
+- [Architecture](architecture.md) — Understand how Claude Code Karma works
 - [API Reference](api-reference.md) — Browse all API endpoints

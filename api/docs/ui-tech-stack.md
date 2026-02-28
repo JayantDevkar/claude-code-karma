@@ -1,6 +1,6 @@
 ## Overview
 
-A practical, step-by-step guide for implementing Claude Karma UI, from setup to deployment.
+A practical, step-by-step guide for implementing Claude Code Karma UI, from setup to deployment.
 
 ## Technology Stack
 

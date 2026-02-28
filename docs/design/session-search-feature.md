@@ -8,7 +8,7 @@
 
 ## Overview
 
-A unified search feature for filtering sessions across the Claude Karma dashboard. The search will be available on `/projects/[encoded_name]` and potentially `/sessions` pages.
+A unified search feature for filtering sessions across the Claude Code Karma dashboard. The search will be available on `/projects/[encoded_name]` and potentially `/sessions` pages.
 
 ### Design Principles
 

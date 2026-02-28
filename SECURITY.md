@@ -2,7 +2,7 @@
 
 ## Scope
 
-Claude Karma is a **local-only** dashboard that reads Claude Code session data from `~/.claude/` and serves it via a local FastAPI server. It does not expose any public-facing services by default.
+Claude Code Karma is a **local-only** dashboard that reads Claude Code session data from `~/.claude/` and serves it via a local FastAPI server. It does not expose any public-facing services by default.
 
 Security concerns for this project primarily involve:
 
@@ -36,7 +36,7 @@ You can expect an initial response within **72 hours**.
 
 ### Session Data Privacy
 
-Claude Karma reads your Claude Code session transcripts, which may contain:
+Claude Code Karma reads your Claude Code session transcripts, which may contain:
 
 - Source code from your projects
 - API keys or secrets if they appeared in conversations
@@ -45,7 +45,7 @@ Claude Karma reads your Claude Code session transcripts, which may contain:
 
 **Recommendations:**
 
-- Run Claude Karma only on your local machine
+- Run Claude Code Karma only on your local machine
 - Do not expose the API (port 8000) or frontend (port 5173) to the public internet
 - Review CORS settings if changing the default configuration (`CLAUDE_KARMA_CORS_ORIGINS`)
 

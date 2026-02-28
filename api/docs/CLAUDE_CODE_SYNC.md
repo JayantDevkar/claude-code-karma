@@ -1,10 +1,10 @@
 # Claude Code Data Sync - Implementation Guide
 
-> **Purpose**: This document outlines changes needed to keep Claude Karma in sync with Claude Code's evolving data structures (versions 2.1.3 → 2.1.17+).
+> **Purpose**: This document outlines changes needed to keep Claude Code Karma in sync with Claude Code's evolving data structures (versions 2.1.3 → 2.1.17+).
 
 ## Background
 
-Claude Karma parses Claude Code's local storage (`~/.claude/`) to provide session analytics and visualization. As Claude Code evolves, new data structures are introduced that we need to support for accurate and efficient data display.
+Claude Code Karma parses Claude Code's local storage (`~/.claude/`) to provide session analytics and visualization. As Claude Code evolves, new data structures are introduced that we need to support for accurate and efficient data display.
 
 **Key Finding**: Claude Code now maintains pre-computed metadata that we were previously calculating ourselves by parsing JSONL files. Using these indexes provides ~10x performance improvement for list views.
 

@@ -1,6 +1,6 @@
-# Contributing to Claude Karma
+# Contributing to Claude Code Karma
 
-Thank you for your interest in contributing to Claude Karma! This document provides guidelines and instructions for contributing to the project.
+Thank you for your interest in contributing to Claude Code Karma! This document provides guidelines and instructions for contributing to the project.
 
 ## Code of Conduct
 
@@ -324,4 +324,4 @@ By contributing, you agree that your contributions will be licensed under the Ap
 
 ---
 
-Thank you for contributing to Claude Karma!
+Thank you for contributing to Claude Code Karma!

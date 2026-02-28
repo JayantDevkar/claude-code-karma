@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="450" viewBox="0 0 800 450">
+  <defs>
+    <linearGradient id="bg-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0f0c29;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#302b63;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="infinity-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#a855f7"/>
+      <stop offset="100%" style="stop-color:#7c3aed"/>
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="2.5" result="coloredBlur" />
+      <feMerge>
+        <feMergeNode in="coloredBlur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+    <filter id="text-glow">
+      <feGaussianBlur stdDeviation="1" result="coloredBlur" />
+      <feMerge>
+        <feMergeNode in="coloredBlur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+  </defs>
+
+  <rect width="800" height="450" fill="url(#bg-gradient)" />
+
+  <!-- Circuit lines -->
+  <g stroke="#6a3093" stroke-width="1" fill="none" opacity="0.3">
+    <path d="M0,300 L100,300 L150,250 L300,250" />
+    <path d="M0,320 L80,320 L130,270 L280,270" />
+    <path d="M0,340 L60,340 L110,290 L260,290" />
+    <path d="M50,350 L100,350 L150,300 L300,300" />
+    <path d="M500,100 L650,100 L700,50 L800,50" />
+    <path d="M520,120 L670,120 L720,70 L800,70" />
+    <path d="M540,140 L690,140 L740,90 L800,90" />
+    <circle cx="300" cy="250" r="3" fill="#6a3093" />
+    <circle cx="500" cy="100" r="3" fill="#6a3093" />
+  </g>
+
+  <!-- Logo group: orbits + infinity -->
+  <g transform="translate(250, 225)" filter="url(#glow)">
+    <!-- Orbit rings -->
+    <g stroke="#a855f7" stroke-width="2" fill="none">
+      <ellipse cx="0" cy="0" rx="100" ry="50" transform="rotate(-20)" />
+      <ellipse cx="0" cy="0" rx="100" ry="50" transform="rotate(10)" opacity="0.7" />
+      <ellipse cx="0" cy="0" rx="100" ry="50" transform="rotate(40)" opacity="0.5" />
+    </g>
+
+    <!-- Orbit dots -->
+    <circle cx="90" cy="-20" r="4" fill="#a855f7" transform="rotate(-20)" />
+    <circle cx="-80" cy="30" r="3" fill="#a855f7" transform="rotate(10)" />
+    <circle cx="-20" cy="-45" r="4" fill="#a855f7" transform="rotate(40)" />
+    <circle cx="50" cy="40" r="3" fill="#a855f7" transform="rotate(40)" />
+
+    <!-- Infinity symbol (karma) -->
+    <g transform="scale(0.5)">
+      <path d="M0,0 C-50,-50 -150,-50 -150,0 C-150,50 -50,50 0,0 C50,-50 150,-50 150,0 C150,50 50,50 0,0 Z" fill="none" stroke="url(#infinity-grad)" stroke-width="15" stroke-linecap="round" />
+      <path d="M0,0 C-50,-50 -150,-50 -150,0 C-150,50 -50,50 0,0 C50,-50 150,-50 150,0 C150,50 50,50 0,0 Z" fill="none" stroke="#e9d5ff" stroke-width="5" opacity="0.5" />
+    </g>
+
+    <!-- Code symbols -->
+    <g fill="#e9d5ff" font-family="monospace" font-size="10" filter="url(#text-glow)">
+      <text x="-60" y="-15" transform="rotate(-30)">{ }</text>
+      <text x="-70" y="5" transform="rotate(-15)">&lt;/&gt;</text>
+      <text x="-65" y="25" transform="rotate(10)">#</text>
+      <text x="-45" y="35" transform="rotate(30)">;</text>
+    </g>
+  </g>
+
+  <!-- Text -->
+  <g transform="translate(450, 210)">
+    <text x="0" y="0" font-family="system-ui, -apple-system, sans-serif" font-size="40" fill="white" opacity="0.9">Claude</text>
+    <text x="0" y="45" font-family="system-ui, -apple-system, sans-serif" font-size="40" fill="white" font-weight="bold">Code Karma</text>
+  </g>
+</svg>

@@ -1,5 +1,5 @@
 /**
- * Shared utility functions for Claude Karma
+ * Shared utility functions for Claude Code Karma
  */
 
 import type {

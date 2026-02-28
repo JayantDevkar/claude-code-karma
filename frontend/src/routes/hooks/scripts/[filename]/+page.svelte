@@ -65,7 +65,7 @@
 </script>
 
 <svelte:head>
-	<title>{data.filename} - Hook Script - Claude Karma</title>
+	<title>{data.filename} - Hook Script - Claude Code Karma</title>
 </svelte:head>
 
 <div class="max-w-5xl mx-auto">

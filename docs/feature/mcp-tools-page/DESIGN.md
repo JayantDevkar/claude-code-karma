@@ -6,7 +6,7 @@
 
 ## Problem Statement
 
-Claude Karma surfaces **agents** (who performed work) and **skills** (what workflows were invoked), but has no dedicated view for **MCP tools** — the external systems Claude connects to via the Model Context Protocol.
+Claude Code Karma surfaces **agents** (who performed work) and **skills** (what workflows were invoked), but has no dedicated view for **MCP tools** — the external systems Claude connects to via the Model Context Protocol.
 
 MCP tool usage data already exists in SQLite (`session_tools`, `subagent_tools`) and is partially visible inside plugin detail pages, but users have no way to:
 

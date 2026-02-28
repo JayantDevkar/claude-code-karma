@@ -1013,7 +1013,7 @@
 </script>
 
 <svelte:head>
-	<title>Sessions | Claude Karma</title>
+	<title>Sessions | Claude Code Karma</title>
 </svelte:head>
 
 <div use:listNavigation>

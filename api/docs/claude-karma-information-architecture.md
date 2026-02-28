@@ -1,7 +1,7 @@
-# Claude Karma UI - Information Architecture
+# Claude Code Karma UI - Information Architecture
 
 ## Overview
-This document defines the information architecture, data flow, and state management strategy for Claude Karma UI.
+This document defines the information architecture, data flow, and state management strategy for Claude Code Karma UI.
 
 ---
 
@@ -649,7 +649,7 @@ aruba-backend,def456,2026-01-08 14:00,30m,45,67000,84%,sonnet-4
 ### Markdown Report
 
 ```markdown
-# Claude Karma Report - aruba-backend
+# Claude Code Karma Report - aruba-backend
 
 Generated: 2026-01-09
 
@@ -739,4 +739,4 @@ function parseWithCompatibility(jsonl: string, version?: string) {
 
 ---
 
-This information architecture provides the foundation for building a scalable, performant, and maintainable Claude Karma UI application.
+This information architecture provides the foundation for building a scalable, performant, and maintainable Claude Code Karma UI application.

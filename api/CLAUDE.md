@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Claude Karma API** — FastAPI backend for monitoring and analyzing Claude Code sessions. Parses Claude Code's local storage (`~/.claude/`) and exposes REST endpoints for the SvelteKit frontend.
+**Claude Code Karma API** — FastAPI backend for monitoring and analyzing Claude Code sessions. Parses Claude Code's local storage (`~/.claude/`) and exposes REST endpoints for the SvelteKit frontend.
 
 ## Quick Start
 

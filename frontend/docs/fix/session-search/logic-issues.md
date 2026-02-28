@@ -8,7 +8,7 @@
 
 ## Overview
 
-This document outlines observations and details regarding the session filtering implementation across two views in Claude Karma:
+This document outlines observations and details regarding the session filtering implementation across two views in Claude Code Karma:
 
 1. **Project Detail Page** (`/projects/[encoded_name]`)
 2. **Global Sessions Page** (`/sessions`)

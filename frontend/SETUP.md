@@ -1,6 +1,6 @@
 # Setup Guide
 
-Follow these instructions to get **Claude Karma** running locally.
+Follow these instructions to get **Claude Code Karma** running locally.
 
 ## Prerequisites
 

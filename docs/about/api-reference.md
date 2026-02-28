@@ -1,6 +1,6 @@
 # API Reference
 
-Complete reference for the Claude Karma REST API. All endpoints are served from `http://localhost:8000`.
+Complete reference for the Claude Code Karma REST API. All endpoints are served from `http://localhost:8000`.
 
 The API also provides interactive documentation via FastAPI's built-in Swagger UI at `/docs` and ReDoc at `/redoc`.
 

@@ -6,7 +6,7 @@
 
 ## Executive Summary
 
-Build a comprehensive Agents analytics page in Claude Karma that tracks all agent usage across projects and sessions. This feature enables plugin developers to test and optimize their plugins, and helps users understand their agent usage patterns and costs.
+Build a comprehensive Agents analytics page in Claude Code Karma that tracks all agent usage across projects and sessions. This feature enables plugin developers to test and optimize their plugins, and helps users understand their agent usage patterns and costs.
 
 ---
 

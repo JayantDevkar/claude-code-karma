@@ -8,7 +8,7 @@
 
 ## Executive Summary
 
-This document provides a comprehensive redesign of session chain, compaction, and resume tracking in Claude Karma. The design is validated through real-world meta-testing of actual session data.
+This document provides a comprehensive redesign of session chain, compaction, and resume tracking in Claude Code Karma. The design is validated through real-world meta-testing of actual session data.
 
 ### Critical Discovery from Meta-Testing
 

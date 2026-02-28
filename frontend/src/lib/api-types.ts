@@ -1,5 +1,5 @@
 /**
- * API Type Definitions for Claude Karma
+ * API Type Definitions for Claude Code Karma
  * These interfaces match the FastAPI backend response schemas
  */
 

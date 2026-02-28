@@ -36,7 +36,7 @@
 **What they do:**
 
 1. **`live_session_tracker.py`** (7 events)
-   - Tracks real-time session state for the Claude Karma dashboard
+   - Tracks real-time session state for the Claude Code Karma dashboard
    - Writes to: `~/.claude_karma/live-sessions/{slug}.json`
    - State machine: STARTING → LIVE → WAITING/STOPPED/STALE → ENDED
    - Tracks subagent lifecycle (start/complete times, status)

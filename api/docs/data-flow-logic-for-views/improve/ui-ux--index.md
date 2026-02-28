@@ -1,6 +1,6 @@
 # UI/UX Improvement Plan - Overview
 
-**Project**: Claude Karma Dashboard
+**Project**: Claude Code Karma Dashboard
 **Date**: January 2026
 **Status**: Planning Complete
 
@@ -8,7 +8,7 @@
 
 ## Executive Summary
 
-This improvement plan transforms the Claude Karma dashboard from a functional data display into a beautiful, accessible, and delightful analytics experience. Based on the comprehensive UI/UX review in [`../review/ui-ux-observations.md`](../review/ui-ux-observations.md), we have identified 30+ issues organized into 6 implementation phases.
+This improvement plan transforms the Claude Code Karma dashboard from a functional data display into a beautiful, accessible, and delightful analytics experience. Based on the comprehensive UI/UX review in [`../review/ui-ux-observations.md`](../review/ui-ux-observations.md), we have identified 30+ issues organized into 6 implementation phases.
 
 ---
 

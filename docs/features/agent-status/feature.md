@@ -2,7 +2,7 @@
 
 ## Overview
 
-This feature adds real-time subagent tracking to Claude Karma, enabling monitoring of subagents (Task tool spawns) within live Claude Code sessions. It tracks when subagents start, their type, status, and when they complete.
+This feature adds real-time subagent tracking to Claude Code Karma, enabling monitoring of subagents (Task tool spawns) within live Claude Code sessions. It tracks when subagents start, their type, status, and when they complete.
 
 ## Related PRs
 

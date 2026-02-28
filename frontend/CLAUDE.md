@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Claude Karma Frontend** — SvelteKit + Svelte 5 web interface for monitoring and analyzing Claude Code sessions. Connects to the FastAPI backend on port 8000.
+**Claude Code Karma Frontend** — SvelteKit + Svelte 5 web interface for monitoring and analyzing Claude Code sessions. Connects to the FastAPI backend on port 8000.
 
 ## Quick Start
 

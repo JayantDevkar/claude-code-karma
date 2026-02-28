@@ -1,6 +1,6 @@
 # Architecture
 
-Technical overview of Claude Karma's system design, data flow, and key patterns.
+Technical overview of Claude Code Karma's system design, data flow, and key patterns.
 
 ---
 
@@ -91,7 +91,7 @@ claude-karma/
 
 ## Claude Code Storage Locations
 
-Claude Karma reads from these locations on disk:
+Claude Code Karma reads from these locations on disk:
 
 | Data | Location |
 |------|----------|
@@ -155,7 +155,7 @@ Related sessions are detected via two mechanisms:
 
 ### Compaction Detection
 
-When Claude Code compacts a session's context window, it inserts a `SummaryMessage` containing the compressed history. Claude Karma detects these messages and flags the session as compacted in the UI.
+When Claude Code compacts a session's context window, it inserts a `SummaryMessage` containing the compressed history. Claude Code Karma detects these messages and flags the session as compacted in the UI.
 
 ### Async File I/O
 

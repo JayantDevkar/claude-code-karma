@@ -1,4 +1,4 @@
-# Claude Karma API Setup
+# Claude Code Karma API Setup
 
 FastAPI backend for monitoring and analyzing Claude Code sessions.
 
@@ -45,7 +45,7 @@ ruff format .                               # Format
 
 ## Hook Configuration
 
-Claude Karma uses Claude Code hooks to track live session state and subagent activity.
+Claude Code Karma uses Claude Code hooks to track live session state and subagent activity.
 
 ### Install Hook Scripts
 

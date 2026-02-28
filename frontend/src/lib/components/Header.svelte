@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/stores';
-	import { Orbit, Menu, X, Settings } from 'lucide-svelte';
+	import { Menu, X, Settings } from 'lucide-svelte';
+	import LogoIcon from '$lib/assets/LogoIcon.svelte';
 
 	let mobileMenuOpen = $state(false);
 
@@ -29,18 +30,19 @@
 		class="w-full max-w-[1000px] mx-auto pt-8 sm:pt-12 md:pt-16 pb-6 md:pb-8 px-4 flex items-center justify-center relative"
 	>
 		<div class="flex flex-col items-center gap-4 md:gap-5">
-			<div
-				class="p-2.5 md:p-3 rounded-2xl bg-[var(--bg-base)] border border-[var(--border)] shadow-[var(--shadow-sm)]"
-			>
-				<Orbit size={28} class="text-[var(--accent)] md:w-8 md:h-8" strokeWidth={1.5} />
-			</div>
+			<LogoIcon size={64} class="text-[var(--accent)] md:w-20 md:h-20" />
 			<div class="text-center flex flex-col items-center gap-1">
 				<h1
 					class="text-2xl sm:text-3xl font-semibold tracking-tight text-[var(--text-primary)]"
 				>
-					Claude Karma
+					Claude <span class="font-bold">Code Karma</span>
 				</h1>
-				<p class="text-sm text-[var(--text-muted)]">Track work not terminals</p>
+				<p
+					class="mt-1 text-sm tracking-wide"
+					style="background: linear-gradient(135deg, #a855f7, #7c3aed); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;"
+				>
+					Track work, not terminals
+				</p>
 			</div>
 		</div>
 	</header>
@@ -56,17 +58,13 @@
 			<div class="flex items-center gap-3">
 				<a
 					href="/"
-					class="flex items-center gap-2 md:gap-3 hover:opacity-80 transition-opacity group"
+					class="flex items-center gap-2 md:gap-3 hover:opacity-80 transition-opacity group text-[var(--accent)] group-hover:text-[var(--accent-hover)] transition-colors"
 				>
-					<div
-						class="p-1 rounded bg-[var(--bg-muted)] border border-[var(--border)] text-[var(--accent)] group-hover:text-[var(--accent-hover)] transition-colors"
-					>
-						<Orbit size={16} strokeWidth={2} />
-					</div>
+					<LogoIcon size={26} />
 					<h1
 						class="hidden sm:block text-sm font-semibold tracking-tight text-[var(--text-primary)]"
 					>
-						Claude Karma
+						Claude <span class="font-bold">Code Karma</span>
 					</h1>
 				</a>
 			</div>

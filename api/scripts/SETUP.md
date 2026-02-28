@@ -155,7 +155,7 @@ Session state is written to `~/.claude_karma/live-sessions/{slug}.json`:
 
 ## API Endpoints
 
-The Claude Karma API exposes these endpoints for live session data:
+The Claude Code Karma API exposes these endpoints for live session data:
 
 | Endpoint | Description |
 |----------|-------------|
