@@ -331,7 +331,7 @@ def collect_session_data(session: Session, include_subagents: bool = False) -> S
                         data.file_operations.append(file_op)
 
                     # Extract Task -> subagent_type mapping
-                    if tool_name == "Task":
+                    if tool_name in ("Task", "Agent"):
                         subagent_type = block.input.get("subagent_type")
                         if subagent_type:
                             data.task_tool_to_type[block.id] = subagent_type

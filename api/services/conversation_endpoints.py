@@ -144,7 +144,7 @@ def build_conversation_timeline(
                     # Determine event type based on tool
                     if block.name == "TodoWrite":
                         event_type = "todo_update"
-                    elif block.name == "Task":
+                    elif block.name in ("Task", "Agent"):
                         event_type = "subagent_spawn"
                     elif block.name == "Skill":
                         # Extract skill details from tool input
@@ -275,7 +275,7 @@ def _build_tool_call_metadata(
     metadata = {"tool_name": block.name, "tool_id": block.id, **base_metadata}
 
     # For Task tool, add spawning context
-    if block.name == "Task":
+    if block.name in ("Task", "Agent"):
         metadata["is_spawn_task"] = True
 
     if result_data is None:
@@ -290,7 +290,7 @@ def _build_tool_call_metadata(
         metadata["result_parsed"] = result_data.parsed
 
     # Special handling for Task tool - use pre-extracted spawned agent ID
-    if block.name == "Task" and result_data.spawned_agent_id:
+    if block.name in ("Task", "Agent") and result_data.spawned_agent_id:
         metadata["spawned_agent_id"] = result_data.spawned_agent_id
         metadata["spawned_agent_slug"] = subagent_info.get(result_data.spawned_agent_id)
 

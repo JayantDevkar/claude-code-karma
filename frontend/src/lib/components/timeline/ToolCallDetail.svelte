@@ -347,7 +347,7 @@
 			</div>
 
 			<!-- Task Tool -->
-		{:else if toolName === 'Task'}
+		{:else if toolName === 'Task' || toolName === 'Agent'}
 			<div class="space-y-2">
 				{#if hasValue(input.description)}
 					<div

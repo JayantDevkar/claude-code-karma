@@ -448,7 +448,7 @@ def _collect_plugin_usage_sync(period: str = "all") -> dict[str, dict]:
                             if not isinstance(block, ToolUseBlock):
                                 continue
 
-                            if block.name == "Task":
+                            if block.name in ("Task", "Agent"):
                                 subagent_type = block.input.get("subagent_type", "")
                                 if ":" in subagent_type:
                                     plugin_name = subagent_type.split(":")[0]

@@ -128,7 +128,7 @@ def _collect_task_tools(msg: dict, task_tools: dict[str, str]) -> None:
     for block in content:
         if not isinstance(block, dict):
             continue
-        if block.get("type") == "tool_use" and block.get("name") == "Task":
+        if block.get("type") == "tool_use" and block.get("name") in ("Task", "Agent"):
             tool_use_id = block.get("id")
             subagent_type = (block.get("input") or {}).get("subagent_type")
             if tool_use_id and subagent_type:
