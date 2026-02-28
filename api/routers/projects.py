@@ -1358,6 +1358,7 @@ async def get_project_memory(encoded_name: str, request: Request):
     Returns the markdown content of the project's memory file stored at
     ~/.claude/projects/{encoded_name}/memory/MEMORY.md
     """
+    encoded_name = resolve_project_identifier(encoded_name)
     from config import settings
 
     memory_dir = settings.projects_dir / encoded_name / "memory"

@@ -88,7 +88,7 @@
 	// --- Top agents & skills with proportional bars ---
 
 	let topAgents = $derived.by(() => {
-		const entries = Object.entries(usage.by_agent)
+		const entries = Object.entries(usage.by_agent ?? {})
 			.sort(([, a], [, b]) => b - a)
 			.slice(0, 5);
 		const max = entries.length > 0 ? entries[0][1] : 1;
@@ -96,7 +96,7 @@
 	});
 
 	let topSkills = $derived.by(() => {
-		const entries = Object.entries(usage.by_skill)
+		const entries = Object.entries(usage.by_skill ?? {})
 			.sort(([, a], [, b]) => b - a)
 			.slice(0, 5);
 		const max = entries.length > 0 ? entries[0][1] : 1;
@@ -165,7 +165,7 @@
 		const items: ItemTrend[] = [];
 
 		// Top agents by total count
-		const topAgentNames = Object.entries(usage.by_agent)
+		const topAgentNames = Object.entries(usage.by_agent ?? {})
 			.sort(([, a], [, b]) => b - a)
 			.slice(0, 6)
 			.map(([name]) => name);
@@ -180,7 +180,7 @@
 		});
 
 		// Top skills
-		const topSkillNames = Object.entries(usage.by_skill)
+		const topSkillNames = Object.entries(usage.by_skill ?? {})
 			.sort(([, a], [, b]) => b - a)
 			.slice(0, 6)
 			.map(([name]) => name);
