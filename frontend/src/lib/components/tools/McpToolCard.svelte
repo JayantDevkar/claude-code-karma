@@ -2,16 +2,20 @@
 	import { ChevronRight } from 'lucide-svelte';
 	import McpContextBar from './McpContextBar.svelte';
 	import type { McpToolSummary } from '$lib/api-types';
+	import TierBadge from '$lib/components/ui/TierBadge.svelte';
+	import { getUsageTier } from '$lib/utils';
 
 	interface Props {
 		tool: McpToolSummary;
 		serverTotalCalls: number;
+		maxCalls?: number;
 		accentColor?: string;
 	}
 
-	let { tool, serverTotalCalls, accentColor = 'var(--nav-teal)' }: Props = $props();
+	let { tool, serverTotalCalls, maxCalls = 100, accentColor = 'var(--nav-teal)' }: Props = $props();
 
 	let proportion = $derived(serverTotalCalls > 0 ? (tool.calls / serverTotalCalls) * 100 : 0);
+	let tier = $derived(getUsageTier(tool.calls, maxCalls));
 </script>
 
 <div
@@ -40,6 +44,13 @@
 			class="text-[var(--text-faint)] group-hover:text-[var(--text-muted)] transition-colors flex-shrink-0"
 		/>
 	</div>
+
+	<!-- Tier Badge -->
+	{#if tier !== 'low'}
+		<div class="mb-2">
+			<TierBadge {tier} />
+		</div>
+	{/if}
 
 	<!-- Call Count -->
 	<p class="text-xs text-[var(--text-muted)] mb-3 tabular-nums">

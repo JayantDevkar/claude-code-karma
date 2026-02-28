@@ -2,15 +2,17 @@
 	import { goto } from '$app/navigation';
 	import { Bot, Clock, DollarSign, Play, FolderOpen, Puzzle } from 'lucide-svelte';
 	import { formatDistanceToNow } from 'date-fns';
-	import { formatCost, getSubagentColorVars, getScopeColorVars } from '$lib/utils';
+	import { formatCost, getSubagentColorVars, getScopeColorVars, getUsageTier } from '$lib/utils';
 	import type { AgentUsageSummary } from '$lib/api-types';
+	import TierBadge from '$lib/components/ui/TierBadge.svelte';
 
 	interface Props {
 		agent: AgentUsageSummary;
+		maxRuns?: number;
 		class?: string;
 	}
 
-	let { agent, class: className = '' }: Props = $props();
+	let { agent, maxRuns = 100, class: className = '' }: Props = $props();
 
 	// Category display labels
 	const categoryLabels: Record<string, string> = {
@@ -41,6 +43,8 @@
 
 	// Build link to agent detail page
 	let detailHref = $derived(`/agents/${encodeURIComponent(agent.subagent_type)}`);
+
+	let tier = $derived(getUsageTier(agent.total_runs, maxRuns));
 </script>
 
 <a
@@ -68,12 +72,15 @@
 		>
 			<Bot size={22} strokeWidth={2.5} />
 		</div>
-		<span
-			class="px-2.5 py-1 rounded-full text-[10px] font-semibold uppercase tracking-wider"
-			style="background-color: {badgeColors.subtle}; color: {badgeColors.color};"
-		>
-			{categoryLabel}
-		</span>
+		<div class="flex items-center gap-2">
+			<TierBadge {tier} />
+			<span
+				class="px-2.5 py-1 rounded-full text-[10px] font-semibold uppercase tracking-wider"
+				style="background-color: {badgeColors.subtle}; color: {badgeColors.color};"
+			>
+				{categoryLabel}
+			</span>
+		</div>
 	</div>
 
 	<!-- Agent name -->
@@ -134,10 +141,7 @@
 			<div class="h-1.5 bg-[var(--bg-subtle)] rounded-full overflow-hidden">
 				<div
 					class="h-full rounded-full transition-all duration-300"
-					style="width: {Math.min(
-						(agent.total_runs / 100) * 100,
-						100
-					)}%; background-color: {colorVars.color};"
+					style="width: {Math.min((agent.total_runs / maxRuns) * 100, 100)}%; background-color: {colorVars.color};"
 				></div>
 			</div>
 		</div>

@@ -20,12 +20,16 @@
 	import CollapsibleGroup from '$lib/components/ui/CollapsibleGroup.svelte';
 	import AgentUsageCard from '$lib/components/agents/AgentUsageCard.svelte';
 	import AgentUsageTable from '$lib/components/agents/AgentUsageTable.svelte';
+	import UsageAnalytics from '$lib/components/charts/UsageAnalytics.svelte';
+	import Switch from '$lib/components/ui/Switch.svelte';
 	import type { AgentCategory, AgentUsageSummary, StatItem } from '$lib/api-types';
 	import {
 		formatCost,
 		getSubagentColorVars,
 		getPluginColorVars,
-		getScopeColorVars
+		getScopeColorVars,
+		getSubagentChartHex,
+		getSubagentTypeDisplayName
 	} from '$lib/utils';
 
 	// Server data — loaded once, never re-fetched on tab switch
@@ -34,11 +38,12 @@
 	// Pure client-side filter state (no goto, no navigation, no flicker)
 	let searchQuery = $state('');
 	let selectedCategory = $state<AgentCategory>('all');
-	let viewMode = $state<'agents' | 'table'>('agents');
+	let viewMode = $state<'agents' | 'table' | 'analytics'>('agents');
 
 	const viewOptions = [
 		{ label: 'By Category', value: 'agents' },
-		{ label: 'All Agents', value: 'table' }
+		{ label: 'All Agents', value: 'table' },
+		{ label: 'Usage Analytics', value: 'analytics' }
 	];
 
 	// Category filter options — dynamically built from actual data so empty categories are hidden
@@ -97,6 +102,10 @@
 
 		return agents;
 	});
+
+	let maxRuns = $derived(
+		filteredAgents.length > 0 ? Math.max(...filteredAgents.map((a) => a.total_runs)) : 100
+	);
 
 	// Group agents by category or plugin source for display
 	interface AgentGroup {
@@ -233,6 +242,20 @@
 		return data.definitions.filter((d) => !usedNames.has(d.name));
 	});
 
+	// Hide built-in agents toggle for analytics
+	const BUILTIN_AGENTS = new Set([
+		'Explore', 'Plan', 'Bash',
+		'_prompt_suggestion', '_compact', '_warmup', '_teammate'
+	]);
+
+	let hideBuiltin = $state(true);
+
+	function isBuiltinAgent(name: string): boolean {
+		return BUILTIN_AGENTS.has(name);
+	}
+
+	let excludeFn = $derived(hideBuiltin ? isBuiltinAgent : undefined);
+
 	let hasAgents = $derived(data.usage.agents.length > 0 || unusedDefinitions.length > 0);
 	let hasFilteredAgents = $derived(filteredAgents.length > 0);
 </script>
@@ -350,6 +373,22 @@
 				Try adjusting your search or category filter
 			</p>
 		</div>
+	{:else if viewMode === 'analytics'}
+		<!-- Usage Analytics View -->
+		<div class="flex items-center justify-end mb-4">
+			<label class="flex items-center gap-2 select-none text-xs text-[var(--text-muted)]">
+				Hide built-in agents
+				<Switch bind:checked={hideBuiltin} />
+			</label>
+		</div>
+		<UsageAnalytics
+			endpoint="/agents/usage/trend"
+			itemLabel="Agents"
+			colorFn={getSubagentChartHex}
+			excludeItemFn={excludeFn}
+			itemLinkPrefix="/agents/"
+			itemDisplayFn={getSubagentTypeDisplayName}
+		/>
 	{:else if viewMode === 'table'}
 		<!-- Flat Table View -->
 		<AgentUsageTable agents={filteredAgents} />
@@ -410,7 +449,7 @@
 						class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 stagger-children"
 					>
 						{#each group.agents as agent (agent.subagent_type)}
-							<AgentUsageCard {agent} />
+							<AgentUsageCard {agent} {maxRuns} />
 						{/each}
 					</div>
 				</CollapsibleGroup>

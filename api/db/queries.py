@@ -467,7 +467,9 @@ def query_skill_usage(
     """Aggregate skill usage counts, optionally filtered by project."""
     if project:
         rows = conn.execute(
-            """SELECT sk.skill_name, SUM(sk.count) as total_count
+            """SELECT sk.skill_name, SUM(sk.count) as total_count,
+                COUNT(DISTINCT sk.session_uuid) as session_count,
+                MAX(s.end_time) as last_used
             FROM session_skills sk
             JOIN sessions s ON sk.session_uuid = s.uuid
             WHERE s.project_encoded_name = :project
@@ -478,9 +480,12 @@ def query_skill_usage(
         ).fetchall()
     else:
         rows = conn.execute(
-            """SELECT skill_name, SUM(count) as total_count
-            FROM session_skills
-            GROUP BY skill_name
+            """SELECT sk.skill_name, SUM(sk.count) as total_count,
+                COUNT(DISTINCT sk.session_uuid) as session_count,
+                MAX(s.end_time) as last_used
+            FROM session_skills sk
+            JOIN sessions s ON sk.session_uuid = s.uuid
+            GROUP BY sk.skill_name
             ORDER BY total_count DESC
             LIMIT :limit""",
             {"limit": limit},
