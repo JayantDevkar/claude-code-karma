@@ -41,7 +41,7 @@ Claude Karma ships three hook scripts in the `hooks/` directory.
 
 **Purpose:** Tracks session state in real time across 8 hook events.
 
-**Events handled:** SessionStart, SessionEnd, Stop, SubagentStop, PreToolUse, PostToolUse, UserPromptSubmit, Notification
+**Events handled:** SessionStart, SessionEnd, Stop, SubagentStart, SubagentStop, PostToolUse, UserPromptSubmit, Notification
 
 **State machine:**
 
@@ -134,48 +134,110 @@ Add hook registrations to your Claude Code settings file (`~/.claude/settings.js
   "hooks": {
     "SessionStart": [
       {
-        "command": "python3 ~/.claude/hooks/live_session_tracker.py",
-        "timeout": 5000
-      }
-    ],
-    "SessionEnd": [
-      {
-        "command": "python3 ~/.claude/hooks/live_session_tracker.py",
-        "timeout": 5000
-      },
-      {
-        "command": "python3 ~/.claude/hooks/session_title_generator.py",
-        "timeout": 10000
-      }
-    ],
-    "Stop": [
-      {
-        "command": "python3 ~/.claude/hooks/live_session_tracker.py",
-        "timeout": 5000
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/live_session_tracker.py",
+            "timeout": 5000
+          }
+        ]
       }
     ],
     "UserPromptSubmit": [
       {
-        "command": "python3 ~/.claude/hooks/live_session_tracker.py",
-        "timeout": 5000
-      }
-    ],
-    "PreToolUse": [
-      {
-        "command": "python3 ~/.claude/hooks/live_session_tracker.py",
-        "timeout": 5000
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/live_session_tracker.py",
+            "timeout": 5000
+          }
+        ]
       }
     ],
     "PostToolUse": [
       {
-        "command": "python3 ~/.claude/hooks/live_session_tracker.py",
-        "timeout": 5000
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/live_session_tracker.py",
+            "timeout": 5000
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/live_session_tracker.py",
+            "timeout": 5000
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/live_session_tracker.py",
+            "timeout": 5000
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/live_session_tracker.py",
+            "timeout": 5000
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/live_session_tracker.py",
+            "timeout": 5000
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/live_session_tracker.py",
+            "timeout": 5000
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/session_title_generator.py",
+            "timeout": 15000
+          }
+        ]
       }
     ],
     "PermissionRequest": [
       {
-        "command": "python3 ~/.claude/hooks/plan_approval.py",
-        "timeout": 10000
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/plan_approval.py",
+            "timeout": 10000
+          }
+        ]
       }
     ]
   }

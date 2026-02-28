@@ -174,7 +174,7 @@ The API uses `aiofiles` for non-blocking file reads. Since all data comes from t
 | File I/O | aiofiles | Non-blocking filesystem access |
 | Testing | pytest | Unit and integration tests |
 | Linting | ruff | Python linting and formatting |
-| Runtime | Python 3.10+ | Minimum supported version |
+| Runtime | Python 3.9+ | Minimum supported version |
 
 ### Frontend
 

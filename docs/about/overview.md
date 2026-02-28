@@ -41,7 +41,7 @@ Claude Karma makes all of this accessible through a single dashboard.
 
 | Layer | Technology |
 |-------|-----------|
-| Backend | Python 3.10+, FastAPI, Pydantic 2.x, aiofiles |
+| Backend | Python 3.9+, FastAPI, Pydantic 2.x, aiofiles |
 | Frontend | SvelteKit 2, Svelte 5 (runes), Tailwind CSS 4, Chart.js 4, bits-ui |
 | Hooks | captain-hook (Pydantic models for Claude Code's 10 hook types) |
 | Tooling | ruff (Python), eslint/prettier (JS), pytest, vitest |

@@ -6,7 +6,7 @@ Get Claude Karma running in under 5 minutes.
 
 | Requirement | Minimum Version |
 |-------------|----------------|
-| Python | 3.10+ |
+| Python | 3.9+ |
 | Node.js | 18+ |
 | npm | 7+ |
 | Git | 2.x |
