@@ -14,7 +14,20 @@ from pydantic import BaseModel, ConfigDict, Field
 # Long-context pricing applies when input exceeds the threshold (e.g., 200K for Sonnet 4.5)
 MODEL_PRICING: dict[str, dict[str, float]] = {
     # Claude 4.6
-    "claude-opus-4-6": {"input": 5.0, "output": 25.0},
+    "claude-opus-4-6": {
+        "input": 5.0,
+        "output": 25.0,
+        "input_long": 10.0,
+        "output_long": 37.5,
+        "long_context_threshold": 200_000,
+    },
+    "claude-sonnet-4-6": {
+        "input": 3.0,
+        "output": 15.0,
+        "input_long": 6.0,
+        "output_long": 22.5,
+        "long_context_threshold": 200_000,
+    },
     # Claude 4.5
     "claude-opus-4-5-20251101": {"input": 5.0, "output": 25.0},
     "claude-sonnet-4-5-20250929": {
@@ -28,8 +41,16 @@ MODEL_PRICING: dict[str, dict[str, float]] = {
     # Claude 4.1
     "claude-opus-4-1-20250805": {"input": 15.0, "output": 75.0},
     # Claude 4
-    "claude-sonnet-4-20250514": {"input": 3.0, "output": 15.0},
+    "claude-sonnet-4-20250514": {
+        "input": 3.0,
+        "output": 15.0,
+        "input_long": 6.0,
+        "output_long": 22.5,
+        "long_context_threshold": 200_000,
+    },
     "claude-opus-4-20250514": {"input": 15.0, "output": 75.0},
+    # Claude 3.7 (deprecated)
+    "claude-3-7-sonnet-20250219": {"input": 3.0, "output": 15.0},
     # Claude 3.5
     "claude-3-5-sonnet-20241022": {"input": 3.0, "output": 15.0},
     "claude-3-5-haiku-20241022": {"input": 0.80, "output": 4.0},
@@ -38,18 +59,21 @@ MODEL_PRICING: dict[str, dict[str, float]] = {
     "claude-3-sonnet-20240229": {"input": 3.0, "output": 15.0},
     "claude-3-haiku-20240307": {"input": 0.25, "output": 1.25},
 }
-DEFAULT_PRICING_MODEL = "claude-opus-4-6"
+DEFAULT_PRICING_MODEL = "claude-sonnet-4-6"
 
 # Model alias → canonical model ID for fuzzy matching unknown model strings
 _MODEL_FAMILY_PATTERNS: list[tuple[str, str]] = [
     ("haiku-4-5", "claude-haiku-4-5-20251001"),
     ("haiku-4", "claude-haiku-4-5-20251001"),
     ("haiku-3-5", "claude-3-5-haiku-20241022"),
+    ("haiku-3", "claude-3-haiku-20240307"),
     ("haiku", "claude-haiku-4-5-20251001"),
+    ("sonnet-4-6", "claude-sonnet-4-6"),
     ("sonnet-4-5", "claude-sonnet-4-5-20250929"),
     ("sonnet-4", "claude-sonnet-4-20250514"),
+    ("sonnet-3-7", "claude-3-7-sonnet-20250219"),
     ("sonnet-3-5", "claude-3-5-sonnet-20241022"),
-    ("sonnet", "claude-sonnet-4-5-20250929"),
+    ("sonnet", "claude-sonnet-4-6"),
     ("opus-4-6", "claude-opus-4-6"),
     ("opus-4-5", "claude-opus-4-5-20251101"),
     ("opus-4-1", "claude-opus-4-1-20250805"),

@@ -28,22 +28,95 @@
 
 If you use Claude Code, you already have a goldmine of data sitting in `~/.claude/` — every session, every tool call, every token. But it's all buried in JSONL files you'll never read.
 
-> **⚠️ Important: Claude Code only retains session data for the last ~30 days by default.** Older JSONL files in `~/.claude/projects/` are automatically cleaned up by Claude Code. Since Claude Code Karma reads directly from those files, any sessions that Claude Code deletes will also disappear from the dashboard. There is currently no built-in way to preserve historical data beyond this retention window.
+> **Warning: Claude Code only keeps session data for about 30 days.** Older JSONL files in `~/.claude/projects/` are automatically cleaned up. Since Karma reads directly from those files, deleted sessions will disappear from the dashboard too.
 
 Claude Code Karma reads that local data and gives you a proper dashboard. No cloud. No accounts. No telemetry. Just your data, on your machine.
 
 ## Features
 
-- **Session Browser** — Browse all sessions across projects with live status, search, and filters
-- **Timeline View** — Chronological event timeline showing tool calls, thinking blocks, and responses
-- **Live Sessions** — Real-time session monitoring via Claude Code hooks
-- **Analytics** — Token usage, costs, velocity trends, cache hit rates, and coding rhythm
-- **Subagent Tracking** — Monitor spawned agents and their activity within sessions
-- **Tool & Skill Analytics** — Track which tools and skills are most used
+### Session Browser
+
+Browse all your Claude Code sessions in one place. Search by title, prompt, or slug. Filter by project. See live sessions at the top with real-time status badges.
+
+<p align="center">
+  <img src="docs/screenshots/sessions.png" alt="Session Browser" width="100%" />
+</p>
+
+### Session Timeline & Overview
+
+Dive into any session to see exactly what happened — every prompt, tool call, thinking block, and response laid out chronologically. The overview tab shows key stats like message count, duration, model used, and which tools were called.
+
+<p align="center">
+  <img src="docs/screenshots/session-overview.png" alt="Session Overview" width="100%" />
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/session-timeline.png" alt="Session Timeline" width="100%" />
+</p>
+
+### Projects
+
+See all your Claude Code workspaces organized by git repository. Each project card shows session count and when it was last active. Expand git repos to see individual project directories inside them.
+
+<p align="center">
+  <img src="docs/screenshots/projects.png" alt="Projects" width="100%" />
+</p>
+
+### Analytics
+
+Track your token usage, costs, velocity trends, cache hit rates, and coding rhythm across all projects. See which models you use most and how your usage patterns change over time.
+
+<p align="center">
+  <img src="docs/screenshots/analytics.png" alt="Analytics Dashboard" width="100%" />
+</p>
+
+### Tools
+
+See every tool Claude Code uses — built-in ones like Read, Edit, and Bash, plus any MCP integrations you've added. Grouped by server with call counts and session coverage. Switch to the Usage Analytics tab for activity trends and top tools over time.
+
+<p align="center">
+  <img src="docs/screenshots/tools.png" alt="Tools Browser" width="100%" />
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/tool-analytics.png" alt="Tool Usage Analytics" width="100%" />
+</p>
+
+### Agents
+
+Browse all your agents — built-in, custom, and plugin-provided. See total runs, token consumption, and filter by category to understand how your agent ecosystem is being used. The Usage Analytics view shows activity trends and your most-used agents.
+
+<p align="center">
+  <img src="docs/screenshots/agents.png" alt="Agents Browser" width="100%" />
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/agent-analytics.png" alt="Agent Usage Analytics" width="100%" />
+</p>
+
+### Hooks
+
+Visualize all your Claude Code hooks organized by lifecycle phase — session start/end, tool use, agent lifecycle, and permissions. See which hooks can block execution and how many registrations each event has.
+
+<p align="center">
+  <img src="docs/screenshots/hooks.png" alt="Hooks Browser" width="100%" />
+</p>
+
+### Plugins
+
+View all installed Claude Code plugins with their agents, skills, and commands. Filter between official and community plugins. See version info and when each was last updated.
+
+<p align="center">
+  <img src="docs/screenshots/plugins.png" alt="Plugins Browser" width="100%" />
+</p>
+
+### And More
+
 - **Plans Browser** — View implementation plans and their execution status
-- **Hooks & Plugins** — Browse installed Claude Code hooks and MCP plugins
+- **Skills** — Track which skills are invoked and how often
 - **Command Palette** — Quick navigation with `Ctrl+K` / `Cmd+K`
 - **Full-text Search** — Search across session titles, prompts, and slugs
+- **Live Sessions** — Real-time monitoring via Claude Code hooks
 
 ## Quick Start
 
