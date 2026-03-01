@@ -36,6 +36,7 @@ from routers import (  # noqa: E402
     skills,
     subagent_sessions,
     tools,
+    workflows,
 )
 from routers import settings as settings_router  # noqa: E402
 
@@ -171,6 +172,7 @@ app.include_router(
     prefix="/agents",
     tags=["subagent-sessions"],
 )
+app.include_router(workflows.router, prefix="/workflows", tags=["workflows"])
 app.include_router(admin.router)
 
 
