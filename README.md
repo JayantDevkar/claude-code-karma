@@ -32,6 +32,8 @@ If you use Claude Code, you already have a goldmine of data sitting in `~/.claud
 
 Claude Code Karma reads that local data and gives you a proper dashboard. No cloud. No accounts. No telemetry. Just your data, on your machine.
 
+It works with both **Claude Code CLI** and **Claude Desktop** (Claude Code mode) sessions — any session that writes to `~/.claude/` shows up automatically.
+
 ## Features
 
 ### Session Browser
@@ -122,6 +124,16 @@ See every tool Claude Code uses — built-in ones like Read, Edit, and Bash, plu
   <img src="docs/screenshots/tool-analytics.png" alt="Tool Usage Analytics" width="100%" />
 </p>
 
+Click into any tool for detailed stats — total calls, session count, main vs subagent split, usage trend over time, and a full session history.
+
+<p align="center">
+  <img src="docs/screenshots/tool-detail.png" alt="Tool Detail" width="100%" />
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/tool-history.png" alt="Tool History" width="100%" />
+</p>
+
 ### Agents
 
 Browse all your agents — built-in, custom, and plugin-provided. See total runs, token consumption, and filter by category to understand how your agent ecosystem is being used. The Usage Analytics view shows activity trends and your most-used agents.
@@ -132,6 +144,16 @@ Browse all your agents — built-in, custom, and plugin-provided. See total runs
 
 <p align="center">
   <img src="docs/screenshots/agent-analytics.png" alt="Agent Usage Analytics" width="100%" />
+</p>
+
+Drill into any agent for run counts, token usage, average duration, usage trends, project breakdown, and a session history showing every time that agent was used.
+
+<p align="center">
+  <img src="docs/screenshots/agent-detail.png" alt="Agent Detail" width="100%" />
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/agent-history.png" alt="Agent History" width="100%" />
 </p>
 
 ### Hooks
@@ -150,10 +172,27 @@ View all installed Claude Code plugins with their agents, skills, and commands. 
   <img src="docs/screenshots/plugins.png" alt="Plugins Browser" width="100%" />
 </p>
 
+Click into any plugin to see everything it provides — agents, skills, commands, MCP tools, and hooks — along with usage analytics showing activity trends and top-used components.
+
+<p align="center">
+  <img src="docs/screenshots/plugin-detail.png" alt="Plugin Detail" width="100%" />
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/plugin-analytics.png" alt="Plugin Usage Analytics" width="100%" />
+</p>
+
+### Skills
+
+Track which skills are invoked across sessions, grouped by plugin or shown individually. Click into any skill for usage stats, context split (main vs subagent), and a full session history showing every time that skill was used.
+
+<p align="center">
+  <img src="docs/screenshots/skill-detail.png" alt="Skill Detail with History" width="100%" />
+</p>
+
 ### And More
 
 - **Plans Browser** — View implementation plans and their execution status
-- **Skills** — Track which skills are invoked and how often
 - **Command Palette** — Quick navigation with `Ctrl+K` / `Cmd+K`
 - **Full-text Search** — Search across session titles, prompts, and slugs
 - **Live Sessions** — Real-time monitoring via Claude Code hooks
