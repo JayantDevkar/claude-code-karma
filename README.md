@@ -54,6 +54,46 @@ Dive into any session to see exactly what happened — every prompt, tool call, 
   <img src="docs/screenshots/session-timeline.png" alt="Session Timeline" width="100%" />
 </p>
 
+### Session Detail Tabs
+
+Each session page has dedicated tabs that break down different aspects of what happened during the session.
+
+**Tasks** — See all tasks Claude created and completed during the session, displayed in a flow view with status tracking.
+
+<p align="center">
+  <img src="docs/screenshots/session-tasks.png" alt="Session Tasks" width="100%" />
+</p>
+
+**Files** — Every file operation in a sortable table — reads, writes, edits — with timestamps, actors, and the tools that made each change.
+
+<p align="center">
+  <img src="docs/screenshots/session-files.png" alt="Session Files" width="100%" />
+</p>
+
+**Subagents** — Agents spawned during the session, grouped by type. Expand each to see message counts, tool calls, and what they were asked to do.
+
+<p align="center">
+  <img src="docs/screenshots/session-subagents.png" alt="Session Subagents" width="100%" />
+</p>
+
+**Skills** — Skills invoked via `/skill` commands during the session, with their source plugin and invocation count.
+
+<p align="center">
+  <img src="docs/screenshots/session-skills.png" alt="Session Skills" width="100%" />
+</p>
+
+**Commands** — Slash commands used during the session, showing built-in and plugin commands with usage counts.
+
+<p align="center">
+  <img src="docs/screenshots/session-commands.png" alt="Session Commands" width="100%" />
+</p>
+
+**Analytics** — Per-session cost breakdown, token usage, cache hit rates, tool distribution with a donut chart, and a ranked list of every tool used.
+
+<p align="center">
+  <img src="docs/screenshots/session-analytics.png" alt="Session Analytics" width="100%" />
+</p>
+
 ### Projects
 
 See all your Claude Code workspaces organized by git repository. Each project card shows session count and when it was last active. Expand git repos to see individual project directories inside them.
