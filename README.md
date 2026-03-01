@@ -72,18 +72,26 @@ Track your token usage, costs, velocity trends, cache hit rates, and coding rhyt
 
 ### Tools
 
-See every tool Claude Code uses — built-in ones like Read, Edit, and Bash, plus any MCP integrations you've added. Grouped by server with call counts and session coverage.
+See every tool Claude Code uses — built-in ones like Read, Edit, and Bash, plus any MCP integrations you've added. Grouped by server with call counts and session coverage. Switch to the Usage Analytics tab for activity trends and top tools over time.
 
 <p align="center">
   <img src="docs/screenshots/tools.png" alt="Tools Browser" width="100%" />
 </p>
 
+<p align="center">
+  <img src="docs/screenshots/tool-analytics.png" alt="Tool Usage Analytics" width="100%" />
+</p>
+
 ### Agents
 
-Browse all your agents — built-in, custom, and plugin-provided. See total runs, token consumption, and filter by category to understand how your agent ecosystem is being used.
+Browse all your agents — built-in, custom, and plugin-provided. See total runs, token consumption, and filter by category to understand how your agent ecosystem is being used. The Usage Analytics view shows activity trends and your most-used agents.
 
 <p align="center">
   <img src="docs/screenshots/agents.png" alt="Agents Browser" width="100%" />
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/agent-analytics.png" alt="Agent Usage Analytics" width="100%" />
 </p>
 
 ### Hooks
