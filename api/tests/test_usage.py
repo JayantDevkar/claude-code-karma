@@ -534,12 +534,12 @@ class TestTokenUsageCalculateCost:
 
     def test_default_model_all_components(self, typical_usage):
         """Cost should include uncached input, cache write, cache read, and output."""
-        # Default model: claude-opus-4-6 ($5/$25)
-        # uncached: 100/1M * $5 = $0.0005
-        # cache_write: 50000/1M * $5 * 1.25 = $0.3125
-        # cache_read: 10000/1M * $5 * 0.10 = $0.005
-        # output: 500/1M * $25 = $0.0125
-        expected = 0.0005 + 0.3125 + 0.005 + 0.0125
+        # Default model: claude-sonnet-4-6 ($3/$15)
+        # uncached: 100/1M * $3 = $0.0003
+        # cache_write: 50000/1M * $3 * 1.25 = $0.1875
+        # cache_read: 10000/1M * $3 * 0.10 = $0.003
+        # output: 500/1M * $15 = $0.0075
+        expected = 0.0003 + 0.1875 + 0.003 + 0.0075
         assert typical_usage.calculate_cost() == pytest.approx(expected)
 
     def test_specific_model_haiku(self):
@@ -550,30 +550,33 @@ class TestTokenUsageCalculateCost:
         assert cost == pytest.approx(1.0 + 5.0)
 
     def test_specific_model_opus_4_6(self):
-        """Opus 4.6 pricing should use $5/$25."""
-        usage = TokenUsage(input_tokens=1_000_000, output_tokens=1_000_000)
+        """Opus 4.6 pricing should use $5/$25 (base) or $10/$37.50 (long context)."""
+        # Under 200K threshold: base rates $5/$25
+        usage = TokenUsage(input_tokens=100_000, output_tokens=1_000_000)
         cost = usage.calculate_cost("claude-opus-4-6")
-        assert cost == pytest.approx(5.0 + 25.0)
+        expected = (100_000 / 1_000_000) * 5.0 + (1_000_000 / 1_000_000) * 25.0
+        assert cost == pytest.approx(expected)
 
     def test_no_cache_usage(self, no_cache_usage):
         """Cost with no cache should only have uncached input + output."""
-        # Default model ($5/$25): input=1000, output=2000
-        expected = (1000 / 1_000_000) * 5.0 + (2000 / 1_000_000) * 25.0
+        # Default model ($3/$15): input=1000, output=2000
+        expected = (1000 / 1_000_000) * 3.0 + (2000 / 1_000_000) * 15.0
         assert no_cache_usage.calculate_cost() == pytest.approx(expected)
 
     def test_all_cache_hits(self, all_cache_hits_usage):
         """Cost with only cache reads should charge at 10% rate."""
-        # input=0, output=100, cache_read=5000
-        cache_read_cost = (5000 / 1_000_000) * 5.0 * 0.10
-        output_cost = (100 / 1_000_000) * 25.0
+        # input=0, output=100, cache_read=5000, default model ($3/$15)
+        cache_read_cost = (5000 / 1_000_000) * 3.0 * 0.10
+        output_cost = (100 / 1_000_000) * 15.0
         assert all_cache_hits_usage.calculate_cost() == pytest.approx(cache_read_cost + output_cost)
 
     def test_unknown_model_falls_back_to_default(self):
         """Completely unknown model should fall back to default pricing."""
-        usage = TokenUsage(input_tokens=1_000_000, output_tokens=1_000_000)
+        usage = TokenUsage(input_tokens=100_000, output_tokens=1_000_000)
         cost = usage.calculate_cost("unknown-model-xyz")
-        # Falls back to claude-opus-4-6: $5/$25
-        assert cost == pytest.approx(5.0 + 25.0)
+        # Falls back to claude-sonnet-4-6: $3/$15 (under 200K threshold)
+        expected = (100_000 / 1_000_000) * 3.0 + (1_000_000 / 1_000_000) * 15.0
+        assert cost == pytest.approx(expected)
 
     def test_zero_usage_returns_zero(self, zero_usage):
         """Zero token usage should return $0.00."""
@@ -598,9 +601,11 @@ class TestTokenUsageCalculateCost:
 
     def test_fuzzy_match_opus_alias(self):
         """Model alias containing 'opus-4-6' should resolve to Opus 4.6 pricing."""
-        usage = TokenUsage(input_tokens=1_000_000, output_tokens=1_000_000)
+        # Under 200K threshold: base rates $5/$25
+        usage = TokenUsage(input_tokens=100_000, output_tokens=1_000_000)
         cost = usage.calculate_cost("claude-opus-4-6-20260205")
-        assert cost == pytest.approx(5.0 + 25.0)
+        expected = (100_000 / 1_000_000) * 5.0 + (1_000_000 / 1_000_000) * 25.0
+        assert cost == pytest.approx(expected)
 
     # --- Long-context pricing ---
 
@@ -638,10 +643,18 @@ class TestTokenUsageCalculateCost:
         output = (100_000 / 1_000_000) * 22.5
         assert cost == pytest.approx(uncached + cache_write + cache_read + output)
 
-    def test_long_context_not_applied_to_opus(self):
-        """Opus models should not have long-context pricing."""
+    def test_long_context_applied_to_opus_4_6(self):
+        """Opus 4.6 with >200K input tokens should use long-context rates."""
         usage = TokenUsage(input_tokens=500_000, output_tokens=1_000_000)
         cost = usage.calculate_cost("claude-opus-4-6")
+        # Long-context: $10/$37.50
+        expected = (500_000 / 1_000_000) * 10.0 + (1_000_000 / 1_000_000) * 37.5
+        assert cost == pytest.approx(expected)
+
+    def test_long_context_not_applied_to_opus_4_5(self):
+        """Opus 4.5 should not have long-context pricing."""
+        usage = TokenUsage(input_tokens=500_000, output_tokens=1_000_000)
+        cost = usage.calculate_cost("claude-opus-4-5-20251101")
         # Standard: $5/$25 regardless of input size
         expected = (500_000 / 1_000_000) * 5.0 + (1_000_000 / 1_000_000) * 25.0
         assert cost == pytest.approx(expected)

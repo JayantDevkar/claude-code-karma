@@ -211,9 +211,15 @@ class TestGetModelPricing:
         assert pricing == {"input": 15.0, "output": 75.0}
 
     def test_exact_match_sonnet(self):
-        """Test exact match for Sonnet model."""
+        """Test exact match for Sonnet model (now includes long context)."""
         pricing = get_model_pricing("claude-sonnet-4-20250514")
-        assert pricing == {"input": 3.0, "output": 15.0}
+        assert pricing == {
+            "input": 3.0,
+            "output": 15.0,
+            "input_long": 6.0,
+            "output_long": 22.5,
+            "long_context_threshold": 200_000,
+        }
 
     def test_exact_match_sonnet_35(self):
         """Test exact match for Sonnet 3.5 model."""
@@ -292,10 +298,10 @@ class TestCalculateCost:
         assert cost == 30.0
 
     def test_sonnet_cost_calculation(self):
-        """Test cost calculation for Sonnet model."""
-        # 1M input tokens at $3 + 1M output tokens at $15 = $18
+        """Test cost calculation for Sonnet model (long context >200K)."""
+        # 1M input tokens triggers long context: $6 input + $22.50 output = $28.50
         cost = calculate_cost(1_000_000, 1_000_000, "claude-sonnet-4-20250514")
-        assert cost == 18.0
+        assert cost == pytest.approx(28.5)
 
     def test_haiku_cost_calculation(self):
         """Test cost calculation for Haiku model."""
@@ -318,9 +324,10 @@ class TestCalculateCost:
 
     def test_cost_with_unknown_model_uses_default(self):
         """Test that unknown model falls back to default pricing."""
-        # Using default pricing (claude-opus-4-6): $5/M input, $25/M output
+        # Using default pricing (claude-sonnet-4-6): $3/M input, $15/M output
+        # 1M input triggers long context: $6/$22.50
         cost = calculate_cost(1_000_000, 1_000_000, "unknown-model")
-        assert cost == 30.0
+        assert cost == pytest.approx(28.5)
 
     def test_input_only(self):
         """Test cost calculation with only input tokens."""
