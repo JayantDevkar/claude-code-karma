@@ -7,24 +7,55 @@ This service detects worktree projects and maps them back to real projects.
 
 Two detection strategies:
 - Strategy A: Worktree filesystem scan (fallback, cross-platform)
-- Strategy B: Desktop metadata ingestion (primary, macOS)
+- Strategy B: Desktop metadata ingestion (primary, cross-platform)
 """
 
 import json
 import logging
+import os
+import platform
 import time
 from pathlib import Path
 from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-# Worktree base directory
-WORKTREE_BASE = Path.home() / ".claude-worktrees"
 
-# Desktop metadata location (macOS)
-DESKTOP_SESSIONS_DIR = (
-    Path.home() / "Library" / "Application Support" / "Claude" / "claude-code-sessions"
-)
+def _get_worktree_base() -> Path:
+    """Get worktree base directory, configurable via env var."""
+    custom = os.environ.get("CLAUDE_KARMA_WORKTREE_BASE")
+    if custom:
+        return Path(custom)
+    return Path.home() / ".claude-worktrees"
+
+
+def _get_desktop_sessions_dir() -> Path:
+    """Get platform-specific Claude Desktop sessions directory."""
+    system = platform.system()
+    if system == "Darwin":
+        return (
+            Path.home()
+            / "Library"
+            / "Application Support"
+            / "Claude"
+            / "claude-code-sessions"
+        )
+    elif system == "Windows":
+        appdata = os.environ.get("APPDATA")
+        if appdata:
+            return Path(appdata) / "Claude" / "claude-code-sessions"
+        return (
+            Path.home() / "AppData" / "Roaming" / "Claude" / "claude-code-sessions"
+        )
+    else:  # Linux and other Unix
+        xdg_config = os.environ.get(
+            "XDG_CONFIG_HOME", str(Path.home() / ".config")
+        )
+        return Path(xdg_config) / "Claude" / "claude-code-sessions"
+
+
+WORKTREE_BASE = _get_worktree_base()
+DESKTOP_SESSIONS_DIR = _get_desktop_sessions_dir()
 
 # Cache for desktop metadata: (timestamp, data)
 # Note: in-memory cache assumes single-process uvicorn (no workers)
@@ -92,7 +123,7 @@ def extract_worktree_info(encoded_name: str) -> Optional[dict]:
 
 
 # =============================================================================
-# Strategy B: Desktop Metadata Ingestion (Primary, macOS)
+# Strategy B: Desktop Metadata Ingestion (Primary, cross-platform)
 # =============================================================================
 
 
