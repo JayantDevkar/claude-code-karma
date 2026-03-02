@@ -1261,6 +1261,7 @@ export interface DailyUsage {
 	date: string;
 	agent_runs: number;
 	skill_invocations: number;
+	command_invocations: number;
 	mcp_tool_calls: number;
 	cost_usd: number;
 }
@@ -1284,13 +1285,16 @@ export interface PluginUsageStats {
 	plugin_name: string;
 	total_agent_runs: number;
 	total_skill_invocations: number;
+	total_command_invocations: number;
 	total_mcp_tool_calls: number;
 	estimated_cost_usd: number;
 	by_agent: Record<string, number>;
 	by_skill: Record<string, number>;
+	by_command: Record<string, number>;
 	by_mcp_tool: Record<string, number>;
 	by_agent_daily: Record<string, Record<string, number>>;
 	by_skill_daily: Record<string, Record<string, number>>;
+	by_command_daily: Record<string, Record<string, number>>;
 	by_mcp_tool_daily: Record<string, Record<string, number>>;
 	trend: DailyUsage[];
 	first_used: string | null;

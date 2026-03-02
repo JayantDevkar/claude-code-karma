@@ -1344,6 +1344,7 @@ class DailyUsage(BaseModel):
     date: str = Field(..., description="Date in YYYY-MM-DD format")
     agent_runs: int = Field(0, description="Agent invocations on this date")
     skill_invocations: int = Field(0, description="Skill invocations on this date")
+    command_invocations: int = Field(0, description="Command invocations on this date")
     mcp_tool_calls: int = Field(0, description="MCP tool calls on this date")
     cost_usd: float = Field(0.0, description="Estimated cost for this date")
 
@@ -1354,11 +1355,15 @@ class PluginUsageStats(BaseModel):
     plugin_name: str = Field(..., description="Plugin identifier")
     total_agent_runs: int = Field(0, description="Total agent invocations")
     total_skill_invocations: int = Field(0, description="Total skill invocations")
+    total_command_invocations: int = Field(0, description="Total command invocations")
     total_mcp_tool_calls: int = Field(0, description="Total MCP tool invocations")
     estimated_cost_usd: float = Field(0.0, description="Total estimated cost")
     by_agent: dict[str, int] = Field(default_factory=dict, description="Agent name -> run count")
     by_skill: dict[str, int] = Field(
         default_factory=dict, description="Skill name -> invocation count"
+    )
+    by_command: dict[str, int] = Field(
+        default_factory=dict, description="Command name -> invocation count"
     )
     by_mcp_tool: dict[str, int] = Field(
         default_factory=dict, description="MCP tool short name -> call count"
@@ -1368,6 +1373,9 @@ class PluginUsageStats(BaseModel):
     )
     by_skill_daily: dict[str, dict[str, int]] = Field(
         default_factory=dict, description="Skill name -> {date -> count}"
+    )
+    by_command_daily: dict[str, dict[str, int]] = Field(
+        default_factory=dict, description="Command name -> {date -> count}"
     )
     by_mcp_tool_daily: dict[str, dict[str, int]] = Field(
         default_factory=dict, description="MCP tool name -> {date -> count}"

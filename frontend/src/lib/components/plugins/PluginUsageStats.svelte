@@ -11,7 +11,7 @@
 		Legend,
 		Tooltip
 	} from 'chart.js';
-	import { Play, Bot, Zap, Wrench, TrendingUp, Clock, Calendar } from 'lucide-svelte';
+	import { Play, Bot, Zap, Wrench, Terminal, TrendingUp, Clock, Calendar } from 'lucide-svelte';
 	import { formatDistanceToNow } from 'date-fns';
 	import type { PluginUsageStats } from '$lib/api-types';
 	import {
@@ -50,13 +50,17 @@
 	// --- Metric computations ---
 
 	let totalRuns = $derived(
-		usage.total_agent_runs + usage.total_skill_invocations + usage.total_mcp_tool_calls
+		usage.total_agent_runs +
+			usage.total_skill_invocations +
+			usage.total_command_invocations +
+			usage.total_mcp_tool_calls
 	);
 
 	let avgPerDay = $derived.by(() => {
 		if (usage.trend.length === 0) return 0;
 		const total = usage.trend.reduce(
-			(sum, d) => sum + d.agent_runs + d.skill_invocations + d.mcp_tool_calls,
+			(sum, d) =>
+				sum + d.agent_runs + d.skill_invocations + d.command_invocations + d.mcp_tool_calls,
 			0
 		);
 		return Math.round(total / usage.trend.length);
@@ -85,7 +89,7 @@
 		}
 	});
 
-	// --- Top agents & skills with proportional bars ---
+	// --- Top agents, skills, commands & MCP tools with proportional bars ---
 
 	let topAgents = $derived.by(() => {
 		const entries = Object.entries(usage.by_agent ?? {})
@@ -103,6 +107,14 @@
 		return entries.map(([name, count]) => ({ name, count, pct: (count / max) * 100 }));
 	});
 
+	let topCommands = $derived.by(() => {
+		const entries = Object.entries(usage.by_command ?? {})
+			.sort(([, a], [, b]) => b - a)
+			.slice(0, 5);
+		const max = entries.length > 0 ? entries[0][1] : 1;
+		return entries.map(([name, count]) => ({ name, count, pct: (count / max) * 100 }));
+	});
+
 	let topMcpTools = $derived.by(() => {
 		const entries = Object.entries(usage.by_mcp_tool ?? {})
 			.sort(([, a], [, b]) => b - a)
@@ -114,6 +126,7 @@
 	let hasUsage = $derived(
 		usage.total_agent_runs > 0 ||
 			usage.total_skill_invocations > 0 ||
+			usage.total_command_invocations > 0 ||
 			usage.total_mcp_tool_calls > 0
 	);
 
@@ -151,6 +164,8 @@
 	const agentColors = ['#7c3aed', '#8b5cf6', '#a78bfa', '#6d28d9', '#5b21b6', '#c4b5fd'];
 	// Skill colors: green/teal spectrum
 	const skillColors = ['#10b981', '#14b8a6', '#34d399', '#059669', '#047857', '#6ee7b7'];
+	// Command colors: blue spectrum
+	const commandColors = ['#3b82f6', '#60a5fa', '#93c5fd', '#2563eb', '#1d4ed8', '#bfdbfe'];
 	// MCP colors: amber/orange spectrum
 	const mcpColors = ['#f59e0b', '#f97316', '#fbbf24', '#d97706', '#ea580c', '#fcd34d'];
 
@@ -158,7 +173,7 @@
 		name: string;
 		data: number[];
 		color: string;
-		category: 'agent' | 'skill' | 'mcp';
+		category: 'agent' | 'skill' | 'command' | 'mcp';
 	}
 
 	let itemTrends = $derived.by((): ItemTrend[] => {
@@ -193,6 +208,25 @@
 			}
 		});
 
+		// Top commands
+		const topCommandNames = Object.entries(usage.by_command ?? {})
+			.sort(([, a], [, b]) => b - a)
+			.slice(0, 6)
+			.map(([name]) => name);
+
+		topCommandNames.forEach((name, i) => {
+			const daily = usage.by_command_daily?.[name] ?? {};
+			const data = trendDates.map((date) => daily[date] ?? 0);
+			if (data.some((v) => v > 0)) {
+				items.push({
+					name,
+					data,
+					color: commandColors[i % commandColors.length],
+					category: 'command'
+				});
+			}
+		});
+
 		// Top MCP tools
 		const topMcpNames = Object.entries(usage.by_mcp_tool ?? {})
 			.sort(([, a], [, b]) => b - a)
@@ -217,6 +251,7 @@
 
 		const agents = itemTrends.filter((t) => t.category === 'agent');
 		const skills = itemTrends.filter((t) => t.category === 'skill');
+		const commands = itemTrends.filter((t) => t.category === 'command');
 		const mcps = itemTrends.filter((t) => t.category === 'mcp');
 
 		if (agents.length > 0) {
@@ -231,6 +266,13 @@
 				category: 'Skills',
 				icon: 'zap',
 				items: skills.map((t) => ({ name: t.name, color: t.color }))
+			});
+		}
+		if (commands.length > 0) {
+			groups.push({
+				category: 'Commands',
+				icon: 'terminal',
+				items: commands.map((t) => ({ name: t.name, color: t.color }))
 			});
 		}
 		if (mcps.length > 0) {
@@ -368,7 +410,7 @@
 		</div>
 	{:else}
 		<!-- Stats cards -->
-		<div class="grid grid-cols-2 md:grid-cols-5 gap-4">
+		<div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
 			<div class="bg-[var(--bg-subtle)] rounded-xl p-4">
 				<div class="flex items-center gap-2 text-[var(--text-muted)] mb-2">
 					<Bot size={14} />
@@ -386,6 +428,16 @@
 				</div>
 				<p class="text-2xl font-bold text-[var(--text-primary)] tabular-nums">
 					{usage.total_skill_invocations.toLocaleString()}
+				</p>
+			</div>
+
+			<div class="bg-[var(--bg-subtle)] rounded-xl p-4">
+				<div class="flex items-center gap-2 text-[var(--text-muted)] mb-2">
+					<Terminal size={14} />
+					<span class="text-xs font-medium">Commands</span>
+				</div>
+				<p class="text-2xl font-bold text-[var(--text-primary)] tabular-nums">
+					{usage.total_command_invocations.toLocaleString()}
 				</p>
 			</div>
 
@@ -460,8 +512,8 @@
 			</div>
 		{/if}
 
-		<!-- Top Agents, Skills & MCP Tools -->
-		<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+		<!-- Top Agents, Skills, Commands & MCP Tools -->
+		<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
 			<!-- Top Agents -->
 			<div class="bg-[var(--bg-subtle)] rounded-xl p-4">
 				<div class="flex items-center gap-2 mb-4">
@@ -534,6 +586,43 @@
 									<div
 										class="h-full rounded-full transition-all duration-500 ease-out"
 										style="width: {pct}%; background-color: {skillColors[i % skillColors.length]};"
+									></div>
+								</div>
+							</div>
+						{/each}
+					</div>
+				{/if}
+			</div>
+
+			<!-- Top Commands -->
+			<div class="bg-[var(--bg-subtle)] rounded-xl p-4">
+				<div class="flex items-center gap-2 mb-4">
+					<Terminal size={16} class="text-[var(--text-muted)]" />
+					<h4 class="text-sm font-medium text-[var(--text-primary)]">Top Commands</h4>
+				</div>
+				{#if topCommands.length === 0}
+					<p class="text-xs text-[var(--text-muted)] text-center py-4">No command usage</p>
+				{:else}
+					<div class="space-y-3">
+						{#each topCommands as { name, count, pct }, i}
+							<div>
+								<div class="flex items-center justify-between text-sm mb-1">
+									<span
+										class="text-[var(--text-secondary)] truncate flex-1 mr-2 text-xs font-medium"
+									>
+										{name}
+									</span>
+									<span
+										class="text-[var(--text-muted)] tabular-nums text-xs flex-shrink-0"
+										>{count.toLocaleString()}</span
+									>
+								</div>
+								<div
+									class="h-1.5 bg-[var(--bg-muted)] rounded-full overflow-hidden"
+								>
+									<div
+										class="h-full rounded-full transition-all duration-500 ease-out"
+										style="width: {pct}%; background-color: {commandColors[i % commandColors.length]};"
 									></div>
 								</div>
 							</div>
