@@ -10,7 +10,7 @@ import sqlite3
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 11
 
 SCHEMA_SQL = """
 -- Schema versioning
@@ -345,8 +345,8 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
                 "UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1 WHERE subagent_count > 0"
             )
 
-        if current_version < 9:
-            logger.info("Migrating v8 → v9: adding invocation_source to skill/command tables")
+        if current_version < 11:
+            logger.info("Migrating → v11: adding invocation_source to skill/command tables")
             # Recreate tables with new PK that includes invocation_source.
             # SQLite doesn't support ALTER TABLE to change PK, so drop & recreate.
             # Data will be repopulated by forced re-index below.
