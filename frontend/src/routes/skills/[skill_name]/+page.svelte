@@ -153,6 +153,17 @@
 			: []
 	);
 
+	// Manual vs Auto breakdown
+	let manualCalls = $derived(detail?.manual_calls ?? 0);
+	let autoCalls = $derived(detail?.auto_calls ?? 0);
+	let hasInvocationBreakdown = $derived(manualCalls > 0 || autoCalls > 0);
+	let manualPercent = $derived(
+		detail && detail.calls > 0 ? (manualCalls / detail.calls) * 100 : 0
+	);
+	let autoPercent = $derived(
+		detail && detail.calls > 0 ? (autoCalls / detail.calls) * 100 : 0
+	);
+
 	// Convert McpSessionSummary to SessionWithContext
 	function toSessionWithContext(s: McpSessionSummary): SessionWithContext {
 		return {
@@ -524,8 +535,43 @@
 				class="absolute -top-24 -right-24 w-96 h-96 opacity-10 rounded-full blur-3xl pointer-events-none"
 				style="background-color: {pluginColors.color};"
 			></div>
-			<div class="relative">
+			<div class="relative space-y-4">
 				<StatsGrid {stats} columns={4} />
+
+				{#if hasInvocationBreakdown}
+					<!-- Manual vs Auto invocation breakdown -->
+					<div class="flex items-center gap-4 px-1">
+						<span class="text-[10px] uppercase tracking-wider font-semibold text-[var(--text-muted)] shrink-0">Invocations</span>
+						<div class="flex-1 flex items-center gap-3">
+							<div class="flex h-2 rounded-full overflow-hidden bg-[var(--bg-muted)] flex-1 max-w-xs">
+								{#if manualPercent > 0}
+									<div
+										class="bg-[var(--nav-blue)] transition-all duration-300"
+										style="width: {manualPercent}%"
+										title="Manual: {manualCalls}"
+									></div>
+								{/if}
+								{#if autoPercent > 0}
+									<div
+										class="bg-[var(--nav-purple)] transition-all duration-300"
+										style="width: {autoPercent}%"
+										title="Auto: {autoCalls}"
+									></div>
+								{/if}
+							</div>
+							<div class="flex items-center gap-3 text-[10px] text-[var(--text-muted)]">
+								<span class="flex items-center gap-1">
+									<span class="w-2 h-2 rounded-full bg-[var(--nav-blue)]"></span>
+									Manual: {manualCalls}
+								</span>
+								<span class="flex items-center gap-1">
+									<span class="w-2 h-2 rounded-full bg-[var(--nav-purple)]"></span>
+									Auto: {autoCalls}
+								</span>
+							</div>
+						</div>
+					</div>
+				{/if}
 			</div>
 		</div>
 

@@ -571,6 +571,18 @@ def query_skill_detail(
     if main_calls == 0 and sub_calls == 0:
         return None
 
+    # Calls by invocation source (manual vs auto)
+    source_rows = conn.execute(
+        """SELECT sk.invocation_source, COALESCE(SUM(sk.count), 0) as total
+        FROM session_skills sk
+        WHERE sk.skill_name = :skill
+        GROUP BY sk.invocation_source""",
+        {"skill": skill_name},
+    ).fetchall()
+    source_counts = {r["invocation_source"]: r["total"] for r in source_rows}
+    manual_calls = source_counts.get("slash_command", 0)
+    auto_calls = source_counts.get("skill_tool", 0) + source_counts.get("text_detection", 0)
+
     # Daily trend
     trend_rows = conn.execute(
         """SELECT DATE(s.start_time) as date,
@@ -667,6 +679,8 @@ def query_skill_detail(
         "main_calls": main_calls,
         "subagent_calls": sub_calls,
         "total_calls": main_calls + sub_calls,
+        "manual_calls": manual_calls,
+        "auto_calls": auto_calls,
         "session_count": main_row["session_count"] or 0 if main_row else 0,
         "first_used": main_row["first_used"] if main_row else None,
         "last_used": main_row["last_used"] if main_row else None,

@@ -1491,6 +1491,8 @@ export interface SkillDetailResponse {
 	calls: number;
 	main_calls: number;
 	subagent_calls: number;
+	manual_calls: number;
+	auto_calls: number;
 	session_count: number;
 	first_used: string | null;
 	last_used: string | null;

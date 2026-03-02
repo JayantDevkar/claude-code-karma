@@ -627,6 +627,8 @@ async def get_skill_detail(
         calls=usage_data["total_calls"] if usage_data else 0,
         main_calls=usage_data["main_calls"] if usage_data else 0,
         subagent_calls=usage_data["subagent_calls"] if usage_data else 0,
+        manual_calls=usage_data["manual_calls"] if usage_data else 0,
+        auto_calls=usage_data["auto_calls"] if usage_data else 0,
         session_count=usage_data["session_count"] if usage_data else 0,
         first_used=usage_data["first_used"] if usage_data else None,
         last_used=usage_data["last_used"] if usage_data else None,

@@ -662,6 +662,8 @@ class SkillDetailResponse(BaseModel):
     calls: int = Field(0, description="Total invocations")
     main_calls: int = Field(0, description="Calls from main sessions")
     subagent_calls: int = Field(0, description="Calls from subagents")
+    manual_calls: int = Field(0, description="Calls via slash command (user-initiated)")
+    auto_calls: int = Field(0, description="Calls via skill tool or text detection (auto)")
     session_count: int = Field(0, description="Distinct sessions using this skill")
     first_used: Optional[str] = Field(None, description="First usage date (ISO)")
     last_used: Optional[str] = Field(None, description="Last usage date (ISO)")
