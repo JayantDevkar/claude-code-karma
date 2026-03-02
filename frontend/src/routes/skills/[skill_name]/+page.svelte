@@ -117,6 +117,13 @@
 		return () => window.removeEventListener('resize', checkMobile);
 	});
 
+	// Manual vs Auto vs Mentioned breakdown
+	let manualCalls = $derived(detail?.manual_calls ?? 0);
+	let autoCalls = $derived(detail?.auto_calls ?? 0);
+	let mentionedCalls = $derived(detail?.mentioned_calls ?? 0);
+	let hasInvocationBreakdown = $derived(manualCalls > 0 || autoCalls > 0 || mentionedCalls > 0);
+	let barTotal = $derived(manualCalls + autoCalls + mentionedCalls);
+
 	// Stats
 	let stats = $derived<StatItem[]>(
 		detail
@@ -153,13 +160,6 @@
 				]
 			: []
 	);
-
-	// Manual vs Auto vs Mentioned breakdown
-	let manualCalls = $derived(detail?.manual_calls ?? 0);
-	let autoCalls = $derived(detail?.auto_calls ?? 0);
-	let mentionedCalls = $derived(detail?.mentioned_calls ?? 0);
-	let hasInvocationBreakdown = $derived(manualCalls > 0 || autoCalls > 0 || mentionedCalls > 0);
-	let barTotal = $derived(manualCalls + autoCalls + mentionedCalls);
 	let manualPercent = $derived(
 		barTotal > 0 ? (manualCalls / barTotal) * 100 : 0
 	);
