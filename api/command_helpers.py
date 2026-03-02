@@ -102,21 +102,94 @@ def _is_plugin_skill(name: str) -> bool:
     return False
 
 
+def _collect_plugin_entries(version_dir) -> list[str]:
+    """Collect all invocable entry names from a plugin version directory.
+
+    Plugins define invocables in three locations:
+      - skills/{name}/    (directory-based, e.g. frontend-design)
+      - commands/{name}.md (file-based, e.g. feature-dev)
+      - agents/{name}.md   (file-based, e.g. code-simplifier)
+    """
+    entry_names: list[str] = []
+
+    # skills/ — directory-based entries
+    skills_dir = version_dir / "skills"
+    if skills_dir.is_dir():
+        entry_names.extend(d.name for d in skills_dir.iterdir() if d.is_dir())
+
+    # commands/ — file-based entries (.md files)
+    commands_dir = version_dir / "commands"
+    if commands_dir.is_dir():
+        entry_names.extend(
+            f.stem for f in commands_dir.iterdir()
+            if f.is_file() and f.suffix == ".md"
+        )
+
+    # agents/ — file-based entries (.md files)
+    agents_dir = version_dir / "agents"
+    if agents_dir.is_dir():
+        entry_names.extend(
+            f.stem for f in agents_dir.iterdir()
+            if f.is_file() and f.suffix == ".md" and f.stem != "AGENTS"
+        )
+
+    return entry_names
+
+
+@lru_cache(maxsize=1)
+def _build_entry_to_plugin_map() -> dict[str, str]:
+    """Build a reverse lookup: entry_name → 'plugin:entry_name'.
+
+    Handles cases where the Skill tool is called with just the entry name
+    (e.g., 'commit') instead of the full form ('commit-commands:commit').
+    Only maps unambiguous entries (skip if multiple plugins define the same name).
+    """
+    from config import settings
+
+    plugins_cache = settings.claude_base / "plugins" / "cache"
+    if not plugins_cache.is_dir():
+        return {}
+
+    # entry_name → list of plugin names that define it
+    candidates: dict[str, list[str]] = {}
+
+    for registry in plugins_cache.iterdir():
+        if not registry.is_dir():
+            continue
+        for plugin_dir in registry.iterdir():
+            if not plugin_dir.is_dir():
+                continue
+            plugin_name = plugin_dir.name
+            versions = sorted(plugin_dir.iterdir(), reverse=True)
+            for version_dir in versions:
+                entries = _collect_plugin_entries(version_dir)
+                for entry in entries:
+                    candidates.setdefault(entry, []).append(plugin_name)
+                break  # Only check latest version
+
+    # Only include unambiguous mappings (one plugin owns the name)
+    result: dict[str, str] = {}
+    for entry, plugins in candidates.items():
+        if len(plugins) == 1:
+            plugin = plugins[0]
+            # Skip if entry == plugin (handled by expand_plugin_short_name)
+            if entry != plugin:
+                result[entry] = f"{plugin}:{entry}"
+
+    return result
+
+
 @lru_cache(maxsize=128)
 def expand_plugin_short_name(name: str) -> str:
     """Expand a short-form plugin skill name to the full plugin:skill form.
 
-    When users type /frontend-design, Claude Code resolves it to
-    frontend-design:frontend-design (plugin:skill). This function replicates
-    that expansion by checking the plugin's skills and commands directories.
+    Handles two cases:
+    1. Plugin name used as short form: "feature-dev" → "feature-dev:feature-dev"
+       (user typed /feature-dev, plugin has an entry matching its own name)
+    2. Entry name used without plugin prefix: "commit" → "commit-commands:commit"
+       (Skill tool called with just the entry name)
 
-    Plugins can define invocables in two locations:
-      - skills/{name}/   (directory-based, e.g. frontend-design)
-      - commands/{name}.md (file-based, e.g. feature-dev)
-
-    If the plugin has a skill/command matching its own name, returns "name:name".
-    If it has exactly one skill/command, returns "name:that_entry".
-    Otherwise returns the name unchanged.
+    Returns the name unchanged if expansion is ambiguous or no match found.
     """
     if ":" in name:
         return name  # Already in full form
@@ -127,6 +200,7 @@ def expand_plugin_short_name(name: str) -> str:
     if not plugins_cache.is_dir():
         return name
 
+    # Case 1: name matches a plugin directory
     for registry in plugins_cache.iterdir():
         if not registry.is_dir():
             continue
@@ -136,25 +210,9 @@ def expand_plugin_short_name(name: str) -> str:
         # Find the latest version
         versions = sorted(plugin_dir.iterdir(), reverse=True)
         for version_dir in versions:
-            # Collect all invocable names from skills/ and commands/
-            entry_names: list[str] = []
-
-            # skills/ — directory-based entries
-            skills_dir = version_dir / "skills"
-            if skills_dir.is_dir():
-                entry_names.extend(d.name for d in skills_dir.iterdir() if d.is_dir())
-
-            # commands/ — file-based entries (.md files)
-            commands_dir = version_dir / "commands"
-            if commands_dir.is_dir():
-                entry_names.extend(
-                    f.stem for f in commands_dir.iterdir()
-                    if f.is_file() and f.suffix == ".md"
-                )
-
+            entry_names = _collect_plugin_entries(version_dir)
             if not entry_names:
                 continue
-
             # If plugin has an entry matching its own name, use that
             if name in entry_names:
                 return f"{name}:{name}"
@@ -162,6 +220,12 @@ def expand_plugin_short_name(name: str) -> str:
             if len(entry_names) == 1:
                 return f"{name}:{entry_names[0]}"
             return name
+
+    # Case 2: name is an entry name without plugin prefix (reverse lookup)
+    entry_map = _build_entry_to_plugin_map()
+    if name in entry_map:
+        return entry_map[name]
+
     return name
 
 
