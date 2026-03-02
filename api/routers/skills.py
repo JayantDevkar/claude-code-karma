@@ -613,6 +613,7 @@ async def get_skill_detail(
                     or [],
                     tool_source=row.get("tool_source"),
                     subagent_agent_ids=row.get("subagent_agent_ids", []),
+                    invocation_sources=row.get("invocation_sources", []),
                 )
             )
 
