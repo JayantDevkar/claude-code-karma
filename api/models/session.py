@@ -329,6 +329,11 @@ class Session(BaseModel):
                 if msg.content:
                     cmd_name, _ = parse_command_from_content(msg.content)
                     source = "slash_command"  # <command-message> = user typed /command
+                    # Normalize short-form plugin names (e.g. "frontend-design"
+                    # → "frontend-design:frontend-design") so names match the
+                    # full form that Skill tool invocations use.
+                    if cmd_name:
+                        cmd_name = expand_plugin_short_name(cmd_name)
                     # Fallback: detect /command in plain text (hook-triggered skills).
                     # ONLY run on real user prompts — tool results, internal messages,
                     # and system injections contain code/diffs/paths that produce
@@ -338,9 +343,6 @@ class Session(BaseModel):
                             # Only detect skills — builtins always have <command-message>
                             # tags when actually invoked, so they're caught above.
                             if classify_invocation(candidate) == "skill":
-                                # Expand short-form plugin names (e.g. "frontend-design"
-                                # → "frontend-design:frontend-design") so dedup works
-                                # against the full name from Skill tool invocations.
                                 cmd_name = expand_plugin_short_name(candidate)
                                 source = "text_detection"
                                 break
@@ -348,9 +350,6 @@ class Session(BaseModel):
                         kind = classify_invocation(cmd_name)
                         if kind == "skill":
                             user_prompt_skills.add((cmd_name, source))
-                            # Also track as command when user typed /command to invoke a skill
-                            if source == "slash_command":
-                                user_prompt_commands.add((cmd_name, source))
                         else:
                             # Both "command" and "builtin" go into commands
                             user_prompt_commands.add((cmd_name, source))
@@ -392,6 +391,8 @@ class Session(BaseModel):
                         if block.name == "Skill" and block.input:
                             skill_name = block.input.get("skill")
                             if skill_name:
+                                # Normalize short-form plugin names
+                                skill_name = expand_plugin_short_name(skill_name)
                                 kind = classify_invocation(skill_name)
                                 if kind == "skill":
                                     skills[(skill_name, "skill_tool")] += 1

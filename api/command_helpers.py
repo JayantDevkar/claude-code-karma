@@ -108,10 +108,14 @@ def expand_plugin_short_name(name: str) -> str:
 
     When users type /frontend-design, Claude Code resolves it to
     frontend-design:frontend-design (plugin:skill). This function replicates
-    that expansion by checking the plugin's skills directory.
+    that expansion by checking the plugin's skills and commands directories.
 
-    If the plugin has a single skill with the same name, returns "name:name".
-    If it has exactly one skill, returns "name:that_skill".
+    Plugins can define invocables in two locations:
+      - skills/{name}/   (directory-based, e.g. frontend-design)
+      - commands/{name}.md (file-based, e.g. feature-dev)
+
+    If the plugin has a skill/command matching its own name, returns "name:name".
+    If it has exactly one skill/command, returns "name:that_entry".
     Otherwise returns the name unchanged.
     """
     if ":" in name:
@@ -129,21 +133,34 @@ def expand_plugin_short_name(name: str) -> str:
         plugin_dir = registry / name
         if not plugin_dir.is_dir():
             continue
-        # Find the latest version's skills directory
+        # Find the latest version
         versions = sorted(plugin_dir.iterdir(), reverse=True)
         for version_dir in versions:
+            # Collect all invocable names from skills/ and commands/
+            entry_names: list[str] = []
+
+            # skills/ — directory-based entries
             skills_dir = version_dir / "skills"
-            if not skills_dir.is_dir():
+            if skills_dir.is_dir():
+                entry_names.extend(d.name for d in skills_dir.iterdir() if d.is_dir())
+
+            # commands/ — file-based entries (.md files)
+            commands_dir = version_dir / "commands"
+            if commands_dir.is_dir():
+                entry_names.extend(
+                    f.stem for f in commands_dir.iterdir()
+                    if f.is_file() and f.suffix == ".md"
+                )
+
+            if not entry_names:
                 continue
-            skill_names = [d.name for d in skills_dir.iterdir() if d.is_dir()]
-            if not skill_names:
-                continue
-            # If plugin has a skill matching its own name, use that
-            if name in skill_names:
+
+            # If plugin has an entry matching its own name, use that
+            if name in entry_names:
                 return f"{name}:{name}"
-            # If plugin has exactly one skill, use that
-            if len(skill_names) == 1:
-                return f"{name}:{skill_names[0]}"
+            # If plugin has exactly one entry, use that
+            if len(entry_names) == 1:
+                return f"{name}:{entry_names[0]}"
             return name
     return name
 

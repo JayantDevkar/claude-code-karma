@@ -508,8 +508,13 @@ def _index_session(
                             ):
                                 skill_name = block.input.get("skill")
                                 if skill_name:
-                                    from command_helpers import classify_invocation
+                                    from command_helpers import (
+                                        classify_invocation,
+                                        expand_plugin_short_name,
+                                    )
 
+                                    # Normalize short-form plugin names
+                                    skill_name = expand_plugin_short_name(skill_name)
                                     kind = classify_invocation(skill_name)
                                     source = "skill_tool"
                                     if kind == "skill":

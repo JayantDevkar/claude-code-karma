@@ -10,7 +10,7 @@ import sqlite3
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 13
+SCHEMA_VERSION = 14
 
 SCHEMA_SQL = """
 -- Schema versioning
@@ -420,6 +420,17 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             # text_detection entries are now tracked as "mentioned" (not "used")
             # in the indexer. Clear and reindex so counts are correct.
             conn.execute("DELETE FROM session_skills")
+            conn.execute("UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1")
+
+        if current_version < 14:
+            logger.info("Migrating → v14: reindex to normalize short-form plugin skill names")
+            # Short-form names like "frontend-design" now get expanded to
+            # "frontend-design:frontend-design" everywhere. Clear and reindex.
+            conn.execute("DELETE FROM session_skills")
+            conn.execute("DELETE FROM session_commands")
+            conn.execute("DELETE FROM subagent_skills")
+            conn.execute("DELETE FROM subagent_commands")
+            conn.execute("DELETE FROM subagent_invocations")
             conn.execute("UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1")
 
     # Record version
