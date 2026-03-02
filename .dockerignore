@@ -1,0 +1,9 @@
+.git
+.github
+.idea
+.claude
+.DS_Store
+*.md
+captain-hook
+hooks
+docs
