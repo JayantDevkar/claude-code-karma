@@ -109,6 +109,8 @@ def _dedup_invocation_sources(counter: Counter) -> None:
 
         td_count = counter.get(td_key, 0)
         st_count = counter.get(st_key, 0)
+        # Snapshot BEFORE the upgrade step mutates counter[sc_key].
+        # Used later to limit how many skill_tool entries get absorbed.
         orig_sc_count = counter.get(sc_key, 0)
 
         # text_detection + skill_tool (without slash_command) → upgrade to slash_command.
@@ -404,9 +406,9 @@ class Session(BaseModel):
                             # Only detect skills — builtins always have <command-message>
                             # tags when actually invoked, so they're caught above.
                             if classify_invocation(expanded) == "skill":
-                                cmd_name = expanded
-                                source = "text_detection"
-                                break
+                                user_prompt_skills.add((expanded, "text_detection"))
+                            elif classify_invocation(expanded) not in ("builtin", "agent"):
+                                user_prompt_commands.add((expanded, "text_detection"))
                     if cmd_name:
                         kind = classify_invocation(cmd_name)
                         if kind == "skill":

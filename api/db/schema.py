@@ -10,7 +10,7 @@ import sqlite3
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 16
+SCHEMA_VERSION = 9
 
 SCHEMA_SQL = """
 -- Schema versioning
@@ -345,11 +345,13 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
                 "UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1 WHERE subagent_count > 0"
             )
 
-        if current_version < 11:
-            logger.info("Migrating → v11: adding invocation_source to skill/command tables")
-            # Recreate tables with new PK that includes invocation_source.
+        if current_version < 9:
+            logger.info(
+                "Migrating → v9: invocation source tracking, plugin name normalization, "
+                "worktree session resolution"
+            )
+            # Recreate skill/command tables with new PK that includes invocation_source.
             # SQLite doesn't support ALTER TABLE to change PK, so drop & recreate.
-            # Data will be repopulated by forced re-index below.
             conn.executescript("""
                 DROP TABLE IF EXISTS session_skills;
                 CREATE TABLE session_skills (
@@ -399,62 +401,18 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
                 CREATE INDEX IF NOT EXISTS idx_subagent_commands_invocation ON subagent_commands(invocation_id);
                 CREATE INDEX IF NOT EXISTS idx_subagent_commands_name ON subagent_commands(command_name);
             """)
-            # Force full re-index so all sessions get reparsed with new source tracking
-            conn.execute("UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1")
-            # Also re-index subagent data
-            conn.execute("DELETE FROM subagent_tools")
-            conn.execute("DELETE FROM subagent_invocations")
 
-        if current_version < 12:
-            logger.info("Migrating → v12: force reindex for invocation source dedup")
-            # Clear skill/command data and force re-parse with dedup logic
-            conn.execute("DELETE FROM session_skills")
-            conn.execute("DELETE FROM session_commands")
-            conn.execute("DELETE FROM subagent_skills")
-            conn.execute("DELETE FROM subagent_commands")
-            conn.execute("DELETE FROM subagent_invocations")
-            conn.execute("UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1")
-
-        if current_version < 13:
-            logger.info("Migrating → v13: reindex to separate skill mentions from invocations")
-            # text_detection entries are now tracked as "mentioned" (not "used")
-            # in the indexer. Clear and reindex so counts are correct.
-            conn.execute("DELETE FROM session_skills")
-            conn.execute("UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1")
-
-        if current_version < 14:
-            logger.info("Migrating → v14: reindex to normalize short-form plugin skill names")
-            # Short-form names like "frontend-design" now get expanded to
-            # "frontend-design:frontend-design" everywhere. Clear and reindex.
-            conn.execute("DELETE FROM session_skills")
-            conn.execute("DELETE FROM session_commands")
-            conn.execute("DELETE FROM subagent_skills")
-            conn.execute("DELETE FROM subagent_commands")
-            conn.execute("DELETE FROM subagent_invocations")
-            conn.execute("UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1")
-
-        if current_version < 15:
-            logger.info("Migrating → v15: reindex with agents/ dir + reverse entry lookup")
-            # v14 may have reindexed with old code. Force full reindex with
-            # expanded expand_plugin_short_name (agents/ + reverse lookup).
-            conn.execute("DELETE FROM session_skills")
-            conn.execute("DELETE FROM session_commands")
-            conn.execute("DELETE FROM subagent_skills")
-            conn.execute("DELETE FROM subagent_commands")
-            conn.execute("DELETE FROM subagent_invocations")
-            conn.execute("UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1")
-
-        if current_version < 16:
-            logger.info("Migrating → v16: fix worktree session resolution for CLI worktrees")
-            # CLI/superpowers worktrees (.claude/worktrees/, .worktrees/) were
-            # indexed as standalone projects. Delete those sessions and their
-            # phantom project entries so the indexer re-resolves them under the
-            # correct real project using the new Strategy C prefix parsing.
+            # Delete worktree phantom sessions/projects so the indexer
+            # re-resolves them under the correct real project.
             conn.execute("DELETE FROM sessions WHERE project_encoded_name LIKE '%--worktrees-%'")
             conn.execute("DELETE FROM projects WHERE encoded_name LIKE '%--worktrees-%'")
-            # Also clean up dot-preserved variants
             conn.execute("DELETE FROM sessions WHERE project_encoded_name LIKE '%-.worktrees-%'")
             conn.execute("DELETE FROM projects WHERE encoded_name LIKE '%-.worktrees-%'")
+
+            # Force full re-index of all sessions and subagent data
+            conn.execute("DELETE FROM subagent_tools")
+            conn.execute("DELETE FROM subagent_invocations")
+            conn.execute("UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1")
 
     # Record version
     conn.execute(

@@ -673,6 +673,9 @@ class SkillDetailResponse(BaseModel):
     manual_calls: int = Field(0, description="Calls via slash command (user-initiated)")
     auto_calls: int = Field(0, description="Calls via skill tool (auto-invoked by Claude)")
     mentioned_calls: int = Field(0, description="Times mentioned in user prompts but not invoked")
+    mention_session_count: int = Field(
+        0, description="Sessions where skill was only mentioned, not invoked"
+    )
     session_count: int = Field(0, description="Distinct sessions using this skill")
     first_used: Optional[str] = Field(None, description="First usage date (ISO)")
     last_used: Optional[str] = Field(None, description="Last usage date (ISO)")

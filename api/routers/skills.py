@@ -640,6 +640,7 @@ async def get_skill_detail(
         manual_calls=usage_data["manual_calls"] if usage_data else 0,
         auto_calls=usage_data["auto_calls"] if usage_data else 0,
         mentioned_calls=usage_data.get("mentioned_calls", 0) if usage_data else 0,
+        mention_session_count=usage_data.get("mention_session_count", 0) if usage_data else 0,
         session_count=usage_data["session_count"] if usage_data else 0,
         first_used=usage_data["first_used"] if usage_data else None,
         last_used=usage_data["last_used"] if usage_data else None,

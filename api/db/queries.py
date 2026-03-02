@@ -579,6 +579,18 @@ def query_skill_detail(
     auto_calls = source_counts.get("skill_tool", 0)
     mentioned_calls = source_counts.get("text_detection", 0)
 
+    # Count sessions where the skill was ONLY mentioned (no actual invocation)
+    mention_session_count = conn.execute(
+        """SELECT COUNT(DISTINCT sk.session_uuid)
+        FROM session_skills sk
+        WHERE sk.skill_name = :skill AND sk.invocation_source = 'text_detection'
+            AND sk.session_uuid NOT IN (
+                SELECT session_uuid FROM session_skills
+                WHERE skill_name = :skill AND invocation_source != 'text_detection'
+            )""",
+        {"skill": skill_name},
+    ).fetchone()[0]
+
     if main_calls == 0 and sub_calls == 0 and mentioned_calls == 0:
         return None
 
@@ -695,6 +707,7 @@ def query_skill_detail(
         "manual_calls": manual_calls,
         "auto_calls": auto_calls,
         "mentioned_calls": mentioned_calls,
+        "mention_session_count": mention_session_count,
         "session_count": main_row["session_count"] or 0 if main_row else 0,
         "first_used": main_row["first_used"] if main_row else None,
         "last_used": main_row["last_used"] if main_row else None,
