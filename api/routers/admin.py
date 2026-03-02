@@ -15,21 +15,32 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 
 
 @router.post("/reindex")
-def trigger_reindex():
+def trigger_reindex(force: bool = False):
     """
-    Trigger a full re-index of all JSONL sessions into SQLite.
+    Trigger a re-index of all JSONL sessions into SQLite.
 
     Runs synchronously. For large installations, this may take
     several seconds. The incremental indexer only re-processes
     files whose mtime has changed.
+
+    Query params:
+        force: If true, reset all session mtimes to force a full re-parse.
+               Use after changing classification logic or schema without
+               bumping SCHEMA_VERSION.
     """
     from db.connection import get_writer_db
     from db.indexer import sync_all_projects
 
     try:
         conn = get_writer_db()
+        if force:
+            reset = conn.execute(
+                "UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1"
+            ).rowcount
+            conn.commit()
+            logger.info("Force reindex: reset mtime on %d sessions", reset)
         stats = sync_all_projects(conn)
-        return {"status": "ok", "stats": stats}
+        return {"status": "ok", "force": force, "stats": stats}
     except Exception as e:
         logger.error("Reindex failed: %s", e)
         return {"status": "error", "detail": str(e)}
