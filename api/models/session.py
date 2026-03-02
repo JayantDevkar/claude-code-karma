@@ -289,8 +289,8 @@ class Session(BaseModel):
         # Skills/commands use (name, source) tuple keys for invocation tracking
         skills: Counter[tuple] = Counter()  # {(name, source): count}
         commands: Counter[tuple] = Counter()  # {(name, source): count}
-        user_prompt_skills: Set[str] = set()
-        user_prompt_commands: Set[str] = set()
+        user_prompt_skills: Set[tuple] = set()  # {(name, source)}
+        user_prompt_commands: Set[tuple] = set()  # {(name, source)}
         git_branches: Set[str] = set()
         working_dirs: Set[str] = set()
         models_used: Set[str] = set()

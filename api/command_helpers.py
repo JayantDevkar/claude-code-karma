@@ -207,21 +207,6 @@ def aggregate_by_name(items: dict) -> dict[str, int]:
     return result
 
 
-def with_sources(items: dict) -> list[dict]:
-    """Convert (name, source) keyed counts to a list of dicts with source info.
-
-    Returns: [{"name": str, "source": str, "count": int}, ...]
-    """
-    result = []
-    for key, count in items.items():
-        if isinstance(key, tuple):
-            name, source = key
-        else:
-            name, source = key, "unknown"
-        result.append({"name": name, "source": source, "count": count})
-    return result
-
-
 def strip_command_tags(content: str) -> str:
     """Remove command and local-command XML tags from content for display.
 
