@@ -4,7 +4,14 @@ import uuid
 from datetime import datetime
 from typing import Any, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+
+ALLOWED_MODELS = {"haiku", "sonnet", "opus"}
+ALLOWED_TOOLS = {
+    "Read", "Edit", "Write", "Bash", "Glob", "Grep",
+    "WebFetch", "WebSearch", "Agent", "Skill",
+}
 
 
 class WorkflowStep(BaseModel):
@@ -14,10 +21,25 @@ class WorkflowStep(BaseModel):
 
     id: str
     label: Optional[str] = None
-    prompt_template: str
+    prompt_template: str = Field(max_length=100_000)
     model: str = "sonnet"
     tools: list[str] = Field(default_factory=lambda: ["Read", "Edit"])
-    max_turns: int = 10
+    max_turns: int = Field(default=10, ge=1, le=100)
+
+    @field_validator("model")
+    @classmethod
+    def validate_model(cls, v: str) -> str:
+        if v not in ALLOWED_MODELS:
+            raise ValueError(f"Unknown model '{v}'. Allowed: {sorted(ALLOWED_MODELS)}")
+        return v
+
+    @field_validator("tools")
+    @classmethod
+    def validate_tools(cls, v: list[str]) -> list[str]:
+        invalid = set(v) - ALLOWED_TOOLS
+        if invalid:
+            raise ValueError(f"Unknown tools: {sorted(invalid)}. Allowed: {sorted(ALLOWED_TOOLS)}")
+        return v
 
 
 class WorkflowInput(BaseModel):

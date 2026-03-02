@@ -12,6 +12,11 @@
 
 	let condition = $state(edge.data?.condition ?? '');
 
+	// Re-sync local state when the bound edge prop changes (e.g. different edge selected)
+	$effect(() => {
+		condition = edge.data?.condition ?? '';
+	});
+
 	function updateCondition() {
 		edge = {
 			...edge,
@@ -41,10 +46,10 @@
 			oninput={updateCondition}
 			rows="3"
 			class="field-input field-textarea"
-			placeholder="e.g. steps.step_1.output contains 'success'"
+			placeholder="e.g. {'{{ steps.step_1.output }}'} == success"
 		></textarea>
 		<span class="field-hint">
-			Leave empty for unconditional execution. Expression is evaluated at runtime.
+			Leave empty for unconditional execution. Supports <code>==</code> and <code>!=</code> operators.
 		</span>
 	</label>
 </div>

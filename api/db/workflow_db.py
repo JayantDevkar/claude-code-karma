@@ -59,7 +59,10 @@ def get_wf_writer() -> sqlite3.Connection:
         from .workflow_schema import ensure_workflow_schema, migrate_from_metadata_db
 
         ensure_workflow_schema(conn)
-        migrate_from_metadata_db(conn)
+        try:
+            migrate_from_metadata_db(conn)
+        except Exception:
+            logger.warning("Workflow migration from metadata.db failed; skipping", exc_info=True)
 
         _wf_writer = conn
         logger.info("Workflow DB writer connection ready")

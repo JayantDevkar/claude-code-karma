@@ -56,7 +56,7 @@
 		</div>
 	{:else}
 		<div class="input-list">
-			{#each inputs as inp, i (i)}
+			{#each inputs as inp, i (inp.name || i)}
 				<div class="input-card">
 					<div class="input-row">
 						<label class="field field-name">

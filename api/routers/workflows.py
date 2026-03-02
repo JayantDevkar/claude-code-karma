@@ -18,6 +18,7 @@ import logging
 import uuid
 from collections import defaultdict
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException
@@ -136,6 +137,14 @@ def _save_workflow_normalized(
 
     Raises HTTPException(422) if the edge graph contains a cycle.
     """
+    # Validate project_path is a real directory if provided
+    if req.project_path:
+        p = Path(req.project_path)
+        if not p.is_absolute():
+            raise HTTPException(status_code=422, detail="project_path must be an absolute path")
+        if not p.is_dir():
+            raise HTTPException(status_code=422, detail=f"project_path does not exist: {req.project_path}")
+
     # Validate no cycle in the edge graph
     step_ids = [s.id for s in req.steps]
     raw_edges = req.graph.get("edges", [])
@@ -156,7 +165,7 @@ def _save_workflow_normalized(
             node_positions[node_id] = {k: v for k, v in node.items() if k != "id"}
 
     if is_update:
-        # Remove old child rows
+        # Remove old child rows (caller wraps in transaction via conn context manager)
         conn.execute("DELETE FROM workflow_steps WHERE workflow_id = ?", (wf_id,))
         conn.execute("DELETE FROM workflow_edges WHERE workflow_id = ?", (wf_id,))
         conn.execute("DELETE FROM workflow_inputs WHERE workflow_id = ?", (wf_id,))
@@ -258,8 +267,8 @@ def create_workflow(req: WorkflowCreateRequest):
     now = datetime.now(timezone.utc).isoformat()
 
     conn = get_wf_writer()
-    _save_workflow_normalized(conn, wf_id, req, now, is_update=False)
-    conn.commit()
+    with conn:  # transaction: auto-commit on success, rollback on exception
+        _save_workflow_normalized(conn, wf_id, req, now, is_update=False)
 
     # Read back through a fresh read connection for consistency
     read_conn = create_wf_read_conn()
@@ -268,6 +277,8 @@ def create_workflow(req: WorkflowCreateRequest):
     finally:
         read_conn.close()
 
+    if data is None:
+        raise HTTPException(status_code=500, detail="Workflow was saved but could not be retrieved")
     return WorkflowResponse(**data)
 
 
@@ -294,8 +305,8 @@ def update_workflow(workflow_id: str, req: WorkflowCreateRequest):
     if not exists:
         raise HTTPException(status_code=404, detail="Workflow not found")
 
-    _save_workflow_normalized(conn, workflow_id, req, now, is_update=True)
-    conn.commit()
+    with conn:  # transaction: auto-commit on success, rollback on exception
+        _save_workflow_normalized(conn, workflow_id, req, now, is_update=True)
 
     read_conn = create_wf_read_conn()
     try:
@@ -303,6 +314,8 @@ def update_workflow(workflow_id: str, req: WorkflowCreateRequest):
     finally:
         read_conn.close()
 
+    if data is None:
+        raise HTTPException(status_code=500, detail="Workflow was saved but could not be retrieved")
     return WorkflowResponse(**data)
 
 
@@ -358,8 +371,18 @@ async def trigger_run(workflow_id: str, req: Optional[WorkflowRunRequest] = None
             for e in edge_rows
         ]
 
-        # Check concurrent run limit
-        active_count = read_conn.execute(
+    finally:
+        read_conn.close()
+
+    # Create run + step records atomically with the concurrent run limit check
+    run_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc).isoformat()
+    input_values = req.input_values if req else None
+
+    wconn = get_wf_writer()
+    step_responses = []
+    with wconn:  # transaction: check + insert are atomic
+        active_count = wconn.execute(
             "SELECT COUNT(*) FROM workflow_runs WHERE workflow_id = ? AND status IN ('pending', 'running')",
             (workflow_id,),
         ).fetchone()[0]
@@ -367,32 +390,22 @@ async def trigger_run(workflow_id: str, req: Optional[WorkflowRunRequest] = None
             raise HTTPException(
                 status_code=429, detail="Maximum 3 concurrent runs per workflow"
             )
-    finally:
-        read_conn.close()
 
-    # Create run + step records
-    run_id = str(uuid.uuid4())
-    now = datetime.now(timezone.utc).isoformat()
-    input_values = req.input_values if req else None
-
-    wconn = get_wf_writer()
-    step_responses = []
-    wconn.execute(
-        """INSERT INTO workflow_runs (id, workflow_id, status, input_values, started_at)
-           VALUES (?, ?, 'pending', ?, ?)""",
-        (run_id, workflow_id, json.dumps(input_values) if input_values else None, now),
-    )
-    for s in steps:
-        step_record_id = str(uuid.uuid4())
         wconn.execute(
-            """INSERT INTO workflow_run_steps (id, run_id, step_id, status)
-               VALUES (?, ?, ?, 'pending')""",
-            (step_record_id, run_id, s["id"]),
+            """INSERT INTO workflow_runs (id, workflow_id, status, input_values, started_at)
+               VALUES (?, ?, 'pending', ?, ?)""",
+            (run_id, workflow_id, json.dumps(input_values) if input_values else None, now),
         )
-        step_responses.append(
-            WorkflowRunStepResponse(id=step_record_id, step_id=s["id"], status="pending")
-        )
-    wconn.commit()
+        for s in steps:
+            step_record_id = str(uuid.uuid4())
+            wconn.execute(
+                """INSERT INTO workflow_run_steps (id, run_id, step_id, status)
+                   VALUES (?, ?, ?, 'pending')""",
+                (step_record_id, run_id, s["id"]),
+            )
+            step_responses.append(
+                WorkflowRunStepResponse(id=step_record_id, step_id=s["id"], status="pending")
+            )
 
     # Launch background execution with task tracking
     task = asyncio.create_task(

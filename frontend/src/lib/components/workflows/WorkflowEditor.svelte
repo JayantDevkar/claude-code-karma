@@ -56,7 +56,12 @@
 	let selectedStepId = $state<string | null>(null);
 	let selectedEdgeId = $state<string | null>(null);
 	let showInputsPanel = $state(false);
-	let stepCounter = $state(initialSteps.length);
+	let stepCounter = $state(
+		initialSteps.reduce((max, s) => {
+			const m = s.id.match(/^step_(\d+)$/);
+			return m ? Math.max(max, parseInt(m[1])) : max;
+		}, 0)
+	);
 
 	// Selection type: step, edge, or none
 	type Selection = 'step' | 'edge' | 'inputs' | null;
