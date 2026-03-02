@@ -10,7 +10,7 @@ import sqlite3
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 15
+SCHEMA_VERSION = 16
 
 SCHEMA_SQL = """
 -- Schema versioning
@@ -443,6 +443,18 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             conn.execute("DELETE FROM subagent_commands")
             conn.execute("DELETE FROM subagent_invocations")
             conn.execute("UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1")
+
+        if current_version < 16:
+            logger.info("Migrating → v16: fix worktree session resolution for CLI worktrees")
+            # CLI/superpowers worktrees (.claude/worktrees/, .worktrees/) were
+            # indexed as standalone projects. Delete those sessions and their
+            # phantom project entries so the indexer re-resolves them under the
+            # correct real project using the new Strategy C prefix parsing.
+            conn.execute("DELETE FROM sessions WHERE project_encoded_name LIKE '%--worktrees-%'")
+            conn.execute("DELETE FROM projects WHERE encoded_name LIKE '%--worktrees-%'")
+            # Also clean up dot-preserved variants
+            conn.execute("DELETE FROM sessions WHERE project_encoded_name LIKE '%-.worktrees-%'")
+            conn.execute("DELETE FROM projects WHERE encoded_name LIKE '%-.worktrees-%'")
 
     # Record version
     conn.execute(

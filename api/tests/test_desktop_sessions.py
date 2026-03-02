@@ -155,6 +155,95 @@ class TestIsWorktreeProject:
         assert not is_worktree_project("-Users-test-claude-worktrees")
         assert is_worktree_project("-Users-test-claude-worktrees-proj-wt")
 
+    def test_cli_worktree_dot_claude_worktrees(self):
+        """CLI worktrees at {project}/.claude/worktrees/{name}."""
+        from services.desktop_sessions import is_worktree_project
+
+        # Claude Code encodes .claude as -claude, producing --claude-worktrees-
+        assert is_worktree_project(
+            "-Users-jayantdevkar-Documents-GitHub-claude-karma--claude-worktrees-fix-command-skill-tracking"
+        )
+
+    def test_superpowers_dot_worktrees(self):
+        """Superpowers worktrees at {project}/.worktrees/{name}."""
+        from services.desktop_sessions import is_worktree_project
+
+        # Claude Code encodes .worktrees as -worktrees, producing --worktrees-
+        assert is_worktree_project(
+            "-Users-jayantdevkar-Documents-GitHub-claude-karma--worktrees-fix-command-skill-tracking"
+        )
+        # Our encode_path preserves dots
+        assert is_worktree_project(
+            "-Users-jayantdevkar-Documents-GitHub-claude-karma-.worktrees-fix-command-skill-tracking"
+        )
+
+
+# =============================================================================
+# _extract_project_prefix_from_worktree
+# =============================================================================
+
+
+class TestExtractProjectPrefixFromWorktree:
+    """Tests for _extract_project_prefix_from_worktree encoded name parsing."""
+
+    def test_cli_worktree_double_dash(self):
+        from services.desktop_sessions import _extract_project_prefix_from_worktree
+
+        result = _extract_project_prefix_from_worktree(
+            "-Users-jayantdevkar-Documents-GitHub-claude-karma--claude-worktrees-fix-branch"
+        )
+        assert result == "-Users-jayantdevkar-Documents-GitHub-claude-karma"
+
+    def test_cli_worktree_dot_preserved(self):
+        from services.desktop_sessions import _extract_project_prefix_from_worktree
+
+        result = _extract_project_prefix_from_worktree(
+            "-Users-test-myproject-.claude-worktrees-feature-x"
+        )
+        assert result == "-Users-test-myproject"
+
+    def test_superpowers_worktree_double_dash(self):
+        from services.desktop_sessions import _extract_project_prefix_from_worktree
+
+        result = _extract_project_prefix_from_worktree("-Users-test-myproject--worktrees-fix-bug")
+        assert result == "-Users-test-myproject"
+
+    def test_superpowers_worktree_dot_preserved(self):
+        from services.desktop_sessions import _extract_project_prefix_from_worktree
+
+        result = _extract_project_prefix_from_worktree("-Users-test-myproject-.worktrees-fix-bug")
+        assert result == "-Users-test-myproject"
+
+    def test_desktop_worktree_no_project_prefix(self):
+        """Desktop worktrees (~/. claude-worktrees/) don't have a project prefix."""
+        from services.desktop_sessions import _extract_project_prefix_from_worktree
+
+        # This is a Desktop worktree — the path before the marker is the home dir,
+        # not a project. Strategy C will return the prefix, but the caller verifies
+        # it exists on disk (which it won't as a project dir).
+        result = _extract_project_prefix_from_worktree(
+            "-Users-test--claude-worktrees-myproject-focused-jepsen"
+        )
+        # Returns a prefix (Strategy C doesn't know it's not a project)
+        assert result == "-Users-test"
+
+    def test_no_marker_returns_none(self):
+        from services.desktop_sessions import _extract_project_prefix_from_worktree
+
+        result = _extract_project_prefix_from_worktree("-Users-test-normal-project")
+        assert result is None
+
+    def test_empty_string(self):
+        from services.desktop_sessions import _extract_project_prefix_from_worktree
+
+        assert _extract_project_prefix_from_worktree("") is None
+
+    def test_marker_at_start_returns_none(self):
+        """If marker is at position 0, no valid prefix exists."""
+        from services.desktop_sessions import _extract_project_prefix_from_worktree
+
+        assert _extract_project_prefix_from_worktree("--claude-worktrees-foo") is None
+
 
 # =============================================================================
 # extract_worktree_info
@@ -414,6 +503,90 @@ class TestGetRealProjectEncodedName:
 
             result = get_real_project_encoded_name(encoded_wt, ["no-match-uuid"])
             assert result == "-Users-test-myproject"
+
+    def test_strategy_c_cli_worktree_prefix(self, tmp_path):
+        """Strategy C: resolve CLI worktree by parsing encoded name prefix."""
+        projects_dir = tmp_path / "projects"
+        real_project = projects_dir / "-Users-jayantdevkar-Documents-GitHub-claude-karma"
+        real_project.mkdir(parents=True)
+
+        worktree_encoded = (
+            "-Users-jayantdevkar-Documents-GitHub-claude-karma"
+            "--claude-worktrees-fix-command-skill-tracking"
+        )
+
+        with (
+            patch(
+                "services.desktop_sessions.load_desktop_metadata",
+                return_value={},
+            ),
+            patch(
+                "services.desktop_sessions.WORKTREE_BASE",
+                tmp_path / "nonexistent",
+            ),
+            patch("config.settings") as mock_settings,
+        ):
+            mock_settings.projects_dir = projects_dir
+
+            from services.desktop_sessions import get_real_project_encoded_name
+
+            result = get_real_project_encoded_name(worktree_encoded, ["no-match-uuid"])
+            assert result == "-Users-jayantdevkar-Documents-GitHub-claude-karma"
+
+    def test_strategy_c_superpowers_worktree(self, tmp_path):
+        """Strategy C: resolve .worktrees/ (superpowers) by prefix parsing."""
+        projects_dir = tmp_path / "projects"
+        real_project = projects_dir / "-Users-jayantdevkar-Documents-GitHub-claude-karma"
+        real_project.mkdir(parents=True)
+
+        worktree_encoded = (
+            "-Users-jayantdevkar-Documents-GitHub-claude-karma"
+            "--worktrees-fix-command-skill-tracking"
+        )
+
+        with (
+            patch(
+                "services.desktop_sessions.load_desktop_metadata",
+                return_value={},
+            ),
+            patch(
+                "services.desktop_sessions.WORKTREE_BASE",
+                tmp_path / "nonexistent",
+            ),
+            patch("config.settings") as mock_settings,
+        ):
+            mock_settings.projects_dir = projects_dir
+
+            from services.desktop_sessions import get_real_project_encoded_name
+
+            result = get_real_project_encoded_name(worktree_encoded, ["no-match-uuid"])
+            assert result == "-Users-jayantdevkar-Documents-GitHub-claude-karma"
+
+    def test_strategy_c_prefix_not_on_disk(self, tmp_path):
+        """Strategy C: if parsed prefix doesn't exist on disk, falls through."""
+        projects_dir = tmp_path / "projects"
+        projects_dir.mkdir(parents=True)
+        # Don't create the real project dir
+
+        worktree_encoded = "-Users-test-nonexistent-project--claude-worktrees-some-branch"
+
+        with (
+            patch(
+                "services.desktop_sessions.load_desktop_metadata",
+                return_value={},
+            ),
+            patch(
+                "services.desktop_sessions.WORKTREE_BASE",
+                tmp_path / "nonexistent",
+            ),
+            patch("config.settings") as mock_settings,
+        ):
+            mock_settings.projects_dir = projects_dir
+
+            from services.desktop_sessions import get_real_project_encoded_name
+
+            result = get_real_project_encoded_name(worktree_encoded, ["no-match"])
+            assert result is None
 
     def test_no_match_returns_none(self):
         with (

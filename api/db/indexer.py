@@ -124,12 +124,23 @@ def sync_all_projects(conn: sqlite3.Connection) -> dict:
                 real_encoded = get_real_project_encoded_name(wt_dir.name, session_uuids)
                 if real_encoded:
                     real_path = real_project_paths.get(real_encoded)
+                    # Determine session source: CLI worktrees (per-repo .claude/worktrees/
+                    # or .worktrees/) don't come from Desktop — let auto-detect handle it
+                    from services.desktop_sessions import (
+                        _extract_project_prefix_from_worktree,
+                    )
+
+                    wt_source = (
+                        None  # auto-detect per session
+                        if _extract_project_prefix_from_worktree(wt_dir.name)
+                        else "desktop"
+                    )
                     project_stats = sync_project(
                         conn,
                         wt_dir,
                         encoded_name_override=real_encoded,
                         project_path_override=real_path,
-                        session_source="desktop",
+                        session_source=wt_source,
                     )
                 else:
                     # Can't resolve — index as standalone (graceful degradation)

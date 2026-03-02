@@ -5,9 +5,10 @@ Claude Desktop creates git worktrees with random names for each "Claude Code"
 session, causing the same project to appear as multiple phantom entries.
 This service detects worktree projects and maps them back to real projects.
 
-Two detection strategies:
-- Strategy A: Worktree filesystem scan (fallback, cross-platform)
+Three detection strategies:
 - Strategy B: Desktop metadata ingestion (primary, cross-platform)
+- Strategy C: Encoded name prefix parsing (for CLI/superpowers worktrees)
+- Strategy A: Worktree filesystem scan (fallback, cross-platform)
 """
 
 import json
@@ -33,24 +34,14 @@ def _get_desktop_sessions_dir() -> Path:
     """Get platform-specific Claude Desktop sessions directory."""
     system = platform.system()
     if system == "Darwin":
-        return (
-            Path.home()
-            / "Library"
-            / "Application Support"
-            / "Claude"
-            / "claude-code-sessions"
-        )
+        return Path.home() / "Library" / "Application Support" / "Claude" / "claude-code-sessions"
     elif system == "Windows":
         appdata = os.environ.get("APPDATA")
         if appdata:
             return Path(appdata) / "Claude" / "claude-code-sessions"
-        return (
-            Path.home() / "AppData" / "Roaming" / "Claude" / "claude-code-sessions"
-        )
+        return Path.home() / "AppData" / "Roaming" / "Claude" / "claude-code-sessions"
     else:  # Linux and other Unix
-        xdg_config = os.environ.get(
-            "XDG_CONFIG_HOME", str(Path.home() / ".config")
-        )
+        xdg_config = os.environ.get("XDG_CONFIG_HOME", str(Path.home() / ".config"))
         return Path(xdg_config) / "Claude" / "claude-code-sessions"
 
 
@@ -72,12 +63,25 @@ def is_worktree_project(encoded_name: str) -> bool:
     """
     Check if an encoded project dir is a worktree.
 
-    Works on the ENCODED name directly. Checks for '-claude-worktrees-'
-    which appears in both encoding variants:
-    - Our encode_path: '-.claude-worktrees-' (dots preserved)
-    - Claude Code's actual encoding: '--claude-worktrees-' (dots -> dashes)
+    Works on the ENCODED name directly. Detects three worktree patterns:
+
+    1. Claude Desktop worktrees (~/.claude-worktrees/{project}/{name}):
+       Encoded as '--claude-worktrees-' (dots -> dashes by Claude Code encoder)
+
+    2. Claude Code CLI worktrees ({project}/.claude/worktrees/{name}):
+       Encoded as '--claude-worktrees-' (same, since .claude -> -claude)
+
+    3. Superpowers/custom worktrees ({project}/.worktrees/{name}):
+       Encoded as '--worktrees-' (dot -> dash by Claude Code encoder)
+       or '-.worktrees-' (dots preserved by our encode_path)
     """
-    return "-claude-worktrees-" in encoded_name
+    if "-claude-worktrees-" in encoded_name:
+        return True
+    # .worktrees/ dirs (superpowers pattern) — encoded as --worktrees- or -.worktrees-
+    # But avoid false positives: require the marker, not just "worktrees" in any path
+    if "--worktrees-" in encoded_name or "-.worktrees-" in encoded_name:
+        return True
+    return False
 
 
 def extract_worktree_info(encoded_name: str) -> Optional[dict]:
@@ -119,6 +123,42 @@ def extract_worktree_info(encoded_name: str) -> Optional[dict]:
                     "project_name": project_dir.name,
                     "worktree_name": worktree_dir.name,
                 }
+    return None
+
+
+# =============================================================================
+# Strategy C: Encoded Name Prefix Parsing (for CLI/superpowers worktrees)
+# =============================================================================
+
+
+# Markers in encoded names that separate the real project prefix from the
+# worktree suffix. Ordered longest-first so we split on the most specific match.
+_WORKTREE_MARKERS = [
+    "--claude-worktrees-",  # .claude/worktrees/ (CLI EnterWorktree)
+    "-.claude-worktrees-",  # .claude/worktrees/ (our encode_path, dots preserved)
+    "--worktrees-",  # .worktrees/ (superpowers pattern)
+    "-.worktrees-",  # .worktrees/ (our encode_path, dots preserved)
+]
+
+
+def _extract_project_prefix_from_worktree(encoded_name: str) -> Optional[str]:
+    """
+    Extract the real project's encoded name from a CLI/superpowers worktree path.
+
+    For CLI worktrees, the encoded name embeds the real project path as a prefix:
+      -Users-me-projects-myapp--claude-worktrees-feature-branch
+      ^^^^^^^^^^^^^^^^^^^^^^^^  <- real project encoded name
+
+    Returns:
+        The real project's encoded_name prefix, or None if no marker found.
+    """
+    for marker in _WORKTREE_MARKERS:
+        idx = encoded_name.find(marker)
+        if idx > 0:
+            prefix = encoded_name[:idx]
+            # Sanity check: prefix should look like an encoded path
+            if prefix.startswith("-") and len(prefix) > 1:
+                return prefix
     return None
 
 
@@ -222,6 +262,17 @@ def get_real_project_encoded_name(
                 real_dir = settings.projects_dir / real_encoded
                 if real_dir.exists():
                     return real_encoded
+
+    # Strategy C: Parse encoded name for CLI/superpowers worktrees
+    # CLI worktrees live inside the project repo:
+    #   {project}/.claude/worktrees/{name} -> encoded prefix--claude-worktrees-{name}
+    #   {project}/.worktrees/{name}        -> encoded prefix--worktrees-{name}
+    # The real project's encoded name is the prefix before the worktree marker.
+    real_encoded = _extract_project_prefix_from_worktree(worktree_encoded_name)
+    if real_encoded:
+        real_dir = settings.projects_dir / real_encoded
+        if real_dir.exists():
+            return real_encoded
 
     # Strategy A (fallback): filesystem scan for project name
     wt_info = extract_worktree_info(worktree_encoded_name)
