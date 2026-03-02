@@ -123,8 +123,11 @@ class TestDedupInvocationSources:
         _dedup_invocation_sources(counter)
         assert counter[("commit", "slash_command")] == 5
 
-    def test_skill_tool_absorbs_text_detection(self):
-        """skill_tool (higher priority) absorbs text_detection when no slash_command."""
+    def test_text_detection_plus_skill_tool_upgrades_to_slash_command(self):
+        """text_detection + skill_tool (no slash_command) → upgrade to slash_command.
+
+        User typed /command in text AND Claude invoked Skill tool = manual invocation.
+        """
         counter = Counter(
             {
                 ("autopilot", "skill_tool"): 2,
@@ -132,6 +135,21 @@ class TestDedupInvocationSources:
             }
         )
         _dedup_invocation_sources(counter)
+        assert counter[("autopilot", "slash_command")] == 2
+        assert ("autopilot", "skill_tool") not in counter
+        assert ("autopilot", "text_detection") not in counter
+
+    def test_text_detection_plus_skill_tool_partial_upgrade(self):
+        """More skill_tool than text_detection → partial upgrade, rest stays auto."""
+        counter = Counter(
+            {
+                ("autopilot", "skill_tool"): 3,
+                ("autopilot", "text_detection"): 1,
+            }
+        )
+        _dedup_invocation_sources(counter)
+        # 1 upgraded to slash_command, 2 remain as skill_tool
+        assert counter[("autopilot", "slash_command")] == 1
         assert counter[("autopilot", "skill_tool")] == 2
         assert ("autopilot", "text_detection") not in counter
 

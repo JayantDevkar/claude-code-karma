@@ -55,12 +55,15 @@ if TYPE_CHECKING:
 def _dedup_invocation_sources(counter: Counter) -> None:
     """Deduplicate invocation sources for the same skill/command.
 
-    When user types /skill (slash_command), Claude also fires a Skill tool
-    call (skill_tool) and the name may appear in text (text_detection).
-    These are the SAME invocation — not separate ones.
+    When user types /skill (slash_command or text_detection), Claude may also
+    fire a Skill tool call (skill_tool).  These are the SAME invocation.
 
-    Rule: each higher-priority source "absorbs" one count from lower sources.
-    Priority: slash_command > skill_tool > text_detection
+    Classification rules (per skill name):
+      - slash_command + skill_tool → slash_command  (user typed /cmd with tags, Claude ran it)
+      - text_detection + skill_tool → slash_command  (user typed /cmd in text, Claude ran it)
+      - skill_tool alone → skill_tool               (Claude auto-invoked)
+      - text_detection alone → text_detection        (user typed /cmd, Claude didn't run it)
+      - slash_command alone → slash_command           (user typed /cmd via tags, Claude didn't run it)
     """
     by_name: dict[str, list[str]] = {}
     for name, source in list(counter.keys()):
@@ -71,14 +74,34 @@ def _dedup_invocation_sources(counter: Counter) -> None:
         sc_key = (name, "slash_command")
         st_key = (name, "skill_tool")
         td_key = (name, "text_detection")
-        sc_count = counter.get(sc_key, 0)
-        # slash_command absorbs from skill_tool (the triggered call)
-        if sc_count > 0 and st_key in counter:
-            absorb = min(sc_count, counter[st_key])
+
+        td_count = counter.get(td_key, 0)
+        st_count = counter.get(st_key, 0)
+        orig_sc_count = counter.get(sc_key, 0)
+
+        # text_detection + skill_tool (without slash_command) → upgrade to slash_command.
+        # User typed /command in text AND Claude invoked it = manual invocation.
+        # Skip if slash_command already exists (text_detection is redundant with tags).
+        if td_count > 0 and st_count > 0 and orig_sc_count == 0:
+            upgrade = min(td_count, st_count)
+            counter[sc_key] = upgrade
+            counter[td_key] -= upgrade
+            counter[st_key] -= upgrade
+            if counter[td_key] <= 0:
+                del counter[td_key]
+            if counter[st_key] <= 0:
+                del counter[st_key]
+
+        # Original slash_command (from <command-message> tags) absorbs skill_tool.
+        # Only absorb up to the original count — upgraded entries already consumed
+        # their corresponding skill_tool during the upgrade step above.
+        if orig_sc_count > 0 and st_key in counter:
+            absorb = min(orig_sc_count, counter[st_key])
             counter[st_key] -= absorb
             if counter[st_key] <= 0:
                 del counter[st_key]
-        # Higher sources absorb from text_detection (1:1)
+
+        # Higher sources absorb remaining text_detection
         remaining_higher = counter.get(sc_key, 0) + counter.get(st_key, 0)
         if remaining_higher > 0 and td_key in counter:
             absorb = min(remaining_higher, counter[td_key])
@@ -342,10 +365,14 @@ class Session(BaseModel):
                     # false positives (e.g. "/plugin:command" in a code comment).
                     if cmd_name is None and not msg.is_tool_result and not msg.is_internal_message:
                         for candidate in detect_slash_commands_in_text(msg.content):
+                            # Expand short names first (e.g. "brainstorming" →
+                            # "superpowers:brainstorming") so classify_invocation
+                            # can recognize plugin entry names as skills.
+                            expanded = expand_plugin_short_name(candidate)
                             # Only detect skills — builtins always have <command-message>
                             # tags when actually invoked, so they're caught above.
-                            if classify_invocation(candidate) == "skill":
-                                cmd_name = expand_plugin_short_name(candidate)
+                            if classify_invocation(expanded) == "skill":
+                                cmd_name = expanded
                                 source = "text_detection"
                                 break
                     if cmd_name:
