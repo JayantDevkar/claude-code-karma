@@ -23,7 +23,6 @@
  * const response = await fetch(`${API_BASE}/projects`);
  * ```
  */
-const BROWSER_API = import.meta.env.PUBLIC_API_URL || '/api';
 const SERVER_API = (() => {
 	try {
 		return process.env.INTERNAL_API_URL || 'http://localhost:8000';
@@ -32,7 +31,10 @@ const SERVER_API = (() => {
 	}
 })();
 
-export const API_BASE = typeof window !== 'undefined' ? BROWSER_API : SERVER_API;
+export const API_BASE =
+	typeof window !== 'undefined'
+		? (import.meta.env.PUBLIC_API_URL || `${window.location.origin}/api`)
+		: SERVER_API;
 
 /**
  * API request timeout in milliseconds (default: 30 seconds)
