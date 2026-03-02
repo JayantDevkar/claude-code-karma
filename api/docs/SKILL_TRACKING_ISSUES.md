@@ -158,6 +158,18 @@ Added `_link_command_to_skill()` which upgrades `skill_tool` entries to `slash_c
 
 Heuristic: same plugin prefix = linked. This covers the common pattern where commands exist specifically to trigger skills.
 
+**Step 4: Fixed `parse_command_from_content()`** (`command_helpers.py`)
+
+Prefer `<command-name>` tag (clean name like `agent-selection`) over `<command-message>` tag (may contain descriptive text like `The "agent-selection" skill is running`). Falls back to `<command-message>` when `<command-name>` is absent (older JSONL format).
+
+Added `_COMMAND_NAME_RE` regex with leading `/` stripping: `<command-name>/foo</command-name>` → `foo`.
+
+**Step 5: Text detection validation** (`command_helpers.py`)
+
+`detect_slash_commands_in_text()` now validates candidates before returning:
+- Names with `:` must exist in `_build_entry_type_map()` — rejects malformed entries like `feature:dev-feature-dev` and unknown plugins like `omc:plan`.
+- Bare names (no `:`) must either expand via `expand_plugin_short_name()`, be a builtin, or be a custom skill — rejects bare plugin names like `oh-my-claudecode` that can't resolve to a specific entry.
+
 ---
 
 ## DB Schema Reference

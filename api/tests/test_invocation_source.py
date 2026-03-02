@@ -15,7 +15,9 @@ from command_helpers import (
     _plugin_skill_cache,
     aggregate_by_name,
     classify_invocation,
+    detect_slash_commands_in_text,
     expand_plugin_short_name,
+    parse_command_from_content,
 )
 from models.session import _dedup_invocation_sources, _link_command_to_skill
 
@@ -426,3 +428,107 @@ class TestCommandToSkillLinkage:
         _link_command_to_skill(commands, skills)
         # "commit" has no ':', so no plugin prefix extracted
         assert skills[("commit-commands:commit", "skill_tool")] == 1
+
+
+class TestParseCommandFromContent:
+    """Tests for parse_command_from_content() XML tag parsing."""
+
+    def test_prefers_command_name_over_message(self):
+        """When both tags exist, <command-name> has the clean name."""
+        content = (
+            '<command-message>The "agent-selection" skill is running</command-message>'
+            "<command-name>agent-selection</command-name>"
+        )
+        name, args = parse_command_from_content(content)
+        assert name == "agent-selection"
+
+    def test_command_name_strips_leading_slash(self):
+        """<command-name>/foo</command-name> → 'foo' (no leading /)."""
+        content = (
+            "<command-message>brainstorm</command-message><command-name>/brainstorm</command-name>"
+        )
+        name, args = parse_command_from_content(content)
+        assert name == "brainstorm"
+
+    def test_falls_back_to_command_message(self):
+        """When no <command-name>, use <command-message>."""
+        content = "<command-message>analyze-ui-project</command-message>"
+        name, args = parse_command_from_content(content)
+        assert name == "analyze-ui-project"
+
+    def test_no_tags_returns_none(self):
+        content = "just some regular text"
+        name, args = parse_command_from_content(content)
+        assert name is None
+
+    def test_tags_mid_content_rejected(self):
+        """Tags appearing mid-content (code snippets) are rejected."""
+        content = "Here is some code: <command-message>foo</command-message>"
+        name, args = parse_command_from_content(content)
+        assert name is None
+
+
+class TestDetectSlashCommandsValidation:
+    """Tests for text detection validation in detect_slash_commands_in_text()."""
+
+    @pytest.fixture(autouse=True)
+    def _clear_caches(self):
+        _plugin_skill_cache.clear()
+        _expand_name_cache.clear()
+        _entry_map_cache.clear()
+        _entry_type_cache.clear()
+
+    def test_rejects_malformed_plugin_entry(self, tmp_path, monkeypatch):
+        """'feature:dev-feature-dev' (colon in wrong place) rejected."""
+        # Set up plugin with no matching entry
+        plugins_cache = tmp_path / "plugins" / "cache"
+        (plugins_cache / "registry" / "feature" / "v1" / "skills").mkdir(parents=True)
+        monkeypatch.setattr("config.settings.claude_base", tmp_path)
+
+        result = detect_slash_commands_in_text("try /feature:dev-feature-dev please")
+        assert "feature:dev-feature-dev" not in result
+
+    def test_rejects_unknown_plugin_colon_entry(self, tmp_path, monkeypatch):
+        """'omc:plan' where 'omc' isn't a real plugin is rejected."""
+        plugins_cache = tmp_path / "plugins" / "cache"
+        plugins_cache.mkdir(parents=True)
+        monkeypatch.setattr("config.settings.claude_base", tmp_path)
+
+        result = detect_slash_commands_in_text("use /omc:plan for this")
+        assert "omc:plan" not in result
+
+    def test_accepts_valid_plugin_entry(self, tmp_path, monkeypatch):
+        """'superpowers:brainstorming' (real plugin:entry) accepted."""
+        plugins_cache = tmp_path / "plugins" / "cache"
+        skill_dir = plugins_cache / "reg" / "superpowers" / "v1" / "skills" / "brainstorming"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").touch()
+        monkeypatch.setattr("config.settings.claude_base", tmp_path)
+
+        result = detect_slash_commands_in_text("use /superpowers:brainstorming")
+        assert "superpowers:brainstorming" in result
+
+    def test_rejects_bare_plugin_name_no_expansion(self, tmp_path, monkeypatch):
+        """'oh-my-claudecode' (bare plugin, many entries, can't expand) rejected."""
+        plugins_cache = tmp_path / "plugins" / "cache"
+        omc_dir = plugins_cache / "reg" / "oh-my-claudecode" / "v1"
+        # Create multiple entries so it can't auto-expand
+        (omc_dir / "skills" / "cancel").mkdir(parents=True)
+        (omc_dir / "skills" / "cancel" / "SKILL.md").touch()
+        (omc_dir / "skills" / "plan").mkdir(parents=True)
+        (omc_dir / "skills" / "plan" / "SKILL.md").touch()
+        monkeypatch.setattr("config.settings.claude_base", tmp_path)
+
+        result = detect_slash_commands_in_text("install /oh-my-claudecode plugin")
+        assert "oh-my-claudecode" not in result
+
+    def test_accepts_expandable_bare_name(self, tmp_path, monkeypatch):
+        """'brainstorming' (expands to superpowers:brainstorming) accepted."""
+        plugins_cache = tmp_path / "plugins" / "cache"
+        skill_dir = plugins_cache / "reg" / "superpowers" / "v1" / "skills" / "brainstorming"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").touch()
+        monkeypatch.setattr("config.settings.claude_base", tmp_path)
+
+        result = detect_slash_commands_in_text("run /brainstorming on this")
+        assert "brainstorming" in result

@@ -55,6 +55,7 @@ BUILTIN_CLI_COMMANDS = frozenset(
 # Regex for detecting real command prompts (starts with command tag)
 _COMMAND_START_RE = re.compile(r"\s*<command-(?:name|message)>")
 _COMMAND_MESSAGE_RE = re.compile(r"<command-message>(.*?)</command-message>")
+_COMMAND_NAME_RE = re.compile(r"<command-name>/?(.*?)</command-name>")
 _COMMAND_ARGS_RE = re.compile(r"<command-args>(.*?)</command-args>", re.DOTALL)
 
 # Strips command/local-command XML tags from content for display
@@ -326,7 +327,9 @@ def classify_invocation(name: str) -> str:
         entry_type = entry_types.get(name)
         if entry_type == "command":
             return "command"
-        # Default to "skill" for unknown or skill entries (backward compat)
+        # Agents and skills both go to session_skills. Agents invoked via
+        # /command or Skill tool are rare edge cases — they flow through the
+        # same path as skills in modern Claude Code (commands/ merged into skills).
         return "skill"
     if _is_custom_skill(name):
         return "skill"
@@ -354,11 +357,17 @@ def parse_command_from_content(content: str) -> tuple[Optional[str], Optional[st
     if not _COMMAND_START_RE.match(content):
         return None, None
 
-    cmd_match = _COMMAND_MESSAGE_RE.search(content)
-    if not cmd_match:
-        return None, None
+    # Prefer <command-name> (clean name like "brainstorm") over
+    # <command-message> (may contain descriptive text like "The skill is running").
+    name_match = _COMMAND_NAME_RE.search(content)
+    if name_match:
+        cmd_name = name_match.group(1)
+    else:
+        cmd_match = _COMMAND_MESSAGE_RE.search(content)
+        if not cmd_match:
+            return None, None
+        cmd_name = cmd_match.group(1)
 
-    cmd_name = cmd_match.group(1)
     args_match = _COMMAND_ARGS_RE.search(content)
     args = args_match.group(1).strip() if args_match and args_match.group(1).strip() else None
 
@@ -428,7 +437,25 @@ def detect_slash_commands_in_text(content: str) -> list[str]:
             content = content[:idx]
 
     candidates = _SLASH_COMMAND_RE.findall(content)
-    return [c for c in candidates if c not in _PATH_ROOTS]
+    results: list[str] = []
+    entry_types = _build_entry_type_map()
+    for c in candidates:
+        if c in _PATH_ROOTS:
+            continue
+        if ":" in c:
+            # Validate plugin:entry names exist in filesystem.
+            # Rejects "feature:dev-feature-dev" (malformed), "omc:plan" (not real).
+            if c not in entry_types:
+                continue
+        else:
+            # Bare names (no ':') must resolve to something concrete.
+            # Reject bare plugin names that don't expand to a specific entry
+            # (e.g., "oh-my-claudecode" has 71 entries, can't pick one).
+            expanded = expand_plugin_short_name(c)
+            if expanded == c and c not in BUILTIN_CLI_COMMANDS and not _is_custom_skill(c):
+                continue
+        results.append(c)
+    return results
 
 
 def aggregate_by_name(items: dict) -> dict[str, int]:
