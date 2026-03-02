@@ -154,15 +154,20 @@
 			: []
 	);
 
-	// Manual vs Auto breakdown
+	// Manual vs Auto vs Mentioned breakdown
 	let manualCalls = $derived(detail?.manual_calls ?? 0);
 	let autoCalls = $derived(detail?.auto_calls ?? 0);
-	let hasInvocationBreakdown = $derived(manualCalls > 0 || autoCalls > 0);
+	let mentionedCalls = $derived(detail?.mentioned_calls ?? 0);
+	let hasInvocationBreakdown = $derived(manualCalls > 0 || autoCalls > 0 || mentionedCalls > 0);
+	let barTotal = $derived(manualCalls + autoCalls + mentionedCalls);
 	let manualPercent = $derived(
-		detail && detail.calls > 0 ? (manualCalls / detail.calls) * 100 : 0
+		barTotal > 0 ? (manualCalls / barTotal) * 100 : 0
 	);
 	let autoPercent = $derived(
-		detail && detail.calls > 0 ? (autoCalls / detail.calls) * 100 : 0
+		barTotal > 0 ? (autoCalls / barTotal) * 100 : 0
+	);
+	let mentionedPercent = $derived(
+		barTotal > 0 ? (mentionedCalls / barTotal) * 100 : 0
 	);
 
 	// Convert McpSessionSummary to SessionWithContext
@@ -573,7 +578,7 @@
 				<StatsGrid {stats} columns={4} />
 
 				{#if hasInvocationBreakdown}
-					<!-- Manual vs Auto invocation breakdown -->
+					<!-- Manual vs Auto vs Mentioned breakdown -->
 					<div class="flex items-center gap-4 px-1">
 						<span class="text-[10px] uppercase tracking-wider font-semibold text-[var(--text-muted)] shrink-0">Invocations</span>
 						<div class="flex-1 flex items-center gap-3">
@@ -592,6 +597,13 @@
 										title="Auto: {autoCalls}"
 									></div>
 								{/if}
+								{#if mentionedPercent > 0}
+									<div
+										class="bg-[var(--text-muted)] opacity-40 transition-all duration-300"
+										style="width: {mentionedPercent}%"
+										title="Mentioned (not invoked): {mentionedCalls}"
+									></div>
+								{/if}
 							</div>
 							<div class="flex items-center gap-3 text-[10px] text-[var(--text-muted)]">
 								<span class="flex items-center gap-1">
@@ -602,6 +614,12 @@
 									<span class="w-2 h-2 rounded-full bg-[var(--nav-purple)]"></span>
 									Auto: {autoCalls}
 								</span>
+								{#if mentionedCalls > 0}
+									<span class="flex items-center gap-1">
+										<span class="w-2 h-2 rounded-full bg-[var(--text-muted)] opacity-40"></span>
+										Mentioned: {mentionedCalls}
+									</span>
+								{/if}
 							</div>
 						</div>
 					</div>

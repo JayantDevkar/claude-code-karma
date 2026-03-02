@@ -220,7 +220,7 @@ def _query_plugin_usage_sqlite(
         time_filter = "AND s.start_time >= :cutoff"
         params["cutoff"] = cutoff.isoformat()
 
-    # Query skill invocations
+    # Query skill invocations (exclude mentions, match both full and short form)
     skill_rows = conn.execute(
         f"""
         SELECT
@@ -230,7 +230,9 @@ def _query_plugin_usage_sqlite(
             s.total_cost
         FROM session_skills sk
         JOIN sessions s ON s.uuid = sk.session_uuid
-        WHERE sk.skill_name LIKE :plugin || ':%' {time_filter}
+        WHERE (sk.skill_name LIKE :plugin || ':%' OR sk.skill_name = :plugin)
+            AND sk.invocation_source != 'text_detection'
+            {time_filter}
         ORDER BY s.start_time
         """,
         params,
