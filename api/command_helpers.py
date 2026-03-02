@@ -6,6 +6,7 @@ and sessions.py to prevent drift.
 """
 
 import re
+from functools import lru_cache
 from typing import Optional
 
 # Built-in Claude Code CLI commands that should NOT be tracked as user-authored commands.
@@ -81,12 +82,79 @@ def _is_custom_skill(name: str) -> bool:
     )
 
 
+@lru_cache(maxsize=128)
+def _is_plugin_skill(name: str) -> bool:
+    """Check if a name matches a plugin directory (short-form skill invocation).
+
+    When users type /frontend-design instead of /frontend-design:frontend-design,
+    the name lacks a ':' but still refers to a plugin skill. This checks if a
+    plugin with that name exists in ~/.claude/plugins/cache/.
+    """
+    from config import settings
+
+    plugins_cache = settings.claude_base / "plugins" / "cache"
+    if not plugins_cache.is_dir():
+        return False
+    # Check all registries (e.g., claude-plugins-official/)
+    for registry in plugins_cache.iterdir():
+        if registry.is_dir() and (registry / name).is_dir():
+            return True
+    return False
+
+
+@lru_cache(maxsize=128)
+def expand_plugin_short_name(name: str) -> str:
+    """Expand a short-form plugin skill name to the full plugin:skill form.
+
+    When users type /frontend-design, Claude Code resolves it to
+    frontend-design:frontend-design (plugin:skill). This function replicates
+    that expansion by checking the plugin's skills directory.
+
+    If the plugin has a single skill with the same name, returns "name:name".
+    If it has exactly one skill, returns "name:that_skill".
+    Otherwise returns the name unchanged.
+    """
+    if ":" in name:
+        return name  # Already in full form
+
+    from config import settings
+
+    plugins_cache = settings.claude_base / "plugins" / "cache"
+    if not plugins_cache.is_dir():
+        return name
+
+    for registry in plugins_cache.iterdir():
+        if not registry.is_dir():
+            continue
+        plugin_dir = registry / name
+        if not plugin_dir.is_dir():
+            continue
+        # Find the latest version's skills directory
+        versions = sorted(plugin_dir.iterdir(), reverse=True)
+        for version_dir in versions:
+            skills_dir = version_dir / "skills"
+            if not skills_dir.is_dir():
+                continue
+            skill_names = [d.name for d in skills_dir.iterdir() if d.is_dir()]
+            if not skill_names:
+                continue
+            # If plugin has a skill matching its own name, use that
+            if name in skill_names:
+                return f"{name}:{name}"
+            # If plugin has exactly one skill, use that
+            if len(skill_names) == 1:
+                return f"{name}:{skill_names[0]}"
+            return name
+    return name
+
+
 def classify_invocation(name: str) -> str:
     """Classify a command/skill invocation name.
 
     Returns:
         "builtin" for built-in CLI commands (/exit, /model, etc.)
-        "skill" for plugin skills (contains ':') or custom skills (SKILL.md exists)
+        "skill" for plugin skills (contains ':'), custom skills (SKILL.md exists),
+                or plugin short names (matching a plugin directory)
         "command" for user-authored commands
     """
     if name in BUILTIN_CLI_COMMANDS:
@@ -94,6 +162,8 @@ def classify_invocation(name: str) -> str:
     if ":" in name:
         return "skill"
     if _is_custom_skill(name):
+        return "skill"
+    if _is_plugin_skill(name):
         return "skill"
     return "command"
 

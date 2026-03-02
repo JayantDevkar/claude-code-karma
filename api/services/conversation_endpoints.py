@@ -15,6 +15,7 @@ from typing import Optional
 from command_helpers import (
     classify_invocation,
     detect_slash_commands_in_text,
+    expand_plugin_short_name,
     parse_command_from_content,
     strip_command_tags,
 )
@@ -83,8 +84,8 @@ def build_conversation_timeline(
             content = msg.content or ""
 
             # Detect command invocation from <command-message> tags
-            prompt_event_type, prompt_title, cmd_summary, cmd_name = _detect_command_from_content(
-                content
+            prompt_event_type, prompt_title, cmd_summary, cmd_name, referenced_skills = (
+                _detect_command_from_content(content)
             )
 
             # Strip XML tags from display summary
@@ -97,6 +98,11 @@ def build_conversation_timeline(
                 prompt_metadata["is_plugin"] = ":" in cmd_name
                 if ":" in cmd_name:
                     prompt_metadata["plugin"] = cmd_name.split(":")[0]
+            # Track user intent: skills mentioned in the prompt text (not explicit invocations).
+            # These may or may not result in actual Skill tool calls by Claude.
+            if referenced_skills:
+                prompt_metadata["referenced_skills"] = referenced_skills
+                prompt_metadata["skill_intent"] = True
             events.append(
                 TimelineEvent(
                     id=f"evt-{event_counter}",
@@ -219,45 +225,54 @@ def build_conversation_timeline(
 
 def _detect_command_from_content(
     content: str,
-) -> tuple[str, str, str | None, str | None]:
+) -> tuple[str, str, str | None, str | None, list[str] | None]:
     """Parse <command-message> tags or slash-command patterns from user prompt content.
 
     First checks for structured <command-message> tags (Claude Code's standard format).
     Falls back to detecting /command patterns in plain text for skills invoked via hooks
     (magic keywords) where the slash command is embedded in a larger message.
 
-    Returns (event_type, title, summary, command_name).
+    For <command-message> detected commands (explicit user invocation), returns the
+    appropriate event type (skill_invocation, command_invocation, builtin_command).
+
+    For text-detected skills (slash commands embedded in larger messages), returns
+    "prompt" as the event type since the user prompt itself is not the invocation —
+    the actual invocation happens when Claude calls the Skill tool ("Launching skill:").
+    The referenced skill names are returned separately as intent metadata.
+
+    Returns (event_type, title, summary, command_name, referenced_skills).
+    - referenced_skills: list of skill names the user mentioned (intent, not invocation)
     """
     cmd_name, args = parse_command_from_content(content)
+    from_command_tags = cmd_name is not None
 
     # Fallback: detect /command patterns in plain text (hook-triggered skills)
+    referenced_skills: list[str] | None = None
     if cmd_name is None:
         slash_cmds = detect_slash_commands_in_text(content)
-        # Pick the most specific (skill-like) command if multiple found
-        for candidate in slash_cmds:
-            kind = classify_invocation(candidate)
-            if kind == "skill":
-                cmd_name = candidate
-                args = None
-                break
-        # Don't fall back to "command" or "builtin" detection in plain text.
-        # Both user-authored commands and builtins are always wrapped in
-        # <command-message> tags when actually invoked, so they're caught
-        # by the primary path above.  Only skills need the fallback
-        # (hook-triggered skills bypass the tag wrapping).
+        # Collect ALL skill references from the text (not just the first)
+        # Expand short-form plugin names for consistency with Skill tool invocations
+        skills_found = [
+            expand_plugin_short_name(c)
+            for c in slash_cmds
+            if classify_invocation(c) == "skill"
+        ]
+        if skills_found:
+            referenced_skills = skills_found
 
     if cmd_name is None:
-        return "prompt", "User prompt", None, None
+        # No <command-message> tags. Return as prompt with intent metadata.
+        return "prompt", "User prompt", None, None, referenced_skills
 
     kind = classify_invocation(cmd_name)
     summary = args[:200] if args else f"Invoked /{cmd_name}"
 
     if kind == "builtin":
-        return "builtin_command", f"Built-in: /{cmd_name}", summary, cmd_name
+        return "builtin_command", f"Built-in: /{cmd_name}", summary, cmd_name, None
     elif kind == "skill":
-        return "skill_invocation", f"Skill: /{cmd_name}", summary, cmd_name
+        return "skill_invocation", f"Skill: /{cmd_name}", summary, cmd_name, None
     else:
-        return "command_invocation", f"Command: /{cmd_name}", summary, cmd_name
+        return "command_invocation", f"Command: /{cmd_name}", summary, cmd_name, None
 
 
 def _strip_command_tags(content: str) -> str:

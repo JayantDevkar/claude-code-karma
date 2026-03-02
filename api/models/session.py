@@ -18,6 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from command_helpers import (
     classify_invocation,
     detect_slash_commands_in_text,
+    expand_plugin_short_name,
     parse_command_from_content,
 )
 
@@ -334,7 +335,10 @@ class Session(BaseModel):
                             # Only detect skills — builtins always have <command-message>
                             # tags when actually invoked, so they're caught above.
                             if classify_invocation(candidate) == "skill":
-                                cmd_name = candidate
+                                # Expand short-form plugin names (e.g. "frontend-design"
+                                # → "frontend-design:frontend-design") so dedup works
+                                # against the full name from Skill tool invocations.
+                                cmd_name = expand_plugin_short_name(candidate)
                                 source = "text_detection"
                                 break
                     if cmd_name:
