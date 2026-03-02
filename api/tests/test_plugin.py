@@ -500,6 +500,79 @@ class TestGetPluginsFile:
         assert ".claude" in str(plugins_file)
 
 
+class TestScanPluginCapabilities:
+    """Tests for scan_plugin_capabilities() skill/command deduplication."""
+
+    def _make_plugin_dir(
+        self, tmp_path: Path, skills: list[str] = None, commands: list[str] = None
+    ) -> Path:
+        """Create a fake plugin cache directory under plugins/ with skills and/or commands."""
+        plugin_cache = tmp_path / "plugins" / "cache" / "test-plugin"
+        plugin_cache.mkdir(parents=True, exist_ok=True)
+        if skills:
+            for name in skills:
+                skill_dir = plugin_cache / "skills" / name
+                skill_dir.mkdir(parents=True, exist_ok=True)
+                (skill_dir / "SKILL.md").write_text(f"# {name}\nA skill.")
+        if commands:
+            cmds_dir = plugin_cache / "commands"
+            cmds_dir.mkdir(parents=True, exist_ok=True)
+            for name in commands:
+                (cmds_dir / f"{name}.md").write_text(f"# {name}\nA command.")
+        return plugin_cache
+
+    def test_skill_takes_priority_over_command_when_both_exist(self, tmp_path: Path):
+        """When skills/X/ and commands/X.md both exist, X appears only in skills."""
+        plugin_cache = self._make_plugin_dir(
+            tmp_path,
+            skills=["autopilot", "plan", "ralph"],
+            commands=["autopilot", "plan", "ralph"],
+        )
+        with patch("models.plugin.get_plugin_cache_path", return_value=plugin_cache), \
+             patch("models.plugin.settings") as mock_settings:
+            mock_settings.claude_base = tmp_path
+
+            from models.plugin import scan_plugin_capabilities
+            result = scan_plugin_capabilities("test-plugin")
+
+        assert sorted(result["skills"]) == ["autopilot", "plan", "ralph"]
+        assert result["commands"] == []
+
+    def test_command_only_entries_still_listed(self, tmp_path: Path):
+        """Commands that don't overlap with skills are still listed."""
+        plugin_cache = self._make_plugin_dir(
+            tmp_path,
+            skills=["autopilot"],
+            commands=["autopilot", "cancel", "help"],
+        )
+        with patch("models.plugin.get_plugin_cache_path", return_value=plugin_cache), \
+             patch("models.plugin.settings") as mock_settings:
+            mock_settings.claude_base = tmp_path
+
+            from models.plugin import scan_plugin_capabilities
+            result = scan_plugin_capabilities("test-plugin")
+
+        assert result["skills"] == ["autopilot"]
+        assert sorted(result["commands"]) == ["cancel", "help"]
+
+    def test_no_overlap_both_listed(self, tmp_path: Path):
+        """When skills and commands have different names, both are fully listed."""
+        plugin_cache = self._make_plugin_dir(
+            tmp_path,
+            skills=["autopilot", "plan"],
+            commands=["cancel", "help"],
+        )
+        with patch("models.plugin.get_plugin_cache_path", return_value=plugin_cache), \
+             patch("models.plugin.settings") as mock_settings:
+            mock_settings.claude_base = tmp_path
+
+            from models.plugin import scan_plugin_capabilities
+            result = scan_plugin_capabilities("test-plugin")
+
+        assert sorted(result["skills"]) == ["autopilot", "plan"]
+        assert sorted(result["commands"]) == ["cancel", "help"]
+
+
 class TestLoadInstalledPlugins:
     """Tests for load_installed_plugins() convenience function."""
 

@@ -354,6 +354,13 @@ class TestBuildEntryTypeMap:
         result = _build_entry_type_map()
         assert result["my-plugin:code-reviewer"] == "agent"
 
+    def test_skill_takes_priority_over_command_when_both_exist(self, mock_claude_base):
+        """When skills/X/ and commands/X.md both exist, classify as 'skill'."""
+        _make_plugin(mock_claude_base, "my-plugin", ["autopilot"], kind="skills")
+        _make_plugin(mock_claude_base, "my-plugin", ["autopilot"], kind="commands")
+        result = _build_entry_type_map()
+        assert result["my-plugin:autopilot"] == "skill"
+
     def test_empty_plugins_dir(self, mock_claude_base):
         result = _build_entry_type_map()
         assert result == {}
@@ -391,6 +398,12 @@ class TestClassifyInvocation:
         """feature-dev:code-explorer (in agents/) → 'agent'."""
         _make_plugin(mock_claude_base, "feature-dev", ["code-explorer"], kind="agents")
         assert classify_invocation("feature-dev:code-explorer") == "agent"
+
+    def test_overlapping_skill_and_command_prefers_skill(self, mock_claude_base):
+        """oh-my-claudecode:autopilot in both skills/ and commands/ → 'skill'."""
+        _make_plugin(mock_claude_base, "oh-my-claudecode", ["autopilot"], kind="skills")
+        _make_plugin(mock_claude_base, "oh-my-claudecode", ["autopilot"], kind="commands")
+        assert classify_invocation("oh-my-claudecode:autopilot") == "skill"
 
 
 class TestCommandToSkillLinkage:

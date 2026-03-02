@@ -174,11 +174,13 @@ def _collect_plugin_entries(version_dir) -> dict[str, str]:
                 entries[d.name] = "skill"
 
     # commands/ — file-based entries (.md files)
+    # Skills take priority when both exist (skills have richer structure)
     commands_dir = version_dir / "commands"
     if commands_dir.is_dir():
         for f in commands_dir.iterdir():
             if f.is_file() and f.suffix == ".md":
-                entries[f.stem] = "command"
+                if f.stem not in entries:  # Don't overwrite existing skill
+                    entries[f.stem] = "command"
 
     # agents/ — file-based entries (.md files)
     agents_dir = version_dir / "agents"

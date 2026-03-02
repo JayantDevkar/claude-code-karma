@@ -369,18 +369,21 @@ def scan_plugin_capabilities(plugin_name: str) -> dict:
         for f in agents_dir.glob("*.md"):
             result["agents"].append(f.stem)
 
-    # Scan commands directory
-    commands_dir = cache_path / "commands"
-    if commands_dir.exists():
-        for f in commands_dir.glob("*.md"):
-            result["commands"].append(f.stem)
-
-    # Scan skills directory (recursive for SKILL.md)
+    # Scan skills directory first (recursive for SKILL.md)
+    # Skills take priority over commands when both exist (skills have richer structure)
     skills_dir = cache_path / "skills"
     if skills_dir.exists():
         for f in skills_dir.rglob("SKILL.md"):
             skill_name = f.parent.name
             result["skills"].append(skill_name)
+
+    # Scan commands directory — skip entries already found as skills
+    skills_set = set(result["skills"])
+    commands_dir = cache_path / "commands"
+    if commands_dir.exists():
+        for f in commands_dir.glob("*.md"):
+            if f.stem not in skills_set:
+                result["commands"].append(f.stem)
 
     # Scan hooks directory
     hooks_dir = cache_path / "hooks"
