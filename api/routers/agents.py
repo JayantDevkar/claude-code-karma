@@ -464,7 +464,9 @@ async def get_agent_sessions(
                 sessions = []
                 for row in data["sessions"]:
                     project_path = row.get("project_path") or ""
-                    project_display_name = project_path.rstrip("/").split("/")[-1] if project_path else None
+                    project_display_name = (
+                        project_path.rstrip("/").split("/")[-1] if project_path else None
+                    )
                     sessions.append(
                         SessionSummary(
                             uuid=row["uuid"],

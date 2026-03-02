@@ -957,6 +957,7 @@ def get_session(uuid: str, request: Request, fresh: bool = False):
     working_dirs = list(session.get_working_directories())
     if working_dirs:
         from pathlib import Path
+
         project_display_name = Path(working_dirs[0]).name
 
     # Clear session cache for fresh requests (live session polling)
