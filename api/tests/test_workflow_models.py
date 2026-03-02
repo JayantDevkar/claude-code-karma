@@ -8,7 +8,6 @@ def test_workflow_step_defaults():
     assert step.model == "sonnet"
     assert step.tools == ["Read", "Edit"]
     assert step.max_turns == 10
-    assert step.condition is None
 
 
 def test_workflow_input_required():
@@ -28,12 +27,10 @@ def test_workflow_definition_minimal():
     assert wf.inputs == []
 
 
-def test_workflow_step_with_condition():
+def test_workflow_step_custom_model():
     step = WorkflowStep(
         id="fix",
         prompt_template="Fix: {{ steps.review.output }}",
         model="opus",
-        condition="{{ steps.review.has_issues }}",
     )
-    assert step.condition == "{{ steps.review.has_issues }}"
     assert step.model == "opus"

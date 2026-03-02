@@ -1535,7 +1535,6 @@ class WorkflowStepSchema(BaseModel):
     model: str = "sonnet"
     tools: list[str] = []
     max_turns: int = Field(default=10, ge=1, le=50)
-    condition: Optional[str] = Field(default=None, max_length=1000)
 
     @field_validator("tools")
     @classmethod

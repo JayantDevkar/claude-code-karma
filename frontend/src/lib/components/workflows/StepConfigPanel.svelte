@@ -64,16 +64,6 @@
 		<input type="number" bind:value={step.max_turns} min="1" max="100" class="field-input" />
 	</label>
 
-	<label class="field">
-		<span class="field-label">Condition (optional)</span>
-		<input
-			type="text"
-			bind:value={step.condition}
-			placeholder="{'{{'}  steps.review.has_issues {'}}'}  == true"
-			class="field-input field-mono"
-		/>
-	</label>
-
 	<div class="field">
 		<span class="field-label">Tools</span>
 		<div class="tools-grid">
@@ -167,10 +157,6 @@
 	.field-textarea {
 		font-family: 'JetBrains Mono', monospace;
 		resize: vertical;
-	}
-
-	.field-mono {
-		font-family: 'JetBrains Mono', monospace;
 	}
 
 	.tools-grid {

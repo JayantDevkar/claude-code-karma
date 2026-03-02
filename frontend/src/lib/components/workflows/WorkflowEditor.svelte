@@ -76,8 +76,7 @@
 			prompt_template: '',
 			model: 'sonnet',
 			tools: ['Read', 'Edit'],
-			max_turns: 10,
-			condition: null
+			max_turns: 10
 		};
 
 		const newNode: Node = {

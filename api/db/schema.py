@@ -215,53 +215,7 @@ CREATE TABLE IF NOT EXISTS projects (
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_slug ON projects(slug);
 
--- Workflow definitions
-CREATE TABLE IF NOT EXISTS workflows (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    description TEXT,
-    project_path TEXT,
-    graph JSON NOT NULL,
-    steps JSON NOT NULL,
-    inputs JSON,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX IF NOT EXISTS idx_workflows_project ON workflows(project_path);
-
--- Workflow execution runs
-CREATE TABLE IF NOT EXISTS workflow_runs (
-    id TEXT PRIMARY KEY,
-    workflow_id TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'pending',
-    input_values JSON,
-    started_at TIMESTAMP,
-    completed_at TIMESTAMP,
-    error TEXT,
-    FOREIGN KEY(workflow_id) REFERENCES workflows(id) ON DELETE CASCADE
-);
-
-CREATE INDEX IF NOT EXISTS idx_workflow_runs_workflow ON workflow_runs(workflow_id);
-CREATE INDEX IF NOT EXISTS idx_workflow_runs_status ON workflow_runs(status);
-
--- Individual step execution within a run
-CREATE TABLE IF NOT EXISTS workflow_run_steps (
-    id TEXT PRIMARY KEY,
-    run_id TEXT NOT NULL,
-    step_id TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'pending',
-    session_id TEXT,
-    prompt TEXT,
-    output TEXT,
-    started_at TIMESTAMP,
-    completed_at TIMESTAMP,
-    error TEXT,
-    FOREIGN KEY(run_id) REFERENCES workflow_runs(id) ON DELETE CASCADE
-);
-
-CREATE INDEX IF NOT EXISTS idx_run_steps_run ON workflow_run_steps(run_id);
-CREATE INDEX IF NOT EXISTS idx_run_steps_session ON workflow_run_steps(session_id);
+-- Workflow tables moved to workflow.db (schema version 10)
 """
 
 
@@ -475,50 +429,40 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             conn.execute("UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1")
 
         if current_version < 11:
-            logger.info("Migrating → v11: adding workflow tables")
-            conn.executescript("""
-                CREATE TABLE IF NOT EXISTS workflows (
-                    id TEXT PRIMARY KEY,
-                    name TEXT NOT NULL,
-                    description TEXT,
-                    project_path TEXT,
-                    graph JSON NOT NULL,
-                    steps JSON NOT NULL,
-                    inputs JSON,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                );
-                CREATE INDEX IF NOT EXISTS idx_workflows_project ON workflows(project_path);
+            logger.info("Migrating → v11: dropping workflow tables (moved to workflow.db)")
+            from config import settings
 
-                CREATE TABLE IF NOT EXISTS workflow_runs (
-                    id TEXT PRIMARY KEY,
-                    workflow_id TEXT NOT NULL,
-                    status TEXT NOT NULL DEFAULT 'pending',
-                    input_values JSON,
-                    started_at TIMESTAMP,
-                    completed_at TIMESTAMP,
-                    error TEXT,
-                    FOREIGN KEY(workflow_id) REFERENCES workflows(id) ON DELETE CASCADE
-                );
-                CREATE INDEX IF NOT EXISTS idx_workflow_runs_workflow ON workflow_runs(workflow_id);
-                CREATE INDEX IF NOT EXISTS idx_workflow_runs_status ON workflow_runs(status);
+            # Only drop if workflow.db migration was confirmed successful
+            should_drop = False
+            wf_path = settings.workflow_db_path
+            if wf_path.exists():
+                try:
+                    import sqlite3 as _sqlite3
 
-                CREATE TABLE IF NOT EXISTS workflow_run_steps (
-                    id TEXT PRIMARY KEY,
-                    run_id TEXT NOT NULL,
-                    step_id TEXT NOT NULL,
-                    status TEXT NOT NULL DEFAULT 'pending',
-                    session_id TEXT,
-                    prompt TEXT,
-                    output TEXT,
-                    started_at TIMESTAMP,
-                    completed_at TIMESTAMP,
-                    error TEXT,
-                    FOREIGN KEY(run_id) REFERENCES workflow_runs(id) ON DELETE CASCADE
-                );
-                CREATE INDEX IF NOT EXISTS idx_run_steps_run ON workflow_run_steps(run_id);
-                CREATE INDEX IF NOT EXISTS idx_run_steps_session ON workflow_run_steps(session_id);
-            """)
+                    wf_check = _sqlite3.connect(str(wf_path), timeout=5.0)
+                    migrated = wf_check.execute(
+                        "SELECT 1 FROM wf_migration_log WHERE source = 'metadata_db'"
+                    ).fetchone()
+                    wf_check.close()
+                    should_drop = migrated is not None
+                except Exception:
+                    logger.warning(
+                        "Could not verify workflow.db migration; "
+                        "keeping workflow tables in metadata.db"
+                    )
+
+            if should_drop:
+                conn.executescript("""
+                    DROP TABLE IF EXISTS workflow_run_steps;
+                    DROP TABLE IF EXISTS workflow_runs;
+                    DROP TABLE IF EXISTS workflows;
+                """)
+                logger.info("Dropped workflow tables from metadata.db")
+            else:
+                logger.info(
+                    "Workflow migration not confirmed; "
+                    "keeping workflow tables in metadata.db until next restart"
+                )
 
     # Record version
     conn.execute(

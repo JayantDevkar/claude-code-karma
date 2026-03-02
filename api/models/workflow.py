@@ -17,7 +17,6 @@ class WorkflowStep(BaseModel):
     model: str = "sonnet"
     tools: list[str] = Field(default_factory=lambda: ["Read", "Edit"])
     max_turns: int = 10
-    condition: Optional[str] = None
 
 
 class WorkflowInput(BaseModel):

@@ -82,7 +82,7 @@ def test_evaluate_condition_none():
     assert evaluate_condition(None, {}) is True  # No condition = always run
 
 
-# --- 4d: Cycle detection test ---
+# --- Cycle detection test ---
 
 
 def test_topological_sort_cycle_raises():
@@ -95,7 +95,7 @@ def test_topological_sort_cycle_raises():
         topological_sort(["a", "b"], edges)
 
 
-# --- 4f: evaluate_condition coverage ---
+# --- evaluate_condition coverage ---
 
 
 def test_evaluate_condition_not_equal_true():
@@ -122,7 +122,7 @@ def test_evaluate_condition_falsy_values():
     assert evaluate_condition("{{ steps.check.ready }}", ctx3) is False
 
 
-# --- 4c: run_claude_step test ---
+# --- run_claude_step test ---
 
 
 @pytest.mark.asyncio
@@ -142,20 +142,21 @@ async def test_run_claude_step_success():
         assert result["exit_code"] == 0
 
 
-# --- 4a: execute_workflow tests ---
+# --- execute_workflow tests ---
 
 
 @pytest.fixture
 def engine_db(tmp_path):
-    """Set up a test DB for engine tests."""
-    db_path = tmp_path / "engine_test.db"
-    with patch("db.connection.get_db_path", return_value=db_path):
-        conn = sqlite3.connect(str(db_path))
+    """Set up a test workflow.db for engine tests."""
+    wf_db_path = tmp_path / "workflow.db"
+    with patch("db.workflow_db.get_workflow_db_path", return_value=wf_db_path), \
+         patch("db.workflow_db._wf_writer", None):
+        conn = sqlite3.connect(str(wf_db_path))
         conn.row_factory = sqlite3.Row
-        from db.schema import ensure_schema
-        ensure_schema(conn)
+        from db.workflow_schema import ensure_workflow_schema
+        ensure_workflow_schema(conn)
         conn.close()
-        yield db_path
+        yield wf_db_path
 
 
 @pytest.mark.asyncio
@@ -164,12 +165,22 @@ async def test_execute_workflow_success(engine_db):
     run_id = str(uuid.uuid4())
     workflow_id = str(uuid.uuid4())
 
-    # Create workflow and run records
+    # Create workflow and run records in workflow.db
     wconn = sqlite3.connect(str(db_path), timeout=10.0)
     wconn.row_factory = sqlite3.Row
-    wconn.execute("INSERT INTO workflows (id, name, graph, steps) VALUES (?, ?, '{}', '[]')", (workflow_id, "test"))
-    wconn.execute("INSERT INTO workflow_runs (id, workflow_id, status) VALUES (?, ?, 'pending')", (run_id, workflow_id))
-    wconn.execute("INSERT INTO workflow_run_steps (id, run_id, step_id, status) VALUES (?, ?, 'step_1', 'pending')", (str(uuid.uuid4()), run_id))
+    wconn.execute("PRAGMA foreign_keys=ON")
+    wconn.execute(
+        "INSERT INTO workflows (id, name, node_positions, created_at, updated_at) VALUES (?, ?, '{}', '', '')",
+        (workflow_id, "test"),
+    )
+    wconn.execute(
+        "INSERT INTO workflow_runs (id, workflow_id, status) VALUES (?, ?, 'pending')",
+        (run_id, workflow_id),
+    )
+    wconn.execute(
+        "INSERT INTO workflow_run_steps (id, run_id, step_id, status) VALUES (?, ?, 'step_1', 'pending')",
+        (str(uuid.uuid4()), run_id),
+    )
     wconn.commit()
     wconn.close()
 
@@ -201,10 +212,23 @@ async def test_execute_workflow_step_failure(engine_db):
 
     wconn = sqlite3.connect(str(db_path), timeout=10.0)
     wconn.row_factory = sqlite3.Row
-    wconn.execute("INSERT INTO workflows (id, name, graph, steps) VALUES (?, ?, '{}', '[]')", (workflow_id, "test"))
-    wconn.execute("INSERT INTO workflow_runs (id, workflow_id, status) VALUES (?, ?, 'pending')", (run_id, workflow_id))
-    wconn.execute("INSERT INTO workflow_run_steps (id, run_id, step_id, status) VALUES (?, ?, 'step_1', 'pending')", (str(uuid.uuid4()), run_id))
-    wconn.execute("INSERT INTO workflow_run_steps (id, run_id, step_id, status) VALUES (?, ?, 'step_2', 'pending')", (str(uuid.uuid4()), run_id))
+    wconn.execute("PRAGMA foreign_keys=ON")
+    wconn.execute(
+        "INSERT INTO workflows (id, name, node_positions, created_at, updated_at) VALUES (?, ?, '{}', '', '')",
+        (workflow_id, "test"),
+    )
+    wconn.execute(
+        "INSERT INTO workflow_runs (id, workflow_id, status) VALUES (?, ?, 'pending')",
+        (run_id, workflow_id),
+    )
+    wconn.execute(
+        "INSERT INTO workflow_run_steps (id, run_id, step_id, status) VALUES (?, ?, 'step_1', 'pending')",
+        (str(uuid.uuid4()), run_id),
+    )
+    wconn.execute(
+        "INSERT INTO workflow_run_steps (id, run_id, step_id, status) VALUES (?, ?, 'step_2', 'pending')",
+        (str(uuid.uuid4()), run_id),
+    )
     wconn.commit()
     wconn.close()
 
@@ -227,4 +251,57 @@ async def test_execute_workflow_step_failure(engine_db):
     vconn.row_factory = sqlite3.Row
     run = vconn.execute("SELECT status FROM workflow_runs WHERE id = ?", (run_id,)).fetchone()
     assert run["status"] == "failed"
+    vconn.close()
+
+
+@pytest.mark.asyncio
+async def test_execute_workflow_edge_condition_skip(engine_db):
+    """Steps should be skipped when incoming edge conditions are not met."""
+    db_path = engine_db
+    run_id = str(uuid.uuid4())
+    workflow_id = str(uuid.uuid4())
+
+    wconn = sqlite3.connect(str(db_path), timeout=10.0)
+    wconn.row_factory = sqlite3.Row
+    wconn.execute("PRAGMA foreign_keys=ON")
+    wconn.execute(
+        "INSERT INTO workflows (id, name, node_positions, created_at, updated_at) VALUES (?, ?, '{}', '', '')",
+        (workflow_id, "test"),
+    )
+    wconn.execute(
+        "INSERT INTO workflow_runs (id, workflow_id, status) VALUES (?, ?, 'pending')",
+        (run_id, workflow_id),
+    )
+    wconn.execute(
+        "INSERT INTO workflow_run_steps (id, run_id, step_id, status) VALUES (?, ?, 'step_1', 'pending')",
+        (str(uuid.uuid4()), run_id),
+    )
+    wconn.execute(
+        "INSERT INTO workflow_run_steps (id, run_id, step_id, status) VALUES (?, ?, 'step_2', 'pending')",
+        (str(uuid.uuid4()), run_id),
+    )
+    wconn.commit()
+    wconn.close()
+
+    mock_result = {"result": "done", "session_id": "sess-1", "exit_code": 0}
+
+    with patch("services.workflow_engine.run_claude_step", new_callable=AsyncMock, return_value=mock_result):
+        from services.workflow_engine import execute_workflow
+        await execute_workflow(
+            run_id=run_id,
+            workflow_id=workflow_id,
+            steps=[
+                {"id": "step_1", "prompt_template": "First step", "model": "sonnet", "tools": ["Read"], "max_turns": 5},
+                {"id": "step_2", "prompt_template": "Conditional step", "model": "sonnet", "tools": ["Read"], "max_turns": 5},
+            ],
+            edges=[{"source": "step_1", "target": "step_2", "condition": "{{ steps.step_1.output }} == never_matches"}],
+            input_values={},
+        )
+
+    vconn = sqlite3.connect(str(db_path))
+    vconn.row_factory = sqlite3.Row
+    step2 = vconn.execute("SELECT status FROM workflow_run_steps WHERE run_id = ? AND step_id = 'step_2'", (run_id,)).fetchone()
+    assert step2["status"] == "skipped"
+    run = vconn.execute("SELECT status FROM workflow_runs WHERE id = ?", (run_id,)).fetchone()
+    assert run["status"] == "completed"
     vconn.close()

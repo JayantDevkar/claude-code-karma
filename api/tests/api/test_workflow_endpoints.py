@@ -96,3 +96,55 @@ def test_get_run_not_found(workflow_client, sample_workflow):
     wf_id = create_resp.json()["id"]
     resp = workflow_client.get(f"/workflows/{wf_id}/runs/nonexistent")
     assert resp.status_code == 404
+
+
+def test_create_workflow_with_cycle_rejected(workflow_client):
+    """POST a workflow with cyclic edges should return 422."""
+    payload = {
+        "name": "Cyclic Workflow",
+        "graph": {
+            "nodes": [
+                {"id": "a", "position": {"x": 0, "y": 0}},
+                {"id": "b", "position": {"x": 100, "y": 0}},
+            ],
+            "edges": [
+                {"id": "e1", "source": "a", "target": "b"},
+                {"id": "e2", "source": "b", "target": "a"},
+            ],
+        },
+        "steps": [
+            {"id": "a", "prompt_template": "Step A"},
+            {"id": "b", "prompt_template": "Step B"},
+        ],
+        "inputs": [],
+    }
+    resp = workflow_client.post("/workflows", json=payload)
+    assert resp.status_code == 422
+
+
+def test_create_workflow_with_edge_condition(workflow_client):
+    """Edges can carry conditions."""
+    payload = {
+        "name": "Conditional Workflow",
+        "graph": {
+            "nodes": [
+                {"id": "s1", "position": {"x": 0, "y": 0}},
+                {"id": "s2", "position": {"x": 100, "y": 0}},
+            ],
+            "edges": [
+                {"id": "e1", "source": "s1", "target": "s2", "condition": "{{ steps.s1.output }} == yes"},
+            ],
+        },
+        "steps": [
+            {"id": "s1", "prompt_template": "Check something"},
+            {"id": "s2", "prompt_template": "Conditional step"},
+        ],
+        "inputs": [],
+    }
+    resp = workflow_client.post("/workflows", json=payload)
+    assert resp.status_code == 201
+    data = resp.json()
+    # Verify edge condition is stored and returned
+    edges = data["graph"]["edges"]
+    assert len(edges) == 1
+    assert edges[0]["condition"] == "{{ steps.s1.output }} == yes"

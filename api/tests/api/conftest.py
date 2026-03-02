@@ -46,18 +46,29 @@ def mock_claude_base(tmp_path, monkeypatch):
 
 @pytest.fixture
 def workflow_client(tmp_path):
-    """Test client with workflow schema initialized."""
+    """Test client with workflow schema initialized in a temp workflow.db."""
     from fastapi.testclient import TestClient
 
-    db_path = tmp_path / "test.db"
+    wf_db_path = tmp_path / "workflow.db"
+    meta_db_path = tmp_path / "metadata.db"
 
-    with patch("db.connection.get_db_path", return_value=db_path), \
+    with patch("db.workflow_db.get_workflow_db_path", return_value=wf_db_path), \
+         patch("db.workflow_db._wf_writer", None), \
+         patch("db.connection.get_db_path", return_value=meta_db_path), \
          patch("config.settings.use_sqlite", True):
-        conn = sqlite3.connect(str(db_path))
+        # Initialize workflow DB schema
+        conn = sqlite3.connect(str(wf_db_path))
         conn.row_factory = sqlite3.Row
-        from db.schema import ensure_schema
-        ensure_schema(conn)
+        from db.workflow_schema import ensure_workflow_schema
+        ensure_workflow_schema(conn)
         conn.close()
+
+        # Initialize metadata DB schema (needed for app startup)
+        meta_conn = sqlite3.connect(str(meta_db_path))
+        meta_conn.row_factory = sqlite3.Row
+        from db.schema import ensure_schema
+        ensure_schema(meta_conn)
+        meta_conn.close()
 
         from main import app
         yield TestClient(app)
@@ -75,7 +86,7 @@ def sample_workflow():
                 {"id": "step_1", "type": "step", "position": {"x": 0, "y": 0}, "data": {"label": "Step 1"}},
                 {"id": "step_2", "type": "step", "position": {"x": 200, "y": 0}, "data": {"label": "Step 2"}},
             ],
-            "edges": [{"source": "step_1", "target": "step_2"}],
+            "edges": [{"id": "e1", "source": "step_1", "target": "step_2"}],
         },
         "steps": [
             {"id": "step_1", "prompt_template": "Do task 1", "model": "sonnet", "tools": ["Read"], "max_turns": 5},

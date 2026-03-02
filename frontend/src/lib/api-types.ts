@@ -1673,7 +1673,13 @@ export interface WorkflowStep {
 	model: string;
 	tools: string[];
 	max_turns: number;
-	condition: string | null;
+}
+
+export interface WorkflowEdge {
+	id: string;
+	source: string;
+	target: string;
+	condition?: string | null;
 }
 
 export interface WorkflowInput {
@@ -1689,7 +1695,7 @@ export interface Workflow {
 	name: string;
 	description: string | null;
 	project_path: string | null;
-	graph: { nodes: any[]; edges: any[] };
+	graph: { nodes: any[]; edges: WorkflowEdge[] };
 	steps: WorkflowStep[];
 	inputs: WorkflowInput[];
 	created_at: string | null;
