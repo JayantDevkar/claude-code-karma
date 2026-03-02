@@ -952,6 +952,14 @@ def get_session(uuid: str, request: Request, fresh: bool = False):
     session = result.session
     project_encoded_name = result.project_encoded_name
 
+    # Compute display name from session's working directory
+    project_display_name = None
+    working_dirs = list(session.get_working_directories())
+    if working_dirs:
+        from pathlib import Path
+
+        project_display_name = Path(working_dirs[0]).name
+
     # Clear session cache for fresh requests (live session polling)
     # This ensures message_count, duration, tokens, etc. are recomputed
     if fresh:
@@ -1026,6 +1034,7 @@ def get_session(uuid: str, request: Request, fresh: bool = False):
         uuid=session.uuid,
         slug=session.slug,
         project_encoded_name=project_encoded_name,
+        project_display_name=project_display_name,
         message_count=session.message_count,
         start_time=session.start_time,
         end_time=session.end_time,

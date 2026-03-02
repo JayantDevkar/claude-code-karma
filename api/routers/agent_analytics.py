@@ -296,11 +296,14 @@ def _get_agent_history_sqlite(
 
         invocations = []
         for row in data["invocations"]:
+            project_path = row.get("project_path") or ""
+            project_display_name = project_path.rstrip("/").split("/")[-1] if project_path else None
             invocations.append(
                 AgentInvocation(
                     agent_id=row["agent_id"],
                     session_uuid=row["session_uuid"],
                     project_encoded_name=row["project_encoded_name"],
+                    project_display_name=project_display_name,
                     invoked_at=_parse_iso(row["started_at"]),
                     duration_seconds=row["duration_seconds"],
                     input_tokens=row["input_tokens"],

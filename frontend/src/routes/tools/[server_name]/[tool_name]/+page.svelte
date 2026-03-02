@@ -227,7 +227,7 @@
 			session_titles: s.session_titles,
 			project_encoded_name: s.project_encoded_name ?? undefined,
 			project_path: s.project_encoded_name ?? '',
-			project_name: getProjectNameFromEncoded(s.project_encoded_name ?? '')
+			project_name: s.project_display_name || getProjectNameFromEncoded(s.project_encoded_name ?? '')
 		};
 	}
 

@@ -49,7 +49,7 @@
 
 	// Parse project name from encoded name to preserve hyphens (e.g., "claude-karma" not "karma")
 	const displayProjectName = $derived(
-		getProjectNameFromEncoded(session.project_encoded_name ?? '') || session.project_name
+		session.project_display_name || session.project_name || getProjectNameFromEncoded(session.project_encoded_name ?? '')
 	);
 
 	// Local formatDuration that returns null instead of '--' for card display

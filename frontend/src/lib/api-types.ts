@@ -514,6 +514,7 @@ export interface ArchivedSession {
 export interface ArchivedProject {
 	project_path: string;
 	project_name: string;
+	display_name?: string;
 	encoded_name: string;
 	session_count: number;
 	prompt_count: number;
@@ -824,6 +825,7 @@ export interface AgentInvocation {
 	session_uuid: string;
 	session_slug: string | null;
 	project_encoded_name: string;
+	project_display_name?: string;
 	invoked_at: string | null;
 	duration_seconds: number | null;
 	input_tokens: number;
@@ -1432,6 +1434,7 @@ export interface McpSessionSummary {
 	uuid: string;
 	slug: string | null;
 	project_encoded_name: string | null;
+	project_display_name?: string;
 	message_count: number;
 	start_time: string | null;
 	end_time: string | null;

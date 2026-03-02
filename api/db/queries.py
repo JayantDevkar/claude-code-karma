@@ -1737,6 +1737,7 @@ def query_agent_history(
             si.agent_id,
             si.session_uuid,
             s.project_encoded_name,
+            s.project_path,
             si.started_at,
             si.duration_seconds,
             si.input_tokens,

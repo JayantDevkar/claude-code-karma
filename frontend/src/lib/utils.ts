@@ -395,29 +395,17 @@ export function getSessionDisplayPrompt(
  * Uses pattern matching to preserve hyphens in the actual project folder name.
  */
 export function getProjectNameFromEncoded(encodedName: string): string {
-	// Common path prefixes to strip (order matters - more specific first)
-	const patterns = [
-		/^-Users-[^-]+-Documents-GitHub-/,
-		/^-Users-[^-]+-Documents-/,
-		/^-Users-[^-]+-Desktop-/,
-		/^-Users-[^-]+-Projects-/,
-		/^-Users-[^-]+-Code-/,
-		/^-Users-[^-]+-/,
-		/^-home-[^-]+-Documents-/,
-		/^-home-[^-]+-Projects-/,
-		/^-home-[^-]+-/
-	];
+	// Strip the platform prefix: -Users-{username}- or -home-{username}-
+	// Returns everything after the user's home directory
+	// This is a last-resort fallback — prefer API-provided display_name
+	const macosMatch = encodedName.match(/^-Users-[^-]+-(.+)$/);
+	if (macosMatch) return macosMatch[1];
 
-	for (const pattern of patterns) {
-		const match = encodedName.match(pattern);
-		if (match) {
-			// Return the remainder after the prefix (preserves hyphens in project name)
-			return encodedName.slice(match[0].length) || encodedName;
-		}
-	}
+	const linuxMatch = encodedName.match(/^-home-[^-]+-(.+)$/);
+	if (linuxMatch) return linuxMatch[1];
 
-	// Fallback: take last segment (old behavior, may split hyphenated names)
-	return encodedName.replace(/^-/, '').split('-').pop() || encodedName;
+	// Fallback: return as-is (strip leading dash if present)
+	return encodedName.replace(/^-/, '') || encodedName;
 }
 
 /**
