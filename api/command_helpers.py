@@ -148,6 +148,18 @@ def expand_plugin_short_name(name: str) -> str:
     return name
 
 
+def is_plugin_skill(name: str) -> bool:
+    """Check if a skill name refers to a plugin skill (full or short form).
+
+    Returns True for:
+      - Full form: 'oh-my-claudecode:cancel' (contains ':')
+      - Short form: 'frontend-design' (matches a plugin directory)
+    """
+    if ":" in name:
+        return True
+    return _is_plugin_skill(name)
+
+
 def classify_invocation(name: str) -> str:
     """Classify a command/skill invocation name.
 

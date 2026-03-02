@@ -17,8 +17,18 @@ from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from command_helpers import is_plugin_skill
 from schemas import SessionSummary
 from services.desktop_sessions import get_session_source
+
+
+def _skill_plugin_name(skill_name: str) -> str | None:
+    """Extract plugin name from a skill name (full or short form)."""
+    if ":" in skill_name:
+        return skill_name.split(":")[0]
+    if is_plugin_skill(skill_name):
+        return skill_name  # Short-form: plugin name IS the skill name
+    return None
 
 
 def _enrich_chain_titles_by_slug(summaries: list[SessionSummary]) -> None:
@@ -1065,8 +1075,8 @@ def get_session(uuid: str, request: Request, fresh: bool = False):
             SkillUsage(
                 name=skill_name,
                 count=count,
-                is_plugin=":" in skill_name,
-                plugin=skill_name.split(":")[0] if ":" in skill_name else None,
+                is_plugin=is_plugin_skill(skill_name),
+                plugin=_skill_plugin_name(skill_name),
                 invocation_source=inv_source,
             )
             for (skill_name, inv_source), count in skills_used.items()
@@ -1076,8 +1086,8 @@ def get_session(uuid: str, request: Request, fresh: bool = False):
             SkillUsage(
                 name=skill_name,
                 count=count,
-                is_plugin=":" in skill_name,
-                plugin=skill_name.split(":")[0] if ":" in skill_name else None,
+                is_plugin=is_plugin_skill(skill_name),
+                plugin=_skill_plugin_name(skill_name),
                 invocation_source=inv_source,
             )
             for (skill_name, inv_source), count in skills_mentioned.items()

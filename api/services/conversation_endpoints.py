@@ -16,6 +16,7 @@ from command_helpers import (
     classify_invocation,
     detect_slash_commands_in_text,
     expand_plugin_short_name,
+    is_plugin_skill,
     parse_command_from_content,
     strip_command_tags,
 )
@@ -95,9 +96,11 @@ def build_conversation_timeline(
             prompt_metadata: dict = {"full_content": content}
             if cmd_name:
                 prompt_metadata["command_name"] = cmd_name
-                prompt_metadata["is_plugin"] = ":" in cmd_name
+                prompt_metadata["is_plugin"] = is_plugin_skill(cmd_name)
                 if ":" in cmd_name:
                     prompt_metadata["plugin"] = cmd_name.split(":")[0]
+                elif is_plugin_skill(cmd_name):
+                    prompt_metadata["plugin"] = cmd_name
             # Track user intent: skills mentioned in the prompt text (not explicit invocations).
             # These may or may not result in actual Skill tool calls by Claude.
             if referenced_skills:
@@ -166,9 +169,11 @@ def build_conversation_timeline(
                             event_type = "command_invocation"
                             title = f"Command: /{skill_name}"
                         metadata["command_name"] = skill_name
-                        metadata["is_plugin"] = ":" in skill_name
+                        metadata["is_plugin"] = is_plugin_skill(skill_name)
                         if ":" in skill_name:
                             metadata["plugin"] = skill_name.split(":")[0]
+                        elif is_plugin_skill(skill_name):
+                            metadata["plugin"] = skill_name
                         summary = f"Invoked /{skill_name}"
                     else:
                         event_type = "tool_call"

@@ -18,6 +18,7 @@ from urllib.parse import unquote
 
 from fastapi import APIRouter, HTTPException, Query, Request
 
+from command_helpers import is_plugin_skill
 from http_caching import cacheable
 from models import (
     PluginInstallation,
@@ -417,10 +418,15 @@ def _collect_plugin_usage_sync(period: str = "all") -> dict[str, dict]:
                 # Track skill invocations (keys are (name, source) tuples)
                 skills_used = session.get_skills_used()
                 for (skill_name, _inv_source), count in skills_used.items():
-                    if ":" in skill_name:
-                        plugin_name = skill_name.split(":")[0]
+                    if is_plugin_skill(skill_name):
+                        if ":" in skill_name:
+                            plugin_name = skill_name.split(":")[0]
+                            skill_short = skill_name.split(":", 1)[1]
+                        else:
+                            # Short-form: plugin name is the skill name
+                            plugin_name = skill_name
+                            skill_short = skill_name
                         plugins_in_session.add(plugin_name)
-                        skill_short = skill_name.split(":", 1)[1]
                         plugin_stats[plugin_name]["skill_invocations"] += count
                         plugin_stats[plugin_name]["by_skill"][skill_short] += count
                         plugin_stats[plugin_name]["by_skill_daily"][skill_short][date_key] += count

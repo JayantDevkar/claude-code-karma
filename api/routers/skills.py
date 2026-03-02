@@ -23,6 +23,7 @@ models_path = api_path.parent.parent
 sys.path.insert(0, str(api_path))
 sys.path.insert(0, str(models_path))
 
+from command_helpers import is_plugin_skill
 from config import Settings, settings
 from http_caching import cacheable
 from models import Project
@@ -409,8 +410,8 @@ def get_skill_usage(
                 results = []
                 for row in rows:
                     skill_name = row["skill_name"]
-                    is_plugin = ":" in skill_name
-                    plugin_name = skill_name.split(":")[0] if is_plugin else None
+                    is_plugin = is_plugin_skill(skill_name)
+                    plugin_name = skill_name.split(":")[0] if ":" in skill_name else (skill_name if is_plugin else None)
                     results.append(
                         {
                             "name": skill_name,
@@ -465,8 +466,8 @@ def get_skill_usage(
     results = []
     for skill_name, count in skills_counter.most_common(limit):
         # Determine if this is a plugin skill
-        is_plugin = ":" in skill_name
-        plugin_name = skill_name.split(":")[0] if is_plugin else None
+        is_plugin = is_plugin_skill(skill_name)
+        plugin_name = skill_name.split(":")[0] if ":" in skill_name else (skill_name if is_plugin else None)
 
         results.append(
             {
@@ -622,7 +623,7 @@ async def get_skill_detail(
         name=skill_info.name if skill_info else skill_name,
         description=skill_info.description if skill_info else None,
         content=skill_info.content if skill_info else None,
-        is_plugin=skill_info.is_plugin if skill_info else (":" in skill_name),
+        is_plugin=skill_info.is_plugin if skill_info else is_plugin_skill(skill_name),
         plugin=skill_info.plugin if skill_info else None,
         file_path=skill_info.file_path if skill_info else None,
         calls=usage_data["total_calls"] if usage_data else 0,
@@ -803,8 +804,14 @@ async def _resolve_skill_info(skill_name: str, config: Settings) -> SkillInfo:
     import yaml
 
     # Determine if this is a plugin skill
-    is_plugin = ":" in skill_name
-    plugin_full_name = skill_name.split(":")[0] if is_plugin else None
+    is_plugin = is_plugin_skill(skill_name)
+    if ":" in skill_name:
+        plugin_full_name = skill_name.split(":")[0]
+    elif is_plugin:
+        # Short-form: plugin name is the skill name itself
+        plugin_full_name = skill_name
+    else:
+        plugin_full_name = None
     # Extract short name (before @) for directory matching
     # e.g., "oh-my-claudecode@omc" -> "oh-my-claudecode"
     plugin_short_name = (
