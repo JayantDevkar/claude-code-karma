@@ -98,7 +98,7 @@
 	let scopeSelection = $state<SearchScopeSelection>({ ...DEFAULT_SCOPE_SELECTION });
 	let showFiltersDropdown = $state(false);
 	let isMobile = $state(false);
-	let sourceFilter = $state<'all' | 'manual' | 'auto'>('all');
+	let sourceFilter = $state<'all' | 'manual' | 'auto' | 'mentioned'>('all');
 	let searchTokens = $state<string[]>([]);
 	let selectedProjectFilters = $state<Set<string>>(new Set());
 
@@ -134,12 +134,12 @@
 						color: 'green'
 					},
 					{
-						title: 'Subagent %',
+						title: 'Manual Invoke Rate',
 						value:
-							detail.calls > 0
-								? Math.round((detail.subagent_calls / detail.calls) * 100) + '%'
-								: '0%',
-						icon: Bot,
+							manualCalls + mentionedCalls > 0
+								? Math.round((manualCalls / (manualCalls + mentionedCalls)) * 100) + '%'
+								: '—',
+						icon: Zap,
 						color: 'purple'
 					},
 					{
@@ -229,7 +229,7 @@
 	// Restore filters from URL params
 	function restoreFiltersFromUrl(params: URLSearchParams) {
 		const sourceParam = params.get('source');
-		if (sourceParam === 'manual' || sourceParam === 'auto') {
+		if (sourceParam === 'manual' || sourceParam === 'auto' || sourceParam === 'mentioned') {
 			sourceFilter = sourceParam;
 		} else {
 			sourceFilter = 'all';
@@ -346,14 +346,18 @@
 			filters.customEnd
 		) as SessionWithContext[];
 
-		// Filter by invocation source (manual/auto)
+		// Filter by invocation source
 		if (sourceFilter !== 'all') {
 			result = result.filter((s) => {
 				const sources = invocationSourceMap.get(s.uuid) ?? [];
 				if (sourceFilter === 'manual') {
 					return sources.includes('slash_command');
 				}
-				return sources.includes('skill_tool');
+				if (sourceFilter === 'auto') {
+					return sources.includes('skill_tool');
+				}
+				// mentioned: text_detection only (no slash_command or skill_tool)
+				return sources.includes('text_detection') && !sources.includes('slash_command') && !sources.includes('skill_tool');
 			});
 		}
 
@@ -582,42 +586,42 @@
 					<div class="flex items-center gap-4 px-1">
 						<span class="text-[10px] uppercase tracking-wider font-semibold text-[var(--text-muted)] shrink-0">Invocations</span>
 						<div class="flex-1 flex items-center gap-3">
-							<div class="flex h-2 rounded-full overflow-hidden bg-[var(--bg-muted)] flex-1 max-w-xs">
+							<div class="flex h-2.5 rounded-full overflow-hidden bg-[var(--bg-muted)] flex-1 max-w-xs">
 								{#if manualPercent > 0}
 									<div
-										class="bg-[var(--nav-blue)] transition-all duration-300"
+										class="bg-blue-500 transition-all duration-300"
 										style="width: {manualPercent}%"
 										title="Manual: {manualCalls}"
 									></div>
 								{/if}
 								{#if autoPercent > 0}
 									<div
-										class="bg-[var(--nav-purple)] transition-all duration-300"
+										class="bg-purple-500 transition-all duration-300"
 										style="width: {autoPercent}%"
 										title="Auto: {autoCalls}"
 									></div>
 								{/if}
 								{#if mentionedPercent > 0}
 									<div
-										class="bg-[var(--text-muted)] opacity-40 transition-all duration-300"
+										class="bg-amber-500/50 transition-all duration-300"
 										style="width: {mentionedPercent}%"
 										title="Mentioned (not invoked): {mentionedCalls}"
 									></div>
 								{/if}
 							</div>
-							<div class="flex items-center gap-3 text-[10px] text-[var(--text-muted)]">
+							<div class="flex items-center gap-3 text-[10px] text-[var(--text-secondary)]">
 								<span class="flex items-center gap-1">
-									<span class="w-2 h-2 rounded-full bg-[var(--nav-blue)]"></span>
+									<span class="w-2 h-2 rounded-full bg-blue-500"></span>
 									Manual: {manualCalls}
 								</span>
 								<span class="flex items-center gap-1">
-									<span class="w-2 h-2 rounded-full bg-[var(--nav-purple)]"></span>
+									<span class="w-2 h-2 rounded-full bg-purple-500"></span>
 									Auto: {autoCalls}
 								</span>
 								{#if mentionedCalls > 0}
 									<span class="flex items-center gap-1">
-										<span class="w-2 h-2 rounded-full bg-[var(--text-muted)] opacity-40"></span>
-										Mentioned: {mentionedCalls}
+										<span class="w-2 h-2 rounded-full bg-amber-500/50"></span>
+										Mentioned <span class="opacity-60">(Not invoked)</span>: {mentionedCalls}
 									</span>
 								{/if}
 							</div>
@@ -694,7 +698,7 @@
 					<div class="flex items-center gap-2 text-sm text-[var(--text-muted)]">
 						<Layers size={16} style="color: {pluginColors.color};" />
 						<span class="font-medium text-[var(--text-primary)]">{totalCount}</span>
-						<span>{totalCount === 1 ? 'session' : 'sessions'} using this skill</span>
+						<span>{totalCount === 1 ? 'session' : 'sessions'}</span>
 					</div>
 					<div class="flex items-center gap-3">
 						<span class="text-xs text-[var(--text-muted)] font-mono tabular-nums">
@@ -736,20 +740,11 @@
 					</div>
 				</div>
 
-				<!-- Invocation Source Pills -->
+				<!-- Invocation Source Pills (toggle: click to select, click again to deselect) -->
 				{#if hasInvocationBreakdown}
 					<div class="flex items-center gap-1.5" role="group" aria-label="Filter by invocation type">
 						<button
-							onclick={() => (sourceFilter = 'all')}
-							class="px-3 py-1 text-xs font-medium rounded-full transition-all {sourceFilter === 'all'
-								? 'bg-[var(--accent-subtle)] text-[var(--accent)] border border-[var(--accent)]'
-								: 'bg-[var(--bg-subtle)] text-[var(--text-muted)] border border-transparent hover:border-[var(--border)] hover:text-[var(--text-secondary)]'}"
-							aria-pressed={sourceFilter === 'all'}
-						>
-							All
-						</button>
-						<button
-							onclick={() => (sourceFilter = 'manual')}
+							onclick={() => (sourceFilter = sourceFilter === 'manual' ? 'all' : 'manual')}
 							class="px-3 py-1 text-xs font-medium rounded-full transition-all {sourceFilter === 'manual'
 								? 'bg-blue-500/15 text-blue-400 border border-blue-500/30'
 								: 'bg-[var(--bg-subtle)] text-[var(--text-muted)] border border-transparent hover:border-[var(--border)] hover:text-[var(--text-secondary)]'}"
@@ -758,7 +753,7 @@
 							Manual <span class="ml-0.5 opacity-70">{manualCalls}</span>
 						</button>
 						<button
-							onclick={() => (sourceFilter = 'auto')}
+							onclick={() => (sourceFilter = sourceFilter === 'auto' ? 'all' : 'auto')}
 							class="px-3 py-1 text-xs font-medium rounded-full transition-all {sourceFilter === 'auto'
 								? 'bg-purple-500/15 text-purple-400 border border-purple-500/30'
 								: 'bg-[var(--bg-subtle)] text-[var(--text-muted)] border border-transparent hover:border-[var(--border)] hover:text-[var(--text-secondary)]'}"
@@ -766,6 +761,17 @@
 						>
 							Auto <span class="ml-0.5 opacity-70">{autoCalls}</span>
 						</button>
+						{#if mentionedCalls > 0}
+							<button
+								onclick={() => (sourceFilter = sourceFilter === 'mentioned' ? 'all' : 'mentioned')}
+								class="px-3 py-1 text-xs font-medium rounded-full transition-all {sourceFilter === 'mentioned'
+									? 'bg-[var(--text-muted)]/15 text-[var(--text-secondary)] border border-[var(--text-muted)]/30'
+									: 'bg-[var(--bg-subtle)] text-[var(--text-muted)] border border-transparent hover:border-[var(--border)] hover:text-[var(--text-secondary)]'}"
+								aria-pressed={sourceFilter === 'mentioned'}
+							>
+								Mentioned <span class="text-[10px] opacity-60">(Not invoked)</span> <span class="ml-0.5 opacity-70">{mentionedCalls}</span>
+							</button>
+						{/if}
 					</div>
 				{/if}
 

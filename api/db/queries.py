@@ -601,11 +601,11 @@ def query_skill_detail(
 
     cte_sql = """
     WITH target_sessions AS (
-        -- Main session usage (exclude mention-only)
+        -- Main session usage (includes mentions for filtering)
         SELECT sk.session_uuid, 1 as has_main, 0 as has_sub, NULL as agent_id
         FROM session_skills sk
         JOIN sessions s ON sk.session_uuid = s.uuid
-        WHERE sk.skill_name = :skill AND sk.invocation_source != 'text_detection'
+        WHERE sk.skill_name = :skill
 
         UNION ALL
 
