@@ -52,6 +52,38 @@ if TYPE_CHECKING:
     pass
 
 
+def _link_command_to_skill(commands: set[tuple], skills: Counter) -> None:
+    """Upgrade skills to manual when triggered by a same-plugin command.
+
+    When session has:
+    - A command from plugin X (e.g., superpowers:brainstorm) in user_prompt_commands
+    - A skill_tool call for a skill from plugin X (e.g., superpowers:brainstorming)
+    → Upgrade the skill from skill_tool to slash_command.
+
+    Heuristic: same plugin prefix = linked.
+    """
+    # Collect plugin prefixes from commands
+    command_plugins: set[str] = set()
+    for name, _source in commands:
+        if ":" in name:
+            command_plugins.add(name.split(":")[0])
+
+    if not command_plugins:
+        return
+
+    # Find skill_tool entries whose plugin prefix matches a command
+    for key in list(skills.keys()):
+        name, source = key
+        if source != "skill_tool" or ":" not in name:
+            continue
+        plugin = name.split(":")[0]
+        if plugin in command_plugins:
+            # Upgrade to slash_command
+            count = skills.pop(key)
+            sc_key = (name, "slash_command")
+            skills[sc_key] = skills.get(sc_key, 0) + count
+
+
 def _dedup_invocation_sources(counter: Counter) -> None:
     """Deduplicate invocation sources for the same skill/command.
 
@@ -447,6 +479,10 @@ class Session(BaseModel):
         for key in user_prompt_commands:
             if key not in commands:
                 commands[key] += 1
+
+        # Command→Skill linkage: when a command from plugin X triggered a skill
+        # from plugin X, upgrade the skill to slash_command (manual).
+        _link_command_to_skill(user_prompt_commands, skills)
 
         _dedup_invocation_sources(skills)
         _dedup_invocation_sources(commands)

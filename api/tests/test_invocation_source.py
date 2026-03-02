@@ -7,14 +7,17 @@ import pytest
 
 from command_helpers import (
     _build_entry_to_plugin_map,
+    _build_entry_type_map,
     _entry_map_cache,
+    _entry_type_cache,
     _expand_name_cache,
     _is_plugin_skill,
     _plugin_skill_cache,
     aggregate_by_name,
+    classify_invocation,
     expand_plugin_short_name,
 )
-from models.session import _dedup_invocation_sources
+from models.session import _dedup_invocation_sources, _link_command_to_skill
 
 
 class TestDedupInvocationSources:
@@ -189,6 +192,7 @@ def _clear_caches():
     _plugin_skill_cache.clear()
     _expand_name_cache.clear()
     _entry_map_cache.clear()
+    _entry_type_cache.clear()
 
 
 def _make_plugin(base: Path, plugin_name: str, entries: list[str], *, kind: str = "skills"):
@@ -320,3 +324,105 @@ class TestBuildEntryToPluginMap:
     def test_empty_plugins_dir(self, mock_claude_base):
         result = _build_entry_to_plugin_map()
         assert result == {}
+
+
+class TestBuildEntryTypeMap:
+    """Tests for _build_entry_type_map() which maps plugin:entry → type."""
+
+    def test_command_entries_mapped(self, mock_claude_base):
+        _make_plugin(mock_claude_base, "superpowers", ["brainstorm"], kind="commands")
+        result = _build_entry_type_map()
+        assert result["superpowers:brainstorm"] == "command"
+
+    def test_skill_entries_mapped(self, mock_claude_base):
+        _make_plugin(mock_claude_base, "superpowers", ["brainstorming"], kind="skills")
+        result = _build_entry_type_map()
+        assert result["superpowers:brainstorming"] == "skill"
+
+    def test_mixed_entries(self, mock_claude_base):
+        """Plugin with commands + skills all mapped correctly."""
+        _make_plugin(mock_claude_base, "superpowers", ["brainstorm"], kind="commands")
+        _make_plugin(mock_claude_base, "superpowers", ["brainstorming"], kind="skills")
+        result = _build_entry_type_map()
+        assert result["superpowers:brainstorm"] == "command"
+        assert result["superpowers:brainstorming"] == "skill"
+
+    def test_agent_entries_mapped(self, mock_claude_base):
+        _make_plugin(mock_claude_base, "my-plugin", ["code-reviewer"], kind="agents")
+        result = _build_entry_type_map()
+        assert result["my-plugin:code-reviewer"] == "agent"
+
+    def test_empty_plugins_dir(self, mock_claude_base):
+        result = _build_entry_type_map()
+        assert result == {}
+
+
+class TestClassifyInvocation:
+    """Tests for classify_invocation() with entry type awareness."""
+
+    def test_plugin_command_classified_as_command(self, mock_claude_base):
+        """superpowers:brainstorm (in commands/) → 'command'."""
+        _make_plugin(mock_claude_base, "superpowers", ["brainstorm"], kind="commands")
+        assert classify_invocation("superpowers:brainstorm") == "command"
+
+    def test_plugin_skill_classified_as_skill(self, mock_claude_base):
+        """superpowers:brainstorming (in skills/) → 'skill'."""
+        _make_plugin(mock_claude_base, "superpowers", ["brainstorming"], kind="skills")
+        assert classify_invocation("superpowers:brainstorming") == "skill"
+
+    def test_unknown_plugin_entry_defaults_to_skill(self, mock_claude_base):
+        """Backward compat: unknown plugin:entry defaults to 'skill'."""
+        assert classify_invocation("unknown-plugin:unknown-entry") == "skill"
+
+    def test_builtin_still_builtin(self, mock_claude_base):
+        """/exit → 'builtin' regardless of entry type map."""
+        assert classify_invocation("exit") == "builtin"
+
+    def test_custom_skill_still_skill(self, mock_claude_base):
+        """Custom skills (no ':') still classified as 'skill' when SKILL.md exists."""
+        skills_dir = mock_claude_base / "skills" / "my-custom-skill"
+        skills_dir.mkdir(parents=True)
+        (skills_dir / "SKILL.md").write_text("# My Skill")
+        assert classify_invocation("my-custom-skill") == "skill"
+
+
+class TestCommandToSkillLinkage:
+    """Tests for _link_command_to_skill() which upgrades skills triggered by commands."""
+
+    def test_same_plugin_command_upgrades_skill(self):
+        """brainstorm command + brainstorming skill_tool → slash_command."""
+        commands = {("superpowers:brainstorm", "slash_command")}
+        skills: Counter[tuple] = Counter({("superpowers:brainstorming", "skill_tool"): 1})
+        _link_command_to_skill(commands, skills)
+        assert ("superpowers:brainstorming", "skill_tool") not in skills
+        assert skills[("superpowers:brainstorming", "slash_command")] == 1
+
+    def test_different_plugin_no_upgrade(self):
+        """Command from plugin A doesn't affect skill from plugin B."""
+        commands = {("plugin-a:cmd", "slash_command")}
+        skills: Counter[tuple] = Counter({("plugin-b:skill", "skill_tool"): 1})
+        _link_command_to_skill(commands, skills)
+        assert skills[("plugin-b:skill", "skill_tool")] == 1
+        assert ("plugin-b:skill", "slash_command") not in skills
+
+    def test_no_commands_no_change(self):
+        """No commands → skills unchanged."""
+        commands: set[tuple] = set()
+        skills: Counter[tuple] = Counter({("superpowers:brainstorming", "skill_tool"): 2})
+        _link_command_to_skill(commands, skills)
+        assert skills[("superpowers:brainstorming", "skill_tool")] == 2
+
+    def test_command_without_matching_skill_no_change(self):
+        """Command present but no matching skill_tool → no change."""
+        commands = {("superpowers:brainstorm", "slash_command")}
+        skills: Counter[tuple] = Counter({("other-plugin:something", "skill_tool"): 1})
+        _link_command_to_skill(commands, skills)
+        assert skills[("other-plugin:something", "skill_tool")] == 1
+
+    def test_command_without_colon_ignored(self):
+        """Commands without ':' (non-plugin) don't trigger linkage."""
+        commands = {("commit", "slash_command")}
+        skills: Counter[tuple] = Counter({("commit-commands:commit", "skill_tool"): 1})
+        _link_command_to_skill(commands, skills)
+        # "commit" has no ':', so no plugin prefix extracted
+        assert skills[("commit-commands:commit", "skill_tool")] == 1

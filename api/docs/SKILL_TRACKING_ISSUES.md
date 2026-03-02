@@ -137,31 +137,24 @@ The `":"` check assumes all `plugin:entry` names are skills, but they can also b
 | oh-my-claudecode | `omc-setup` | (setup flow) |
 | oh-my-claudecode | `ralplan` | (planning flow) |
 
-### Proposed Fix (Not Yet Implemented)
+### Fixes Applied
 
-**Step 1: Entry type awareness**
+**Step 1: Entry type awareness** (`command_helpers.py`)
 
-Add a `_build_entry_type_map()` function that maps `plugin:entry` → `"command"|"skill"|"agent"` by checking which directory the entry lives in.
+Added `_build_entry_type_map()` which scans plugin directories to map `plugin:entry` → `"command"|"skill"|"agent"` based on which subdirectory (`commands/`, `skills/`, `agents/`) the entry lives in. Uses `TTLCache(maxsize=1, ttl=60)` for caching.
 
-```python
-def _build_entry_type_map() -> dict[str, str]:
-    """Map 'plugin:entry' → 'command'|'skill'|'agent'."""
-    # Check commands/, skills/, agents/ directories
-```
+Refactored `_collect_plugin_entries()` to return `dict[str, str]` (entry_name → kind) instead of `list[str]`.
 
-**Step 2: Fix `classify_invocation()`**
+**Step 2: Fixed `classify_invocation()`** (`command_helpers.py`)
 
-Use the entry type map to properly classify:
+The `":" in name` branch now consults `_build_entry_type_map()`:
 - `superpowers:brainstorm` → `"command"` (it's in `commands/`)
 - `superpowers:brainstorming` → `"skill"` (it's in `skills/`)
+- Unknown `plugin:entry` → `"skill"` (backward compat)
 
-**Step 3: Command→Skill linkage**
+**Step 3: Command→Skill linkage** (`session.py`)
 
-When a session has:
-- A command from plugin X (e.g., `superpowers:brainstorm`) in `user_prompt_commands`
-- A skill_tool call for a skill from plugin X (e.g., `superpowers:brainstorming`)
-
-→ Upgrade the skill to `slash_command` (manual), because the user's command triggered the skill.
+Added `_link_command_to_skill()` which upgrades `skill_tool` entries to `slash_command` when a same-plugin command exists in `user_prompt_commands`. Called before `_dedup_invocation_sources()`.
 
 Heuristic: same plugin prefix = linked. This covers the common pattern where commands exist specifically to trigger skills.
 

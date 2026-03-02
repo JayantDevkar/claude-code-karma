@@ -481,6 +481,8 @@ def get_skill_usage(
                 "count": count,
                 "is_plugin": is_plugin,
                 "plugin": plugin_name,
+                "last_used": None,
+                "session_count": 0,
             }
         )
 

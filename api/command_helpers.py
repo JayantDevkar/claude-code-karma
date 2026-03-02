@@ -88,6 +88,7 @@ def _is_custom_skill(name: str) -> bool:
 _plugin_skill_cache: TTLCache[str, bool] = TTLCache(maxsize=128, ttl=60)
 _expand_name_cache: TTLCache[str, str] = TTLCache(maxsize=128, ttl=60)
 _entry_map_cache: TTLCache[str, dict[str, str]] = TTLCache(maxsize=1, ttl=60)
+_entry_type_cache: TTLCache[str, dict[str, str]] = TTLCache(maxsize=1, ttl=60)
 
 
 def _is_plugin_skill(name: str) -> bool:
@@ -115,38 +116,77 @@ def _is_plugin_skill(name: str) -> bool:
     return False
 
 
-def _collect_plugin_entries(version_dir) -> list[str]:
+def _build_entry_type_map() -> dict[str, str]:
+    """Map 'plugin:entry' → 'command'|'skill'|'agent' by checking filesystem.
+
+    Scans all plugins' commands/, skills/, agents/ directories.
+    Returns mapping like {'superpowers:brainstorm': 'command', 'superpowers:brainstorming': 'skill'}.
+    """
+    _sentinel = "__entry_type__"
+    if _sentinel in _entry_type_cache:
+        return _entry_type_cache[_sentinel]
+
+    from config import settings
+
+    plugins_cache = settings.claude_base / "plugins" / "cache"
+    if not plugins_cache.is_dir():
+        _entry_type_cache[_sentinel] = {}
+        return {}
+
+    result: dict[str, str] = {}
+    for registry in plugins_cache.iterdir():
+        if not registry.is_dir():
+            continue
+        for plugin_dir in registry.iterdir():
+            if not plugin_dir.is_dir():
+                continue
+            plugin_name = plugin_dir.name
+            versions = sorted(plugin_dir.iterdir(), reverse=True)
+            for version_dir in versions:
+                entries = _collect_plugin_entries(version_dir)
+                for entry_name, kind in entries.items():
+                    result[f"{plugin_name}:{entry_name}"] = kind
+                break  # Only check latest version
+
+    _entry_type_cache[_sentinel] = result
+    return result
+
+
+def _collect_plugin_entries(version_dir) -> dict[str, str]:
     """Collect all invocable entry names from a plugin version directory.
 
     Plugins define invocables in three locations:
       - skills/{name}/    (directory-based, e.g. frontend-design)
       - commands/{name}.md (file-based, e.g. feature-dev)
       - agents/{name}.md   (file-based, e.g. code-simplifier)
+
+    Returns:
+        Dict mapping entry_name → kind ("skill", "command", or "agent").
     """
-    entry_names: list[str] = []
+    entries: dict[str, str] = {}
 
     # skills/ — directory-based entries
     skills_dir = version_dir / "skills"
     if skills_dir.is_dir():
-        entry_names.extend(d.name for d in skills_dir.iterdir() if d.is_dir())
+        for d in skills_dir.iterdir():
+            if d.is_dir():
+                entries[d.name] = "skill"
 
     # commands/ — file-based entries (.md files)
     commands_dir = version_dir / "commands"
     if commands_dir.is_dir():
-        entry_names.extend(
-            f.stem for f in commands_dir.iterdir()
-            if f.is_file() and f.suffix == ".md"
-        )
+        for f in commands_dir.iterdir():
+            if f.is_file() and f.suffix == ".md":
+                entries[f.stem] = "command"
 
     # agents/ — file-based entries (.md files)
     agents_dir = version_dir / "agents"
     if agents_dir.is_dir():
-        entry_names.extend(
-            f.stem for f in agents_dir.iterdir()
-            if f.is_file() and f.suffix == ".md" and f.stem != "AGENTS"
-        )
+        for f in agents_dir.iterdir():
+            if f.is_file() and f.suffix == ".md" and f.stem != "AGENTS":
+                entries[f.stem] = "agent"
 
-    return entry_names
+    return entries
 
 
 def _build_entry_to_plugin_map() -> dict[str, str]:
@@ -180,7 +220,7 @@ def _build_entry_to_plugin_map() -> dict[str, str]:
             versions = sorted(plugin_dir.iterdir(), reverse=True)
             for version_dir in versions:
                 entries = _collect_plugin_entries(version_dir)
-                for entry in entries:
+                for entry in entries.keys():
                     candidates.setdefault(entry, []).append(plugin_name)
                 break  # Only check latest version
 
@@ -241,7 +281,7 @@ def expand_plugin_short_name(name: str) -> str:
                 return result
             # If plugin has exactly one entry, use that
             if len(entry_names) == 1:
-                result = f"{name}:{entry_names[0]}"
+                result = f"{name}:{next(iter(entry_names))}"
                 _expand_name_cache[name] = result
                 return result
             _expand_name_cache[name] = name
@@ -282,6 +322,11 @@ def classify_invocation(name: str) -> str:
     if name in BUILTIN_CLI_COMMANDS:
         return "builtin"
     if ":" in name:
+        entry_types = _build_entry_type_map()
+        entry_type = entry_types.get(name)
+        if entry_type == "command":
+            return "command"
+        # Default to "skill" for unknown or skill entries (backward compat)
         return "skill"
     if _is_custom_skill(name):
         return "skill"
