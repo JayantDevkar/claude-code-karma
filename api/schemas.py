@@ -283,6 +283,10 @@ class SessionDetail(SessionSummary):
         default_factory=list,
         description="Skills invoked via the Skill tool during this session",
     )
+    skills_mentioned: list["SkillUsage"] = Field(
+        default_factory=list,
+        description="Skills referenced in user prompts but not actually invoked",
+    )
     # Command usage tracking (user-authored slash commands without ':' prefix)
     commands_used: list["CommandUsage"] = Field(
         default_factory=list,

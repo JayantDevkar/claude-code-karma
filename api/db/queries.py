@@ -467,33 +467,25 @@ def query_skill_usage(
     Includes invocation_sources field showing which sources contributed
     (e.g., 'slash_command,skill_tool').
     """
+    _where = "WHERE s.project_encoded_name = :project" if project else ""
+    _params: dict = {"limit": limit}
     if project:
-        rows = conn.execute(
-            """SELECT sk.skill_name, SUM(sk.count) as total_count,
-                COUNT(DISTINCT sk.session_uuid) as session_count,
-                MAX(s.end_time) as last_used,
-                GROUP_CONCAT(DISTINCT sk.invocation_source) as invocation_sources
-            FROM session_skills sk
-            JOIN sessions s ON sk.session_uuid = s.uuid
-            WHERE s.project_encoded_name = :project
-            GROUP BY sk.skill_name
-            ORDER BY total_count DESC
-            LIMIT :limit""",
-            {"project": project, "limit": limit},
-        ).fetchall()
-    else:
-        rows = conn.execute(
-            """SELECT sk.skill_name, SUM(sk.count) as total_count,
-                COUNT(DISTINCT sk.session_uuid) as session_count,
-                MAX(s.end_time) as last_used,
-                GROUP_CONCAT(DISTINCT sk.invocation_source) as invocation_sources
-            FROM session_skills sk
-            JOIN sessions s ON sk.session_uuid = s.uuid
-            GROUP BY sk.skill_name
-            ORDER BY total_count DESC
-            LIMIT :limit""",
-            {"limit": limit},
-        ).fetchall()
+        _params["project"] = project
+    rows = conn.execute(
+        f"""SELECT sk.skill_name,
+            SUM(CASE WHEN sk.invocation_source != 'text_detection' THEN sk.count ELSE 0 END) as total_count,
+            SUM(CASE WHEN sk.invocation_source = 'text_detection' THEN sk.count ELSE 0 END) as mentioned_count,
+            COUNT(DISTINCT sk.session_uuid) as session_count,
+            MAX(s.end_time) as last_used,
+            GROUP_CONCAT(DISTINCT sk.invocation_source) as invocation_sources
+        FROM session_skills sk
+        JOIN sessions s ON sk.session_uuid = s.uuid
+        {_where}
+        GROUP BY sk.skill_name
+        ORDER BY total_count DESC
+        LIMIT :limit""",
+        _params,
+    ).fetchall()
     return [dict(row) for row in rows]
 
 
@@ -581,7 +573,8 @@ def query_skill_detail(
     ).fetchall()
     source_counts = {r["invocation_source"]: r["total"] for r in source_rows}
     manual_calls = source_counts.get("slash_command", 0)
-    auto_calls = source_counts.get("skill_tool", 0) + source_counts.get("text_detection", 0)
+    auto_calls = source_counts.get("skill_tool", 0)
+    mentioned_calls = source_counts.get("text_detection", 0)
 
     # Daily trend
     trend_rows = conn.execute(
@@ -689,11 +682,12 @@ def query_skill_detail(
 
     return {
         "name": skill_name,
-        "main_calls": main_calls,
+        "main_calls": main_calls - mentioned_calls,
         "subagent_calls": sub_calls,
-        "total_calls": main_calls + sub_calls,
+        "total_calls": main_calls + sub_calls - mentioned_calls,
         "manual_calls": manual_calls,
         "auto_calls": auto_calls,
+        "mentioned_calls": mentioned_calls,
         "session_count": main_row["session_count"] or 0 if main_row else 0,
         "first_used": main_row["first_used"] if main_row else None,
         "last_used": main_row["last_used"] if main_row else None,
@@ -1381,12 +1375,19 @@ def query_skill_usage_trend(
 
     where = "WHERE " + " AND ".join(conditions) if conditions else ""
 
-    # Totals by skill
+    # Exclude text_detection (mentions) from skill usage analytics
+    mention_filter = "sk.invocation_source != 'text_detection'"
+    if where:
+        where_skills = f"{where} AND {mention_filter}"
+    else:
+        where_skills = f"WHERE {mention_filter}"
+
+    # Totals by skill (excluding mentions)
     rows = conn.execute(
         f"""SELECT sk.skill_name, SUM(sk.count) as total_count
         FROM session_skills sk
         JOIN sessions s ON sk.session_uuid = s.uuid
-        {where}
+        {where_skills}
         GROUP BY sk.skill_name
         ORDER BY total_count DESC""",
         params,
@@ -1395,12 +1396,12 @@ def query_skill_usage_trend(
     by_item = {row["skill_name"]: row["total_count"] for row in rows}
     total = sum(by_item.values())
 
-    # Daily trend
+    # Daily trend (excluding mentions)
     trend_rows = conn.execute(
         f"""SELECT DATE(s.start_time) as date, SUM(sk.count) as count
         FROM session_skills sk
         JOIN sessions s ON sk.session_uuid = s.uuid
-        {where}
+        {where_skills}
         AND s.start_time IS NOT NULL
         GROUP BY DATE(s.start_time)
         ORDER BY date""",
@@ -1413,17 +1414,17 @@ def query_skill_usage_trend(
         conn,
         item_col="sk.skill_name",
         from_clause="FROM session_skills sk JOIN sessions s ON sk.session_uuid = s.uuid",
-        where=where,
+        where=where_skills,
         params=params,
         count_expr="SUM(sk.count)",
     )
 
-    # First/last used
+    # First/last used (excluding mentions)
     time_row = conn.execute(
         f"""SELECT MIN(s.start_time) as first_used, MAX(s.start_time) as last_used
         FROM session_skills sk
         JOIN sessions s ON sk.session_uuid = s.uuid
-        {where}""",
+        {where_skills}""",
         params,
     ).fetchone()
 

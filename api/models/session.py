@@ -107,6 +107,7 @@ class SessionCache(BaseCache):
         "usage_summary",
         "tools_used",
         "skills_used",
+        "skills_mentioned",
         "commands_used",
         "git_branches",
         "working_dirs",
@@ -140,6 +141,7 @@ class SessionCache(BaseCache):
         self.usage_summary: Optional[TokenUsage] = None
         self.tools_used: Optional[Dict[str, int]] = None
         self.skills_used: Optional[Dict[tuple, int]] = None  # {(name, source): count}
+        self.skills_mentioned: Optional[Dict[tuple, int]] = None  # {(name, "text_detection"): count}
         self.commands_used: Optional[Dict[tuple, int]] = None  # {(name, source): count}
         self.git_branches: Optional[Set[str]] = None
         self.working_dirs: Optional[Set[str]] = None
@@ -173,6 +175,7 @@ class SessionCache(BaseCache):
         self.usage_summary = None
         self.tools_used = None
         self.skills_used = None
+        self.skills_mentioned = None
         self.commands_used = None
         self.git_branches = None
         self.working_dirs = None
@@ -418,6 +421,14 @@ class Session(BaseModel):
         _dedup_invocation_sources(skills)
         _dedup_invocation_sources(commands)
 
+        # Separate text_detection entries that survived dedup into skills_mentioned.
+        # These are skills the user referenced in their prompt but Claude never invoked.
+        # skills_used should only contain actually invoked skills (skill_tool, slash_command).
+        skills_mentioned: Counter[tuple] = Counter()
+        for key in list(skills.keys()):
+            if key[1] == "text_detection":
+                skills_mentioned[key] = skills.pop(key)
+
         # Store all computed values
         cache.start_time = first_ts
         cache.end_time = last_ts
@@ -425,6 +436,7 @@ class Session(BaseModel):
         cache.usage_summary = usage
         cache.tools_used = dict(tools)
         cache.skills_used = dict(skills)
+        cache.skills_mentioned = dict(skills_mentioned)
         cache.commands_used = dict(commands)
         cache.git_branches = git_branches
         cache.working_dirs = working_dirs
@@ -789,15 +801,31 @@ class Session(BaseModel):
         """
         Count skill usage with invocation source tracking (cached).
 
-        Tracks both file-based skills and plugin skills (e.g., 'oh-my-claudecode:security-review').
+        Only includes actually invoked skills (via Skill tool or slash command).
         Keys are (skill_name, invocation_source) tuples where source is one of:
-        'slash_command', 'skill_tool', 'text_detection'.
+        'slash_command', 'skill_tool'.
 
         Returns:
             Dict mapping (skill_name, source) to usage count
         """
         self._load_metadata()
         return dict(self._get_cache().skills_used or {})
+
+    def get_skills_mentioned(self) -> Dict[tuple, int]:
+        """
+        Count skills mentioned in user prompts but never invoked (cached).
+
+        These are /skill references detected in user text where Claude did not
+        subsequently call the Skill tool. Tracked separately from skills_used
+        to avoid inflating usage counts.
+
+        Keys are (skill_name, 'text_detection') tuples.
+
+        Returns:
+            Dict mapping (skill_name, source) to mention count
+        """
+        self._load_metadata()
+        return dict(self._get_cache().skills_mentioned or {})
 
     def get_commands_used(self) -> Dict[tuple, int]:
         """

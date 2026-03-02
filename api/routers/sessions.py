@@ -958,6 +958,7 @@ def get_session(uuid: str, request: Request, fresh: bool = False):
     usage = session.get_usage_summary()
     tools_used = session.get_tools_used()
     skills_used = session.get_skills_used()
+    skills_mentioned = session.get_skills_mentioned()
     commands_used = session.get_commands_used()
 
     # Get initial prompt using shared helper
@@ -1069,6 +1070,17 @@ def get_session(uuid: str, request: Request, fresh: bool = False):
                 invocation_source=inv_source,
             )
             for (skill_name, inv_source), count in skills_used.items()
+        ],
+        # Skills mentioned in user prompts but not invoked
+        skills_mentioned=[
+            SkillUsage(
+                name=skill_name,
+                count=count,
+                is_plugin=":" in skill_name,
+                plugin=skill_name.split(":")[0] if ":" in skill_name else None,
+                invocation_source=inv_source,
+            )
+            for (skill_name, inv_source), count in skills_mentioned.items()
         ],
         # Command usage tracking (keys are (name, invocation_source) tuples)
         commands_used=[

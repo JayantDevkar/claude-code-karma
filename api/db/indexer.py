@@ -304,6 +304,7 @@ def _index_session(
     usage = session.get_usage_summary()
     tools_used = session.get_tools_used()
     skills_used = session.get_skills_used()
+    skills_mentioned = session.get_skills_mentioned()
     commands_used = session.get_commands_used()
     models_used = list(session.get_models_used())
     git_branches = list(session.get_git_branches())
@@ -395,9 +396,12 @@ def _index_session(
 
     # Upsert skill usage with invocation_source
     # Keys are (skill_name, invocation_source) tuples
+    # skills_used = actual invocations (slash_command, skill_tool)
+    # skills_mentioned = text_detection only (user referenced but didn't invoke)
     conn.execute("DELETE FROM session_skills WHERE session_uuid = ?", (uuid,))
-    if skills_used:
-        for (skill_name, source), count in skills_used.items():
+    all_skills = {**skills_used, **skills_mentioned}
+    if all_skills:
+        for (skill_name, source), count in all_skills.items():
             conn.execute(
                 "INSERT OR REPLACE INTO session_skills (session_uuid, skill_name, invocation_source, count) VALUES (?, ?, ?, ?)",
                 (uuid, skill_name, source, count),
