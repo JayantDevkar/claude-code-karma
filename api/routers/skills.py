@@ -411,7 +411,11 @@ def get_skill_usage(
                 for row in rows:
                     skill_name = row["skill_name"]
                     is_plugin = is_plugin_skill(skill_name)
-                    plugin_name = skill_name.split(":")[0] if ":" in skill_name else (skill_name if is_plugin else None)
+                    plugin_name = (
+                        skill_name.split(":")[0]
+                        if ":" in skill_name
+                        else (skill_name if is_plugin else None)
+                    )
                     results.append(
                         {
                             "name": skill_name,
@@ -467,7 +471,9 @@ def get_skill_usage(
     for skill_name, count in skills_counter.most_common(limit):
         # Determine if this is a plugin skill
         is_plugin = is_plugin_skill(skill_name)
-        plugin_name = skill_name.split(":")[0] if ":" in skill_name else (skill_name if is_plugin else None)
+        plugin_name = (
+            skill_name.split(":")[0] if ":" in skill_name else (skill_name if is_plugin else None)
+        )
 
         results.append(
             {

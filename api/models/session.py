@@ -141,7 +141,9 @@ class SessionCache(BaseCache):
         self.usage_summary: Optional[TokenUsage] = None
         self.tools_used: Optional[Dict[str, int]] = None
         self.skills_used: Optional[Dict[tuple, int]] = None  # {(name, source): count}
-        self.skills_mentioned: Optional[Dict[tuple, int]] = None  # {(name, "text_detection"): count}
+        self.skills_mentioned: Optional[Dict[tuple, int]] = (
+            None  # {(name, "text_detection"): count}
+        )
         self.commands_used: Optional[Dict[tuple, int]] = None  # {(name, source): count}
         self.git_branches: Optional[Set[str]] = None
         self.working_dirs: Optional[Set[str]] = None
