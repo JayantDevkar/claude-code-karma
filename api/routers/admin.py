@@ -34,9 +34,7 @@ def trigger_reindex(force: bool = False):
     try:
         conn = get_writer_db()
         if force:
-            reset = conn.execute(
-                "UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1"
-            ).rowcount
+            reset = conn.execute("UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1").rowcount
             conn.commit()
             logger.info("Force reindex: reset mtime on %d sessions", reset)
         stats = sync_all_projects(conn)

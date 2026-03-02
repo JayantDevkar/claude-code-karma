@@ -528,11 +528,14 @@ class TestScanPluginCapabilities:
             skills=["autopilot", "plan", "ralph"],
             commands=["autopilot", "plan", "ralph"],
         )
-        with patch("models.plugin.get_plugin_cache_path", return_value=plugin_cache), \
-             patch("models.plugin.settings") as mock_settings:
+        with (
+            patch("models.plugin.get_plugin_cache_path", return_value=plugin_cache),
+            patch("models.plugin.settings") as mock_settings,
+        ):
             mock_settings.claude_base = tmp_path
 
             from models.plugin import scan_plugin_capabilities
+
             result = scan_plugin_capabilities("test-plugin")
 
         assert sorted(result["skills"]) == ["autopilot", "plan", "ralph"]
@@ -545,11 +548,14 @@ class TestScanPluginCapabilities:
             skills=["autopilot"],
             commands=["autopilot", "cancel", "help"],
         )
-        with patch("models.plugin.get_plugin_cache_path", return_value=plugin_cache), \
-             patch("models.plugin.settings") as mock_settings:
+        with (
+            patch("models.plugin.get_plugin_cache_path", return_value=plugin_cache),
+            patch("models.plugin.settings") as mock_settings,
+        ):
             mock_settings.claude_base = tmp_path
 
             from models.plugin import scan_plugin_capabilities
+
             result = scan_plugin_capabilities("test-plugin")
 
         assert result["skills"] == ["autopilot"]
@@ -562,11 +568,14 @@ class TestScanPluginCapabilities:
             skills=["autopilot", "plan"],
             commands=["cancel", "help"],
         )
-        with patch("models.plugin.get_plugin_cache_path", return_value=plugin_cache), \
-             patch("models.plugin.settings") as mock_settings:
+        with (
+            patch("models.plugin.get_plugin_cache_path", return_value=plugin_cache),
+            patch("models.plugin.settings") as mock_settings,
+        ):
             mock_settings.claude_base = tmp_path
 
             from models.plugin import scan_plugin_capabilities
+
             result = scan_plugin_capabilities("test-plugin")
 
         assert sorted(result["skills"]) == ["autopilot", "plan"]

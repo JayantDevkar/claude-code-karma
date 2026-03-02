@@ -249,7 +249,6 @@ def _detect_command_from_content(
     - referenced_skills: list of skill names the user mentioned (intent, not invocation)
     """
     cmd_name, args = parse_command_from_content(content)
-    from_command_tags = cmd_name is not None
 
     # Fallback: detect /command patterns in plain text (hook-triggered skills)
     referenced_skills: list[str] | None = None
@@ -258,9 +257,7 @@ def _detect_command_from_content(
         # Collect ALL skill references from the text (not just the first)
         # Expand short-form plugin names for consistency with Skill tool invocations
         skills_found = [
-            expand_plugin_short_name(c)
-            for c in slash_cmds
-            if classify_invocation(c) == "skill"
+            expand_plugin_short_name(c) for c in slash_cmds if classify_invocation(c) == "skill"
         ]
         if skills_found:
             referenced_skills = skills_found
