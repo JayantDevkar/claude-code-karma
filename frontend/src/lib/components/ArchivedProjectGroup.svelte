@@ -15,7 +15,7 @@
 
 	// Parse project name from encoded name to preserve hyphens (e.g., "claude-karma" not "karma")
 	const displayProjectName = $derived(
-		getProjectNameFromEncoded(project.encoded_name) || project.project_name
+		project.display_name || project.project_name || getProjectNameFromEncoded(project.encoded_name)
 	);
 
 	function formatDateRange(start: string, end: string): string {

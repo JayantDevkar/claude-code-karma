@@ -451,24 +451,37 @@ describe('decodeProjectPath', () => {
 describe('getProjectNameFromEncoded', () => {
 	it('extracts project name from Documents/GitHub path', () => {
 		const result = getProjectNameFromEncoded('-Users-me-Documents-GitHub-my-project');
-		expect(result).toBe('my-project');
+		expect(result).toBe('Documents-GitHub-my-project');
 	});
 
-	it('extracts project name with hyphens preserved', () => {
+	it('extracts project name preserving all content after user prefix', () => {
 		const result = getProjectNameFromEncoded('-Users-me-Documents-GitHub-claude-karma');
-		expect(result).toBe('claude-karma');
+		expect(result).toBe('Documents-GitHub-claude-karma');
 	});
 
-	it('extracts from Desktop path', () => {
+	it('extracts from Desktop path preserving intermediate dirs', () => {
 		const result = getProjectNameFromEncoded('-Users-me-Desktop-cool-app');
-		expect(result).toBe('cool-app');
+		expect(result).toBe('Desktop-cool-app');
 	});
 
-	it('falls back to last segment for unknown patterns', () => {
-		const result = getProjectNameFromEncoded('-custom-deep-nested-repo');
-		// fallback: last segment after splitting by hyphens
-		expect(typeof result).toBe('string');
-		expect(result.length).toBeGreaterThan(0);
+	it('extracts from non-standard parent directory like My-Github', () => {
+		const result = getProjectNameFromEncoded('-Users-me-My-Github-verticalSlice');
+		expect(result).toBe('My-Github-verticalSlice');
+	});
+
+	it('extracts from Linux home path', () => {
+		const result = getProjectNameFromEncoded('-home-user-projects-my-app');
+		expect(result).toBe('projects-my-app');
+	});
+
+	it('returns stripped encoded name for unrecognized format', () => {
+		const result = getProjectNameFromEncoded('weird-format');
+		expect(result).toBe('weird-format');
+	});
+
+	it('handles single-component after user prefix', () => {
+		const result = getProjectNameFromEncoded('-Users-me-myrepo');
+		expect(result).toBe('myrepo');
 	});
 });
 

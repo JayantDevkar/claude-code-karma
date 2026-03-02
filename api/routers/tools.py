@@ -128,10 +128,14 @@ def _build_server_schema(server_data: dict) -> McpServer:
 
 def _build_session_summary(session_data: dict) -> SessionSummary:
     """Convert a session dict from query results into a SessionSummary schema."""
+    project_path = session_data.get("project_path") or ""
+    project_display_name = project_path.rstrip("/").split("/")[-1] if project_path else None
+
     return SessionSummary(
         uuid=session_data["uuid"],
         slug=session_data.get("slug"),
         project_encoded_name=session_data.get("project_encoded_name"),
+        project_display_name=project_display_name,
         message_count=session_data.get("message_count", 0),
         start_time=session_data.get("start_time"),
         end_time=session_data.get("end_time"),

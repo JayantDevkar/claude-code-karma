@@ -1131,6 +1131,7 @@ class AgentInvocation(BaseModel):
     session_uuid: str = Field(..., description="Parent session UUID")
     project_encoded_name: str = Field(..., description="Project where invocation occurred")
     project_slug: Optional[str] = Field(None, description="URL-friendly project slug")
+    project_display_name: Optional[str] = Field(None, description="Human-readable project name")
     invoked_at: Optional[datetime] = Field(None, description="When the agent was invoked")
     duration_seconds: Optional[float] = Field(None, description="Invocation duration")
     input_tokens: int = Field(0, description="Input tokens used")

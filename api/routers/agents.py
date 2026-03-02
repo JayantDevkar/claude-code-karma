@@ -463,11 +463,14 @@ async def get_agent_sessions(
                 data = query_sessions_by_agent(conn, subagent_type, limit=limit, offset=offset)
                 sessions = []
                 for row in data["sessions"]:
+                    project_path = row.get("project_path") or ""
+                    project_display_name = project_path.rstrip("/").split("/")[-1] if project_path else None
                     sessions.append(
                         SessionSummary(
                             uuid=row["uuid"],
                             slug=row.get("slug"),
                             project_encoded_name=row["project_encoded_name"],
+                            project_display_name=project_display_name,
                             message_count=row["message_count"],
                             start_time=row.get("start_time"),
                             end_time=row.get("end_time"),
