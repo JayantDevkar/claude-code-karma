@@ -10,7 +10,7 @@ import sqlite3
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 11
+SCHEMA_VERSION = 12
 
 SCHEMA_SQL = """
 -- Schema versioning
@@ -404,6 +404,16 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             # Also re-index subagent data
             conn.execute("DELETE FROM subagent_tools")
             conn.execute("DELETE FROM subagent_invocations")
+
+        if current_version < 12:
+            logger.info("Migrating → v12: force reindex for invocation source dedup")
+            # Clear skill/command data and force re-parse with dedup logic
+            conn.execute("DELETE FROM session_skills")
+            conn.execute("DELETE FROM session_commands")
+            conn.execute("DELETE FROM subagent_skills")
+            conn.execute("DELETE FROM subagent_commands")
+            conn.execute("DELETE FROM subagent_invocations")
+            conn.execute("UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1")
 
     # Record version
     conn.execute(
