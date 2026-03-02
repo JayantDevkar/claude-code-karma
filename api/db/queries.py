@@ -688,9 +688,9 @@ def query_skill_detail(
 
     return {
         "name": skill_name,
-        "main_calls": main_calls - mentioned_calls,
+        "main_calls": main_calls,
         "subagent_calls": sub_calls,
-        "total_calls": main_calls + sub_calls - mentioned_calls,
+        "total_calls": main_calls + sub_calls,
         "manual_calls": manual_calls,
         "auto_calls": auto_calls,
         "mentioned_calls": mentioned_calls,
