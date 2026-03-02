@@ -98,6 +98,7 @@
 	let scopeSelection = $state<SearchScopeSelection>({ ...DEFAULT_SCOPE_SELECTION });
 	let showFiltersDropdown = $state(false);
 	let isMobile = $state(false);
+	let sourceFilter = $state<'all' | 'manual' | 'auto'>('all');
 	let searchTokens = $state<string[]>([]);
 	let selectedProjectFilters = $state<Set<string>>(new Set());
 
@@ -213,8 +214,21 @@
 
 	let totalCount = $derived(detail?.sessions_total ?? 0);
 
+	// Map session UUID to invocation sources for filtering
+	let invocationSourceMap = $derived<Map<string, string[]>>(
+		new Map(
+			(detail?.sessions ?? []).map((s) => [s.uuid, s.invocation_sources ?? []])
+		)
+	);
+
 	// Restore filters from URL params
 	function restoreFiltersFromUrl(params: URLSearchParams) {
+		const sourceParam = params.get('source');
+		if (sourceParam === 'manual' || sourceParam === 'auto') {
+			sourceFilter = sourceParam;
+		} else {
+			sourceFilter = 'all';
+		}
 		const restored = restoreAllFiltersFromUrl(params);
 		searchTokens = restored.tokens;
 		filters.status = restored.status;
@@ -270,6 +284,11 @@
 			tab: activeTab,
 			defaultTab: 'overview'
 		});
+		if (sourceFilter !== 'all') {
+			url.searchParams.set('source', sourceFilter);
+		} else {
+			url.searchParams.delete('source');
+		}
 		tick().then(() => replaceState(url.toString(), {}));
 	});
 
@@ -285,7 +304,10 @@
 	});
 	let filterChips = $derived(getFilterChips(filtersWithScope));
 	let hasActiveFilters = $derived(
-		checkHasActiveFilters(filtersWithScope) || !scopeSelection.titles || !scopeSelection.prompts
+		checkHasActiveFilters(filtersWithScope) ||
+			!scopeSelection.titles ||
+			!scopeSelection.prompts ||
+			sourceFilter !== 'all'
 	);
 	let activeFilterCount = $derived(
 		filterChips.length + (selectedProjectFilters.size > 0 ? 1 : 0)
@@ -318,6 +340,17 @@
 			filters.customStart,
 			filters.customEnd
 		) as SessionWithContext[];
+
+		// Filter by invocation source (manual/auto)
+		if (sourceFilter !== 'all') {
+			result = result.filter((s) => {
+				const sources = invocationSourceMap.get(s.uuid) ?? [];
+				if (sourceFilter === 'manual') {
+					return sources.includes('slash_command');
+				}
+				return sources.includes('skill_tool') || sources.includes('text_detection');
+			});
+		}
 
 		return result.sort(
 			(a, b) => new Date(b.start_time).getTime() - new Date(a.start_time).getTime()
@@ -391,6 +424,7 @@
 		scopeSelection = { ...DEFAULT_SCOPE_SELECTION };
 		selectedProjectFilters = new Set();
 		searchTokens = [];
+		sourceFilter = 'all';
 	}
 
 	function handleProjectToggle(project: string) {
@@ -683,6 +717,39 @@
 						</div>
 					</div>
 				</div>
+
+				<!-- Invocation Source Pills -->
+				{#if hasInvocationBreakdown}
+					<div class="flex items-center gap-1.5" role="group" aria-label="Filter by invocation type">
+						<button
+							onclick={() => (sourceFilter = 'all')}
+							class="px-3 py-1 text-xs font-medium rounded-full transition-all {sourceFilter === 'all'
+								? 'bg-[var(--accent-subtle)] text-[var(--accent)] border border-[var(--accent)]'
+								: 'bg-[var(--bg-subtle)] text-[var(--text-muted)] border border-transparent hover:border-[var(--border)] hover:text-[var(--text-secondary)]'}"
+							aria-pressed={sourceFilter === 'all'}
+						>
+							All
+						</button>
+						<button
+							onclick={() => (sourceFilter = 'manual')}
+							class="px-3 py-1 text-xs font-medium rounded-full transition-all {sourceFilter === 'manual'
+								? 'bg-blue-500/15 text-blue-400 border border-blue-500/30'
+								: 'bg-[var(--bg-subtle)] text-[var(--text-muted)] border border-transparent hover:border-[var(--border)] hover:text-[var(--text-secondary)]'}"
+							aria-pressed={sourceFilter === 'manual'}
+						>
+							Manual <span class="ml-0.5 opacity-70">{manualCalls}</span>
+						</button>
+						<button
+							onclick={() => (sourceFilter = 'auto')}
+							class="px-3 py-1 text-xs font-medium rounded-full transition-all {sourceFilter === 'auto'
+								? 'bg-purple-500/15 text-purple-400 border border-purple-500/30'
+								: 'bg-[var(--bg-subtle)] text-[var(--text-muted)] border border-transparent hover:border-[var(--border)] hover:text-[var(--text-secondary)]'}"
+							aria-pressed={sourceFilter === 'auto'}
+						>
+							Auto <span class="ml-0.5 opacity-70">{autoCalls}</span>
+						</button>
+					</div>
+				{/if}
 
 				<!-- Search & Filters -->
 				<div class="space-y-3">

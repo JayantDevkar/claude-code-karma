@@ -199,6 +199,10 @@ class SessionSummary(BaseModel):
         default_factory=list,
         description="Agent IDs of subagents that used the tool (for deep-linking to agent session view)",
     )
+    invocation_sources: list[str] = Field(
+        default_factory=list,
+        description="How the skill was invoked in this session: slash_command, skill_tool, text_detection",
+    )
     session_source: Optional[str] = Field(
         None,
         description="Session origin: 'desktop' for Claude Desktop, None for CLI",

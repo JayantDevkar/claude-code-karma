@@ -623,6 +623,13 @@ def query_skill_detail(
                GROUP_CONCAT(DISTINCT agent_id) as agent_ids
         FROM target_sessions
         GROUP BY session_uuid
+    ),
+    session_sources AS (
+        SELECT sk.session_uuid,
+               GROUP_CONCAT(DISTINCT sk.invocation_source) as invocation_sources
+        FROM session_skills sk
+        WHERE sk.skill_name = :skill
+        GROUP BY sk.session_uuid
     )
     """
 
@@ -638,9 +645,11 @@ def query_skill_detail(
             s.message_count, s.start_time, s.end_time, s.duration_seconds,
             s.models_used, s.subagent_count, s.initial_prompt,
             s.git_branch, s.session_titles,
-            agg.has_main, agg.has_sub, agg.agent_ids
+            agg.has_main, agg.has_sub, agg.agent_ids,
+            ss.invocation_sources
         FROM sessions s
         JOIN aggregated_sessions agg ON s.uuid = agg.session_uuid
+        LEFT JOIN session_sources ss ON s.uuid = ss.session_uuid
         ORDER BY s.start_time DESC
         LIMIT :limit OFFSET :offset""",
         params,
@@ -663,6 +672,10 @@ def query_skill_detail(
         # Parse agent IDs
         agent_ids_str = session.pop("agent_ids")
         session["subagent_agent_ids"] = agent_ids_str.split(",") if agent_ids_str else []
+
+        # Parse invocation sources per session
+        sources_str = session.pop("invocation_sources", None)
+        session["invocation_sources"] = sources_str.split(",") if sources_str else []
 
         # Parse JSON fields
         session["models_used"] = _parse_json_list(session.get("models_used"))

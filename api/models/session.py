@@ -51,6 +51,41 @@ if TYPE_CHECKING:
     pass
 
 
+def _dedup_invocation_sources(counter: Counter) -> None:
+    """Deduplicate invocation sources for the same skill/command.
+
+    When user types /skill (slash_command), Claude also fires a Skill tool
+    call (skill_tool) and the name may appear in text (text_detection).
+    These are the SAME invocation — not separate ones.
+
+    Rule: each higher-priority source "absorbs" one count from lower sources.
+    Priority: slash_command > skill_tool > text_detection
+    """
+    by_name: dict[str, list[str]] = {}
+    for name, source in list(counter.keys()):
+        by_name.setdefault(name, []).append(source)
+    for name, sources in by_name.items():
+        if len(sources) <= 1:
+            continue
+        sc_key = (name, "slash_command")
+        st_key = (name, "skill_tool")
+        td_key = (name, "text_detection")
+        sc_count = counter.get(sc_key, 0)
+        # slash_command absorbs from skill_tool (the triggered call)
+        if sc_count > 0 and st_key in counter:
+            absorb = min(sc_count, counter[st_key])
+            counter[st_key] -= absorb
+            if counter[st_key] <= 0:
+                del counter[st_key]
+        # Higher sources absorb from text_detection (1:1)
+        remaining_higher = counter.get(sc_key, 0) + counter.get(st_key, 0)
+        if remaining_higher > 0 and td_key in counter:
+            absorb = min(remaining_higher, counter[td_key])
+            counter[td_key] -= absorb
+            if counter[td_key] <= 0:
+                del counter[td_key]
+
+
 class SessionCache(BaseCache):
     """
     Mutable cache for session's computed properties.
@@ -375,6 +410,9 @@ class Session(BaseModel):
         for key in user_prompt_commands:
             if key not in commands:
                 commands[key] += 1
+
+        _dedup_invocation_sources(skills)
+        _dedup_invocation_sources(commands)
 
         # Store all computed values
         cache.start_time = first_ts

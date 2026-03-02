@@ -1439,6 +1439,7 @@ export interface McpSessionSummary {
 	session_titles: string[];
 	tool_source?: 'main' | 'subagent' | 'both';
 	subagent_agent_ids?: string[];
+	invocation_sources?: string[];
 }
 
 /**
