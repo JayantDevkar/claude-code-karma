@@ -565,10 +565,8 @@ def query_skill_detail(
     main_calls = main_row["total_count"] or 0 if main_row else 0
     sub_calls = sub_row["total_count"] or 0 if sub_row else 0
 
-    if main_calls == 0 and sub_calls == 0:
-        return None
-
-    # Calls by invocation source (manual vs auto)
+    # Calls by invocation source (manual vs auto vs mentioned)
+    # Must run BEFORE early-exit so mention-only skills are not hidden.
     source_rows = conn.execute(
         """SELECT sk.invocation_source, COALESCE(SUM(sk.count), 0) as total
         FROM session_skills sk
@@ -580,6 +578,9 @@ def query_skill_detail(
     manual_calls = source_counts.get("slash_command", 0)
     auto_calls = source_counts.get("skill_tool", 0)
     mentioned_calls = source_counts.get("text_detection", 0)
+
+    if main_calls == 0 and sub_calls == 0 and mentioned_calls == 0:
+        return None
 
     # Daily trend (exclude mentions)
     trend_rows = conn.execute(

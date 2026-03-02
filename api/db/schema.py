@@ -360,8 +360,8 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
                     PRIMARY KEY (session_uuid, skill_name, invocation_source),
                     FOREIGN KEY (session_uuid) REFERENCES sessions(uuid) ON DELETE CASCADE
                 );
-                CREATE INDEX idx_skills_name ON session_skills(skill_name);
-                CREATE INDEX idx_skills_source ON session_skills(invocation_source);
+                CREATE INDEX IF NOT EXISTS idx_skills_name ON session_skills(skill_name);
+                CREATE INDEX IF NOT EXISTS idx_skills_source ON session_skills(invocation_source);
 
                 DROP TABLE IF EXISTS session_commands;
                 CREATE TABLE session_commands (
@@ -372,8 +372,8 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
                     PRIMARY KEY (session_uuid, command_name, invocation_source),
                     FOREIGN KEY (session_uuid) REFERENCES sessions(uuid) ON DELETE CASCADE
                 );
-                CREATE INDEX idx_commands_name ON session_commands(command_name);
-                CREATE INDEX idx_commands_source ON session_commands(invocation_source);
+                CREATE INDEX IF NOT EXISTS idx_commands_name ON session_commands(command_name);
+                CREATE INDEX IF NOT EXISTS idx_commands_source ON session_commands(invocation_source);
 
                 DROP TABLE IF EXISTS subagent_skills;
                 CREATE TABLE subagent_skills (
@@ -384,8 +384,8 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
                     PRIMARY KEY (invocation_id, skill_name, invocation_source),
                     FOREIGN KEY (invocation_id) REFERENCES subagent_invocations(id) ON DELETE CASCADE
                 );
-                CREATE INDEX idx_subagent_skills_invocation ON subagent_skills(invocation_id);
-                CREATE INDEX idx_subagent_skills_name ON subagent_skills(skill_name);
+                CREATE INDEX IF NOT EXISTS idx_subagent_skills_invocation ON subagent_skills(invocation_id);
+                CREATE INDEX IF NOT EXISTS idx_subagent_skills_name ON subagent_skills(skill_name);
 
                 DROP TABLE IF EXISTS subagent_commands;
                 CREATE TABLE subagent_commands (
@@ -396,8 +396,8 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
                     PRIMARY KEY (invocation_id, command_name, invocation_source),
                     FOREIGN KEY (invocation_id) REFERENCES subagent_invocations(id) ON DELETE CASCADE
                 );
-                CREATE INDEX idx_subagent_commands_invocation ON subagent_commands(invocation_id);
-                CREATE INDEX idx_subagent_commands_name ON subagent_commands(command_name);
+                CREATE INDEX IF NOT EXISTS idx_subagent_commands_invocation ON subagent_commands(invocation_id);
+                CREATE INDEX IF NOT EXISTS idx_subagent_commands_name ON subagent_commands(command_name);
             """)
             # Force full re-index so all sessions get reparsed with new source tracking
             conn.execute("UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1")

@@ -353,7 +353,7 @@
 				if (sourceFilter === 'manual') {
 					return sources.includes('slash_command');
 				}
-				return sources.includes('skill_tool') || sources.includes('text_detection');
+				return sources.includes('skill_tool');
 			});
 		}
 

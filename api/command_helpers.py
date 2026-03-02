@@ -6,8 +6,9 @@ and sessions.py to prevent drift.
 """
 
 import re
-from functools import lru_cache
 from typing import Optional
+
+from cachetools import TTLCache
 
 # Built-in Claude Code CLI commands that should NOT be tracked as user-authored commands.
 # These are internal to the CLI and have no corresponding user .md files.
@@ -82,7 +83,13 @@ def _is_custom_skill(name: str) -> bool:
     )
 
 
-@lru_cache(maxsize=128)
+# TTL caches for filesystem-dependent lookups (auto-expire after 60s so
+# plugin installs/removals are picked up without restarting the server).
+_plugin_skill_cache: TTLCache[str, bool] = TTLCache(maxsize=128, ttl=60)
+_expand_name_cache: TTLCache[str, str] = TTLCache(maxsize=128, ttl=60)
+_entry_map_cache: TTLCache[str, dict[str, str]] = TTLCache(maxsize=1, ttl=60)
+
+
 def _is_plugin_skill(name: str) -> bool:
     """Check if a name matches a plugin directory (short-form skill invocation).
 
@@ -90,15 +97,21 @@ def _is_plugin_skill(name: str) -> bool:
     the name lacks a ':' but still refers to a plugin skill. This checks if a
     plugin with that name exists in ~/.claude/plugins/cache/.
     """
+    if name in _plugin_skill_cache:
+        return _plugin_skill_cache[name]
+
     from config import settings
 
     plugins_cache = settings.claude_base / "plugins" / "cache"
     if not plugins_cache.is_dir():
+        _plugin_skill_cache[name] = False
         return False
     # Check all registries (e.g., claude-plugins-official/)
     for registry in plugins_cache.iterdir():
         if registry.is_dir() and (registry / name).is_dir():
+            _plugin_skill_cache[name] = True
             return True
+    _plugin_skill_cache[name] = False
     return False
 
 
@@ -136,7 +149,6 @@ def _collect_plugin_entries(version_dir) -> list[str]:
     return entry_names
 
 
-@lru_cache(maxsize=1)
 def _build_entry_to_plugin_map() -> dict[str, str]:
     """Build a reverse lookup: entry_name → 'plugin:entry_name'.
 
@@ -144,10 +156,15 @@ def _build_entry_to_plugin_map() -> dict[str, str]:
     (e.g., 'commit') instead of the full form ('commit-commands:commit').
     Only maps unambiguous entries (skip if multiple plugins define the same name).
     """
+    _sentinel = "__entry_map__"
+    if _sentinel in _entry_map_cache:
+        return _entry_map_cache[_sentinel]
+
     from config import settings
 
     plugins_cache = settings.claude_base / "plugins" / "cache"
     if not plugins_cache.is_dir():
+        _entry_map_cache[_sentinel] = {}
         return {}
 
     # entry_name → list of plugin names that define it
@@ -176,10 +193,10 @@ def _build_entry_to_plugin_map() -> dict[str, str]:
             if entry != plugin:
                 result[entry] = f"{plugin}:{entry}"
 
+    _entry_map_cache[_sentinel] = result
     return result
 
 
-@lru_cache(maxsize=128)
 def expand_plugin_short_name(name: str) -> str:
     """Expand a short-form plugin skill name to the full plugin:skill form.
 
@@ -194,10 +211,14 @@ def expand_plugin_short_name(name: str) -> str:
     if ":" in name:
         return name  # Already in full form
 
+    if name in _expand_name_cache:
+        return _expand_name_cache[name]
+
     from config import settings
 
     plugins_cache = settings.claude_base / "plugins" / "cache"
     if not plugins_cache.is_dir():
+        _expand_name_cache[name] = name
         return name
 
     # Case 1: name matches a plugin directory
@@ -215,17 +236,25 @@ def expand_plugin_short_name(name: str) -> str:
                 continue
             # If plugin has an entry matching its own name, use that
             if name in entry_names:
-                return f"{name}:{name}"
+                result = f"{name}:{name}"
+                _expand_name_cache[name] = result
+                return result
             # If plugin has exactly one entry, use that
             if len(entry_names) == 1:
-                return f"{name}:{entry_names[0]}"
+                result = f"{name}:{entry_names[0]}"
+                _expand_name_cache[name] = result
+                return result
+            _expand_name_cache[name] = name
             return name
 
     # Case 2: name is an entry name without plugin prefix (reverse lookup)
     entry_map = _build_entry_to_plugin_map()
     if name in entry_map:
-        return entry_map[name]
+        result = entry_map[name]
+        _expand_name_cache[name] = result
+        return result
 
+    _expand_name_cache[name] = name
     return name
 
 
