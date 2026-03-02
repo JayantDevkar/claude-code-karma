@@ -327,9 +327,12 @@ def classify_invocation(name: str) -> str:
         entry_type = entry_types.get(name)
         if entry_type == "command":
             return "command"
-        # Agents and skills both go to session_skills. Agents invoked via
-        # /command or Skill tool are rare edge cases — they flow through the
-        # same path as skills in modern Claude Code (commands/ merged into skills).
+        if entry_type == "agent":
+            # Agents are tracked in subagent_invocations via the Agent tool.
+            # Rare edge case: Claude may invoke an agent via the Skill tool.
+            # Return "agent" so callers can skip — these don't belong in
+            # session_skills or session_commands.
+            return "agent"
         return "skill"
     if _is_custom_skill(name):
         return "skill"

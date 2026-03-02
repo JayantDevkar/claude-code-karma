@@ -387,6 +387,11 @@ class TestClassifyInvocation:
         (skills_dir / "SKILL.md").write_text("# My Skill")
         assert classify_invocation("my-custom-skill") == "skill"
 
+    def test_plugin_agent_classified_as_agent(self, mock_claude_base):
+        """feature-dev:code-explorer (in agents/) → 'agent'."""
+        _make_plugin(mock_claude_base, "feature-dev", ["code-explorer"], kind="agents")
+        assert classify_invocation("feature-dev:code-explorer") == "agent"
+
 
 class TestCommandToSkillLinkage:
     """Tests for _link_command_to_skill() which upgrades skills triggered by commands."""

@@ -411,8 +411,10 @@ class Session(BaseModel):
                         kind = classify_invocation(cmd_name)
                         if kind == "skill":
                             user_prompt_skills.add((cmd_name, source))
-                        else:
-                            # Both "command" and "builtin" go into commands
+                        elif kind != "agent":
+                            # "command" and "builtin" go into commands.
+                            # "agent" entries are skipped — tracked separately
+                            # in subagent_invocations.
                             user_prompt_commands.add((cmd_name, source))
             elif isinstance(msg, AssistantMessage):
                 assistant_msg_count += 1
@@ -457,8 +459,10 @@ class Session(BaseModel):
                                 kind = classify_invocation(skill_name)
                                 if kind == "skill":
                                     skills[(skill_name, "skill_tool")] += 1
-                                else:
-                                    # Both "command" and "builtin" go into commands
+                                elif kind != "agent":
+                                    # "command" and "builtin" go into commands.
+                                    # "agent" entries are skipped — tracked separately
+                                    # in subagent_invocations.
                                     commands[(skill_name, "skill_tool")] += 1
 
             # Git branches
