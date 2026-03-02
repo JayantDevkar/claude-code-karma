@@ -10,7 +10,7 @@ import sqlite3
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 14
+SCHEMA_VERSION = 15
 
 SCHEMA_SQL = """
 -- Schema versioning
@@ -426,6 +426,17 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             logger.info("Migrating → v14: reindex to normalize short-form plugin skill names")
             # Short-form names like "frontend-design" now get expanded to
             # "frontend-design:frontend-design" everywhere. Clear and reindex.
+            conn.execute("DELETE FROM session_skills")
+            conn.execute("DELETE FROM session_commands")
+            conn.execute("DELETE FROM subagent_skills")
+            conn.execute("DELETE FROM subagent_commands")
+            conn.execute("DELETE FROM subagent_invocations")
+            conn.execute("UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1")
+
+        if current_version < 15:
+            logger.info("Migrating → v15: reindex with agents/ dir + reverse entry lookup")
+            # v14 may have reindexed with old code. Force full reindex with
+            # expanded expand_plugin_short_name (agents/ + reverse lookup).
             conn.execute("DELETE FROM session_skills")
             conn.execute("DELETE FROM session_commands")
             conn.execute("DELETE FROM subagent_skills")
