@@ -264,13 +264,23 @@ class LiveSessionState(BaseModel):
         """
         primary = self.project_encoded_name
 
+        # For worktree sessions, always prefer git_root (resolves to real project).
+        # The transcript may exist at the worktree path (e.g., .claude/worktrees/
+        # inside the repo creates a valid JSONL under the worktree-encoded dir),
+        # but the session should still roll up to the real project.
+        if primary and self.git_root:
+            from services.desktop_sessions import is_worktree_project
+
+            if is_worktree_project(primary):
+                encoded = "-" + self.git_root.lstrip("/").replace("/", "-")
+                return encoded
+
         # If transcript exists at the primary (cwd-derived) path, use it
         if primary and self.transcript_path and Path(self.transcript_path).exists():
             return primary
 
         # Fallback: use git_root to compute parent project name
-        # This handles worktree sessions (JSONL stored under real project, not worktree)
-        # and submodule sessions (JSONL stored under parent repo)
+        # This handles submodule sessions (JSONL stored under parent repo)
         if self.git_root:
             encoded = "-" + self.git_root.lstrip("/").replace("/", "-")
             return encoded
