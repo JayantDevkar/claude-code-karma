@@ -495,14 +495,19 @@ def query_sessions_by_skill(
     limit: int = 100,
     offset: int = 0,
 ) -> dict:
-    """Find sessions that used a specific skill. Returns {sessions, total}."""
-    # Total count
+    """Find sessions that used a specific skill. Returns {sessions, total}.
+
+    Excludes sessions where the skill was only mentioned (text_detection)
+    but never actually invoked.
+    """
+    # Total count (exclude mention-only sessions)
     total = conn.execute(
-        "SELECT COUNT(DISTINCT session_uuid) FROM session_skills WHERE skill_name = :skill",
+        """SELECT COUNT(DISTINCT session_uuid) FROM session_skills
+        WHERE skill_name = :skill AND invocation_source != 'text_detection'""",
         {"skill": skill_name},
     ).fetchone()[0]
 
-    # Paginated results
+    # Paginated results (exclude mention-only sessions)
     rows = conn.execute(
         """SELECT
             s.uuid, s.slug, s.project_encoded_name, s.project_path,
@@ -511,7 +516,7 @@ def query_sessions_by_skill(
             s.git_branch, s.session_titles
         FROM sessions s
         JOIN session_skills sk ON s.uuid = sk.session_uuid
-        WHERE sk.skill_name = :skill
+        WHERE sk.skill_name = :skill AND sk.invocation_source != 'text_detection'
         ORDER BY s.start_time DESC
         LIMIT :limit OFFSET :offset""",
         {"skill": skill_name, "limit": limit, "offset": offset},
@@ -535,7 +540,7 @@ def query_skill_detail(
     offset: int = 0,
 ) -> dict | None:
     """Detailed stats for a single skill with trend and session list."""
-    # Main session stats
+    # Main session stats (exclude mentions from counts)
     main_row = conn.execute(
         """SELECT COALESCE(SUM(sk.count), 0) as total_count,
             COUNT(DISTINCT sk.session_uuid) as session_count,
@@ -544,7 +549,7 @@ def query_skill_detail(
             GROUP_CONCAT(DISTINCT sk.invocation_source) as invocation_sources
         FROM session_skills sk
         JOIN sessions s ON sk.session_uuid = s.uuid
-        WHERE sk.skill_name = :skill""",
+        WHERE sk.skill_name = :skill AND sk.invocation_source != 'text_detection'""",
         {"skill": skill_name},
     ).fetchone()
 
@@ -576,7 +581,7 @@ def query_skill_detail(
     auto_calls = source_counts.get("skill_tool", 0)
     mentioned_calls = source_counts.get("text_detection", 0)
 
-    # Daily trend
+    # Daily trend (exclude mentions)
     trend_rows = conn.execute(
         """SELECT DATE(s.start_time) as date,
             SUM(sk.count) as calls,
@@ -584,6 +589,7 @@ def query_skill_detail(
         FROM session_skills sk
         JOIN sessions s ON sk.session_uuid = s.uuid
         WHERE sk.skill_name = :skill AND s.start_time IS NOT NULL
+            AND sk.invocation_source != 'text_detection'
         GROUP BY DATE(s.start_time)
         ORDER BY date""",
         {"skill": skill_name},
@@ -594,11 +600,11 @@ def query_skill_detail(
 
     cte_sql = """
     WITH target_sessions AS (
-        -- Main session usage
+        -- Main session usage (exclude mention-only)
         SELECT sk.session_uuid, 1 as has_main, 0 as has_sub, NULL as agent_id
         FROM session_skills sk
         JOIN sessions s ON sk.session_uuid = s.uuid
-        WHERE sk.skill_name = :skill
+        WHERE sk.skill_name = :skill AND sk.invocation_source != 'text_detection'
 
         UNION ALL
 
