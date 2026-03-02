@@ -818,7 +818,9 @@ class TestSkillUsage:
         _insert_test_session(conn, "s2", project_encoded_name="-proj-a")
         _insert_test_session(conn, "s3", project_encoded_name="-proj-b")
         conn.execute("INSERT INTO session_skills VALUES ('s1', 'commit', 'skill_tool', 5)")
-        conn.execute("INSERT INTO session_skills VALUES ('s1', 'oh-my-claudecode:plan', 'slash_command', 2)")
+        conn.execute(
+            "INSERT INTO session_skills VALUES ('s1', 'oh-my-claudecode:plan', 'slash_command', 2)"
+        )
         conn.execute("INSERT INTO session_skills VALUES ('s2', 'commit', 'skill_tool', 3)")
         conn.execute("INSERT INTO session_skills VALUES ('s3', 'commit', 'slash_command', 1)")
         conn.execute("INSERT INTO session_skills VALUES ('s3', 'review-pr', 'skill_tool', 4)")

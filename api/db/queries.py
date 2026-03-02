@@ -39,9 +39,7 @@ def _query_per_item_trend(
     ).fetchall()
     result: dict[str, list[dict]] = {}
     for row in rows:
-        result.setdefault(row["item"], []).append(
-            {"date": row["date"], "count": row["count"]}
-        )
+        result.setdefault(row["item"], []).append({"date": row["date"], "count": row["count"]})
     return result
 
 
@@ -674,8 +672,7 @@ def query_skill_detail(
         "last_used": main_row["last_used"] if main_row else None,
         "invocation_sources": invocation_sources,
         "trend": [
-            {"date": r["date"], "calls": r["calls"], "sessions": r["sessions"]}
-            for r in trend_rows
+            {"date": r["date"], "calls": r["calls"], "sessions": r["sessions"]} for r in trend_rows
         ],
         "sessions": sessions,
         "total": total_sessions,
@@ -1783,11 +1780,24 @@ BUILTIN_TOOL_CATEGORIES: dict[str, list[str]] = {
     "builtin-file-ops": ["Read", "Write", "Edit", "Glob", "Grep", "NotebookEdit"],
     "builtin-execution": ["Bash", "KillShell"],
     "builtin-agents": [
-        "Task", "Agent", "TaskCreate", "TaskUpdate", "TaskOutput", "TaskList",
-        "TaskGet", "TaskStop", "SendMessage", "TeamCreate", "TeamDelete",
+        "Task",
+        "Agent",
+        "TaskCreate",
+        "TaskUpdate",
+        "TaskOutput",
+        "TaskList",
+        "TaskGet",
+        "TaskStop",
+        "SendMessage",
+        "TeamCreate",
+        "TeamDelete",
     ],
     "builtin-planning": [
-        "TodoWrite", "EnterPlanMode", "ExitPlanMode", "Skill", "AskUserQuestion",
+        "TodoWrite",
+        "EnterPlanMode",
+        "ExitPlanMode",
+        "Skill",
+        "AskUserQuestion",
         "EnterWorktree",
     ],
     "builtin-web": ["WebFetch", "WebSearch"],
@@ -1805,9 +1815,7 @@ BUILTIN_CATEGORY_DISPLAY: dict[str, str] = {
 
 # Reverse lookup: tool_name -> category
 _BUILTIN_TOOL_TO_CATEGORY: dict[str, str] = {
-    tool: cat
-    for cat, tools in BUILTIN_TOOL_CATEGORIES.items()
-    for tool in tools
+    tool: cat for cat, tools in BUILTIN_TOOL_CATEGORIES.items() for tool in tools
 }
 
 
@@ -1902,7 +1910,9 @@ def query_builtin_tools_overview(
         GROUP BY st.tool_name""",
         params,
     ).fetchall()
-    tool_time_bounds = {row["tool_name"]: (row["first_used"], row["last_used"]) for row in time_rows}
+    tool_time_bounds = {
+        row["tool_name"]: (row["first_used"], row["last_used"]) for row in time_rows
+    }
 
     # Group by category
     servers: dict[str, dict] = defaultdict(
@@ -1976,9 +1986,7 @@ def query_builtin_tools_overview(
     total_tools = 0
     total_calls = 0
 
-    for cat_name, sdata in sorted(
-        servers.items(), key=lambda x: x[1]["total_calls"], reverse=True
-    ):
+    for cat_name, sdata in sorted(servers.items(), key=lambda x: x[1]["total_calls"], reverse=True):
         tools_sorted = sorted(sdata["tools"], key=lambda t: t["calls"], reverse=True)
         total_tools += len(tools_sorted)
         total_calls += sdata["total_calls"]
@@ -2359,7 +2367,7 @@ def query_mcp_server_trend(
     ).fetchall()
 
     # Subagent calls per day
-    sub_conditions = [f"sat.tool_name LIKE :pattern"]
+    sub_conditions = ["sat.tool_name LIKE :pattern"]
     sub_params: dict = {"pattern": like_pattern}
     if project:
         sub_conditions.append("s.project_encoded_name = :project")
@@ -2873,13 +2881,15 @@ def query_mcp_tool_detail(
     trend = []
     for d in sorted(trend_map):
         m = trend_map[d]
-        trend.append({
-            "date": d,
-            "calls": m["main_calls"] + m["sub_calls"],
-            "sessions": m["sessions"],
-            "main_calls": m["main_calls"],
-            "subagent_calls": m["sub_calls"],
-        })
+        trend.append(
+            {
+                "date": d,
+                "calls": m["main_calls"] + m["sub_calls"],
+                "sessions": m["sessions"],
+                "main_calls": m["main_calls"],
+                "subagent_calls": m["sub_calls"],
+            }
+        )
 
     return {
         "name": tool_name,
@@ -2904,7 +2914,7 @@ def query_sessions_by_mcp_tool(
     offset: int = 0,
 ) -> dict:
     """Paginated session list for a specific MCP tool. Returns {sessions, total}."""
-    
+
     # Base WHERE clause components
     conditions = []
     params: dict = {"full_name": full_tool_name}
@@ -2917,7 +2927,7 @@ def query_sessions_by_mcp_tool(
     if time_clause:
         conditions.append(time_clause)
         params.update(time_params)
-    
+
     where = "WHERE " + " AND ".join(conditions) if conditions else ""
 
     # Common CTE for main + subagent tool usage union
@@ -2926,7 +2936,7 @@ def query_sessions_by_mcp_tool(
     cte_sql = f"""
     WITH target_sessions AS (
         -- Main usage
-        SELECT 
+        SELECT
             st.session_uuid,
             1 as has_main,
             0 as has_sub,
@@ -2934,11 +2944,11 @@ def query_sessions_by_mcp_tool(
         FROM session_tools st
         JOIN sessions s ON st.session_uuid = s.uuid
         {where} AND st.tool_name = :full_name
-        
+
         UNION ALL
-        
+
         -- Subagent usage
-        SELECT 
+        SELECT
             si.session_uuid,
             0 as has_main,
             1 as has_sub,
@@ -2949,7 +2959,7 @@ def query_sessions_by_mcp_tool(
         {where} AND sat.tool_name = :full_name
     ),
     aggregated_sessions AS (
-        SELECT 
+        SELECT
             session_uuid,
             MAX(has_main) as has_main,
             MAX(has_sub) as has_sub,
@@ -2962,14 +2972,14 @@ def query_sessions_by_mcp_tool(
     # Total count
     total = conn.execute(
         f"""{cte_sql}
-        SELECT COUNT(*) FROM aggregated_sessions"""
-        , params
+        SELECT COUNT(*) FROM aggregated_sessions""",
+        params,
     ).fetchone()[0]
 
     # Paginated results
     params["limit"] = limit
     params["offset"] = offset
-    
+
     rows = conn.execute(
         f"""{cte_sql}
         SELECT
@@ -2988,7 +2998,7 @@ def query_sessions_by_mcp_tool(
     sessions = []
     for row in rows:
         session = dict(row)
-        
+
         # Calculate tool_source
         has_main = session.pop("has_main")
         has_sub = session.pop("has_sub")
@@ -2998,7 +3008,7 @@ def query_sessions_by_mcp_tool(
             session["tool_source"] = "subagent"
         else:
             session["tool_source"] = "main"
-            
+
         # Parse agent IDs
         agent_ids_str = session.pop("agent_ids")
         session["subagent_agent_ids"] = agent_ids_str.split(",") if agent_ids_str else []
@@ -3017,9 +3027,7 @@ def query_sessions_by_mcp_tool(
 # ---------------------------------------------------------------------------
 
 
-def _builtin_tool_placeholders(
-    tool_names: list[str], prefix: str = "bt"
-) -> tuple[str, dict]:
+def _builtin_tool_placeholders(tool_names: list[str], prefix: str = "bt") -> tuple[str, dict]:
     """Build IN-clause placeholders and params for a list of tool names."""
     placeholders = ",".join(f":{prefix}{i}" for i in range(len(tool_names)))
     params = {f"{prefix}{i}": name for i, name in enumerate(tool_names)}

@@ -510,14 +510,10 @@ def _index_session(
                                     source = "skill_tool"
                                     if kind == "skill":
                                         key = (skill_name, source)
-                                        skill_counts[key] = (
-                                            skill_counts.get(key, 0) + 1
-                                        )
+                                        skill_counts[key] = skill_counts.get(key, 0) + 1
                                     elif kind == "command":
                                         key = (skill_name, source)
-                                        command_counts[key] = (
-                                            command_counts.get(key, 0) + 1
-                                        )
+                                        command_counts[key] = command_counts.get(key, 0) + 1
 
                 if tool_counts:
                     conn.executemany(
@@ -527,12 +523,18 @@ def _index_session(
                 if skill_counts:
                     conn.executemany(
                         "INSERT INTO subagent_skills (invocation_id, skill_name, invocation_source, count) VALUES (?, ?, ?, ?)",
-                        [(invocation_id, name, source, count) for (name, source), count in skill_counts.items()],
+                        [
+                            (invocation_id, name, source, count)
+                            for (name, source), count in skill_counts.items()
+                        ],
                     )
                 if command_counts:
                     conn.executemany(
                         "INSERT INTO subagent_commands (invocation_id, command_name, invocation_source, count) VALUES (?, ?, ?, ?)",
-                        [(invocation_id, name, source, count) for (name, source), count in command_counts.items()],
+                        [
+                            (invocation_id, name, source, count)
+                            for (name, source), count in command_counts.items()
+                        ],
                     )
         except Exception as e:
             logger.warning("Error indexing subagent invocations for %s: %s", uuid, e)

@@ -611,7 +611,9 @@ class CommandUsage(BaseModel):
 
     name: str = Field(..., description="Command name (e.g., 'commit', 'run-tests')")
     count: int = Field(..., description="Number of times the command was invoked")
-    source: str = Field("unknown", description="Source: 'builtin', 'plugin', 'project', 'user', or 'unknown'")
+    source: str = Field(
+        "unknown", description="Source: 'builtin', 'plugin', 'project', 'user', or 'unknown'"
+    )
     plugin: Optional[str] = Field(None, description="Plugin name if source == 'plugin'")
     invocation_source: str = Field(
         "slash_command",

@@ -27,26 +27,21 @@ class TestGetDesktopSessionsDir:
 
             result = _get_desktop_sessions_dir()
             assert result == (
-                Path.home()
-                / "Library"
-                / "Application Support"
-                / "Claude"
-                / "claude-code-sessions"
+                Path.home() / "Library" / "Application Support" / "Claude" / "claude-code-sessions"
             )
 
     def test_windows_path_with_appdata(self):
         with (
             patch("services.desktop_sessions.platform.system", return_value="Windows"),
-            patch.dict(
-                "os.environ", {"APPDATA": "C:\\Users\\test\\AppData\\Roaming"}
-            ),
+            patch.dict("os.environ", {"APPDATA": "C:\\Users\\test\\AppData\\Roaming"}),
         ):
             from services.desktop_sessions import _get_desktop_sessions_dir
 
             result = _get_desktop_sessions_dir()
-            assert result == Path(
-                "C:\\Users\\test\\AppData\\Roaming"
-            ) / "Claude" / "claude-code-sessions"
+            assert (
+                result
+                == Path("C:\\Users\\test\\AppData\\Roaming") / "Claude" / "claude-code-sessions"
+            )
 
     def test_windows_path_without_appdata(self):
         with (
@@ -58,11 +53,7 @@ class TestGetDesktopSessionsDir:
 
             result = _get_desktop_sessions_dir()
             assert result == (
-                Path.home()
-                / "AppData"
-                / "Roaming"
-                / "Claude"
-                / "claude-code-sessions"
+                Path.home() / "AppData" / "Roaming" / "Claude" / "claude-code-sessions"
             )
 
     def test_linux_path_default(self):
@@ -77,26 +68,20 @@ class TestGetDesktopSessionsDir:
             from services.desktop_sessions import _get_desktop_sessions_dir
 
             result = _get_desktop_sessions_dir()
-            assert result == (
-                Path.home() / ".config" / "Claude" / "claude-code-sessions"
-            )
+            assert result == (Path.home() / ".config" / "Claude" / "claude-code-sessions")
 
     def test_linux_path_with_xdg(self):
         with (
             patch("services.desktop_sessions.platform.system", return_value="Linux"),
             patch(
                 "services.desktop_sessions.os.environ.get",
-                side_effect=lambda k, d=None: "/custom/config"
-                if k == "XDG_CONFIG_HOME"
-                else d,
+                side_effect=lambda k, d=None: "/custom/config" if k == "XDG_CONFIG_HOME" else d,
             ),
         ):
             from services.desktop_sessions import _get_desktop_sessions_dir
 
             result = _get_desktop_sessions_dir()
-            assert result == Path(
-                "/custom/config/Claude/claude-code-sessions"
-            )
+            assert result == Path("/custom/config/Claude/claude-code-sessions")
 
 
 # =============================================================================
@@ -112,9 +97,7 @@ class TestGetWorktreeBase:
             # Need to re-read since os.environ.get is called at function time
             with patch(
                 "services.desktop_sessions.os.environ.get",
-                side_effect=lambda k, d=None: None
-                if k == "CLAUDE_KARMA_WORKTREE_BASE"
-                else d,
+                side_effect=lambda k, d=None: None if k == "CLAUDE_KARMA_WORKTREE_BASE" else d,
             ):
                 from services.desktop_sessions import _get_worktree_base
 
@@ -147,17 +130,13 @@ class TestIsWorktreeProject:
 
         # Our encode_path preserves dots: -.claude-worktrees- does NOT
         # contain -claude-worktrees- (dot != dash), so this is False
-        assert not is_worktree_project(
-            "-Users-test-.claude-worktrees-myproject-focused-jepsen"
-        )
+        assert not is_worktree_project("-Users-test-.claude-worktrees-myproject-focused-jepsen")
 
     def test_worktree_with_dash_encoding(self):
         from services.desktop_sessions import is_worktree_project
 
         # Claude Code's encoding replaces dots with dashes
-        assert is_worktree_project(
-            "-Users-test--claude-worktrees-myproject-focused-jepsen"
-        )
+        assert is_worktree_project("-Users-test--claude-worktrees-myproject-focused-jepsen")
 
     def test_regular_project(self):
         from services.desktop_sessions import is_worktree_project
@@ -197,9 +176,7 @@ class TestExtractWorktreeInfo:
             "services.desktop_sessions.WORKTREE_BASE",
             tmp_path / "nonexistent",
         ):
-            result = extract_worktree_info(
-                "-Users-test-.claude-worktrees-proj-wt"
-            )
+            result = extract_worktree_info("-Users-test-.claude-worktrees-proj-wt")
             assert result is None
 
     def test_matching_worktree_found(self, tmp_path):
@@ -314,9 +291,7 @@ class TestLoadDesktopMetadataImpl:
         session_file = project_dir / "local_session-uuid.json"
         session_file.write_text(json.dumps(session_data))
 
-        with patch(
-            "services.desktop_sessions.DESKTOP_SESSIONS_DIR", tmp_path
-        ):
+        with patch("services.desktop_sessions.DESKTOP_SESSIONS_DIR", tmp_path):
             from services.desktop_sessions import _load_desktop_metadata_impl
 
             result = _load_desktop_metadata_impl()
@@ -347,9 +322,7 @@ class TestLoadDesktopMetadataImpl:
         }
         (project_dir / "local_good.json").write_text(json.dumps(valid_data))
 
-        with patch(
-            "services.desktop_sessions.DESKTOP_SESSIONS_DIR", tmp_path
-        ):
+        with patch("services.desktop_sessions.DESKTOP_SESSIONS_DIR", tmp_path):
             from services.desktop_sessions import _load_desktop_metadata_impl
 
             result = _load_desktop_metadata_impl()
@@ -367,9 +340,7 @@ class TestLoadDesktopMetadataImpl:
         data = {"cliSessionId": "should-not-appear"}
         (project_dir / "remote_session.json").write_text(json.dumps(data))
 
-        with patch(
-            "services.desktop_sessions.DESKTOP_SESSIONS_DIR", tmp_path
-        ):
+        with patch("services.desktop_sessions.DESKTOP_SESSIONS_DIR", tmp_path):
             from services.desktop_sessions import _load_desktop_metadata_impl
 
             result = _load_desktop_metadata_impl()
@@ -441,9 +412,7 @@ class TestGetRealProjectEncodedName:
 
             from services.desktop_sessions import get_real_project_encoded_name
 
-            result = get_real_project_encoded_name(
-                encoded_wt, ["no-match-uuid"]
-            )
+            result = get_real_project_encoded_name(encoded_wt, ["no-match-uuid"])
             assert result == "-Users-test-myproject"
 
     def test_no_match_returns_none(self):
@@ -459,7 +428,5 @@ class TestGetRealProjectEncodedName:
         ):
             from services.desktop_sessions import get_real_project_encoded_name
 
-            result = get_real_project_encoded_name(
-                "-Users-test-unknown", ["no-match"]
-            )
+            result = get_real_project_encoded_name("-Users-test-unknown", ["no-match"])
             assert result is None
