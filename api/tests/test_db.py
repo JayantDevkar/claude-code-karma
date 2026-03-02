@@ -225,7 +225,7 @@ class TestSessionCRUD:
             "INSERT INTO session_tools (session_uuid, tool_name, count) VALUES ('test-uuid', 'Read', 5)"
         )
         mem_db.execute(
-            "INSERT INTO session_skills (session_uuid, skill_name, count) VALUES ('test-uuid', 'commit', 2)"
+            "INSERT INTO session_skills (session_uuid, skill_name, invocation_source, count) VALUES ('test-uuid', 'commit', 'skill_tool', 2)"
         )
         mem_db.commit()
 
@@ -817,11 +817,13 @@ class TestSkillUsage:
         _insert_test_session(conn, "s1", project_encoded_name="-proj-a")
         _insert_test_session(conn, "s2", project_encoded_name="-proj-a")
         _insert_test_session(conn, "s3", project_encoded_name="-proj-b")
-        conn.execute("INSERT INTO session_skills VALUES ('s1', 'commit', 5)")
-        conn.execute("INSERT INTO session_skills VALUES ('s1', 'oh-my-claudecode:plan', 2)")
-        conn.execute("INSERT INTO session_skills VALUES ('s2', 'commit', 3)")
-        conn.execute("INSERT INTO session_skills VALUES ('s3', 'commit', 1)")
-        conn.execute("INSERT INTO session_skills VALUES ('s3', 'review-pr', 4)")
+        conn.execute("INSERT INTO session_skills VALUES ('s1', 'commit', 'skill_tool', 5)")
+        conn.execute(
+            "INSERT INTO session_skills VALUES ('s1', 'oh-my-claudecode:plan', 'slash_command', 2)"
+        )
+        conn.execute("INSERT INTO session_skills VALUES ('s2', 'commit', 'skill_tool', 3)")
+        conn.execute("INSERT INTO session_skills VALUES ('s3', 'commit', 'slash_command', 1)")
+        conn.execute("INSERT INTO session_skills VALUES ('s3', 'review-pr', 'skill_tool', 4)")
         conn.commit()
 
     def test_global_usage(self, mem_db):
@@ -887,9 +889,9 @@ class TestSessionsBySkill:
             project_encoded_name="-proj-b",
             start_time="2026-01-17T10:00:00+00:00",
         )
-        conn.execute("INSERT INTO session_skills VALUES ('s1', 'commit', 1)")
-        conn.execute("INSERT INTO session_skills VALUES ('s2', 'commit', 2)")
-        conn.execute("INSERT INTO session_skills VALUES ('s3', 'review-pr', 1)")
+        conn.execute("INSERT INTO session_skills VALUES ('s1', 'commit', 'skill_tool', 1)")
+        conn.execute("INSERT INTO session_skills VALUES ('s2', 'commit', 'skill_tool', 2)")
+        conn.execute("INSERT INTO session_skills VALUES ('s3', 'review-pr', 'skill_tool', 1)")
         conn.commit()
 
     def test_find_sessions(self, mem_db):

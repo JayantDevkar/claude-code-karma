@@ -39,9 +39,7 @@ def _query_per_item_trend(
     ).fetchall()
     result: dict[str, list[dict]] = {}
     for row in rows:
-        result.setdefault(row["item"], []).append(
-            {"date": row["date"], "count": row["count"]}
-        )
+        result.setdefault(row["item"], []).append({"date": row["date"], "count": row["count"]})
     return result
 
 
@@ -464,32 +462,30 @@ def query_skill_usage(
     project: Optional[str] = None,
     limit: int = 50,
 ) -> list[dict]:
-    """Aggregate skill usage counts, optionally filtered by project."""
+    """Aggregate skill usage counts, optionally filtered by project.
+
+    Includes invocation_sources field showing which sources contributed
+    (e.g., 'slash_command,skill_tool').
+    """
+    _where = "WHERE s.project_encoded_name = :project" if project else ""
+    _params: dict = {"limit": limit}
     if project:
-        rows = conn.execute(
-            """SELECT sk.skill_name, SUM(sk.count) as total_count,
-                COUNT(DISTINCT sk.session_uuid) as session_count,
-                MAX(s.end_time) as last_used
-            FROM session_skills sk
-            JOIN sessions s ON sk.session_uuid = s.uuid
-            WHERE s.project_encoded_name = :project
-            GROUP BY sk.skill_name
-            ORDER BY total_count DESC
-            LIMIT :limit""",
-            {"project": project, "limit": limit},
-        ).fetchall()
-    else:
-        rows = conn.execute(
-            """SELECT sk.skill_name, SUM(sk.count) as total_count,
-                COUNT(DISTINCT sk.session_uuid) as session_count,
-                MAX(s.end_time) as last_used
-            FROM session_skills sk
-            JOIN sessions s ON sk.session_uuid = s.uuid
-            GROUP BY sk.skill_name
-            ORDER BY total_count DESC
-            LIMIT :limit""",
-            {"limit": limit},
-        ).fetchall()
+        _params["project"] = project
+    rows = conn.execute(
+        f"""SELECT sk.skill_name,
+            SUM(CASE WHEN sk.invocation_source != 'text_detection' THEN sk.count ELSE 0 END) as total_count,
+            SUM(CASE WHEN sk.invocation_source = 'text_detection' THEN sk.count ELSE 0 END) as mentioned_count,
+            COUNT(DISTINCT sk.session_uuid) as session_count,
+            MAX(s.end_time) as last_used,
+            GROUP_CONCAT(DISTINCT sk.invocation_source) as invocation_sources
+        FROM session_skills sk
+        JOIN sessions s ON sk.session_uuid = s.uuid
+        {_where}
+        GROUP BY sk.skill_name
+        ORDER BY total_count DESC
+        LIMIT :limit""",
+        _params,
+    ).fetchall()
     return [dict(row) for row in rows]
 
 
@@ -499,14 +495,19 @@ def query_sessions_by_skill(
     limit: int = 100,
     offset: int = 0,
 ) -> dict:
-    """Find sessions that used a specific skill. Returns {sessions, total}."""
-    # Total count
+    """Find sessions that used a specific skill. Returns {sessions, total}.
+
+    Excludes sessions where the skill was only mentioned (text_detection)
+    but never actually invoked.
+    """
+    # Total count (exclude mention-only sessions)
     total = conn.execute(
-        "SELECT COUNT(DISTINCT session_uuid) FROM session_skills WHERE skill_name = :skill",
+        """SELECT COUNT(DISTINCT session_uuid) FROM session_skills
+        WHERE skill_name = :skill AND invocation_source != 'text_detection'""",
         {"skill": skill_name},
     ).fetchone()[0]
 
-    # Paginated results
+    # Paginated results (exclude mention-only sessions)
     rows = conn.execute(
         """SELECT
             s.uuid, s.slug, s.project_encoded_name, s.project_path,
@@ -515,7 +516,7 @@ def query_sessions_by_skill(
             s.git_branch, s.session_titles
         FROM sessions s
         JOIN session_skills sk ON s.uuid = sk.session_uuid
-        WHERE sk.skill_name = :skill
+        WHERE sk.skill_name = :skill AND sk.invocation_source != 'text_detection'
         ORDER BY s.start_time DESC
         LIMIT :limit OFFSET :offset""",
         {"skill": skill_name, "limit": limit, "offset": offset},
@@ -539,15 +540,16 @@ def query_skill_detail(
     offset: int = 0,
 ) -> dict | None:
     """Detailed stats for a single skill with trend and session list."""
-    # Main session stats
+    # Main session stats (exclude mentions from counts)
     main_row = conn.execute(
         """SELECT COALESCE(SUM(sk.count), 0) as total_count,
             COUNT(DISTINCT sk.session_uuid) as session_count,
             MIN(s.start_time) as first_used,
-            MAX(s.start_time) as last_used
+            MAX(s.start_time) as last_used,
+            GROUP_CONCAT(DISTINCT sk.invocation_source) as invocation_sources
         FROM session_skills sk
         JOIN sessions s ON sk.session_uuid = s.uuid
-        WHERE sk.skill_name = :skill""",
+        WHERE sk.skill_name = :skill AND sk.invocation_source != 'text_detection'""",
         {"skill": skill_name},
     ).fetchone()
 
@@ -563,10 +565,36 @@ def query_skill_detail(
     main_calls = main_row["total_count"] or 0 if main_row else 0
     sub_calls = sub_row["total_count"] or 0 if sub_row else 0
 
-    if main_calls == 0 and sub_calls == 0:
+    # Calls by invocation source (manual vs auto vs mentioned)
+    # Must run BEFORE early-exit so mention-only skills are not hidden.
+    source_rows = conn.execute(
+        """SELECT sk.invocation_source, COALESCE(SUM(sk.count), 0) as total
+        FROM session_skills sk
+        WHERE sk.skill_name = :skill
+        GROUP BY sk.invocation_source""",
+        {"skill": skill_name},
+    ).fetchall()
+    source_counts = {r["invocation_source"]: r["total"] for r in source_rows}
+    manual_calls = source_counts.get("slash_command", 0)
+    auto_calls = source_counts.get("skill_tool", 0)
+    mentioned_calls = source_counts.get("text_detection", 0)
+
+    # Count sessions where the skill was ONLY mentioned (no actual invocation)
+    mention_session_count = conn.execute(
+        """SELECT COUNT(DISTINCT sk.session_uuid)
+        FROM session_skills sk
+        WHERE sk.skill_name = :skill AND sk.invocation_source = 'text_detection'
+            AND sk.session_uuid NOT IN (
+                SELECT session_uuid FROM session_skills
+                WHERE skill_name = :skill AND invocation_source != 'text_detection'
+            )""",
+        {"skill": skill_name},
+    ).fetchone()[0]
+
+    if main_calls == 0 and sub_calls == 0 and mentioned_calls == 0:
         return None
 
-    # Daily trend
+    # Daily trend (exclude mentions)
     trend_rows = conn.execute(
         """SELECT DATE(s.start_time) as date,
             SUM(sk.count) as calls,
@@ -574,6 +602,7 @@ def query_skill_detail(
         FROM session_skills sk
         JOIN sessions s ON sk.session_uuid = s.uuid
         WHERE sk.skill_name = :skill AND s.start_time IS NOT NULL
+            AND sk.invocation_source != 'text_detection'
         GROUP BY DATE(s.start_time)
         ORDER BY date""",
         {"skill": skill_name},
@@ -584,7 +613,7 @@ def query_skill_detail(
 
     cte_sql = """
     WITH target_sessions AS (
-        -- Main session usage
+        -- Main session usage (includes mentions for filtering)
         SELECT sk.session_uuid, 1 as has_main, 0 as has_sub, NULL as agent_id
         FROM session_skills sk
         JOIN sessions s ON sk.session_uuid = s.uuid
@@ -606,6 +635,13 @@ def query_skill_detail(
                GROUP_CONCAT(DISTINCT agent_id) as agent_ids
         FROM target_sessions
         GROUP BY session_uuid
+    ),
+    session_sources AS (
+        SELECT sk.session_uuid,
+               GROUP_CONCAT(DISTINCT sk.invocation_source) as invocation_sources
+        FROM session_skills sk
+        WHERE sk.skill_name = :skill
+        GROUP BY sk.session_uuid
     )
     """
 
@@ -621,9 +657,11 @@ def query_skill_detail(
             s.message_count, s.start_time, s.end_time, s.duration_seconds,
             s.models_used, s.subagent_count, s.initial_prompt,
             s.git_branch, s.session_titles,
-            agg.has_main, agg.has_sub, agg.agent_ids
+            agg.has_main, agg.has_sub, agg.agent_ids,
+            ss.invocation_sources
         FROM sessions s
         JOIN aggregated_sessions agg ON s.uuid = agg.session_uuid
+        LEFT JOIN session_sources ss ON s.uuid = ss.session_uuid
         ORDER BY s.start_time DESC
         LIMIT :limit OFFSET :offset""",
         params,
@@ -647,23 +685,35 @@ def query_skill_detail(
         agent_ids_str = session.pop("agent_ids")
         session["subagent_agent_ids"] = agent_ids_str.split(",") if agent_ids_str else []
 
+        # Parse invocation sources per session
+        sources_str = session.pop("invocation_sources", None)
+        session["invocation_sources"] = sources_str.split(",") if sources_str else []
+
         # Parse JSON fields
         session["models_used"] = _parse_json_list(session.get("models_used"))
         session["session_titles"] = _parse_json_list(session.get("session_titles"))
         session["git_branches"] = [session["git_branch"]] if session.get("git_branch") else []
         sessions.append(session)
 
+    # Parse invocation sources from comma-separated string
+    sources_str = main_row["invocation_sources"] if main_row else None
+    invocation_sources = sources_str.split(",") if sources_str else []
+
     return {
         "name": skill_name,
         "main_calls": main_calls,
         "subagent_calls": sub_calls,
         "total_calls": main_calls + sub_calls,
+        "manual_calls": manual_calls,
+        "auto_calls": auto_calls,
+        "mentioned_calls": mentioned_calls,
+        "mention_session_count": mention_session_count,
         "session_count": main_row["session_count"] or 0 if main_row else 0,
         "first_used": main_row["first_used"] if main_row else None,
         "last_used": main_row["last_used"] if main_row else None,
+        "invocation_sources": invocation_sources,
         "trend": [
-            {"date": r["date"], "calls": r["calls"], "sessions": r["sessions"]}
-            for r in trend_rows
+            {"date": r["date"], "calls": r["calls"], "sessions": r["sessions"]} for r in trend_rows
         ],
         "sessions": sessions,
         "total": total_sessions,
@@ -1345,12 +1395,19 @@ def query_skill_usage_trend(
 
     where = "WHERE " + " AND ".join(conditions) if conditions else ""
 
-    # Totals by skill
+    # Exclude text_detection (mentions) from skill usage analytics
+    mention_filter = "sk.invocation_source != 'text_detection'"
+    if where:
+        where_skills = f"{where} AND {mention_filter}"
+    else:
+        where_skills = f"WHERE {mention_filter}"
+
+    # Totals by skill (excluding mentions)
     rows = conn.execute(
         f"""SELECT sk.skill_name, SUM(sk.count) as total_count
         FROM session_skills sk
         JOIN sessions s ON sk.session_uuid = s.uuid
-        {where}
+        {where_skills}
         GROUP BY sk.skill_name
         ORDER BY total_count DESC""",
         params,
@@ -1359,12 +1416,12 @@ def query_skill_usage_trend(
     by_item = {row["skill_name"]: row["total_count"] for row in rows}
     total = sum(by_item.values())
 
-    # Daily trend
+    # Daily trend (excluding mentions)
     trend_rows = conn.execute(
         f"""SELECT DATE(s.start_time) as date, SUM(sk.count) as count
         FROM session_skills sk
         JOIN sessions s ON sk.session_uuid = s.uuid
-        {where}
+        {where_skills}
         AND s.start_time IS NOT NULL
         GROUP BY DATE(s.start_time)
         ORDER BY date""",
@@ -1377,17 +1434,17 @@ def query_skill_usage_trend(
         conn,
         item_col="sk.skill_name",
         from_clause="FROM session_skills sk JOIN sessions s ON sk.session_uuid = s.uuid",
-        where=where,
+        where=where_skills,
         params=params,
         count_expr="SUM(sk.count)",
     )
 
-    # First/last used
+    # First/last used (excluding mentions)
     time_row = conn.execute(
         f"""SELECT MIN(s.start_time) as first_used, MAX(s.start_time) as last_used
         FROM session_skills sk
         JOIN sessions s ON sk.session_uuid = s.uuid
-        {where}""",
+        {where_skills}""",
         params,
     ).fetchone()
 
@@ -1771,11 +1828,24 @@ BUILTIN_TOOL_CATEGORIES: dict[str, list[str]] = {
     "builtin-file-ops": ["Read", "Write", "Edit", "Glob", "Grep", "NotebookEdit"],
     "builtin-execution": ["Bash", "KillShell"],
     "builtin-agents": [
-        "Task", "Agent", "TaskCreate", "TaskUpdate", "TaskOutput", "TaskList",
-        "TaskGet", "TaskStop", "SendMessage", "TeamCreate", "TeamDelete",
+        "Task",
+        "Agent",
+        "TaskCreate",
+        "TaskUpdate",
+        "TaskOutput",
+        "TaskList",
+        "TaskGet",
+        "TaskStop",
+        "SendMessage",
+        "TeamCreate",
+        "TeamDelete",
     ],
     "builtin-planning": [
-        "TodoWrite", "EnterPlanMode", "ExitPlanMode", "Skill", "AskUserQuestion",
+        "TodoWrite",
+        "EnterPlanMode",
+        "ExitPlanMode",
+        "Skill",
+        "AskUserQuestion",
         "EnterWorktree",
     ],
     "builtin-web": ["WebFetch", "WebSearch"],
@@ -1793,9 +1863,7 @@ BUILTIN_CATEGORY_DISPLAY: dict[str, str] = {
 
 # Reverse lookup: tool_name -> category
 _BUILTIN_TOOL_TO_CATEGORY: dict[str, str] = {
-    tool: cat
-    for cat, tools in BUILTIN_TOOL_CATEGORIES.items()
-    for tool in tools
+    tool: cat for cat, tools in BUILTIN_TOOL_CATEGORIES.items() for tool in tools
 }
 
 
@@ -1890,7 +1958,9 @@ def query_builtin_tools_overview(
         GROUP BY st.tool_name""",
         params,
     ).fetchall()
-    tool_time_bounds = {row["tool_name"]: (row["first_used"], row["last_used"]) for row in time_rows}
+    tool_time_bounds = {
+        row["tool_name"]: (row["first_used"], row["last_used"]) for row in time_rows
+    }
 
     # Group by category
     servers: dict[str, dict] = defaultdict(
@@ -1964,9 +2034,7 @@ def query_builtin_tools_overview(
     total_tools = 0
     total_calls = 0
 
-    for cat_name, sdata in sorted(
-        servers.items(), key=lambda x: x[1]["total_calls"], reverse=True
-    ):
+    for cat_name, sdata in sorted(servers.items(), key=lambda x: x[1]["total_calls"], reverse=True):
         tools_sorted = sorted(sdata["tools"], key=lambda t: t["calls"], reverse=True)
         total_tools += len(tools_sorted)
         total_calls += sdata["total_calls"]
@@ -2347,7 +2415,7 @@ def query_mcp_server_trend(
     ).fetchall()
 
     # Subagent calls per day
-    sub_conditions = [f"sat.tool_name LIKE :pattern"]
+    sub_conditions = ["sat.tool_name LIKE :pattern"]
     sub_params: dict = {"pattern": like_pattern}
     if project:
         sub_conditions.append("s.project_encoded_name = :project")
@@ -2861,13 +2929,15 @@ def query_mcp_tool_detail(
     trend = []
     for d in sorted(trend_map):
         m = trend_map[d]
-        trend.append({
-            "date": d,
-            "calls": m["main_calls"] + m["sub_calls"],
-            "sessions": m["sessions"],
-            "main_calls": m["main_calls"],
-            "subagent_calls": m["sub_calls"],
-        })
+        trend.append(
+            {
+                "date": d,
+                "calls": m["main_calls"] + m["sub_calls"],
+                "sessions": m["sessions"],
+                "main_calls": m["main_calls"],
+                "subagent_calls": m["sub_calls"],
+            }
+        )
 
     return {
         "name": tool_name,
@@ -2892,7 +2962,7 @@ def query_sessions_by_mcp_tool(
     offset: int = 0,
 ) -> dict:
     """Paginated session list for a specific MCP tool. Returns {sessions, total}."""
-    
+
     # Base WHERE clause components
     conditions = []
     params: dict = {"full_name": full_tool_name}
@@ -2905,7 +2975,7 @@ def query_sessions_by_mcp_tool(
     if time_clause:
         conditions.append(time_clause)
         params.update(time_params)
-    
+
     where = "WHERE " + " AND ".join(conditions) if conditions else ""
 
     # Common CTE for main + subagent tool usage union
@@ -2914,7 +2984,7 @@ def query_sessions_by_mcp_tool(
     cte_sql = f"""
     WITH target_sessions AS (
         -- Main usage
-        SELECT 
+        SELECT
             st.session_uuid,
             1 as has_main,
             0 as has_sub,
@@ -2922,11 +2992,11 @@ def query_sessions_by_mcp_tool(
         FROM session_tools st
         JOIN sessions s ON st.session_uuid = s.uuid
         {where} AND st.tool_name = :full_name
-        
+
         UNION ALL
-        
+
         -- Subagent usage
-        SELECT 
+        SELECT
             si.session_uuid,
             0 as has_main,
             1 as has_sub,
@@ -2937,7 +3007,7 @@ def query_sessions_by_mcp_tool(
         {where} AND sat.tool_name = :full_name
     ),
     aggregated_sessions AS (
-        SELECT 
+        SELECT
             session_uuid,
             MAX(has_main) as has_main,
             MAX(has_sub) as has_sub,
@@ -2950,14 +3020,14 @@ def query_sessions_by_mcp_tool(
     # Total count
     total = conn.execute(
         f"""{cte_sql}
-        SELECT COUNT(*) FROM aggregated_sessions"""
-        , params
+        SELECT COUNT(*) FROM aggregated_sessions""",
+        params,
     ).fetchone()[0]
 
     # Paginated results
     params["limit"] = limit
     params["offset"] = offset
-    
+
     rows = conn.execute(
         f"""{cte_sql}
         SELECT
@@ -2976,7 +3046,7 @@ def query_sessions_by_mcp_tool(
     sessions = []
     for row in rows:
         session = dict(row)
-        
+
         # Calculate tool_source
         has_main = session.pop("has_main")
         has_sub = session.pop("has_sub")
@@ -2986,7 +3056,7 @@ def query_sessions_by_mcp_tool(
             session["tool_source"] = "subagent"
         else:
             session["tool_source"] = "main"
-            
+
         # Parse agent IDs
         agent_ids_str = session.pop("agent_ids")
         session["subagent_agent_ids"] = agent_ids_str.split(",") if agent_ids_str else []
@@ -3005,9 +3075,7 @@ def query_sessions_by_mcp_tool(
 # ---------------------------------------------------------------------------
 
 
-def _builtin_tool_placeholders(
-    tool_names: list[str], prefix: str = "bt"
-) -> tuple[str, dict]:
+def _builtin_tool_placeholders(tool_names: list[str], prefix: str = "bt") -> tuple[str, dict]:
     """Build IN-clause placeholders and params for a list of tool names."""
     placeholders = ",".join(f":{prefix}{i}" for i in range(len(tool_names)))
     params = {f"{prefix}{i}": name for i, name in enumerate(tool_names)}

@@ -18,6 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from command_helpers import (
     classify_invocation,
     detect_slash_commands_in_text,
+    expand_plugin_short_name,
     parse_command_from_content,
 )
 
@@ -51,6 +52,98 @@ if TYPE_CHECKING:
     pass
 
 
+def _link_command_to_skill(commands: set[tuple], skills: Counter) -> None:
+    """Upgrade skills to manual when triggered by a same-plugin command.
+
+    When session has:
+    - A command from plugin X (e.g., superpowers:brainstorm) in user_prompt_commands
+    - A skill_tool call for a skill from plugin X (e.g., superpowers:brainstorming)
+    → Upgrade the skill from skill_tool to slash_command.
+
+    Heuristic: same plugin prefix = linked.
+    """
+    # Collect plugin prefixes from commands
+    command_plugins: set[str] = set()
+    for name, _source in commands:
+        if ":" in name:
+            command_plugins.add(name.split(":")[0])
+
+    if not command_plugins:
+        return
+
+    # Find skill_tool entries whose plugin prefix matches a command
+    for key in list(skills.keys()):
+        name, source = key
+        if source != "skill_tool" or ":" not in name:
+            continue
+        plugin = name.split(":")[0]
+        if plugin in command_plugins:
+            # Upgrade to slash_command
+            count = skills.pop(key)
+            sc_key = (name, "slash_command")
+            skills[sc_key] = skills.get(sc_key, 0) + count
+
+
+def _dedup_invocation_sources(counter: Counter) -> None:
+    """Deduplicate invocation sources for the same skill/command.
+
+    When user types /skill (slash_command or text_detection), Claude may also
+    fire a Skill tool call (skill_tool).  These are the SAME invocation.
+
+    Classification rules (per skill name):
+      - slash_command + skill_tool → slash_command  (user typed /cmd with tags, Claude ran it)
+      - text_detection + skill_tool → slash_command  (user typed /cmd in text, Claude ran it)
+      - skill_tool alone → skill_tool               (Claude auto-invoked)
+      - text_detection alone → text_detection        (user typed /cmd, Claude didn't run it)
+      - slash_command alone → slash_command           (user typed /cmd via tags, Claude didn't run it)
+    """
+    by_name: dict[str, list[str]] = {}
+    for name, source in list(counter.keys()):
+        by_name.setdefault(name, []).append(source)
+    for name, sources in by_name.items():
+        if len(sources) <= 1:
+            continue
+        sc_key = (name, "slash_command")
+        st_key = (name, "skill_tool")
+        td_key = (name, "text_detection")
+
+        td_count = counter.get(td_key, 0)
+        st_count = counter.get(st_key, 0)
+        # Snapshot BEFORE the upgrade step mutates counter[sc_key].
+        # Used later to limit how many skill_tool entries get absorbed.
+        orig_sc_count = counter.get(sc_key, 0)
+
+        # text_detection + skill_tool (without slash_command) → upgrade to slash_command.
+        # User typed /command in text AND Claude invoked it = manual invocation.
+        # Skip if slash_command already exists (text_detection is redundant with tags).
+        if td_count > 0 and st_count > 0 and orig_sc_count == 0:
+            upgrade = min(td_count, st_count)
+            counter[sc_key] = upgrade
+            counter[td_key] -= upgrade
+            counter[st_key] -= upgrade
+            if counter[td_key] <= 0:
+                del counter[td_key]
+            if counter[st_key] <= 0:
+                del counter[st_key]
+
+        # Original slash_command (from <command-message> tags) absorbs skill_tool.
+        # Only absorb up to the original count — upgraded entries already consumed
+        # their corresponding skill_tool during the upgrade step above.
+        if orig_sc_count > 0 and st_key in counter:
+            absorb = min(orig_sc_count, counter[st_key])
+            counter[st_key] -= absorb
+            if counter[st_key] <= 0:
+                del counter[st_key]
+
+        # Higher sources absorb remaining text_detection
+        remaining_higher = counter.get(sc_key, 0) + counter.get(st_key, 0)
+        if remaining_higher > 0 and td_key in counter:
+            absorb = min(remaining_higher, counter[td_key])
+            counter[td_key] -= absorb
+            if counter[td_key] <= 0:
+                del counter[td_key]
+
+
 class SessionCache(BaseCache):
     """
     Mutable cache for session's computed properties.
@@ -71,6 +164,7 @@ class SessionCache(BaseCache):
         "usage_summary",
         "tools_used",
         "skills_used",
+        "skills_mentioned",
         "commands_used",
         "git_branches",
         "working_dirs",
@@ -103,8 +197,11 @@ class SessionCache(BaseCache):
         self.slug: Optional[str] = None
         self.usage_summary: Optional[TokenUsage] = None
         self.tools_used: Optional[Dict[str, int]] = None
-        self.skills_used: Optional[Dict[str, int]] = None
-        self.commands_used: Optional[Dict[str, int]] = None
+        self.skills_used: Optional[Dict[tuple, int]] = None  # {(name, source): count}
+        self.skills_mentioned: Optional[Dict[tuple, int]] = (
+            None  # {(name, "text_detection"): count}
+        )
+        self.commands_used: Optional[Dict[tuple, int]] = None  # {(name, source): count}
         self.git_branches: Optional[Set[str]] = None
         self.working_dirs: Optional[Set[str]] = None
         self.models_used: Optional[Set[str]] = None
@@ -137,6 +234,7 @@ class SessionCache(BaseCache):
         self.usage_summary = None
         self.tools_used = None
         self.skills_used = None
+        self.skills_mentioned = None
         self.commands_used = None
         self.git_branches = None
         self.working_dirs = None
@@ -251,10 +349,11 @@ class Session(BaseModel):
         slug: Optional[str] = None
         usage = TokenUsage.zero()
         tools: Counter[str] = Counter()
-        skills: Counter[str] = Counter()
-        commands: Counter[str] = Counter()
-        user_prompt_skills: Set[str] = set()
-        user_prompt_commands: Set[str] = set()
+        # Skills/commands use (name, source) tuple keys for invocation tracking
+        skills: Counter[tuple] = Counter()  # {(name, source): count}
+        commands: Counter[tuple] = Counter()  # {(name, source): count}
+        user_prompt_skills: Set[tuple] = set()  # {(name, source)}
+        user_prompt_commands: Set[tuple] = set()  # {(name, source)}
         git_branches: Set[str] = set()
         working_dirs: Set[str] = set()
         models_used: Set[str] = set()
@@ -288,24 +387,37 @@ class Session(BaseModel):
                 # These fire when users type /command but may not result in a Skill tool call
                 if msg.content:
                     cmd_name, _ = parse_command_from_content(msg.content)
+                    source = "slash_command"  # <command-message> = user typed /command
+                    # Normalize short-form plugin names (e.g. "frontend-design"
+                    # → "frontend-design:frontend-design") so names match the
+                    # full form that Skill tool invocations use.
+                    if cmd_name:
+                        cmd_name = expand_plugin_short_name(cmd_name)
                     # Fallback: detect /command in plain text (hook-triggered skills).
                     # ONLY run on real user prompts — tool results, internal messages,
                     # and system injections contain code/diffs/paths that produce
                     # false positives (e.g. "/plugin:command" in a code comment).
                     if cmd_name is None and not msg.is_tool_result and not msg.is_internal_message:
                         for candidate in detect_slash_commands_in_text(msg.content):
+                            # Expand short names first (e.g. "brainstorming" →
+                            # "superpowers:brainstorming") so classify_invocation
+                            # can recognize plugin entry names as skills.
+                            expanded = expand_plugin_short_name(candidate)
                             # Only detect skills — builtins always have <command-message>
                             # tags when actually invoked, so they're caught above.
-                            if classify_invocation(candidate) == "skill":
-                                cmd_name = candidate
-                                break
+                            if classify_invocation(expanded) == "skill":
+                                user_prompt_skills.add((expanded, "text_detection"))
+                            elif classify_invocation(expanded) not in ("builtin", "agent"):
+                                user_prompt_commands.add((expanded, "text_detection"))
                     if cmd_name:
                         kind = classify_invocation(cmd_name)
                         if kind == "skill":
-                            user_prompt_skills.add(cmd_name)
-                        else:
-                            # Both "command" and "builtin" go into commands
-                            user_prompt_commands.add(cmd_name)
+                            user_prompt_skills.add((cmd_name, source))
+                        elif kind != "agent":
+                            # "command" and "builtin" go into commands.
+                            # "agent" entries are skipped — tracked separately
+                            # in subagent_invocations.
+                            user_prompt_commands.add((cmd_name, source))
             elif isinstance(msg, AssistantMessage):
                 assistant_msg_count += 1
             elif isinstance(msg, FileHistorySnapshot):
@@ -344,12 +456,16 @@ class Session(BaseModel):
                         if block.name == "Skill" and block.input:
                             skill_name = block.input.get("skill")
                             if skill_name:
+                                # Normalize short-form plugin names
+                                skill_name = expand_plugin_short_name(skill_name)
                                 kind = classify_invocation(skill_name)
                                 if kind == "skill":
-                                    skills[skill_name] += 1
-                                else:
-                                    # Both "command" and "builtin" go into commands
-                                    commands[skill_name] += 1
+                                    skills[(skill_name, "skill_tool")] += 1
+                                elif kind != "agent":
+                                    # "command" and "builtin" go into commands.
+                                    # "agent" entries are skipped — tracked separately
+                                    # in subagent_invocations.
+                                    commands[(skill_name, "skill_tool")] += 1
 
             # Git branches
             git_branch = getattr(msg, "git_branch", None)
@@ -362,12 +478,28 @@ class Session(BaseModel):
                 working_dirs.add(cwd)
 
         # Merge user-prompt detected commands/skills (avoid double-counting)
-        for name in user_prompt_skills:
-            if name not in skills:
-                skills[name] += 1
-        for name in user_prompt_commands:
-            if name not in commands:
-                commands[name] += 1
+        # user_prompt_skills/commands now contain (name, source) tuples
+        for key in user_prompt_skills:
+            if key not in skills:
+                skills[key] += 1
+        for key in user_prompt_commands:
+            if key not in commands:
+                commands[key] += 1
+
+        # Command→Skill linkage: when a command from plugin X triggered a skill
+        # from plugin X, upgrade the skill to slash_command (manual).
+        _link_command_to_skill(user_prompt_commands, skills)
+
+        _dedup_invocation_sources(skills)
+        _dedup_invocation_sources(commands)
+
+        # Separate text_detection entries that survived dedup into skills_mentioned.
+        # These are skills the user referenced in their prompt but Claude never invoked.
+        # skills_used should only contain actually invoked skills (skill_tool, slash_command).
+        skills_mentioned: Counter[tuple] = Counter()
+        for key in list(skills.keys()):
+            if key[1] == "text_detection":
+                skills_mentioned[key] = skills.pop(key)
 
         # Store all computed values
         cache.start_time = first_ts
@@ -376,6 +508,7 @@ class Session(BaseModel):
         cache.usage_summary = usage
         cache.tools_used = dict(tools)
         cache.skills_used = dict(skills)
+        cache.skills_mentioned = dict(skills_mentioned)
         cache.commands_used = dict(commands)
         cache.git_branches = git_branches
         cache.working_dirs = working_dirs
@@ -736,29 +869,49 @@ class Session(BaseModel):
         self._load_metadata()
         return Counter(self._get_cache().tools_used or {})
 
-    def get_skills_used(self) -> Counter[str]:
+    def get_skills_used(self) -> Dict[tuple, int]:
         """
-        Count skill usage from Skill tool invocations (cached).
+        Count skill usage with invocation source tracking (cached).
 
-        Tracks both file-based skills and plugin skills (e.g., 'oh-my-claudecode:security-review').
+        Only includes actually invoked skills (via Skill tool or slash command).
+        Keys are (skill_name, invocation_source) tuples where source is one of:
+        'slash_command', 'skill_tool'.
 
         Returns:
-            Counter mapping skill name to usage count
+            Dict mapping (skill_name, source) to usage count
         """
         self._load_metadata()
-        return Counter(self._get_cache().skills_used or {})
+        return dict(self._get_cache().skills_used or {})
 
-    def get_commands_used(self) -> Counter[str]:
+    def get_skills_mentioned(self) -> Dict[tuple, int]:
         """
-        Count command usage from Skill tool invocations without ':' prefix (cached).
+        Count skills mentioned in user prompts but never invoked (cached).
 
-        Commands are user-authored .md files in ~/.claude/commands/ or .claude/commands/.
+        These are /skill references detected in user text where Claude did not
+        subsequently call the Skill tool. Tracked separately from skills_used
+        to avoid inflating usage counts.
+
+        Keys are (skill_name, 'text_detection') tuples.
 
         Returns:
-            Counter mapping command name to usage count
+            Dict mapping (skill_name, source) to mention count
         """
         self._load_metadata()
-        return Counter(self._get_cache().commands_used or {})
+        return dict(self._get_cache().skills_mentioned or {})
+
+    def get_commands_used(self) -> Dict[tuple, int]:
+        """
+        Count command usage with invocation source tracking (cached).
+
+        Commands are user-authored .md files in ~/.claude/commands/ or .claude/commands/,
+        built-in CLI commands, or slash commands that invoke skills.
+        Keys are (command_name, invocation_source) tuples.
+
+        Returns:
+            Dict mapping (command_name, source) to usage count
+        """
+        self._load_metadata()
+        return dict(self._get_cache().commands_used or {})
 
     def get_git_branches(self) -> Set[str]:
         """

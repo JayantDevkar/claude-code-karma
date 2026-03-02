@@ -199,6 +199,10 @@ class SessionSummary(BaseModel):
         default_factory=list,
         description="Agent IDs of subagents that used the tool (for deep-linking to agent session view)",
     )
+    invocation_sources: list[str] = Field(
+        default_factory=list,
+        description="How the skill was invoked in this session: slash_command, skill_tool, text_detection",
+    )
     session_source: Optional[str] = Field(
         None,
         description="Session origin: 'desktop' for Claude Desktop, None for CLI",
@@ -278,6 +282,10 @@ class SessionDetail(SessionSummary):
     skills_used: list["SkillUsage"] = Field(
         default_factory=list,
         description="Skills invoked via the Skill tool during this session",
+    )
+    skills_mentioned: list["SkillUsage"] = Field(
+        default_factory=list,
+        description="Skills referenced in user prompts but not actually invoked",
     )
     # Command usage tracking (user-authored slash commands without ':' prefix)
     commands_used: list["CommandUsage"] = Field(
@@ -599,6 +607,11 @@ class SkillUsage(BaseModel):
     plugin: Optional[str] = Field(
         None, description="Plugin name if is_plugin (e.g., 'oh-my-claudecode')"
     )
+    invocation_source: str = Field(
+        "skill_tool",
+        description="How the skill was invoked: 'slash_command' (user typed /), "
+        "'skill_tool' (Claude auto-invoked), or 'text_detection' (regex fallback)",
+    )
 
 
 class CommandUsage(BaseModel):
@@ -606,8 +619,14 @@ class CommandUsage(BaseModel):
 
     name: str = Field(..., description="Command name (e.g., 'commit', 'run-tests')")
     count: int = Field(..., description="Number of times the command was invoked")
-    source: str = Field("unknown", description="Source: 'builtin', 'plugin', 'project', 'user', or 'unknown'")
+    source: str = Field(
+        "unknown", description="Source: 'builtin', 'plugin', 'project', 'user', or 'unknown'"
+    )
     plugin: Optional[str] = Field(None, description="Plugin name if source == 'plugin'")
+    invocation_source: str = Field(
+        "slash_command",
+        description="How the command was invoked: 'slash_command', 'skill_tool', or 'text_detection'",
+    )
 
 
 class SkillInfo(BaseModel):
@@ -651,6 +670,12 @@ class SkillDetailResponse(BaseModel):
     calls: int = Field(0, description="Total invocations")
     main_calls: int = Field(0, description="Calls from main sessions")
     subagent_calls: int = Field(0, description="Calls from subagents")
+    manual_calls: int = Field(0, description="Calls via slash command (user-initiated)")
+    auto_calls: int = Field(0, description="Calls via skill tool (auto-invoked by Claude)")
+    mentioned_calls: int = Field(0, description="Times mentioned in user prompts but not invoked")
+    mention_session_count: int = Field(
+        0, description="Sessions where skill was only mentioned, not invoked"
+    )
     session_count: int = Field(0, description="Distinct sessions using this skill")
     first_used: Optional[str] = Field(None, description="First usage date (ISO)")
     last_used: Optional[str] = Field(None, description="Last usage date (ISO)")
@@ -1322,6 +1347,7 @@ class DailyUsage(BaseModel):
     date: str = Field(..., description="Date in YYYY-MM-DD format")
     agent_runs: int = Field(0, description="Agent invocations on this date")
     skill_invocations: int = Field(0, description="Skill invocations on this date")
+    command_invocations: int = Field(0, description="Command invocations on this date")
     mcp_tool_calls: int = Field(0, description="MCP tool calls on this date")
     cost_usd: float = Field(0.0, description="Estimated cost for this date")
 
@@ -1332,11 +1358,15 @@ class PluginUsageStats(BaseModel):
     plugin_name: str = Field(..., description="Plugin identifier")
     total_agent_runs: int = Field(0, description="Total agent invocations")
     total_skill_invocations: int = Field(0, description="Total skill invocations")
+    total_command_invocations: int = Field(0, description="Total command invocations")
     total_mcp_tool_calls: int = Field(0, description="Total MCP tool invocations")
     estimated_cost_usd: float = Field(0.0, description="Total estimated cost")
     by_agent: dict[str, int] = Field(default_factory=dict, description="Agent name -> run count")
     by_skill: dict[str, int] = Field(
         default_factory=dict, description="Skill name -> invocation count"
+    )
+    by_command: dict[str, int] = Field(
+        default_factory=dict, description="Command name -> invocation count"
     )
     by_mcp_tool: dict[str, int] = Field(
         default_factory=dict, description="MCP tool short name -> call count"
@@ -1346,6 +1376,9 @@ class PluginUsageStats(BaseModel):
     )
     by_skill_daily: dict[str, dict[str, int]] = Field(
         default_factory=dict, description="Skill name -> {date -> count}"
+    )
+    by_command_daily: dict[str, dict[str, int]] = Field(
+        default_factory=dict, description="Command name -> {date -> count}"
     )
     by_mcp_tool_daily: dict[str, dict[str, int]] = Field(
         default_factory=dict, description="MCP tool name -> {date -> count}"

@@ -17,8 +17,18 @@ from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from command_helpers import is_plugin_skill
 from schemas import SessionSummary
 from services.desktop_sessions import get_session_source
+
+
+def _skill_plugin_name(skill_name: str) -> str | None:
+    """Extract plugin name from a skill name (full or short form)."""
+    if ":" in skill_name:
+        return skill_name.split(":")[0]
+    if is_plugin_skill(skill_name):
+        return skill_name  # Short-form: plugin name IS the skill name
+    return None
 
 
 def _enrich_chain_titles_by_slug(summaries: list[SessionSummary]) -> None:
@@ -958,6 +968,7 @@ def get_session(uuid: str, request: Request, fresh: bool = False):
     usage = session.get_usage_summary()
     tools_used = session.get_tools_used()
     skills_used = session.get_skills_used()
+    skills_mentioned = session.get_skills_mentioned()
     commands_used = session.get_commands_used()
 
     # Get initial prompt using shared helper
@@ -1059,25 +1070,38 @@ def get_session(uuid: str, request: Request, fresh: bool = False):
             for detail in (session.compaction_summaries or [])
         ],
         message_type_breakdown=session.get_message_type_breakdown(),
-        # Skill usage tracking
+        # Skill usage tracking (keys are (name, invocation_source) tuples)
         skills_used=[
             SkillUsage(
                 name=skill_name,
                 count=count,
-                is_plugin=":" in skill_name,
-                plugin=skill_name.split(":")[0] if ":" in skill_name else None,
+                is_plugin=is_plugin_skill(skill_name),
+                plugin=_skill_plugin_name(skill_name),
+                invocation_source=inv_source,
             )
-            for skill_name, count in skills_used.items()
+            for (skill_name, inv_source), count in skills_used.items()
         ],
-        # Command usage tracking (user-authored slash commands)
+        # Skills mentioned in user prompts but not invoked
+        skills_mentioned=[
+            SkillUsage(
+                name=skill_name,
+                count=count,
+                is_plugin=is_plugin_skill(skill_name),
+                plugin=_skill_plugin_name(skill_name),
+                invocation_source=inv_source,
+            )
+            for (skill_name, inv_source), count in skills_mentioned.items()
+        ],
+        # Command usage tracking (keys are (name, invocation_source) tuples)
         commands_used=[
             CommandUsage(
                 name=cmd_name,
                 count=count,
                 source=source,
                 plugin=plugin,
+                invocation_source=inv_source,
             )
-            for cmd_name, count in commands_used.items()
+            for (cmd_name, inv_source), count in commands_used.items()
             for source, plugin in [detect_command_source(cmd_name, project_encoded_name)]
         ],
     )

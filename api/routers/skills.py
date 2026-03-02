@@ -23,6 +23,7 @@ models_path = api_path.parent.parent
 sys.path.insert(0, str(api_path))
 sys.path.insert(0, str(models_path))
 
+from command_helpers import is_plugin_skill
 from config import Settings, settings
 from http_caching import cacheable
 from models import Project
@@ -409,8 +410,12 @@ def get_skill_usage(
                 results = []
                 for row in rows:
                     skill_name = row["skill_name"]
-                    is_plugin = ":" in skill_name
-                    plugin_name = skill_name.split(":")[0] if is_plugin else None
+                    is_plugin = is_plugin_skill(skill_name)
+                    plugin_name = (
+                        skill_name.split(":")[0]
+                        if ":" in skill_name
+                        else (skill_name if is_plugin else None)
+                    )
                     results.append(
                         {
                             "name": skill_name,
@@ -427,13 +432,14 @@ def get_skill_usage(
 
     from collections import Counter
 
+    from command_helpers import aggregate_by_name
     from parallel import process_items_parallel
     from utils import list_all_projects
 
     def process_session_skills(session) -> dict[str, int]:
-        """Extract skill usage from a single session."""
+        """Extract skill usage from a single session (aggregated by name)."""
         try:
-            return session.get_skills_used()
+            return aggregate_by_name(session.get_skills_used())
         except Exception:
             return {}
 
@@ -464,8 +470,10 @@ def get_skill_usage(
     results = []
     for skill_name, count in skills_counter.most_common(limit):
         # Determine if this is a plugin skill
-        is_plugin = ":" in skill_name
-        plugin_name = skill_name.split(":")[0] if is_plugin else None
+        is_plugin = is_plugin_skill(skill_name)
+        plugin_name = (
+            skill_name.split(":")[0] if ":" in skill_name else (skill_name if is_plugin else None)
+        )
 
         results.append(
             {
@@ -473,6 +481,8 @@ def get_skill_usage(
                 "count": count,
                 "is_plugin": is_plugin,
                 "plugin": plugin_name,
+                "last_used": None,
+                "session_count": 0,
             }
         )
 
@@ -612,6 +622,7 @@ async def get_skill_detail(
                     or [],
                     tool_source=row.get("tool_source"),
                     subagent_agent_ids=row.get("subagent_agent_ids", []),
+                    invocation_sources=row.get("invocation_sources", []),
                 )
             )
 
@@ -620,12 +631,16 @@ async def get_skill_detail(
         name=skill_info.name if skill_info else skill_name,
         description=skill_info.description if skill_info else None,
         content=skill_info.content if skill_info else None,
-        is_plugin=skill_info.is_plugin if skill_info else (":" in skill_name),
+        is_plugin=skill_info.is_plugin if skill_info else is_plugin_skill(skill_name),
         plugin=skill_info.plugin if skill_info else None,
         file_path=skill_info.file_path if skill_info else None,
         calls=usage_data["total_calls"] if usage_data else 0,
         main_calls=usage_data["main_calls"] if usage_data else 0,
         subagent_calls=usage_data["subagent_calls"] if usage_data else 0,
+        manual_calls=usage_data["manual_calls"] if usage_data else 0,
+        auto_calls=usage_data["auto_calls"] if usage_data else 0,
+        mentioned_calls=usage_data.get("mentioned_calls", 0) if usage_data else 0,
+        mention_session_count=usage_data.get("mention_session_count", 0) if usage_data else 0,
         session_count=usage_data["session_count"] if usage_data else 0,
         first_used=usage_data["first_used"] if usage_data else None,
         last_used=usage_data["last_used"] if usage_data else None,
@@ -707,6 +722,7 @@ def get_skill_sessions(
     except Exception as e:
         logger.warning("SQLite skill sessions query failed, falling back: %s", e)
 
+    from command_helpers import aggregate_by_name
     from parallel import process_items_parallel
     from utils import get_initial_prompt, list_all_projects, normalize_timezone
 
@@ -714,7 +730,7 @@ def get_skill_sessions(
         """Check if session uses skill and return summary if it does."""
         try:
             project, session = session_tuple
-            skills_used = session.get_skills_used()
+            skills_used = aggregate_by_name(session.get_skills_used())
             if skill_name not in skills_used:
                 return None
 
@@ -798,8 +814,14 @@ async def _resolve_skill_info(skill_name: str, config: Settings) -> SkillInfo:
     import yaml
 
     # Determine if this is a plugin skill
-    is_plugin = ":" in skill_name
-    plugin_full_name = skill_name.split(":")[0] if is_plugin else None
+    is_plugin = is_plugin_skill(skill_name)
+    if ":" in skill_name:
+        plugin_full_name = skill_name.split(":")[0]
+    elif is_plugin:
+        # Short-form: plugin name is the skill name itself
+        plugin_full_name = skill_name
+    else:
+        plugin_full_name = None
     # Extract short name (before @) for directory matching
     # e.g., "oh-my-claudecode@omc" -> "oh-my-claudecode"
     plugin_short_name = (

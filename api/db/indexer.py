@@ -124,12 +124,23 @@ def sync_all_projects(conn: sqlite3.Connection) -> dict:
                 real_encoded = get_real_project_encoded_name(wt_dir.name, session_uuids)
                 if real_encoded:
                     real_path = real_project_paths.get(real_encoded)
+                    # Determine session source: CLI worktrees (per-repo .claude/worktrees/
+                    # or .worktrees/) don't come from Desktop — let auto-detect handle it
+                    from services.desktop_sessions import (
+                        _extract_project_prefix_from_worktree,
+                    )
+
+                    wt_source = (
+                        None  # auto-detect per session
+                        if _extract_project_prefix_from_worktree(wt_dir.name)
+                        else "desktop"
+                    )
                     project_stats = sync_project(
                         conn,
                         wt_dir,
                         encoded_name_override=real_encoded,
                         project_path_override=real_path,
-                        session_source="desktop",
+                        session_source=wt_source,
                     )
                 else:
                     # Can't resolve — index as standalone (graceful degradation)
@@ -304,6 +315,7 @@ def _index_session(
     usage = session.get_usage_summary()
     tools_used = session.get_tools_used()
     skills_used = session.get_skills_used()
+    skills_mentioned = session.get_skills_mentioned()
     commands_used = session.get_commands_used()
     models_used = list(session.get_models_used())
     git_branches = list(session.get_git_branches())
@@ -393,35 +405,28 @@ def _index_session(
     else:
         conn.execute("DELETE FROM session_tools WHERE session_uuid = ?", (uuid,))
 
-    # Upsert skill usage (INSERT OR REPLACE + cleanup to avoid DELETE gap)
-    if skills_used:
-        for skill_name, count in skills_used.items():
+    # Upsert skill usage with invocation_source
+    # Keys are (skill_name, invocation_source) tuples
+    # skills_used = actual invocations (slash_command, skill_tool)
+    # skills_mentioned = text_detection only (user referenced but didn't invoke)
+    conn.execute("DELETE FROM session_skills WHERE session_uuid = ?", (uuid,))
+    all_skills = {**skills_used, **skills_mentioned}
+    if all_skills:
+        for (skill_name, source), count in all_skills.items():
             conn.execute(
-                "INSERT OR REPLACE INTO session_skills VALUES (?, ?, ?)", (uuid, skill_name, count)
+                "INSERT OR REPLACE INTO session_skills (session_uuid, skill_name, invocation_source, count) VALUES (?, ?, ?, ?)",
+                (uuid, skill_name, source, count),
             )
-        # Remove skills no longer present
-        placeholders = ",".join("?" * len(skills_used))
-        conn.execute(
-            f"DELETE FROM session_skills WHERE session_uuid = ? AND skill_name NOT IN ({placeholders})",
-            (uuid, *skills_used.keys()),
-        )
-    else:
-        conn.execute("DELETE FROM session_skills WHERE session_uuid = ?", (uuid,))
 
-    # Upsert command usage (INSERT OR REPLACE + cleanup to avoid DELETE gap)
+    # Upsert command usage with invocation_source
+    # Keys are (command_name, invocation_source) tuples
+    conn.execute("DELETE FROM session_commands WHERE session_uuid = ?", (uuid,))
     if commands_used:
-        for cmd_name, count in commands_used.items():
+        for (cmd_name, source), count in commands_used.items():
             conn.execute(
-                "INSERT OR REPLACE INTO session_commands VALUES (?, ?, ?)", (uuid, cmd_name, count)
+                "INSERT OR REPLACE INTO session_commands (session_uuid, command_name, invocation_source, count) VALUES (?, ?, ?, ?)",
+                (uuid, cmd_name, source, count),
             )
-        # Remove commands no longer present
-        placeholders = ",".join("?" * len(commands_used))
-        conn.execute(
-            f"DELETE FROM session_commands WHERE session_uuid = ? AND command_name NOT IN ({placeholders})",
-            (uuid, *commands_used.keys()),
-        )
-    else:
-        conn.execute("DELETE FROM session_commands WHERE session_uuid = ?", (uuid,))
 
     # Upsert message UUIDs (for continuation lookup)
     conn.execute("DELETE FROM message_uuids WHERE session_uuid = ?", (uuid,))
@@ -494,6 +499,7 @@ def _index_session(
                 invocation_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
 
                 # Count tool/skill/command usage from subagent messages
+                # skill_counts/command_counts use (name, source) tuple keys
                 tool_counts = {}
                 skill_counts = {}
                 command_counts = {}
@@ -513,17 +519,21 @@ def _index_session(
                             ):
                                 skill_name = block.input.get("skill")
                                 if skill_name:
-                                    from command_helpers import classify_invocation
+                                    from command_helpers import (
+                                        classify_invocation,
+                                        expand_plugin_short_name,
+                                    )
 
+                                    # Normalize short-form plugin names
+                                    skill_name = expand_plugin_short_name(skill_name)
                                     kind = classify_invocation(skill_name)
+                                    source = "skill_tool"
                                     if kind == "skill":
-                                        skill_counts[skill_name] = (
-                                            skill_counts.get(skill_name, 0) + 1
-                                        )
+                                        key = (skill_name, source)
+                                        skill_counts[key] = skill_counts.get(key, 0) + 1
                                     elif kind == "command":
-                                        command_counts[skill_name] = (
-                                            command_counts.get(skill_name, 0) + 1
-                                        )
+                                        key = (skill_name, source)
+                                        command_counts[key] = command_counts.get(key, 0) + 1
 
                 if tool_counts:
                     conn.executemany(
@@ -532,13 +542,19 @@ def _index_session(
                     )
                 if skill_counts:
                     conn.executemany(
-                        "INSERT INTO subagent_skills (invocation_id, skill_name, count) VALUES (?, ?, ?)",
-                        [(invocation_id, name, count) for name, count in skill_counts.items()],
+                        "INSERT INTO subagent_skills (invocation_id, skill_name, invocation_source, count) VALUES (?, ?, ?, ?)",
+                        [
+                            (invocation_id, name, source, count)
+                            for (name, source), count in skill_counts.items()
+                        ],
                     )
                 if command_counts:
                     conn.executemany(
-                        "INSERT INTO subagent_commands (invocation_id, command_name, count) VALUES (?, ?, ?)",
-                        [(invocation_id, name, count) for name, count in command_counts.items()],
+                        "INSERT INTO subagent_commands (invocation_id, command_name, invocation_source, count) VALUES (?, ?, ?, ?)",
+                        [
+                            (invocation_id, name, source, count)
+                            for (name, source), count in command_counts.items()
+                        ],
                     )
         except Exception as e:
             logger.warning("Error indexing subagent invocations for %s: %s", uuid, e)

@@ -18,6 +18,7 @@ from urllib.parse import unquote
 
 from fastapi import APIRouter, HTTPException, Query, Request
 
+from command_helpers import is_plugin_skill
 from http_caching import cacheable
 from models import (
     PluginInstallation,
@@ -219,7 +220,7 @@ def _query_plugin_usage_sqlite(
         time_filter = "AND s.start_time >= :cutoff"
         params["cutoff"] = cutoff.isoformat()
 
-    # Query skill invocations
+    # Query skill invocations (exclude mentions, match both full and short form)
     skill_rows = conn.execute(
         f"""
         SELECT
@@ -229,7 +230,9 @@ def _query_plugin_usage_sqlite(
             s.total_cost
         FROM session_skills sk
         JOIN sessions s ON s.uuid = sk.session_uuid
-        WHERE sk.skill_name LIKE :plugin || ':%' {time_filter}
+        WHERE (sk.skill_name LIKE :plugin || ':%' OR sk.skill_name = :plugin)
+            AND sk.invocation_source != 'text_detection'
+            {time_filter}
         ORDER BY s.start_time
         """,
         params,
@@ -250,8 +253,26 @@ def _query_plugin_usage_sqlite(
         params,
     ).fetchall()
 
+    # Query command invocations
+    command_rows = conn.execute(
+        f"""
+        SELECT
+            sc.command_name,
+            sc.count,
+            s.start_time,
+            s.total_cost
+        FROM session_commands sc
+        JOIN sessions s ON s.uuid = sc.session_uuid
+        WHERE (sc.command_name LIKE :plugin || ':%' OR sc.command_name = :plugin)
+            AND sc.invocation_source != 'text_detection'
+            {time_filter}
+        ORDER BY s.start_time
+        """,
+        params,
+    ).fetchall()
+
     # If no data found, return None
-    if not skill_rows and not agent_rows:
+    if not skill_rows and not agent_rows and not command_rows:
         return None
 
     # Aggregate results
@@ -259,11 +280,16 @@ def _query_plugin_usage_sqlite(
 
     by_skill = Counter()
     by_agent = Counter()
-    daily_usage = defaultdict(lambda: {"agent_runs": 0, "skill_invocations": 0, "cost_usd": 0.0})
+    by_command = Counter()
+    daily_usage = defaultdict(
+        lambda: {"agent_runs": 0, "skill_invocations": 0, "command_invocations": 0, "cost_usd": 0.0}
+    )
     by_agent_daily: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
     by_skill_daily: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    by_command_daily: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
     total_skill_invocations = 0
     total_agent_runs = 0
+    total_command_invocations = 0
     total_cost = 0.0
     first_used = None
     last_used = None
@@ -315,14 +341,37 @@ def _query_plugin_usage_sqlite(
             if last_used is None or start_time > last_used:
                 last_used = start_time
 
+    # Process command invocations
+    for row in command_rows:
+        cmd_full_name = row["command_name"]
+        cmd_short = cmd_full_name.split(":", 1)[1] if ":" in cmd_full_name else cmd_full_name
+        count = row["count"]
+        start_time = datetime.fromisoformat(row["start_time"]) if row["start_time"] else None
+
+        by_command[cmd_short] += count
+        total_command_invocations += count
+
+        if start_time:
+            date_key = start_time.strftime("%Y-%m-%d")
+            daily_usage[date_key]["command_invocations"] += count
+            by_command_daily[cmd_short][date_key] += count
+
+            if first_used is None or start_time < first_used:
+                first_used = start_time
+            if last_used is None or start_time > last_used:
+                last_used = start_time
+
     return {
         "agent_runs": total_agent_runs,
         "skill_invocations": total_skill_invocations,
+        "command_invocations": total_command_invocations,
         "cost_usd": total_cost,
         "by_agent": dict(by_agent),
         "by_skill": dict(by_skill),
+        "by_command": dict(by_command),
         "by_agent_daily": {k: dict(v) for k, v in by_agent_daily.items()},
         "by_skill_daily": {k: dict(v) for k, v in by_skill_daily.items()},
+        "by_command_daily": {k: dict(v) for k, v in by_command_daily.items()},
         "daily_usage": dict(daily_usage),
         "first_used": first_used,
         "last_used": last_used,
@@ -361,13 +410,16 @@ def _collect_plugin_usage_sync(period: str = "all") -> dict[str, dict]:
         lambda: {
             "agent_runs": 0,
             "skill_invocations": 0,
+            "command_invocations": 0,
             "mcp_tool_calls": 0,
             "cost_usd": 0.0,
             "by_agent": Counter(),
             "by_skill": Counter(),
+            "by_command": Counter(),
             "by_mcp_tool": Counter(),
             "by_agent_daily": defaultdict(lambda: defaultdict(int)),
             "by_skill_daily": defaultdict(lambda: defaultdict(int)),
+            "by_command_daily": defaultdict(lambda: defaultdict(int)),
             "by_mcp_tool_daily": defaultdict(lambda: defaultdict(int)),
             "first_used": None,
             "last_used": None,
@@ -375,6 +427,7 @@ def _collect_plugin_usage_sync(period: str = "all") -> dict[str, dict]:
                 lambda: {
                     "agent_runs": 0,
                     "skill_invocations": 0,
+                    "command_invocations": 0,
                     "mcp_tool_calls": 0,
                     "cost_usd": 0.0,
                 }
@@ -414,13 +467,18 @@ def _collect_plugin_usage_sync(period: str = "all") -> dict[str, dict]:
                 # Track which plugins are used in this session
                 plugins_in_session = set()
 
-                # Track skill invocations
+                # Track skill invocations (keys are (name, source) tuples)
                 skills_used = session.get_skills_used()
-                for skill_name, count in skills_used.items():
-                    if ":" in skill_name:
-                        plugin_name = skill_name.split(":")[0]
+                for (skill_name, _inv_source), count in skills_used.items():
+                    if is_plugin_skill(skill_name):
+                        if ":" in skill_name:
+                            plugin_name = skill_name.split(":")[0]
+                            skill_short = skill_name.split(":", 1)[1]
+                        else:
+                            # Short-form: plugin name is the skill name
+                            plugin_name = skill_name
+                            skill_short = skill_name
                         plugins_in_session.add(plugin_name)
-                        skill_short = skill_name.split(":", 1)[1]
                         plugin_stats[plugin_name]["skill_invocations"] += count
                         plugin_stats[plugin_name]["by_skill"][skill_short] += count
                         plugin_stats[plugin_name]["by_skill_daily"][skill_short][date_key] += count
@@ -440,6 +498,35 @@ def _collect_plugin_usage_sync(period: str = "all") -> dict[str, dict]:
                                 or session_time > plugin_stats[plugin_name]["last_used"]
                             ):
                                 plugin_stats[plugin_name]["last_used"] = session_time
+
+                # Track command invocations
+                commands_used = session.get_commands_used()
+                for (cmd_name, _inv_source), count in commands_used.items():
+                    if ":" in cmd_name:
+                        plugin_name_cmd = cmd_name.split(":")[0]
+                        cmd_short = cmd_name.split(":", 1)[1]
+                    else:
+                        continue  # Skip commands without plugin prefix
+                    plugins_in_session.add(plugin_name_cmd)
+                    plugin_stats[plugin_name_cmd]["command_invocations"] += count
+                    plugin_stats[plugin_name_cmd]["by_command"][cmd_short] += count
+                    plugin_stats[plugin_name_cmd]["by_command_daily"][cmd_short][date_key] += count
+                    plugin_stats[plugin_name_cmd]["daily_usage"][date_key][
+                        "command_invocations"
+                    ] += count
+
+                    # Track timestamps
+                    if session_time:
+                        if (
+                            plugin_stats[plugin_name_cmd]["first_used"] is None
+                            or session_time < plugin_stats[plugin_name_cmd]["first_used"]
+                        ):
+                            plugin_stats[plugin_name_cmd]["first_used"] = session_time
+                        if (
+                            plugin_stats[plugin_name_cmd]["last_used"] is None
+                            or session_time > plugin_stats[plugin_name_cmd]["last_used"]
+                        ):
+                            plugin_stats[plugin_name_cmd]["last_used"] = session_time
 
                 # Track agent runs and MCP tool calls by analyzing tool use blocks
                 for msg in session.iter_messages():
@@ -529,12 +616,16 @@ def _collect_plugin_usage_sync(period: str = "all") -> dict[str, dict]:
     for plugin_name in plugin_stats:
         plugin_stats[plugin_name]["by_agent"] = dict(plugin_stats[plugin_name]["by_agent"])
         plugin_stats[plugin_name]["by_skill"] = dict(plugin_stats[plugin_name]["by_skill"])
+        plugin_stats[plugin_name]["by_command"] = dict(plugin_stats[plugin_name]["by_command"])
         plugin_stats[plugin_name]["by_mcp_tool"] = dict(plugin_stats[plugin_name]["by_mcp_tool"])
         plugin_stats[plugin_name]["by_agent_daily"] = {
             k: dict(v) for k, v in plugin_stats[plugin_name]["by_agent_daily"].items()
         }
         plugin_stats[plugin_name]["by_skill_daily"] = {
             k: dict(v) for k, v in plugin_stats[plugin_name]["by_skill_daily"].items()
+        }
+        plugin_stats[plugin_name]["by_command_daily"] = {
+            k: dict(v) for k, v in plugin_stats[plugin_name]["by_command_daily"].items()
         }
         plugin_stats[plugin_name]["by_mcp_tool_daily"] = {
             k: dict(v) for k, v in plugin_stats[plugin_name]["by_mcp_tool_daily"].items()
@@ -675,6 +766,7 @@ def plugin_to_summary(
     total_runs = (
         plugin_usage.get("agent_runs", 0)
         + plugin_usage.get("skill_invocations", 0)
+        + plugin_usage.get("command_invocations", 0)
         + plugin_usage.get("mcp_tool_calls", 0)
     )
     estimated_cost = plugin_usage.get("cost_usd", 0.0)
@@ -952,9 +1044,14 @@ def get_plugin_usage(
                         plugin_usage = {
                             "agent_runs": 0,
                             "skill_invocations": 0,
+                            "command_invocations": 0,
                             "cost_usd": 0.0,
                             "by_agent": {},
                             "by_skill": {},
+                            "by_agent_daily": {},
+                            "by_skill_daily": {},
+                            "by_command": {},
+                            "by_command_daily": {},
                             "daily_usage": {},
                             "first_used": None,
                             "last_used": None,
@@ -974,6 +1071,11 @@ def get_plugin_usage(
                             skill_invocations=daily_usage.get(date, {}).get("skill_invocations", 0)
                             if isinstance(daily_usage.get(date), dict)
                             else 0,
+                            command_invocations=daily_usage.get(date, {}).get(
+                                "command_invocations", 0
+                            )
+                            if isinstance(daily_usage.get(date), dict)
+                            else 0,
                             mcp_tool_calls=mcp_daily.get(date, 0),
                             cost_usd=daily_usage.get(date, {}).get("cost_usd", 0.0)
                             if isinstance(daily_usage.get(date), dict)
@@ -987,13 +1089,16 @@ def get_plugin_usage(
                         plugin_name=decoded_name,
                         total_agent_runs=plugin_usage.get("agent_runs", 0),
                         total_skill_invocations=plugin_usage.get("skill_invocations", 0),
+                        total_command_invocations=plugin_usage.get("command_invocations", 0),
                         total_mcp_tool_calls=mcp_usage.get("total_mcp_tool_calls", 0),
                         estimated_cost_usd=plugin_usage.get("cost_usd", 0.0),
                         by_agent=plugin_usage.get("by_agent", {}),
                         by_skill=plugin_usage.get("by_skill", {}),
+                        by_command=plugin_usage.get("by_command", {}),
                         by_mcp_tool=mcp_usage.get("by_mcp_tool", {}),
                         by_agent_daily=plugin_usage.get("by_agent_daily", {}),
                         by_skill_daily=plugin_usage.get("by_skill_daily", {}),
+                        by_command_daily=plugin_usage.get("by_command_daily", {}),
                         by_mcp_tool_daily=mcp_usage.get("by_mcp_tool_daily", {}),
                         trend=trend,
                         first_used=plugin_usage.get("first_used"),
@@ -1013,6 +1118,7 @@ def get_plugin_usage(
             date=date,
             agent_runs=data.get("agent_runs", 0),
             skill_invocations=data.get("skill_invocations", 0),
+            command_invocations=data.get("command_invocations", 0),
             mcp_tool_calls=data.get("mcp_tool_calls", 0),
             cost_usd=data.get("cost_usd", 0.0),
         )
@@ -1024,13 +1130,16 @@ def get_plugin_usage(
         plugin_name=decoded_name,
         total_agent_runs=plugin_usage.get("agent_runs", 0),
         total_skill_invocations=plugin_usage.get("skill_invocations", 0),
+        total_command_invocations=plugin_usage.get("command_invocations", 0),
         total_mcp_tool_calls=plugin_usage.get("mcp_tool_calls", 0),
         estimated_cost_usd=plugin_usage.get("cost_usd", 0.0),
         by_agent=plugin_usage.get("by_agent", {}),
         by_skill=plugin_usage.get("by_skill", {}),
+        by_command=plugin_usage.get("by_command", {}),
         by_mcp_tool=plugin_usage.get("by_mcp_tool", {}),
         by_agent_daily=plugin_usage.get("by_agent_daily", {}),
         by_skill_daily=plugin_usage.get("by_skill_daily", {}),
+        by_command_daily=plugin_usage.get("by_command_daily", {}),
         by_mcp_tool_daily=plugin_usage.get("by_mcp_tool_daily", {}),
         trend=trend,
         first_used=plugin_usage.get("first_used"),

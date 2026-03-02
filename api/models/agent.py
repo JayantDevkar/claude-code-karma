@@ -62,8 +62,8 @@ class AgentCache(BaseCache):
         self.usage_summary: Optional["TokenUsage"] = None
         self.message_count: Optional[int] = None
         self.tasks: Optional[List["Task"]] = None
-        self.skills_used: Optional[Dict[str, int]] = None
-        self.commands_used: Optional[Dict[str, int]] = None
+        self.skills_used: Optional[Dict[tuple, int]] = None  # {(name, source): count}
+        self.commands_used: Optional[Dict[tuple, int]] = None  # {(name, source): count}
 
     def reset(self) -> None:
         """Reset all cache values to initial state."""
@@ -216,8 +216,9 @@ class Agent(BaseModel):
         last_ts: Optional[datetime] = None
         usage = TokenUsage.zero()
         message_count = 0
-        skills: Counter = Counter()
-        commands: Counter = Counter()
+        # Skills/commands use (name, source) tuple keys for invocation tracking
+        skills: Counter = Counter()  # {(name, source): count}
+        commands: Counter = Counter()  # {(name, source): count}
 
         for msg in self.iter_messages():
             message_count += 1
@@ -239,9 +240,9 @@ class Agent(BaseModel):
                         if skill_name:
                             kind = classify_invocation(skill_name)
                             if kind == "skill":
-                                skills[skill_name] += 1
+                                skills[(skill_name, "skill_tool")] += 1
                             elif kind == "command":
-                                commands[skill_name] += 1
+                                commands[(skill_name, "skill_tool")] += 1
 
         # Store all computed values
         cache.start_time = first_ts
@@ -316,13 +317,19 @@ class Agent(BaseModel):
         self._load_metadata()
         return self._get_cache().usage_summary or TokenUsage.zero()
 
-    def get_skills_used(self) -> Dict[str, int]:
-        """Get skill usage counts (cached)."""
+    def get_skills_used(self) -> Dict[tuple, int]:
+        """Get skill usage counts with invocation source (cached).
+
+        Returns dict mapping (skill_name, invocation_source) to count.
+        """
         self._load_metadata()
         return self._get_cache().skills_used or {}
 
-    def get_commands_used(self) -> Dict[str, int]:
-        """Get command usage counts (cached)."""
+    def get_commands_used(self) -> Dict[tuple, int]:
+        """Get command usage counts with invocation source (cached).
+
+        Returns dict mapping (command_name, invocation_source) to count.
+        """
         self._load_metadata()
         return self._get_cache().commands_used or {}
 

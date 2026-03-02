@@ -31,7 +31,7 @@
 					cmp = a.count - b.count;
 					break;
 				case 'sessions':
-					cmp = a.session_count - b.session_count;
+					cmp = (a.session_count ?? 0) - (b.session_count ?? 0);
 					break;
 				case 'last':
 					cmp =
@@ -146,12 +146,12 @@
 						</span>
 					</td>
 					<td class="px-4 py-3 text-right tabular-nums font-medium text-[var(--text-primary)]">
-						{skill.count.toLocaleString()}
+						{skill.count?.toLocaleString() ?? '0'}
 					</td>
 					<td
 						class="px-4 py-3 text-right tabular-nums text-[var(--text-muted)] hidden md:table-cell"
 					>
-						{skill.session_count.toLocaleString()}
+						{skill.session_count?.toLocaleString() ?? '—'}
 					</td>
 					<td class="px-4 py-3 text-right text-[var(--text-muted)] hidden md:table-cell">
 						{#if skill.last_used}

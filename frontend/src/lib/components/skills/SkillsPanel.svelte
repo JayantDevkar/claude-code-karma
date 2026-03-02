@@ -11,8 +11,22 @@
 
 	let { skills, projectEncodedName }: Props = $props();
 
+	// Deduplicate skills by name (multiple invocation sources can create duplicates)
+	let deduplicatedSkills = $derived.by(() => {
+		const map = new Map<string, SkillUsage>();
+		for (const skill of skills) {
+			const existing = map.get(skill.name);
+			if (existing) {
+				map.set(skill.name, { ...existing, count: existing.count + skill.count });
+			} else {
+				map.set(skill.name, { ...skill });
+			}
+		}
+		return [...map.values()];
+	});
+
 	// Sort skills by count (descending)
-	let sortedSkills = $derived([...skills].sort((a, b) => b.count - a.count));
+	let sortedSkills = $derived([...deduplicatedSkills].sort((a, b) => b.count - a.count));
 
 	// Get skill detail link
 	function getSkillHref(skill: SkillUsage): string {
@@ -27,7 +41,7 @@
 <div class="space-y-4">
 	<div>
 		<h2 class="text-lg font-semibold text-[var(--text-primary)]">
-			Skills ({skills.length})
+			Skills ({deduplicatedSkills.length})
 		</h2>
 		<p class="text-sm text-[var(--text-muted)]">
 			Skills invoked during this session via the /skill command
