@@ -501,7 +501,7 @@ def _collect_plugin_usage_sync(period: str = "all") -> dict[str, dict]:
 
                 # Track command invocations
                 commands_used = session.get_commands_used()
-                for cmd_name, count in commands_used.items():
+                for (cmd_name, _inv_source), count in commands_used.items():
                     if ":" in cmd_name:
                         plugin_name_cmd = cmd_name.split(":")[0]
                         cmd_short = cmd_name.split(":", 1)[1]
@@ -1048,6 +1048,8 @@ def get_plugin_usage(
                             "cost_usd": 0.0,
                             "by_agent": {},
                             "by_skill": {},
+                            "by_agent_daily": {},
+                            "by_skill_daily": {},
                             "by_command": {},
                             "by_command_daily": {},
                             "daily_usage": {},
