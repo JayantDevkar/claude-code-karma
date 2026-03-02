@@ -5,6 +5,7 @@
 	import CommandFooter from '$lib/components/CommandFooter.svelte';
 	import CommandPalette from '$lib/components/command-palette/CommandPalette.svelte';
 	import KeyboardShortcutsHelp from '$lib/components/KeyboardShortcutsHelp.svelte';
+	import Toast from '$lib/components/ui/Toast.svelte';
 	import { globalKeyboard } from '$lib/actions/globalKeyboard';
 	import { globalShortcuts } from '$lib/actions/globalShortcuts';
 	import { navigating } from '$app/stores';
@@ -166,4 +167,7 @@
 
 	<!-- Keyboard Shortcuts Help Modal -->
 	<KeyboardShortcutsHelp bind:open={showKeyboardHelp} />
+
+	<!-- Global toast notifications -->
+	<Toast />
 </div>
