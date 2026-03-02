@@ -103,8 +103,8 @@ class SessionCache(BaseCache):
         self.slug: Optional[str] = None
         self.usage_summary: Optional[TokenUsage] = None
         self.tools_used: Optional[Dict[str, int]] = None
-        self.skills_used: Optional[Dict[str, int]] = None
-        self.commands_used: Optional[Dict[str, int]] = None
+        self.skills_used: Optional[Dict[tuple, int]] = None  # {(name, source): count}
+        self.commands_used: Optional[Dict[tuple, int]] = None  # {(name, source): count}
         self.git_branches: Optional[Set[str]] = None
         self.working_dirs: Optional[Set[str]] = None
         self.models_used: Optional[Set[str]] = None
@@ -251,8 +251,9 @@ class Session(BaseModel):
         slug: Optional[str] = None
         usage = TokenUsage.zero()
         tools: Counter[str] = Counter()
-        skills: Counter[str] = Counter()
-        commands: Counter[str] = Counter()
+        # Skills/commands use (name, source) tuple keys for invocation tracking
+        skills: Counter[tuple] = Counter()  # {(name, source): count}
+        commands: Counter[tuple] = Counter()  # {(name, source): count}
         user_prompt_skills: Set[str] = set()
         user_prompt_commands: Set[str] = set()
         git_branches: Set[str] = set()
@@ -288,6 +289,7 @@ class Session(BaseModel):
                 # These fire when users type /command but may not result in a Skill tool call
                 if msg.content:
                     cmd_name, _ = parse_command_from_content(msg.content)
+                    source = "slash_command"  # <command-message> = user typed /command
                     # Fallback: detect /command in plain text (hook-triggered skills).
                     # ONLY run on real user prompts — tool results, internal messages,
                     # and system injections contain code/diffs/paths that produce
@@ -298,14 +300,18 @@ class Session(BaseModel):
                             # tags when actually invoked, so they're caught above.
                             if classify_invocation(candidate) == "skill":
                                 cmd_name = candidate
+                                source = "text_detection"
                                 break
                     if cmd_name:
                         kind = classify_invocation(cmd_name)
                         if kind == "skill":
-                            user_prompt_skills.add(cmd_name)
+                            user_prompt_skills.add((cmd_name, source))
+                            # Also track as command when user typed /command to invoke a skill
+                            if source == "slash_command":
+                                user_prompt_commands.add((cmd_name, source))
                         else:
                             # Both "command" and "builtin" go into commands
-                            user_prompt_commands.add(cmd_name)
+                            user_prompt_commands.add((cmd_name, source))
             elif isinstance(msg, AssistantMessage):
                 assistant_msg_count += 1
             elif isinstance(msg, FileHistorySnapshot):
@@ -346,10 +352,10 @@ class Session(BaseModel):
                             if skill_name:
                                 kind = classify_invocation(skill_name)
                                 if kind == "skill":
-                                    skills[skill_name] += 1
+                                    skills[(skill_name, "skill_tool")] += 1
                                 else:
                                     # Both "command" and "builtin" go into commands
-                                    commands[skill_name] += 1
+                                    commands[(skill_name, "skill_tool")] += 1
 
             # Git branches
             git_branch = getattr(msg, "git_branch", None)
@@ -362,12 +368,13 @@ class Session(BaseModel):
                 working_dirs.add(cwd)
 
         # Merge user-prompt detected commands/skills (avoid double-counting)
-        for name in user_prompt_skills:
-            if name not in skills:
-                skills[name] += 1
-        for name in user_prompt_commands:
-            if name not in commands:
-                commands[name] += 1
+        # user_prompt_skills/commands now contain (name, source) tuples
+        for key in user_prompt_skills:
+            if key not in skills:
+                skills[key] += 1
+        for key in user_prompt_commands:
+            if key not in commands:
+                commands[key] += 1
 
         # Store all computed values
         cache.start_time = first_ts
@@ -736,29 +743,33 @@ class Session(BaseModel):
         self._load_metadata()
         return Counter(self._get_cache().tools_used or {})
 
-    def get_skills_used(self) -> Counter[str]:
+    def get_skills_used(self) -> Dict[tuple, int]:
         """
-        Count skill usage from Skill tool invocations (cached).
+        Count skill usage with invocation source tracking (cached).
 
         Tracks both file-based skills and plugin skills (e.g., 'oh-my-claudecode:security-review').
+        Keys are (skill_name, invocation_source) tuples where source is one of:
+        'slash_command', 'skill_tool', 'text_detection'.
 
         Returns:
-            Counter mapping skill name to usage count
+            Dict mapping (skill_name, source) to usage count
         """
         self._load_metadata()
-        return Counter(self._get_cache().skills_used or {})
+        return dict(self._get_cache().skills_used or {})
 
-    def get_commands_used(self) -> Counter[str]:
+    def get_commands_used(self) -> Dict[tuple, int]:
         """
-        Count command usage from Skill tool invocations without ':' prefix (cached).
+        Count command usage with invocation source tracking (cached).
 
-        Commands are user-authored .md files in ~/.claude/commands/ or .claude/commands/.
+        Commands are user-authored .md files in ~/.claude/commands/ or .claude/commands/,
+        built-in CLI commands, or slash commands that invoke skills.
+        Keys are (command_name, invocation_source) tuples.
 
         Returns:
-            Counter mapping command name to usage count
+            Dict mapping (command_name, source) to usage count
         """
         self._load_metadata()
-        return Counter(self._get_cache().commands_used or {})
+        return dict(self._get_cache().commands_used or {})
 
     def get_git_branches(self) -> Set[str]:
         """

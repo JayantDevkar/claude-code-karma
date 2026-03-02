@@ -414,9 +414,9 @@ def _collect_plugin_usage_sync(period: str = "all") -> dict[str, dict]:
                 # Track which plugins are used in this session
                 plugins_in_session = set()
 
-                # Track skill invocations
+                # Track skill invocations (keys are (name, source) tuples)
                 skills_used = session.get_skills_used()
-                for skill_name, count in skills_used.items():
+                for (skill_name, _inv_source), count in skills_used.items():
                     if ":" in skill_name:
                         plugin_name = skill_name.split(":")[0]
                         plugins_in_session.add(plugin_name)

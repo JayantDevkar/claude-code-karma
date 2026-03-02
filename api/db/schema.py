@@ -10,7 +10,7 @@ import sqlite3
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 
 SCHEMA_SQL = """
 -- Schema versioning
@@ -101,26 +101,32 @@ CREATE TABLE IF NOT EXISTS session_tools (
 CREATE INDEX IF NOT EXISTS idx_tools_name ON session_tools(tool_name);
 
 -- Skill usage per session
+-- invocation_source: 'slash_command' (user typed /), 'skill_tool' (Claude auto-invoked), 'text_detection' (regex fallback)
 CREATE TABLE IF NOT EXISTS session_skills (
     session_uuid TEXT NOT NULL,
     skill_name TEXT NOT NULL,
+    invocation_source TEXT NOT NULL DEFAULT 'skill_tool',
     count INTEGER DEFAULT 1,
-    PRIMARY KEY (session_uuid, skill_name),
+    PRIMARY KEY (session_uuid, skill_name, invocation_source),
     FOREIGN KEY (session_uuid) REFERENCES sessions(uuid) ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS idx_skills_name ON session_skills(skill_name);
+CREATE INDEX IF NOT EXISTS idx_skills_source ON session_skills(invocation_source);
 
--- Command usage per session (user-authored slash commands without ':' prefix)
+-- Command usage per session
+-- invocation_source: 'slash_command' (user typed /), 'skill_tool' (Claude invoked), 'text_detection' (regex fallback)
 CREATE TABLE IF NOT EXISTS session_commands (
     session_uuid TEXT NOT NULL,
     command_name TEXT NOT NULL,
+    invocation_source TEXT NOT NULL DEFAULT 'slash_command',
     count INTEGER DEFAULT 1,
-    PRIMARY KEY (session_uuid, command_name),
+    PRIMARY KEY (session_uuid, command_name, invocation_source),
     FOREIGN KEY (session_uuid) REFERENCES sessions(uuid) ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS idx_commands_name ON session_commands(command_name);
+CREATE INDEX IF NOT EXISTS idx_commands_source ON session_commands(invocation_source);
 
 -- Subagent invocations (replaces AgentUsageIndex)
 CREATE TABLE IF NOT EXISTS subagent_invocations (
@@ -155,8 +161,9 @@ CREATE INDEX IF NOT EXISTS idx_subagent_tools_invocation ON subagent_tools(invoc
 CREATE TABLE IF NOT EXISTS subagent_skills (
     invocation_id INTEGER NOT NULL,
     skill_name TEXT NOT NULL,
+    invocation_source TEXT NOT NULL DEFAULT 'skill_tool',
     count INTEGER DEFAULT 1,
-    PRIMARY KEY (invocation_id, skill_name),
+    PRIMARY KEY (invocation_id, skill_name, invocation_source),
     FOREIGN KEY (invocation_id) REFERENCES subagent_invocations(id) ON DELETE CASCADE
 );
 
@@ -167,8 +174,9 @@ CREATE INDEX IF NOT EXISTS idx_subagent_skills_name ON subagent_skills(skill_nam
 CREATE TABLE IF NOT EXISTS subagent_commands (
     invocation_id INTEGER NOT NULL,
     command_name TEXT NOT NULL,
+    invocation_source TEXT NOT NULL DEFAULT 'slash_command',
     count INTEGER DEFAULT 1,
-    PRIMARY KEY (invocation_id, command_name),
+    PRIMARY KEY (invocation_id, command_name, invocation_source),
     FOREIGN KEY (invocation_id) REFERENCES subagent_invocations(id) ON DELETE CASCADE
 );
 
@@ -336,6 +344,66 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             conn.execute(
                 "UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1 WHERE subagent_count > 0"
             )
+
+        if current_version < 9:
+            logger.info("Migrating v8 → v9: adding invocation_source to skill/command tables")
+            # Recreate tables with new PK that includes invocation_source.
+            # SQLite doesn't support ALTER TABLE to change PK, so drop & recreate.
+            # Data will be repopulated by forced re-index below.
+            conn.executescript("""
+                DROP TABLE IF EXISTS session_skills;
+                CREATE TABLE session_skills (
+                    session_uuid TEXT NOT NULL,
+                    skill_name TEXT NOT NULL,
+                    invocation_source TEXT NOT NULL DEFAULT 'skill_tool',
+                    count INTEGER DEFAULT 1,
+                    PRIMARY KEY (session_uuid, skill_name, invocation_source),
+                    FOREIGN KEY (session_uuid) REFERENCES sessions(uuid) ON DELETE CASCADE
+                );
+                CREATE INDEX idx_skills_name ON session_skills(skill_name);
+                CREATE INDEX idx_skills_source ON session_skills(invocation_source);
+
+                DROP TABLE IF EXISTS session_commands;
+                CREATE TABLE session_commands (
+                    session_uuid TEXT NOT NULL,
+                    command_name TEXT NOT NULL,
+                    invocation_source TEXT NOT NULL DEFAULT 'slash_command',
+                    count INTEGER DEFAULT 1,
+                    PRIMARY KEY (session_uuid, command_name, invocation_source),
+                    FOREIGN KEY (session_uuid) REFERENCES sessions(uuid) ON DELETE CASCADE
+                );
+                CREATE INDEX idx_commands_name ON session_commands(command_name);
+                CREATE INDEX idx_commands_source ON session_commands(invocation_source);
+
+                DROP TABLE IF EXISTS subagent_skills;
+                CREATE TABLE subagent_skills (
+                    invocation_id INTEGER NOT NULL,
+                    skill_name TEXT NOT NULL,
+                    invocation_source TEXT NOT NULL DEFAULT 'skill_tool',
+                    count INTEGER DEFAULT 1,
+                    PRIMARY KEY (invocation_id, skill_name, invocation_source),
+                    FOREIGN KEY (invocation_id) REFERENCES subagent_invocations(id) ON DELETE CASCADE
+                );
+                CREATE INDEX idx_subagent_skills_invocation ON subagent_skills(invocation_id);
+                CREATE INDEX idx_subagent_skills_name ON subagent_skills(skill_name);
+
+                DROP TABLE IF EXISTS subagent_commands;
+                CREATE TABLE subagent_commands (
+                    invocation_id INTEGER NOT NULL,
+                    command_name TEXT NOT NULL,
+                    invocation_source TEXT NOT NULL DEFAULT 'slash_command',
+                    count INTEGER DEFAULT 1,
+                    PRIMARY KEY (invocation_id, command_name, invocation_source),
+                    FOREIGN KEY (invocation_id) REFERENCES subagent_invocations(id) ON DELETE CASCADE
+                );
+                CREATE INDEX idx_subagent_commands_invocation ON subagent_commands(invocation_id);
+                CREATE INDEX idx_subagent_commands_name ON subagent_commands(command_name);
+            """)
+            # Force full re-index so all sessions get reparsed with new source tracking
+            conn.execute("UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1")
+            # Also re-index subagent data
+            conn.execute("DELETE FROM subagent_tools")
+            conn.execute("DELETE FROM subagent_invocations")
 
     # Record version
     conn.execute(

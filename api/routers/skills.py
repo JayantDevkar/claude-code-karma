@@ -427,13 +427,14 @@ def get_skill_usage(
 
     from collections import Counter
 
+    from command_helpers import aggregate_by_name
     from parallel import process_items_parallel
     from utils import list_all_projects
 
     def process_session_skills(session) -> dict[str, int]:
-        """Extract skill usage from a single session."""
+        """Extract skill usage from a single session (aggregated by name)."""
         try:
-            return session.get_skills_used()
+            return aggregate_by_name(session.get_skills_used())
         except Exception:
             return {}
 
@@ -707,6 +708,7 @@ def get_skill_sessions(
     except Exception as e:
         logger.warning("SQLite skill sessions query failed, falling back: %s", e)
 
+    from command_helpers import aggregate_by_name
     from parallel import process_items_parallel
     from utils import get_initial_prompt, list_all_projects, normalize_timezone
 
@@ -714,7 +716,7 @@ def get_skill_sessions(
         """Check if session uses skill and return summary if it does."""
         try:
             project, session = session_tuple
-            skills_used = session.get_skills_used()
+            skills_used = aggregate_by_name(session.get_skills_used())
             if skill_name not in skills_used:
                 return None
 

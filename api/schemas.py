@@ -599,6 +599,11 @@ class SkillUsage(BaseModel):
     plugin: Optional[str] = Field(
         None, description="Plugin name if is_plugin (e.g., 'oh-my-claudecode')"
     )
+    invocation_source: str = Field(
+        "skill_tool",
+        description="How the skill was invoked: 'slash_command' (user typed /), "
+        "'skill_tool' (Claude auto-invoked), or 'text_detection' (regex fallback)",
+    )
 
 
 class CommandUsage(BaseModel):
@@ -608,6 +613,10 @@ class CommandUsage(BaseModel):
     count: int = Field(..., description="Number of times the command was invoked")
     source: str = Field("unknown", description="Source: 'builtin', 'plugin', 'project', 'user', or 'unknown'")
     plugin: Optional[str] = Field(None, description="Plugin name if source == 'plugin'")
+    invocation_source: str = Field(
+        "slash_command",
+        description="How the command was invoked: 'slash_command', 'skill_tool', or 'text_detection'",
+    )
 
 
 class SkillInfo(BaseModel):

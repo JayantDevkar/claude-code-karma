@@ -464,12 +464,17 @@ def query_skill_usage(
     project: Optional[str] = None,
     limit: int = 50,
 ) -> list[dict]:
-    """Aggregate skill usage counts, optionally filtered by project."""
+    """Aggregate skill usage counts, optionally filtered by project.
+
+    Includes invocation_sources field showing which sources contributed
+    (e.g., 'slash_command,skill_tool').
+    """
     if project:
         rows = conn.execute(
             """SELECT sk.skill_name, SUM(sk.count) as total_count,
                 COUNT(DISTINCT sk.session_uuid) as session_count,
-                MAX(s.end_time) as last_used
+                MAX(s.end_time) as last_used,
+                GROUP_CONCAT(DISTINCT sk.invocation_source) as invocation_sources
             FROM session_skills sk
             JOIN sessions s ON sk.session_uuid = s.uuid
             WHERE s.project_encoded_name = :project
@@ -482,7 +487,8 @@ def query_skill_usage(
         rows = conn.execute(
             """SELECT sk.skill_name, SUM(sk.count) as total_count,
                 COUNT(DISTINCT sk.session_uuid) as session_count,
-                MAX(s.end_time) as last_used
+                MAX(s.end_time) as last_used,
+                GROUP_CONCAT(DISTINCT sk.invocation_source) as invocation_sources
             FROM session_skills sk
             JOIN sessions s ON sk.session_uuid = s.uuid
             GROUP BY sk.skill_name
@@ -544,7 +550,8 @@ def query_skill_detail(
         """SELECT COALESCE(SUM(sk.count), 0) as total_count,
             COUNT(DISTINCT sk.session_uuid) as session_count,
             MIN(s.start_time) as first_used,
-            MAX(s.start_time) as last_used
+            MAX(s.start_time) as last_used,
+            GROUP_CONCAT(DISTINCT sk.invocation_source) as invocation_sources
         FROM session_skills sk
         JOIN sessions s ON sk.session_uuid = s.uuid
         WHERE sk.skill_name = :skill""",
@@ -653,6 +660,10 @@ def query_skill_detail(
         session["git_branches"] = [session["git_branch"]] if session.get("git_branch") else []
         sessions.append(session)
 
+    # Parse invocation sources from comma-separated string
+    sources_str = main_row["invocation_sources"] if main_row else None
+    invocation_sources = sources_str.split(",") if sources_str else []
+
     return {
         "name": skill_name,
         "main_calls": main_calls,
@@ -661,6 +672,7 @@ def query_skill_detail(
         "session_count": main_row["session_count"] or 0 if main_row else 0,
         "first_used": main_row["first_used"] if main_row else None,
         "last_used": main_row["last_used"] if main_row else None,
+        "invocation_sources": invocation_sources,
         "trend": [
             {"date": r["date"], "calls": r["calls"], "sessions": r["sessions"]}
             for r in trend_rows

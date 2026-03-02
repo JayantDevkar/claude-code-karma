@@ -194,6 +194,34 @@ def detect_slash_commands_in_text(content: str) -> list[str]:
     return [c for c in candidates if c not in _PATH_ROOTS]
 
 
+def aggregate_by_name(items: dict) -> dict[str, int]:
+    """Aggregate (name, source) keyed counts to name-only counts.
+
+    Converts the tuple-keyed dicts from get_skills_used()/get_commands_used()
+    back to simple {name: total_count} format for backward compatibility.
+    """
+    result: dict[str, int] = {}
+    for key, count in items.items():
+        name = key[0] if isinstance(key, tuple) else key
+        result[name] = result.get(name, 0) + count
+    return result
+
+
+def with_sources(items: dict) -> list[dict]:
+    """Convert (name, source) keyed counts to a list of dicts with source info.
+
+    Returns: [{"name": str, "source": str, "count": int}, ...]
+    """
+    result = []
+    for key, count in items.items():
+        if isinstance(key, tuple):
+            name, source = key
+        else:
+            name, source = key, "unknown"
+        result.append({"name": name, "source": source, "count": count})
+    return result
+
+
 def strip_command_tags(content: str) -> str:
     """Remove command and local-command XML tags from content for display.
 
