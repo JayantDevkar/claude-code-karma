@@ -1531,6 +1531,7 @@ ALLOWED_TOOL_NAMES = {"Read", "Edit", "Write", "Bash", "Glob", "Grep", "WebFetch
 
 class WorkflowStepSchema(BaseModel):
     id: str
+    label: Optional[str] = None
     prompt_template: str = Field(..., max_length=50000)
     model: str = "sonnet"
     tools: list[str] = []

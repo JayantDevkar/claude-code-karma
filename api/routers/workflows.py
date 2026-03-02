@@ -81,6 +81,7 @@ def _load_workflow_response(conn, wf_id: str) -> dict | None:
     steps = [
         {
             "id": s["id"],
+            "label": s["label"] if "label" in s.keys() else None,
             "prompt_template": s["prompt_template"],
             "model": s["model"],
             "tools": json.loads(s["tools"]) if s["tools"] else [],
@@ -192,11 +193,12 @@ def _save_workflow_normalized(
     # Insert steps
     for order, step in enumerate(req.steps):
         conn.execute(
-            """INSERT INTO workflow_steps (id, workflow_id, prompt_template, model, tools, max_turns, sort_order)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            """INSERT INTO workflow_steps (id, workflow_id, label, prompt_template, model, tools, max_turns, sort_order)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 step.id,
                 wf_id,
+                step.label,
                 step.prompt_template,
                 step.model,
                 json.dumps(step.tools),

@@ -11,7 +11,7 @@ import sqlite3
 
 logger = logging.getLogger(__name__)
 
-WORKFLOW_SCHEMA_VERSION = 1
+WORKFLOW_SCHEMA_VERSION = 2
 
 WORKFLOW_SCHEMA_SQL = """
 -- Schema versioning (separate from metadata.db)
@@ -36,6 +36,7 @@ CREATE INDEX IF NOT EXISTS idx_wf_project ON workflows(project_path);
 CREATE TABLE IF NOT EXISTS workflow_steps (
     id              TEXT NOT NULL,
     workflow_id     TEXT NOT NULL,
+    label           TEXT,
     prompt_template TEXT NOT NULL,
     model           TEXT NOT NULL DEFAULT 'sonnet',
     tools           JSON NOT NULL DEFAULT '["Read","Edit"]',
@@ -127,7 +128,12 @@ def ensure_workflow_schema(conn: sqlite3.Connection) -> None:
     )
 
     conn.execute("PRAGMA foreign_keys=ON")
-    conn.executescript(WORKFLOW_SCHEMA_SQL)
+
+    if current_version < 1:
+        conn.executescript(WORKFLOW_SCHEMA_SQL)
+
+    if current_version < 2:
+        _migrate_v2(conn)
 
     conn.execute(
         "INSERT OR REPLACE INTO wf_schema_version (version) VALUES (?)",
@@ -135,6 +141,17 @@ def ensure_workflow_schema(conn: sqlite3.Connection) -> None:
     )
     conn.commit()
     logger.info("Workflow schema version %d applied", WORKFLOW_SCHEMA_VERSION)
+
+
+def _migrate_v2(conn: sqlite3.Connection) -> None:
+    """v2: Add label column to workflow_steps."""
+    # Check if column already exists (idempotent)
+    cols = {
+        r[1] for r in conn.execute("PRAGMA table_info(workflow_steps)").fetchall()
+    }
+    if "label" not in cols:
+        conn.execute("ALTER TABLE workflow_steps ADD COLUMN label TEXT")
+        logger.info("v2 migration: added label column to workflow_steps")
 
 
 def migrate_from_metadata_db(wf_conn: sqlite3.Connection) -> None:

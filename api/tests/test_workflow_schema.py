@@ -14,8 +14,8 @@ def test_metadata_schema_version_is_10():
     assert SCHEMA_VERSION == 10
 
 
-def test_workflow_schema_version_is_1():
-    assert WORKFLOW_SCHEMA_VERSION == 1
+def test_workflow_schema_version_is_2():
+    assert WORKFLOW_SCHEMA_VERSION == 2
 
 
 def test_workflow_tables_in_workflow_db(tmp_path):
@@ -92,7 +92,7 @@ def test_workflow_steps_table_columns(tmp_path):
 
     cols = {row[1] for row in conn.execute("PRAGMA table_info(workflow_steps)").fetchall()}
     assert cols == {
-        "id", "workflow_id", "prompt_template", "model",
+        "id", "workflow_id", "label", "prompt_template", "model",
         "tools", "max_turns", "sort_order",
     }
     conn.close()

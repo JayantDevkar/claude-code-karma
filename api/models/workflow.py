@@ -13,6 +13,7 @@ class WorkflowStep(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     id: str
+    label: Optional[str] = None
     prompt_template: str
     model: str = "sonnet"
     tools: list[str] = Field(default_factory=lambda: ["Read", "Edit"])
