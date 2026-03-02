@@ -6,7 +6,7 @@ from models.workflow import WorkflowStep, WorkflowInput, WorkflowDefinition
 def test_workflow_step_defaults():
     step = WorkflowStep(id="test", prompt_template="Do something")
     assert step.model == "sonnet"
-    assert step.tools == ["Read", "Edit", "Bash"]
+    assert step.tools == ["Read", "Edit"]
     assert step.max_turns == 10
     assert step.condition is None
 

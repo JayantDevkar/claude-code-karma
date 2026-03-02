@@ -11,18 +11,11 @@
 
 	import StepNode from './StepNode.svelte';
 	import { getLayoutedElements } from './dagre-layout';
+	import { statusColors } from './constants';
 	import type { WorkflowRun, WorkflowRunStep } from '$lib/api-types';
 
 	let { run, graphNodes, graphEdges }: { run: WorkflowRun; graphNodes: any[]; graphEdges: any[] } =
 		$props();
-
-	const statusColors: Record<string, string> = {
-		pending: '#6b7280',
-		running: '#3b82f6',
-		completed: '#22c55e',
-		failed: '#ef4444',
-		skipped: '#9ca3af'
-	};
 
 	const nodeTypes: NodeTypes = {
 		step: StepNode
@@ -119,7 +112,7 @@
 			<div class="side-panel">
 				<div class="panel-header">
 					<h3 class="panel-title">{selectedStepId}</h3>
-					<button class="panel-close" onclick={() => (selectedStepId = null)}>&times;</button>
+					<button class="panel-close" aria-label="Close panel" onclick={() => (selectedStepId = null)}>&times;</button>
 				</div>
 
 				<div class="panel-section">

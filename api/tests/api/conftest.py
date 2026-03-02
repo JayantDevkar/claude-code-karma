@@ -4,8 +4,10 @@ Pytest configuration for API tests.
 Sets up proper Python paths for importing the API modules.
 """
 
+import sqlite3
 import sys
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -40,3 +42,44 @@ def mock_claude_base(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "claude_base", claude_dir)
 
     return claude_dir
+
+
+@pytest.fixture
+def workflow_client(tmp_path):
+    """Test client with workflow schema initialized."""
+    from fastapi.testclient import TestClient
+
+    db_path = tmp_path / "test.db"
+
+    with patch("db.connection.get_db_path", return_value=db_path), \
+         patch("config.settings.use_sqlite", True):
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        from db.schema import ensure_schema
+        ensure_schema(conn)
+        conn.close()
+
+        from main import app
+        yield TestClient(app)
+
+
+@pytest.fixture
+def sample_workflow():
+    """Sample workflow payload for testing."""
+    return {
+        "name": "Test Workflow",
+        "description": "A test workflow",
+        "project_path": None,
+        "graph": {
+            "nodes": [
+                {"id": "step_1", "type": "step", "position": {"x": 0, "y": 0}, "data": {"label": "Step 1"}},
+                {"id": "step_2", "type": "step", "position": {"x": 200, "y": 0}, "data": {"label": "Step 2"}},
+            ],
+            "edges": [{"source": "step_1", "target": "step_2"}],
+        },
+        "steps": [
+            {"id": "step_1", "prompt_template": "Do task 1", "model": "sonnet", "tools": ["Read"], "max_turns": 5},
+            {"id": "step_2", "prompt_template": "Do task 2 based on {{ steps.step_1.output }}", "model": "sonnet", "tools": ["Read", "Edit"], "max_turns": 10},
+        ],
+        "inputs": [],
+    }

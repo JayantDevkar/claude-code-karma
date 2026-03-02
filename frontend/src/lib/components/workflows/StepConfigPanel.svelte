@@ -37,7 +37,7 @@
 
 	<label class="field">
 		<span class="field-label">Name</span>
-		<input type="text" bind:value={step.id} class="field-input" />
+		<span class="field-value">{step.id}</span>
 	</label>
 
 	<label class="field">
@@ -82,6 +82,7 @@
 					onclick={() => toggleTool(tool)}
 					class="tool-chip"
 					class:tool-active={step.tools.includes(tool)}
+					aria-pressed={step.tools.includes(tool)}
 				>
 					{tool}
 				</button>
@@ -138,6 +139,13 @@
 		font-size: 11px;
 		color: var(--text-muted);
 		margin-bottom: 4px;
+	}
+
+	.field-value {
+		font-family: monospace;
+		font-size: 0.85rem;
+		color: var(--text-secondary, #888);
+		padding: 0.25rem 0;
 	}
 
 	.field-input {

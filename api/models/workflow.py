@@ -15,7 +15,7 @@ class WorkflowStep(BaseModel):
     id: str
     prompt_template: str
     model: str = "sonnet"
-    tools: list[str] = Field(default_factory=lambda: ["Read", "Edit", "Bash"])
+    tools: list[str] = Field(default_factory=lambda: ["Read", "Edit"])
     max_turns: int = 10
     condition: Optional[str] = None
 

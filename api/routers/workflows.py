@@ -15,13 +15,14 @@ Endpoints:
 import asyncio
 import json
 import logging
-import sqlite3
 import uuid
+from collections import defaultdict
 from datetime import datetime, timezone
+from typing import Optional
 
 from fastapi import APIRouter, HTTPException
 
-from db.connection import create_read_connection
+from db.connection import create_read_connection, get_write_conn
 from schemas import (
     WorkflowCreateRequest,
     WorkflowResponse,
@@ -35,16 +36,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-
-def _get_write_conn():
-    from db.connection import get_db_path
-
-    db_path = get_db_path()
-    conn = sqlite3.connect(str(db_path), timeout=10.0)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA busy_timeout=5000")
-    conn.execute("PRAGMA foreign_keys=ON")
-    return conn
+# Track active background workflow tasks so they aren't garbage-collected
+_active_tasks: dict[str, asyncio.Task] = {}
 
 
 @router.get("", response_model=list[WorkflowResponse])
@@ -77,7 +70,7 @@ def create_workflow(req: WorkflowCreateRequest):
     wf_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
 
-    conn = _get_write_conn()
+    conn = get_write_conn()
     try:
         conn.execute(
             """INSERT INTO workflows (id, name, description, project_path, graph, steps, inputs, created_at, updated_at)
@@ -138,10 +131,10 @@ def get_workflow(workflow_id: str):
 @router.put("/{workflow_id}", response_model=WorkflowResponse)
 def update_workflow(workflow_id: str, req: WorkflowCreateRequest):
     now = datetime.now(timezone.utc).isoformat()
-    conn = _get_write_conn()
+    conn = get_write_conn()
     try:
         existing = conn.execute(
-            "SELECT id FROM workflows WHERE id = ?", (workflow_id,)
+            "SELECT id, created_at FROM workflows WHERE id = ?", (workflow_id,)
         ).fetchone()
         if not existing:
             raise HTTPException(status_code=404, detail="Workflow not found")
@@ -172,13 +165,14 @@ def update_workflow(workflow_id: str, req: WorkflowCreateRequest):
         graph=req.graph,
         steps=[s.model_dump() for s in req.steps],
         inputs=[i.model_dump() for i in req.inputs],
+        created_at=existing["created_at"],
         updated_at=now,
     )
 
 
 @router.delete("/{workflow_id}", status_code=204)
 def delete_workflow(workflow_id: str):
-    conn = _get_write_conn()
+    conn = get_write_conn()
     try:
         result = conn.execute("DELETE FROM workflows WHERE id = ?", (workflow_id,))
         conn.commit()
@@ -189,7 +183,7 @@ def delete_workflow(workflow_id: str):
 
 
 @router.post("/{workflow_id}/run", response_model=WorkflowRunResponse)
-async def trigger_run(workflow_id: str, req: WorkflowRunRequest = None):
+async def trigger_run(workflow_id: str, req: Optional[WorkflowRunRequest] = None):
     # Load workflow
     conn = create_read_connection()
     try:
@@ -206,30 +200,47 @@ async def trigger_run(workflow_id: str, req: WorkflowRunRequest = None):
     finally:
         conn.close()
 
+    # Check concurrent run limit
+    check_conn = create_read_connection()
+    try:
+        active_count = check_conn.execute(
+            "SELECT COUNT(*) FROM workflow_runs WHERE workflow_id = ? AND status IN ('pending', 'running')",
+            (workflow_id,),
+        ).fetchone()[0]
+        if active_count >= 3:
+            raise HTTPException(status_code=429, detail="Maximum 3 concurrent runs per workflow")
+    finally:
+        check_conn.close()
+
     # Create run + step records
     run_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
     input_values = req.input_values if req else None
 
-    wconn = _get_write_conn()
+    wconn = get_write_conn()
+    step_responses = []
     try:
         wconn.execute(
             """INSERT INTO workflow_runs (id, workflow_id, status, input_values, started_at)
                VALUES (?, ?, 'pending', ?, ?)""",
             (run_id, workflow_id, json.dumps(input_values) if input_values else None, now),
         )
-        for step in steps:
+        for s in steps:
+            step_id = str(uuid.uuid4())
             wconn.execute(
                 """INSERT INTO workflow_run_steps (id, run_id, step_id, status)
                    VALUES (?, ?, ?, 'pending')""",
-                (str(uuid.uuid4()), run_id, step["id"]),
+                (step_id, run_id, s["id"]),
+            )
+            step_responses.append(
+                WorkflowRunStepResponse(id=step_id, step_id=s["id"], status="pending")
             )
         wconn.commit()
     finally:
         wconn.close()
 
-    # Launch background execution
-    asyncio.create_task(
+    # Launch background execution with task tracking
+    task = asyncio.create_task(
         execute_workflow(
             run_id=run_id,
             workflow_id=workflow_id,
@@ -240,6 +251,14 @@ async def trigger_run(workflow_id: str, req: WorkflowRunRequest = None):
             workflow_name=workflow_name,
         )
     )
+    _active_tasks[run_id] = task
+
+    def _on_task_done(t: asyncio.Task, rid: str = run_id):
+        _active_tasks.pop(rid, None)
+        if not t.cancelled() and t.exception():
+            logger.error("Workflow run %s failed with unhandled error: %s", rid, t.exception())
+
+    task.add_done_callback(_on_task_done)
 
     return WorkflowRunResponse(
         id=run_id,
@@ -247,10 +266,7 @@ async def trigger_run(workflow_id: str, req: WorkflowRunRequest = None):
         status="pending",
         input_values=input_values,
         started_at=now,
-        steps=[
-            WorkflowRunStepResponse(id="", step_id=s["id"], status="pending")
-            for s in steps
-        ],
+        steps=step_responses,
     )
 
 
@@ -262,34 +278,47 @@ def list_runs(workflow_id: str):
             "SELECT * FROM workflow_runs WHERE workflow_id = ? ORDER BY started_at DESC",
             (workflow_id,),
         ).fetchall()
+
+        # Batch fetch ALL steps for these runs in one query
+        run_ids = [r["id"] for r in rows]
+        if run_ids:
+            placeholders = ",".join("?" * len(run_ids))
+            step_rows = conn.execute(
+                f"SELECT * FROM workflow_run_steps WHERE run_id IN ({placeholders})",
+                run_ids,
+            ).fetchall()
+        else:
+            step_rows = []
+
+        # Group steps by run_id
+        steps_by_run: dict[str, list[WorkflowRunStepResponse]] = defaultdict(list)
+        for s in step_rows:
+            steps_by_run[s["run_id"]].append(
+                WorkflowRunStepResponse(
+                    id=s["id"],
+                    step_id=s["step_id"],
+                    status=s["status"],
+                    session_id=s.get("session_id"),
+                    prompt=s.get("prompt"),
+                    output=s.get("output"),
+                    started_at=s.get("started_at"),
+                    completed_at=s.get("completed_at"),
+                    error=s.get("error"),
+                )
+            )
+
         result = []
         for r in rows:
-            step_rows = conn.execute(
-                "SELECT * FROM workflow_run_steps WHERE run_id = ?", (r["id"],)
-            ).fetchall()
             result.append(
                 WorkflowRunResponse(
                     id=r["id"],
                     workflow_id=r["workflow_id"],
                     status=r["status"],
                     input_values=json.loads(r["input_values"]) if r["input_values"] else None,
-                    started_at=r["started_at"],
-                    completed_at=r["completed_at"],
-                    error=r["error"],
-                    steps=[
-                        WorkflowRunStepResponse(
-                            id=s["id"],
-                            step_id=s["step_id"],
-                            status=s["status"],
-                            session_id=s["session_id"],
-                            prompt=s["prompt"],
-                            output=s["output"],
-                            started_at=s["started_at"],
-                            completed_at=s["completed_at"],
-                            error=s["error"],
-                        )
-                        for s in step_rows
-                    ],
+                    started_at=r.get("started_at"),
+                    completed_at=r.get("completed_at"),
+                    error=r.get("error"),
+                    steps=steps_by_run.get(r["id"], []),
                 )
             )
         return result

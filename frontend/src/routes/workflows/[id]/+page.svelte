@@ -17,28 +17,45 @@
 		steps: WorkflowStep[];
 		inputs: WorkflowInput[];
 	}) {
-		await fetch(`${API_BASE}/workflows/${workflow.id}`, {
-			method: 'PUT',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				name: workflowName,
-				description: workflowDescription || null,
-				graph: { nodes: editorData.nodes, edges: editorData.edges },
-				steps: editorData.steps,
-				inputs: editorData.inputs
-			})
-		});
+		try {
+			const resp = await fetch(`${API_BASE}/workflows/${workflow.id}`, {
+				method: 'PUT',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					name: workflowName,
+					description: workflowDescription || null,
+					graph: { nodes: editorData.nodes, edges: editorData.edges },
+					steps: editorData.steps,
+					inputs: editorData.inputs
+				})
+			});
+			if (!resp.ok) {
+				const err = await resp.text();
+				alert(`Failed to save workflow: ${err}`);
+				return;
+			}
+			alert('Workflow saved successfully');
+		} catch (e) {
+			alert(`Error saving workflow: ${e instanceof Error ? e.message : 'Network error'}`);
+		}
 	}
 
 	async function handleRun() {
-		const resp = await fetch(`${API_BASE}/workflows/${workflow.id}/run`, {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ input_values: {} })
-		});
-		if (resp.ok) {
+		try {
+			const resp = await fetch(`${API_BASE}/workflows/${workflow.id}/run`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ input_values: {} })
+			});
+			if (!resp.ok) {
+				const err = await resp.text();
+				alert(`Failed to run workflow: ${err}`);
+				return;
+			}
 			const run = await resp.json();
 			goto(`/workflows/${workflow.id}/runs/${run.id}`);
+		} catch (e) {
+			alert(`Error running workflow: ${e instanceof Error ? e.message : 'Network error'}`);
 		}
 	}
 </script>

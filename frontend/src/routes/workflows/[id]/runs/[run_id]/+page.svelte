@@ -1,22 +1,13 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { invalidateAll } from '$app/navigation';
 	import ExecutionView from '$lib/components/workflows/ExecutionView.svelte';
 
 	let { data } = $props();
 
-	let interval: ReturnType<typeof setInterval>;
-
-	onMount(() => {
-		if (data.run.status === 'pending' || data.run.status === 'running') {
-			interval = setInterval(() => invalidateAll(), 3000);
-		}
-		return () => clearInterval(interval);
-	});
-
 	$effect(() => {
-		if (data.run.status !== 'pending' && data.run.status !== 'running') {
-			clearInterval(interval);
+		if (data.run.status === 'pending' || data.run.status === 'running') {
+			const interval = setInterval(() => invalidateAll(), 3000);
+			return () => clearInterval(interval);
 		}
 	});
 </script>

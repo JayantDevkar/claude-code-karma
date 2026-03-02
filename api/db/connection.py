@@ -171,6 +171,16 @@ def sqlite_read() -> Generator[Optional[sqlite3.Connection], None, None]:
         conn.close()
 
 
+def get_write_conn() -> sqlite3.Connection:
+    """Create a new write connection for workflow operations."""
+    db_path = get_db_path()
+    conn = sqlite3.connect(str(db_path), timeout=10.0)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA busy_timeout=5000")
+    conn.execute("PRAGMA foreign_keys=ON")
+    return conn
+
+
 def close_db() -> None:
     """Close the writer connection. Called during app shutdown."""
     global _writer

@@ -14,20 +14,27 @@
 		steps: WorkflowStep[];
 		inputs: WorkflowInput[];
 	}) {
-		const resp = await fetch(`${API_BASE}/workflows`, {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				name: workflowName || 'Untitled Workflow',
-				description: workflowDescription || null,
-				graph: { nodes: data.nodes, edges: data.edges },
-				steps: data.steps,
-				inputs: data.inputs
-			})
-		});
-		if (resp.ok) {
+		try {
+			const resp = await fetch(`${API_BASE}/workflows`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					name: workflowName || 'Untitled Workflow',
+					description: workflowDescription || null,
+					graph: { nodes: data.nodes, edges: data.edges },
+					steps: data.steps,
+					inputs: data.inputs
+				})
+			});
+			if (!resp.ok) {
+				const err = await resp.text();
+				alert(`Failed to save workflow: ${err}`);
+				return;
+			}
 			const wf = await resp.json();
 			goto(`/workflows/${wf.id}`);
+		} catch (e) {
+			alert(`Error saving workflow: ${e instanceof Error ? e.message : 'Network error'}`);
 		}
 	}
 </script>

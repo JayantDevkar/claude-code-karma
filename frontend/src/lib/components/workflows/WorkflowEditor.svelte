@@ -75,7 +75,7 @@
 			id,
 			prompt_template: '',
 			model: 'sonnet',
-			tools: ['Read', 'Edit', 'Bash'],
+			tools: ['Read', 'Edit'],
 			max_turns: 10,
 			condition: null
 		};
@@ -178,7 +178,6 @@
 				{onconnect}
 				onnodeclick={handleNodeClick}
 				fitView
-				proOptions={{ hideAttribution: true }}
 			>
 				<Background />
 				<Controls />

@@ -1,15 +1,9 @@
 <script lang="ts">
 	import PageHeader from '$lib/components/layout/PageHeader.svelte';
 	import { Activity } from 'lucide-svelte';
+	import { statusColors } from '$lib/components/workflows/constants';
 
 	let { data } = $props();
-
-	const statusColors: Record<string, string> = {
-		pending: '#6b7280',
-		running: '#3b82f6',
-		completed: '#22c55e',
-		failed: '#ef4444'
-	};
 </script>
 
 <div>
