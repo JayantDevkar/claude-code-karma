@@ -107,9 +107,9 @@ class TestGetWorktreeBase:
     def test_custom_path_via_env(self):
         with patch(
             "services.desktop_sessions.os.environ.get",
-            side_effect=lambda k, d=None: "/custom/worktrees"
-            if k == "CLAUDE_KARMA_WORKTREE_BASE"
-            else d,
+            side_effect=lambda k, d=None: (
+                "/custom/worktrees" if k == "CLAUDE_KARMA_WORKTREE_BASE" else d
+            ),
         ):
             from services.desktop_sessions import _get_worktree_base
 
