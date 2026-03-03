@@ -330,6 +330,11 @@
 						<span class="font-medium text-[var(--text-primary)]">{totalCount}</span>
 						<span>{totalCount === 1 ? 'session' : 'sessions'}</span>
 					</div>
+					{#if sessions.length < totalCount}
+						<span class="text-xs text-[var(--text-muted)]">
+							Showing {sessions.length} of {totalCount}
+						</span>
+					{/if}
 				</div>
 
 				{#if sessions.length > 0}

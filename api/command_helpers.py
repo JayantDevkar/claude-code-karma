@@ -302,6 +302,9 @@ _COMMAND_TAG_RE = re.compile(
 )
 
 
+_custom_skill_cache: TTLCache[str, bool] = TTLCache(maxsize=128, ttl=60)
+
+
 def _is_custom_skill(name: str) -> bool:
     """Check if a name corresponds to a custom skill file on disk.
 
@@ -310,15 +313,20 @@ def _is_custom_skill(name: str) -> bool:
       ~/.claude/skills/{name}/skill.md  (directory-based, lowercase)
       ~/.claude/skills/{name}.md        (file-based)
     """
+    if name in _custom_skill_cache:
+        return _custom_skill_cache[name]
+
     from config import settings
 
     skills_dir = settings.skills_dir
     skill_dir = skills_dir / name
-    return (
+    result = (
         (skill_dir / "SKILL.md").is_file()
         or (skill_dir / "skill.md").is_file()
         or (skills_dir / f"{name}.md").is_file()
     )
+    _custom_skill_cache[name] = result
+    return result
 
 
 # TTL caches for filesystem-dependent lookups (auto-expire after 60s so

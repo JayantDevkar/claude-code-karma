@@ -27,7 +27,12 @@ def _query_per_item_trend(
     params: dict,
     count_expr: str = "COUNT(*)",
 ) -> dict[str, list[dict]]:
-    """Query per-item daily trend. Returns {item_name: [{date, count}, ...]}."""
+    """Query per-item daily trend. Returns {item_name: [{date, count}, ...]}.
+
+    SECURITY: item_col, from_clause, where, and count_expr are interpolated
+    directly into the SQL string. They MUST be hardcoded SQL fragments,
+    never user input. All user-supplied values must go through ``params``.
+    """
     rows = conn.execute(
         f"""SELECT {item_col} as item, DATE(s.start_time) as date, {count_expr} as count
         {from_clause}

@@ -11,7 +11,7 @@ import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
@@ -44,8 +44,11 @@ def get_commands_dir(
 ) -> Path:
     """Get the commands directory (global or project-specific)."""
     if project:
-        proj = Project.from_encoded_name(project)
-        return Path(proj.path) / ".claude" / "commands"
+        try:
+            proj = Project.from_encoded_name(project)
+            return Path(proj.path) / ".claude" / "commands"
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid project name")
     return config.commands_dir
 
 
@@ -226,7 +229,7 @@ def get_command_usage_trend(
     project: Annotated[
         str | None, Query(description="Project encoded name filter")
     ] = None,
-    period: Annotated[str, Query(description="Time period: week, month, quarter, all")] = "month",
+    period: Annotated[Literal["week", "month", "quarter", "all"], Query(description="Time period: week, month, quarter, all")] = "month",
 ):
     """Get command usage trend data with daily breakdown."""
     import sqlite3
@@ -251,10 +254,19 @@ def get_command_usage_trend(
     }
 
 
+def _validate_command_name(command_name: str) -> None:
+    """Validate command_name to prevent path traversal and injection."""
+    if not command_name or not ALLOWED_PATH_PATTERN.match(command_name):
+        raise HTTPException(status_code=400, detail="Invalid command name")
+    if ".." in command_name:
+        raise HTTPException(status_code=400, detail="Path traversal not allowed")
+
+
 @router.get("/commands/usage/{command_name}")
 @cacheable(max_age=120, stale_while_revalidate=300)
 def get_command_usage_detail(command_name: str, request: Request):
     """Get usage detail for a specific command."""
+    _validate_command_name(command_name)
     from db.connection import sqlite_read
 
     with sqlite_read() as conn:
@@ -280,14 +292,14 @@ def get_command_usage_detail(command_name: str, request: Request):
 
         return {
             "name": command_name,
-            "total_uses": sum(r[1] for r in rows),
+            "total_uses": sum(r["count"] for r in rows),
             "sessions": [
                 {
-                    "uuid": row[0],
-                    "count": row[1],
-                    "slug": row[2],
-                    "project_encoded_name": row[3],
-                    "start_time": row[4],
+                    "uuid": row["session_uuid"],
+                    "count": row["count"],
+                    "slug": row["slug"],
+                    "project_encoded_name": row["project_encoded_name"],
+                    "start_time": row["start_time"],
                 }
                 for row in rows
             ],
@@ -307,6 +319,7 @@ async def get_command_detail(
     ] = None,
 ):
     """Get detailed command info with usage stats, trend, and session list."""
+    _validate_command_name(command_name)
     from command_helpers import classify_invocation, get_command_description
     from db.connection import sqlite_read
     from db.queries import query_command_detail
@@ -390,11 +403,7 @@ async def get_command_info(
     """
     import yaml
 
-    # Sanitize command name
-    if not command_name or not ALLOWED_PATH_PATTERN.match(command_name):
-        raise HTTPException(status_code=400, detail="Invalid command name")
-    if ".." in command_name:
-        raise HTTPException(status_code=400, detail="Path traversal not allowed")
+    _validate_command_name(command_name)
 
     command_file = None
 

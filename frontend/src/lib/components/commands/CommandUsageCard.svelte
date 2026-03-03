@@ -162,11 +162,5 @@
 			<Clock size={12} />
 			<span>{lastUsedFormatted}</span>
 		</span>
-		{#if command.session_count != null}
-			<span class="flex items-center gap-1.5">
-				<MessageSquare size={12} />
-				<span>{command.session_count} session{command.session_count !== 1 ? 's' : ''}</span>
-			</span>
-		{/if}
 	</div>
 </a>
