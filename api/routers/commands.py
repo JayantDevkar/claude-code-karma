@@ -209,17 +209,24 @@ def get_command_usage(
             return []
 
         rows = query_command_usage(conn, project=project, limit=100)
-        return [
-            {
-                "name": row["command_name"],
-                "count": row["total_count"],
-                "session_count": row["session_count"],
-                "last_used": row["last_used"],
-                "category": classify_invocation(row["command_name"]),
-                "description": get_command_description(row["command_name"]),
-            }
-            for row in rows
-        ]
+        results = []
+        for row in rows:
+            cmd_name = row["command_name"]
+            is_plugin = ":" in cmd_name
+            plugin_name = cmd_name.split(":")[0] if is_plugin else None
+            results.append(
+                {
+                    "name": cmd_name,
+                    "count": row["total_count"],
+                    "session_count": row["session_count"],
+                    "last_used": row["last_used"],
+                    "category": classify_invocation(cmd_name),
+                    "description": get_command_description(cmd_name),
+                    "is_plugin": is_plugin,
+                    "plugin": plugin_name,
+                }
+            )
+        return results
 
 
 @router.get("/commands/usage/trend")

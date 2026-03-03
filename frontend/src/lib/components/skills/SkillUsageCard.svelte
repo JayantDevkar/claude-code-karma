@@ -4,7 +4,8 @@
 	import { formatDistanceToNow } from 'date-fns';
 	import Badge from '$lib/components/ui/Badge.svelte';
 	import TierBadge from '$lib/components/ui/TierBadge.svelte';
-	import { getSkillColorVars, cleanSkillName, getUsageTier } from '$lib/utils';
+	import { getSkillColorVars, getSkillCategoryLabel, getSkillCategoryColorVars, cleanSkillName, getUsageTier } from '$lib/utils';
+	import type { SkillCategory } from '$lib/api-types';
 
 	interface Skill {
 		name: string;
@@ -13,6 +14,8 @@
 		plugin: string | null;
 		last_used?: string | null;
 		session_count?: number;
+		category?: SkillCategory;
+		description?: string | null;
 	}
 
 	interface Props {
@@ -29,10 +32,18 @@
 	// Clean display name
 	let displayName = $derived(cleanSkillName(skill.name, skill.is_plugin));
 
-	// Badge variant based on type
-	type BadgeVariant = 'purple' | 'accent';
-	let badgeVariant = $derived<BadgeVariant>(skill.is_plugin ? 'purple' : 'accent');
-	let badgeText = $derived(skill.is_plugin ? 'Plugin' : 'Custom');
+	// Badge based on category
+	type BadgeVariant = 'purple' | 'emerald' | 'info' | 'accent';
+	let categoryLabel = $derived(getSkillCategoryLabel(skill.category ?? (skill.is_plugin ? 'plugin_skill' : 'custom_skill')));
+	let badgeVariant = $derived<BadgeVariant>(
+		skill.category === 'bundled_skill'
+			? 'purple'
+			: skill.category === 'plugin_skill'
+				? 'emerald'
+				: skill.category === 'custom_skill'
+					? 'info'
+					: skill.is_plugin ? 'purple' : 'accent'
+	);
 
 	// Calculate usage percentage for progress bar
 	let usagePercentage = $derived(Math.min((skill.count / maxUsage) * 100, 100));
@@ -77,7 +88,7 @@
 		<div class="flex items-center gap-2">
 			<TierBadge {tier} />
 			<Badge variant={badgeVariant} size="sm" rounded="full">
-				{badgeText}
+				{categoryLabel}
 			</Badge>
 		</div>
 	</div>
@@ -89,6 +100,12 @@
 	>
 		{displayName}
 	</h3>
+
+	{#if skill.description}
+		<p class="text-xs text-[var(--text-muted)] mb-2 line-clamp-2" title={skill.description}>
+			{skill.description}
+		</p>
+	{/if}
 
 	<!-- Plugin source if applicable -->
 	{#if skill.plugin}

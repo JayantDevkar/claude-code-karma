@@ -10,6 +10,8 @@
 		name: string;
 		count: number;
 		category?: CommandCategory;
+		is_plugin?: boolean;
+		plugin?: string | null;
 		description?: string | null;
 		last_used?: string | null;
 		session_count?: number;
@@ -34,7 +36,7 @@
 			? 'blue'
 			: command.category === 'bundled_skill'
 				? 'purple'
-				: command.category === 'plugin_skill'
+				: command.category === 'plugin_skill' || command.category === 'plugin_command'
 					? 'emerald'
 					: command.category === 'custom_skill'
 						? 'info'
@@ -47,7 +49,7 @@
 			? Terminal
 			: command.category === 'bundled_skill'
 				? Sparkles
-				: command.category === 'plugin_skill'
+				: command.category === 'plugin_skill' || command.category === 'plugin_command'
 					? Puzzle
 					: command.category === 'custom_skill'
 						? Zap

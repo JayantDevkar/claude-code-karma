@@ -927,6 +927,7 @@ export function getCommandCategoryColorVars(category: string): { color: string; 
 		case 'bundled_skill':
 			return { color: 'var(--nav-purple)', subtle: 'oklch(0.75 0.1 300 / 0.1)' };
 		case 'plugin_skill':
+		case 'plugin_command':
 			return { color: 'var(--nav-blue)', subtle: 'oklch(0.7 0.12 250 / 0.1)' };
 		case 'custom_skill':
 			return { color: 'var(--nav-teal)', subtle: 'oklch(0.75 0.1 180 / 0.1)' };
@@ -948,12 +949,46 @@ export function getCommandCategoryLabel(category: string): string {
 			return 'Bundled';
 		case 'plugin_skill':
 			return 'Plugin';
+		case 'plugin_command':
+			return 'Plugin Command';
 		case 'custom_skill':
 			return 'Custom';
 		case 'user_command':
 			return 'User';
 		default:
 			return category;
+	}
+}
+
+/**
+ * Get human-readable label for a skill category.
+ */
+export function getSkillCategoryLabel(category: string): string {
+	switch (category) {
+		case 'bundled_skill':
+			return 'Bundled';
+		case 'plugin_skill':
+			return 'Plugin';
+		case 'custom_skill':
+			return 'Custom';
+		default:
+			return category;
+	}
+}
+
+/**
+ * Get color vars for a skill category (3-category classification).
+ */
+export function getSkillCategoryColorVars(category: string): { color: string; subtle: string } {
+	switch (category) {
+		case 'bundled_skill':
+			return { color: 'var(--nav-purple)', subtle: 'rgba(124, 58, 237, 0.08)' };
+		case 'plugin_skill':
+			return { color: 'var(--nav-green)', subtle: 'rgba(16, 185, 129, 0.08)' };
+		case 'custom_skill':
+			return { color: 'var(--nav-blue)', subtle: 'rgba(59, 130, 246, 0.08)' };
+		default:
+			return { color: 'var(--text-muted)', subtle: 'var(--bg-muted)' };
 	}
 }
 

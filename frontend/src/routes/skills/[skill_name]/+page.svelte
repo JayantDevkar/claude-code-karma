@@ -32,7 +32,7 @@
 	import FiltersDropdown from '$lib/components/FiltersDropdown.svelte';
 	import FiltersBottomSheet from '$lib/components/FiltersBottomSheet.svelte';
 	import ActiveFilterChips from '$lib/components/ActiveFilterChips.svelte';
-	import { renderMarkdownEffect, cleanSkillName, getPluginColorVars, getPluginChartHex, getProjectNameFromEncoded } from '$lib/utils';
+	import { renderMarkdownEffect, cleanSkillName, getPluginColorVars, getPluginChartHex, getProjectNameFromEncoded, getSkillCategoryLabel, getSkillCategoryColorVars } from '$lib/utils';
 	import SkeletonBox from '$lib/components/skeleton/SkeletonBox.svelte';
 	import SkeletonText from '$lib/components/skeleton/SkeletonText.svelte';
 	import { SkeletonGlobalSessionCard } from '$lib/components/skeleton';
@@ -563,6 +563,15 @@
 			]}
 		>
 			{#snippet badges()}
+				{#if detail.category}
+					{@const catColors = getSkillCategoryColorVars(detail.category)}
+					<span
+						class="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-full"
+						style="color: {catColors.color}; background-color: {catColors.subtle};"
+					>
+						{getSkillCategoryLabel(detail.category)}
+					</span>
+				{/if}
 				{#if detail.is_plugin && detail.plugin}
 					<a
 						href="/plugins/{encodeURIComponent(detail.plugin.split('@')[0])}"

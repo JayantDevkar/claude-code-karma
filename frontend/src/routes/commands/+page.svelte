@@ -6,6 +6,8 @@
 		Play,
 		Sparkles,
 		FileText,
+		Puzzle,
+		ExternalLink,
 		ChevronsUpDown,
 		ChevronsDownUp
 	} from 'lucide-svelte';
@@ -17,7 +19,7 @@
 	import CommandUsageCard from '$lib/components/commands/CommandUsageCard.svelte';
 	import CommandUsageTable from '$lib/components/commands/CommandUsageTable.svelte';
 	import UsageAnalytics from '$lib/components/charts/UsageAnalytics.svelte';
-	import { getCommandCategoryColorVars, getCommandCategoryLabel, getCommandChartHex } from '$lib/utils';
+	import { getCommandCategoryColorVars, getCommandCategoryLabel, getCommandChartHex, getPluginColorVars } from '$lib/utils';
 	import type { CommandUsage, CommandCategory, StatItem } from '$lib/api-types';
 
 	let { data } = $props();
@@ -27,12 +29,13 @@
 
 	// Filter state
 	let searchQuery = $state('');
-	let selectedFilter = $state<'all' | 'builtin' | 'bundled' | 'user'>('all');
+	let selectedFilter = $state<'all' | 'builtin' | 'bundled' | 'plugin' | 'user'>('all');
 
 	const filterOptions = [
 		{ label: 'All', value: 'all' },
 		{ label: 'Built-in', value: 'builtin' },
 		{ label: 'Bundled', value: 'bundled' },
+		{ label: 'Plugin', value: 'plugin' },
 		{ label: 'User', value: 'user' }
 	];
 
@@ -50,8 +53,13 @@
 		const builtinCount = usage.filter(
 			(c: CommandUsage) => c.category === 'builtin_command'
 		).length;
+		const pluginCount = usage.filter(
+			(c: CommandUsage) =>
+				c.category === 'plugin_command' || c.category === 'plugin_skill'
+		).length;
 		const userCount = usage.filter(
-			(c: CommandUsage) => c.category === 'user_command' || c.category === 'custom_skill'
+			(c: CommandUsage) =>
+				c.category === 'user_command' || c.category === 'custom_skill'
 		).length;
 
 		return [
@@ -74,10 +82,16 @@
 				color: 'teal'
 			},
 			{
-				title: 'User Commands',
+				title: 'Plugin',
+				value: pluginCount,
+				icon: Puzzle,
+				color: 'green'
+			},
+			{
+				title: 'User',
 				value: userCount,
 				icon: FileText,
-				color: 'green'
+				color: 'orange'
 			}
 		];
 	});
@@ -91,12 +105,15 @@
 			commands = commands.filter((c: CommandUsage) => c.category === 'builtin_command');
 		} else if (selectedFilter === 'bundled') {
 			commands = commands.filter((c: CommandUsage) => c.category === 'bundled_skill');
+		} else if (selectedFilter === 'plugin') {
+			commands = commands.filter(
+				(c: CommandUsage) =>
+					c.category === 'plugin_command' || c.category === 'plugin_skill'
+			);
 		} else if (selectedFilter === 'user') {
 			commands = commands.filter(
 				(c: CommandUsage) =>
-					c.category === 'user_command' ||
-					c.category === 'custom_skill' ||
-					c.category === 'plugin_skill'
+					c.category === 'user_command' || c.category === 'custom_skill'
 			);
 		}
 
@@ -106,62 +123,84 @@
 			commands = commands.filter(
 				(c: CommandUsage) =>
 					c.name.toLowerCase().includes(query) ||
-					(c.description && c.description.toLowerCase().includes(query))
+					(c.description && c.description.toLowerCase().includes(query)) ||
+					(c.plugin && c.plugin.toLowerCase().includes(query))
 			);
 		}
 
 		return commands;
 	});
 
-	// Group commands by category for display
+	// Group commands by category for display, with dynamic plugin grouping
 	interface CommandGroup {
-		key: CommandCategory;
+		key: string;
 		label: string;
 		icon: typeof Terminal;
 		commands: CommandUsage[];
+		pluginName: string | null;
 	}
 
-	const categoryOrder: CommandCategory[] = [
-		'builtin_command',
-		'bundled_skill',
-		'plugin_skill',
-		'custom_skill',
-		'user_command'
-	];
+	// Priority order for non-plugin categories
+	const categoryPriority: Record<string, number> = {
+		builtin_command: 0,
+		bundled_skill: 1,
+		// plugin groups go here (priority 2)
+		custom_skill: 3,
+		user_command: 4
+	};
 
-	const categoryIcons: Record<CommandCategory, typeof Terminal> = {
+	const categoryIcons: Record<string, typeof Terminal> = {
 		builtin_command: Terminal,
 		bundled_skill: Sparkles,
-		plugin_skill: Zap,
 		custom_skill: Zap,
 		user_command: FileText
 	};
 
 	let groupedCommands = $derived.by<CommandGroup[]>(() => {
 		const commands = filteredCommands;
-		const groups: Map<CommandCategory, CommandGroup> = new Map();
+		const groups: Map<string, CommandGroup> = new Map();
 
 		for (const cmd of commands) {
 			const cat = cmd.category ?? 'user_command';
-			if (!groups.has(cat)) {
-				groups.set(cat, {
-					key: cat,
-					label: getCommandCategoryLabel(cat),
-					icon: categoryIcons[cat] ?? Terminal,
-					commands: []
+			let groupKey: string;
+			let groupLabel: string;
+			let groupIcon: typeof Terminal;
+			let pluginName: string | null = null;
+
+			if ((cat === 'plugin_command' || cat === 'plugin_skill') && cmd.plugin) {
+				groupKey = `plugin:${cmd.plugin}`;
+				groupLabel = cmd.plugin;
+				groupIcon = Puzzle;
+				pluginName = cmd.plugin;
+			} else {
+				groupKey = cat;
+				groupLabel = getCommandCategoryLabel(cat);
+				groupIcon = categoryIcons[cat] ?? Terminal;
+			}
+
+			if (!groups.has(groupKey)) {
+				groups.set(groupKey, {
+					key: groupKey,
+					label: groupLabel,
+					icon: groupIcon,
+					commands: [],
+					pluginName
 				});
 			}
-			groups.get(cat)!.commands.push(cmd);
+			groups.get(groupKey)!.commands.push(cmd);
 		}
 
-		// Sort by predefined category order
-		return categoryOrder
-			.filter((cat) => groups.has(cat))
-			.map((cat) => groups.get(cat)!);
+		// Sort: fixed categories by priority, plugin groups alphabetically in between
+		return Array.from(groups.values()).sort((a, b) => {
+			const aPriority = categoryPriority[a.key] ?? 2;
+			const bPriority = categoryPriority[b.key] ?? 2;
+			if (aPriority !== bPriority) return aPriority - bPriority;
+			return a.label.localeCompare(b.label);
+		});
 	});
 
 	// Track which groups are expanded
-	let expandedGroups = $state<Set<string>>(new Set(['builtin_command', 'bundled_skill']));
+	let expandedGroups = $state<Set<string>>(new Set(['builtin_command']));
 	let previousExpandedGroups = $state<Set<string> | null>(null);
 
 	// Auto-expand groups when searching
@@ -226,10 +265,16 @@
 		if (selectedFilter === 'bundled') {
 			return (name: string) => commandCategoryMap.get(name) !== 'bundled_skill';
 		}
-		// 'user' — exclude builtin and bundled
+		if (selectedFilter === 'plugin') {
+			return (name: string) => {
+				const cat = commandCategoryMap.get(name);
+				return cat !== 'plugin_command' && cat !== 'plugin_skill';
+			};
+		}
+		// 'user' — only user_command and custom_skill
 		return (name: string) => {
 			const cat = commandCategoryMap.get(name);
-			return cat === 'builtin_command' || cat === 'bundled_skill';
+			return cat !== 'user_command' && cat !== 'custom_skill';
 		};
 	});
 
@@ -260,7 +305,7 @@
 				class="absolute -bottom-24 -left-24 w-64 h-64 bg-teal-500/3 rounded-full blur-3xl pointer-events-none"
 			></div>
 			<div class="relative">
-				<StatsGrid {stats} columns={4} />
+				<StatsGrid {stats} columns={5} />
 			</div>
 		</div>
 	{/if}
@@ -367,7 +412,9 @@
 		<!-- Grouped Command Display (By Category) -->
 		<div class="space-y-4">
 			{#each groupedCommands as group (group.key)}
-				{@const groupColors = getCommandCategoryColorVars(group.key)}
+				{@const groupColors = group.pluginName
+					? getPluginColorVars(group.pluginName)
+					: getCommandCategoryColorVars(group.key)}
 				<CollapsibleGroup
 					title={group.label}
 					open={expandedGroups.has(group.key)}
@@ -383,9 +430,30 @@
 						</div>
 					{/snippet}
 					{#snippet metadata()}
-						<span class="text-xs text-[var(--text-muted)] tabular-nums">
-							{group.commands.length} command{group.commands.length !== 1 ? 's' : ''}
-						</span>
+						<div class="flex items-center gap-3">
+							<span class="text-xs text-[var(--text-muted)] tabular-nums">
+								{group.commands.length} command{group.commands.length !== 1 ? 's' : ''}
+							</span>
+							{#if group.pluginName}
+								<a
+									href="/plugins/{encodeURIComponent(group.pluginName)}"
+									class="
+										inline-flex items-center gap-1 px-2 py-0.5
+										text-[10px] font-medium
+										text-[var(--accent)] hover:text-[var(--text-primary)]
+										bg-[var(--accent-subtle)] hover:bg-[var(--bg-muted)]
+										rounded-full
+										transition-colors
+									"
+									onclick={(e) => e.stopPropagation()}
+									title="View plugin"
+								>
+									<Puzzle size={10} />
+									View plugin
+									<ExternalLink size={9} />
+								</a>
+							{/if}
+						</div>
 					{/snippet}
 
 					<div

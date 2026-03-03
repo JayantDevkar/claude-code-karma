@@ -6,6 +6,7 @@
 		Play,
 		Puzzle,
 		FolderOpen,
+		Sparkles,
 		ChevronsUpDown,
 		ChevronsDownUp,
 		ExternalLink
@@ -18,7 +19,7 @@
 	import SkillUsageCard from '$lib/components/skills/SkillUsageCard.svelte';
 	import SkillUsageTable from '$lib/components/skills/SkillUsageTable.svelte';
 	import UsageAnalytics from '$lib/components/charts/UsageAnalytics.svelte';
-	import { getSkillGroupColorVars, getSkillChartHex, cleanSkillName } from '$lib/utils';
+	import { getSkillGroupColorVars, getSkillCategoryColorVars, getSkillChartHex, cleanSkillName } from '$lib/utils';
 	import type { SkillUsage, StatItem } from '$lib/api-types';
 
 	// Server data
@@ -29,13 +30,14 @@
 
 	// Filter state
 	let searchQuery = $state('');
-	let selectedFilter = $state<'all' | 'plugin' | 'file'>('all');
+	let selectedFilter = $state<'all' | 'bundled' | 'plugin' | 'custom'>('all');
 
 	// Filter options
 	const filterOptions = [
 		{ label: 'All', value: 'all' },
+		{ label: 'Bundled', value: 'bundled' },
 		{ label: 'Plugin', value: 'plugin' },
-		{ label: 'Custom', value: 'file' }
+		{ label: 'Custom', value: 'custom' }
 	];
 
 	// View tab options
@@ -50,7 +52,8 @@
 		const usage = data.usage || [];
 		const totalSkills = usage.length;
 		const totalUses = usage.reduce((sum: number, skill: SkillUsage) => sum + skill.count, 0);
-		const pluginSkills = usage.filter((s: SkillUsage) => s.is_plugin).length;
+		const bundledSkills = usage.filter((s: SkillUsage) => s.category === 'bundled_skill').length;
+		const pluginSkills = usage.filter((s: SkillUsage) => s.category === 'plugin_skill').length;
 
 		return [
 			{
@@ -66,6 +69,12 @@
 				color: 'blue'
 			},
 			{
+				title: 'Bundled',
+				value: bundledSkills,
+				icon: Sparkles,
+				color: 'purple'
+			},
+			{
 				title: 'Plugin Skills',
 				value: pluginSkills,
 				icon: Puzzle,
@@ -78,11 +87,13 @@
 	let filteredSkills = $derived.by(() => {
 		let skills = data.usage || [];
 
-		// Filter by type
-		if (selectedFilter === 'plugin') {
-			skills = skills.filter((s: SkillUsage) => s.is_plugin);
-		} else if (selectedFilter === 'file') {
-			skills = skills.filter((s: SkillUsage) => !s.is_plugin);
+		// Filter by category
+		if (selectedFilter === 'bundled') {
+			skills = skills.filter((s: SkillUsage) => s.category === 'bundled_skill');
+		} else if (selectedFilter === 'plugin') {
+			skills = skills.filter((s: SkillUsage) => s.category === 'plugin_skill');
+		} else if (selectedFilter === 'custom') {
+			skills = skills.filter((s: SkillUsage) => s.category === 'custom_skill');
 		}
 
 		// Filter by search query
@@ -117,19 +128,31 @@
 			let groupIcon: typeof Zap;
 			let pluginName: string | null = null;
 
-			if (skill.is_plugin && skill.plugin) {
+			if (skill.category === 'bundled_skill') {
+				groupKey = 'bundled_skill';
+				groupLabel = 'Bundled Skills';
+				groupIcon = Sparkles;
+			} else if (skill.category === 'plugin_skill' && skill.plugin) {
 				groupKey = `plugin:${skill.plugin}`;
 				groupLabel = skill.plugin;
 				groupIcon = Puzzle;
 				pluginName = skill.plugin;
-			} else if (!skill.is_plugin) {
-				groupKey = 'file';
+			} else if (skill.category === 'custom_skill') {
+				groupKey = 'custom_skill';
 				groupLabel = 'Custom Skills';
 				groupIcon = FolderOpen;
 			} else {
-				groupKey = 'other';
-				groupLabel = 'Other Skills';
-				groupIcon = Zap;
+				// Backward compat fallback for skills without category
+				if (skill.is_plugin && skill.plugin) {
+					groupKey = `plugin:${skill.plugin}`;
+					groupLabel = skill.plugin;
+					groupIcon = Puzzle;
+					pluginName = skill.plugin;
+				} else {
+					groupKey = 'custom_skill';
+					groupLabel = 'Custom Skills';
+					groupIcon = FolderOpen;
+				}
 			}
 
 			if (!groups.has(groupKey)) {
@@ -144,16 +167,18 @@
 			groups.get(groupKey)!.skills.push(skill);
 		}
 
-		// Sort groups: file-based first, then plugins alphabetically
+		// Sort groups: bundled first, then custom, then plugins alphabetically
 		return Array.from(groups.values()).sort((a, b) => {
-			if (a.key === 'file') return -1;
-			if (b.key === 'file') return 1;
+			const priority: Record<string, number> = { 'bundled_skill': 0, 'custom_skill': 1 };
+			const aPriority = priority[a.key] ?? 2;
+			const bPriority = priority[b.key] ?? 2;
+			if (aPriority !== bPriority) return aPriority - bPriority;
 			return a.label.localeCompare(b.label);
 		});
 	});
 
 	// Track which groups are expanded
-	let expandedGroups = $state<Set<string>>(new Set(['file']));
+	let expandedGroups = $state<Set<string>>(new Set(['bundled_skill']));
 	let previousExpandedGroups = $state<Set<string> | null>(null);
 
 	// Auto-expand groups when searching rule:
@@ -227,11 +252,20 @@
 
 	let excludeFn = $derived.by(() => {
 		if (selectedFilter === 'all') return undefined;
+		if (selectedFilter === 'bundled') {
+			return (name: string) => {
+				const skill = (data.usage || []).find((s: SkillUsage) => s.name === name);
+				return skill?.category !== 'bundled_skill';
+			};
+		}
 		if (selectedFilter === 'plugin') {
 			return (name: string) => skillPluginMap.get(name) !== true;
 		}
-		// 'file' — exclude plugin skills
-		return (name: string) => skillPluginMap.get(name) === true;
+		// 'custom'
+		return (name: string) => {
+			const skill = (data.usage || []).find((s: SkillUsage) => s.name === name);
+			return skill?.category !== 'custom_skill';
+		};
 	});
 
 	// Check if we have any skills
@@ -265,7 +299,7 @@
 
 			<!-- Stats Grid -->
 			<div class="relative">
-				<StatsGrid {stats} columns={3} />
+				<StatsGrid {stats} columns={4} />
 			</div>
 		</div>
 	{/if}
@@ -382,7 +416,7 @@
 		<!-- Grouped Skill Display (By Category) -->
 		<div class="space-y-4">
 			{#each groupedSkills as group (group.key)}
-				{@const groupColors = getSkillGroupColorVars(group.key)}
+				{@const groupColors = group.key.startsWith('plugin:') ? getSkillGroupColorVars(group.key) : getSkillCategoryColorVars(group.key)}
 				<CollapsibleGroup
 					title={group.label}
 					open={expandedGroups.has(group.key)}
@@ -395,6 +429,8 @@
 						>
 							{#if group.icon === Puzzle}
 								<Puzzle size={14} style="color: {groupColors.color};" />
+							{:else if group.icon === Sparkles}
+								<Sparkles size={14} style="color: {groupColors.color};" />
 							{:else if group.icon === FolderOpen}
 								<FolderOpen size={14} style="color: {groupColors.color};" />
 							{:else}

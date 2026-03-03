@@ -97,6 +97,8 @@ export interface ToolUsage {
 // Skill Usage
 // ============================================
 
+export type SkillCategory = 'bundled_skill' | 'plugin_skill' | 'custom_skill';
+
 export interface SkillUsage {
 	name: string;
 	count: number;
@@ -104,12 +106,15 @@ export interface SkillUsage {
 	plugin: string | null;
 	last_used: string | null;
 	session_count: number;
+	category?: SkillCategory;
+	description?: string | null;
 }
 
 export type CommandCategory =
 	| 'builtin_command'
 	| 'bundled_skill'
 	| 'plugin_skill'
+	| 'plugin_command'
 	| 'custom_skill'
 	| 'user_command';
 
@@ -118,6 +123,7 @@ export interface CommandUsage {
 	count: number;
 	source?: 'builtin' | 'plugin' | 'project' | 'user' | 'unknown';
 	plugin?: string | null;
+	is_plugin?: boolean;
 	category?: CommandCategory;
 	description?: string | null;
 	last_used?: string | null;
@@ -1536,6 +1542,7 @@ export interface SkillDetailResponse {
 	auto_calls: number;
 	mentioned_calls: number;
 	command_triggered_calls?: number;
+	category?: SkillCategory;
 	mention_session_count: number;
 	session_count: number;
 	first_used: string | null;
