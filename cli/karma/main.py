@@ -20,7 +20,7 @@ def require_config() -> SyncConfig:
 
 
 @click.group()
-@click.version_option()
+@click.version_option(package_name="claude-karma-cli")
 def cli():
     """Claude Karma - IPFS session sync for distributed teams."""
     pass
