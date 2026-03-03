@@ -142,11 +142,50 @@ def find_session_by_message_uuid(message_uuid: str) -> Optional[SessionLookupRes
     return None
 
 
+def _find_session_jsonl(
+    projects_dir: Path, encoded_name: str, session_uuid: str
+) -> Optional[Path]:
+    """
+    Find a session JSONL file, searching the project dir and its worktree dirs.
+
+    For worktree-grouped sessions, the JSONL lives in the worktree-encoded
+    directory (e.g., -Users-...-worktrees-karma-focused-jepsen/) but the UI
+    routes through the real project's encoded_name. This function handles
+    the fallback transparently.
+
+    Args:
+        projects_dir: Root ~/.claude/projects/ directory
+        encoded_name: Encoded project directory name (may be the real project)
+        session_uuid: Session UUID to find
+
+    Returns:
+        Path to the session JSONL file, or None if not found.
+    """
+    # Primary: check the project directory itself
+    session_jsonl = projects_dir / encoded_name / f"{session_uuid}.jsonl"
+    if session_jsonl.exists():
+        return session_jsonl
+
+    # Worktree fallback: session may live in a worktree dir grouped under this project
+    from utils import get_worktree_mappings_for_project
+
+    for wt_enc in get_worktree_mappings_for_project(encoded_name):
+        wt_jsonl = projects_dir / wt_enc / f"{session_uuid}.jsonl"
+        if wt_jsonl.exists():
+            return wt_jsonl
+
+    return None
+
+
 def find_subagent(
     encoded_name: str, session_uuid: str, agent_id: str
 ) -> Optional[SubagentLookupResult]:
     """
     Find a subagent by project, session, and agent ID.
+
+    Supports worktree-grouped sessions: when the UI navigates via the real
+    project's encoded_name but the session JSONL lives in a worktree directory,
+    this function searches worktree dirs as a fallback.
 
     Args:
         encoded_name: Encoded project directory name
@@ -158,14 +197,10 @@ def find_subagent(
         or None if not found.
     """
     projects_dir = settings.projects_dir
-    project_dir = projects_dir / encoded_name
 
-    if not project_dir.exists():
-        return None
-
-    # Find parent session
-    session_jsonl = project_dir / f"{session_uuid}.jsonl"
-    if not session_jsonl.exists():
+    # Find parent session (searches worktree dirs if needed)
+    session_jsonl = _find_session_jsonl(projects_dir, encoded_name, session_uuid)
+    if not session_jsonl:
         return None
 
     parent_session = Session.from_path(session_jsonl)
