@@ -46,7 +46,7 @@
 	let stats = $derived.by<StatItem[]>(() => {
 		const usage = data.usage || [];
 		const totalCommands = usage.length;
-		const totalUses = usage.reduce((sum: number, cmd: CommandUsage) => sum + cmd.count, 0);
+		const totalUses = usage.reduce((sum: number, cmd: CommandUsage) => sum + (cmd.count ?? 0), 0);
 		const builtinCount = usage.filter(
 			(c: CommandUsage) => c.category === 'builtin_command'
 		).length;

@@ -133,7 +133,7 @@
 	{#if sortedCommands.length > 0}
 		<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
 			{#each sortedCommands as command (command.name)}
-				{@const cmdColors = getCommandColorVars(command.source, command.plugin)}
+				{@const cmdColors = getCommandColorVars(command.source ?? 'unknown', command.plugin)}
 				{@const Icon = command.source === 'plugin' ? Zap : TerminalSquare}
 				{@const isClickable = command.source !== 'builtin' && command.source !== 'unknown'}
 

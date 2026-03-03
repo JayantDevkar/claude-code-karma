@@ -208,8 +208,8 @@ def get_command_usage(
         rows = query_command_usage(conn, project=project, limit=100)
         return [
             {
-                "command_name": row["command_name"],
-                "total_uses": row["total_count"],
+                "name": row["command_name"],
+                "count": row["total_count"],
                 "session_count": row["session_count"],
                 "last_used": row["last_used"],
                 "category": classify_invocation(row["command_name"]),
@@ -279,14 +279,14 @@ def get_command_usage_detail(command_name: str, request: Request):
         ).fetchall()
 
         return {
-            "command_name": command_name,
+            "name": command_name,
             "total_uses": sum(r[1] for r in rows),
             "sessions": [
                 {
-                    "session_uuid": row[0],
+                    "uuid": row[0],
                     "count": row[1],
                     "slug": row[2],
-                    "project": row[3],
+                    "project_encoded_name": row[3],
                     "start_time": row[4],
                 }
                 for row in rows

@@ -116,8 +116,8 @@ export type CommandCategory =
 export interface CommandUsage {
 	name: string;
 	count: number;
-	source: 'builtin' | 'plugin' | 'project' | 'user' | 'unknown';
-	plugin: string | null;
+	source?: 'builtin' | 'plugin' | 'project' | 'user' | 'unknown';
+	plugin?: string | null;
 	category?: CommandCategory;
 	description?: string | null;
 	last_used?: string | null;
