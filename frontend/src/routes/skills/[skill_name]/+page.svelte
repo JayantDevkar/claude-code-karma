@@ -703,6 +703,104 @@
 					/>
 				</div>
 
+				<!-- Invocation Breakdown Card -->
+				{#if hasInvocationBreakdown}
+					<div
+						class="bg-[var(--bg-base)] border border-[var(--border)] rounded-xl p-6 shadow-sm hover:shadow-md transition-shadow"
+					>
+						<div class="flex items-center gap-2 mb-6">
+							<Zap size={18} class="text-[var(--text-muted)]" />
+							<h3 class="text-lg font-bold text-[var(--text-primary)]">Invocation Breakdown</h3>
+						</div>
+
+						<!-- Stacked bar -->
+						<div class="mb-6">
+							<div class="flex h-5 rounded-full overflow-hidden bg-[var(--bg-muted)] shadow-inner">
+								{#if manualPercent > 0}
+									<div
+										class="bg-blue-500 transition-all duration-300 ease-out flex items-center justify-center text-[10px] font-bold text-white"
+										style="width: {manualPercent}%"
+										title="Manual: {manualCalls}"
+									>
+										{#if manualPercent > 15}{Math.round(manualPercent)}%{/if}
+									</div>
+								{/if}
+								{#if commandTriggeredPercent > 0}
+									<div
+										class="bg-amber-500 transition-all duration-300 ease-out flex items-center justify-center text-[10px] font-bold text-white"
+										style="width: {commandTriggeredPercent}%"
+										title="By Command: {commandTriggeredCalls}"
+									>
+										{#if commandTriggeredPercent > 15}{Math.round(commandTriggeredPercent)}%{/if}
+									</div>
+								{/if}
+								{#if autoPercent > 0}
+									<div
+										class="bg-purple-500 transition-all duration-300 ease-out flex items-center justify-center text-[10px] font-bold text-white"
+										style="width: {autoPercent}%"
+										title="Auto: {autoCalls}"
+									>
+										{#if autoPercent > 15}{Math.round(autoPercent)}%{/if}
+									</div>
+								{/if}
+								{#if mentionedPercent > 0}
+									<div
+										class="bg-gray-500/50 transition-all duration-300 ease-out flex items-center justify-center text-[10px] font-bold text-white"
+										style="width: {mentionedPercent}%"
+										title="Mentioned (not invoked): {mentionedCalls}"
+									>
+										{#if mentionedPercent > 15}{Math.round(mentionedPercent)}%{/if}
+									</div>
+								{/if}
+							</div>
+						</div>
+
+						<!-- Legend grid -->
+						<div class="grid grid-cols-2 gap-3 text-xs">
+							<div class="flex items-center gap-2 text-[var(--text-secondary)] bg-[var(--bg-subtle)] rounded-lg p-2.5">
+								<span class="w-3 h-3 rounded-full bg-blue-500"></span>
+								<div class="flex-1 min-w-0">
+									<div class="font-medium">Manual</div>
+									<div class="text-[var(--text-primary)] font-semibold tabular-nums">
+										{manualCalls.toLocaleString()} calls
+									</div>
+								</div>
+							</div>
+							<div class="flex items-center gap-2 text-[var(--text-secondary)] bg-[var(--bg-subtle)] rounded-lg p-2.5">
+								<span class="w-3 h-3 rounded-full bg-purple-500"></span>
+								<div class="flex-1 min-w-0">
+									<div class="font-medium">Auto</div>
+									<div class="text-[var(--text-primary)] font-semibold tabular-nums">
+										{autoCalls.toLocaleString()} calls
+									</div>
+								</div>
+							</div>
+							{#if commandTriggeredCalls > 0}
+								<div class="flex items-center gap-2 text-[var(--text-secondary)] bg-[var(--bg-subtle)] rounded-lg p-2.5">
+									<span class="w-3 h-3 rounded-full bg-amber-500"></span>
+									<div class="flex-1 min-w-0">
+										<div class="font-medium">By Command</div>
+										<div class="text-[var(--text-primary)] font-semibold tabular-nums">
+											{commandTriggeredCalls.toLocaleString()} calls
+										</div>
+									</div>
+								</div>
+							{/if}
+							{#if mentionedCalls > 0}
+								<div class="flex items-center gap-2 text-[var(--text-secondary)] bg-[var(--bg-subtle)] rounded-lg p-2.5">
+									<span class="w-3 h-3 rounded-full bg-gray-500/50"></span>
+									<div class="flex-1 min-w-0">
+										<div class="font-medium">Mentioned</div>
+										<div class="text-[var(--text-primary)] font-semibold tabular-nums">
+											{mentionedCalls.toLocaleString()} calls
+										</div>
+									</div>
+								</div>
+							{/if}
+						</div>
+					</div>
+				{/if}
+
 				<!-- Usage Trend -->
 				{#if detail.trend && detail.trend.length > 0}
 					<div

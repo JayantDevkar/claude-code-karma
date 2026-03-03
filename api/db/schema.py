@@ -10,7 +10,7 @@ import sqlite3
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 10
 
 SCHEMA_SQL = """
 -- Schema versioning
@@ -412,6 +412,18 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             # Force full re-index of all sessions and subagent data
             conn.execute("DELETE FROM subagent_tools")
             conn.execute("DELETE FROM subagent_invocations")
+            conn.execute("UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1")
+
+        if current_version < 10:
+            logger.info(
+                "Migrating → v10: re-index skills for command_triggered invocation source"
+            )
+            # Clear skill/command tables so they get repopulated with new linkage logic
+            conn.execute("DELETE FROM session_skills")
+            conn.execute("DELETE FROM session_commands")
+            conn.execute("DELETE FROM subagent_skills")
+            conn.execute("DELETE FROM subagent_commands")
+            # Nudge mtime to force re-index of all sessions
             conn.execute("UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1")
 
     # Record version
