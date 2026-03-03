@@ -12,6 +12,16 @@
 - `docs/plans/2026-03-03-ipfs-session-sync-design.md` — IPFS architecture
 - `docs/plans/2026-03-03-ipfs-sync-ui-ux-design.md` — UI/UX design
 
+**Review fixes applied (2026-03-03):** Plan reviewed by Explorer, Architect, and Critic agents. Fixes:
+1. **Monkeypatch target** — `test_history.py` patches `"karma.history.KARMA_BASE"` (not `"karma.config.KARMA_BASE"`) since `from X import Y` binds at import time.
+2. **WAL pragma** — All `sqlite3.connect()` calls in `api/routers/sync.py` now include `PRAGMA journal_mode=WAL` to match CLI and `db/connection.py` patterns.
+3. **Session count verified** — `sync_project()` returns `manifest.session_count = len(sessions)` (cumulative total, not incremental). No fix needed.
+4. **Migration test** — Added `test_sync_history_migration_from_v9()` to verify incremental v9→v10 migration path.
+5. **API endpoint tests** — Added tests for `/sync/projects`, `/sync/team`, `/sync/history` empty-state paths.
+6. **Accurate last_pull_at** — `get_sync_team()` queries `sync_history WHERE event_type='pull'` instead of using manifest `synced_at`.
+7. **Human-readable project names** — Team zone derives display name from manifest `project_path` basename.
+8. **CLI unpushed count** — `karma status` now queries `sync_history` to show unpushed session deltas matching the design doc.
+
 ---
 
 ## Task 1: SQLite schema — add `sync_history` table
@@ -88,6 +98,32 @@ def test_sync_history_indexes_exist():
     assert "idx_sync_history_user" in indexes
     assert "idx_sync_history_project" in indexes
     assert "idx_sync_history_created" in indexes
+
+
+def test_sync_history_migration_from_v9():
+    """Incremental migration from v9 should add sync_history table."""
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+
+    # Simulate a v9 database (create schema_version table with version 9)
+    conn.execute("CREATE TABLE IF NOT EXISTS schema_version (version INTEGER)")
+    conn.execute("INSERT INTO schema_version (version) VALUES (9)")
+    conn.commit()
+
+    # Run migration
+    ensure_schema(conn)
+
+    # sync_history table should now exist
+    tables = {
+        r[0] for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ).fetchall()
+    }
+    assert "sync_history" in tables
+
+    # Version should be 10
+    version = conn.execute("SELECT version FROM schema_version").fetchone()[0]
+    assert version == SCHEMA_VERSION
 ```
 
 **Step 2: Run test to verify it fails**
@@ -148,7 +184,7 @@ CREATE INDEX IF NOT EXISTS idx_sync_history_created ON sync_history(created_at);
 **Step 4: Run test to verify it passes**
 
 Run: `cd api && python -m pytest tests/test_sync_history_schema.py -v`
-Expected: All 4 tests PASS.
+Expected: All 5 tests PASS.
 
 **Step 5: Commit**
 
@@ -319,19 +355,46 @@ def status():
         click.echo("\nNo projects configured.")
         return
 
+    # Query sync_history for synced session counts per project
+    from pathlib import Path
+    synced_counts: dict[str, int] = {}
+    db_path = Path.home() / ".claude_karma" / "metadata.db"
+    if db_path.exists():
+        import sqlite3
+        try:
+            conn = sqlite3.connect(str(db_path))
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                "SELECT project, session_count FROM sync_history "
+                "WHERE event_type='push' AND id IN ("
+                "  SELECT MAX(id) FROM sync_history WHERE event_type='push' GROUP BY project"
+                ")"
+            ).fetchall()
+            synced_counts = {r["project"]: r["session_count"] for r in rows}
+            conn.close()
+        except Exception:
+            pass
+
     click.echo(f"\nProjects ({len(config.projects)}):")
     for name, proj in config.projects.items():
         # Count local sessions
-        from pathlib import Path
         claude_dir = Path.home() / ".claude" / "projects" / proj.encoded_name
         local_count = len(list(claude_dir.glob("*.jsonl"))) if claude_dir.is_dir() else 0
 
-        if proj.last_sync_at:
-            sync_info = f"synced {proj.last_sync_at}"
-        else:
-            sync_info = "never synced"
+        synced = synced_counts.get(name, 0)
+        unpushed = max(0, local_count - synced)
 
-        click.echo(f"  {name}: {local_count} sessions ({sync_info})")
+        if not proj.last_sync_at:
+            status_icon = "  "
+            sync_info = "never synced"
+        elif unpushed > 0:
+            status_icon = "⚠ "
+            sync_info = f"{unpushed} unpushed ({synced}/{local_count} synced, last sync {proj.last_sync_at})"
+        else:
+            status_icon = "✓ "
+            sync_info = f"up to date ({local_count} sessions, last sync {proj.last_sync_at})"
+
+        click.echo(f"  {name}: {status_icon}{sync_info}")
 ```
 
 **Step 4: Run test to verify it passes**
@@ -366,7 +429,7 @@ from karma.history import record_sync_event, get_db_path, ensure_sync_schema
 
 
 def test_record_push_event(tmp_path, monkeypatch):
-    monkeypatch.setattr("karma.config.KARMA_BASE", tmp_path)
+    monkeypatch.setattr("karma.history.KARMA_BASE", tmp_path)
 
     record_sync_event(
         event_type="push",
@@ -392,7 +455,7 @@ def test_record_push_event(tmp_path, monkeypatch):
 
 
 def test_record_pull_event(tmp_path, monkeypatch):
-    monkeypatch.setattr("karma.config.KARMA_BASE", tmp_path)
+    monkeypatch.setattr("karma.history.KARMA_BASE", tmp_path)
 
     record_sync_event(
         event_type="pull",
@@ -612,6 +675,38 @@ def test_sync_status_initialized(client, tmp_path, monkeypatch):
     assert data["initialized"] is True
     assert data["user_id"] == "alice"
     assert data["machine_id"] == "macbook-pro"
+
+
+def test_sync_projects_not_initialized(client, tmp_path, monkeypatch):
+    """Returns empty list when no sync-config.json exists."""
+    monkeypatch.setattr("routers.sync.SYNC_CONFIG_PATH", tmp_path / "nope.json")
+    resp = client.get("/sync/projects")
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+
+def test_sync_team_not_initialized(client, tmp_path, monkeypatch):
+    """Returns empty list when no sync-config.json exists."""
+    monkeypatch.setattr("routers.sync.SYNC_CONFIG_PATH", tmp_path / "nope.json")
+    resp = client.get("/sync/team")
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+
+def test_sync_history_empty(client, tmp_path, monkeypatch):
+    """Returns empty list when no metadata.db exists."""
+    monkeypatch.setattr("routers.sync.KARMA_BASE", tmp_path)
+    resp = client.get("/sync/history")
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+
+def test_sync_history_with_limit(client, tmp_path, monkeypatch):
+    """Respects limit query parameter."""
+    monkeypatch.setattr("routers.sync.KARMA_BASE", tmp_path)
+    resp = client.get("/sync/history?limit=5&offset=0")
+    assert resp.status_code == 200
+    assert resp.json() == []
 ```
 
 **Step 2: Run test to verify it fails**
@@ -757,6 +852,7 @@ def get_sync_projects() -> list[ProjectSyncState]:
     if db_path.exists():
         try:
             db_conn = sqlite3.connect(str(db_path))
+            db_conn.execute("PRAGMA journal_mode=WAL")
             db_conn.row_factory = sqlite3.Row
             rows = db_conn.execute(
                 "SELECT project, session_count FROM sync_history "
@@ -817,6 +913,23 @@ def get_sync_team() -> list[TeamMember]:
     if config is None:
         return []
 
+    # Query sync_history for accurate last_pull_at per member
+    pull_times: dict[str, str] = {}
+    db_path = KARMA_BASE / "metadata.db"
+    if db_path.exists():
+        try:
+            db_conn = sqlite3.connect(str(db_path))
+            db_conn.execute("PRAGMA journal_mode=WAL")
+            db_conn.row_factory = sqlite3.Row
+            rows = db_conn.execute(
+                "SELECT machine_id, MAX(created_at) as last_pull "
+                "FROM sync_history WHERE event_type='pull' GROUP BY machine_id"
+            ).fetchall()
+            pull_times = {r["machine_id"]: r["last_pull"] for r in rows}
+            db_conn.close()
+        except (sqlite3.OperationalError, sqlite3.DatabaseError):
+            pass
+
     # Group team members by user_id (extracted from manifests)
     user_machines: dict[str, list[TeamMachine]] = {}
 
@@ -827,7 +940,6 @@ def get_sync_team() -> list[TeamMember]:
         member_dir = REMOTE_SESSIONS_DIR / member_name
         projects = []
         user_id = member_name  # default
-        last_pull_at = None
 
         if member_dir.is_dir():
             for proj_dir in sorted(member_dir.iterdir()):
@@ -838,15 +950,21 @@ def get_sync_team() -> list[TeamMember]:
                     try:
                         manifest = json.loads(manifest_path.read_text())
                         user_id = manifest.get("user_id", member_name)
-                        synced_at = manifest.get("synced_at")
-                        if synced_at and (last_pull_at is None or synced_at > last_pull_at):
-                            last_pull_at = synced_at
+                        # Derive human-readable name from project_path or encoded dir name
+                        display_name = proj_dir.name
+                        project_path = manifest.get("project_path", "")
+                        if project_path:
+                            display_name = project_path.rstrip("/").rsplit("/", 1)[-1]
                         projects.append({
+                            "name": display_name,
                             "encoded_name": proj_dir.name,
                             "session_count": manifest.get("session_count", 0),
                         })
                     except (json.JSONDecodeError, OSError):
                         pass
+
+        # Use sync_history pull time (accurate), fall back to manifest synced_at
+        last_pull_at = pull_times.get(member_name)
 
         machine = TeamMachine(
             machine_id=member_name,
@@ -877,6 +995,7 @@ def get_sync_history(
 
     try:
         conn = sqlite3.connect(str(db_path))
+        conn.execute("PRAGMA journal_mode=WAL")
         conn.row_factory = sqlite3.Row
 
         # Check if sync_history table exists
@@ -1228,7 +1347,7 @@ Create `frontend/src/routes/sync/+page.svelte`:
 									</div>
 									<div class="flex items-center gap-3 text-xs text-[var(--text-muted)]">
 										{#each machine.projects as proj}
-											<span>{proj.session_count} sessions</span>
+											<span>{proj.name ?? proj.encoded_name}: {proj.session_count} sessions</span>
 										{/each}
 										{#if machine.last_pull_at}
 											<span class="flex items-center gap-1">
@@ -1396,4 +1515,4 @@ git add -A && git commit -m "fix: test and type check fixes for sync feature"
 | **API** | `api/main.py` | Register sync router |
 | **Frontend** | `frontend/src/routes/sync/` | New `/sync` page with 4-zone layout |
 | **Frontend** | `frontend/src/lib/components/Header.svelte` | Add "Sync" nav link (desktop + mobile) |
-| **Tests** | 3 new test files | Schema, CLI, API endpoint tests |
+| **Tests** | 4 new test files | Schema (5 tests incl. migration), CLI status, CLI history, API sync endpoints (6 tests) |
