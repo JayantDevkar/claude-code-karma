@@ -708,6 +708,7 @@ class SkillDetailResponse(BaseModel):
     manual_calls: int = Field(0, description="Calls via slash command (user-initiated)")
     auto_calls: int = Field(0, description="Calls via skill tool (auto-invoked by Claude)")
     mentioned_calls: int = Field(0, description="Times mentioned in user prompts but not invoked")
+    command_triggered_calls: int = Field(0, description="Calls triggered by a plugin command")
     mention_session_count: int = Field(
         0, description="Sessions where skill was only mentioned, not invoked"
     )

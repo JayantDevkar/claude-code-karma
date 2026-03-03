@@ -1535,6 +1535,7 @@ export interface SkillDetailResponse {
 	manual_calls: number;
 	auto_calls: number;
 	mentioned_calls: number;
+	command_triggered_calls?: number;
 	mention_session_count: number;
 	session_count: number;
 	first_used: string | null;

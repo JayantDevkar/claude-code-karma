@@ -583,6 +583,7 @@ def query_skill_detail(
     manual_calls = source_counts.get("slash_command", 0)
     auto_calls = source_counts.get("skill_tool", 0)
     mentioned_calls = source_counts.get("text_detection", 0)
+    command_triggered_calls = source_counts.get("command_triggered", 0)
 
     # Count sessions where the skill was ONLY mentioned (no actual invocation)
     mention_session_count = conn.execute(
@@ -596,7 +597,7 @@ def query_skill_detail(
         {"skill": skill_name},
     ).fetchone()[0]
 
-    if main_calls == 0 and sub_calls == 0 and mentioned_calls == 0:
+    if main_calls == 0 and sub_calls == 0 and mentioned_calls == 0 and command_triggered_calls == 0:
         return None
 
     # Daily trend (exclude mentions)
@@ -712,6 +713,7 @@ def query_skill_detail(
         "manual_calls": manual_calls,
         "auto_calls": auto_calls,
         "mentioned_calls": mentioned_calls,
+        "command_triggered_calls": command_triggered_calls,
         "mention_session_count": mention_session_count,
         "session_count": main_row["session_count"] or 0 if main_row else 0,
         "first_used": main_row["first_used"] if main_row else None,

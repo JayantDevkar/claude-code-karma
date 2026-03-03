@@ -98,7 +98,7 @@
 	let scopeSelection = $state<SearchScopeSelection>({ ...DEFAULT_SCOPE_SELECTION });
 	let showFiltersDropdown = $state(false);
 	let isMobile = $state(false);
-	let sourceFilter = $state<'all' | 'manual' | 'auto' | 'mentioned'>('all');
+	let sourceFilter = $state<'all' | 'manual' | 'auto' | 'mentioned' | 'command_triggered'>('all');
 	let searchTokens = $state<string[]>([]);
 	let selectedProjectFilters = $state<Set<string>>(new Set());
 
@@ -121,8 +121,9 @@
 	let manualCalls = $derived(detail?.manual_calls ?? 0);
 	let autoCalls = $derived(detail?.auto_calls ?? 0);
 	let mentionedCalls = $derived(detail?.mentioned_calls ?? 0);
-	let hasInvocationBreakdown = $derived(manualCalls > 0 || autoCalls > 0 || mentionedCalls > 0);
-	let barTotal = $derived(manualCalls + autoCalls + mentionedCalls);
+	let commandTriggeredCalls = $derived(detail?.command_triggered_calls ?? 0);
+	let hasInvocationBreakdown = $derived(manualCalls > 0 || autoCalls > 0 || mentionedCalls > 0 || commandTriggeredCalls > 0);
+	let barTotal = $derived(manualCalls + autoCalls + mentionedCalls + commandTriggeredCalls);
 
 	// Stats
 	let stats = $derived<StatItem[]>(
@@ -165,6 +166,9 @@
 	);
 	let autoPercent = $derived(
 		barTotal > 0 ? (autoCalls / barTotal) * 100 : 0
+	);
+	let commandTriggeredPercent = $derived(
+		barTotal > 0 ? (commandTriggeredCalls / barTotal) * 100 : 0
 	);
 	let mentionedPercent = $derived(
 		barTotal > 0 ? (mentionedCalls / barTotal) * 100 : 0
@@ -229,7 +233,7 @@
 	// Restore filters from URL params
 	function restoreFiltersFromUrl(params: URLSearchParams) {
 		const sourceParam = params.get('source');
-		if (sourceParam === 'manual' || sourceParam === 'auto' || sourceParam === 'mentioned') {
+		if (sourceParam === 'manual' || sourceParam === 'auto' || sourceParam === 'mentioned' || sourceParam === 'command_triggered') {
 			sourceFilter = sourceParam;
 		} else {
 			sourceFilter = 'all';
@@ -355,6 +359,9 @@
 				}
 				if (sourceFilter === 'auto') {
 					return sources.includes('skill_tool');
+				}
+				if (sourceFilter === 'command_triggered') {
+					return sources.includes('command_triggered');
 				}
 				// mentioned: text_detection only (no slash_command or skill_tool)
 				return sources.includes('text_detection') && !sources.includes('slash_command') && !sources.includes('skill_tool');
@@ -594,6 +601,13 @@
 										title="Manual: {manualCalls}"
 									></div>
 								{/if}
+								{#if commandTriggeredPercent > 0}
+									<div
+										class="bg-amber-500 transition-all duration-300"
+										style="width: {commandTriggeredPercent}%"
+										title="Command-triggered: {commandTriggeredCalls}"
+									></div>
+								{/if}
 								{#if autoPercent > 0}
 									<div
 										class="bg-purple-500 transition-all duration-300"
@@ -603,7 +617,7 @@
 								{/if}
 								{#if mentionedPercent > 0}
 									<div
-										class="bg-amber-500/50 transition-all duration-300"
+										class="bg-gray-500/50 transition-all duration-300"
 										style="width: {mentionedPercent}%"
 										title="Mentioned (not invoked): {mentionedCalls}"
 									></div>
@@ -618,9 +632,15 @@
 									<span class="w-2 h-2 rounded-full bg-purple-500"></span>
 									Auto: {autoCalls}
 								</span>
+								{#if commandTriggeredCalls > 0}
+									<span class="flex items-center gap-1">
+										<span class="w-2 h-2 rounded-full bg-amber-500"></span>
+										Command-triggered: {commandTriggeredCalls}
+									</span>
+								{/if}
 								{#if mentionedCalls > 0}
 									<span class="flex items-center gap-1">
-										<span class="w-2 h-2 rounded-full bg-amber-500/50"></span>
+										<span class="w-2 h-2 rounded-full bg-gray-500/50"></span>
 										Mentioned <span class="opacity-60">(Not invoked)</span>: {mentionedCalls}
 									</span>
 								{/if}
@@ -761,6 +781,17 @@
 						>
 							Auto <span class="ml-0.5 opacity-70">{autoCalls}</span>
 						</button>
+						{#if commandTriggeredCalls > 0}
+							<button
+								onclick={() => (sourceFilter = sourceFilter === 'command_triggered' ? 'all' : 'command_triggered')}
+								class="px-3 py-1 text-xs font-medium rounded-full transition-all {sourceFilter === 'command_triggered'
+									? 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
+									: 'bg-[var(--bg-subtle)] text-[var(--text-muted)] border border-transparent hover:border-[var(--border)] hover:text-[var(--text-secondary)]'}"
+								aria-pressed={sourceFilter === 'command_triggered'}
+							>
+								Cmd-triggered <span class="ml-0.5 opacity-70">{commandTriggeredCalls}</span>
+							</button>
+						{/if}
 						{#if mentionedCalls > 0}
 							<button
 								onclick={() => (sourceFilter = sourceFilter === 'mentioned' ? 'all' : 'mentioned')}

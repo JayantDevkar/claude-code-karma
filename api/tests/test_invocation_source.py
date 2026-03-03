@@ -21,7 +21,7 @@ from command_helpers import (
     is_skill_category,
     parse_command_from_content,
 )
-from models.session import _dedup_invocation_sources, _link_command_to_skill
+from models.session import _dedup_invocation_sources, _apply_command_triggered
 
 
 class TestDedupInvocationSources:
@@ -129,6 +129,28 @@ class TestDedupInvocationSources:
         )
         _dedup_invocation_sources(counter)
         assert counter[("commit", "slash_command")] == 5
+
+    def test_command_triggered_not_absorbed(self):
+        """command_triggered is independent — not absorbed by slash_command or skill_tool."""
+        counter = Counter(
+            {
+                ("brainstorming", "command_triggered"): 1,
+                ("brainstorming", "skill_tool"): 2,
+            }
+        )
+        _dedup_invocation_sources(counter)
+        assert counter[("brainstorming", "command_triggered")] == 1
+        assert counter[("brainstorming", "skill_tool")] == 2
+
+    def test_command_triggered_alone_untouched(self):
+        """Pure command_triggered entries should not be modified."""
+        counter = Counter(
+            {
+                ("brainstorming", "command_triggered"): 3,
+            }
+        )
+        _dedup_invocation_sources(counter)
+        assert counter[("brainstorming", "command_triggered")] == 3
 
     def test_text_detection_plus_skill_tool_upgrades_to_slash_command(self):
         """text_detection + skill_tool (no slash_command) → upgrade to slash_command.
@@ -371,13 +393,16 @@ class TestBuildEntryTypeMap:
 class TestClassifyInvocation:
     """Tests for classify_invocation() with entry type awareness."""
 
-    def test_plugin_command_classified_as_plugin_skill(self, mock_claude_base):
-        """superpowers:brainstorm (in commands/) → 'plugin_skill'.
-
-        Commands from plugins with ':' return 'plugin_skill' unless entry_type == 'agent'.
-        """
+    def test_plugin_command_classified_as_plugin_command(self, mock_claude_base):
+        """superpowers:brainstorm (in commands/) → 'plugin_command'."""
         _make_plugin(mock_claude_base, "superpowers", ["brainstorm"], kind="commands")
-        assert classify_invocation("superpowers:brainstorm") == "plugin_skill"
+        assert classify_invocation("superpowers:brainstorm") == "plugin_command"
+
+    def test_plugin_command_is_command_category(self):
+        assert is_command_category("plugin_command") is True
+
+    def test_plugin_command_is_not_skill_category(self):
+        assert is_skill_category("plugin_command") is False
 
     def test_plugin_skill_classified_as_plugin_skill(self, mock_claude_base):
         """superpowers:brainstorming (in skills/) → 'plugin_skill'."""
@@ -459,46 +484,48 @@ class TestIsCommandCategory:
         assert is_command_category("custom_skill") is False
 
 
-class TestCommandToSkillLinkage:
-    """Tests for _link_command_to_skill() which upgrades skills triggered by commands."""
+class TestCommandTriggeredLinkage:
+    """Tests for turn-based command→skill linkage via pending_commands state."""
 
-    def test_same_plugin_command_upgrades_skill(self):
-        """brainstorm command + brainstorming skill_tool → slash_command."""
-        commands = {("superpowers:brainstorm", "slash_command")}
+    def test_same_plugin_command_triggers_skill(self):
+        """Command from plugin X + Skill tool from plugin X → command_triggered."""
+        pending_commands: set[str] = {"superpowers"}
         skills: Counter[tuple] = Counter({("superpowers:brainstorming", "skill_tool"): 1})
-        _link_command_to_skill(commands, skills)
+        _apply_command_triggered(pending_commands, skills)
         assert ("superpowers:brainstorming", "skill_tool") not in skills
-        assert skills[("superpowers:brainstorming", "slash_command")] == 1
+        assert skills[("superpowers:brainstorming", "command_triggered")] == 1
 
-    def test_different_plugin_no_upgrade(self):
+    def test_different_plugin_no_linkage(self):
         """Command from plugin A doesn't affect skill from plugin B."""
-        commands = {("plugin-a:cmd", "slash_command")}
+        pending_commands: set[str] = {"plugin-a"}
         skills: Counter[tuple] = Counter({("plugin-b:skill", "skill_tool"): 1})
-        _link_command_to_skill(commands, skills)
+        _apply_command_triggered(pending_commands, skills)
         assert skills[("plugin-b:skill", "skill_tool")] == 1
-        assert ("plugin-b:skill", "slash_command") not in skills
 
-    def test_no_commands_no_change(self):
-        """No commands → skills unchanged."""
-        commands: set[tuple] = set()
+    def test_no_pending_commands_no_change(self):
+        """No pending commands → skills unchanged."""
+        pending_commands: set[str] = set()
         skills: Counter[tuple] = Counter({("superpowers:brainstorming", "skill_tool"): 2})
-        _link_command_to_skill(commands, skills)
+        _apply_command_triggered(pending_commands, skills)
         assert skills[("superpowers:brainstorming", "skill_tool")] == 2
 
-    def test_command_without_matching_skill_no_change(self):
-        """Command present but no matching skill_tool → no change."""
-        commands = {("superpowers:brainstorm", "slash_command")}
-        skills: Counter[tuple] = Counter({("other-plugin:something", "skill_tool"): 1})
-        _link_command_to_skill(commands, skills)
-        assert skills[("other-plugin:something", "skill_tool")] == 1
+    def test_non_plugin_skill_unaffected(self):
+        """Skills without ':' (bundled) are never command_triggered."""
+        pending_commands: set[str] = {"superpowers"}
+        skills: Counter[tuple] = Counter({("simplify", "skill_tool"): 1})
+        _apply_command_triggered(pending_commands, skills)
+        assert skills[("simplify", "skill_tool")] == 1
 
-    def test_command_without_colon_ignored(self):
-        """Commands without ':' (non-plugin) don't trigger linkage."""
-        commands = {("commit", "slash_command")}
-        skills: Counter[tuple] = Counter({("commit-commands:commit", "skill_tool"): 1})
-        _link_command_to_skill(commands, skills)
-        # "commit" has no ':', so no plugin prefix extracted
-        assert skills[("commit-commands:commit", "skill_tool")] == 1
+    def test_multiple_skills_first_matches(self):
+        """Only same-plugin skills get command_triggered, others stay skill_tool."""
+        pending_commands: set[str] = {"superpowers"}
+        skills: Counter[tuple] = Counter({
+            ("superpowers:brainstorming", "skill_tool"): 1,
+            ("oh-my-claudecode:autopilot", "skill_tool"): 1,
+        })
+        _apply_command_triggered(pending_commands, skills)
+        assert skills[("superpowers:brainstorming", "command_triggered")] == 1
+        assert skills[("oh-my-claudecode:autopilot", "skill_tool")] == 1
 
 
 class TestParseCommandFromContent:

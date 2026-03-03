@@ -8,6 +8,7 @@ Classification categories (returned by classify_invocation):
     "builtin_command"  — Pure CLI commands compiled into Claude Code (/clear, /model)
     "bundled_skill"    — Prompt-based skills shipped with Claude Code (/simplify, /batch)
     "plugin_skill"     — Skills from installed plugins (/oh-my-claudecode:autopilot)
+    "plugin_command"   — Commands from installed plugins (/superpowers:brainstorm)
     "custom_skill"     — User-authored SKILL.md files (~/.claude/skills/)
     "user_command"     — User-authored .md command files (~/.claude/commands/)
     "agent"            — Agent entries (tracked via Agent tool, not skill/command tables)
@@ -32,6 +33,7 @@ InvocationCategory = Literal[
     "builtin_command",
     "bundled_skill",
     "plugin_skill",
+    "plugin_command",
     "custom_skill",
     "user_command",
     "agent",
@@ -42,7 +44,7 @@ _SKILL_CATEGORIES: frozenset[str] = frozenset(
     {"bundled_skill", "plugin_skill", "custom_skill"}
 )
 # Categories that go into session_commands table
-_COMMAND_CATEGORIES: frozenset[str] = frozenset({"builtin_command", "user_command"})
+_COMMAND_CATEGORIES: frozenset[str] = frozenset({"builtin_command", "user_command", "plugin_command"})
 
 
 def is_skill_category(kind: str) -> bool:
@@ -589,6 +591,8 @@ def classify_invocation(name: str) -> str:
             # Return "agent" so callers can skip — these don't belong in
             # session_skills or session_commands.
             return "agent"
+        if entry_type == "command":
+            return "plugin_command"
         return "plugin_skill"
     if _is_custom_skill(name):
         return "custom_skill"
