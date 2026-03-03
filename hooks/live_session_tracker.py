@@ -61,17 +61,38 @@ LIVE_SESSIONS_DIR = Path.home() / ".claude_karma" / "live-sessions"
 
 
 def resolve_git_root(cwd: str) -> str | None:
-    """Resolve git root from cwd. Returns None if not in a git repo."""
+    """Resolve the real git root from cwd.
+
+    For worktrees, --show-toplevel returns the worktree root (not the main repo).
+    We use --git-common-dir to find the shared .git directory, whose parent is
+    the actual repository root.
+    """
     try:
         result = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],
+            ["git", "rev-parse", "--show-toplevel", "--git-common-dir"],
             cwd=cwd,
             capture_output=True,
             text=True,
             timeout=5,
         )
-        if result.returncode == 0:
-            return result.stdout.strip()
+        if result.returncode != 0:
+            return None
+
+        lines = result.stdout.strip().splitlines()
+        toplevel = lines[0]
+        common_dir = lines[1] if len(lines) > 1 else None
+
+        if common_dir:
+            common_path = Path(common_dir)
+            if not common_path.is_absolute():
+                common_path = (Path(cwd) / common_path).resolve()
+            # For worktrees, common_dir points to the main repo's .git dir.
+            # Its parent is the real repo root.
+            real_root = str(common_path.parent)
+            if real_root != toplevel:
+                return real_root
+
+        return toplevel
     except (subprocess.TimeoutExpired, OSError):
         pass
     return None
