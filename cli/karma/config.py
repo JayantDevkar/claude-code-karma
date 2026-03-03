@@ -1,10 +1,12 @@
 """Sync configuration management."""
 
 import json
+import os
+import re
 import socket
 from pathlib import Path
 from typing import Optional
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 KARMA_BASE = Path.home() / ".claude_karma"
@@ -29,6 +31,15 @@ class TeamMember(BaseModel):
 
     ipns_key: str = Field(..., description="IPNS key ID for resolving latest sync")
 
+    @field_validator("ipns_key")
+    @classmethod
+    def validate_ipns_key(cls, v: str) -> str:
+        if not v or len(v) > 128 or v.startswith("-"):
+            raise ValueError("IPNS key must be non-empty, under 128 chars, and not start with dash")
+        if not re.match(r"^[a-zA-Z0-9]+$", v):
+            raise ValueError("IPNS key must be alphanumeric")
+        return v
+
 
 class SyncConfig(BaseModel):
     """Root sync configuration stored at ~/.claude_karma/sync-config.json."""
@@ -44,6 +55,13 @@ class SyncConfig(BaseModel):
     team: dict[str, TeamMember] = Field(default_factory=dict)
     ipfs_api: str = Field(default="http://127.0.0.1:5001", description="Kubo API endpoint")
 
+    @field_validator("user_id")
+    @classmethod
+    def validate_user_id(cls, v: str) -> str:
+        if not re.match(r"^[a-zA-Z0-9_\-]+$", v):
+            raise ValueError("user_id must be alphanumeric, dash, or underscore")
+        return v
+
     @staticmethod
     def load() -> Optional["SyncConfig"]:
         """Load config from disk. Returns None if not initialized."""
@@ -58,3 +76,4 @@ class SyncConfig(BaseModel):
         SYNC_CONFIG_PATH.write_text(
             json.dumps(self.model_dump(), indent=2) + "\n"
         )
+        os.chmod(SYNC_CONFIG_PATH, 0o600)

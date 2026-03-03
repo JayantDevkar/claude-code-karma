@@ -14,6 +14,7 @@ from karma.ipfs import IPFSClient
 from karma.packager import SessionPackager
 
 _SAFE_NAME = re.compile(r"^[a-zA-Z0-9_\-]+$")
+_SAFE_FILENAME = re.compile(r"^[a-zA-Z0-9_.\-]+$")
 
 
 def encode_project_path(path: str) -> str:
@@ -60,6 +61,7 @@ def sync_project(
         project_dir=claude_dir,
         user_id=config.user_id,
         machine_id=config.machine_id,
+        project_path=project.path,
         last_sync_cid=project.last_sync_cid,
     )
 
@@ -130,7 +132,16 @@ def pull_remote_sessions(
 
                 member_dir.mkdir(parents=True, exist_ok=True)
                 for item in src.iterdir():
+                    # Skip symlinks (could point outside output dir)
+                    if item.is_symlink():
+                        continue
+                    # Validate filename
+                    if not _SAFE_FILENAME.match(item.name):
+                        continue
                     dest = member_dir / item.name
+                    # Final safety: ensure dest resolves inside member_dir
+                    if not dest.resolve().is_relative_to(member_dir.resolve()):
+                        continue
                     if dest.exists():
                         if dest.is_dir():
                             shutil.rmtree(dest)

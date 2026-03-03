@@ -13,7 +13,11 @@
 />
 
 <div class="space-y-3">
-	{#if data.projects.length === 0}
+	{#if data.error}
+		<div class="text-center py-8 text-red-500">
+			<p>Failed to load projects: {data.error}</p>
+		</div>
+	{:else if data.projects.length === 0}
 		<p class="text-[var(--text-muted)] py-8 text-center">No synced projects for this user.</p>
 	{:else}
 		{#each data.projects as project}
@@ -32,9 +36,7 @@
 					</span>
 				</div>
 				{#if project.synced_at}
-					<div
-						class="flex items-center gap-3 mt-2 text-xs text-[var(--text-muted)]"
-					>
+					<div class="flex items-center gap-3 mt-2 text-xs text-[var(--text-muted)]">
 						<span class="flex items-center gap-1">
 							<Clock size={12} />
 							Synced: {new Date(project.synced_at).toLocaleString()}

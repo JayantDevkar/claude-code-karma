@@ -1,6 +1,6 @@
 import type { PageServerLoad } from './$types';
 import { API_BASE } from '$lib/config';
-import { fetchWithFallback } from '$lib/utils/api-fetch';
+import { safeFetch } from '$lib/utils/api-fetch';
 
 interface RemoteProject {
 	encoded_name: string;
@@ -10,14 +10,13 @@ interface RemoteProject {
 }
 
 export const load: PageServerLoad = async ({ params, fetch }) => {
-	const projects = await fetchWithFallback<RemoteProject[]>(
+	const result = await safeFetch<RemoteProject[]>(
 		fetch,
-		`${API_BASE}/remote/users/${encodeURIComponent(params.user_id)}/projects`,
-		[]
+		`${API_BASE}/remote/users/${encodeURIComponent(params.user_id)}/projects`
 	);
-
-	return {
-		user_id: params.user_id,
-		projects
-	};
+	if (!result.ok) {
+		console.error('Failed to fetch user projects:', result.message);
+		return { user_id: params.user_id, projects: [], error: result.message };
+	}
+	return { user_id: params.user_id, projects: result.data, error: null };
 };
