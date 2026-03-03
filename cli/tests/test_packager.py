@@ -76,7 +76,7 @@ class TestSessionPackager:
         assert manifest.version == 1
         assert len(manifest.sessions) == 2
 
-    def test_incremental_skips_already_synced(self, mock_claude_project, tmp_path):
+    def test_previous_cid_recorded_in_manifest(self, mock_claude_project, tmp_path):
         staging = tmp_path / "staging"
         packager = SessionPackager(
             project_dir=mock_claude_project,

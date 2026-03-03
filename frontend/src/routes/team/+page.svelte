@@ -1,14 +1,23 @@
 <script lang="ts">
 	import PageHeader from '$lib/components/layout/PageHeader.svelte';
-	import { Users, MessageSquare, FolderGit2 } from 'lucide-svelte';
+	import { Users, MessageSquare } from 'lucide-svelte';
 
 	let { data } = $props();
 </script>
 
-<PageHeader title="Team" icon={Users} iconColor="--nav-purple" />
+<PageHeader
+	title="Team"
+	icon={Users}
+	iconColor="--nav-purple"
+	breadcrumbs={[{ label: 'Dashboard', href: '/' }, { label: 'Team' }]}
+/>
 
 <div class="space-y-6">
-	{#if data.users.length === 0}
+	{#if data.error}
+		<div class="text-center py-8 text-red-500">
+			<p>Failed to load team data: {data.error}</p>
+		</div>
+	{:else if data.users.length === 0}
 		<div
 			class="flex flex-col items-center justify-center py-16 text-center text-[var(--text-muted)]"
 		>

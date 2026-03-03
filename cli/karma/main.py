@@ -38,6 +38,9 @@ def init(user_id: str):
         if not click.confirm("Reinitialize?"):
             return
 
+    if not _SAFE_NAME.match(user_id):
+        raise click.ClickException("User ID must be alphanumeric, dash, or underscore only.")
+
     config = SyncConfig(user_id=user_id)
     config.save()
     click.echo(f"Initialized as '{user_id}' on '{config.machine_id}'.")
@@ -135,23 +138,24 @@ def sync(name: str, sync_all: bool):
         raise click.ClickException("Specify a project name or use --all")
 
     for project_name in targets:
-        click.echo(f"Syncing '{project_name}'...")
-        cid, count = sync_project(project_name, config, ipfs)
-        if count == 0:
-            click.echo("  No sessions found.")
-        else:
-            click.echo(f"  Synced {count} sessions -> {cid}")
-
-            # Update last sync in config
-            projects = dict(config.projects)
-            old = projects[project_name]
-            from datetime import datetime, timezone
-            projects[project_name] = old.model_copy(update={
-                "last_sync_cid": cid,
-                "last_sync_at": datetime.now(timezone.utc).isoformat(),
-            })
-            config = config.model_copy(update={"projects": projects})
-            config.save()
+        try:
+            click.echo(f"Syncing '{project_name}'...")
+            cid, count = sync_project(project_name, config, ipfs)
+            if count == 0:
+                click.echo("  No sessions found.")
+            else:
+                click.echo(f"  Synced {count} sessions -> {cid}")
+                projects = dict(config.projects)
+                old = projects[project_name]
+                from datetime import datetime, timezone
+                projects[project_name] = old.model_copy(update={
+                    "last_sync_cid": cid,
+                    "last_sync_at": datetime.now(timezone.utc).isoformat(),
+                })
+                config = config.model_copy(update={"projects": projects})
+                config.save()
+        except click.ClickException as e:
+            click.echo(f"  Error syncing '{project_name}': {e.message}", err=True)
 
 
 # --- pull ---
@@ -228,6 +232,12 @@ def team_add(name: str, ipns_key: str):
     """Add a team member by their IPNS key."""
     if not _SAFE_NAME.match(name):
         raise click.ClickException("Team member name must be alphanumeric, dash, or underscore only.")
+
+    if not ipns_key or ipns_key.startswith("-") or len(ipns_key) > 128:
+        raise click.ClickException("Invalid IPNS key: must be non-empty, not start with dash, max 128 chars.")
+    if not re.match(r"^[a-zA-Z0-9]+$", ipns_key):
+        raise click.ClickException("Invalid IPNS key: must be alphanumeric only.")
+
     config = require_config()
 
     members = dict(config.team)

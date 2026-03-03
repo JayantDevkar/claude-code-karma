@@ -15,7 +15,7 @@ router = APIRouter()
 
 REMOTE_SESSIONS_DIR = Path.home() / ".claude_karma" / "remote-sessions"
 
-_SAFE_NAME = re.compile(r"^[a-zA-Z0-9_\-]+$")
+_SAFE_NAME = re.compile(r"^[a-zA-Z0-9_.\-]+$")
 
 
 class RemoteUser(BaseModel):
@@ -54,13 +54,13 @@ def _validate_path_segment(value: str, label: str) -> None:
     if not _SAFE_NAME.match(value):
         raise HTTPException(
             status_code=400,
-            detail=f"Invalid {label}: must be alphanumeric, dash, or underscore",
+            detail=f"Invalid {label}: must be alphanumeric, dash, underscore, or dot",
         )
 
 
 def _is_safe_dirname(name: str) -> bool:
-    """Check if a directory name is safe for path construction (no traversal)."""
-    return bool(name) and ".." not in name and "/" not in name and "\\" not in name
+    """Check if a directory name is safe for path construction."""
+    return bool(_SAFE_NAME.match(name))
 
 
 def _load_manifest_safe(user_id: str, project: str) -> Optional[dict]:
@@ -90,7 +90,7 @@ def _load_manifest(user_id: str, project: str) -> Optional[dict]:
 
 
 @router.get("/users", response_model=list[RemoteUser])
-async def list_remote_users() -> list[RemoteUser]:
+def list_remote_users() -> list[RemoteUser]:
     """List all remote users who have synced sessions."""
     if not REMOTE_SESSIONS_DIR.is_dir():
         return []
@@ -117,7 +117,7 @@ async def list_remote_users() -> list[RemoteUser]:
 
 
 @router.get("/users/{user_id}/projects", response_model=list[RemoteProject])
-async def list_user_projects(user_id: str) -> list[RemoteProject]:
+def list_user_projects(user_id: str) -> list[RemoteProject]:
     """List projects synced by a remote user."""
     _validate_path_segment(user_id, "user_id")
     user_dir = REMOTE_SESSIONS_DIR / user_id
@@ -139,7 +139,7 @@ async def list_user_projects(user_id: str) -> list[RemoteProject]:
 
 
 @router.get("/users/{user_id}/projects/{project}/sessions", response_model=list[RemoteSessionSummary])
-async def list_user_sessions(user_id: str, project: str) -> list[RemoteSessionSummary]:
+def list_user_sessions(user_id: str, project: str) -> list[RemoteSessionSummary]:
     """List sessions for a remote user's project."""
     manifest = _load_manifest(user_id, project)
     if not manifest:
@@ -149,7 +149,7 @@ async def list_user_sessions(user_id: str, project: str) -> list[RemoteSessionSu
 
 
 @router.get("/users/{user_id}/projects/{project}/manifest", response_model=RemoteManifest)
-async def get_manifest(user_id: str, project: str) -> RemoteManifest:
+def get_manifest(user_id: str, project: str) -> RemoteManifest:
     """Get the full manifest for a remote user's project."""
     manifest = _load_manifest(user_id, project)
     if not manifest:

@@ -17,11 +17,13 @@ class SessionPackager:
         project_dir: Path,
         user_id: str,
         machine_id: str,
+        project_path: str = "",
         last_sync_cid: Optional[str] = None,
     ):
         self.project_dir = Path(project_dir)
         self.user_id = user_id
         self.machine_id = machine_id
+        self.project_path = project_path or str(self.project_dir)
         self.last_sync_cid = last_sync_cid
 
     def discover_sessions(self) -> list[SessionEntry]:
@@ -76,7 +78,7 @@ class SessionPackager:
         manifest = SyncManifest(
             user_id=self.user_id,
             machine_id=self.machine_id,
-            project_path=str(self.project_dir),
+            project_path=self.project_path,
             project_encoded=self.project_dir.name,
             session_count=len(sessions),
             sessions=sessions,
