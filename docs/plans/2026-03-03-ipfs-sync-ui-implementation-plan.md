@@ -168,40 +168,59 @@ git commit -m "feat: add sync_history SQLite table (schema v10)"
 
 **Step 1: Write the failing test**
 
-Add to `cli/tests/test_cli.py`:
+Add to `cli/tests/test_cli.py` inside `TestInitCommand`:
 
 ```python
-def test_init_sets_ipns_key_name(tmp_path, monkeypatch):
-    """karma init should store a per-machine IPNS key name in config."""
-    monkeypatch.setattr("karma.config.SYNC_CONFIG_PATH", tmp_path / "sync-config.json")
-    monkeypatch.setattr("karma.config.KARMA_BASE", tmp_path)
+class TestInitCommand:
+    # ... existing tests ...
 
-    from karma.config import SyncConfig
-    config = SyncConfig(user_id="alice")
-    assert config.ipns_key_name == f"karma-alice-{config.machine_id}"
+    def test_init_sets_ipns_key_name(self, runner, init_config):
+        """karma init should store a per-machine IPNS key name in config."""
+        from karma.config import SyncConfig
+        config = SyncConfig(user_id="alice")
+        assert config.ipns_key_name == f"karma-alice-{config.machine_id}"
+
+    def test_ipns_key_name_roundtrips(self, runner, init_config):
+        """ipns_key_name survives save/load cycle."""
+        result = runner.invoke(cli, ["init", "--user-id", "alice"])
+        assert result.exit_code == 0
+
+        from karma.config import SyncConfig
+        loaded = SyncConfig.load()
+        assert loaded is not None
+        assert loaded.ipns_key_name == f"karma-alice-{loaded.machine_id}"
 ```
 
 **Step 2: Run test to verify it fails**
 
-Run: `cd cli && python -m pytest tests/test_cli.py::test_init_sets_ipns_key_name -v`
+Run: `cd cli && python -m pytest tests/test_cli.py::TestInitCommand::test_init_sets_ipns_key_name -v`
 Expected: FAIL — `ipns_key_name` field doesn't exist on SyncConfig.
 
 **Step 3: Implement**
 
-In `cli/karma/config.py`, add computed field to `SyncConfig`:
+In `cli/karma/config.py`, add `model_validator` import and computed field to `SyncConfig`:
 
 ```python
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+class SyncConfig(BaseModel):
+    # ... existing fields ...
+
     ipns_key_name: str = Field(
         default="",
         description="IPNS key name for this machine (karma-{user_id}-{machine_id})",
     )
 
-    def __init__(self, **data):
-        super().__init__(**data)
+    @model_validator(mode="after")
+    def set_ipns_key_name(self) -> "SyncConfig":
         if not self.ipns_key_name:
-            # Set via object.__setattr__ because model is frozen
             object.__setattr__(self, "ipns_key_name", f"karma-{self.user_id}-{self.machine_id}")
+        return self
 ```
+
+> **Note:** `model_validator(mode="after")` is the idiomatic Pydantic v2 approach for computed
+> fields on frozen models. It runs on every construction (including `load()` round-trips),
+> and `object.__setattr__` is safe inside validators before the model is finalized as frozen.
 
 In `cli/karma/main.py`, update the `init` command to display the key name:
 
@@ -213,7 +232,7 @@ In `cli/karma/main.py`, update the `init` command to display the key name:
 
 **Step 4: Run test to verify it passes**
 
-Run: `cd cli && python -m pytest tests/test_cli.py::test_init_sets_ipns_key_name -v`
+Run: `cd cli && python -m pytest tests/test_cli.py::TestInitCommand::test_init_sets_ipns_key_name tests/test_cli.py::TestInitCommand::test_ipns_key_name_roundtrips -v`
 Expected: PASS
 
 **Step 5: Commit**
@@ -233,43 +252,40 @@ git commit -m "feat: per-machine IPNS key name in karma init"
 
 **Step 1: Write the failing test**
 
-Add to `cli/tests/test_cli.py`:
+Add a new test class to `cli/tests/test_cli.py`:
 
 ```python
-from click.testing import CliRunner
-from karma.main import cli
+class TestStatusCommand:
+    def test_status_not_initialized(self, runner, tmp_path, monkeypatch):
+        """karma status should fail if not initialized."""
+        monkeypatch.setattr("karma.config.SYNC_CONFIG_PATH", tmp_path / "nope.json")
+        result = runner.invoke(cli, ["status"])
+        assert result.exit_code != 0
+        assert "Not initialized" in result.output
 
-def test_status_not_initialized(tmp_path, monkeypatch):
-    """karma status should fail if not initialized."""
-    monkeypatch.setattr("karma.config.SYNC_CONFIG_PATH", tmp_path / "nope.json")
-    runner = CliRunner()
-    result = runner.invoke(cli, ["status"])
-    assert result.exit_code != 0
-    assert "Not initialized" in result.output
+    def test_status_shows_projects(self, runner, init_config):
+        """karma status should show project sync state."""
+        from karma.config import SyncConfig, ProjectConfig
+        runner.invoke(cli, ["init", "--user-id", "alice"])
 
+        config = SyncConfig.load()
+        projects = dict(config.projects)
+        projects["acme"] = ProjectConfig(path="/tmp/acme", encoded_name="-tmp-acme")
+        updated = config.model_copy(update={"projects": projects})
+        updated.save()
 
-def test_status_shows_projects(tmp_path, monkeypatch):
-    """karma status should show project sync state."""
-    monkeypatch.setattr("karma.config.SYNC_CONFIG_PATH", tmp_path / "sync-config.json")
-    monkeypatch.setattr("karma.config.KARMA_BASE", tmp_path)
-
-    from karma.config import SyncConfig, ProjectConfig
-    config = SyncConfig(
-        user_id="alice",
-        projects={"acme": ProjectConfig(path="/tmp/acme", encoded_name="-tmp-acme")},
-    )
-    config.save()
-
-    runner = CliRunner()
-    result = runner.invoke(cli, ["status"])
-    assert result.exit_code == 0
-    assert "alice" in result.output
-    assert "acme" in result.output
+        result = runner.invoke(cli, ["status"])
+        assert result.exit_code == 0
+        assert "alice" in result.output
+        assert "acme" in result.output
 ```
+
+> **Note:** Uses the existing `runner` and `init_config` fixtures (consistent with other test classes).
+> Initializes via `cli` first so the config file is properly created.
 
 **Step 2: Run test to verify it fails**
 
-Run: `cd cli && python -m pytest tests/test_cli.py::test_status_not_initialized tests/test_cli.py::test_status_shows_projects -v`
+Run: `cd cli && python -m pytest tests/test_cli.py::TestStatusCommand -v`
 Expected: FAIL — `status` command doesn't exist.
 
 **Step 3: Implement**
@@ -320,7 +336,7 @@ def status():
 
 **Step 4: Run test to verify it passes**
 
-Run: `cd cli && python -m pytest tests/test_cli.py::test_status_not_initialized tests/test_cli.py::test_status_shows_projects -v`
+Run: `cd cli && python -m pytest tests/test_cli.py::TestStatusCommand -v`
 Expected: PASS
 
 **Step 5: Commit**
@@ -350,7 +366,7 @@ from karma.history import record_sync_event, get_db_path, ensure_sync_schema
 
 
 def test_record_push_event(tmp_path, monkeypatch):
-    monkeypatch.setattr("karma.history.KARMA_BASE", tmp_path)
+    monkeypatch.setattr("karma.config.KARMA_BASE", tmp_path)
 
     record_sync_event(
         event_type="push",
@@ -376,7 +392,7 @@ def test_record_push_event(tmp_path, monkeypatch):
 
 
 def test_record_pull_event(tmp_path, monkeypatch):
-    monkeypatch.setattr("karma.history.KARMA_BASE", tmp_path)
+    monkeypatch.setattr("karma.config.KARMA_BASE", tmp_path)
 
     record_sync_event(
         event_type="pull",
@@ -406,13 +422,18 @@ Expected: FAIL — `karma.history` module doesn't exist.
 Create `cli/karma/history.py`:
 
 ```python
-"""Record sync events to SQLite for audit trail."""
+"""Record sync events to SQLite for audit trail.
+
+Note: This module creates sync_history independently from the API's schema.py
+because the CLI must work standalone without the API server. Both define the
+same table schema — keep them in sync if either changes.
+"""
 
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-KARMA_BASE = Path.home() / ".claude_karma"
+from karma.config import KARMA_BASE
 
 SYNC_HISTORY_SCHEMA = """
 CREATE TABLE IF NOT EXISTS sync_history (
@@ -432,7 +453,8 @@ CREATE INDEX IF NOT EXISTS idx_sync_history_created ON sync_history(created_at);
 """
 
 
-def _get_db_path() -> Path:
+def get_db_path() -> Path:
+    """Return path to the shared metadata.db."""
     return KARMA_BASE / "metadata.db"
 
 
@@ -450,11 +472,12 @@ def record_sync_event(
     session_count: int = 0,
 ) -> None:
     """Write a push or pull event to sync_history."""
-    db_path = _get_db_path()
+    db_path = get_db_path()
     db_path.parent.mkdir(parents=True, exist_ok=True)
 
     conn = sqlite3.connect(str(db_path))
     try:
+        conn.execute("PRAGMA journal_mode=WAL")  # safe for concurrent CLI + API access
         ensure_sync_schema(conn)
         conn.execute(
             "INSERT INTO sync_history (event_type, user_id, machine_id, project, cid, ipns_key, session_count, created_at) "
@@ -466,6 +489,11 @@ def record_sync_event(
     finally:
         conn.close()
 ```
+
+> **Changes from original:** (1) Imports `KARMA_BASE` from `karma.config` instead of redefining.
+> (2) Renamed `_get_db_path` → `get_db_path` (public, matches test import).
+> (3) Added `PRAGMA journal_mode=WAL` for safe concurrent access.
+> (4) Added module docstring explaining why the schema is duplicated.
 
 Then modify `cli/karma/main.py` — in the `sync` command, after successful sync:
 
@@ -483,20 +511,40 @@ Then modify `cli/karma/main.py` — in the `sync` command, after successful sync
                 )
 ```
 
-In the `pull` command, after each successful member pull:
+In the `pull` command (at `cli/karma/main.py:181`), after each successful member pull, record
+per-project events using manifest data:
 
 ```python
     for r in results:
         if r["status"] == "ok":
+            from pathlib import Path
             from karma.history import record_sync_event
-            record_sync_event(
-                event_type="pull",
-                user_id=r["member"],
-                machine_id=r["member"],  # team member name encodes machine
-                project="all",  # pull fetches all projects
-                cid=r["cid"],
-            )
+            import json
+            # Read manifest to get accurate machine_id and per-project data
+            remote_dir = Path.home() / ".claude_karma" / "remote-sessions" / r["member"]
+            if remote_dir.is_dir():
+                for proj_dir in remote_dir.iterdir():
+                    manifest_path = proj_dir / "manifest.json"
+                    if manifest_path.exists():
+                        try:
+                            manifest = json.loads(manifest_path.read_text())
+                            record_sync_event(
+                                event_type="pull",
+                                user_id=manifest.get("user_id", r["member"]),
+                                machine_id=manifest.get("machine_id", r["member"]),
+                                project=proj_dir.name,
+                                cid=r["cid"],
+                                session_count=manifest.get("session_count", 0),
+                            )
+                        except (json.JSONDecodeError, OSError):
+                            pass
 ```
+
+> **Changes from original:** (1) Records per-project pull events with `machine_id` and `session_count`
+> from the manifest instead of using `machine_id=r["member"]` and `project="all"`.
+> This ensures history records match the team display in the UI.
+> (2) Added `from pathlib import Path` — the `pull` function doesn't import `Path` at module scope
+> (only `list_remote` and `project_add` do local imports).
 
 **Step 4: Run tests**
 
@@ -578,6 +626,8 @@ Create `api/routers/sync.py`:
 ```python
 """Sync status API — IPFS daemon health, project sync state, team info, history."""
 
+from __future__ import annotations
+
 import json
 import logging
 import sqlite3
@@ -649,6 +699,27 @@ def _load_sync_config() -> Optional[dict]:
         return None
 
 
+def _check_ipfs_health(api_url: str) -> tuple[bool | None, int | None]:
+    """Probe the IPFS daemon for running status and peer count."""
+    import urllib.request
+    import urllib.error
+
+    try:
+        req = urllib.request.Request(f"{api_url}/api/v0/id", method="POST")
+        with urllib.request.urlopen(req, timeout=3) as resp:
+            import json as _json
+            _json.loads(resp.read())  # validates daemon is responding
+
+        # Get peer count
+        req2 = urllib.request.Request(f"{api_url}/api/v0/swarm/peers", method="POST")
+        with urllib.request.urlopen(req2, timeout=3) as resp2:
+            peers_data = _json.loads(resp2.read())
+            peer_count = len(peers_data.get("Peers") or [])
+            return True, peer_count
+    except (urllib.error.URLError, OSError, ValueError):
+        return False, None
+
+
 @router.get("/status", response_model=SyncStatus)
 def get_sync_status() -> SyncStatus:
     """Get IPFS daemon health, identity, and initialization state."""
@@ -656,14 +727,17 @@ def get_sync_status() -> SyncStatus:
     if config is None:
         return SyncStatus(initialized=False)
 
+    ipfs_running, ipfs_peer_count = _check_ipfs_health(
+        config.get("ipfs_api", "http://127.0.0.1:5001")
+    )
+
     return SyncStatus(
         initialized=True,
         user_id=config.get("user_id"),
         machine_id=config.get("machine_id"),
         ipns_key_name=config.get("ipns_key_name"),
-        # IPFS status checked client-side or via a separate health probe
-        ipfs_running=None,
-        ipfs_peer_count=None,
+        ipfs_running=ipfs_running,
+        ipfs_peer_count=ipfs_peer_count,
     )
 
 
@@ -677,6 +751,24 @@ def get_sync_projects() -> list[ProjectSyncState]:
     results = []
     claude_projects_dir = Path.home() / ".claude" / "projects"
 
+    # Query sync_history for the most recent push session_count per project
+    synced_count_map: dict[str, int] = {}
+    db_path = KARMA_BASE / "metadata.db"
+    if db_path.exists():
+        try:
+            db_conn = sqlite3.connect(str(db_path))
+            db_conn.row_factory = sqlite3.Row
+            rows = db_conn.execute(
+                "SELECT project, session_count FROM sync_history "
+                "WHERE event_type='push' AND id IN ("
+                "  SELECT MAX(id) FROM sync_history WHERE event_type='push' GROUP BY project"
+                ")"
+            ).fetchall()
+            synced_count_map = {r["project"]: r["session_count"] for r in rows}
+            db_conn.close()
+        except (sqlite3.OperationalError, sqlite3.DatabaseError):
+            pass
+
     for name, proj in config.get("projects", {}).items():
         encoded = proj.get("encoded_name", "")
         local_dir = claude_projects_dir / encoded
@@ -689,15 +781,10 @@ def get_sync_projects() -> list[ProjectSyncState]:
                 if not f.name.startswith("agent-")
             ])
 
-        # Get synced count from last manifest
-        synced_count = 0
+        # Get synced count from last push event in sync_history
+        synced_count = synced_count_map.get(name, 0)
         last_sync_cid = proj.get("last_sync_cid")
         last_sync_at = proj.get("last_sync_at")
-
-        if last_sync_cid:
-            # Try to get session count from the manifest we know about
-            # For now, use the config's recorded state
-            synced_count = local_count  # Approximation until we track per-sync counts
 
         unpushed = local_count - synced_count
         if not last_sync_cid:
@@ -814,13 +901,41 @@ def get_sync_history(
         return []
 ```
 
-Register in `api/main.py` — add import and include:
+Register in `api/main.py`:
+
+1. Add `sync` to the existing `from routers import (...)` block (lines 23–40). Insert
+   alphabetically between `subagent_sessions` and `tools`:
 
 ```python
-from routers import sync as sync_router  # add to imports
-
-app.include_router(sync_router.router, prefix="/sync", tags=["sync"])  # add after remote_sessions
+from routers import (  # noqa: E402
+    admin,
+    agents,
+    analytics,
+    commands,
+    docs,
+    history,
+    hooks,
+    live_sessions,
+    plans,
+    plugins,
+    projects,
+    remote_sessions,
+    sessions,
+    skills,
+    subagent_sessions,
+    sync,          # ← add here
+    tools,
+)
 ```
+
+2. Add router registration after the `remote_sessions` line (after line 175):
+
+```python
+app.include_router(sync.router, prefix="/sync", tags=["sync"])
+```
+
+> **Note:** Uses bare import `sync` (not `sync as sync_router`) to match the existing pattern.
+> The `settings` router is special-cased on line 41 because of the name conflict with `config.settings`.
 
 **Step 4: Run tests**
 
@@ -841,7 +956,7 @@ git commit -m "feat: add /sync API router (status, projects, team, history)"
 **Files:**
 - Create: `frontend/src/routes/sync/+page.server.ts`
 - Create: `frontend/src/routes/sync/+page.svelte`
-- Modify: `frontend/src/lib/components/Header.svelte` (add Sync nav link)
+- Modify: `frontend/src/lib/components/Header.svelte` (add Sync nav link — both desktop AND mobile)
 
 **Step 1: Create server load function**
 
@@ -990,13 +1105,19 @@ Create `frontend/src/routes/sync/+page.svelte`:
 					</div>
 				</div>
 				<div class="flex items-center gap-2">
-					{#if data.status.ipfs_running === true}
+					{#if data.status.ipfs_running === true && (data.status.ipfs_peer_count ?? 0) > 0}
 						<Wifi size={16} class="text-emerald-400" />
 						<div>
 							<p class="text-xs text-[var(--text-muted)]">IPFS Daemon</p>
 							<p class="font-medium text-sm text-emerald-400">
-								Running ({data.status.ipfs_peer_count ?? '?'} peers)
+								Running ({data.status.ipfs_peer_count} peers)
 							</p>
+						</div>
+					{:else if data.status.ipfs_running === true && (data.status.ipfs_peer_count ?? 0) === 0}
+						<Wifi size={16} class="text-amber-400" />
+						<div>
+							<p class="text-xs text-[var(--text-muted)]">IPFS Daemon</p>
+							<p class="font-medium text-sm text-amber-400">Degraded (0 peers)</p>
 						</div>
 					{:else if data.status.ipfs_running === false}
 						<WifiOff size={16} class="text-red-400" />
@@ -1049,6 +1170,9 @@ Create `frontend/src/routes/sync/+page.svelte`:
 									{#if project.last_sync_at}
 										&middot; synced {timeAgo(project.last_sync_at)}
 									{/if}
+									{#if project.last_sync_cid}
+										&middot; <span class="font-mono">{project.last_sync_cid.slice(0, 12)}...</span>
+									{/if}
 								</p>
 							</div>
 						</div>
@@ -1066,7 +1190,7 @@ Create `frontend/src/routes/sync/+page.svelte`:
 							{:else}
 								<span class="flex items-center gap-1.5 text-xs text-[var(--text-muted)]">
 									<XCircle size={14} />
-									Never synced
+									Never synced — run <code class="px-1 py-0.5 bg-[var(--bg-muted)] rounded text-xs font-mono">karma sync {project.name}</code>
 								</span>
 							{/if}
 						</div>
@@ -1177,23 +1301,43 @@ Create `frontend/src/routes/sync/+page.svelte`:
 
 **Step 3: Add Sync link to Header**
 
-In `frontend/src/lib/components/Header.svelte`, add a "Sync" nav link between "Team" and the settings icon. In both the desktop nav and mobile nav sections, add:
+In `frontend/src/lib/components/Header.svelte`, add "Sync" in **two places**:
+
+**Desktop nav** — insert after the "Team" link closing `</a>` (after line 168, before `</nav>` on line 169):
 
 ```svelte
-<a
-    href="/sync"
-    class="text-sm font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
-    class:text-[var(--text-primary)]={$page.url.pathname.startsWith('/sync')}
-    aria-current={$page.url.pathname.startsWith('/sync') ? 'page' : undefined}
->
-    Sync
-</a>
+			<a
+				href="/sync"
+				class="text-sm font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+				class:text-[var(--text-primary)]={$page.url.pathname.startsWith('/sync')}
+				aria-current={$page.url.pathname.startsWith('/sync') ? 'page' : undefined}
+			>
+				Sync
+			</a>
 ```
 
-**Step 4: Verify**
+**Mobile nav** — insert after the "Team" mobile link closing `</a>` (after line 313, before `</nav>` on line 314):
+
+```svelte
+			<a
+				href="/sync"
+				onclick={closeMobileMenu}
+				class="text-base font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-subtle)] py-3 px-4 rounded-lg transition-colors"
+				class:text-[var(--text-primary)]={$page.url.pathname.startsWith('/sync')}
+				class:bg-[var(--bg-subtle)]={$page.url.pathname.startsWith('/sync')}
+				aria-current={$page.url.pathname.startsWith('/sync') ? 'page' : undefined}
+			>
+				Sync
+			</a>
+```
+
+> **Note:** Both link blocks follow the exact pattern of existing nav links. Desktop links use
+> `text-sm font-medium` while mobile links use `text-base font-medium` with `onclick={closeMobileMenu}`.
+
+**Step 4: Type-check the frontend**
 
 Run: `cd frontend && npm run check`
-Expected: No type errors.
+Expected: No type errors from new files.
 
 **Step 5: Commit**
 
@@ -1251,5 +1395,5 @@ git add -A && git commit -m "fix: test and type check fixes for sync feature"
 | **API** | `api/routers/sync.py` | New router: `/sync/status`, `/sync/projects`, `/sync/team`, `/sync/history` |
 | **API** | `api/main.py` | Register sync router |
 | **Frontend** | `frontend/src/routes/sync/` | New `/sync` page with 4-zone layout |
-| **Frontend** | `frontend/src/lib/components/Header.svelte` | Add "Sync" nav link |
+| **Frontend** | `frontend/src/lib/components/Header.svelte` | Add "Sync" nav link (desktop + mobile) |
 | **Tests** | 3 new test files | Schema, CLI, API endpoint tests |
