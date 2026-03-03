@@ -199,7 +199,7 @@ def _collect_conversation_data_core(
                     if tool_name == "Skill" and block.input:
                         skill_name = block.input.get("skill")
                         if skill_name:
-                            kind = classify_invocation(skill_name)
+                            kind = classify_invocation(skill_name, source="skill_tool")
                             if is_skill_category(kind):
                                 data.skills[skill_name] += 1
                             elif is_command_category(kind):
@@ -387,7 +387,7 @@ def _collect_subagent_data(subagent, data: SessionData) -> None:
                     if tool_name == "Skill" and block.input:
                         skill_name = block.input.get("skill")
                         if skill_name:
-                            kind = classify_invocation(skill_name)
+                            kind = classify_invocation(skill_name, source="skill_tool")
                             if is_skill_category(kind):
                                 data.subagent_skill_counts[skill_name] += 1
                             elif is_command_category(kind):
@@ -456,7 +456,7 @@ def collect_subagent_info(
                         if block.name == "Skill" and block.input:
                             skill_name = block.input.get("skill")
                             if skill_name:
-                                kind = classify_invocation(skill_name)
+                                kind = classify_invocation(skill_name, source="skill_tool")
                                 if is_skill_category(kind):
                                     skill_counts[skill_name] += 1
                                 elif is_command_category(kind):

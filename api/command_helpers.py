@@ -812,8 +812,16 @@ def is_plugin_skill(name: str) -> bool:
     return _is_plugin_skill(name)
 
 
-def classify_invocation(name: str) -> str:
+def classify_invocation(name: str, *, source: str = "") -> str:
     """Classify a command/skill invocation name into one of 6 categories.
+
+    Args:
+        name: The invocation name (e.g. "commit", "superpowers:brainstorming").
+        source: Where the invocation came from. Use "skill_tool" when the name
+            was extracted from a Skill tool call — this lets plugin entries win
+            over builtin/bundled names that shadow them (e.g. "commit" is both a
+            builtin CLI alias and a plugin skill "commit-commands:commit"; when
+            invoked via the Skill tool it's always the plugin skill).
 
     Returns one of:
         "builtin_command"  — Pure CLI commands (/exit, /model, /clear)
@@ -823,6 +831,16 @@ def classify_invocation(name: str) -> str:
         "user_command"     — User .md command files (~/.claude/commands/)
         "agent"            — Agent entries (skip from skill/command tables)
     """
+    # When invoked via the Skill tool, plugin entries take priority over
+    # builtin/bundled names that shadow them.  The Skill tool never runs
+    # builtin CLI commands — those are handled by Claude Code internally.
+    if source == "skill_tool":
+        expanded = expand_plugin_short_name(name)
+        if expanded != name and ":" in expanded:
+            return _classify_colon_name(expanded)
+        if ":" in name:
+            return _classify_colon_name(name)
+
     # Check bundled skills first (before builtin, since these are tracked as skills)
     if name in BUNDLED_SKILL_COMMANDS:
         return "bundled_skill"
@@ -835,22 +853,32 @@ def classify_invocation(name: str) -> str:
     if name in cli["builtin_commands"]:
         return "builtin_command"
     if ":" in name:
-        entry_types = _build_entry_type_map()
-        entry_type = entry_types.get(name)
-        if entry_type == "agent":
-            # Agents are tracked in subagent_invocations via the Agent tool.
-            # Rare edge case: Claude may invoke an agent via the Skill tool.
-            # Return "agent" so callers can skip — these don't belong in
-            # session_skills or session_commands.
-            return "agent"
-        if entry_type == "command":
-            return "plugin_command"
-        return "plugin_skill"
+        return _classify_colon_name(name)
     if _is_custom_skill(name):
         return "custom_skill"
     if _is_plugin_skill(name):
         return "plugin_skill"
+    # Last resort: try expanding short-form plugin entry names.
+    # e.g. "brainstorming" → "superpowers:brainstorming" (a plugin skill entry)
+    expanded = expand_plugin_short_name(name)
+    if expanded != name and ":" in expanded:
+        return _classify_colon_name(expanded)
     return "user_command"
+
+
+def _classify_colon_name(name: str) -> str:
+    """Classify a fully-qualified 'plugin:entry' name via filesystem lookup."""
+    entry_types = _build_entry_type_map()
+    entry_type = entry_types.get(name)
+    if entry_type == "agent":
+        # Agents are tracked in subagent_invocations via the Agent tool.
+        # Rare edge case: Claude may invoke an agent via the Skill tool.
+        # Return "agent" so callers can skip — these don't belong in
+        # session_skills or session_commands.
+        return "agent"
+    if entry_type == "command":
+        return "plugin_command"
+    return "plugin_skill"
 
 
 def parse_command_from_content(content: str) -> tuple[Optional[str], Optional[str]]:

@@ -97,12 +97,13 @@ def build_conversation_timeline(
             content_preview = cmd_summary or (display_content[:200] if display_content else "")
             prompt_metadata: dict = {"full_content": content}
             if cmd_name:
+                expanded_cmd = expand_plugin_short_name(cmd_name)
                 prompt_metadata["command_name"] = cmd_name
-                prompt_metadata["is_plugin"] = is_plugin_skill(cmd_name)
-                if ":" in cmd_name:
-                    prompt_metadata["plugin"] = cmd_name.split(":")[0]
-                elif is_plugin_skill(cmd_name):
-                    prompt_metadata["plugin"] = cmd_name
+                prompt_metadata["is_plugin"] = is_plugin_skill(expanded_cmd)
+                if ":" in expanded_cmd:
+                    prompt_metadata["plugin"] = expanded_cmd.split(":")[0]
+                elif is_plugin_skill(expanded_cmd):
+                    prompt_metadata["plugin"] = expanded_cmd
             # Track user intent: skills mentioned in the prompt text (not explicit invocations).
             # These may or may not result in actual Skill tool calls by Claude.
             if referenced_skills:
@@ -160,7 +161,10 @@ def build_conversation_timeline(
                     elif block.name == "Skill":
                         # Extract skill details from tool input
                         skill_name = block.input.get("skill", "Unknown")
-                        kind = classify_invocation(skill_name)
+                        # Expand short-form names for correct classification
+                        # and metadata (e.g. "brainstorming" → "superpowers:brainstorming")
+                        expanded_name = expand_plugin_short_name(skill_name)
+                        kind = classify_invocation(skill_name, source="skill_tool")
                         if kind == "builtin_command":
                             event_type = "builtin_command"
                             title = f"Built-in: /{skill_name}"
@@ -171,11 +175,11 @@ def build_conversation_timeline(
                             event_type = "command_invocation"
                             title = f"Command: /{skill_name}"
                         metadata["command_name"] = skill_name
-                        metadata["is_plugin"] = is_plugin_skill(skill_name)
-                        if ":" in skill_name:
-                            metadata["plugin"] = skill_name.split(":")[0]
-                        elif is_plugin_skill(skill_name):
-                            metadata["plugin"] = skill_name
+                        metadata["is_plugin"] = is_plugin_skill(expanded_name)
+                        if ":" in expanded_name:
+                            metadata["plugin"] = expanded_name.split(":")[0]
+                        elif is_plugin_skill(expanded_name):
+                            metadata["plugin"] = expanded_name
                         summary = f"Invoked /{skill_name}"
                     else:
                         event_type = "tool_call"

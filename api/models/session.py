@@ -409,6 +409,9 @@ class Session(BaseModel):
                                 user_prompt_skills.add((expanded, "text_detection"))
                             elif is_command_category(classify_invocation(expanded)):
                                 user_prompt_commands.add((expanded, "text_detection"))
+                                # Also track plugin prefix for command→skill linkage
+                                if ":" in expanded:
+                                    pending_command_plugins.add(expanded.split(":")[0])
                     if cmd_name:
                         kind = classify_invocation(cmd_name)
                         if is_skill_category(kind):
@@ -461,7 +464,7 @@ class Session(BaseModel):
                             if skill_name:
                                 # Normalize short-form plugin names
                                 skill_name = expand_plugin_short_name(skill_name)
-                                kind = classify_invocation(skill_name)
+                                kind = classify_invocation(skill_name, source="skill_tool")
                                 if is_skill_category(kind):
                                     skills[(skill_name, "skill_tool")] += 1
                                 elif is_command_category(kind):
@@ -470,9 +473,9 @@ class Session(BaseModel):
                                     # in subagent_invocations.
                                     commands[(skill_name, "skill_tool")] += 1
 
-                # Apply command→skill linkage for this turn
-                _apply_command_triggered(pending_command_plugins, skills)
-                pending_command_plugins.clear()
+                # Command→skill linkage applied after the message loop
+                # (see _apply_command_triggered below) since Skill tool
+                # calls may come in later assistant messages.
 
             # Git branches
             git_branch = getattr(msg, "git_branch", None)
@@ -495,6 +498,17 @@ class Session(BaseModel):
 
         _dedup_invocation_sources(skills)
         _dedup_invocation_sources(commands)
+
+        # Apply command→skill linkage: when a plugin command fired (e.g.
+        # superpowers:brainstorm) and a skill from the same plugin was
+        # invoked (superpowers:brainstorming), upgrade the skill source
+        # to "command_triggered".  Done after dedup so all sources are final.
+        # Also collect plugin prefixes from commands counter (Skill tool
+        # invocations that classified as plugin_command, e.g. commit-commands:commit).
+        for (cmd_name, _source) in commands:
+            if ":" in cmd_name:
+                pending_command_plugins.add(cmd_name.split(":")[0])
+        _apply_command_triggered(pending_command_plugins, skills)
 
         # Separate text_detection entries that survived dedup into skills_mentioned.
         # These are skills the user referenced in their prompt but Claude never invoked.

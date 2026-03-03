@@ -238,7 +238,7 @@ class Agent(BaseModel):
                     if isinstance(block, ToolUseBlock) and block.name == "Skill" and block.input:
                         skill_name = block.input.get("skill")
                         if skill_name:
-                            kind = classify_invocation(skill_name)
+                            kind = classify_invocation(skill_name, source="skill_tool")
                             if is_skill_category(kind):
                                 skills[(skill_name, "skill_tool")] += 1
                             elif is_command_category(kind):

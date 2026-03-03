@@ -528,7 +528,7 @@ def _index_session(
 
                                     # Normalize short-form plugin names
                                     skill_name = expand_plugin_short_name(skill_name)
-                                    kind = classify_invocation(skill_name)
+                                    kind = classify_invocation(skill_name, source="skill_tool")
                                     source = "skill_tool"
                                     if is_skill_category(kind):
                                         key = (skill_name, source)
