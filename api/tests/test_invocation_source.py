@@ -17,6 +17,8 @@ from command_helpers import (
     classify_invocation,
     detect_slash_commands_in_text,
     expand_plugin_short_name,
+    is_command_category,
+    is_skill_category,
     parse_command_from_content,
 )
 from models.session import _dedup_invocation_sources, _link_command_to_skill
@@ -369,41 +371,92 @@ class TestBuildEntryTypeMap:
 class TestClassifyInvocation:
     """Tests for classify_invocation() with entry type awareness."""
 
-    def test_plugin_command_classified_as_command(self, mock_claude_base):
-        """superpowers:brainstorm (in commands/) → 'command'."""
+    def test_plugin_command_classified_as_plugin_skill(self, mock_claude_base):
+        """superpowers:brainstorm (in commands/) → 'plugin_skill'.
+
+        Commands from plugins with ':' return 'plugin_skill' unless entry_type == 'agent'.
+        """
         _make_plugin(mock_claude_base, "superpowers", ["brainstorm"], kind="commands")
-        assert classify_invocation("superpowers:brainstorm") == "command"
+        assert classify_invocation("superpowers:brainstorm") == "plugin_skill"
 
-    def test_plugin_skill_classified_as_skill(self, mock_claude_base):
-        """superpowers:brainstorming (in skills/) → 'skill'."""
+    def test_plugin_skill_classified_as_plugin_skill(self, mock_claude_base):
+        """superpowers:brainstorming (in skills/) → 'plugin_skill'."""
         _make_plugin(mock_claude_base, "superpowers", ["brainstorming"], kind="skills")
-        assert classify_invocation("superpowers:brainstorming") == "skill"
+        assert classify_invocation("superpowers:brainstorming") == "plugin_skill"
 
-    def test_unknown_plugin_entry_defaults_to_skill(self, mock_claude_base):
-        """Backward compat: unknown plugin:entry defaults to 'skill'."""
-        assert classify_invocation("unknown-plugin:unknown-entry") == "skill"
+    def test_unknown_plugin_entry_defaults_to_plugin_skill(self, mock_claude_base):
+        """Backward compat: unknown plugin:entry defaults to 'plugin_skill'."""
+        assert classify_invocation("unknown-plugin:unknown-entry") == "plugin_skill"
 
-    def test_builtin_still_builtin(self, mock_claude_base):
-        """/exit → 'builtin' regardless of entry type map."""
-        assert classify_invocation("exit") == "builtin"
+    def test_builtin_classified_as_builtin_command(self, mock_claude_base):
+        """/exit → 'builtin_command' regardless of entry type map."""
+        assert classify_invocation("exit") == "builtin_command"
 
-    def test_custom_skill_still_skill(self, mock_claude_base):
-        """Custom skills (no ':') still classified as 'skill' when SKILL.md exists."""
+    def test_custom_skill_classified_as_custom_skill(self, mock_claude_base):
+        """Custom skills (no ':') classified as 'custom_skill' when SKILL.md exists."""
         skills_dir = mock_claude_base / "skills" / "my-custom-skill"
         skills_dir.mkdir(parents=True)
         (skills_dir / "SKILL.md").write_text("# My Skill")
-        assert classify_invocation("my-custom-skill") == "skill"
+        assert classify_invocation("my-custom-skill") == "custom_skill"
 
     def test_plugin_agent_classified_as_agent(self, mock_claude_base):
         """feature-dev:code-explorer (in agents/) → 'agent'."""
         _make_plugin(mock_claude_base, "feature-dev", ["code-explorer"], kind="agents")
         assert classify_invocation("feature-dev:code-explorer") == "agent"
 
-    def test_overlapping_skill_and_command_prefers_skill(self, mock_claude_base):
-        """oh-my-claudecode:autopilot in both skills/ and commands/ → 'skill'."""
+    def test_overlapping_skill_and_command_prefers_plugin_skill(self, mock_claude_base):
+        """oh-my-claudecode:autopilot in both skills/ and commands/ → 'plugin_skill'."""
         _make_plugin(mock_claude_base, "oh-my-claudecode", ["autopilot"], kind="skills")
         _make_plugin(mock_claude_base, "oh-my-claudecode", ["autopilot"], kind="commands")
-        assert classify_invocation("oh-my-claudecode:autopilot") == "skill"
+        assert classify_invocation("oh-my-claudecode:autopilot") == "plugin_skill"
+
+    def test_bundled_skill_classified_as_bundled_skill(self, mock_claude_base):
+        """Bundled Claude Code skills (e.g. /simplify) → 'bundled_skill'."""
+        assert classify_invocation("simplify") == "bundled_skill"
+
+
+class TestIsSkillCategory:
+    """Tests for is_skill_category() helper."""
+
+    def test_bundled_skill_is_skill_category(self):
+        assert is_skill_category("bundled_skill") is True
+
+    def test_plugin_skill_is_skill_category(self):
+        assert is_skill_category("plugin_skill") is True
+
+    def test_custom_skill_is_skill_category(self):
+        assert is_skill_category("custom_skill") is True
+
+    def test_agent_is_not_skill_category(self):
+        assert is_skill_category("agent") is False
+
+    def test_builtin_command_is_not_skill_category(self):
+        assert is_skill_category("builtin_command") is False
+
+    def test_user_command_is_not_skill_category(self):
+        assert is_skill_category("user_command") is False
+
+
+class TestIsCommandCategory:
+    """Tests for is_command_category() helper."""
+
+    def test_builtin_command_is_command_category(self):
+        assert is_command_category("builtin_command") is True
+
+    def test_user_command_is_command_category(self):
+        assert is_command_category("user_command") is True
+
+    def test_plugin_skill_is_not_command_category(self):
+        assert is_command_category("plugin_skill") is False
+
+    def test_bundled_skill_is_not_command_category(self):
+        assert is_command_category("bundled_skill") is False
+
+    def test_agent_is_not_command_category(self):
+        assert is_command_category("agent") is False
+
+    def test_custom_skill_is_not_command_category(self):
+        assert is_command_category("custom_skill") is False
 
 
 class TestCommandToSkillLinkage:

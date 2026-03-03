@@ -106,11 +106,44 @@ export interface SkillUsage {
 	session_count: number;
 }
 
+export type CommandCategory =
+	| 'builtin_command'
+	| 'bundled_skill'
+	| 'plugin_skill'
+	| 'custom_skill'
+	| 'user_command';
+
 export interface CommandUsage {
 	name: string;
 	count: number;
 	source: 'builtin' | 'plugin' | 'project' | 'user' | 'unknown';
 	plugin: string | null;
+	category?: CommandCategory;
+	description?: string | null;
+	last_used?: string | null;
+	session_count?: number;
+	invocation_source?: string;
+}
+
+export interface CommandDetailResponse {
+	name: string;
+	description: string | null;
+	category: CommandCategory;
+	content: string | null;
+	is_plugin: boolean;
+	plugin: string | null;
+	file_path: string | null;
+	calls: number;
+	main_calls: number;
+	subagent_calls: number;
+	manual_calls: number;
+	auto_calls: number;
+	session_count: number;
+	first_used: string | null;
+	last_used: string | null;
+	trend: Array<{ date: string; calls: number; sessions: number }>;
+	sessions: SessionSummary[];
+	sessions_total: number;
 }
 
 // ============================================

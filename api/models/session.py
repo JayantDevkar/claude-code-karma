@@ -19,6 +19,8 @@ from command_helpers import (
     classify_invocation,
     detect_slash_commands_in_text,
     expand_plugin_short_name,
+    is_command_category,
+    is_skill_category,
     parse_command_from_content,
 )
 
@@ -405,16 +407,16 @@ class Session(BaseModel):
                             expanded = expand_plugin_short_name(candidate)
                             # Only detect skills — builtins always have <command-message>
                             # tags when actually invoked, so they're caught above.
-                            if classify_invocation(expanded) == "skill":
+                            if is_skill_category(classify_invocation(expanded)):
                                 user_prompt_skills.add((expanded, "text_detection"))
-                            elif classify_invocation(expanded) not in ("builtin", "agent"):
+                            elif is_command_category(classify_invocation(expanded)):
                                 user_prompt_commands.add((expanded, "text_detection"))
                     if cmd_name:
                         kind = classify_invocation(cmd_name)
-                        if kind == "skill":
+                        if is_skill_category(kind):
                             user_prompt_skills.add((cmd_name, source))
-                        elif kind != "agent":
-                            # "command" and "builtin" go into commands.
+                        elif is_command_category(kind):
+                            # "user_command" and "builtin_command" go into commands.
                             # "agent" entries are skipped — tracked separately
                             # in subagent_invocations.
                             user_prompt_commands.add((cmd_name, source))
@@ -459,10 +461,10 @@ class Session(BaseModel):
                                 # Normalize short-form plugin names
                                 skill_name = expand_plugin_short_name(skill_name)
                                 kind = classify_invocation(skill_name)
-                                if kind == "skill":
+                                if is_skill_category(kind):
                                     skills[(skill_name, "skill_tool")] += 1
-                                elif kind != "agent":
-                                    # "command" and "builtin" go into commands.
+                                elif is_command_category(kind):
+                                    # "user_command" and "builtin_command" go into commands.
                                     # "agent" entries are skipped — tracked separately
                                     # in subagent_invocations.
                                     commands[(skill_name, "skill_tool")] += 1

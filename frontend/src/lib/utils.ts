@@ -918,6 +918,58 @@ export function getCommandColorVars(
 }
 
 /**
+ * Get color vars for a command category (5-category classification).
+ */
+export function getCommandCategoryColorVars(category: string): { color: string; subtle: string } {
+	switch (category) {
+		case 'builtin_command':
+			return { color: 'var(--text-muted)', subtle: 'var(--bg-muted)' };
+		case 'bundled_skill':
+			return { color: 'var(--nav-purple)', subtle: 'oklch(0.75 0.1 300 / 0.1)' };
+		case 'plugin_skill':
+			return { color: 'var(--nav-blue)', subtle: 'oklch(0.7 0.12 250 / 0.1)' };
+		case 'custom_skill':
+			return { color: 'var(--nav-teal)', subtle: 'oklch(0.75 0.1 180 / 0.1)' };
+		case 'user_command':
+			return { color: 'var(--accent)', subtle: 'var(--accent-subtle)' };
+		default:
+			return { color: 'var(--accent)', subtle: 'var(--accent-subtle)' };
+	}
+}
+
+/**
+ * Get a human-readable label for a command category.
+ */
+export function getCommandCategoryLabel(category: string): string {
+	switch (category) {
+		case 'builtin_command':
+			return 'Built-in';
+		case 'bundled_skill':
+			return 'Bundled';
+		case 'plugin_skill':
+			return 'Plugin';
+		case 'custom_skill':
+			return 'Custom';
+		case 'user_command':
+			return 'User';
+		default:
+			return category;
+	}
+}
+
+/**
+ * Get a hex color for a command name (for Chart.js which can't use CSS vars).
+ */
+export function getCommandChartHex(name: string): string {
+	let hash = 0;
+	for (let i = 0; i < name.length; i++) {
+		hash = name.charCodeAt(i) + ((hash << 5) - hash);
+	}
+	const h = ((hash % 360) + 360) % 360;
+	return oklchToHex(0.7, 0.12, h);
+}
+
+/**
  * Get color vars for a hook source based on its type and name.
  * Global hooks get warm amber, plugin hooks use plugin colors, project hooks use scope colors.
  */

@@ -627,6 +627,41 @@ class CommandUsage(BaseModel):
         "slash_command",
         description="How the command was invoked: 'slash_command', 'skill_tool', or 'text_detection'",
     )
+    category: Optional[str] = Field(
+        None,
+        description="Classification category: 'builtin_command', 'bundled_skill', "
+        "'plugin_skill', 'custom_skill', 'user_command'",
+    )
+    description: Optional[str] = Field(
+        None, description="Command description from cli.js (for builtins/bundled)"
+    )
+    last_used: Optional[str] = Field(None, description="Last usage date (ISO)")
+    session_count: Optional[int] = Field(None, description="Number of sessions using this command")
+
+
+class CommandDetailResponse(BaseModel):
+    """Detailed command info with usage stats, trend, and session list."""
+
+    name: str = Field(..., description="Command name")
+    description: Optional[str] = Field(None, description="Command description")
+    category: str = Field("user_command", description="Classification category")
+    content: Optional[str] = Field(None, description="Full command content (markdown)")
+    is_plugin: bool = Field(False, description="True if this is a plugin command")
+    plugin: Optional[str] = Field(None, description="Plugin name if is_plugin")
+    file_path: Optional[str] = Field(None, description="Path to the command file")
+    calls: int = Field(0, description="Total invocations")
+    main_calls: int = Field(0, description="Calls from main sessions")
+    subagent_calls: int = Field(0, description="Calls from subagents")
+    manual_calls: int = Field(0, description="Calls via slash command (user-initiated)")
+    auto_calls: int = Field(0, description="Calls via skill tool (auto-invoked by Claude)")
+    session_count: int = Field(0, description="Distinct sessions using this command")
+    first_used: Optional[str] = Field(None, description="First usage date (ISO)")
+    last_used: Optional[str] = Field(None, description="Last usage date (ISO)")
+    trend: list["SkillTrendItem"] = Field(default_factory=list, description="Daily usage trend")
+    sessions: list[SessionSummary] = Field(
+        default_factory=list, description="Sessions using this command"
+    )
+    sessions_total: int = Field(0, description="Total session count (before pagination)")
 
 
 class SkillInfo(BaseModel):

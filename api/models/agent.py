@@ -205,7 +205,7 @@ class Agent(BaseModel):
 
         from collections import Counter
 
-        from command_helpers import classify_invocation
+        from command_helpers import classify_invocation, is_command_category, is_skill_category
 
         from .content import ToolUseBlock
         from .message import AssistantMessage
@@ -239,9 +239,9 @@ class Agent(BaseModel):
                         skill_name = block.input.get("skill")
                         if skill_name:
                             kind = classify_invocation(skill_name)
-                            if kind == "skill":
+                            if is_skill_category(kind):
                                 skills[(skill_name, "skill_tool")] += 1
-                            elif kind == "command":
+                            elif is_command_category(kind):
                                 commands[(skill_name, "skill_tool")] += 1
 
         # Store all computed values

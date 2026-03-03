@@ -721,6 +721,299 @@ def query_skill_detail(
 
 
 # ---------------------------------------------------------------------------
+# Command queries (mirrors skill query pattern)
+# ---------------------------------------------------------------------------
+
+
+def query_command_usage(
+    conn: sqlite3.Connection,
+    project: Optional[str] = None,
+    limit: int = 50,
+) -> list[dict]:
+    """Aggregate command usage counts, optionally filtered by project.
+
+    Includes invocation_sources field showing which sources contributed
+    (e.g., 'slash_command,skill_tool').
+    """
+    _where = "WHERE s.project_encoded_name = :project" if project else ""
+    _params: dict = {"limit": limit}
+    if project:
+        _params["project"] = project
+    rows = conn.execute(
+        f"""SELECT sc.command_name,
+            SUM(sc.count) as total_count,
+            COUNT(DISTINCT sc.session_uuid) as session_count,
+            MAX(s.end_time) as last_used,
+            GROUP_CONCAT(DISTINCT sc.invocation_source) as invocation_sources
+        FROM session_commands sc
+        JOIN sessions s ON sc.session_uuid = s.uuid
+        {_where}
+        GROUP BY sc.command_name
+        ORDER BY total_count DESC
+        LIMIT :limit""",
+        _params,
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def query_command_detail(
+    conn: sqlite3.Connection,
+    command_name: str,
+    limit: int = 100,
+    offset: int = 0,
+) -> dict | None:
+    """Detailed stats for a single command with trend and session list."""
+    # Main session stats
+    main_row = conn.execute(
+        """SELECT COALESCE(SUM(sc.count), 0) as total_count,
+            COUNT(DISTINCT sc.session_uuid) as session_count,
+            MIN(s.start_time) as first_used,
+            MAX(s.start_time) as last_used
+        FROM session_commands sc
+        JOIN sessions s ON sc.session_uuid = s.uuid
+        WHERE sc.command_name = :cmd""",
+        {"cmd": command_name},
+    ).fetchone()
+
+    # Subagent stats
+    sub_row = conn.execute(
+        """SELECT COALESCE(SUM(ssc.count), 0) as total_count
+        FROM subagent_commands ssc
+        JOIN subagent_invocations si ON ssc.invocation_id = si.id
+        WHERE ssc.command_name = :cmd""",
+        {"cmd": command_name},
+    ).fetchone()
+
+    main_calls = main_row["total_count"] or 0 if main_row else 0
+    sub_calls = sub_row["total_count"] or 0 if sub_row else 0
+
+    # Calls by invocation source (manual vs auto)
+    source_rows = conn.execute(
+        """SELECT sc.invocation_source, COALESCE(SUM(sc.count), 0) as total
+        FROM session_commands sc
+        WHERE sc.command_name = :cmd
+        GROUP BY sc.invocation_source""",
+        {"cmd": command_name},
+    ).fetchall()
+    source_counts = {r["invocation_source"]: r["total"] for r in source_rows}
+    manual_calls = source_counts.get("slash_command", 0)
+    auto_calls = source_counts.get("skill_tool", 0)
+
+    if main_calls == 0 and sub_calls == 0:
+        return None
+
+    # Daily trend
+    trend_rows = conn.execute(
+        """SELECT DATE(s.start_time) as date,
+            SUM(sc.count) as calls,
+            COUNT(DISTINCT sc.session_uuid) as sessions
+        FROM session_commands sc
+        JOIN sessions s ON sc.session_uuid = s.uuid
+        WHERE sc.command_name = :cmd AND s.start_time IS NOT NULL
+        GROUP BY DATE(s.start_time)
+        ORDER BY date""",
+        {"cmd": command_name},
+    ).fetchall()
+
+    # Sessions with source tagging (main vs subagent)
+    params: dict = {"cmd": command_name, "limit": limit, "offset": offset}
+
+    cte_sql = """
+    WITH target_sessions AS (
+        -- Main session usage
+        SELECT sc.session_uuid, 1 as has_main, 0 as has_sub, NULL as agent_id
+        FROM session_commands sc
+        JOIN sessions s ON sc.session_uuid = s.uuid
+        WHERE sc.command_name = :cmd
+
+        UNION ALL
+
+        -- Subagent usage
+        SELECT si.session_uuid, 0 as has_main, 1 as has_sub, si.agent_id
+        FROM subagent_commands ssc
+        JOIN subagent_invocations si ON ssc.invocation_id = si.id
+        JOIN sessions s ON si.session_uuid = s.uuid
+        WHERE ssc.command_name = :cmd
+    ),
+    aggregated_sessions AS (
+        SELECT session_uuid,
+               MAX(has_main) as has_main,
+               MAX(has_sub) as has_sub,
+               GROUP_CONCAT(DISTINCT agent_id) as agent_ids
+        FROM target_sessions
+        GROUP BY session_uuid
+    ),
+    session_sources AS (
+        SELECT sc.session_uuid,
+               GROUP_CONCAT(DISTINCT sc.invocation_source) as invocation_sources
+        FROM session_commands sc
+        WHERE sc.command_name = :cmd
+        GROUP BY sc.session_uuid
+    )
+    """
+
+    total_sessions = conn.execute(
+        f"{cte_sql} SELECT COUNT(*) FROM aggregated_sessions",
+        params,
+    ).fetchone()[0]
+
+    rows = conn.execute(
+        f"""{cte_sql}
+        SELECT
+            s.uuid, s.slug, s.project_encoded_name, s.project_path,
+            s.message_count, s.start_time, s.end_time, s.duration_seconds,
+            s.models_used, s.subagent_count, s.initial_prompt,
+            s.git_branch, s.session_titles,
+            agg.has_main, agg.has_sub, agg.agent_ids,
+            ss.invocation_sources
+        FROM sessions s
+        JOIN aggregated_sessions agg ON s.uuid = agg.session_uuid
+        LEFT JOIN session_sources ss ON s.uuid = ss.session_uuid
+        ORDER BY s.start_time DESC
+        LIMIT :limit OFFSET :offset""",
+        params,
+    ).fetchall()
+
+    sessions = []
+    for row in rows:
+        session = dict(row)
+
+        has_main = session.pop("has_main")
+        has_sub = session.pop("has_sub")
+        if has_main and has_sub:
+            session["tool_source"] = "both"
+        elif has_sub:
+            session["tool_source"] = "subagent"
+        else:
+            session["tool_source"] = "main"
+
+        agent_ids_str = session.pop("agent_ids")
+        session["subagent_agent_ids"] = agent_ids_str.split(",") if agent_ids_str else []
+
+        sources_str = session.pop("invocation_sources", None)
+        session["invocation_sources"] = sources_str.split(",") if sources_str else []
+
+        session["models_used"] = _parse_json_list(session.get("models_used"))
+        session["session_titles"] = _parse_json_list(session.get("session_titles"))
+        session["git_branches"] = [session["git_branch"]] if session.get("git_branch") else []
+        sessions.append(session)
+
+    return {
+        "name": command_name,
+        "main_calls": main_calls,
+        "subagent_calls": sub_calls,
+        "total_calls": main_calls + sub_calls,
+        "manual_calls": manual_calls,
+        "auto_calls": auto_calls,
+        "session_count": main_row["session_count"] or 0 if main_row else 0,
+        "first_used": main_row["first_used"] if main_row else None,
+        "last_used": main_row["last_used"] if main_row else None,
+        "trend": [
+            {"date": r["date"], "calls": r["calls"], "sessions": r["sessions"]} for r in trend_rows
+        ],
+        "sessions": sessions,
+        "total": total_sessions,
+    }
+
+
+def query_command_usage_trend(
+    conn: sqlite3.Connection,
+    project: Optional[str] = None,
+    period: str = "month",
+) -> dict:
+    """
+    Aggregate command usage with daily trend data.
+
+    Args:
+        conn: SQLite connection
+        project: Optional project encoded name filter
+        period: Time period - "week", "month", "quarter", or "all"
+
+    Returns:
+        Dict with total, by_item, trend, trend_by_item, first_used, last_used
+    """
+    from datetime import timedelta
+
+    now = datetime.now(timezone.utc)
+    cutoff = None
+    if period == "week":
+        cutoff = now - timedelta(days=7)
+    elif period == "month":
+        cutoff = now - timedelta(days=30)
+    elif period == "quarter":
+        cutoff = now - timedelta(days=90)
+
+    conditions = []
+    params: dict = {}
+    if project:
+        conditions.append("s.project_encoded_name = :project")
+        params["project"] = project
+    if cutoff:
+        conditions.append("s.start_time >= :cutoff")
+        params["cutoff"] = cutoff.isoformat()
+
+    where = "WHERE " + " AND ".join(conditions) if conditions else ""
+
+    # Totals by command
+    rows = conn.execute(
+        f"""SELECT sc.command_name, SUM(sc.count) as total_count
+        FROM session_commands sc
+        JOIN sessions s ON sc.session_uuid = s.uuid
+        {where}
+        GROUP BY sc.command_name
+        ORDER BY total_count DESC""",
+        params,
+    ).fetchall()
+
+    by_item = {row["command_name"]: row["total_count"] for row in rows}
+    total = sum(by_item.values())
+
+    # Daily trend
+    trend_rows = conn.execute(
+        f"""SELECT DATE(s.start_time) as date, SUM(sc.count) as count
+        FROM session_commands sc
+        JOIN sessions s ON sc.session_uuid = s.uuid
+        {where}
+        {"AND" if where else "WHERE"} s.start_time IS NOT NULL
+        GROUP BY DATE(s.start_time)
+        ORDER BY date""",
+        params,
+    ).fetchall()
+
+    trend = [{"date": row["date"], "count": row["count"]} for row in trend_rows]
+
+    trend_by_item = _query_per_item_trend(
+        conn,
+        item_col="sc.command_name",
+        from_clause="FROM session_commands sc JOIN sessions s ON sc.session_uuid = s.uuid",
+        where=where,
+        params=params,
+        count_expr="SUM(sc.count)",
+    )
+
+    # First/last used
+    time_row = conn.execute(
+        f"""SELECT MIN(s.start_time) as first_used, MAX(s.start_time) as last_used
+        FROM session_commands sc
+        JOIN sessions s ON sc.session_uuid = s.uuid
+        {where}""",
+        params,
+    ).fetchone()
+
+    first_used = time_row["first_used"] if time_row else None
+    last_used = time_row["last_used"] if time_row else None
+
+    return {
+        "total": total,
+        "by_item": by_item,
+        "trend": trend,
+        "trend_by_item": trend_by_item,
+        "first_used": first_used,
+        "last_used": last_used,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Project queries
 # ---------------------------------------------------------------------------
 

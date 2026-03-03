@@ -16,7 +16,9 @@ from command_helpers import (
     classify_invocation,
     detect_slash_commands_in_text,
     expand_plugin_short_name,
+    is_command_category,
     is_plugin_skill,
+    is_skill_category,
     parse_command_from_content,
     strip_command_tags,
 )
@@ -159,10 +161,10 @@ def build_conversation_timeline(
                         # Extract skill details from tool input
                         skill_name = block.input.get("skill", "Unknown")
                         kind = classify_invocation(skill_name)
-                        if kind == "builtin":
+                        if kind == "builtin_command":
                             event_type = "builtin_command"
                             title = f"Built-in: /{skill_name}"
-                        elif kind == "skill":
+                        elif is_skill_category(kind):
                             event_type = "skill_invocation"
                             title = f"Skill: /{skill_name}"
                         else:
@@ -257,7 +259,7 @@ def _detect_command_from_content(
         # Collect ALL skill references from the text (not just the first)
         # Expand short-form plugin names for consistency with Skill tool invocations
         skills_found = [
-            expand_plugin_short_name(c) for c in slash_cmds if classify_invocation(c) == "skill"
+            expand_plugin_short_name(c) for c in slash_cmds if is_skill_category(classify_invocation(c))
         ]
         if skills_found:
             referenced_skills = skills_found
@@ -269,9 +271,9 @@ def _detect_command_from_content(
     kind = classify_invocation(cmd_name)
     summary = args[:200] if args else f"Invoked /{cmd_name}"
 
-    if kind == "builtin":
+    if kind == "builtin_command":
         return "builtin_command", f"Built-in: /{cmd_name}", summary, cmd_name, None
-    elif kind == "skill":
+    elif is_skill_category(kind):
         return "skill_invocation", f"Skill: /{cmd_name}", summary, cmd_name, None
     else:
         return "command_invocation", f"Command: /{cmd_name}", summary, cmd_name, None

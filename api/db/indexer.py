@@ -522,16 +522,18 @@ def _index_session(
                                     from command_helpers import (
                                         classify_invocation,
                                         expand_plugin_short_name,
+                                        is_command_category,
+                                        is_skill_category,
                                     )
 
                                     # Normalize short-form plugin names
                                     skill_name = expand_plugin_short_name(skill_name)
                                     kind = classify_invocation(skill_name)
                                     source = "skill_tool"
-                                    if kind == "skill":
+                                    if is_skill_category(kind):
                                         key = (skill_name, source)
                                         skill_counts[key] = skill_counts.get(key, 0) + 1
-                                    elif kind == "command":
+                                    elif is_command_category(kind):
                                         key = (skill_name, source)
                                         command_counts[key] = command_counts.get(key, 0) + 1
 

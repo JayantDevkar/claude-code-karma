@@ -119,6 +119,14 @@
 					Skills
 				</a>
 				<a
+					href="/commands"
+					class="text-sm font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+					class:text-[var(--text-primary)]={$page.url.pathname.startsWith('/commands')}
+					aria-current={$page.url.pathname.startsWith('/commands') ? 'page' : undefined}
+				>
+					Commands
+				</a>
+				<a
 					href="/tools"
 					class="text-sm font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
 					class:text-[var(--text-primary)]={$page.url.pathname.startsWith('/tools')}
@@ -242,6 +250,16 @@
 					aria-current={$page.url.pathname.startsWith('/skills') ? 'page' : undefined}
 				>
 					Skills
+				</a>
+				<a
+					href="/commands"
+					onclick={closeMobileMenu}
+					class="text-base font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-subtle)] py-3 px-4 rounded-lg transition-colors"
+					class:text-[var(--text-primary)]={$page.url.pathname.startsWith('/commands')}
+					class:bg-[var(--bg-subtle)]={$page.url.pathname.startsWith('/commands')}
+					aria-current={$page.url.pathname.startsWith('/commands') ? 'page' : undefined}
+				>
+					Commands
 				</a>
 				<a
 					href="/tools"

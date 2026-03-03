@@ -190,35 +190,65 @@ async def get_command_content(
 
 @router.get("/commands/usage")
 @cacheable(max_age=120, stale_while_revalidate=300)
-def get_command_usage(request: Request):
-    """Get command usage analytics across all sessions."""
+def get_command_usage(
+    request: Request,
+    project: Annotated[
+        str | None, Query(description="Project encoded name filter")
+    ] = None,
+):
+    """Get command usage analytics across all sessions with category classification."""
+    from command_helpers import classify_invocation, get_command_description
     from db.connection import sqlite_read
+    from db.queries import query_command_usage
 
     with sqlite_read() as conn:
         if conn is None:
             return []
 
-        rows = conn.execute("""
-            SELECT
-                sc.command_name,
-                SUM(sc.count) as total_uses,
-                COUNT(DISTINCT sc.session_uuid) as session_count,
-                MAX(s.start_time) as last_used
-            FROM session_commands sc
-            JOIN sessions s ON sc.session_uuid = s.uuid
-            GROUP BY sc.command_name
-            ORDER BY total_uses DESC
-        """).fetchall()
-
+        rows = query_command_usage(conn, project=project, limit=100)
         return [
             {
-                "command_name": row[0],
-                "total_uses": row[1],
-                "session_count": row[2],
-                "last_used": row[3],
+                "command_name": row["command_name"],
+                "total_uses": row["total_count"],
+                "session_count": row["session_count"],
+                "last_used": row["last_used"],
+                "category": classify_invocation(row["command_name"]),
+                "description": get_command_description(row["command_name"]),
             }
             for row in rows
         ]
+
+
+@router.get("/commands/usage/trend")
+@cacheable(max_age=120, stale_while_revalidate=300)
+def get_command_usage_trend(
+    request: Request,
+    project: Annotated[
+        str | None, Query(description="Project encoded name filter")
+    ] = None,
+    period: Annotated[str, Query(description="Time period: week, month, quarter, all")] = "month",
+):
+    """Get command usage trend data with daily breakdown."""
+    import sqlite3
+
+    from db.connection import sqlite_read
+    from db.queries import query_command_usage_trend
+
+    try:
+        with sqlite_read() as conn:
+            if conn is not None:
+                return query_command_usage_trend(conn, project=project, period=period)
+    except sqlite3.Error as e:
+        logger.warning("SQLite command trend query failed: %s", e)
+
+    return {
+        "total": 0,
+        "by_item": {},
+        "trend": [],
+        "trend_by_item": {},
+        "first_used": None,
+        "last_used": None,
+    }
 
 
 @router.get("/commands/usage/{command_name}")
@@ -262,6 +292,83 @@ def get_command_usage_detail(command_name: str, request: Request):
                 for row in rows
             ],
         }
+
+
+@router.get("/commands/{command_name}/detail")
+@cacheable(max_age=120, stale_while_revalidate=300)
+async def get_command_detail(
+    command_name: str,
+    request: Request,
+    config: Annotated[Settings, Depends(get_settings)],
+    per_page: Annotated[int, Query(ge=1, le=200)] = 100,
+    page: Annotated[int, Query(ge=1)] = 1,
+    project: Annotated[
+        str | None, Query(description="Project encoded name for project-specific lookup")
+    ] = None,
+):
+    """Get detailed command info with usage stats, trend, and session list."""
+    from command_helpers import classify_invocation, get_command_description
+    from db.connection import sqlite_read
+    from db.queries import query_command_detail
+
+    category = classify_invocation(command_name)
+    description = get_command_description(command_name)
+
+    # Try to get file content for user commands
+    content = None
+    file_path = None
+    if category == "user_command":
+        # Check project then global commands
+        cmd_file = None
+        if project:
+            try:
+                proj = Project.from_encoded_name(project)
+                project_cmd = Path(proj.path) / ".claude" / "commands" / f"{command_name}.md"
+                if project_cmd.is_file():
+                    cmd_file = project_cmd
+            except Exception:
+                pass
+        if not cmd_file:
+            user_cmd = config.commands_dir / f"{command_name}.md"
+            if user_cmd.is_file():
+                cmd_file = user_cmd
+        if cmd_file:
+            try:
+                content = await run_in_thread(safe_read_file, cmd_file, settings.max_skill_size)
+                file_path = str(cmd_file)
+            except Exception:
+                pass
+
+    # Get usage stats from SQLite
+    usage_data = None
+    with sqlite_read() as conn:
+        if conn is not None:
+            offset = (page - 1) * per_page
+            usage_data = query_command_detail(conn, command_name, limit=per_page, offset=offset)
+
+    if usage_data is None and content is None and description is None:
+        raise HTTPException(status_code=404, detail=f"Command '{command_name}' not found")
+
+    return {
+        "name": command_name,
+        "description": description,
+        "category": category,
+        "content": content,
+        "is_plugin": ":" in command_name,
+        "plugin": command_name.split(":")[0] if ":" in command_name else None,
+        "file_path": file_path,
+        "calls": usage_data["total_calls"] if usage_data else 0,
+        "main_calls": usage_data["main_calls"] if usage_data else 0,
+        "subagent_calls": usage_data["subagent_calls"] if usage_data else 0,
+        "manual_calls": usage_data["manual_calls"] if usage_data else 0,
+        "auto_calls": usage_data["auto_calls"] if usage_data else 0,
+        "session_count": usage_data["session_count"] if usage_data else 0,
+        "first_used": usage_data["first_used"] if usage_data else None,
+        "last_used": usage_data["last_used"] if usage_data else None,
+        "trend": usage_data["trend"] if usage_data else [],
+        "sessions": usage_data["sessions"] if usage_data else [],
+        "sessions_total": usage_data["total"] if usage_data else 0,
+    }
 
 
 @router.get("/commands/info/{command_name}", response_model=CommandInfo)
