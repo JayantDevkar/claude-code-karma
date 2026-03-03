@@ -23,7 +23,7 @@ models_path = api_path.parent.parent
 sys.path.insert(0, str(api_path))
 sys.path.insert(0, str(models_path))
 
-from command_helpers import classify_invocation, get_command_description, is_plugin_skill
+from command_helpers import classify_invocation, get_bundled_skill_prompt, get_command_description, is_plugin_skill
 from config import Settings, settings
 from http_caching import cacheable
 from models import Project
@@ -929,7 +929,7 @@ async def _resolve_skill_info(skill_name: str, config: Settings) -> SkillInfo:
                     return SkillInfo(
                         name=skill_name,
                         description=desc,
-                        content=None,
+                        content=get_bundled_skill_prompt(skill_name),
                         is_plugin=False,
                         plugin=None,
                         file_path=None,

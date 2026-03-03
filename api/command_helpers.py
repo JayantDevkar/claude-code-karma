@@ -291,6 +291,258 @@ def get_command_description(name: str) -> str | None:
     desc = cli["builtin_commands"].get(name) or cli["bundled_skills"].get(name)
     return desc if desc else None
 
+
+# ---------------------------------------------------------------------------
+# Bundled skill full prompt extraction
+# ---------------------------------------------------------------------------
+
+# Unique content markers to locate each bundled skill's prompt template literal
+# in cli.js.  We search for these strings, scan backwards to find the opening
+# backtick, then extract the full template literal.
+_PROMPT_MARKERS: dict[str, str] = {
+    "simplify": "# Simplify: Code Review and Cleanup",
+    "batch": "# Batch: Parallel Work Orchestration",
+    "review": "You are an expert code reviewer",
+    "security-review": "You are a senior security engineer",
+    "debug": "# Debug Skill",
+    "claude-developer-platform": "# Building LLM-Powered Applications",
+}
+
+# Secondary markers for template-literal variables referenced inside prompts.
+# These are extracted separately and spliced in during resolution.
+_TEMPLATE_LITERAL_VAR_MARKERS: dict[str, str] = {
+    "uGz": "After you finish implementing the change:",  # batch worker instructions
+}
+
+# Cache: {cli_js_path: {"mtime": float, "size": int, "prompts": {name: text}}}
+_prompt_cache: dict[str, dict] = {}
+
+
+def _extract_template_literal(content: str, backtick_pos: int) -> str | None:
+    """Extract a JS template literal starting at *backtick_pos*.
+
+    Handles escaped characters (``\\```, ``\\n``), ``${...}`` expressions
+    (preserved verbatim for later resolution), and nested braces.
+    Returns the decoded string content, or ``None`` on failure.
+    """
+    if backtick_pos >= len(content) or content[backtick_pos] != "`":
+        return None
+
+    pos = backtick_pos + 1
+    chars: list[str] = []
+
+    while pos < len(content):
+        ch = content[pos]
+
+        if ch == "\\":
+            # Escaped character
+            pos += 1
+            if pos >= len(content):
+                break
+            nch = content[pos]
+            if nch == "`":
+                chars.append("`")
+            elif nch == "n":
+                chars.append("\n")
+            elif nch == "t":
+                chars.append("\t")
+            elif nch == "\\":
+                chars.append("\\")
+            elif nch == "$":
+                chars.append("$")
+            else:
+                chars.append(nch)
+            pos += 1
+
+        elif ch == "`":
+            # End of template literal
+            return "".join(chars)
+
+        elif ch == "$" and pos + 1 < len(content) and content[pos + 1] == "{":
+            # Template expression ${...} — preserve for later resolution
+            depth = 1
+            expr_start = pos + 2
+            pos = expr_start
+            while pos < len(content) and depth > 0:
+                if content[pos] == "{":
+                    depth += 1
+                elif content[pos] == "}":
+                    depth -= 1
+                elif content[pos] == "`":
+                    # Skip nested template literal inside expression
+                    pos += 1
+                    while pos < len(content):
+                        if content[pos] == "\\":
+                            pos += 1
+                        elif content[pos] == "`":
+                            break
+                        pos += 1
+                elif content[pos] == "\\":
+                    pos += 1  # skip escaped char in expression
+                pos += 1
+            expr = content[expr_start : pos - 1]
+            chars.append(f"${{{expr}}}")
+
+        else:
+            chars.append(ch)
+            pos += 1
+
+    return None  # Unclosed template literal
+
+
+# Regex for simple var assignments:  var X="VALUE"  or  X="VALUE"
+_VAR_ASSIGN_STR_RE = re.compile(
+    r"(?:var\s+)?([a-zA-Z_$][a-zA-Z0-9_$]*)=\"([^\"]*)\""
+)
+# Regex for numeric var assignments:  var X=NUMBER
+_VAR_ASSIGN_NUM_RE = re.compile(
+    r"(?:var\s+)?([a-zA-Z_$][a-zA-Z0-9_$]*)=(\d+)(?=[,;\s})])"
+)
+# Regex for ${VARNAME} references (simple identifiers only, not function calls)
+_TEMPLATE_VAR_RE = re.compile(r"\$\{([a-zA-Z_$][a-zA-Z0-9_$]*)\}")
+# Regex for ${func(...)} patterns (function calls in template expressions)
+_FUNC_CALL_IN_TEMPLATE_RE = re.compile(r"\$\{[^}]*\([^)]*\)[^}]*\}")
+
+
+def _build_var_map(content: str) -> dict[str, str]:
+    """Build a combined map of variable name → resolved value from cli.js.
+
+    Captures:
+    - Simple string assignments: ``var X="Agent"``
+    - Numeric assignments: ``var X=30``
+    - Known template-literal variables (via ``_TEMPLATE_LITERAL_VAR_MARKERS``)
+    """
+    var_map: dict[str, str] = {}
+
+    # String vars (tool names, etc.)
+    for m in _VAR_ASSIGN_STR_RE.finditer(content):
+        name, value = m.group(1), m.group(2)
+        if len(value) <= 60 and not name.isdigit():
+            var_map[name] = value
+
+    # Numeric vars (counts like gVq=5, FVq=30)
+    for m in _VAR_ASSIGN_NUM_RE.finditer(content):
+        name, value = m.group(1), m.group(2)
+        if not name.isdigit():
+            var_map[name] = value
+
+    # Template-literal vars (e.g., uGz for batch worker instructions)
+    for var_name, marker in _TEMPLATE_LITERAL_VAR_MARKERS.items():
+        idx = content.find(marker)
+        if idx == -1:
+            continue
+        bt = content.rfind("`", max(0, idx - 200), idx)
+        if bt == -1:
+            continue
+        extracted = _extract_template_literal(content, bt)
+        if extracted:
+            var_map[var_name] = extracted
+
+    return var_map
+
+
+def _resolve_template_variables(prompt: str, var_map: dict[str, str]) -> str:
+    """Replace ``${VARNAME}`` references with resolved values.
+
+    - Known function arguments (``A``, ``q``, ``K``) → descriptive placeholders
+    - Resolved variables → their value
+    - ``${func(...)}`` calls → ``[dynamic]``
+    - Remaining unresolved → ``[VARNAME]``
+    """
+    # Replace function-call expressions first (before simple var resolution)
+    prompt = _FUNC_CALL_IN_TEMPLATE_RE.sub("[dynamic]", prompt)
+
+    # Single-letter vars that are function arguments, not global constants
+    _arg_names = frozenset("AqKYzw_$")
+
+    def _replace(m: re.Match) -> str:
+        name = m.group(1)
+        if name in _arg_names:
+            return "[argument]"
+        if name in var_map:
+            return var_map[name]
+        return f"[{name}]"
+
+    return _TEMPLATE_VAR_RE.sub(_replace, prompt)
+
+
+def _extract_bundled_skill_prompts(cli_js_path: Path) -> dict[str, str]:
+    """Extract full prompt templates for all bundled skills from cli.js.
+
+    Returns ``{skill_name: resolved_prompt_markdown}``.
+    """
+    try:
+        with open(cli_js_path, "r", encoding="utf-8", errors="ignore") as f:
+            content = f.read()
+    except OSError as e:
+        logger.debug("Failed to read cli.js for prompt extraction: %s", e)
+        return {}
+
+    var_map = _build_var_map(content)
+    prompts: dict[str, str] = {}
+
+    for skill_name, marker in _PROMPT_MARKERS.items():
+        marker_idx = content.find(marker)
+        if marker_idx == -1:
+            logger.debug("Could not find prompt marker for %s", skill_name)
+            continue
+
+        # Scan backwards from marker to find the opening backtick
+        search_start = max(0, marker_idx - 500)
+        bt = content.rfind("`", search_start, marker_idx)
+        if bt == -1:
+            logger.debug("Could not find opening backtick for %s", skill_name)
+            continue
+
+        raw = _extract_template_literal(content, bt)
+        if not raw:
+            logger.debug("Failed to extract template literal for %s", skill_name)
+            continue
+
+        resolved = _resolve_template_variables(raw, var_map)
+
+        # Post-processing: strip YAML frontmatter for security-review
+        if skill_name == "security-review" and resolved.lstrip().startswith("---"):
+            text = resolved.lstrip()
+            end = text.find("---", 3)
+            if end != -1:
+                resolved = text[end + 3:].lstrip("\n")
+
+        prompts[skill_name] = resolved.strip()
+
+    return prompts
+
+
+def get_bundled_skill_prompt(name: str) -> str | None:
+    """Get the full prompt markdown for a bundled skill, or ``None``.
+
+    Extracts from cli.js with mtime+size caching — only re-parses when the
+    file changes on disk.
+    """
+    cli_js = _find_cli_js_path()
+    if not cli_js:
+        return None
+
+    try:
+        stat = cli_js.stat()
+        mtime = stat.st_mtime
+        size = stat.st_size
+    except OSError:
+        return None
+
+    cache_key = str(cli_js)
+    cached = _prompt_cache.get(cache_key)
+    if cached and cached["mtime"] == mtime and cached["size"] == size:
+        return cached["prompts"].get(name)
+
+    # Re-extract
+    prompts = _extract_bundled_skill_prompts(cli_js)
+    _prompt_cache[cache_key] = {"mtime": mtime, "size": size, "prompts": prompts}
+    logger.debug("Extracted %d bundled skill prompts from cli.js", len(prompts))
+
+    return prompts.get(name)
+
+
 # Regex for detecting real command prompts (starts with command tag)
 _COMMAND_START_RE = re.compile(r"\s*<command-(?:name|message)>")
 _COMMAND_MESSAGE_RE = re.compile(r"<command-message>(.*?)</command-message>")
