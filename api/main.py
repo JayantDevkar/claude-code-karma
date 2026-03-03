@@ -32,6 +32,7 @@ from routers import (  # noqa: E402
     plans,
     plugins,
     projects,
+    remote_sessions,
     sessions,
     skills,
     subagent_sessions,
@@ -171,6 +172,7 @@ app.include_router(
     prefix="/agents",
     tags=["subagent-sessions"],
 )
+app.include_router(remote_sessions.router, prefix="/remote", tags=["remote"])
 app.include_router(admin.router)
 
 
