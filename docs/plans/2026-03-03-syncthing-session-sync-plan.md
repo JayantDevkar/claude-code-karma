@@ -12,86 +12,39 @@
 
 **Existing code:** The IPFS CLI exists at `cli/` with `config.py`, `ipfs.py`, `sync.py`, `packager.py`, `manifest.py`, and `main.py`. This plan extends that codebase. All file paths are relative to the `cli/` directory unless noted otherwise.
 
+### Review Fixes Applied (2026-03-03)
+
+Based on Critic review (verdict: REVISE → fixes applied):
+
+| # | Finding | Fix |
+|---|---------|-----|
+| 1 | Task 1 already implemented | Converted to verification-only step |
+| 2 | `TeamMember \| TeamMemberSyncthing` union has no discriminator | Split into `ipfs_members` / `syncthing_members` dicts with `members` property |
+| 3 | `requests` missing from pyproject.toml | Added `requests>=2.28` to Task 3 dependencies step |
+| 4 | `str \| None` requires Python 3.10+ | Changed all to `Optional[str]` for Python 3.9 compat |
+| 5 | `project add --team` used in Task 6 tests before defined | Moved `project add --team` implementation to Task 6 Step 1 |
+| 6 | API import style doesn't match codebase | Changed to block import pattern |
+| 7 | `RemoteManifest` missing `sync_backend` field | Added Step 0 to Task 8 |
+| 8 | Watcher silently swallows exceptions | Added stderr error logging |
+| 9 | API key in plain text | Acknowledged (mitigated by `chmod 0o600`) |
+| 10 | No integration test | Post-MVP (noted in Summary) |
+
 ---
 
-## Task 1: Extend SyncManifest with `sync_backend` Field
+## Task 1: Verify SyncManifest `sync_backend` Field (Already Implemented)
 
-**Files:**
-- Modify: `cli/karma/manifest.py:18-35`
-- Modify: `cli/tests/test_packager.py` (add test)
+> **Note:** This task was completed during the IPFS sync implementation. The `sync_backend` field and tests already exist. This step is a verification-only checkpoint.
 
-**Step 1: Write the failing test**
+**Files (already modified):**
+- `cli/karma/manifest.py:36-38` — `sync_backend: Optional[str]` field exists
+- `cli/tests/test_packager.py` — `TestSyncManifest` class with 3 tests exists
 
-Add to `cli/tests/test_packager.py`:
-
-```python
-class TestSyncManifest:
-    def test_manifest_default_sync_backend_is_none(self):
-        from karma.manifest import SyncManifest
-        m = SyncManifest(
-            user_id="alice",
-            machine_id="mac",
-            project_path="/foo",
-            project_encoded="-foo",
-            session_count=0,
-            sessions=[],
-        )
-        assert m.sync_backend is None
-
-    def test_manifest_sync_backend_set(self):
-        from karma.manifest import SyncManifest
-        m = SyncManifest(
-            user_id="alice",
-            machine_id="mac",
-            project_path="/foo",
-            project_encoded="-foo",
-            session_count=0,
-            sessions=[],
-            sync_backend="syncthing",
-        )
-        assert m.sync_backend == "syncthing"
-
-    def test_manifest_sync_backend_in_dump(self):
-        from karma.manifest import SyncManifest
-        m = SyncManifest(
-            user_id="alice",
-            machine_id="mac",
-            project_path="/foo",
-            project_encoded="-foo",
-            session_count=0,
-            sessions=[],
-            sync_backend="ipfs",
-        )
-        data = m.model_dump()
-        assert data["sync_backend"] == "ipfs"
-```
-
-**Step 2: Run test to verify it fails**
+**Step 1: Verify existing implementation**
 
 Run: `cd cli && pytest tests/test_packager.py::TestSyncManifest -v`
-Expected: FAIL — `sync_backend` field doesn't exist yet.
+Expected: PASS — all 3 tests pass (default None, set to "syncthing", in model_dump).
 
-**Step 3: Write minimal implementation**
-
-In `cli/karma/manifest.py`, add to the `SyncManifest` class after `previous_cid`:
-
-```python
-    sync_backend: Optional[str] = Field(
-        default=None, description="Sync backend used: 'ipfs', 'syncthing', or None"
-    )
-```
-
-**Step 4: Run test to verify it passes**
-
-Run: `cd cli && pytest tests/test_packager.py::TestSyncManifest -v`
-Expected: PASS
-
-**Step 5: Commit**
-
-```bash
-git add cli/karma/manifest.py cli/tests/test_packager.py
-git commit -m "feat: add sync_backend field to SyncManifest"
-```
+**Step 2: No commit needed** — already committed.
 
 ---
 
@@ -180,6 +133,15 @@ class TestSyncConfigWithTeams:
         )
         assert "acme" in config.projects
 
+    def test_team_members_property(self):
+        """Unified members view combines ipfs_members and syncthing_members."""
+        from karma.config import TeamMemberSyncthing
+        team = TeamConfig(
+            backend="syncthing",
+            syncthing_members={"bob": TeamMemberSyncthing(syncthing_device_id="DEVICE123")},
+        )
+        assert "bob" in team.members
+
     def test_save_and_load_with_teams(self, tmp_path, monkeypatch):
         config_path = tmp_path / "sync-config.json"
         monkeypatch.setattr("karma.config.SYNC_CONFIG_PATH", config_path)
@@ -215,7 +177,10 @@ Expected: FAIL — `TeamConfig`, `SyncthingSettings` don't exist yet.
 
 **Step 3: Write minimal implementation**
 
-In `cli/karma/config.py`, add new models and extend `SyncConfig`:
+In `cli/karma/config.py`, add new models and extend `SyncConfig`.
+
+> **Important:** Use `Optional[str]` (not `str | None`) throughout for Python 3.9 compatibility.
+> **Important:** Use separate `ipfs_members` and `syncthing_members` dicts instead of a union type to avoid Pydantic deserialization ambiguity.
 
 ```python
 from typing import Literal, Optional
@@ -254,9 +219,17 @@ class TeamConfig(BaseModel):
 
     backend: Literal["ipfs", "syncthing"] = Field(..., description="Sync backend for this team")
     projects: dict[str, ProjectConfig] = Field(default_factory=dict)
-    members: dict[str, TeamMember | TeamMemberSyncthing] = Field(default_factory=dict)
+    ipfs_members: dict[str, TeamMember] = Field(default_factory=dict)
+    syncthing_members: dict[str, TeamMemberSyncthing] = Field(default_factory=dict)
     owner_device_id: Optional[str] = Field(default=None, description="Owner's Syncthing device ID")
     owner_ipns_key: Optional[str] = Field(default=None, description="Owner's IPNS key")
+
+    @property
+    def members(self) -> dict:
+        """Unified view of all members regardless of backend."""
+        result = dict(self.ipfs_members)
+        result.update(self.syncthing_members)
+        return result
 ```
 
 Then extend `SyncConfig` to add:
@@ -265,6 +238,8 @@ Then extend `SyncConfig` to add:
     teams: dict[str, TeamConfig] = Field(default_factory=dict)
     syncthing: SyncthingSettings = Field(default_factory=SyncthingSettings)
 ```
+
+> **Backward compatibility note:** Old config files lacking `teams` and `syncthing` keys will load correctly because both fields have `default_factory` defaults. The existing flat `projects` and `team` dicts are preserved for IPFS-only setups.
 
 **Step 4: Run tests to verify they pass**
 
@@ -291,7 +266,11 @@ git commit -m "feat: add per-team backend config with Syncthing settings"
 - Create: `cli/karma/syncthing.py`
 - Create: `cli/tests/test_syncthing.py`
 
-**Step 1: Write the failing tests**
+**Step 1: Add `requests` to dependencies**
+
+In `cli/pyproject.toml`, add `"requests>=2.28"` to the `dependencies` list.
+
+**Step 2: Write the failing tests**
 
 Create `cli/tests/test_syncthing.py`:
 
@@ -388,17 +367,21 @@ class TestSyncthingClient:
         assert folder["type"] == "sendonly"
 ```
 
-**Step 2: Run tests to verify they fail**
+**Step 3: Run tests to verify they fail**
 
 Run: `cd cli && pytest tests/test_syncthing.py -v`
 Expected: FAIL — `karma.syncthing` module doesn't exist.
 
-**Step 3: Write minimal implementation**
+**Step 4: Write minimal implementation**
 
 Create `cli/karma/syncthing.py`:
 
+> **Important:** Use `Optional[str]` (not `str | None`) for Python 3.9 compatibility.
+
 ```python
 """Syncthing REST API wrapper."""
+
+from typing import Optional
 
 import requests
 
@@ -406,7 +389,7 @@ import requests
 class SyncthingClient:
     """Wraps the Syncthing REST API for device/folder management."""
 
-    def __init__(self, api_url: str = "http://127.0.0.1:8384", api_key: str | None = None):
+    def __init__(self, api_url: str = "http://127.0.0.1:8384", api_key: Optional[str] = None):
         self.api_url = api_url.rstrip("/")
         self.headers = {}
         if api_key:
@@ -498,15 +481,15 @@ class SyncthingClient:
         resp.raise_for_status()
 ```
 
-**Step 4: Run tests to verify they pass**
+**Step 5: Run tests to verify they pass**
 
 Run: `cd cli && pytest tests/test_syncthing.py -v`
 Expected: PASS
 
-**Step 5: Commit**
+**Step 6: Commit**
 
 ```bash
-git add cli/karma/syncthing.py cli/tests/test_syncthing.py
+git add cli/karma/syncthing.py cli/tests/test_syncthing.py cli/pyproject.toml
 git commit -m "feat: add SyncthingClient REST API wrapper"
 ```
 
@@ -596,7 +579,7 @@ Create `cli/karma/watcher.py`:
 
 import threading
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Optional
 
 from watchdog.events import FileSystemEventHandler, FileModifiedEvent, FileCreatedEvent
 from watchdog.observers import Observer
@@ -614,8 +597,8 @@ class SessionWatcher(FileSystemEventHandler):
         self.watch_dir = Path(watch_dir)
         self.package_fn = package_fn
         self.debounce_seconds = debounce_seconds
-        self._timer: threading.Timer | None = None
-        self._observer: Observer | None = None
+        self._timer: Optional[threading.Timer] = None
+        self._observer: Optional[Observer] = None
         self._lock = threading.Lock()
 
     @property
@@ -650,8 +633,9 @@ class SessionWatcher(FileSystemEventHandler):
         """Execute the packaging function."""
         try:
             self.package_fn()
-        except Exception:
-            pass  # Watcher should not crash on packaging errors
+        except Exception as e:
+            import sys
+            print(f"[karma watch] Packaging error: {e}", file=sys.stderr)
 
     def start(self):
         """Start watching the directory."""
@@ -788,13 +772,22 @@ Modify `cli/karma/main.py`:
 
 1. Add `--backend` option to `init` command:
 
+Replace the existing `init` command (keeping existing validation logic) to add `--backend` option:
+
 ```python
 @cli.command()
 @click.option("--user-id", prompt="Your user ID (e.g., your name)", help="Identity for syncing")
 @click.option("--backend", type=click.Choice(["ipfs", "syncthing"]), default=None, help="Sync backend")
-def init(user_id: str, backend: str | None):
+def init(user_id: str, backend: Optional[str]):
     """Initialize Karma sync on this machine."""
-    # ... existing validation ...
+    existing = SyncConfig.load()
+    if existing:
+        click.echo(f"Already initialized as '{existing.user_id}' on '{existing.machine_id}'.")
+        if not click.confirm("Reinitialize?"):
+            return
+
+    if not _SAFE_NAME.match(user_id):
+        raise click.ClickException("User ID must be alphanumeric, dash, or underscore only.")
 
     if backend == "syncthing":
         from karma.syncthing import SyncthingClient
@@ -811,8 +804,14 @@ def init(user_id: str, backend: str | None):
         config = SyncConfig(user_id=user_id)
         config.save()
         click.echo(f"Initialized as '{user_id}' on '{config.machine_id}'.")
-        click.echo("Next: install Kubo, start IPFS daemon, add a project.")
+        click.echo(f"Config saved to {SYNC_CONFIG_PATH}")
+        click.echo("\nNext steps:")
+        click.echo("  1. Install Kubo: https://docs.ipfs.tech/install/command-line/")
+        click.echo("  2. Start IPFS daemon: ipfs daemon &")
+        click.echo("  3. Add a project: karma project add <name> --path /path/to/project")
 ```
+
+> **Note:** Add `from typing import Optional` to the top of `main.py` if not already present.
 
 2. Add `team create` command:
 
@@ -845,9 +844,11 @@ def team_create(name: str, backend: str):
 @click.argument("name")
 @click.argument("identifier")
 @click.option("--team", "team_name", default=None, help="Team to add member to (for per-team config)")
-def team_add(name: str, identifier: str, team_name: str | None):
+def team_add(name: str, identifier: str, team_name: Optional[str]):
     """Add a team member by their IPNS key or Syncthing device ID."""
-    # ... validation ...
+    if not _SAFE_NAME.match(name):
+        raise click.ClickException("Team member name must be alphanumeric, dash, or underscore only.")
+
     config = require_config()
 
     if team_name and team_name in config.teams:
@@ -855,19 +856,29 @@ def team_add(name: str, identifier: str, team_name: str | None):
         team_cfg = config.teams[team_name]
         if team_cfg.backend == "syncthing":
             from karma.config import TeamMemberSyncthing
-            member = TeamMemberSyncthing(syncthing_device_id=identifier)
+            syncthing_members = dict(team_cfg.syncthing_members)
+            syncthing_members[name] = TeamMemberSyncthing(syncthing_device_id=identifier)
+            teams = dict(config.teams)
+            teams[team_name] = team_cfg.model_copy(update={"syncthing_members": syncthing_members})
         else:
-            member = TeamMember(ipns_key=identifier)
-        members = dict(team_cfg.members)
-        members[name] = member
-        teams = dict(config.teams)
-        teams[team_name] = team_cfg.model_copy(update={"members": members})
+            ipfs_members = dict(team_cfg.ipfs_members)
+            ipfs_members[name] = TeamMember(ipns_key=identifier)
+            teams = dict(config.teams)
+            teams[team_name] = team_cfg.model_copy(update={"ipfs_members": ipfs_members})
         updated = config.model_copy(update={"teams": teams})
         updated.save()
-        click.echo(f"Added '{name}' to team '{team_name}'")
+        click.echo(f"Added team member '{name}' to team '{team_name}'")
     else:
         # Legacy flat team dict (IPFS-only backward compat)
-        # ... existing logic ...
+        if not identifier or identifier.startswith("-") or len(identifier) > 128:
+            raise click.ClickException("Invalid IPNS key.")
+        if not re.match(r"^[a-zA-Z0-9]+$", identifier):
+            raise click.ClickException("Invalid IPNS key: must be alphanumeric only.")
+        members = dict(config.team)
+        members[name] = TeamMember(ipns_key=identifier)
+        updated = config.model_copy(update={"team": members})
+        updated.save()
+        click.echo(f"Added team member '{name}' ({identifier})")
 ```
 
 **Step 4: Run tests to verify they pass**
@@ -889,13 +900,57 @@ git commit -m "feat: add --backend flag to init, team create command, Syncthing-
 
 ---
 
-## Task 6: Add `karma watch` Command
+## Task 6: Add `karma watch` Command and `project add --team` Flag
 
 **Files:**
 - Modify: `cli/karma/main.py`
 - Add tests to: `cli/tests/test_cli_syncthing.py`
 
-**Step 1: Write the failing tests**
+**Step 1: First, modify `project add` to accept `--team` option**
+
+This must be done BEFORE writing the watch tests, since `TestWatchCommand` uses `project add --team`.
+
+Modify the `project_add` command in `cli/karma/main.py`:
+
+```python
+@project.command("add")
+@click.argument("name")
+@click.option("--path", required=True, help="Absolute path to the project directory")
+@click.option("--team", "team_name", default=None, help="Team to add project to")
+def project_add(name: str, path: str, team_name: Optional[str]):
+    """Add a project for syncing."""
+    if not _SAFE_NAME.match(name):
+        raise click.ClickException("Project name must be alphanumeric, dash, or underscore only.")
+
+    from pathlib import Path as _Path
+    if not _Path(path).is_absolute():
+        raise click.ClickException("Project path must be absolute (e.g., /Users/alice/my-project).")
+
+    config = require_config()
+    encoded = encode_project_path(path)
+    project_config = ProjectConfig(path=path, encoded_name=encoded)
+
+    if team_name:
+        if team_name not in config.teams:
+            raise click.ClickException(f"Team '{team_name}' not found.")
+        team_cfg = config.teams[team_name]
+        projects = dict(team_cfg.projects)
+        projects[name] = project_config
+        teams = dict(config.teams)
+        teams[team_name] = team_cfg.model_copy(update={"projects": projects})
+        updated = config.model_copy(update={"teams": teams})
+    else:
+        # Legacy flat projects
+        projects = dict(config.projects)
+        projects[name] = project_config
+        updated = config.model_copy(update={"projects": projects})
+
+    updated.save()
+    click.echo(f"Added project '{name}' ({path})")
+    click.echo(f"Encoded as: {encoded}")
+```
+
+**Step 2: Write the failing tests**
 
 Add to `cli/tests/test_cli_syncthing.py`:
 
@@ -1002,39 +1057,6 @@ def watch(team_name: str):
         click.echo("Done.")
 ```
 
-Also need to update `project add` to accept `--team` option:
-
-```python
-@project.command("add")
-@click.argument("name")
-@click.option("--path", required=True, help="Absolute path to the project directory")
-@click.option("--team", "team_name", default=None, help="Team to add project to")
-def project_add(name: str, path: str, team_name: str | None):
-    """Add a project for syncing."""
-    # ... existing validation ...
-    config = require_config()
-    encoded = encode_project_path(path)
-    project_config = ProjectConfig(path=path, encoded_name=encoded)
-
-    if team_name:
-        if team_name not in config.teams:
-            raise click.ClickException(f"Team '{team_name}' not found.")
-        team_cfg = config.teams[team_name]
-        projects = dict(team_cfg.projects)
-        projects[name] = project_config
-        teams = dict(config.teams)
-        teams[team_name] = team_cfg.model_copy(update={"projects": projects})
-        updated = config.model_copy(update={"teams": teams})
-    else:
-        # Legacy flat projects
-        projects = dict(config.projects)
-        projects[name] = project_config
-        updated = config.model_copy(update={"projects": projects})
-
-    updated.save()
-    click.echo(f"Added project '{name}' ({path})")
-```
-
 **Step 4: Run tests to verify they pass**
 
 Run: `cd cli && pytest tests/test_cli_syncthing.py -v`
@@ -1135,12 +1157,17 @@ git commit -m "feat: add karma status command showing teams and sync state"
 
 ---
 
-## Task 8: Add API Sync Status Endpoints
+## Task 8: Add API Sync Status Endpoints + Extend RemoteManifest
 
 **Files:**
 - Create: `api/routers/sync_status.py`
 - Create: `api/tests/api/test_sync_status.py`
 - Modify: `api/main.py` (register router)
+- Modify: `api/routers/remote_sessions.py` (add `sync_backend` to `RemoteManifest`)
+
+**Step 0: Extend RemoteManifest to accept `sync_backend`**
+
+In `api/routers/remote_sessions.py`, add `sync_backend: Optional[str] = None` to the `RemoteManifest` model so the API does not reject Syncthing-generated manifests that include this field.
 
 **Step 1: Write the failing tests**
 
@@ -1284,11 +1311,17 @@ async def sync_teams():
     return {"teams": teams}
 ```
 
-In `api/main.py`, add:
+In `api/main.py`, add `sync_status` to the existing block import and register the router following the existing pattern:
 
 ```python
-from routers.sync_status import router as sync_status_router
-app.include_router(sync_status_router)
+# Add to the existing block import:
+from routers import (
+    ...,
+    sync_status,
+)
+
+# Add alongside the other router registrations:
+app.include_router(sync_status.router)
 ```
 
 **Step 4: Run tests to verify they pass**
@@ -1314,13 +1347,15 @@ git commit -m "feat: add /sync/status and /sync/teams API endpoints"
 
 | Task | Component | Key Files | Tests |
 |------|-----------|-----------|-------|
-| 1 | Manifest extension | `manifest.py` | `test_packager.py` |
+| 1 | Manifest extension (verify only) | `manifest.py` | `test_packager.py` |
 | 2 | Per-team config | `config.py` | `test_config_teams.py` |
-| 3 | Syncthing client | `syncthing.py` | `test_syncthing.py` |
-| 4 | Filesystem watcher | `watcher.py` | `test_watcher.py` |
+| 3 | Syncthing client | `syncthing.py`, `pyproject.toml` | `test_syncthing.py` |
+| 4 | Filesystem watcher | `watcher.py`, `pyproject.toml` | `test_watcher.py` |
 | 5 | CLI init + team create | `main.py` | `test_cli_syncthing.py` |
-| 6 | CLI watch command | `main.py` | `test_cli_syncthing.py` |
+| 6 | CLI watch + project add --team | `main.py` | `test_cli_syncthing.py` |
 | 7 | CLI status command | `main.py` | `test_cli_syncthing.py` |
-| 8 | API sync endpoints | `sync_status.py` | `test_sync_status.py` |
+| 8 | API sync endpoints + RemoteManifest | `sync_status.py`, `remote_sessions.py`, `main.py` | `test_sync_status.py` |
 
-**Dependencies:** Task 1 → Task 2 → Tasks 3, 4 (parallel) → Tasks 5, 6, 7 (sequential) → Task 8
+**Dependencies:** Task 1 (verify) → Task 2 → Tasks 3, 4 (parallel) → Tasks 5, 6, 7 (sequential) → Task 8
+
+**Post-MVP:** Integration test for end-to-end flow (init → team create → project add → watch → outbox), Syncthing API key encryption at rest.
