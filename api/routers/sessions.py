@@ -53,6 +53,7 @@ from services.session_filter import (
     SearchScope,
     SessionFilter,
     SessionMetadata,
+    SessionSource,
     SessionStatus,
     determine_session_status,
 )
@@ -335,6 +336,7 @@ def get_all_sessions(
     branch: Optional[str] = None,
     scope: SearchScope = SearchScope.BOTH,
     status: SessionStatus = SessionStatus.ALL,
+    source: str = "all",
     start_ts: Optional[int] = None,
     end_ts: Optional[int] = None,
     page: int = 1,
@@ -402,6 +404,7 @@ def get_all_sessions(
                     branch=branch,
                     scope=scope,
                     status=status,
+                    source=source,
                     start_dt=start_dt,
                     end_dt=end_dt,
                     start_ts=start_ts,
@@ -420,6 +423,7 @@ def get_all_sessions(
             branch=branch,
             scope=scope,
             status=status,
+            source=source,
             start_dt=start_dt,
             end_dt=end_dt,
             start_ts=start_ts,
@@ -456,12 +460,13 @@ def _get_all_sessions_sqlite(
     branch,
     scope,
     status,
-    start_dt,
-    end_dt,
-    start_ts,
-    end_ts,
-    limit,
-    offset,
+    source=None,
+    start_dt=None,
+    end_dt=None,
+    start_ts=None,
+    end_ts=None,
+    limit=50,
+    offset=0,
 ) -> AllSessionsResponse:
     """
     SQLite-backed implementation of get_all_sessions.
@@ -481,6 +486,7 @@ def _get_all_sessions_sqlite(
             branch=branch,
             scope=scope.value if scope else "both",
             status=status.value if status else "all",
+            source=source or "all",
             start_dt=start_dt,
             end_dt=end_dt,
             limit=limit,
@@ -520,6 +526,9 @@ def _get_all_sessions_sqlite(
                 or title_cache.get_titles(row["project_encoded_name"], row["uuid"])
                 or [],
                 session_source=get_session_source(row["uuid"]),
+                source=row.get("source"),
+                remote_user_id=row.get("remote_user_id"),
+                remote_machine_id=row.get("remote_machine_id"),
             )
             sessions_with_context.append(session_context)
 
@@ -575,12 +584,13 @@ def _get_all_sessions_jsonl(
     branch,
     scope,
     status,
-    start_dt,
-    end_dt,
-    start_ts,
-    end_ts,
-    limit,
-    offset,
+    source=None,
+    start_dt=None,
+    end_dt=None,
+    start_ts=None,
+    end_ts=None,
+    limit=50,
+    offset=0,
 ) -> AllSessionsResponse:
     """
     Original JSONL-based implementation of get_all_sessions.
@@ -588,6 +598,13 @@ def _get_all_sessions_jsonl(
     Used as fallback when SQLite is unavailable or disabled.
     """
     all_sessions, project_options = _list_all_projects_with_sessions_optimized()
+
+    # Append remote sessions from Syncthing sync
+    from services.remote_sessions import iter_all_remote_session_metadata
+
+    for remote_meta in iter_all_remote_session_metadata():
+        all_sessions.append(remote_meta)
+
     project_options.sort(key=lambda p: p.session_count, reverse=True)
 
     search_lower = search.lower() if search else None
@@ -598,6 +615,7 @@ def _get_all_sessions_jsonl(
         search=search_lower,
         search_scope=scope,
         status=SessionStatus.ALL,
+        source=SessionSource(source) if source and source != "all" else SessionSource.ALL,
         date_from=start_dt,
         date_to=end_dt,
         project_encoded_name=project,
@@ -684,6 +702,9 @@ def _get_all_sessions_jsonl(
             git_branches=[meta.git_branch] if meta.git_branch else [],
             session_titles=session_titles,
             session_source=get_session_source(meta.uuid),
+            source=meta.source,
+            remote_user_id=meta.remote_user_id,
+            remote_machine_id=meta.remote_machine_id,
         )
         sessions_with_context.append(session_context)
 

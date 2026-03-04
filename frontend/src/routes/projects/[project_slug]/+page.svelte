@@ -87,6 +87,7 @@
 		filterSessionsByStatus,
 		filterSessionsByDateRange,
 		filterSessionsByBranch,
+		filterSessionsBySource,
 		createLiveSessionLookup,
 		calculateLiveStatusCounts,
 		createHistoricalSessionLookup,
@@ -719,6 +720,10 @@
 		filters.dateRange = range;
 	}
 
+	function handleSourceChange(source: SearchFilters['source']) {
+		filters.source = source;
+	}
+
 	function handleLiveSubStatusChange(statuses: LiveSubStatus[]) {
 		selectedLiveSubStatuses = statuses;
 	}
@@ -832,6 +837,9 @@
 			filters.customEnd
 		);
 
+		// Filter by source (local vs remote)
+		sessions = filterSessionsBySource(sessions, filters.source || 'all');
+
 		return sessions.length;
 	});
 
@@ -845,7 +853,8 @@
 		searchTokens.length > 0 ||
 			scopeSelectionToApi(scopeSelection) !== 'both' ||
 			filters.status !== 'all' ||
-			selectedBranchFilters.size > 0
+			selectedBranchFilters.size > 0 ||
+			(filters.source !== undefined && filters.source !== 'all')
 	);
 
 	// Clear server search results when search tokens are removed.
@@ -911,6 +920,9 @@
 			filters.customStart,
 			filters.customEnd
 		);
+
+		// Filter by source (local vs remote)
+		sessions = filterSessionsBySource(sessions, filters.source || 'all');
 
 		// Exclude sessions that appear in the "Recently Ended" section to avoid duplicates
 		const recentlyEndedUuids = new Set(recentlyEndedSessions.map((pair) => pair.session.uuid));
@@ -1153,6 +1165,8 @@
 										{liveStatusCounts}
 										{completedCount}
 										isLoading={isLoadingAllSessions || isServerSearching}
+										source={filters.source || 'all'}
+										onSourceChange={handleSourceChange}
 									/>
 								{/if}
 							</div>
@@ -1174,6 +1188,8 @@
 								onLiveSubStatusChange={handleLiveSubStatusChange}
 								{liveStatusCounts}
 								{completedCount}
+								source={filters.source || 'all'}
+								onSourceChange={handleSourceChange}
 							/>
 						{/if}
 

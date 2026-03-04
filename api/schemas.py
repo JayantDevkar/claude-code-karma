@@ -207,6 +207,19 @@ class SessionSummary(BaseModel):
         None,
         description="Session origin: 'desktop' for Claude Desktop, None for CLI",
     )
+    # Remote sync fields
+    source: Optional[str] = Field(
+        None,
+        description="Session source: 'local' or 'remote' (None defaults to local)",
+    )
+    remote_user_id: Optional[str] = Field(
+        None,
+        description="User ID of the remote machine that produced this session",
+    )
+    remote_machine_id: Optional[str] = Field(
+        None,
+        description="Machine ID of the remote machine that produced this session",
+    )
 
 
 class CompactionSummary(BaseModel):
@@ -705,7 +718,10 @@ class SkillDetailResponse(BaseModel):
     is_plugin: bool = Field(False, description="True if this is a plugin skill")
     plugin: Optional[str] = Field(None, description="Plugin name if is_plugin")
     file_path: Optional[str] = Field(None, description="Path to the skill file")
-    category: Optional[str] = Field(None, description="Invocation category (builtin_command, bundled_skill, plugin_skill, user_skill, unknown)")
+    category: Optional[str] = Field(
+        None,
+        description="Invocation category (builtin_command, bundled_skill, plugin_skill, user_skill, unknown)",
+    )
     calls: int = Field(0, description="Total invocations")
     main_calls: int = Field(0, description="Calls from main sessions")
     subagent_calls: int = Field(0, description="Calls from subagents")

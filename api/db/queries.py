@@ -61,6 +61,7 @@ def query_all_sessions(
     branch: Optional[str] = None,
     scope: str = "both",
     status: str = "all",
+    source: str = "all",
     start_dt: Optional[datetime] = None,
     end_dt: Optional[datetime] = None,
     limit: int = 200,
@@ -94,6 +95,10 @@ def query_all_sessions(
     if end_dt:
         conditions.append("s.end_time <= :end_dt")
         params["end_dt"] = end_dt.isoformat()
+
+    if source and source != "all":
+        conditions.append("s.source = :source")
+        params["source"] = source
 
     # Search via FTS5
     fts_join = ""
@@ -185,7 +190,8 @@ def query_all_sessions(
             s.input_tokens, s.output_tokens, s.total_cost,
             s.initial_prompt, s.git_branch, s.models_used,
             s.session_titles, s.is_continuation_marker, s.was_compacted,
-            s.subagent_count, s.session_source
+            s.subagent_count, s.session_source,
+            s.source, s.remote_user_id, s.remote_machine_id
         FROM sessions s
         {fts_join}
         {where}
@@ -615,7 +621,9 @@ def _query_item_detail(
     param_name = "item"
     item_param = {param_name: item_value}
 
-    mention_exclusion = f"AND {alias}.invocation_source != 'text_detection'" if track_mentions else ""
+    mention_exclusion = (
+        f"AND {alias}.invocation_source != 'text_detection'" if track_mentions else ""
+    )
 
     # Main session stats
     main_row = conn.execute(
@@ -671,7 +679,12 @@ def _query_item_detail(
             item_param,
         ).fetchone()[0]
 
-        if main_calls == 0 and sub_calls == 0 and mentioned_calls == 0 and command_triggered_calls == 0:
+        if (
+            main_calls == 0
+            and sub_calls == 0
+            and mentioned_calls == 0
+            and command_triggered_calls == 0
+        ):
             return None
     else:
         if main_calls == 0 and sub_calls == 0:
@@ -1102,7 +1115,8 @@ def query_project_sessions(
             s.initial_prompt, s.git_branch, s.session_titles,
             s.is_continuation_marker, s.was_compacted, s.input_tokens,
             s.output_tokens, s.total_cost, s.compaction_count,
-            s.session_source
+            s.session_source,
+            s.source, s.remote_user_id, s.remote_machine_id
         FROM sessions s
         {fts_join}
         WHERE {where}

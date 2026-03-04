@@ -10,7 +10,7 @@ import sqlite3
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 11
 
 SCHEMA_SQL = """
 -- Schema versioning
@@ -47,6 +47,9 @@ CREATE TABLE IF NOT EXISTS sessions (
     jsonl_size INTEGER DEFAULT 0,
     session_source TEXT,
     source_encoded_name TEXT,
+    source TEXT DEFAULT 'local',
+    remote_user_id TEXT,
+    remote_machine_id TEXT,
     indexed_at TEXT DEFAULT (datetime('now'))
 );
 
@@ -55,6 +58,7 @@ CREATE INDEX IF NOT EXISTS idx_sessions_start ON sessions(start_time DESC);
 CREATE INDEX IF NOT EXISTS idx_sessions_slug ON sessions(slug);
 CREATE INDEX IF NOT EXISTS idx_sessions_branch ON sessions(project_encoded_name, git_branch);
 CREATE INDEX IF NOT EXISTS idx_sessions_mtime ON sessions(jsonl_mtime);
+CREATE INDEX IF NOT EXISTS idx_sessions_source ON sessions(source);
 
 -- Full-text search (FTS5)
 -- This is an external content FTS5 table (content=sessions) that mirrors the sessions table.
@@ -415,9 +419,7 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             conn.execute("UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1")
 
         if current_version < 10:
-            logger.info(
-                "Migrating → v10: re-index skills for command_triggered invocation source"
-            )
+            logger.info("Migrating → v10: re-index skills for command_triggered invocation source")
             # Clear skill/command tables so they get repopulated with new linkage logic
             conn.execute("DELETE FROM session_skills")
             conn.execute("DELETE FROM session_commands")
@@ -425,6 +427,17 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             conn.execute("DELETE FROM subagent_commands")
             # Nudge mtime to force re-index of all sessions
             conn.execute("UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1")
+
+        if current_version < 11:
+            logger.info("Migrating → v11: adding remote session columns")
+            existing_cols = {r[1] for r in conn.execute("PRAGMA table_info(sessions)").fetchall()}
+            if "source" not in existing_cols:
+                conn.execute("ALTER TABLE sessions ADD COLUMN source TEXT DEFAULT 'local'")
+            if "remote_user_id" not in existing_cols:
+                conn.execute("ALTER TABLE sessions ADD COLUMN remote_user_id TEXT")
+            if "remote_machine_id" not in existing_cols:
+                conn.execute("ALTER TABLE sessions ADD COLUMN remote_machine_id TEXT")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_source ON sessions(source)")
 
     # Record version
     conn.execute(

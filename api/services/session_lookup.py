@@ -78,6 +78,17 @@ def find_session_with_project(uuid: str) -> Optional[SessionLookupResult]:
                     session=Session.from_path(jsonl_path),
                     project_encoded_name=encoded_dir.name,
                 )
+
+    # Remote fallback: search synced remote sessions
+    from services.remote_sessions import find_remote_session
+
+    remote = find_remote_session(uuid)
+    if remote:
+        return SessionLookupResult(
+            session=remote.session,
+            project_encoded_name=remote.local_encoded_name,
+        )
+
     return None
 
 
@@ -142,9 +153,7 @@ def find_session_by_message_uuid(message_uuid: str) -> Optional[SessionLookupRes
     return None
 
 
-def _find_session_jsonl(
-    projects_dir: Path, encoded_name: str, session_uuid: str
-) -> Optional[Path]:
+def _find_session_jsonl(projects_dir: Path, encoded_name: str, session_uuid: str) -> Optional[Path]:
     """
     Find a session JSONL file, searching the project dir and its worktree dirs.
 

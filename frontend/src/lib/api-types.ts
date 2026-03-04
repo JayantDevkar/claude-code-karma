@@ -247,7 +247,15 @@ export interface SessionSummary {
 	chain_title?: string;
 	/** Session origin: 'desktop' for Claude Desktop sessions, undefined for CLI */
 	session_source?: 'desktop' | null;
+	/** Session source: 'local' for this machine, 'remote' for synced from another machine */
+	source?: 'local' | 'remote';
+	/** User ID of the remote machine that produced this session */
+	remote_user_id?: string;
+	/** Machine ID of the remote machine that produced this session */
+	remote_machine_id?: string;
 }
+
+export type SessionSourceFilter = 'all' | 'local' | 'remote';
 
 /**
  * Structured compaction summary with trigger and token metadata.
@@ -1239,6 +1247,8 @@ export interface SearchFilters {
 	customEnd?: Date;
 	/** Live sub-statuses to show when status is 'live' or 'all' */
 	liveSubStatuses?: LiveSubStatus[];
+	/** Filter by session source: local, remote, or all */
+	source?: SessionSourceFilter;
 }
 
 /**
