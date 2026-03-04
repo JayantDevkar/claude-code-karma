@@ -51,7 +51,7 @@ class RemoteManifest(BaseModel):
 
 def _validate_path_segment(value: str, label: str) -> None:
     """Reject path segments that could escape the remote-sessions directory."""
-    if not _SAFE_NAME.match(value):
+    if not _SAFE_NAME.match(value) or value in (".", ".."):
         raise HTTPException(
             status_code=400,
             detail=f"Invalid {label}: must be alphanumeric, dash, underscore, or dot",
@@ -60,7 +60,7 @@ def _validate_path_segment(value: str, label: str) -> None:
 
 def _is_safe_dirname(name: str) -> bool:
     """Check if a directory name is safe for path construction."""
-    return bool(_SAFE_NAME.match(name))
+    return bool(_SAFE_NAME.match(name)) and name not in (".", "..")
 
 
 def _load_manifest_safe(user_id: str, project: str) -> Optional[dict]:
@@ -97,7 +97,7 @@ def list_remote_users() -> list[RemoteUser]:
 
     users = []
     for user_dir in sorted(REMOTE_SESSIONS_DIR.iterdir()):
-        if not user_dir.is_dir():
+        if not user_dir.is_dir() or not _is_safe_dirname(user_dir.name):
             continue
         project_count = 0
         total_sessions = 0
@@ -145,7 +145,10 @@ def list_user_sessions(user_id: str, project: str) -> list[RemoteSessionSummary]
     if not manifest:
         raise HTTPException(status_code=404, detail="Manifest not found")
 
-    return [RemoteSessionSummary(**s) for s in manifest.get("sessions", [])]
+    try:
+        return [RemoteSessionSummary(**s) for s in manifest.get("sessions", [])]
+    except ValidationError:
+        raise HTTPException(status_code=422, detail="Malformed session data in manifest") from None
 
 
 @router.get("/users/{user_id}/projects/{project}/manifest", response_model=RemoteManifest)

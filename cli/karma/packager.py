@@ -34,6 +34,8 @@ class SessionPackager:
             if jsonl_path.name.startswith("agent-"):
                 continue
             stat = jsonl_path.stat()
+            if stat.st_size == 0:
+                continue
             entries.append(
                 SessionEntry(
                     uuid=jsonl_path.stem,
