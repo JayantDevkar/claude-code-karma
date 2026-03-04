@@ -147,7 +147,11 @@ def pull_remote_sessions(
                             shutil.rmtree(dest)
                         else:
                             dest.unlink()
-                    shutil.move(str(item), str(dest))
+                    if item.is_dir():
+                        # Use copytree with symlinks=False to avoid preserving nested symlinks
+                        shutil.copytree(str(item), str(dest), symlinks=False)
+                    else:
+                        shutil.move(str(item), str(dest))
 
             results.append({"member": member_name, "cid": cid, "status": "ok"})
         except Exception as e:
