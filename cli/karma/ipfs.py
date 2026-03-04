@@ -57,12 +57,12 @@ class IPFSClient:
     def get(self, cid: str, output_path: str) -> None:
         """Fetch content by CID to local path."""
         _validate_cid(cid)
-        self._run(["get", "--", cid, "-o", output_path])
+        self._run(["get", "-o", output_path, "--", cid])
 
     def pin_add(self, cid: str) -> None:
         """Pin a CID to prevent garbage collection."""
         _validate_cid(cid)
-        self._run(["pin", "add", cid])
+        self._run(["pin", "add", "--", cid])
 
     def pin_ls(self) -> dict:
         """List pinned CIDs."""
@@ -73,7 +73,7 @@ class IPFSClient:
     def name_publish(self, cid: str, key: Optional[str] = None) -> str:
         """Publish CID to IPNS. Returns publish confirmation."""
         _validate_cid(cid)
-        args = ["name", "publish", f"/ipfs/{cid}"]
+        args = ["name", "publish", "--", f"/ipfs/{cid}"]
         if key:
             if not _SAFE_KEY_RE.match(key):
                 raise ValueError(f"Invalid key name: {key!r}")

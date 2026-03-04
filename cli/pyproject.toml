@@ -10,7 +10,6 @@ requires-python = ">=3.9"
 dependencies = [
     "click>=8.0",
     "pydantic>=2.0",
-    "pydantic-settings>=2.0.0",
 ]
 
 [project.optional-dependencies]

@@ -67,8 +67,11 @@ class SyncConfig(BaseModel):
         """Load config from disk. Returns None if not initialized."""
         if not SYNC_CONFIG_PATH.exists():
             return None
-        data = json.loads(SYNC_CONFIG_PATH.read_text())
-        return SyncConfig(**data)
+        try:
+            data = json.loads(SYNC_CONFIG_PATH.read_text())
+            return SyncConfig(**data)
+        except (json.JSONDecodeError, ValueError) as e:
+            raise RuntimeError(f"Corrupt config at {SYNC_CONFIG_PATH}: {e}") from e
 
     def save(self) -> None:
         """Persist config to disk."""

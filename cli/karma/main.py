@@ -13,7 +13,10 @@ _SAFE_NAME = re.compile(r"^[a-zA-Z0-9_\-]+$")
 
 def require_config() -> SyncConfig:
     """Load config or exit with helpful message."""
-    config = SyncConfig.load()
+    try:
+        config = SyncConfig.load()
+    except RuntimeError as e:
+        raise click.ClickException(str(e))
     if config is None:
         raise click.ClickException("Not initialized. Run: karma init")
     return config
@@ -207,12 +210,15 @@ def list_remote():
                 continue
             manifest_path = project_dir / "manifest.json"
             if manifest_path.exists():
-                manifest = json.loads(manifest_path.read_text())
-                click.echo(
-                    f"  {project_dir.name}: "
-                    f"{manifest.get('session_count', '?')} sessions "
-                    f"(synced {manifest.get('synced_at', '?')})"
-                )
+                try:
+                    manifest = json.loads(manifest_path.read_text())
+                    click.echo(
+                        f"  {project_dir.name}: "
+                        f"{manifest.get('session_count', '?')} sessions "
+                        f"(synced {manifest.get('synced_at', '?')})"
+                    )
+                except (json.JSONDecodeError, OSError):
+                    click.echo(f"  {project_dir.name}: (corrupt manifest)")
             else:
                 click.echo(f"  {project_dir.name}: (no manifest)")
 
