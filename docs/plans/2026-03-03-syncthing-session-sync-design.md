@@ -36,7 +36,7 @@ Enable cross-system session sharing using Syncthing as a pluggable sync backend 
   │  Mac Mini    │  │  Windows     │  │    Mac Mini           │
   └──────┬───────┘  └──────┬───────┘  └──────────┬───────────┘
          │                 │                      │
-    sync-outbox/      sync-outbox/          sync-inbox/
+    remote-sessions/  remote-sessions/      sync-inbox/
     (auto-packaged)   (auto-packaged)       (auto-received)
          │                 │                      │
          └────────────┬────┘                      │
@@ -72,23 +72,22 @@ The packaging format is identical to the IPFS design so the API reads both the s
 
 ```
 ~/.claude_karma/
-├── sync-outbox/                    # Freelancer → Owner (Syncthing watches this)
-│   └── {team}/
-│       └── {user-id}/
-│           └── {project-encoded-name}/
-│               ├── manifest.json
-│               ├── sessions/
-│               │   ├── {uuid1}.jsonl
-│               │   ├── {uuid2}.jsonl
-│               │   ├── {uuid1}/
-│               │   │   ├── subagents/
-│               │   │   │   └── agent-*.jsonl
-│               │   │   └── tool-results/
-│               │   │       └── toolu_*.txt
-│               │   └── {uuid2}/
-│               │       └── ...
-│               └── todos/
-│                   └── {uuid1}-*.json
+├── remote-sessions/                # Both backends write here, API reads from here
+│   └── {user-id}/
+│       └── {project-encoded-name}/
+│           ├── manifest.json
+│           ├── sessions/
+│           │   ├── {uuid1}.jsonl
+│           │   ├── {uuid2}.jsonl
+│           │   ├── {uuid1}/
+│           │   │   ├── subagents/
+│           │   │   │   └── agent-*.jsonl
+│           │   │   └── tool-results/
+│           │   │       └── toolu_*.txt
+│           │   └── {uuid2}/
+│           │       └── ...
+│           └── todos/
+│               └── {uuid1}-*.json
 │
 ├── sync-inbox/                     # Owner → Freelancer (bidirectional)
 │   └── {team}/
@@ -98,13 +97,6 @@ The packaging format is identical to the IPFS design so the API reads both the s
 │                   ├── {session-uuid}.json    # Per-session annotations
 │                   └── project-notes.json     # General project notes
 │
-├── remote-sessions/                # API reads from here (both backends land here)
-│   └── {user-id}/
-│       └── {project-encoded-name}/
-│           ├── manifest.json
-│           └── sessions/
-│               └── ...
-│
 └── sync-config.json
 ```
 
@@ -112,7 +104,7 @@ The packaging format is identical to the IPFS design so the API reads both the s
 
 | Syncthing Folder | Path | Freelancer Side | Owner Side |
 |---|---|---|---|
-| `karma-out-{user-id}` | `sync-outbox/{team}/{user-id}/` | `sendonly` | `receiveonly` |
+| `karma-out-{user-id}` | `remote-sessions/{user-id}/` | `sendonly` | `receiveonly` |
 | `karma-in-{owner-id}` | `sync-inbox/{team}/{owner-id}/` | `receiveonly` | `sendonly` |
 
 ### manifest.json
@@ -178,7 +170,7 @@ karma project add acme-app --path /Users/alice/work/acme-app --team alpha
 # Start the background watcher (packages sessions automatically)
 karma watch
 # Uses watchdog library to monitor ~/.claude/projects/{encoded-path}/
-# On file change → re-packages into sync-outbox/
+# On file change → re-packages into remote-sessions/
 # Debounces: waits 5 seconds of no changes before packaging
 
 # Stop the watcher
@@ -205,7 +197,7 @@ karma team remove alice
 |---|---|---|
 | `karma init` | Checks Kubo, imports swarm key | Checks Syncthing REST API |
 | `karma project add` | Stores config | Stores config + creates Syncthing folder |
-| `karma sync` | Packages + ipfs add + IPNS publish | Packages into sync-outbox (Syncthing handles rest) |
+| `karma sync` | Packages + ipfs add + IPNS publish | Packages into remote-sessions/ (Syncthing handles rest) |
 | `karma watch` | N/A (IPFS is on-demand) | Starts filesystem watcher |
 | `karma team add` | Stores IPNS key | Pairs Syncthing device + shares folders |
 | `karma pull` | Resolves IPNS + ipfs get | N/A (Syncthing auto-syncs) |
@@ -327,7 +319,7 @@ class SessionWatcher(FileSystemEventHandler):
         self._timer.start()
 ```
 
-The watcher monitors `~/.claude/projects/` for JSONL changes, debounces for 5 seconds, then packages into `sync-outbox/`. Syncthing picks up the changes automatically.
+The watcher monitors `~/.claude/projects/` for JSONL changes, debounces for 5 seconds, then packages into `remote-sessions/{user-id}/{project}/`. Syncthing picks up the changes automatically.
 
 ### Onboarding Flow
 

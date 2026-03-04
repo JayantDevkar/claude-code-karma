@@ -1022,7 +1022,8 @@ def watch(team_name: str):
             click.echo(f"  Skipping '{proj_name}': Claude dir not found ({claude_dir})")
             continue
 
-        outbox = KARMA_BASE / "sync-outbox" / team_name / config.user_id / proj.encoded_name
+        # team_name intentionally excluded — user_id provides namespace isolation
+        outbox = KARMA_BASE / "remote-sessions" / config.user_id / proj.encoded_name
 
         def make_package_fn(cd=claude_dir, ob=outbox, pn=proj_name):
             def package():
