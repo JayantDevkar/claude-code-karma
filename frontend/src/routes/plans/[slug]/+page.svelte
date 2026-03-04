@@ -4,9 +4,13 @@
 	import PageHeader from '$lib/components/layout/PageHeader.svelte';
 	import Card from '$lib/components/ui/Card.svelte';
 	import { PlanViewer } from '$lib/components/plan';
+	import { navigating } from '$app/stores';
+	import { PlanDetailSkeleton } from '$lib/components/skeleton';
 
 	// Server data
 	let { data } = $props();
+
+	let isLoading = $derived(!!$navigating && $navigating.to?.route.id === '/plans/[slug]');
 
 	// Format timestamp for display
 	function formatTime(dateStr: string): string {
@@ -44,6 +48,11 @@
 </script>
 
 <div class="space-y-6">
+	{#if isLoading}
+		<div role="status" aria-busy="true" aria-label="Loading...">
+			<PlanDetailSkeleton />
+		</div>
+	{:else}
 	<!-- Page Header with Breadcrumb -->
 	<PageHeader
 		title={data.plan.title || data.slug}
@@ -152,4 +161,5 @@
 			<PlanViewer plan={data.plan} embedded={true} stripFirstH1={true} />
 		</div>
 	</Card>
+	{/if}
 </div>

@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { browser } from '$app/environment';
 	import { replaceState } from '$app/navigation';
-	import { page } from '$app/stores';
+	import { page, navigating } from '$app/stores';
+	import { AgentDetailSkeleton } from '$lib/components/skeleton';
 	import {
 		Bot,
 		Play,
@@ -72,6 +73,8 @@
 	} from '$lib/api-types';
 
 	let { data } = $props();
+
+	let isLoading = $derived(!!$navigating && $navigating.to?.route.id === '/agents/[name]');
 
 	// Tab state
 	let activeTab = $state<'overview' | 'activity' | 'history'>('overview');
@@ -453,6 +456,11 @@
 </script>
 
 <div class="space-y-8">
+	{#if isLoading}
+		<div role="status" aria-busy="true" aria-label="Loading...">
+			<AgentDetailSkeleton />
+		</div>
+	{:else}
 	<!-- Page Header -->
 	<PageHeader
 		title={data.detail?.agent_name ?? data.subagentType}
@@ -1194,5 +1202,6 @@
 				/>
 			{/if}
 		</div>
+	{/if}
 	{/if}
 </div>

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { FolderOpen, GitBranch, Activity, Search, ChevronDown, ChevronUp } from 'lucide-svelte';
+	import { navigating } from '$app/stores';
 	import type { Project } from '$lib/api-types';
 	import { groupProjects } from '$lib/utils/grouped-projects';
 	import ProjectTreeGroup from '$lib/components/ProjectTreeGroup.svelte';
@@ -7,9 +8,13 @@
 	import PageHeader from '$lib/components/layout/PageHeader.svelte';
 	import { projectTreeStore } from '$lib/stores/project-tree-store';
 	import { listNavigation } from '$lib/actions/listNavigation';
+	import SkeletonBox from '$lib/components/skeleton/SkeletonBox.svelte';
+	import SkeletonText from '$lib/components/skeleton/SkeletonText.svelte';
 
 	let { data } = $props();
 	const allProjects = $derived(data.projects as Project[]);
+
+	let isPageLoading = $derived(!!$navigating && $navigating.to?.route.id === '/projects');
 
 	// Subscribe to store state for expand/collapse tracking
 	const storeState = $derived($projectTreeStore);
@@ -190,6 +195,46 @@
 </script>
 
 <div use:listNavigation>
+	{#if isPageLoading}
+		<div class="space-y-8" role="status" aria-busy="true" aria-label="Loading...">
+			<!-- Header skeleton -->
+			<div class="mb-8 flex items-end justify-between">
+				<div>
+					<SkeletonText width="120px" size="xl" class="mb-1" />
+					<SkeletonText width="200px" size="sm" />
+				</div>
+				<div class="flex items-center gap-4">
+					{#each Array(3) as _}
+						<SkeletonBox width="90px" height="28px" rounded="md" />
+					{/each}
+				</div>
+			</div>
+
+			<!-- Search and filters skeleton -->
+			<div class="mb-6 flex flex-col sm:flex-row gap-2">
+				<SkeletonBox width="100%" height="36px" rounded="md" class="flex-1" />
+				<SkeletonBox width="150px" height="36px" rounded="md" />
+				<SkeletonBox width="120px" height="36px" rounded="md" />
+			</div>
+
+			<!-- Project tree groups skeleton -->
+			<div class="space-y-4">
+				{#each Array(3) as _}
+					<div class="flex items-center gap-3 p-3 bg-[var(--bg-subtle)] border border-[var(--border)] rounded-lg">
+						<SkeletonBox width="24px" height="24px" rounded="md" />
+						<SkeletonText width="200px" size="sm" />
+						<div class="flex-1"></div>
+						<SkeletonBox width="50px" height="20px" rounded="full" />
+					</div>
+					<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 pl-4">
+						{#each Array(3) as _}
+							<SkeletonBox height="140px" rounded="md" />
+						{/each}
+					</div>
+				{/each}
+			</div>
+		</div>
+	{:else}
 	<!-- Page Header with Breadcrumb -->
 	<PageHeader
 		title="Projects"
@@ -498,6 +543,7 @@
 					: 'Start using Claude Code to see your projects here'}
 			</p>
 		</div>
+	{/if}
 	{/if}
 </div>
 

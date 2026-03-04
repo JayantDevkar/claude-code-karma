@@ -3,7 +3,10 @@
 	import { browser } from '$app/environment';
 	import { Activity, Zap, Database, Cpu, FolderOpen, Clock, BarChart3 } from 'lucide-svelte';
 	import { goto } from '$app/navigation';
-	import { page } from '$app/stores';
+	import { page, navigating } from '$app/stores';
+	import SkeletonBox from '$lib/components/skeleton/SkeletonBox.svelte';
+	import SkeletonText from '$lib/components/skeleton/SkeletonText.svelte';
+	import SkeletonStatsCard from '$lib/components/skeleton/SkeletonStatsCard.svelte';
 	import { getChartColorPalette } from '$lib/components/charts/chartConfig';
 	import TimeFilterDropdown from '$lib/components/TimeFilterDropdown.svelte';
 	import PageHeader from '$lib/components/layout/PageHeader.svelte';
@@ -267,6 +270,8 @@
 		}
 	]);
 
+	let isPageLoading = $derived(!!$navigating && $navigating.to?.route.id === '/analytics');
+
 	// --- Collapsible Group State ---
 	const groupKeys = ['velocity', 'efficiency', 'rhythm'] as const;
 	let expandedGroups = $state<Set<string>>(new Set(groupKeys));
@@ -351,6 +356,84 @@
 </script>
 
 <div class="max-w-[1100px] mx-auto space-y-6">
+	{#if isPageLoading}
+		<div class="space-y-6" role="status" aria-busy="true" aria-label="Loading...">
+			<!-- Page Header skeleton -->
+			<div class="flex items-start justify-between">
+				<div>
+					<div class="flex items-center gap-2 mb-2">
+						<SkeletonText width="70px" size="xs" />
+						<span class="text-[var(--text-muted)]">/</span>
+						<SkeletonText width="80px" size="xs" />
+					</div>
+					<div class="flex items-center gap-4">
+						<SkeletonBox width="48px" height="48px" rounded="lg" />
+						<div>
+							<SkeletonText width="120px" size="xl" class="mb-2" />
+							<SkeletonText width="260px" size="sm" />
+						</div>
+					</div>
+				</div>
+				<SkeletonBox width="140px" height="36px" rounded="md" />
+			</div>
+
+			<!-- Hero Stats skeleton (3 cols) -->
+			<div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+				{#each Array(3) as _}
+					<SkeletonStatsCard />
+				{/each}
+			</div>
+
+			<!-- Velocity group skeleton -->
+			<div class="border border-[var(--border)] rounded-[var(--radius-lg)] overflow-hidden bg-[var(--bg-base)]">
+				<div class="flex items-center gap-3 px-4 py-4">
+					<SkeletonBox width="32px" height="32px" rounded="md" />
+					<SkeletonText width="100px" size="sm" />
+					<div class="flex-1"></div>
+					<SkeletonText width="80px" size="xs" />
+				</div>
+				<div class="border-t border-[var(--border)] p-4">
+					<SkeletonBox height="160px" rounded="lg" />
+				</div>
+			</div>
+
+			<!-- Efficiency group skeleton -->
+			<div class="border border-[var(--border)] rounded-[var(--radius-lg)] overflow-hidden bg-[var(--bg-base)]">
+				<div class="flex items-center gap-3 px-4 py-4">
+					<SkeletonBox width="32px" height="32px" rounded="md" />
+					<SkeletonText width="100px" size="sm" />
+					<div class="flex-1"></div>
+					<SkeletonText width="80px" size="xs" />
+				</div>
+				<div class="border-t border-[var(--border)] p-4">
+					<div class="grid grid-cols-1 lg:grid-cols-4 gap-4">
+						{#each Array(4) as _}
+							<SkeletonBox height="120px" rounded="lg" />
+						{/each}
+					</div>
+				</div>
+			</div>
+
+			<!-- Rhythm group skeleton -->
+			<div class="border border-[var(--border)] rounded-[var(--radius-lg)] overflow-hidden bg-[var(--bg-base)]">
+				<div class="flex items-center gap-3 px-4 py-4">
+					<SkeletonBox width="32px" height="32px" rounded="md" />
+					<SkeletonText width="80px" size="sm" />
+					<div class="flex-1"></div>
+					<SkeletonText width="80px" size="xs" />
+				</div>
+				<div class="border-t border-[var(--border)] p-4 space-y-3">
+					{#each Array(4) as _}
+						<div class="flex items-center gap-3">
+							<SkeletonText width="80px" size="xs" />
+							<SkeletonBox height="6px" rounded="full" class="flex-1" />
+							<SkeletonText width="80px" size="xs" />
+						</div>
+					{/each}
+				</div>
+			</div>
+		</div>
+	{:else}
 	<!-- Page Header with Breadcrumb -->
 	<PageHeader
 		title="Analytics"
@@ -649,4 +732,5 @@
 			</div>
 		</div>
 	</CollapsibleGroup>
+	{/if}
 </div>

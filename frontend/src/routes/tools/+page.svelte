@@ -10,8 +10,12 @@
 		ExternalLink,
 		Puzzle
 	} from 'lucide-svelte';
+	import { navigating } from '$app/stores';
 	import { listNavigation } from '$lib/actions/listNavigation';
 	import PageHeader from '$lib/components/layout/PageHeader.svelte';
+	import SkeletonBox from '$lib/components/skeleton/SkeletonBox.svelte';
+	import SkeletonText from '$lib/components/skeleton/SkeletonText.svelte';
+	import SkeletonStatsCard from '$lib/components/skeleton/SkeletonStatsCard.svelte';
 	import StatsGrid from '$lib/components/StatsGrid.svelte';
 	import SegmentedControl from '$lib/components/ui/SegmentedControl.svelte';
 	import CollapsibleGroup from '$lib/components/ui/CollapsibleGroup.svelte';
@@ -186,9 +190,86 @@
 
 	let hasServers = $derived(data.overview.servers.length > 0);
 	let hasFiltered = $derived(filteredServers.length > 0);
+
+	let isPageLoading = $derived(!!$navigating && $navigating.to?.route.id === '/tools');
 </script>
 
 <div class="space-y-8">
+	{#if isPageLoading}
+		<div class="space-y-8" role="status" aria-busy="true" aria-label="Loading...">
+			<!-- Page Header skeleton -->
+			<div>
+				<div class="flex items-center gap-2 mb-2">
+					<SkeletonText width="70px" size="xs" />
+					<span class="text-[var(--text-muted)]">/</span>
+					<SkeletonText width="50px" size="xs" />
+				</div>
+				<div class="flex items-center gap-4">
+					<SkeletonBox width="48px" height="48px" rounded="lg" />
+					<div>
+						<SkeletonText width="80px" size="xl" class="mb-2" />
+						<SkeletonText width="300px" size="sm" />
+					</div>
+				</div>
+			</div>
+
+			<!-- Hero Stats skeleton -->
+			<div
+				class="relative overflow-hidden rounded-2xl p-8 border border-[var(--border)]"
+				style="background: linear-gradient(135deg, rgba(8, 145, 178, 0.02) 0%, rgba(8, 145, 178, 0.06) 100%);"
+			>
+				<div class="relative grid grid-cols-1 sm:grid-cols-4 gap-4">
+					{#each Array(4) as _}
+						<SkeletonStatsCard />
+					{/each}
+				</div>
+			</div>
+
+			<!-- Filters row skeleton -->
+			<div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+				<div class="flex items-center gap-3 flex-wrap">
+					<div class="flex gap-1">
+						{#each Array(3) as _}
+							<SkeletonBox width="100px" height="36px" rounded="lg" />
+						{/each}
+					</div>
+					<div class="flex gap-1">
+						{#each Array(4) as _}
+							<SkeletonBox width="80px" height="32px" rounded="lg" />
+						{/each}
+					</div>
+				</div>
+				<div class="flex items-center gap-3">
+					<SkeletonBox width="256px" height="40px" rounded="lg" />
+					<SkeletonBox width="120px" height="40px" rounded="lg" />
+				</div>
+			</div>
+
+			<!-- Collapsible server groups skeleton -->
+			<div class="space-y-4">
+				{#each Array(3) as _, groupIndex}
+					<div class="border border-[var(--border)] rounded-[var(--radius-lg)] overflow-hidden bg-[var(--bg-base)]">
+						<div class="flex items-center gap-3 px-4 py-4">
+							<SkeletonBox width="16px" height="16px" rounded="sm" />
+							<SkeletonBox width="32px" height="32px" rounded="md" />
+							<SkeletonText width="160px" size="sm" />
+							<div class="flex-1"></div>
+							<SkeletonText width="80px" size="xs" />
+						</div>
+						{#if groupIndex === 0}
+							<div class="border-t border-[var(--border)] p-4">
+								<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+									{#each Array(4) as _}
+										<SkeletonBox height="100px" rounded="md" />
+									{/each}
+								</div>
+							</div>
+						{/if}
+					</div>
+				{/each}
+			</div>
+		</div>
+	{:else}
 	<!-- Page Header -->
 	<PageHeader
 		title="Tools"
@@ -452,5 +533,6 @@
 				</CollapsibleGroup>
 			{/each}
 		</div>
+	{/if}
 	{/if}
 </div>

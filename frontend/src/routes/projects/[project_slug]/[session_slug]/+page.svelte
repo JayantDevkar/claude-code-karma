@@ -8,6 +8,8 @@
 		PlanDetail
 	} from '$lib/api-types';
 	import { AlertTriangle, ArrowLeft } from 'lucide-svelte';
+	import { navigating } from '$app/stores';
+	import { SessionDetailSkeleton } from '$lib/components/skeleton';
 
 	let { data } = $props();
 
@@ -15,9 +17,18 @@
 	let session = $derived(data.session as SessionDetail | null);
 	let plan = $derived(data.plan as PlanDetail | null);
 	let error = $derived(data.error as string | null);
+
+	let isLoading = $derived(
+		!!$navigating &&
+			$navigating.to?.route.id === '/projects/[project_slug]/[session_slug]'
+	);
 </script>
 
-{#if error}
+{#if isLoading}
+	<div role="status" aria-busy="true" aria-label="Loading...">
+		<SessionDetailSkeleton />
+	</div>
+{:else if error}
 	<div class="flex flex-col items-center justify-center min-h-[60vh] p-8">
 		<div class="flex flex-col items-center gap-4 max-w-md text-center">
 			<div

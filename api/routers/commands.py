@@ -28,8 +28,10 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# Reuse the same safe path pattern from skills router
+# File path validation — no colons allowed
 ALLOWED_PATH_PATTERN = re.compile(r"^[a-zA-Z0-9_\-./]+$")
+# Command name validation — allows ':' for plugin commands (e.g. feature-dev:feature-dev)
+ALLOWED_COMMAND_NAME_PATTERN = re.compile(r"^[a-zA-Z0-9_\-./:]+$")
 
 
 def get_settings() -> Settings:
@@ -263,7 +265,7 @@ def get_command_usage_trend(
 
 def _validate_command_name(command_name: str) -> None:
     """Validate command_name to prevent path traversal and injection."""
-    if not command_name or not ALLOWED_PATH_PATTERN.match(command_name):
+    if not command_name or not ALLOWED_COMMAND_NAME_PATTERN.match(command_name):
         raise HTTPException(status_code=400, detail="Invalid command name")
     if ".." in command_name:
         raise HTTPException(status_code=400, detail="Path traversal not allowed")
@@ -327,14 +329,14 @@ async def get_command_detail(
 ):
     """Get detailed command info with usage stats, trend, and session list."""
     _validate_command_name(command_name)
-    from command_helpers import classify_invocation, get_command_description
+    from command_helpers import classify_invocation, get_bundled_skill_prompt, get_command_description
     from db.connection import sqlite_read
     from db.queries import query_command_detail
 
     category = classify_invocation(command_name)
     description = get_command_description(command_name)
 
-    # Try to get file content for user commands
+    # Resolve content based on category
     content = None
     file_path = None
     if category == "user_command":
@@ -358,6 +360,36 @@ async def get_command_detail(
                 file_path = str(cmd_file)
             except Exception:
                 pass
+    elif category in ("plugin_command", "plugin_skill"):
+        # Resolve plugin command/skill content via skills info resolver
+        try:
+            from routers.skills import _resolve_skill_info
+            skill_info = await _resolve_skill_info(command_name, config)
+            content = skill_info.content
+            description = description or skill_info.description
+            file_path = skill_info.file_path
+        except Exception:
+            pass
+    elif category == "bundled_skill":
+        # Extract bundled skill prompt from cli.js
+        try:
+            content = get_bundled_skill_prompt(command_name)
+        except Exception:
+            pass
+    elif category == "custom_skill":
+        # User SKILL.md files in ~/.claude/skills/
+        try:
+            skill_file = config.claude_base / "skills" / command_name / "SKILL.md"
+            if skill_file.is_file():
+                content = await run_in_thread(safe_read_file, skill_file, settings.max_skill_size)
+                file_path = str(skill_file)
+        except Exception:
+            pass
+    elif category == "builtin_command":
+        # Built-in CLI commands don't have prompts but we provide descriptions
+        from command_helpers import BUILTIN_COMMAND_DESCRIPTIONS
+        if not description:
+            description = BUILTIN_COMMAND_DESCRIPTIONS.get(command_name)
 
     # Get usage stats from SQLite
     usage_data = None

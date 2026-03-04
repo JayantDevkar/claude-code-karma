@@ -15,7 +15,19 @@
 
 	let { commands, projectEncodedName }: Props = $props();
 
-	let sortedCommands = $derived([...commands].sort((a, b) => b.count - a.count));
+	// Deduplicate commands by name (same command can appear multiple times with different invocation_source)
+	let sortedCommands = $derived.by(() => {
+		const merged = new Map<string, CommandUsage>();
+		for (const cmd of commands) {
+			const existing = merged.get(cmd.name);
+			if (existing) {
+				merged.set(cmd.name, { ...existing, count: existing.count + cmd.count });
+			} else {
+				merged.set(cmd.name, { ...cmd });
+			}
+		}
+		return [...merged.values()].sort((a, b) => b.count - a.count);
+	});
 
 	// Modal state
 	let modalOpen = $state(false);

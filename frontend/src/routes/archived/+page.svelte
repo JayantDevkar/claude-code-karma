@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { browser } from '$app/environment';
-	import { page } from '$app/stores';
+	import { page, navigating } from '$app/stores';
 	import { History, Search, Archive, FolderOpen, MessageSquare } from 'lucide-svelte';
+	import { ArchivedPageSkeleton } from '$lib/components/skeleton';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import ArchivedProjectGroup from '$lib/components/ArchivedProjectGroup.svelte';
 	import PageHeader from '$lib/components/layout/PageHeader.svelte';
@@ -10,6 +11,8 @@
 
 	let { data } = $props();
 	let archived = $derived(data.archived as ArchivedPromptsResponse);
+
+	let isLoading = $derived(!!$navigating && $navigating.to?.route.id === '/archived');
 
 	// Search state — initialized from URL on mount
 	let searchInput = $state(browser ? ($page.url.searchParams.get('search') ?? '') : '');
@@ -128,6 +131,11 @@
 </script>
 
 <div class="space-y-6">
+	{#if isLoading}
+		<div role="status" aria-busy="true" aria-label="Loading...">
+			<ArchivedPageSkeleton />
+		</div>
+	{:else}
 	<!-- Page Header with inline stat badges -->
 	<PageHeader
 		title="Archived"
@@ -246,5 +254,6 @@
 				before you changed this setting would appear here.
 			</p>
 		</EmptyState>
+	{/if}
 	{/if}
 </div>

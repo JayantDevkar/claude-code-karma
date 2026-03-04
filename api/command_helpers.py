@@ -154,6 +154,54 @@ BUNDLED_SKILL_COMMANDS = frozenset(
 # Combined set for quick membership checks (is this name from Claude Code itself?)
 _ALL_CLAUDE_CODE_COMMANDS: frozenset[str] = BUILTIN_CLI_COMMANDS | BUNDLED_SKILL_COMMANDS
 
+# Human-readable descriptions for built-in CLI commands (no prompt content)
+BUILTIN_COMMAND_DESCRIPTIONS: dict[str, str] = {
+    "exit": "End the current session",
+    "clear": "Clear the conversation display",
+    "compact": "Compact conversation context to reduce token usage",
+    "resume": "Resume a previous session",
+    "fork": "Fork the current session into a new conversation",
+    "rename": "Rename the current session",
+    "export": "Export the session to a file",
+    "model": "Switch the AI model",
+    "config": "View or edit configuration settings",
+    "memory": "Manage persistent memory across sessions",
+    "fast": "Toggle fast mode (faster output, same model)",
+    "vim": "Toggle vim keybindings",
+    "permissions": "Manage tool permissions",
+    "allowed-tools": "View or modify allowed tools list",
+    "theme": "Switch between light and dark themes",
+    "keybindings": "Customize keyboard shortcuts",
+    "login": "Authenticate with Anthropic",
+    "logout": "Sign out of your account",
+    "context": "View current context window usage",
+    "add-dir": "Add a directory to the conversation context",
+    "files": "List files in context",
+    "plugin": "Manage Claude Code plugins",
+    "mcp": "Manage MCP (Model Context Protocol) servers",
+    "terminal": "Configure terminal integration",
+    "ide": "Configure IDE integration",
+    "hooks": "Manage event hooks",
+    "agents": "List available agents",
+    "help": "Show help information",
+    "cost": "View token usage and cost for this session",
+    "status": "Show session status",
+    "doctor": "Diagnose configuration issues",
+    "bug": "Report a bug",
+    "usage": "View usage statistics",
+    "diff": "Show uncommitted code changes",
+    "copy": "Copy last response to clipboard",
+    "skills": "List available skills",
+    "plan": "Enter plan mode for structured task planning",
+    "tasks": "View and manage the task list",
+    "init": "Initialize Claude Code in a project",
+    "upgrade": "Upgrade Claude Code to the latest version",
+    "pr-comments": "View pull request comments",
+    "stats": "Show session statistics",
+    "insights": "View usage insights and patterns",
+    "voice": "Toggle voice mode",
+}
+
 
 # ---------------------------------------------------------------------------
 # CLI.js auto-extraction (supplements hardcoded sets at runtime)

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { navigating } from '$app/stores';
 	import {
 		Terminal,
 		Search,
@@ -19,10 +20,15 @@
 	import CommandUsageCard from '$lib/components/commands/CommandUsageCard.svelte';
 	import CommandUsageTable from '$lib/components/commands/CommandUsageTable.svelte';
 	import UsageAnalytics from '$lib/components/charts/UsageAnalytics.svelte';
+	import SkeletonBox from '$lib/components/skeleton/SkeletonBox.svelte';
+	import SkeletonText from '$lib/components/skeleton/SkeletonText.svelte';
 	import { getCommandCategoryColorVars, getCommandCategoryLabel, getCommandChartHex, getPluginColorVars } from '$lib/utils';
 	import type { CommandUsage, CommandCategory, StatItem } from '$lib/api-types';
 
 	let { data } = $props();
+
+	// Loading state: navigating TO this page from elsewhere
+	let isPageLoading = $derived(!!$navigating && $navigating.to?.route.id === '/commands');
 
 	// View state
 	let activeView = $state<'groups' | 'table' | 'analytics'>('groups');
@@ -283,6 +289,73 @@
 </script>
 
 <div class="space-y-8">
+	{#if isPageLoading}
+		<!-- Loading Skeleton -->
+		<div class="space-y-8" role="status" aria-busy="true" aria-label="Loading commands...">
+			<!-- Header skeleton -->
+			<div>
+				<div class="flex items-center gap-2 mb-2">
+					<SkeletonText width="70px" size="xs" />
+					<span class="text-[var(--text-muted)]">/</span>
+					<SkeletonText width="80px" size="xs" />
+				</div>
+				<div class="flex items-center gap-3">
+					<SkeletonBox width="32px" height="32px" rounded="lg" />
+					<SkeletonText width="140px" size="xl" />
+				</div>
+			</div>
+
+			<!-- Stats skeleton -->
+			<div class="rounded-2xl p-8 border border-[var(--border)] bg-[var(--bg-subtle)]">
+				<div class="grid grid-cols-5 gap-6">
+					{#each Array(5) as _}
+						<div class="space-y-2">
+							<SkeletonText width="80px" size="xs" />
+							<SkeletonText width="50px" size="lg" />
+						</div>
+					{/each}
+				</div>
+			</div>
+
+			<!-- Filter bar skeleton -->
+			<div class="flex items-center justify-between">
+				<div class="flex items-center gap-3">
+					<SkeletonBox width="240px" height="36px" rounded="lg" />
+					<SkeletonBox width="280px" height="32px" rounded="lg" />
+				</div>
+				<SkeletonBox width="200px" height="36px" rounded="lg" />
+			</div>
+
+			<!-- Card grid skeleton -->
+			<div class="space-y-4">
+				{#each Array(2) as _}
+					<div>
+						<div class="flex items-center gap-2 mb-4">
+							<SkeletonBox width="28px" height="28px" rounded="md" />
+							<SkeletonText width="120px" size="sm" />
+							<SkeletonText width="60px" size="xs" />
+						</div>
+						<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+							{#each Array(3) as _}
+								<div class="p-4 rounded-xl border border-[var(--border)] bg-[var(--bg-base)] space-y-3">
+									<div class="flex items-center gap-3">
+										<SkeletonBox width="36px" height="36px" rounded="lg" />
+										<div class="flex-1 space-y-1.5">
+											<SkeletonText width="120px" size="sm" />
+											<SkeletonText width="60px" size="xs" />
+										</div>
+										<SkeletonBox width="40px" height="24px" rounded="full" />
+									</div>
+									<SkeletonBox width="100%" height="6px" rounded="full" />
+								</div>
+							{/each}
+						</div>
+					</div>
+				{/each}
+			</div>
+		</div>
+	{:else}
+
 	<!-- Page Header -->
 	<PageHeader
 		title="Commands"
@@ -466,5 +539,7 @@
 				</CollapsibleGroup>
 			{/each}
 		</div>
+	{/if}
+
 	{/if}
 </div>

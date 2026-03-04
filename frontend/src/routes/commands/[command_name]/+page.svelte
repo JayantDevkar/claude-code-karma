@@ -118,6 +118,38 @@
 
 	let totalCount = $derived(detail?.sessions_total ?? 0);
 
+	// Invocation source filter
+	let sourceFilter = $state<'all' | 'manual' | 'auto'>('all');
+
+	// Map session UUID to invocation sources for filtering
+	let invocationSourceMap = $derived<Map<string, string[]>>(
+		new Map(
+			(detail?.sessions ?? []).map((s: any) => [s.uuid, s.invocation_sources ?? []])
+		)
+	);
+
+	// Filtered sessions (by invocation source)
+	let filteredSessions = $derived.by(() => {
+		let result = sessions;
+
+		if (sourceFilter !== 'all') {
+			result = result.filter((s) => {
+				const sources = invocationSourceMap.get(s.uuid) ?? [];
+				if (sourceFilter === 'manual') {
+					return sources.includes('slash_command');
+				}
+				if (sourceFilter === 'auto') {
+					return sources.includes('skill_tool');
+				}
+				return true;
+			});
+		}
+
+		return result.sort(
+			(a, b) => new Date(b.start_time).getTime() - new Date(a.start_time).getTime()
+		);
+	});
+
 	// Skill content (for user commands)
 	let hasContent = $derived(detail?.content && detail.content.trim().length > 0);
 	let renderedContent = $state('');
@@ -261,9 +293,9 @@
 			</div>
 		{/if}
 
-		<!-- Command Definition (for user commands with file content) -->
+		<!-- Command/Skill Definition (user commands, plugin skills, bundled skills) -->
 		{#if hasContent}
-			<CollapsibleGroup title="Command Definition" open={false}>
+			<CollapsibleGroup title="Command Prompt" open={false}>
 				{#snippet icon()}
 					<FileText size={16} style="color: {categoryColors.color};" />
 				{/snippet}
@@ -327,8 +359,11 @@
 				<div class="flex items-center justify-between">
 					<div class="flex items-center gap-2 text-sm text-[var(--text-muted)]">
 						<Layers size={16} style="color: {categoryColors.color};" />
-						<span class="font-medium text-[var(--text-primary)]">{totalCount}</span>
-						<span>{totalCount === 1 ? 'session' : 'sessions'}</span>
+						<span class="font-medium text-[var(--text-primary)]">{filteredSessions.length}</span>
+						<span>{filteredSessions.length === 1 ? 'session' : 'sessions'}</span>
+						{#if sourceFilter !== 'all'}
+							<span class="text-xs text-[var(--text-muted)]">(filtered)</span>
+						{/if}
 					</div>
 					{#if sessions.length < totalCount}
 						<span class="text-xs text-[var(--text-muted)]">
@@ -337,17 +372,41 @@
 					{/if}
 				</div>
 
-				{#if sessions.length > 0}
+				<!-- Invocation Source Pills -->
+				{#if hasInvocationBreakdown}
+					<div class="flex items-center gap-1.5" role="group" aria-label="Filter by invocation type">
+						<button
+							onclick={() => (sourceFilter = sourceFilter === 'manual' ? 'all' : 'manual')}
+							class="px-3 py-1 text-xs font-medium rounded-full transition-all {sourceFilter === 'manual'
+								? 'bg-blue-500/15 text-blue-400 border border-blue-500/30'
+								: 'bg-[var(--bg-subtle)] text-[var(--text-muted)] border border-transparent hover:border-[var(--border)] hover:text-[var(--text-secondary)]'}"
+							aria-pressed={sourceFilter === 'manual'}
+						>
+							Manual <span class="ml-0.5 opacity-70">{manualCalls}</span>
+						</button>
+						<button
+							onclick={() => (sourceFilter = sourceFilter === 'auto' ? 'all' : 'auto')}
+							class="px-3 py-1 text-xs font-medium rounded-full transition-all {sourceFilter === 'auto'
+								? 'bg-purple-500/15 text-purple-400 border border-purple-500/30'
+								: 'bg-[var(--bg-subtle)] text-[var(--text-muted)] border border-transparent hover:border-[var(--border)] hover:text-[var(--text-secondary)]'}"
+							aria-pressed={sourceFilter === 'auto'}
+						>
+							Auto <span class="ml-0.5 opacity-70">{autoCalls}</span>
+						</button>
+					</div>
+				{/if}
+
+				{#if filteredSessions.length > 0}
 					<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-						{#each sessions as session (session.uuid)}
+						{#each filteredSessions as session (session.uuid)}
 							<GlobalSessionCard {session} />
 						{/each}
 					</div>
 				{:else}
 					<EmptyState
 						icon={Layers}
-						title="No sessions yet"
-						description="This command hasn't been used in any sessions."
+						title={sourceFilter !== 'all' ? 'No matching sessions' : 'No sessions yet'}
+						description={sourceFilter !== 'all' ? 'No sessions match the selected invocation type. Try removing the filter.' : "This command hasn't been used in any sessions."}
 					/>
 				{/if}
 			</div>
