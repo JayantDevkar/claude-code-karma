@@ -832,9 +832,11 @@
 
 			<!-- CallMcpTool / mcp__ prefixed tools -->
 		{:else if toolName === 'CallMcpTool' || toolName?.startsWith('mcp__')}
-			{@const server = String(input.server || '')}
-			{@const mcpTool = String(input.tool || input.toolName || '')}
-			{@const mcpArgs = (input.args && typeof input.args === 'object' ? input.args : null) as Record<string, unknown> | null}
+			{@const isDirect = toolName !== 'CallMcpTool'}
+			{@const nameParts = isDirect ? (toolName ?? '').split('__') : []}
+			{@const server = String(input.server || (isDirect && nameParts.length >= 3 ? nameParts.slice(1, -1).join('__') : '') || '')}
+			{@const mcpTool = String(input.tool || input.toolName || (isDirect && nameParts.length >= 2 ? nameParts[nameParts.length - 1] : '') || '')}
+			{@const mcpArgs = (input.args && typeof input.args === 'object' ? input.args : isDirect ? input : null) as Record<string, unknown> | null}
 			<div
 				class="rounded-[var(--radius-md)] border border-purple-500/20 bg-purple-500/5 overflow-hidden"
 			>
@@ -868,7 +870,7 @@
 				</div>
 				<!-- MCP tool arguments -->
 				{#if mcpArgs && Object.keys(mcpArgs).length > 0}
-					{@const argKeys = Object.keys(mcpArgs).filter((k) => mcpArgs[k] != null)}
+					{@const argKeys = Object.keys(mcpArgs).filter((k) => mcpArgs[k] != null && k !== 'is_direct_mcp')}
 					{#if argKeys.length > 0}
 						<div class="px-4 pb-3 border-t border-purple-500/10">
 							<div class="space-y-1.5 pt-2.5">
