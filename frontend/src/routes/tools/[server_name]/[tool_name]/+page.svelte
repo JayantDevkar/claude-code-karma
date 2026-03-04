@@ -69,7 +69,7 @@
 	];
 
 	// View mode for sessions
-	let viewMode = $state<'list' | 'grid'>('grid');
+	let viewMode = $state<'list' | 'grid'>('list');
 	let viewModeInitialized = $state(false);
 
 	$effect(() => {

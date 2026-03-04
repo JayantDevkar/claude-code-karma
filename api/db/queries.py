@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 # Allowlist for SQL fragments interpolated into _query_per_item_trend.
 # Prevents future callers from accidentally passing user input.
-_ALLOWED_ITEM_COLS = frozenset({"sc.command_name", "sk.skill_name", "st.tool_name"})
+_ALLOWED_ITEM_COLS = frozenset({"sc.command_name", "sk.skill_name", "st.tool_name", "si.subagent_type"})
 
 
 def _query_per_item_trend(

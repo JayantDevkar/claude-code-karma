@@ -10,7 +10,11 @@
 		Brain,
 		Sparkles,
 		Zap,
-		TerminalSquare
+		TerminalSquare,
+		BookOpen,
+		HelpCircle,
+		Plug,
+		ClipboardList
 	} from 'lucide-svelte';
 	import type { FilterCategory, FilterCounts } from '$lib/api-types';
 
@@ -99,6 +103,34 @@
 			icon: 'text-purple-500',
 			hoverBg: 'hover:bg-purple-500/5'
 		},
+		big_response: {
+			active: 'bg-amber-500/10 border-amber-500/50 text-amber-500',
+			inactive:
+				'bg-[var(--bg-base)] border-[var(--border)] text-[var(--text-secondary)] hover:border-amber-500/30',
+			icon: 'text-amber-500',
+			hoverBg: 'hover:bg-amber-500/5'
+		},
+		ask_user: {
+			active: 'bg-sky-500/10 border-sky-500/50 text-sky-500',
+			inactive:
+				'bg-[var(--bg-base)] border-[var(--border)] text-[var(--text-secondary)] hover:border-sky-500/30',
+			icon: 'text-sky-500',
+			hoverBg: 'hover:bg-sky-500/5'
+		},
+		mcp_tool: {
+			active: 'bg-indigo-500/10 border-indigo-500/50 text-indigo-500',
+			inactive:
+				'bg-[var(--bg-base)] border-[var(--border)] text-[var(--text-secondary)] hover:border-indigo-500/30',
+			icon: 'text-indigo-500',
+			hoverBg: 'hover:bg-indigo-500/5'
+		},
+		task: {
+			active: 'bg-emerald-500/10 border-emerald-500/50 text-emerald-500',
+			inactive:
+				'bg-[var(--bg-base)] border-[var(--border)] text-[var(--text-secondary)] hover:border-emerald-500/30',
+			icon: 'text-emerald-500',
+			hoverBg: 'hover:bg-emerald-500/5'
+		},
 		command: {
 			active: 'bg-teal-500/10 border-teal-500/50 text-teal-500',
 			inactive:
@@ -141,6 +173,30 @@
 			label: 'Response',
 			icon: Sparkles,
 			countKey: 'response' as const
+		},
+		{
+			id: 'big_response' as const,
+			label: 'Big Response',
+			icon: BookOpen,
+			countKey: 'big_response' as const
+		},
+		{
+			id: 'ask_user' as const,
+			label: 'Ask User',
+			icon: HelpCircle,
+			countKey: 'ask_user' as const
+		},
+		{
+			id: 'mcp_tool' as const,
+			label: 'MCP Tools',
+			icon: Plug,
+			countKey: 'mcp_tool' as const
+		},
+		{
+			id: 'task' as const,
+			label: 'Tasks',
+			icon: ClipboardList,
+			countKey: 'task' as const
 		},
 		{
 			id: 'skill' as const,

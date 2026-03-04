@@ -393,6 +393,10 @@ export type FilterCategory =
 	| 'error'
 	| 'thinking'
 	| 'response'
+	| 'big_response'
+	| 'ask_user'
+	| 'mcp_tool'
+	| 'task'
 	| 'skill'
 	| 'command';
 
@@ -404,6 +408,10 @@ export interface FilterCounts {
 	error: number;
 	thinking: number;
 	response: number;
+	big_response: number;
+	ask_user: number;
+	mcp_tool: number;
+	task: number;
 	skill: number;
 	command: number;
 }
