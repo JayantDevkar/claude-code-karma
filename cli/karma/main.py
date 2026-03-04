@@ -17,24 +17,46 @@ _SAFE_NAME = re.compile(r"^[a-zA-Z0-9_\-]+$")
 
 
 def _auto_share_folders(st, config, team_cfg, teams, team_name, new_device_id):
-    """Auto-create Syncthing shared folders for all projects in a team."""
-    remote_base = KARMA_BASE / "remote-sessions" / config.user_id
+    """Auto-create Syncthing shared folders for all projects in a team.
+
+    Each user gets their own outbox folder with a unique ID:
+      - karma-out-{my_user_id}-{project} (send-only: my sessions → teammates)
+      - karma-in-{their_user_id}-{project} (receive-only: their sessions → my machine)
+
+    This prevents Syncthing from merging sessions from different users.
+    """
     for proj_name, proj_cfg in team_cfg.projects.items():
-        folder_path = str(remote_base / proj_cfg.encoded_name)
-        folder_id = f"karma-{team_name}-{proj_name}"
-        # Collect all member device IDs + our own
-        device_ids = [new_device_id]
+        # 1. My outbox: send my sessions to teammates
+        outbox_path = str(KARMA_BASE / "remote-sessions" / config.user_id / proj_cfg.encoded_name)
+        outbox_id = f"karma-out-{config.user_id}-{proj_name}"
+        all_device_ids = [new_device_id]
         if config.syncthing.device_id:
-            device_ids.append(config.syncthing.device_id)
+            all_device_ids.append(config.syncthing.device_id)
         for member in team_cfg.syncthing_members.values():
-            if member.syncthing_device_id not in device_ids:
-                device_ids.append(member.syncthing_device_id)
+            if member.syncthing_device_id not in all_device_ids:
+                all_device_ids.append(member.syncthing_device_id)
         try:
-            Path(folder_path).mkdir(parents=True, exist_ok=True)
-            st.add_folder(folder_id, folder_path, device_ids, folder_type="sendreceive")
-            click.echo(f"Shared folder '{folder_id}' -> {folder_path}")
+            Path(outbox_path).mkdir(parents=True, exist_ok=True)
+            st.add_folder(outbox_id, outbox_path, all_device_ids, folder_type="sendonly")
+            click.echo(f"Outbox '{outbox_id}' -> {outbox_path} (send-only)")
         except Exception as e:
-            click.echo(f"Warning: Could not create shared folder for '{proj_name}': {e}")
+            click.echo(f"Warning: Could not create outbox for '{proj_name}': {e}")
+
+        # 2. Inbox for each teammate: receive their sessions
+        # Find the member name for the new device ID
+        for member_name, member_cfg in team_cfg.syncthing_members.items():
+            if member_cfg.syncthing_device_id == new_device_id:
+                inbox_path = str(KARMA_BASE / "remote-sessions" / member_name / proj_cfg.encoded_name)
+                inbox_id = f"karma-out-{member_name}-{proj_name}"
+                inbox_devices = [new_device_id]
+                if config.syncthing.device_id:
+                    inbox_devices.append(config.syncthing.device_id)
+                try:
+                    Path(inbox_path).mkdir(parents=True, exist_ok=True)
+                    st.add_folder(inbox_id, inbox_path, inbox_devices, folder_type="receiveonly")
+                    click.echo(f"Inbox '{inbox_id}' -> {inbox_path} (receive-only)")
+                except Exception as e:
+                    click.echo(f"Warning: Could not create inbox for '{member_name}/{proj_name}': {e}")
 
 
 def require_config() -> SyncConfig:
@@ -134,24 +156,35 @@ def project_add(name: str, path: str, team_name: Optional[str]):
         teams[team_name] = team_cfg.model_copy(update={"projects": projects})
         updated = config.model_copy(update={"teams": teams})
 
-        # Auto-create shared folder if team has Syncthing members
+        # Auto-create shared folders if team has Syncthing members
         if team_cfg.backend == "syncthing" and team_cfg.syncthing_members:
             try:
                 from karma.syncthing import SyncthingClient, read_local_api_key
                 api_key = config.syncthing.api_key or read_local_api_key()
                 st = SyncthingClient(api_key=api_key)
                 if st.is_running():
-                    remote_base = KARMA_BASE / "remote-sessions" / config.user_id
-                    folder_path = str(remote_base / encoded)
-                    folder_id = f"karma-{team_name}-{name}"
+                    # My outbox (send-only)
+                    outbox_path = str(KARMA_BASE / "remote-sessions" / config.user_id / encoded)
+                    outbox_id = f"karma-out-{config.user_id}-{name}"
                     device_ids = []
                     if config.syncthing.device_id:
                         device_ids.append(config.syncthing.device_id)
                     for member in team_cfg.syncthing_members.values():
                         device_ids.append(member.syncthing_device_id)
-                    Path(folder_path).mkdir(parents=True, exist_ok=True)
-                    st.add_folder(folder_id, folder_path, device_ids, folder_type="sendreceive")
-                    click.echo(f"Shared folder '{folder_id}' -> {folder_path}")
+                    Path(outbox_path).mkdir(parents=True, exist_ok=True)
+                    st.add_folder(outbox_id, outbox_path, device_ids, folder_type="sendonly")
+                    click.echo(f"Outbox '{outbox_id}' -> {outbox_path} (send-only)")
+
+                    # Inbox per teammate (receive-only)
+                    for member_name, member_cfg in team_cfg.syncthing_members.items():
+                        inbox_path = str(KARMA_BASE / "remote-sessions" / member_name / encoded)
+                        inbox_id = f"karma-out-{member_name}-{name}"
+                        inbox_devices = [member_cfg.syncthing_device_id]
+                        if config.syncthing.device_id:
+                            inbox_devices.append(config.syncthing.device_id)
+                        Path(inbox_path).mkdir(parents=True, exist_ok=True)
+                        st.add_folder(inbox_id, inbox_path, inbox_devices, folder_type="receiveonly")
+                        click.echo(f"Inbox '{inbox_id}' -> {inbox_path} (receive-only)")
             except Exception as e:
                 click.echo(f"Warning: Could not auto-share folder: {e}")
     else:
