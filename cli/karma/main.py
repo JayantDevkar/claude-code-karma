@@ -89,8 +89,7 @@ def project_add(name: str, path: str, team_name: Optional[str]):
     if not _SAFE_NAME.match(name):
         raise click.ClickException("Project name must be alphanumeric, dash, or underscore only.")
 
-    from pathlib import Path as _Path
-    if not _Path(path).is_absolute():
+    if not Path(path).is_absolute():
         raise click.ClickException("Project path must be absolute (e.g., /Users/alice/my-project).")
 
     config = require_config()
@@ -139,18 +138,30 @@ def project_list():
 
 @project.command("remove")
 @click.argument("name")
-def project_remove(name: str):
+@click.option("--team", "team_name", default=None, help="Team to remove project from")
+def project_remove(name: str, team_name: Optional[str]):
     """Remove a project from syncing."""
     config = require_config()
 
-    if name not in config.projects:
-        raise click.ClickException(f"Project '{name}' not found.")
+    if team_name:
+        if team_name not in config.teams:
+            raise click.ClickException(f"Team '{team_name}' not found.")
+        team_cfg = config.teams[team_name]
+        if name not in team_cfg.projects:
+            raise click.ClickException(f"Project '{name}' not found in team '{team_name}'.")
+        projects = dict(team_cfg.projects)
+        del projects[name]
+        teams = dict(config.teams)
+        teams[team_name] = team_cfg.model_copy(update={"projects": projects})
+        updated = config.model_copy(update={"teams": teams})
+    else:
+        if name not in config.projects:
+            raise click.ClickException(f"Project '{name}' not found.")
+        projects = dict(config.projects)
+        del projects[name]
+        updated = config.model_copy(update={"projects": projects})
 
-    projects = dict(config.projects)
-    del projects[name]
-    updated = config.model_copy(update={"projects": projects})
     updated.save()
-
     click.echo(f"Removed project '{name}'.")
 
 
@@ -449,18 +460,38 @@ def team_list():
 
 @team.command("remove")
 @click.argument("name")
-def team_remove(name: str):
+@click.option("--team", "team_name", default=None, help="Team to remove member from")
+def team_remove(name: str, team_name: Optional[str]):
     """Remove a team member."""
     config = require_config()
 
-    if name not in config.team:
-        raise click.ClickException(f"Team member '{name}' not found.")
+    if team_name:
+        if team_name not in config.teams:
+            raise click.ClickException(f"Team '{team_name}' not found.")
+        team_cfg = config.teams[team_name]
+        if team_cfg.backend == "syncthing":
+            if name not in team_cfg.syncthing_members:
+                raise click.ClickException(f"Member '{name}' not found in team '{team_name}'.")
+            members = dict(team_cfg.syncthing_members)
+            del members[name]
+            teams = dict(config.teams)
+            teams[team_name] = team_cfg.model_copy(update={"syncthing_members": members})
+        else:
+            if name not in team_cfg.ipfs_members:
+                raise click.ClickException(f"Member '{name}' not found in team '{team_name}'.")
+            members = dict(team_cfg.ipfs_members)
+            del members[name]
+            teams = dict(config.teams)
+            teams[team_name] = team_cfg.model_copy(update={"ipfs_members": members})
+        updated = config.model_copy(update={"teams": teams})
+    else:
+        if name not in config.team:
+            raise click.ClickException(f"Team member '{name}' not found.")
+        members = dict(config.team)
+        del members[name]
+        updated = config.model_copy(update={"team": members})
 
-    members = dict(config.team)
-    del members[name]
-    updated = config.model_copy(update={"team": members})
     updated.save()
-
     click.echo(f"Removed team member '{name}'.")
 
 

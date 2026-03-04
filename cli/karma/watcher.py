@@ -5,7 +5,7 @@ import threading
 from pathlib import Path
 from typing import Callable, Optional
 
-from watchdog.events import FileSystemEventHandler, FileModifiedEvent, FileCreatedEvent
+from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
 
@@ -35,8 +35,6 @@ class SessionWatcher(FileSystemEventHandler):
         return p.suffix == ".jsonl" and not p.name.startswith("agent-")
 
     def on_modified(self, event):
-        if not isinstance(event, (FileModifiedEvent, FileCreatedEvent)):
-            return
         if self._should_process(event.src_path):
             self._schedule_package()
 

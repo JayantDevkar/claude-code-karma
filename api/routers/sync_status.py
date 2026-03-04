@@ -32,7 +32,7 @@ async def sync_status():
         teams[name] = {
             "backend": team["backend"],
             "project_count": len(team.get("projects", {})),
-            "member_count": len(team.get("members", {})),
+            "member_count": len(team.get("ipfs_members", {})) + len(team.get("syncthing_members", {})),
         }
 
     return {
@@ -56,7 +56,7 @@ async def sync_teams():
             "name": name,
             "backend": team["backend"],
             "projects": list(team.get("projects", {}).keys()),
-            "members": list(team.get("members", {}).keys()),
+            "members": list(team.get("ipfs_members", {}).keys()) + list(team.get("syncthing_members", {}).keys()),
         })
 
     return {"teams": teams}

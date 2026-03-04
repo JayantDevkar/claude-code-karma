@@ -30,7 +30,8 @@ class TestSyncStatus:
                 "beta": {
                     "backend": "syncthing",
                     "projects": {"app": {"path": "/app", "encoded_name": "-app"}},
-                    "members": {},
+                    "syncthing_members": {"bob": {"syncthing_device_id": "AAAA-BBBB"}},
+                    "ipfs_members": {},
                 }
             },
             "projects": {},
@@ -43,6 +44,8 @@ class TestSyncStatus:
         assert data["configured"] is True
         assert data["user_id"] == "alice"
         assert "beta" in data["teams"]
+        assert data["teams"]["beta"]["member_count"] == 1
+        assert data["teams"]["beta"]["project_count"] == 1
 
     def test_sync_teams_endpoint(self, tmp_path, monkeypatch):
         config_path = tmp_path / "sync-config.json"
@@ -50,8 +53,18 @@ class TestSyncStatus:
             "user_id": "alice",
             "machine_id": "mac",
             "teams": {
-                "alpha": {"backend": "ipfs", "projects": {}, "members": {}},
-                "beta": {"backend": "syncthing", "projects": {}, "members": {}},
+                "alpha": {
+                    "backend": "ipfs",
+                    "projects": {},
+                    "ipfs_members": {"carol": {"ipns_key": "abc123"}},
+                    "syncthing_members": {},
+                },
+                "beta": {
+                    "backend": "syncthing",
+                    "projects": {},
+                    "ipfs_members": {},
+                    "syncthing_members": {"bob": {"syncthing_device_id": "XXXX"}},
+                },
             },
             "projects": {},
             "team": {},
@@ -61,6 +74,10 @@ class TestSyncStatus:
         assert resp.status_code == 200
         data = resp.json()
         assert len(data["teams"]) == 2
+        # Verify members are correctly read from split dicts
+        team_names = {t["name"]: t for t in data["teams"]}
+        assert "carol" in team_names["alpha"]["members"]
+        assert "bob" in team_names["beta"]["members"]
 
     def test_sync_status_corrupt_config(self, tmp_path, monkeypatch):
         config_path = tmp_path / "sync-config.json"

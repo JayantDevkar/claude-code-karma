@@ -98,6 +98,47 @@ class TestProjectAddWithTeam:
         assert result.exit_code != 0
 
 
+class TestProjectRemoveWithTeam:
+    def test_project_remove_from_team(self, runner, mock_config, tmp_path):
+        runner.invoke(cli, ["init", "--user-id", "alice"])
+        runner.invoke(cli, ["team", "create", "beta", "--backend", "syncthing"])
+        project_path = tmp_path / "test-project"
+        project_path.mkdir()
+        runner.invoke(cli, [
+            "project", "add", "app", "--path", str(project_path), "--team", "beta"
+        ])
+        result = runner.invoke(cli, ["project", "remove", "app", "--team", "beta"])
+        assert result.exit_code == 0
+        assert "app" in result.output
+
+    def test_project_remove_from_nonexistent_team(self, runner, mock_config):
+        runner.invoke(cli, ["init", "--user-id", "alice"])
+        result = runner.invoke(cli, ["project", "remove", "app", "--team", "nope"])
+        assert result.exit_code != 0
+
+    def test_project_remove_nonexistent_from_team(self, runner, mock_config):
+        runner.invoke(cli, ["init", "--user-id", "alice"])
+        runner.invoke(cli, ["team", "create", "beta", "--backend", "syncthing"])
+        result = runner.invoke(cli, ["project", "remove", "missing", "--team", "beta"])
+        assert result.exit_code != 0
+
+
+class TestTeamMemberRemove:
+    def test_remove_syncthing_member(self, runner, mock_config):
+        runner.invoke(cli, ["init", "--user-id", "alice"])
+        runner.invoke(cli, ["team", "create", "beta", "--backend", "syncthing"])
+        runner.invoke(cli, ["team", "add", "bob", "DEVICEID123", "--team", "beta"])
+        result = runner.invoke(cli, ["team", "remove", "bob", "--team", "beta"])
+        assert result.exit_code == 0
+        assert "bob" in result.output
+
+    def test_remove_nonexistent_member_from_team(self, runner, mock_config):
+        runner.invoke(cli, ["init", "--user-id", "alice"])
+        runner.invoke(cli, ["team", "create", "beta", "--backend", "syncthing"])
+        result = runner.invoke(cli, ["team", "remove", "ghost", "--team", "beta"])
+        assert result.exit_code != 0
+
+
 class TestWatchCommand:
     def test_watch_requires_init(self, runner, mock_config):
         result = runner.invoke(cli, ["watch", "--team", "beta"])
