@@ -6,6 +6,7 @@
 		FolderOpen,
 		Zap,
 		Package,
+		Puzzle,
 		FileText,
 		TrendingUp,
 		Layers,
@@ -21,7 +22,7 @@
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import Badge from '$lib/components/ui/Badge.svelte';
 	import CollapsibleGroup from '$lib/components/ui/CollapsibleGroup.svelte';
-	import { renderMarkdownEffect, getCommandCategoryColorVars, getCommandCategoryLabel, getCommandChartHex, getProjectNameFromEncoded, toSessionWithContext } from '$lib/utils';
+	import { renderMarkdownEffect, getCommandCategoryColorVars, getCommandCategoryLabel, getCommandChartHex, getPluginColorVars, getPluginChartHex, getProjectNameFromEncoded, toSessionWithContext } from '$lib/utils';
 	import SkeletonBox from '$lib/components/skeleton/SkeletonBox.svelte';
 	import SkeletonText from '$lib/components/skeleton/SkeletonText.svelte';
 	import { SkeletonGlobalSessionCard } from '$lib/components/skeleton';
@@ -46,7 +47,18 @@
 		detail ? getCommandCategoryColorVars(detail.category) : { color: 'var(--accent)', subtle: 'var(--accent-subtle)' }
 	);
 	let categoryLabel = $derived(detail ? getCommandCategoryLabel(detail.category) : '');
-	let chartAccentHex = $derived(detail ? getCommandChartHex(detail.name) : '#3b82f6');
+
+	// Plugin-aware colors (use plugin colors for plugin commands, category colors otherwise)
+	let pluginColors = $derived(
+		detail?.is_plugin && detail?.plugin
+			? getPluginColorVars(detail.plugin)
+			: categoryColors
+	);
+	let chartAccentHex = $derived(
+		detail?.is_plugin && detail?.plugin
+			? getPluginChartHex(detail.plugin)
+			: detail ? getCommandChartHex(detail.name) : '#3b82f6'
+	);
 
 	// Manual vs Auto breakdown
 	let manualCalls = $derived(detail?.manual_calls ?? 0);
@@ -196,7 +208,7 @@
 		<PageHeader
 			title="/{detail.name}"
 			icon={Terminal}
-			iconColorRaw={categoryColors}
+			iconColorRaw={pluginColors}
 			breadcrumbs={[
 				{ label: 'Dashboard', href: '/' },
 				{ label: 'Commands', href: '/commands' },
@@ -204,7 +216,10 @@
 			]}
 			metadata={[
 				{ text: `${detail.calls.toLocaleString()} call${detail.calls !== 1 ? 's' : ''}` },
-				{ text: `${detail.session_count} session${detail.session_count !== 1 ? 's' : ''}` }
+				{ text: `${detail.session_count} session${detail.session_count !== 1 ? 's' : ''}` },
+				...(detail.is_plugin && detail.plugin
+					? [{ icon: Puzzle, text: detail.plugin.split('@')[0], href: `/plugins/${encodeURIComponent(detail.plugin.split('@')[0])}` }]
+					: [])
 			]}
 		>
 			{#snippet badges()}
@@ -214,17 +229,27 @@
 				>
 					{categoryLabel}
 				</span>
+				{#if detail.is_plugin && detail.plugin}
+					<a
+						href="/plugins/{encodeURIComponent(detail.plugin.split('@')[0])}"
+						class="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-full hover:bg-[var(--bg-muted)] transition-colors no-underline"
+						style="color: {pluginColors.color}; background-color: {pluginColors.subtle};"
+					>
+						<Puzzle size={12} />
+						{detail.plugin.split('@')[0]}
+					</a>
+				{/if}
 			{/snippet}
 		</PageHeader>
 
 		<!-- Hero Stats -->
 		<div
 			class="relative overflow-hidden rounded-2xl p-8 border border-[var(--border)]"
-			style="background: linear-gradient(135deg, color-mix(in srgb, {categoryColors.color} 3%, transparent) 0%, color-mix(in srgb, {categoryColors.color} 8%, transparent) 100%);"
+			style="background: linear-gradient(135deg, color-mix(in srgb, {pluginColors.color} 3%, transparent) 0%, color-mix(in srgb, {pluginColors.color} 8%, transparent) 100%);"
 		>
 			<div
 				class="absolute -top-24 -right-24 w-96 h-96 opacity-10 rounded-full blur-3xl pointer-events-none"
-				style="background-color: {categoryColors.color};"
+				style="background-color: {pluginColors.color};"
 			></div>
 			<div class="relative space-y-4">
 				<StatsGrid {stats} columns={4} />
@@ -276,7 +301,7 @@
 		{#if hasContent}
 			<CollapsibleGroup title="Command Prompt" open={false}>
 				{#snippet icon()}
-					<FileText size={16} style="color: {categoryColors.color};" />
+					<FileText size={16} style="color: {pluginColors.color};" />
 				{/snippet}
 
 				{#snippet children()}
@@ -329,7 +354,7 @@
 							firstUsed={detail.first_used}
 							lastUsed={detail.last_used}
 							sessions={detail.sessions}
-							accentColor={categoryColors.color}
+							accentColor={pluginColors.color}
 						/>
 					</div>
 
@@ -398,7 +423,7 @@
 			<div class="space-y-4">
 				<div class="flex items-center justify-between">
 					<div class="flex items-center gap-2 text-sm text-[var(--text-muted)]">
-						<Layers size={16} style="color: {categoryColors.color};" />
+						<Layers size={16} style="color: {pluginColors.color};" />
 						<span class="font-medium text-[var(--text-primary)]">{filteredSessions.length}</span>
 						<span>{filteredSessions.length === 1 ? 'session' : 'sessions'}</span>
 						{#if sourceFilter !== 'all'}
