@@ -607,11 +607,14 @@
 						{#each topCommands as { name, count, pct }, i}
 							<div>
 								<div class="flex items-center justify-between text-sm mb-1">
-									<span
-										class="text-[var(--text-secondary)] truncate flex-1 mr-2 text-xs font-medium"
+									<a
+										href="/commands/{encodeURIComponent(
+											pluginShortName + ':' + name
+										)}"
+										class="text-[var(--text-secondary)] hover:text-[var(--accent)] truncate flex-1 mr-2 text-xs font-medium transition-colors"
 									>
 										{name}
-									</span>
+									</a>
 									<span
 										class="text-[var(--text-muted)] tabular-nums text-xs flex-shrink-0"
 										>{count.toLocaleString()}</span

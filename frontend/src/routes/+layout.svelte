@@ -71,7 +71,6 @@
 			return 'project-detail';
 		}
 		if (path === '/hooks') return 'hooks';
-		if (path === '/about') return 'about';
 
 		return null;
 	});
