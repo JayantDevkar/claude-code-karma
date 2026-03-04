@@ -33,3 +33,6 @@ class SyncManifest(BaseModel):
     previous_cid: Optional[str] = Field(
         default=None, description="CID of the previous sync for chain history"
     )
+    sync_backend: Optional[str] = Field(
+        default=None, description="Sync backend used: 'ipfs', 'syncthing', or None"
+    )

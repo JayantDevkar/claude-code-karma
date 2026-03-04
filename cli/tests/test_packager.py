@@ -87,3 +87,44 @@ class TestSessionPackager:
         manifest = packager.package(staging_dir=staging)
         assert manifest.session_count == 2
         assert manifest.previous_cid == "QmPrevious"
+
+
+class TestSyncManifest:
+    def test_manifest_default_sync_backend_is_none(self):
+        from karma.manifest import SyncManifest
+        m = SyncManifest(
+            user_id="alice",
+            machine_id="mac",
+            project_path="/foo",
+            project_encoded="-foo",
+            session_count=0,
+            sessions=[],
+        )
+        assert m.sync_backend is None
+
+    def test_manifest_sync_backend_set(self):
+        from karma.manifest import SyncManifest
+        m = SyncManifest(
+            user_id="alice",
+            machine_id="mac",
+            project_path="/foo",
+            project_encoded="-foo",
+            session_count=0,
+            sessions=[],
+            sync_backend="syncthing",
+        )
+        assert m.sync_backend == "syncthing"
+
+    def test_manifest_sync_backend_in_dump(self):
+        from karma.manifest import SyncManifest
+        m = SyncManifest(
+            user_id="alice",
+            machine_id="mac",
+            project_path="/foo",
+            project_encoded="-foo",
+            session_count=0,
+            sessions=[],
+            sync_backend="ipfs",
+        )
+        data = m.model_dump()
+        assert data["sync_backend"] == "ipfs"

@@ -5,7 +5,7 @@ import os
 import re
 import socket
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
@@ -41,6 +41,51 @@ class TeamMember(BaseModel):
         return v
 
 
+class SyncthingSettings(BaseModel):
+    """Syncthing connection settings."""
+
+    model_config = ConfigDict(frozen=True)
+
+    api_url: str = Field(default="http://127.0.0.1:8384", description="Syncthing REST API URL")
+    api_key: Optional[str] = Field(default=None, description="Syncthing API key")
+    device_id: Optional[str] = Field(default=None, description="This device's Syncthing ID")
+
+
+class TeamMemberSyncthing(BaseModel):
+    """A team member identified by Syncthing device ID."""
+
+    model_config = ConfigDict(frozen=True)
+
+    syncthing_device_id: str = Field(..., description="Syncthing device ID")
+
+    @field_validator("syncthing_device_id")
+    @classmethod
+    def validate_device_id(cls, v: str) -> str:
+        if not v or len(v) > 128:
+            raise ValueError("Device ID must be non-empty and under 128 chars")
+        return v
+
+
+class TeamConfig(BaseModel):
+    """Configuration for a team with its own sync backend."""
+
+    model_config = ConfigDict(frozen=True)
+
+    backend: Literal["ipfs", "syncthing"] = Field(..., description="Sync backend for this team")
+    projects: dict[str, ProjectConfig] = Field(default_factory=dict)
+    ipfs_members: dict[str, TeamMember] = Field(default_factory=dict)
+    syncthing_members: dict[str, TeamMemberSyncthing] = Field(default_factory=dict)
+    owner_device_id: Optional[str] = Field(default=None, description="Owner's Syncthing device ID")
+    owner_ipns_key: Optional[str] = Field(default=None, description="Owner's IPNS key")
+
+    @property
+    def members(self) -> dict:
+        """Unified view of all members regardless of backend."""
+        result = dict(self.ipfs_members)
+        result.update(self.syncthing_members)
+        return result
+
+
 class SyncConfig(BaseModel):
     """Root sync configuration stored at ~/.claude_karma/sync-config.json."""
 
@@ -54,6 +99,8 @@ class SyncConfig(BaseModel):
     projects: dict[str, ProjectConfig] = Field(default_factory=dict)
     team: dict[str, TeamMember] = Field(default_factory=dict)
     ipfs_api: str = Field(default="http://127.0.0.1:5001", description="Kubo API endpoint")
+    teams: dict[str, TeamConfig] = Field(default_factory=dict)
+    syncthing: SyncthingSettings = Field(default_factory=SyncthingSettings)
 
     @field_validator("user_id")
     @classmethod
