@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { Brain, Keyboard, Copy, Check } from 'lucide-svelte';
+	import { Brain, Copy, Check, Bot, ExternalLink, Zap } from 'lucide-svelte';
+	import { keyboardOverrides } from '$lib/stores/keyboardOverrides';
 	import { marked } from 'marked';
 	import DOMPurify from 'isomorphic-dompurify';
 	import type { TimelineEvent } from '$lib/api-types';
@@ -15,7 +16,6 @@
 
 	interface Props {
 		events: TimelineEvent[];
-		enableKeyboard?: boolean;
 		isLive?: boolean;
 		isTailing?: boolean;
 		onToggleTailing?: () => void;
@@ -30,11 +30,14 @@
 		onSearchMatchCount?: (count: number) => void;
 		/** Callback when current match index changes */
 		onCurrentMatchChange?: (index: number) => void;
+		/** Project encoded name for building subagent links */
+		projectEncoded?: string;
+		/** Session slug (short UUID) for building subagent links */
+		sessionSlug?: string;
 	}
 
 	let {
 		events,
-		enableKeyboard = true,
 		isLive = false,
 		isTailing = false,
 		onToggleTailing,
@@ -43,7 +46,9 @@
 		class: className = '',
 		searchQuery = '',
 		onSearchMatchCount,
-		onCurrentMatchChange
+		onCurrentMatchChange,
+		projectEncoded,
+		sessionSlug
 	}: Props = $props();
 
 	// Auto-scroll state
@@ -167,9 +172,16 @@
 	let containerRef = $state<HTMLDivElement | null>(null);
 	let timelineContentRef = $state<HTMLDivElement | null>(null);
 
-	// Setup keyboard navigation and initial scroll
+	// Setup Cmd+K and initial scroll
 	onMount(() => {
-		const keyboardCleanup = timeline.setupKeyboardNavigation(enableKeyboard);
+		// Register Cmd+K to focus the timeline search input
+		const unregisterCtrlK = keyboardOverrides.registerCtrlK(() => {
+			const searchEl = containerRef?.querySelector<HTMLInputElement>('[data-timeline-search]');
+			if (searchEl) {
+				searchEl.focus({ preventScroll: true });
+				searchEl.select();
+			}
+		});
 
 		// Initialize previous state tracking
 		prevEventsLength = events.length;
@@ -184,30 +196,11 @@
 		}
 
 		return () => {
-			keyboardCleanup();
+			unregisterCtrlK();
 			if (initTimeout) clearTimeout(initTimeout);
 			if (userScrollTimeout) clearTimeout(userScrollTimeout);
 			if (scrollRafId) cancelAnimationFrame(scrollRafId);
 		};
-	});
-
-	// Scroll focused event into view (keyboard navigation)
-	$effect(() => {
-		if (timeline.focusedIndex >= 0 && containerRef) {
-			const eventElement = containerRef.querySelector(
-				`[data-event-index="${timeline.focusedIndex}"]`
-			);
-			if (eventElement) {
-				isUserScrolling = true;
-				eventElement.scrollIntoView({
-					behavior: 'smooth',
-					block: 'nearest'
-				});
-				setScrollTimeout(() => {
-					isUserScrolling = false;
-				}, 500);
-			}
-		}
 	});
 
 	// Auto-scroll to show last event when:
@@ -305,7 +298,6 @@
 						sessionStartTime={events[0]?.timestamp}
 						isHighlighted={true}
 						hasActiveFilter={timeline.hasActiveFilter}
-						isFocused={timeline.focusedIndex === visibleEventIndex}
 						isExpanded={timeline.expandedId === item.id}
 						onToggleExpand={() => timeline.toggleExpand(visibleEventIndex, item.id)}
 						{usePopup}
@@ -319,25 +311,6 @@
 			{/each}
 		</div>
 
-		<!-- Keyboard shortcuts hint (hidden when tailing to avoid obstructing view) -->
-		{#if enableKeyboard && !isTailing}
-			<div
-				class="
-					fixed bottom-4 right-4
-					flex items-center gap-2
-					px-3 py-2
-					bg-[var(--bg-muted)]
-					border border-[var(--border)]
-					rounded-lg
-					text-xs text-[var(--text-muted)]
-					opacity-60 hover:opacity-100
-					transition-opacity
-				"
-			>
-				<Keyboard size={14} />
-				<span>j/k to navigate, Enter to expand, gg/G first/last</span>
-			</div>
-		{/if}
 	</div>
 {/if}
 
@@ -352,6 +325,37 @@
 		description={formatDate(popupEvent.timestamp)}
 		maxWidth="xl"
 	>
+		{#snippet titleSnippet()}
+			{#if popupEvent?.event_type === 'skill_invocation'}
+				{@const skillPath = popupEvent.title?.replace(/^Skill:\s*\/?/, '') ?? ''}
+				{#if skillPath}
+					<a
+						href="/skills/{encodeURIComponent(skillPath)}"
+						class="flex items-center gap-2 text-[var(--accent)] hover:text-[var(--accent)]/80 transition-colors no-underline group"
+					>
+						<Zap size={18} class="shrink-0" />
+						<span>{popupEvent.title}</span>
+						<ExternalLink size={14} class="opacity-50 group-hover:opacity-100 transition-opacity" />
+					</a>
+				{:else}
+					{popupEvent.title}
+				{/if}
+			{:else if popupEvent?.metadata?.spawned_agent_id && projectEncoded && sessionSlug}
+				{@const agentId = String(popupEvent.metadata.spawned_agent_id)}
+				{@const agentType = popupEvent.metadata?.subagent_type ? String(popupEvent.metadata.subagent_type) : null}
+				<a
+					href="/projects/{projectEncoded}/{sessionSlug}/agents/{agentId}"
+					class="flex items-center gap-2 text-[var(--text-primary)] hover:text-[var(--event-subagent)] transition-colors no-underline group"
+				>
+					<span>Spawn subagent{agentType ? ` — ${agentType}` : ''}</span>
+					<span class="font-mono text-sm text-[var(--event-subagent)] opacity-70 group-hover:opacity-100">·&nbsp;{agentId.slice(0, 12)}</span>
+					<ExternalLink size={13} class="opacity-40 group-hover:opacity-80 transition-opacity" />
+				</a>
+			{:else}
+				{popupEvent?.title}
+			{/if}
+		{/snippet}
+
 		<div class="max-h-[70vh] overflow-auto">
 			{#if popupEvent.event_type === 'tool_call'}
 				<ToolCallDetail event={popupEvent} {projectPath} />

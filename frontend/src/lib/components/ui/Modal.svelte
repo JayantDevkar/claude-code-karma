@@ -7,6 +7,7 @@
 		open?: boolean;
 		onOpenChange?: (open: boolean) => void;
 		title: string;
+		titleSnippet?: Snippet;
 		description?: string;
 		children: Snippet;
 		footer?: Snippet;
@@ -17,6 +18,7 @@
 		open = $bindable(false),
 		onOpenChange,
 		title,
+		titleSnippet,
 		description,
 		children,
 		footer,
@@ -75,7 +77,11 @@
 		>
 			<div class="flex items-center justify-between mb-4">
 				<Dialog.Title class="text-lg font-semibold text-[var(--text-primary)]">
-					{title}
+					{#if titleSnippet}
+						{@render titleSnippet()}
+					{:else}
+						{title}
+					{/if}
 				</Dialog.Title>
 				<Dialog.Close
 					class="

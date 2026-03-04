@@ -1032,6 +1032,8 @@
 								onToggleTailing={toggleTailing}
 								{currentAgentId}
 								{projectPath}
+								projectEncoded={encodedName}
+								sessionSlug={sessionSlug}
 								searchQuery={showConversationSearch ? conversationSearchQuery : ''}
 								onSearchMatchCount={(count) => {
 									searchMatchCount = count;

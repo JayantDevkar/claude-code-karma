@@ -24,7 +24,6 @@
 		sessionStartTime: string;
 		isHighlighted: boolean;
 		hasActiveFilter: boolean;
-		isFocused: boolean;
 		isExpanded: boolean;
 		onToggleExpand: () => void;
 		usePopup?: boolean;
@@ -47,7 +46,6 @@
 		sessionStartTime,
 		isHighlighted,
 		hasActiveFilter,
-		isFocused,
 		isExpanded,
 		onToggleExpand,
 		usePopup = false,
@@ -98,6 +96,14 @@
 	const IconComponent = $derived(
 		event.event_type === 'tool_call' ? getToolIcon(toolName) : config.icon
 	);
+
+	// Display title — for subagent spawns, show "Spawn [type] subagent"
+	const displayTitle = $derived.by(() => {
+		if (event.metadata?.spawned_agent_id && event.metadata?.subagent_type) {
+			return `Spawn ${event.metadata.subagent_type} subagent`;
+		}
+		return event.title;
+	});
 
 	// Determine importance
 	const importance = $derived.by<EventImportance>(() => {
@@ -182,7 +188,6 @@
 				{importance === 'high'
 				? 'ring-2 ring-offset-2 ring-offset-[var(--bg-base)] ring-[var(--accent)]/20'
 				: ''}
-				{isFocused ? 'scale-110 shadow-lg' : ''}
 				cursor-pointer hover:opacity-80
 			"
 			onclick={(e) => {
@@ -214,7 +219,6 @@
 			{hasExpandableContent ? 'cursor-pointer' : ''}
 			{isPlanEvent ? 'border-[var(--event-plan)]/60' : config.borderColor}
 			{isPlanEvent ? 'border-l-[var(--event-plan)]' : config.leftAccent}
-			{isFocused ? 'shadow-md ring-1 ring-[var(--accent)]/20' : ''}
 		"
 		onclick={() => {
 			if (!hasExpandableContent) return;
@@ -244,9 +248,9 @@
 				<div class="flex items-center gap-2 flex-wrap">
 					<span class="font-medium text-[var(--text-primary)]">
 						{#if searchQuery}
-							{@html highlightText(event.title, searchQuery)}
+							{@html highlightText(displayTitle, searchQuery)}
 						{:else}
-							{event.title}
+							{displayTitle}
 						{/if}
 					</span>
 
