@@ -51,8 +51,9 @@ def init(user_id: str, backend: Optional[str]):
         raise click.ClickException("User ID must be alphanumeric, dash, or underscore only.")
 
     if backend == "syncthing":
-        from karma.syncthing import SyncthingClient
-        st = SyncthingClient()
+        from karma.syncthing import SyncthingClient, read_local_api_key
+        api_key = read_local_api_key()
+        st = SyncthingClient(api_key=api_key)
         if not st.is_running():
             raise click.ClickException("Syncthing is not running. Start Syncthing first.")
         device_id = st.get_device_id()
