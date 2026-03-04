@@ -10,7 +10,7 @@ import sqlite3
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 11
+SCHEMA_VERSION = 17
 
 SCHEMA_SQL = """
 -- Schema versioning
@@ -428,8 +428,8 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             # Nudge mtime to force re-index of all sessions
             conn.execute("UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1")
 
-        if current_version < 11:
-            logger.info("Migrating → v11: adding remote session columns")
+        if current_version < 17:
+            logger.info("Migrating → v17: adding remote session columns")
             existing_cols = {r[1] for r in conn.execute("PRAGMA table_info(sessions)").fetchall()}
             if "source" not in existing_cols:
                 conn.execute("ALTER TABLE sessions ADD COLUMN source TEXT DEFAULT 'local'")

@@ -301,12 +301,12 @@ class TestSessionFilterSource:
 
 
 class TestSchemaMigration:
-    def test_schema_v11_adds_remote_columns(self):
+    def test_schema_v17_adds_remote_columns(self):
         import sqlite3
 
         from db.schema import SCHEMA_VERSION, ensure_schema
 
-        assert SCHEMA_VERSION == 11
+        assert SCHEMA_VERSION == 17
 
         conn = sqlite3.connect(":memory:")
         conn.row_factory = sqlite3.Row
