@@ -2,10 +2,15 @@
 
 import json
 import re
+from pathlib import Path
+from typing import Optional
 
 import click
 
-from karma.config import SyncConfig, ProjectConfig, TeamMember, SYNC_CONFIG_PATH
+from karma.config import (
+    SyncConfig, ProjectConfig, TeamMember, TeamConfig,
+    TeamMemberSyncthing, SYNC_CONFIG_PATH, KARMA_BASE,
+)
 from karma.sync import sync_project, pull_remote_sessions, encode_project_path
 
 _SAFE_NAME = re.compile(r"^[a-zA-Z0-9_\-]+$")
@@ -25,7 +30,7 @@ def require_config() -> SyncConfig:
 @click.group()
 @click.version_option(package_name="claude-karma-cli")
 def cli():
-    """Claude Karma - IPFS session sync for distributed teams."""
+    """Claude Karma - IPFS/Syncthing session sync for distributed teams."""
     pass
 
 
@@ -33,7 +38,8 @@ def cli():
 
 @cli.command()
 @click.option("--user-id", prompt="Your user ID (e.g., your name)", help="Identity for syncing")
-def init(user_id: str):
+@click.option("--backend", type=click.Choice(["ipfs", "syncthing"]), default=None, help="Sync backend")
+def init(user_id: str, backend: Optional[str]):
     """Initialize Karma sync on this machine."""
     existing = SyncConfig.load()
     if existing:
@@ -44,14 +50,26 @@ def init(user_id: str):
     if not _SAFE_NAME.match(user_id):
         raise click.ClickException("User ID must be alphanumeric, dash, or underscore only.")
 
-    config = SyncConfig(user_id=user_id)
-    config.save()
-    click.echo(f"Initialized as '{user_id}' on '{config.machine_id}'.")
-    click.echo(f"Config saved to {SYNC_CONFIG_PATH}")
-    click.echo("\nNext steps:")
-    click.echo("  1. Install Kubo: https://docs.ipfs.tech/install/command-line/")
-    click.echo("  2. Start IPFS daemon: ipfs daemon &")
-    click.echo("  3. Add a project: karma project add <name> --path /path/to/project")
+    if backend == "syncthing":
+        from karma.syncthing import SyncthingClient
+        st = SyncthingClient()
+        if not st.is_running():
+            raise click.ClickException("Syncthing is not running. Start Syncthing first.")
+        device_id = st.get_device_id()
+        config = SyncConfig(user_id=user_id)
+        config.save()
+        click.echo(f"Initialized as '{user_id}' on '{config.machine_id}'.")
+        click.echo(f"Your Syncthing Device ID: {device_id}")
+        click.echo("Share this Device ID with your project owner.")
+    else:
+        config = SyncConfig(user_id=user_id)
+        config.save()
+        click.echo(f"Initialized as '{user_id}' on '{config.machine_id}'.")
+        click.echo(f"Config saved to {SYNC_CONFIG_PATH}")
+        click.echo("\nNext steps:")
+        click.echo("  1. Install Kubo: https://docs.ipfs.tech/install/command-line/")
+        click.echo("  2. Start IPFS daemon: ipfs daemon &")
+        click.echo("  3. Add a project: karma project add <name> --path /path/to/project")
 
 
 # --- project ---
@@ -65,8 +83,9 @@ def project():
 @project.command("add")
 @click.argument("name")
 @click.option("--path", required=True, help="Absolute path to the project directory")
-def project_add(name: str, path: str):
-    """Add a project for IPFS syncing."""
+@click.option("--team", "team_name", default=None, help="Team to add project to")
+def project_add(name: str, path: str, team_name: Optional[str]):
+    """Add a project for syncing."""
     if not _SAFE_NAME.match(name):
         raise click.ClickException("Project name must be alphanumeric, dash, or underscore only.")
 
@@ -79,15 +98,24 @@ def project_add(name: str, path: str):
     encoded = encode_project_path(path)
     project_config = ProjectConfig(path=path, encoded_name=encoded)
 
-    # Update config (create mutable copy)
-    projects = dict(config.projects)
-    projects[name] = project_config
-    updated = config.model_copy(update={"projects": projects})
-    updated.save()
+    if team_name:
+        if team_name not in config.teams:
+            raise click.ClickException(f"Team '{team_name}' not found.")
+        team_cfg = config.teams[team_name]
+        projects = dict(team_cfg.projects)
+        projects[name] = project_config
+        teams = dict(config.teams)
+        teams[team_name] = team_cfg.model_copy(update={"projects": projects})
+        updated = config.model_copy(update={"teams": teams})
+    else:
+        # Legacy flat projects
+        projects = dict(config.projects)
+        projects[name] = project_config
+        updated = config.model_copy(update={"projects": projects})
 
+    updated.save()
     click.echo(f"Added project '{name}' ({path})")
     click.echo(f"Encoded as: {encoded}")
-    click.echo(f"\nSync with: karma sync {name}")
 
 
 @project.command("list")
@@ -95,13 +123,18 @@ def project_list():
     """List configured projects."""
     config = require_config()
 
-    if not config.projects:
+    if not config.projects and not config.teams:
         click.echo("No projects configured. Run: karma project add <name> --path /path")
         return
 
     for name, proj in config.projects.items():
         sync_info = f" (last sync: {proj.last_sync_at})" if proj.last_sync_at else " (never synced)"
         click.echo(f"  {name}: {proj.path}{sync_info}")
+
+    for team_name, team_cfg in config.teams.items():
+        for name, proj in team_cfg.projects.items():
+            last = proj.last_sync_at or "never"
+            click.echo(f"  {name}: {proj.path} [team: {team_name}] (last: {last})")
 
 
 @project.command("remove")
@@ -194,8 +227,6 @@ def pull():
 @cli.command("ls")
 def list_remote():
     """List available remote sessions."""
-    from pathlib import Path
-
     remote_dir = Path.home() / ".claude_karma" / "remote-sessions"
     if not remote_dir.is_dir():
         click.echo("No remote sessions. Run: karma pull")
@@ -223,6 +254,110 @@ def list_remote():
                 click.echo(f"  {project_dir.name}: (no manifest)")
 
 
+# --- watch ---
+
+@cli.command()
+@click.option("--team", "team_name", required=True, help="Team to watch for")
+def watch(team_name: str):
+    """Watch project sessions and auto-package for Syncthing sync."""
+    from karma.watcher import SessionWatcher
+    from karma.packager import SessionPackager
+
+    config = require_config()
+
+    if team_name not in config.teams:
+        raise click.ClickException(
+            f"Team '{team_name}' not found. Run: karma team create {team_name} --backend syncthing"
+        )
+
+    team_cfg = config.teams[team_name]
+    if team_cfg.backend != "syncthing":
+        raise click.ClickException(
+            f"Team '{team_name}' uses {team_cfg.backend}, not syncthing. Watch is only for Syncthing."
+        )
+
+    if not team_cfg.projects:
+        raise click.ClickException(
+            f"No projects in team '{team_name}'. Run: karma project add <name> --path /path --team {team_name}"
+        )
+
+    click.echo(f"Watching {len(team_cfg.projects)} project(s) for team '{team_name}'...")
+    click.echo("Press Ctrl+C to stop.\n")
+
+    watchers = []
+    for proj_name, proj in team_cfg.projects.items():
+        claude_dir = Path.home() / ".claude" / "projects" / proj.encoded_name
+        if not claude_dir.is_dir():
+            click.echo(f"  Skipping '{proj_name}': Claude dir not found ({claude_dir})")
+            continue
+
+        outbox = KARMA_BASE / "sync-outbox" / team_name / config.user_id / proj.encoded_name
+
+        def make_package_fn(cd=claude_dir, ob=outbox, pn=proj_name):
+            def package():
+                packager = SessionPackager(
+                    project_dir=cd,
+                    user_id=config.user_id,
+                    machine_id=config.machine_id,
+                    project_path=proj.path,
+                )
+                ob.mkdir(parents=True, exist_ok=True)
+                packager.package(staging_dir=ob)
+                click.echo(f"  Packaged '{pn}' -> {ob}")
+            return package
+
+        watcher = SessionWatcher(
+            watch_dir=claude_dir,
+            package_fn=make_package_fn(),
+        )
+        watcher.start()
+        watchers.append(watcher)
+        click.echo(f"  Watching: {proj_name} ({claude_dir})")
+
+    try:
+        import time
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        click.echo("\nStopping watchers...")
+    finally:
+        for w in watchers:
+            w.stop()
+        click.echo("Done.")
+
+
+# --- status ---
+
+@cli.command()
+def status():
+    """Show sync status for all teams."""
+    config = require_config()
+
+    click.echo(f"User: {config.user_id} ({config.machine_id})")
+
+    if not config.teams and not config.projects:
+        click.echo("No teams or projects configured.")
+        return
+
+    # Legacy flat projects
+    if config.projects:
+        click.echo(f"\nLegacy projects (IPFS):")
+        for name, proj in config.projects.items():
+            sync_info = f"last sync: {proj.last_sync_at}" if proj.last_sync_at else "never synced"
+            click.echo(f"  {name}: {proj.path} ({sync_info})")
+
+    # Per-team
+    for team_name, team_cfg in config.teams.items():
+        click.echo(f"\n{team_name} ({team_cfg.backend}):")
+        if not team_cfg.projects:
+            click.echo("  No projects")
+        for proj_name, proj in team_cfg.projects.items():
+            last = proj.last_sync_at or "never"
+            click.echo(f"  {proj_name}: {proj.path} (last: {last})")
+        if team_cfg.members:
+            click.echo(f"  Members: {', '.join(team_cfg.members.keys())}")
+
+
 # --- team ---
 
 @cli.group()
@@ -231,27 +366,64 @@ def team():
     pass
 
 
-@team.command("add")
+@team.command("create")
 @click.argument("name")
-@click.argument("ipns_key")
-def team_add(name: str, ipns_key: str):
-    """Add a team member by their IPNS key."""
+@click.option("--backend", type=click.Choice(["ipfs", "syncthing"]), required=True, help="Sync backend")
+def team_create(name: str, backend: str):
+    """Create a new team with a specific sync backend."""
     if not _SAFE_NAME.match(name):
-        raise click.ClickException("Team member name must be alphanumeric, dash, or underscore only.")
-
-    if not ipns_key or ipns_key.startswith("-") or len(ipns_key) > 128:
-        raise click.ClickException("Invalid IPNS key: must be non-empty, not start with dash, max 128 chars.")
-    if not re.match(r"^[a-zA-Z0-9]+$", ipns_key):
-        raise click.ClickException("Invalid IPNS key: must be alphanumeric only.")
+        raise click.ClickException("Team name must be alphanumeric, dash, or underscore only.")
 
     config = require_config()
 
-    members = dict(config.team)
-    members[name] = TeamMember(ipns_key=ipns_key)
-    updated = config.model_copy(update={"team": members})
+    team_config = TeamConfig(backend=backend, projects={})
+
+    teams = dict(config.teams)
+    teams[name] = team_config
+    updated = config.model_copy(update={"teams": teams})
     updated.save()
 
-    click.echo(f"Added team member '{name}' ({ipns_key})")
+    click.echo(f"Created team '{name}' (backend: {backend})")
+
+
+@team.command("add")
+@click.argument("name")
+@click.argument("identifier")
+@click.option("--team", "team_name", default=None, help="Team to add member to (for per-team config)")
+def team_add(name: str, identifier: str, team_name: Optional[str]):
+    """Add a team member by their IPNS key or Syncthing device ID."""
+    if not _SAFE_NAME.match(name):
+        raise click.ClickException("Team member name must be alphanumeric, dash, or underscore only.")
+
+    config = require_config()
+
+    if team_name and team_name in config.teams:
+        # Per-team member add
+        team_cfg = config.teams[team_name]
+        if team_cfg.backend == "syncthing":
+            syncthing_members = dict(team_cfg.syncthing_members)
+            syncthing_members[name] = TeamMemberSyncthing(syncthing_device_id=identifier)
+            teams = dict(config.teams)
+            teams[team_name] = team_cfg.model_copy(update={"syncthing_members": syncthing_members})
+        else:
+            ipfs_members = dict(team_cfg.ipfs_members)
+            ipfs_members[name] = TeamMember(ipns_key=identifier)
+            teams = dict(config.teams)
+            teams[team_name] = team_cfg.model_copy(update={"ipfs_members": ipfs_members})
+        updated = config.model_copy(update={"teams": teams})
+        updated.save()
+        click.echo(f"Added team member '{name}' to team '{team_name}'")
+    else:
+        # Legacy flat team dict (IPFS-only backward compat)
+        if not identifier or identifier.startswith("-") or len(identifier) > 128:
+            raise click.ClickException("Invalid IPNS key: must be non-empty, not start with dash, max 128 chars.")
+        if not re.match(r"^[a-zA-Z0-9]+$", identifier):
+            raise click.ClickException("Invalid IPNS key: must be alphanumeric only.")
+        members = dict(config.team)
+        members[name] = TeamMember(ipns_key=identifier)
+        updated = config.model_copy(update={"team": members})
+        updated.save()
+        click.echo(f"Added team member '{name}' ({identifier})")
 
 
 @team.command("list")
@@ -259,12 +431,20 @@ def team_list():
     """List team members."""
     config = require_config()
 
-    if not config.team:
+    if not config.team and not config.teams:
         click.echo("No team members. Run: karma team add <name> <ipns-key>")
         return
 
+    # Legacy flat team
     for name, member in config.team.items():
         click.echo(f"  {name}: {member.ipns_key}")
+
+    # Per-team members
+    for team_name, team_cfg in config.teams.items():
+        if team_cfg.members:
+            click.echo(f"\n  {team_name} ({team_cfg.backend}):")
+            for member_name in team_cfg.members:
+                click.echo(f"    {member_name}")
 
 
 @team.command("remove")
