@@ -302,6 +302,8 @@ def watch(team_name: str):
             click.echo(f"  Skipping '{proj_name}': Claude dir not found ({claude_dir})")
             continue
 
+        # team_name intentionally excluded — user_id provides namespace isolation.
+        # Both IPFS pull and Syncthing watch converge on this same path.
         outbox = KARMA_BASE / "remote-sessions" / config.user_id / proj.encoded_name
 
         def make_package_fn(cd=claude_dir, ob=outbox, pn=proj_name):
