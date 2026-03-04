@@ -9,11 +9,32 @@ import click
 
 from karma.config import (
     SyncConfig, ProjectConfig, TeamMember, TeamConfig,
-    TeamMemberSyncthing, SYNC_CONFIG_PATH, KARMA_BASE,
+    TeamMemberSyncthing, SyncthingSettings, SYNC_CONFIG_PATH, KARMA_BASE,
 )
 from karma.sync import sync_project, pull_remote_sessions, encode_project_path
 
 _SAFE_NAME = re.compile(r"^[a-zA-Z0-9_\-]+$")
+
+
+def _auto_share_folders(st, config, team_cfg, teams, team_name, new_device_id):
+    """Auto-create Syncthing shared folders for all projects in a team."""
+    remote_base = KARMA_BASE / "remote-sessions" / config.user_id
+    for proj_name, proj_cfg in team_cfg.projects.items():
+        folder_path = str(remote_base / proj_cfg.encoded_name)
+        folder_id = f"karma-{team_name}-{proj_name}"
+        # Collect all member device IDs + our own
+        device_ids = [new_device_id]
+        if config.syncthing.device_id:
+            device_ids.append(config.syncthing.device_id)
+        for member in team_cfg.syncthing_members.values():
+            if member.syncthing_device_id not in device_ids:
+                device_ids.append(member.syncthing_device_id)
+        try:
+            Path(folder_path).mkdir(parents=True, exist_ok=True)
+            st.add_folder(folder_id, folder_path, device_ids, folder_type="sendreceive")
+            click.echo(f"Shared folder '{folder_id}' -> {folder_path}")
+        except Exception as e:
+            click.echo(f"Warning: Could not create shared folder for '{proj_name}': {e}")
 
 
 def require_config() -> SyncConfig:
@@ -57,7 +78,12 @@ def init(user_id: str, backend: Optional[str]):
         if not st.is_running():
             raise click.ClickException("Syncthing is not running. Start Syncthing first.")
         device_id = st.get_device_id()
-        config = SyncConfig(user_id=user_id)
+        syncthing_settings = SyncthingSettings(
+            api_url="http://127.0.0.1:8384",
+            api_key=api_key,
+            device_id=device_id,
+        )
+        config = SyncConfig(user_id=user_id, syncthing=syncthing_settings)
         config.save()
         click.echo(f"Initialized as '{user_id}' on '{config.machine_id}'.")
         click.echo(f"Your Syncthing Device ID: {device_id}")
@@ -107,6 +133,27 @@ def project_add(name: str, path: str, team_name: Optional[str]):
         teams = dict(config.teams)
         teams[team_name] = team_cfg.model_copy(update={"projects": projects})
         updated = config.model_copy(update={"teams": teams})
+
+        # Auto-create shared folder if team has Syncthing members
+        if team_cfg.backend == "syncthing" and team_cfg.syncthing_members:
+            try:
+                from karma.syncthing import SyncthingClient, read_local_api_key
+                api_key = config.syncthing.api_key or read_local_api_key()
+                st = SyncthingClient(api_key=api_key)
+                if st.is_running():
+                    remote_base = KARMA_BASE / "remote-sessions" / config.user_id
+                    folder_path = str(remote_base / encoded)
+                    folder_id = f"karma-{team_name}-{name}"
+                    device_ids = []
+                    if config.syncthing.device_id:
+                        device_ids.append(config.syncthing.device_id)
+                    for member in team_cfg.syncthing_members.values():
+                        device_ids.append(member.syncthing_device_id)
+                    Path(folder_path).mkdir(parents=True, exist_ok=True)
+                    st.add_folder(folder_id, folder_path, device_ids, folder_type="sendreceive")
+                    click.echo(f"Shared folder '{folder_id}' -> {folder_path}")
+            except Exception as e:
+                click.echo(f"Warning: Could not auto-share folder: {e}")
     else:
         # Legacy flat projects
         projects = dict(config.projects)
@@ -419,6 +466,23 @@ def team_add(name: str, identifier: str, team_name: Optional[str]):
             syncthing_members[name] = TeamMemberSyncthing(syncthing_device_id=identifier)
             teams = dict(config.teams)
             teams[team_name] = team_cfg.model_copy(update={"syncthing_members": syncthing_members})
+
+            # Auto-pair device in Syncthing
+            try:
+                from karma.syncthing import SyncthingClient, read_local_api_key
+                api_key = config.syncthing.api_key or read_local_api_key()
+                st = SyncthingClient(api_key=api_key)
+                if st.is_running():
+                    st.add_device(identifier, name)
+                    click.echo(f"Paired Syncthing device '{name}' ({identifier[:7]}...)")
+
+                    # Auto-create shared folder if team has projects
+                    _auto_share_folders(st, config, team_cfg, teams, team_name, identifier)
+                else:
+                    click.echo("Warning: Syncthing not running — device saved but not paired yet.")
+            except Exception as e:
+                click.echo(f"Warning: Could not auto-pair device: {e}")
+                click.echo("You can pair manually in Syncthing UI (http://127.0.0.1:8384)")
         else:
             ipfs_members = dict(team_cfg.ipfs_members)
             ipfs_members[name] = TeamMember(ipns_key=identifier)
