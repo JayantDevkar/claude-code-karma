@@ -12,7 +12,8 @@
 		Zap,
 		TerminalSquare,
 		BookOpen,
-		HelpCircle
+		HelpCircle,
+		Plug
 	} from 'lucide-svelte';
 	import type { FilterCategory, FilterCounts } from '$lib/api-types';
 
@@ -115,6 +116,13 @@
 			icon: 'text-sky-500',
 			hoverBg: 'hover:bg-sky-500/5'
 		},
+		mcp_tool: {
+			active: 'bg-indigo-500/10 border-indigo-500/50 text-indigo-500',
+			inactive:
+				'bg-[var(--bg-base)] border-[var(--border)] text-[var(--text-secondary)] hover:border-indigo-500/30',
+			icon: 'text-indigo-500',
+			hoverBg: 'hover:bg-indigo-500/5'
+		},
 		command: {
 			active: 'bg-teal-500/10 border-teal-500/50 text-teal-500',
 			inactive:
@@ -169,6 +177,12 @@
 			label: 'Ask User',
 			icon: HelpCircle,
 			countKey: 'ask_user' as const
+		},
+		{
+			id: 'mcp_tool' as const,
+			label: 'MCP Tools',
+			icon: Plug,
+			countKey: 'mcp_tool' as const
 		},
 		{
 			id: 'skill' as const,

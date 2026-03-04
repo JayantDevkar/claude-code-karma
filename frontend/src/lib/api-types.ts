@@ -395,6 +395,7 @@ export type FilterCategory =
 	| 'response'
 	| 'big_response'
 	| 'ask_user'
+	| 'mcp_tool'
 	| 'skill'
 	| 'command';
 
@@ -408,6 +409,7 @@ export interface FilterCounts {
 	response: number;
 	big_response: number;
 	ask_user: number;
+	mcp_tool: number;
 	skill: number;
 	command: number;
 }

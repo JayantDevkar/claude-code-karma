@@ -58,6 +58,12 @@ function matchesSingleFilter(
 			return (
 				event.event_type === 'tool_call' && event.metadata?.tool_name === 'AskUserQuestion'
 			);
+		case 'mcp_tool':
+			return (
+				event.event_type === 'tool_call' &&
+				typeof event.metadata?.tool_name === 'string' &&
+				event.metadata.tool_name.startsWith('mcp__')
+			);
 		case 'skill':
 			return event.event_type === 'skill_invocation';
 		case 'command':
@@ -131,6 +137,7 @@ function calculateFilterCounts(
 		response: 0,
 		big_response: 0,
 		ask_user: 0,
+		mcp_tool: 0,
 		skill: 0,
 		command: 0
 	};
@@ -151,6 +158,14 @@ function calculateFilterCounts(
 		// AskUserQuestion (subset of tool_call)
 		if (type === 'tool_call' && event.metadata?.tool_name === 'AskUserQuestion')
 			counts.ask_user++;
+
+		// MCP tools (subset of tool_call)
+		if (
+			type === 'tool_call' &&
+			typeof event.metadata?.tool_name === 'string' &&
+			(event.metadata.tool_name as string).startsWith('mcp__')
+		)
+			counts.mcp_tool++;
 
 		// Subagent logic (complex)
 		if (currentAgentId) {
@@ -258,6 +273,7 @@ export function createTimelineLogic(
 			'response',
 			'big_response',
 			'ask_user',
+			'mcp_tool',
 			'skill',
 			'command'
 		];
