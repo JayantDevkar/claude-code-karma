@@ -30,7 +30,7 @@
 		<NavigationCard title="Agents" href="/agents" icon={Bot} color="purple" />
 		<NavigationCard title="Tools" href="/tools" icon={Cable} color="teal" />
 		<NavigationCard title="Hooks" href="/hooks" icon={Webhook} color="amber" />
-		<NavigationCard title="Commands" href="/commands" icon={Terminal} color="rose" />
+		<NavigationCard title="Commands" href="/commands" icon={Terminal} color="red" />
 		<NavigationCard title="Plugins" href="/plugins" icon={Puzzle} color="violet" />
 		<NavigationCard title="Archived" href="/archived" icon={History} color="gray" />
 		<NavigationCard title="Settings" href="/settings" icon={Settings} color="indigo" />
