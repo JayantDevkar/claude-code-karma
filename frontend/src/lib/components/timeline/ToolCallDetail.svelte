@@ -76,6 +76,107 @@
 		}
 	});
 
+	// AskUserQuestion parsing
+	const isAskUserQuestion = $derived(toolName === 'AskUserQuestion');
+
+	interface ParsedQuestion {
+		question: string;
+		header?: string;
+		multiSelect?: boolean;
+		options: Array<{ label: string; description?: string }>;
+	}
+
+	const parsedQuestions = $derived.by<ParsedQuestion[]>(() => {
+		if (!isAskUserQuestion) return [];
+		const questions = input.questions;
+		if (!Array.isArray(questions)) return [];
+		return questions as ParsedQuestion[];
+	});
+
+	// Extract user answers from result_content or metadata answers field
+	const userAnswers = $derived.by<Map<string, string>>(() => {
+		const answers = new Map<string, string>();
+		if (!isAskUserQuestion) return answers;
+
+		// Try structured answers from metadata
+		if (input.answers && typeof input.answers === 'object') {
+			for (const [q, a] of Object.entries(input.answers as Record<string, string>)) {
+				answers.set(q, a);
+			}
+			return answers;
+		}
+
+		// Parse from result_content using robust matching
+		// Format: "question text"="answer text"
+		// Question text may contain escaped quotes (\') and special chars
+		if (resultContent) {
+			// Strategy: for each question, find its answer in result_content
+			// by looking for the question text (fuzzy) followed by "="answer"
+			for (const q of parsedQuestions) {
+				// Take first 40 chars of question as anchor (enough to be unique)
+				const anchor = q.question.slice(0, 40).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+				// Match: "...anchor..."="answer"
+				const pattern = new RegExp(`"[^"]*?${anchor}[^"]*?"="([^"]*?)"`, 's');
+				const match = resultContent.match(pattern);
+				if (match) {
+					answers.set(q.question, match[1].trim());
+				}
+			}
+
+			// Fallback: if no matches found, try the simple pattern
+			if (answers.size === 0) {
+				const pattern = /"([^"]+)"="([^"]+)"/g;
+				let match;
+				while ((match = pattern.exec(resultContent)) !== null) {
+					answers.set(match[1], match[2]);
+				}
+			}
+		}
+		return answers;
+	});
+
+	// Extract user notes from result_content
+	const userNotes = $derived.by<Map<string, string>>(() => {
+		const notes = new Map<string, string>();
+		if (!isAskUserQuestion || !resultContent) return notes;
+
+		// Try structured annotations from metadata
+		if (input.annotations && typeof input.annotations === 'object') {
+			for (const [q, ann] of Object.entries(
+				input.annotations as Record<string, { notes?: string }>
+			)) {
+				if (ann?.notes) notes.set(q, ann.notes);
+			}
+			return notes;
+		}
+
+		// Parse "user notes: ..." from result_content
+		const notesMatch = resultContent.match(/user notes:\s*(.+?)(?:\.|$)/i);
+		if (notesMatch) {
+			// Associate with the last question
+			if (parsedQuestions.length > 0) {
+				notes.set(parsedQuestions[parsedQuestions.length - 1].question, notesMatch[1].trim());
+			}
+		}
+		return notes;
+	});
+
+	function isSelectedAnswer(questionText: string, optionLabel: string): boolean {
+		const answer = userAnswers.get(questionText);
+		if (!answer) return false;
+		return answer.toLowerCase().trim() === optionLabel.toLowerCase().trim();
+	}
+
+	/** Check if the user typed a custom "Other" answer that doesn't match any predefined option */
+	function getCustomAnswer(q: ParsedQuestion): string | null {
+		const answer = userAnswers.get(q.question);
+		if (!answer) return null;
+		const matchesAny = q.options.some(
+			(o) => o.label.toLowerCase().trim() === answer.toLowerCase().trim()
+		);
+		return matchesAny ? null : answer;
+	}
+
 	function hasValue(val: unknown): boolean {
 		return val != null && val !== '';
 	}
@@ -481,7 +582,173 @@
 				{/if}
 			</div>
 
-			<!-- Default: JSON display -->
+			<!-- AskUserQuestion: Formatted questions with options -->
+		{:else if isAskUserQuestion && parsedQuestions.length > 0}
+			<div class="space-y-4">
+				{#each parsedQuestions as q, qIndex}
+					<div class="rounded-[var(--radius-md)] border border-sky-500/20 bg-sky-500/5 p-4">
+						<!-- Question header -->
+						<div class="flex items-start gap-3 mb-3">
+							<div
+								class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-sky-500/20 text-sky-500 text-xs font-bold mt-0.5"
+							>
+								{qIndex + 1}
+							</div>
+							<div class="flex-1 min-w-0">
+								{#if q.header}
+									<span
+										class="inline-block rounded-full bg-sky-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-sky-500 mb-1.5"
+									>
+										{q.header}
+									</span>
+								{/if}
+								<p class="text-sm font-medium text-[var(--text-primary)] leading-snug">
+									{q.question}
+								</p>
+								{#if q.multiSelect}
+									<span
+										class="inline-block mt-1 text-[10px] text-[var(--text-muted)] italic"
+									>
+										Multiple selections allowed
+									</span>
+								{/if}
+							</div>
+						</div>
+
+						<!-- Options -->
+						<div class="ml-9 space-y-1.5">
+							{#each q.options as option}
+								{@const isSelected = isSelectedAnswer(q.question, option.label)}
+								<div
+									class="
+										flex items-start gap-2.5 rounded-[var(--radius-md)] border px-3 py-2.5
+										transition-all duration-150
+										{isSelected
+										? 'border-emerald-500/40 bg-emerald-500/10 shadow-sm shadow-emerald-500/5'
+										: 'border-[var(--border)] bg-[var(--bg-base)]'}
+									"
+								>
+									<!-- Selection indicator -->
+									<div
+										class="
+											mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2
+											transition-colors
+											{isSelected
+											? 'border-emerald-500 bg-emerald-500'
+											: 'border-[var(--text-muted)]/30'}
+										"
+									>
+										{#if isSelected}
+											<svg
+												class="h-2.5 w-2.5 text-white"
+												viewBox="0 0 24 24"
+												fill="none"
+												stroke="currentColor"
+												stroke-width="3"
+												stroke-linecap="round"
+												stroke-linejoin="round"
+											>
+												<polyline points="20 6 9 17 4 12" />
+											</svg>
+										{/if}
+									</div>
+
+									<div class="flex-1 min-w-0">
+										<span
+											class="
+												text-sm font-medium
+												{isSelected
+												? 'text-emerald-600 dark:text-emerald-400'
+												: 'text-[var(--text-primary)]'}
+											"
+										>
+											{option.label}
+										</span>
+										{#if option.description}
+											<p
+												class="
+													mt-0.5 text-xs leading-relaxed
+													{isSelected
+													? 'text-emerald-600/70 dark:text-emerald-400/70'
+													: 'text-[var(--text-muted)]'}
+												"
+											>
+												{option.description}
+											</p>
+										{/if}
+									</div>
+
+									{#if isSelected}
+										<span
+											class="shrink-0 rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400"
+										>
+											Selected
+										</span>
+									{/if}
+								</div>
+							{/each}
+
+							<!-- Custom "Other" answer (doesn't match any predefined option) -->
+							{#if getCustomAnswer(q)}
+								<div
+									class="flex items-start gap-2.5 rounded-[var(--radius-md)] border border-emerald-500/40 bg-emerald-500/10 shadow-sm shadow-emerald-500/5 px-3 py-2.5"
+								>
+									<div
+										class="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 border-emerald-500 bg-emerald-500"
+									>
+										<svg
+											class="h-2.5 w-2.5 text-white"
+											viewBox="0 0 24 24"
+											fill="none"
+											stroke="currentColor"
+											stroke-width="3"
+											stroke-linecap="round"
+											stroke-linejoin="round"
+										>
+											<polyline points="20 6 9 17 4 12" />
+										</svg>
+									</div>
+									<div class="flex-1 min-w-0">
+										<span
+											class="text-[10px] font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400"
+										>
+											Custom Answer
+										</span>
+										<p
+											class="mt-0.5 text-sm font-medium text-emerald-600 dark:text-emerald-400"
+										>
+											{getCustomAnswer(q)}
+										</p>
+									</div>
+									<span
+										class="shrink-0 rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400"
+									>
+										Selected
+									</span>
+								</div>
+							{/if}
+
+							<!-- User notes for this question (hide if same as custom answer) -->
+							{#if userNotes.get(q.question) && userNotes.get(q.question) !== getCustomAnswer(q)}
+								<div
+									class="mt-2 rounded-[var(--radius-md)] border border-amber-500/20 bg-amber-500/5 px-3 py-2"
+								>
+									<span
+										class="text-[10px] font-semibold uppercase tracking-wider text-amber-600 dark:text-amber-400"
+									>
+										User Note
+									</span>
+									<p class="mt-0.5 text-xs text-[var(--text-secondary)]">
+										{userNotes.get(q.question)}
+									</p>
+								</div>
+							{/if}
+						</div>
+					</div>
+				{/each}
+			</div>
+
+		<!-- Default: JSON display -->
 		{:else}
 			{@const content = JSON.stringify(input, null, 2)}
 			<div class="rounded-[var(--radius-md)] border border-[var(--border)] p-3 relative">
@@ -513,7 +780,24 @@
 	</div>
 
 	<!-- Result Section -->
-	{#if hasResult && resultContent}
+	{#if isAskUserQuestion && hasResult}
+		<!-- AskUserQuestion: show a compact answered status instead of raw result -->
+		<div>
+			<div class="flex items-center gap-2">
+				<h4
+					class="text-[10px] font-medium text-[var(--text-muted)] uppercase tracking-wide"
+				>
+					Result
+				</h4>
+				<span
+					class="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400"
+				>
+					<CheckCircle2 size={10} />
+					Answered
+				</span>
+			</div>
+		</div>
+	{:else if hasResult && resultContent}
 		{@const content =
 			typeof resultContent === 'string'
 				? resultContent

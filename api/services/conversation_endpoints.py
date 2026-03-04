@@ -216,6 +216,14 @@ def build_conversation_timeline(
                     # Only include substantial text responses
                     if len(block.text) > 50:
                         text_preview = block.text[:150]
+                        word_count = len(block.text.split())
+                        is_big = word_count > 100
+                        resp_metadata: dict = {
+                            "full_text": block.text,
+                            "word_count": word_count,
+                        }
+                        if is_big:
+                            resp_metadata["is_big_response"] = True
                         events.append(
                             TimelineEvent(
                                 id=f"evt-{event_counter}",
@@ -223,9 +231,9 @@ def build_conversation_timeline(
                                 timestamp=msg.timestamp,
                                 actor=msg_actor,
                                 actor_type=msg_actor_type,
-                                title="Response",
+                                title="Big Response" if is_big else "Response",
                                 summary=text_preview,
-                                metadata={"full_text": block.text},
+                                metadata=resp_metadata,
                             )
                         )
 

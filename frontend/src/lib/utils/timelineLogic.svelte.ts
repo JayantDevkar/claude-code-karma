@@ -50,6 +50,14 @@ function matchesSingleFilter(
 			return event.event_type === 'thinking';
 		case 'response':
 			return event.event_type === 'response';
+		case 'big_response':
+			return (
+				event.event_type === 'response' && event.metadata?.is_big_response === true
+			);
+		case 'ask_user':
+			return (
+				event.event_type === 'tool_call' && event.metadata?.tool_name === 'AskUserQuestion'
+			);
 		case 'skill':
 			return event.event_type === 'skill_invocation';
 		case 'command':
@@ -121,6 +129,8 @@ function calculateFilterCounts(
 		error: 0,
 		thinking: 0,
 		response: 0,
+		big_response: 0,
+		ask_user: 0,
 		skill: 0,
 		command: 0
 	};
@@ -134,6 +144,13 @@ function calculateFilterCounts(
 		if (type === 'todo_update') counts.todo_update++;
 		if (type === 'thinking') counts.thinking++;
 		if (type === 'response') counts.response++;
+
+		// Big response (subset of response)
+		if (type === 'response' && event.metadata?.is_big_response) counts.big_response++;
+
+		// AskUserQuestion (subset of tool_call)
+		if (type === 'tool_call' && event.metadata?.tool_name === 'AskUserQuestion')
+			counts.ask_user++;
 
 		// Subagent logic (complex)
 		if (currentAgentId) {
@@ -239,6 +256,8 @@ export function createTimelineLogic(
 			'error',
 			'thinking',
 			'response',
+			'big_response',
+			'ask_user',
 			'skill',
 			'command'
 		];

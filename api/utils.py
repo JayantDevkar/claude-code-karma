@@ -661,8 +661,14 @@ def collect_tool_results(
                 parsed_xml = parse_xml_like_content(extracted_content)
 
             # Limit stored content size for display
+            # AskUserQuestion results are kept larger since they contain
+            # the question+answer pairs needed for UI rendering
+            is_ask_user = "has answered your questions" in extracted_content[:60]
+            max_len = 2000 if is_ask_user else 500
             result_preview = (
-                extracted_content[:500] if len(extracted_content) > 500 else extracted_content
+                extracted_content[:max_len]
+                if len(extracted_content) > max_len
+                else extracted_content
             )
 
             results[tool_use_id] = ToolResultData(
