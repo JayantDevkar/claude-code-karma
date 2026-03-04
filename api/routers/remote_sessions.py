@@ -109,11 +109,13 @@ def list_remote_users() -> list[RemoteUser]:
             manifest = _load_manifest_safe(user_dir.name, proj_dir.name)
             if manifest:
                 total_sessions += manifest.get("session_count", 0)
-        users.append(RemoteUser(
-            user_id=user_dir.name,
-            project_count=project_count,
-            total_sessions=total_sessions,
-        ))
+        users.append(
+            RemoteUser(
+                user_id=user_dir.name,
+                project_count=project_count,
+                total_sessions=total_sessions,
+            )
+        )
     return users
 
 
@@ -130,16 +132,20 @@ def list_user_projects(user_id: str) -> list[RemoteProject]:
         if not proj_dir.is_dir():
             continue
         manifest = _load_manifest_safe(user_id, proj_dir.name)
-        projects.append(RemoteProject(
-            encoded_name=proj_dir.name,
-            session_count=manifest.get("session_count", 0) if manifest else 0,
-            synced_at=manifest.get("synced_at") if manifest else None,
-            machine_id=manifest.get("machine_id") if manifest else None,
-        ))
+        projects.append(
+            RemoteProject(
+                encoded_name=proj_dir.name,
+                session_count=manifest.get("session_count", 0) if manifest else 0,
+                synced_at=manifest.get("synced_at") if manifest else None,
+                machine_id=manifest.get("machine_id") if manifest else None,
+            )
+        )
     return projects
 
 
-@router.get("/users/{user_id}/projects/{project}/sessions", response_model=list[RemoteSessionSummary])
+@router.get(
+    "/users/{user_id}/projects/{project}/sessions", response_model=list[RemoteSessionSummary]
+)
 def list_user_sessions(user_id: str, project: str) -> list[RemoteSessionSummary]:
     """List sessions for a remote user's project."""
     manifest = _load_manifest(user_id, project)

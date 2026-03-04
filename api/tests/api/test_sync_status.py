@@ -22,20 +22,24 @@ class TestSyncStatus:
 
     def test_sync_status_with_config(self, tmp_path, monkeypatch):
         config_path = tmp_path / "sync-config.json"
-        config_path.write_text(json.dumps({
-            "user_id": "alice",
-            "machine_id": "mac",
-            "teams": {
-                "beta": {
-                    "backend": "syncthing",
-                    "projects": {"app": {"path": "/app", "encoded_name": "-app"}},
-                    "syncthing_members": {"bob": {"syncthing_device_id": "AAAA-BBBB"}},
-                    "ipfs_members": {},
+        config_path.write_text(
+            json.dumps(
+                {
+                    "user_id": "alice",
+                    "machine_id": "mac",
+                    "teams": {
+                        "beta": {
+                            "backend": "syncthing",
+                            "projects": {"app": {"path": "/app", "encoded_name": "-app"}},
+                            "syncthing_members": {"bob": {"syncthing_device_id": "AAAA-BBBB"}},
+                            "ipfs_members": {},
+                        }
+                    },
+                    "projects": {},
+                    "team": {},
                 }
-            },
-            "projects": {},
-            "team": {},
-        }))
+            )
+        )
         monkeypatch.setattr("routers.sync_status.SYNC_CONFIG_PATH", config_path)
         resp = client.get("/sync/status")
         assert resp.status_code == 200
@@ -48,26 +52,30 @@ class TestSyncStatus:
 
     def test_sync_teams_endpoint(self, tmp_path, monkeypatch):
         config_path = tmp_path / "sync-config.json"
-        config_path.write_text(json.dumps({
-            "user_id": "alice",
-            "machine_id": "mac",
-            "teams": {
-                "alpha": {
-                    "backend": "ipfs",
+        config_path.write_text(
+            json.dumps(
+                {
+                    "user_id": "alice",
+                    "machine_id": "mac",
+                    "teams": {
+                        "alpha": {
+                            "backend": "ipfs",
+                            "projects": {},
+                            "ipfs_members": {"carol": {"ipns_key": "abc123"}},
+                            "syncthing_members": {},
+                        },
+                        "beta": {
+                            "backend": "syncthing",
+                            "projects": {},
+                            "ipfs_members": {},
+                            "syncthing_members": {"bob": {"syncthing_device_id": "XXXX"}},
+                        },
+                    },
                     "projects": {},
-                    "ipfs_members": {"carol": {"ipns_key": "abc123"}},
-                    "syncthing_members": {},
-                },
-                "beta": {
-                    "backend": "syncthing",
-                    "projects": {},
-                    "ipfs_members": {},
-                    "syncthing_members": {"bob": {"syncthing_device_id": "XXXX"}},
-                },
-            },
-            "projects": {},
-            "team": {},
-        }))
+                    "team": {},
+                }
+            )
+        )
         monkeypatch.setattr("routers.sync_status.SYNC_CONFIG_PATH", config_path)
         resp = client.get("/sync/teams")
         assert resp.status_code == 200

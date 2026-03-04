@@ -56,5 +56,3 @@ class TestRemoteManifestParsing:
         sessions_dir = remote_sessions_dir / "alice" / "-Users-alice-acme" / "sessions"
         assert (sessions_dir / "sess-001.jsonl").exists()
         assert (sessions_dir / "sess-002.jsonl").exists()
-
-
