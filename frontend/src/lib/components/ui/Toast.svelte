@@ -3,9 +3,9 @@
 	import { X, CheckCircle2, AlertCircle, Info } from 'lucide-svelte';
 </script>
 
-{#if toasts.list.length > 0}
+{#if $toasts.length > 0}
 	<div class="toast-container" aria-live="polite">
-		{#each toasts.list as toast (toast.id)}
+		{#each $toasts as toast (toast.id)}
 			<div class="toast toast-{toast.type}" role="alert">
 				<span class="toast-icon">
 					{#if toast.type === 'success'}

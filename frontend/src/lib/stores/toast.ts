@@ -1,7 +1,9 @@
 /**
- * Minimal toast notification store using Svelte 5 runes.
+ * Minimal toast notification store using Svelte writable store.
  * Usage: import { toasts, addToast, dismissToast } from '$lib/stores/toast';
  */
+
+import { writable, get } from 'svelte/store';
 
 export type ToastType = 'success' | 'error' | 'info';
 
@@ -12,17 +14,13 @@ export interface Toast {
 }
 
 let _id = 0;
-let _toasts = $state<Toast[]>([]);
+const _toasts = writable<Toast[]>([]);
 
-export const toasts = {
-	get list() {
-		return _toasts;
-	}
-};
+export const toasts = { subscribe: _toasts.subscribe };
 
 export function addToast(message: string, type: ToastType = 'info', duration = 4000) {
 	const id = ++_id;
-	_toasts = [..._toasts, { id, message, type }];
+	_toasts.update((t) => [...t, { id, message, type }]);
 
 	if (duration > 0) {
 		setTimeout(() => dismissToast(id), duration);
@@ -30,5 +28,5 @@ export function addToast(message: string, type: ToastType = 'info', duration = 4
 }
 
 export function dismissToast(id: number) {
-	_toasts = _toasts.filter((t) => t.id !== id);
+	_toasts.update((t) => t.filter((toast) => toast.id !== id));
 }
