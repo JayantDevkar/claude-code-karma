@@ -424,6 +424,17 @@ New endpoints:
 | Multi-team | Backend is per-team | User can use IPFS for one team, Syncthing for another |
 | Security | Direct connections, no relays by default | Maximum privacy for trusted teams |
 
+## Design Update: sync-outbox Removed (2026-03-03)
+
+The original design used `sync-outbox/{team}/{user-id}/{project}/` as an intermediate directory. This was updated so that both `karma watch` (Syncthing) and `karma pull` (IPFS) write directly to `remote-sessions/{user-id}/{project}/`. The `sync-outbox/` concept is dropped because:
+
+1. The API reads from `remote-sessions/` — an intermediate directory created a routing gap
+2. IPFS already wrote directly to `remote-sessions/` — Syncthing should too
+3. The `team` tier in the path was unnecessary — `user_id` already provides namespace isolation
+4. Syncthing can watch any directory — changing the path doesn't affect its operation
+
+Syncthing shared folders now point to `remote-sessions/{user-id}/` instead of `sync-outbox/{team}/{user-id}/`.
+
 ## Future Enhancements (Post-MVP)
 
 - **Live session streaming** — Syncthing's event API notifies dashboard when new files arrive

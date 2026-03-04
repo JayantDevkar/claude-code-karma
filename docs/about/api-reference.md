@@ -65,6 +65,74 @@ Returns session state objects with fields: session ID, project, status (STARTING
 
 ---
 
+## Sync Status
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/sync/status` | Sync configuration and status: backend type, teams, project counts |
+| GET | `/sync/teams` | List all teams with their backend (IPFS or Syncthing) and members |
+
+**Response:** Sync status endpoint returns configured status, user ID, machine ID, and per-team information (backend type, project count, member count).
+
+---
+
+## Remote Sessions (Synced from Team Members)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/users` | List all remote users who have synced sessions |
+| GET | `/users/{user_id}/projects` | List projects synced by a remote user |
+| GET | `/users/{user_id}/projects/{project}/sessions` | List sessions in a remote user's project |
+| GET | `/users/{user_id}/projects/{project}/manifest` | Get the full manifest for a remote user's project (metadata + session list) |
+
+**Path parameters:**
+- `user_id` — Remote freelancer/contributor ID (e.g., `alice`, `bob`)
+- `project` — Project encoded name (e.g., `-Users-alice-work-acme-app`)
+
+**Response examples:**
+
+Remote user:
+```json
+{
+  "user_id": "alice",
+  "project_count": 2,
+  "total_sessions": 12
+}
+```
+
+Remote project:
+```json
+{
+  "encoded_name": "-Users-alice-work-acme-app",
+  "session_count": 5,
+  "synced_at": "2026-03-03T14:30:00Z",
+  "machine_id": "alice-macbook-pro"
+}
+```
+
+Manifest:
+```json
+{
+  "version": 1,
+  "user_id": "alice",
+  "machine_id": "alice-macbook-pro",
+  "project_path": "/Users/alice/work/acme-app",
+  "project_encoded": "-Users-alice-work-acme-app",
+  "synced_at": "2026-03-03T14:30:00Z",
+  "session_count": 5,
+  "sync_backend": "syncthing",
+  "sessions": [
+    {
+      "uuid": "abc123def456...",
+      "mtime": "2026-03-03T12:00:00Z",
+      "size_bytes": 45000
+    }
+  ]
+}
+```
+
+---
+
 ## Plans
 
 | Method | Endpoint | Description |
@@ -166,3 +234,10 @@ Project endpoints use encoded path names. The encoding converts filesystem paths
 ```
 
 Use the value from the `/projects` listing as the `encoded_name` parameter.
+
+### Sync Data Validation
+
+Remote session endpoints validate input to prevent path traversal attacks:
+- `user_id` and `project` parameters must be alphanumeric, dash, underscore, or dot only
+- Values like `.` and `..` are rejected
+- Invalid characters result in 400 Bad Request with error details

@@ -12,6 +12,7 @@ Technical overview of Claude Code Karma's system design, data flow, and key patt
 ~/.claude/projects/{encoded-path}/{uuid}/tool-results/toolu_*.txt
 ~/.claude/todos/{uuid}-*.json
 ~/.claude_karma/live-sessions/{slug}.json
+~/.claude_karma/remote-sessions/{user-id}/*
         |
         v
 +---------------------------------------+
@@ -44,11 +45,33 @@ Technical overview of Claude Code Karma's system design, data flow, and key patt
         |
         v
   ~/.claude_karma/live-sessions/*.json
+
++---------------------------------------+
+|      Sync Layer (Session Sharing)      |
+|                                        |
+|  CLI (karma):                          |
+|  - karma init, karma team create       |
+|  - karma project add                   |
+|  - karma sync (IPFS) / karma watch     |
+|  - karma pull / karma status           |
+|                                        |
+|  IPFS Backend:                         |
+|  - Kubo daemon for publishing          |
+|  - IPNS for versioning                 |
+|                                        |
+|  Syncthing Backend:                    |
+|  - Syncthing daemon for sync           |
+|  - Session watcher for packaging       |
++---------------------------------------+
+        |
+        v
+  ~/.claude_karma/remote-sessions/  (both backends write here, API reads from here)
+  ~/.claude_karma/sync-inbox/       (incoming feedback)
 ```
 
 ---
 
-## Three Layers
+## Four Layers
 
 ### 1. Data Parsing Layer (API)
 
@@ -62,6 +85,15 @@ The SvelteKit frontend fetches data from the API and renders interactive dashboa
 
 Claude Code hook scripts fire during session events and write state to `~/.claude_karma/live-sessions/`. The API reads these state files to serve live session data. Hooks run in the Claude Code process and require no separate daemon.
 
+### 4. Session Sync Layer (CLI + Backends)
+
+The `karma` CLI orchestrates cross-system session sharing via pluggable backends:
+
+- **IPFS backend**: Publish sessions to IPFS, discover via IPNS, pull on-demand. Uses Kubo daemon.
+- **Syncthing backend**: Package sessions locally, auto-sync bidirectionally via Syncthing mesh network.
+
+Both backends write to the same format in `~/.claude_karma/remote-sessions/`, so the API reads them identically.
+
 ---
 
 ## Monorepo Structure
@@ -71,12 +103,24 @@ claude-code-karma/
 ├── api/                    # FastAPI backend (Python)
 │   ├── models/             # Pydantic models for JSONL parsing
 │   ├── routers/            # FastAPI route handlers
+│   │   ├── sync_status.py  # /sync/* endpoints
+│   │   └── remote_sessions.py # /users/* endpoints
 │   ├── tests/              # pytest test suite
 │   └── main.py             # Application entry point
 ├── frontend/               # SvelteKit frontend (Svelte 5)
 │   ├── src/routes/         # Page routes
+│   │   └── team/           # Team management UI
 │   ├── src/lib/            # Shared components, stores, utils
 │   └── static/             # Static assets
+├── cli/karma/              # Karma CLI package (Python)
+│   ├── main.py             # CLI entry point
+│   ├── config.py           # Config models and loading
+│   ├── sync.py             # Sync orchestration
+│   ├── ipfs.py             # IPFS backend client
+│   ├── syncthing.py        # Syncthing backend client
+│   ├── packager.py         # Session packaging
+│   ├── watcher.py          # Syncthing file watcher
+│   └── tests/              # CLI tests
 ├── captain-hook/           # Pydantic hook models library
 │   ├── captain_hook/       # Library source
 │   └── tests/              # Model tests
@@ -91,7 +135,7 @@ claude-code-karma/
 
 ## Claude Code Storage Locations
 
-Claude Code Karma reads from these locations on disk:
+Claude Code Karma reads from and writes to these locations on disk:
 
 | Data | Location |
 |------|----------|
@@ -101,6 +145,9 @@ Claude Code Karma reads from these locations on disk:
 | Debug logs | `~/.claude/debug/{uuid}.txt` |
 | Todo items | `~/.claude/todos/{uuid}-*.json` |
 | Live session state | `~/.claude_karma/live-sessions/{slug}.json` |
+| Sync config | `~/.claude_karma/sync-config.json` |
+| Incoming feedback | `~/.claude_karma/sync-inbox/{team}/{owner-id}/{encoded-path}/feedback/` |
+| Remote sessions | `~/.claude_karma/remote-sessions/{user-id}/{encoded-path}/` |
 
 ---
 
@@ -137,6 +184,29 @@ All models are Pydantic v2 with `ConfigDict(frozen=True)` for immutability.
 
 ---
 
+## Sync Data Model
+
+```
+Manifest (per-project sync metadata)
+├── version: int (format version, currently 1)
+├── user_id: str (freelancer/contributor ID)
+├── machine_id: str (unique per machine)
+├── project_path: str (original filesystem path)
+├── project_encoded: str (encoded path for filenames)
+├── synced_at: datetime (ISO 8601 timestamp)
+├── session_count: int (number of sessions included)
+├── sync_backend: str ("ipfs" or "syncthing")
+├── previous_cid: str (for IPFS: CID of previous sync)
+└── sessions: list[SessionSummary]
+    ├── uuid: str (session ID)
+    ├── mtime: datetime (last modified)
+    └── size_bytes: int (on-disk size)
+```
+
+Both IPFS and Syncthing backends produce identical manifest.json files, allowing the API to read them uniformly.
+
+---
+
 ## Key Patterns
 
 ### Lazy Loading
@@ -160,6 +230,17 @@ When Claude Code compacts a session's context window, it inserts a `SummaryMessa
 ### Async File I/O
 
 The API uses `aiofiles` for non-blocking file reads. Since all data comes from the local filesystem (not a database), async I/O prevents session parsing from blocking the event loop.
+
+### Pluggable Sync Backends
+
+Both IPFS and Syncthing backends implement a common interface:
+- `init()` — Initialize backend on machine
+- `add_project()` — Register project for syncing
+- `sync()` / `watch()` — Initiate sync (IPFS) or start watcher (Syncthing)
+- `pull()` — Pull remote sessions (IPFS) or poll for changes (optional for Syncthing)
+- `status()` — Show sync state
+
+This abstraction allows users to switch backends or use multiple backends for different teams.
 
 ---
 
@@ -188,3 +269,13 @@ The API uses `aiofiles` for non-blocking file reads. Since all data comes from t
 | Icons | lucide-svelte | Icon set |
 | Language | TypeScript | Type safety |
 | Adapter | adapter-node | Node.js deployment |
+
+### CLI (Karma)
+
+| Component | Technology | Purpose |
+|-----------|-----------|---------|
+| Framework | Click | Python CLI framework |
+| Config | Pydantic | Configuration models and persistence |
+| HTTP Client | requests | Syncthing/IPFS API communication |
+| File Watching | watchdog | Filesystem event monitoring (Syncthing) |
+| Runtime | Python 3.9+ | Minimum supported version |
