@@ -13,7 +13,8 @@
 		TerminalSquare,
 		BookOpen,
 		HelpCircle,
-		Plug
+		Plug,
+		ClipboardList
 	} from 'lucide-svelte';
 	import type { FilterCategory, FilterCounts } from '$lib/api-types';
 
@@ -123,6 +124,13 @@
 			icon: 'text-indigo-500',
 			hoverBg: 'hover:bg-indigo-500/5'
 		},
+		task: {
+			active: 'bg-emerald-500/10 border-emerald-500/50 text-emerald-500',
+			inactive:
+				'bg-[var(--bg-base)] border-[var(--border)] text-[var(--text-secondary)] hover:border-emerald-500/30',
+			icon: 'text-emerald-500',
+			hoverBg: 'hover:bg-emerald-500/5'
+		},
 		command: {
 			active: 'bg-teal-500/10 border-teal-500/50 text-teal-500',
 			inactive:
@@ -183,6 +191,12 @@
 			label: 'MCP Tools',
 			icon: Plug,
 			countKey: 'mcp_tool' as const
+		},
+		{
+			id: 'task' as const,
+			label: 'Tasks',
+			icon: ClipboardList,
+			countKey: 'task' as const
 		},
 		{
 			id: 'skill' as const,

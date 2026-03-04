@@ -20,7 +20,11 @@ import {
 	BrainIcon,
 	MessageCircleIcon,
 	MapIcon,
-	TerminalSquareIcon
+	TerminalSquareIcon,
+	PlusCircleIcon,
+	RefreshCwIcon,
+	ListIcon,
+	ClipboardListIcon
 } from 'lucide-svelte';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -54,6 +58,14 @@ export function getToolIcon(toolName: string | undefined): LucideIcon {
 		case 'Task':
 		case 'TaskOutput':
 			return BotIcon;
+		case 'TaskCreate':
+			return PlusCircleIcon;
+		case 'TaskUpdate':
+			return RefreshCwIcon;
+		case 'TaskList':
+			return ListIcon;
+		case 'TaskGet':
+			return ClipboardListIcon;
 		case 'TodoWrite':
 			return ListTodoIcon;
 		case 'WebSearch':

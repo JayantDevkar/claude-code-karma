@@ -1,5 +1,25 @@
 <script lang="ts">
-	import { Copy, Check, AlertCircle, CheckCircle2 } from 'lucide-svelte';
+	import {
+		Copy,
+		Check,
+		AlertCircle,
+		CheckCircle2,
+		PlusCircle,
+		RefreshCw,
+		List,
+		ClipboardList,
+		ArrowRight,
+		User,
+		GitBranch,
+		Plug,
+		FolderOpen,
+		Trash2,
+		Map as MapIcon,
+		ToggleLeft,
+		MessageSquare,
+		Zap,
+		Search
+	} from 'lucide-svelte';
 	import { marked } from 'marked';
 	import DOMPurify from 'isomorphic-dompurify';
 	import type { TimelineEvent } from '$lib/api-types';
@@ -75,6 +95,43 @@
 			}
 		}
 	});
+
+	// Task tool detection
+	const isTaskTool = $derived(
+		toolName === 'TaskCreate' ||
+			toolName === 'TaskUpdate' ||
+			toolName === 'TaskList' ||
+			toolName === 'TaskGet'
+	);
+
+	// Task status color/label helpers
+	function getTaskStatusColor(status: string): string {
+		switch (status) {
+			case 'completed':
+				return 'bg-emerald-500/15 text-emerald-500 border-emerald-500/30';
+			case 'in_progress':
+				return 'bg-amber-500/15 text-amber-500 border-amber-500/30';
+			case 'pending':
+				return 'bg-zinc-500/15 text-zinc-400 border-zinc-500/30';
+			case 'deleted':
+				return 'bg-red-500/15 text-red-400 border-red-500/30';
+			default:
+				return 'bg-zinc-500/15 text-zinc-400 border-zinc-500/30';
+		}
+	}
+
+	function getTaskStatusIcon(
+		status: string
+	): typeof CheckCircle2 | typeof RefreshCw | typeof AlertCircle {
+		switch (status) {
+			case 'completed':
+				return CheckCircle2;
+			case 'in_progress':
+				return RefreshCw;
+			default:
+				return AlertCircle;
+		}
+	}
 
 	// AskUserQuestion parsing
 	const isAskUserQuestion = $derived(toolName === 'AskUserQuestion');
@@ -580,6 +637,401 @@
 						{/if}
 					</button>
 				{/if}
+			</div>
+
+			<!-- Task Tools: TaskCreate, TaskUpdate, TaskGet, TaskList -->
+		{:else if isTaskTool}
+			{#if toolName === 'TaskCreate'}
+				{@const subject = String(input.subject || '')}
+				{@const description = String(input.description || '')}
+				{@const activeForm = String(input.activeForm || '')}
+				<div
+					class="rounded-[var(--radius-md)] border border-emerald-500/20 bg-emerald-500/5 overflow-hidden"
+				>
+					<!-- Header -->
+					<div
+						class="flex items-center gap-2.5 px-4 py-2.5 bg-emerald-500/10 border-b border-emerald-500/15"
+					>
+						<PlusCircle size={15} class="text-emerald-500 shrink-0" />
+						<span
+							class="text-xs font-semibold uppercase tracking-wider text-emerald-500"
+						>
+							New Task
+						</span>
+					</div>
+					<div class="p-4 space-y-3">
+						<!-- Subject -->
+						{#if subject}
+							<p class="text-sm font-medium text-[var(--text-primary)] leading-snug">
+								{subject}
+							</p>
+						{/if}
+						<!-- Description -->
+						{#if description}
+							<p
+								class="text-xs text-[var(--text-secondary)] leading-relaxed border-l-2 border-emerald-500/30 pl-3"
+							>
+								{description}
+							</p>
+						{/if}
+						<!-- Active form -->
+						{#if activeForm}
+							<div class="flex items-center gap-2 text-xs text-[var(--text-muted)]">
+								<RefreshCw size={11} class="animate-spin" />
+								<span class="italic">{activeForm}</span>
+							</div>
+						{/if}
+					</div>
+				</div>
+			{:else if toolName === 'TaskUpdate'}
+				{@const taskId = String(input.taskId || '')}
+				{@const status = String(input.status || '')}
+				{@const subject = String(input.subject || '')}
+				{@const description = String(input.description || '')}
+				{@const owner = String(input.owner || '')}
+				{@const activeForm = String(input.activeForm || '')}
+				{@const addBlocks = (input.addBlocks as string[]) || []}
+				{@const addBlockedBy = (input.addBlockedBy as string[]) || []}
+				{@const hasChanges =
+					status || subject || description || owner || activeForm || addBlocks.length > 0 || addBlockedBy.length > 0}
+				<div
+					class="rounded-[var(--radius-md)] border border-sky-500/20 bg-sky-500/5 overflow-hidden"
+				>
+					<!-- Header -->
+					<div
+						class="flex items-center justify-between gap-2.5 px-4 py-2.5 bg-sky-500/10 border-b border-sky-500/15"
+					>
+						<div class="flex items-center gap-2.5">
+							<RefreshCw size={15} class="text-sky-500 shrink-0" />
+							<span
+								class="text-xs font-semibold uppercase tracking-wider text-sky-500"
+							>
+								Update Task
+							</span>
+							{#if taskId}
+								<span
+									class="font-mono text-[10px] rounded bg-sky-500/15 px-1.5 py-0.5 text-sky-400"
+								>
+									#{taskId}
+								</span>
+							{/if}
+						</div>
+						{#if status}
+							{@const StatusIcon = getTaskStatusIcon(status)}
+							<span
+								class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold {getTaskStatusColor(
+									status
+								)}"
+							>
+								<StatusIcon size={10} />
+								{status.replace('_', ' ')}
+							</span>
+						{/if}
+					</div>
+					<!-- Changes -->
+					{#if hasChanges}
+						<div class="p-4 space-y-2">
+							{#if subject}
+								<div class="flex items-start gap-2">
+									<span
+										class="shrink-0 text-[10px] font-medium uppercase tracking-wide text-[var(--text-muted)] w-16"
+									>
+										Subject
+									</span>
+									<span class="text-sm text-[var(--text-primary)]"
+										>{subject}</span
+									>
+								</div>
+							{/if}
+							{#if description}
+								<div class="flex items-start gap-2">
+									<span
+										class="shrink-0 text-[10px] font-medium uppercase tracking-wide text-[var(--text-muted)] w-16"
+									>
+										Desc
+									</span>
+									<span
+										class="text-xs text-[var(--text-secondary)] leading-relaxed"
+										>{description}</span
+									>
+								</div>
+							{/if}
+							{#if owner}
+								<div class="flex items-center gap-2">
+									<span
+										class="shrink-0 text-[10px] font-medium uppercase tracking-wide text-[var(--text-muted)] w-16"
+									>
+										Owner
+									</span>
+									<span
+										class="inline-flex items-center gap-1 text-xs text-[var(--text-primary)]"
+									>
+										<User size={11} class="text-[var(--text-muted)]" />
+										{owner}
+									</span>
+								</div>
+							{/if}
+							{#if activeForm}
+								<div class="flex items-center gap-2">
+									<span
+										class="shrink-0 text-[10px] font-medium uppercase tracking-wide text-[var(--text-muted)] w-16"
+									>
+										Spinner
+									</span>
+									<span class="text-xs italic text-[var(--text-muted)]"
+										>{activeForm}</span
+									>
+								</div>
+							{/if}
+							{#if addBlocks.length > 0 || addBlockedBy.length > 0}
+								<div class="flex items-center gap-3 flex-wrap pt-1">
+									{#if addBlocks.length > 0}
+										<span
+											class="inline-flex items-center gap-1 text-[10px] text-orange-400"
+										>
+											<GitBranch size={10} />
+											blocks: {addBlocks.join(', ')}
+										</span>
+									{/if}
+									{#if addBlockedBy.length > 0}
+										<span
+											class="inline-flex items-center gap-1 text-[10px] text-orange-400"
+										>
+											<ArrowRight size={10} />
+											blocked by: {addBlockedBy.join(', ')}
+										</span>
+									{/if}
+								</div>
+							{/if}
+						</div>
+					{/if}
+				</div>
+			{:else if toolName === 'TaskGet'}
+				{@const taskId = String(input.taskId || '')}
+				<div
+					class="font-mono text-sm bg-[var(--bg-muted)] rounded-[var(--radius-md)] p-3 flex items-center gap-2.5"
+				>
+					<ClipboardList size={15} class="text-violet-400 shrink-0" />
+					<span class="text-violet-400">Get task</span>
+					{#if taskId}
+						<span
+							class="font-mono text-[10px] rounded bg-violet-500/15 px-1.5 py-0.5 text-violet-300"
+						>
+							#{taskId}
+						</span>
+					{/if}
+				</div>
+			{:else if toolName === 'TaskList'}
+				<div
+					class="font-mono text-sm bg-[var(--bg-muted)] rounded-[var(--radius-md)] p-3 flex items-center gap-2.5"
+				>
+					<List size={15} class="text-zinc-400 shrink-0" />
+					<span class="text-zinc-400">List all tasks</span>
+				</div>
+			{/if}
+
+			<!-- CallMcpTool / mcp__ prefixed tools -->
+		{:else if toolName === 'CallMcpTool' || toolName?.startsWith('mcp__')}
+			{@const server = String(input.server || '')}
+			{@const mcpTool = String(input.tool || input.toolName || '')}
+			{@const mcpArgs = (input.args && typeof input.args === 'object' ? input.args : null) as Record<string, unknown> | null}
+			<div
+				class="rounded-[var(--radius-md)] border border-purple-500/20 bg-purple-500/5 overflow-hidden"
+			>
+				<div
+					class="flex items-center gap-2.5 px-4 py-2.5 bg-purple-500/10 border-b border-purple-500/15"
+				>
+					<Plug size={15} class="text-purple-400 shrink-0" />
+					<span class="text-xs font-semibold uppercase tracking-wider text-purple-400">
+						MCP Tool
+					</span>
+					{#if input.is_direct_mcp}
+						<span class="text-[10px] rounded bg-purple-500/10 px-1.5 py-0.5 text-purple-400/60">
+							direct
+						</span>
+					{/if}
+				</div>
+				<div class="px-4 py-3 flex items-center gap-3">
+					{#if server}
+						<span
+							class="font-mono text-[10px] rounded-full bg-purple-500/15 px-2.5 py-1 text-purple-300 border border-purple-500/20"
+						>
+							{server}
+						</span>
+					{/if}
+					{#if server && mcpTool}
+						<ArrowRight size={12} class="text-purple-500/40" />
+					{/if}
+					{#if mcpTool}
+						<span class="font-mono text-sm text-[var(--text-primary)]">{mcpTool}</span>
+					{/if}
+				</div>
+				<!-- MCP tool arguments -->
+				{#if mcpArgs && Object.keys(mcpArgs).length > 0}
+					{@const argKeys = Object.keys(mcpArgs).filter((k) => mcpArgs[k] != null)}
+					{#if argKeys.length > 0}
+						<div class="px-4 pb-3 border-t border-purple-500/10">
+							<div class="space-y-1.5 pt-2.5">
+								{#each argKeys.slice(0, 8) as key}
+									<div class="flex items-start gap-2">
+										<span
+											class="shrink-0 font-mono text-[10px] text-purple-400/60 min-w-[60px]"
+										>
+											{key}
+										</span>
+										<span
+											class="font-mono text-xs text-[var(--text-secondary)] break-all"
+										>
+											{#if typeof mcpArgs[key] === 'string'}
+												{String(mcpArgs[key]).length > 150
+													? String(mcpArgs[key]).slice(0, 150) + '...'
+													: mcpArgs[key]}
+											{:else}
+												{JSON.stringify(mcpArgs[key]).length > 150
+													? JSON.stringify(mcpArgs[key]).slice(0, 150) + '...'
+													: JSON.stringify(mcpArgs[key])}
+											{/if}
+										</span>
+									</div>
+								{/each}
+								{#if argKeys.length > 8}
+									<span class="text-[10px] text-[var(--text-muted)]">
+										+{argKeys.length - 8} more params
+									</span>
+								{/if}
+							</div>
+						</div>
+					{/if}
+				{/if}
+			</div>
+
+			<!-- LS (List Directory) -->
+		{:else if toolName === 'LS'}
+			<div
+				class="font-mono text-sm bg-[var(--bg-muted)] rounded-[var(--radius-md)] p-3 flex items-center justify-between gap-2"
+			>
+				<div class="flex items-center gap-2" title={String(input.path || '')}>
+					<FolderOpen size={15} class="text-[var(--event-tool)] shrink-0" />
+					<span class="text-[var(--event-tool)]">Listing:</span>
+					<span class="text-[var(--text-primary)]">
+						{formatDisplayPath(String(input.path || '.'), projectPath)}
+					</span>
+				</div>
+			</div>
+
+			<!-- Delete -->
+		{:else if toolName === 'Delete'}
+			<div
+				class="font-mono text-sm bg-red-500/5 border border-red-500/20 rounded-[var(--radius-md)] p-3 flex items-center justify-between gap-2"
+			>
+				<div class="flex items-center gap-2" title={String(input.file_path || input.path || '')}>
+					<Trash2 size={15} class="text-red-400 shrink-0" />
+					<span class="text-red-400">Deleting:</span>
+					<span class="text-[var(--text-primary)]">
+						{formatDisplayPath(String(input.file_path || input.path || ''), projectPath)}
+					</span>
+				</div>
+			</div>
+
+			<!-- EnterPlanMode -->
+		{:else if toolName === 'EnterPlanMode'}
+			<div
+				class="font-mono text-sm bg-[var(--event-plan-subtle)] border border-[var(--event-plan)]/20 rounded-[var(--radius-md)] p-3 flex items-center gap-2.5"
+			>
+				<MapIcon size={15} class="text-[var(--event-plan)] shrink-0" />
+				<span class="text-[var(--event-plan)] font-semibold">Entering plan mode</span>
+			</div>
+
+			<!-- SwitchMode -->
+		{:else if toolName === 'SwitchMode'}
+			<div
+				class="font-mono text-sm bg-[var(--bg-muted)] rounded-[var(--radius-md)] p-3 flex items-center gap-2.5"
+			>
+				<ToggleLeft size={15} class="text-[var(--event-thinking)] shrink-0" />
+				<span class="text-[var(--event-thinking)]">Switch to</span>
+				{#if input.target_mode}
+					<span
+						class="rounded bg-[var(--event-thinking)]/15 px-2 py-0.5 text-xs font-medium text-[var(--text-primary)]"
+					>
+						{input.target_mode}
+					</span>
+				{/if}
+			</div>
+
+			<!-- SendMessage -->
+		{:else if toolName === 'SendMessage'}
+			{@const recipient = String(input.recipient || input.target_agent_id || '')}
+			{@const msgType = String(input.type || 'message')}
+			{@const content = String(input.content || '')}
+			{@const summary = String(input.summary || '')}
+			<div
+				class="rounded-[var(--radius-md)] border border-indigo-500/20 bg-indigo-500/5 overflow-hidden"
+			>
+				<div
+					class="flex items-center justify-between gap-2.5 px-4 py-2.5 bg-indigo-500/10 border-b border-indigo-500/15"
+				>
+					<div class="flex items-center gap-2.5">
+						<MessageSquare size={15} class="text-indigo-400 shrink-0" />
+						<span class="text-xs font-semibold uppercase tracking-wider text-indigo-400">
+							{msgType === 'broadcast' ? 'Broadcast' : msgType === 'shutdown_request' ? 'Shutdown Request' : 'Message'}
+						</span>
+					</div>
+					{#if recipient}
+						<span
+							class="inline-flex items-center gap-1 font-mono text-[10px] rounded-full bg-indigo-500/15 px-2 py-0.5 text-indigo-300"
+						>
+							<ArrowRight size={10} />
+							{recipient}
+						</span>
+					{/if}
+				</div>
+				{#if content}
+					<div class="px-4 py-3">
+						{#if summary}
+							<p class="text-[10px] text-indigo-400/60 uppercase tracking-wide mb-1">
+								{summary}
+							</p>
+						{/if}
+						<p class="text-xs text-[var(--text-secondary)] leading-relaxed">
+							{content.length > 200 ? content.slice(0, 200) + '...' : content}
+						</p>
+					</div>
+				{/if}
+			</div>
+
+			<!-- Skill invocation -->
+		{:else if toolName === 'Skill'}
+			{@const skillName = String(input.skill || '')}
+			{@const args = String(input.args || '')}
+			<div
+				class="font-mono text-sm bg-[var(--accent)]/5 border border-[var(--accent)]/20 rounded-[var(--radius-md)] p-3 flex items-center gap-2.5"
+			>
+				<Zap size={15} class="text-[var(--accent)] shrink-0" />
+				<span class="text-[var(--accent)]">/{skillName}</span>
+				{#if args}
+					<span class="text-[var(--text-muted)] text-xs">{args}</span>
+				{/if}
+			</div>
+
+			<!-- ToolSearch -->
+		{:else if toolName === 'ToolSearch'}
+			{@const query = String(input.query || '')}
+			<div
+				class="font-mono text-sm bg-[var(--bg-muted)] rounded-[var(--radius-md)] p-3 flex items-center gap-2.5"
+			>
+				<Search size={15} class="text-[var(--text-muted)] shrink-0" />
+				<span class="text-[var(--text-muted)]">Searching tools:</span>
+				<span class="text-[var(--text-primary)]">{query}</span>
+			</div>
+
+			<!-- SemanticSearch -->
+		{:else if toolName === 'SemanticSearch'}
+			<div
+				class="font-mono text-sm bg-[var(--bg-muted)] rounded-[var(--radius-md)] p-3 flex items-center gap-2.5"
+			>
+				<Search size={15} class="text-[var(--event-subagent)] shrink-0" />
+				<span class="text-[var(--event-subagent)]">Semantic search:</span>
+				<span class="text-[var(--text-primary)]">{input.query || ''}</span>
 			</div>
 
 			<!-- AskUserQuestion: Formatted questions with options -->

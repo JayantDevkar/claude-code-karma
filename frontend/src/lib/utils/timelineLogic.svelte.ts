@@ -62,7 +62,16 @@ function matchesSingleFilter(
 			return (
 				event.event_type === 'tool_call' &&
 				typeof event.metadata?.tool_name === 'string' &&
-				event.metadata.tool_name.startsWith('mcp__')
+				(event.metadata.tool_name.startsWith('mcp__') ||
+					event.metadata.tool_name === 'CallMcpTool')
+			);
+		case 'task':
+			return (
+				event.event_type === 'tool_call' &&
+				typeof event.metadata?.tool_name === 'string' &&
+				['TaskCreate', 'TaskUpdate', 'TaskGet', 'TaskList'].includes(
+					event.metadata.tool_name as string
+				)
 			);
 		case 'skill':
 			return event.event_type === 'skill_invocation';
@@ -138,6 +147,7 @@ function calculateFilterCounts(
 		big_response: 0,
 		ask_user: 0,
 		mcp_tool: 0,
+		task: 0,
 		skill: 0,
 		command: 0
 	};
@@ -163,9 +173,20 @@ function calculateFilterCounts(
 		if (
 			type === 'tool_call' &&
 			typeof event.metadata?.tool_name === 'string' &&
-			(event.metadata.tool_name as string).startsWith('mcp__')
+			((event.metadata.tool_name as string).startsWith('mcp__') ||
+				event.metadata.tool_name === 'CallMcpTool')
 		)
 			counts.mcp_tool++;
+
+		// Task tools (subset of tool_call)
+		if (
+			type === 'tool_call' &&
+			typeof event.metadata?.tool_name === 'string' &&
+			['TaskCreate', 'TaskUpdate', 'TaskGet', 'TaskList'].includes(
+				event.metadata.tool_name as string
+			)
+		)
+			counts.task++;
 
 		// Subagent logic (complex)
 		if (currentAgentId) {
@@ -274,6 +295,7 @@ export function createTimelineLogic(
 			'big_response',
 			'ask_user',
 			'mcp_tool',
+			'task',
 			'skill',
 			'command'
 		];

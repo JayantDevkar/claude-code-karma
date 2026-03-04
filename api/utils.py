@@ -887,7 +887,81 @@ def get_tool_summary(block, working_dirs: list[str] | None = None) -> tuple[str,
     elif tool_name == "CallMcpTool":
         server = tool_input.get("server", "")
         mcp_tool = tool_input.get("toolName", "")
+        # Capture the actual MCP tool arguments (everything except server/toolName)
+        mcp_args = {
+            k: v
+            for k, v in tool_input.items()
+            if k not in ("server", "toolName") and v is not None
+        }
         summary = f"{server}/{mcp_tool}" if server and mcp_tool else None
-        return "MCP tool", summary, {"server": server, "tool": mcp_tool}
+        metadata = {"server": server, "tool": mcp_tool}
+        if mcp_args:
+            metadata["args"] = mcp_args
+        return "MCP tool", summary, metadata
+    elif tool_name.startswith("mcp__"):
+        # Direct MCP tool calls (e.g. mcp__coderoots__query)
+        parts = tool_name.split("__")
+        server = parts[1] if len(parts) > 1 else ""
+        mcp_tool = "__".join(parts[2:]) if len(parts) > 2 else tool_name
+        summary = f"{server}/{mcp_tool}" if server and mcp_tool else tool_name
+        return (
+            "MCP tool",
+            summary,
+            {"server": server, "tool": mcp_tool, "args": tool_input, "is_direct_mcp": True},
+        )
+    elif tool_name == "TaskCreate":
+        subject = tool_input.get("subject", "")
+        description = tool_input.get("description", "")
+        active_form = tool_input.get("activeForm", "")
+        return (
+            "Create task",
+            subject[:100] if subject else None,
+            {
+                "subject": subject,
+                "description": description,
+                "activeForm": active_form,
+            },
+        )
+    elif tool_name == "TaskUpdate":
+        task_id = tool_input.get("taskId", "")
+        status = tool_input.get("status", "")
+        subject = tool_input.get("subject", "")
+        description = tool_input.get("description", "")
+        active_form = tool_input.get("activeForm", "")
+        owner = tool_input.get("owner", "")
+        add_blocks = tool_input.get("addBlocks", [])
+        add_blocked_by = tool_input.get("addBlockedBy", [])
+        # Build summary
+        parts = []
+        if status:
+            parts.append(status)
+        if subject:
+            parts.append(f'"{subject[:40]}"')
+        elif task_id:
+            parts.append(f"#{task_id}")
+        summary = " ".join(parts) if parts else task_id
+        return (
+            "Update task",
+            summary[:100] if summary else None,
+            {
+                "taskId": task_id,
+                "status": status,
+                "subject": subject,
+                "description": description,
+                "activeForm": active_form,
+                "owner": owner,
+                "addBlocks": add_blocks,
+                "addBlockedBy": add_blocked_by,
+            },
+        )
+    elif tool_name == "TaskGet":
+        task_id = tool_input.get("taskId", "")
+        return (
+            "Get task",
+            f"#{task_id}" if task_id else None,
+            {"taskId": task_id},
+        )
+    elif tool_name == "TaskList":
+        return "List tasks", None, {}
     else:
         return tool_name, None, tool_input
