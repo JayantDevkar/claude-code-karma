@@ -49,8 +49,8 @@ def get_commands_dir(
         try:
             proj = Project.from_encoded_name(project)
             return Path(proj.path) / ".claude" / "commands"
-        except Exception:
-            raise HTTPException(status_code=400, detail="Invalid project name")
+        except Exception as err:
+            raise HTTPException(status_code=400, detail="Invalid project name") from err
     return config.commands_dir
 
 
@@ -197,9 +197,7 @@ async def get_command_content(
 @cacheable(max_age=120, stale_while_revalidate=300)
 def get_command_usage(
     request: Request,
-    project: Annotated[
-        str | None, Query(description="Project encoded name filter")
-    ] = None,
+    project: Annotated[str | None, Query(description="Project encoded name filter")] = None,
 ):
     """Get command usage analytics across all sessions with category classification."""
     from command_helpers import classify_invocation, get_command_description
@@ -235,10 +233,11 @@ def get_command_usage(
 @cacheable(max_age=120, stale_while_revalidate=300)
 def get_command_usage_trend(
     request: Request,
-    project: Annotated[
-        str | None, Query(description="Project encoded name filter")
-    ] = None,
-    period: Annotated[Literal["week", "month", "quarter", "all"], Query(description="Time period: week, month, quarter, all")] = "month",
+    project: Annotated[str | None, Query(description="Project encoded name filter")] = None,
+    period: Annotated[
+        Literal["week", "month", "quarter", "all"],
+        Query(description="Time period: week, month, quarter, all"),
+    ] = "month",
 ):
     """Get command usage trend data with daily breakdown."""
     import sqlite3
@@ -299,7 +298,11 @@ async def get_command_detail(
 ):
     """Get detailed command info with usage stats, trend, and session list."""
     _validate_command_name(command_name)
-    from command_helpers import classify_invocation, get_bundled_skill_prompt, get_command_description
+    from command_helpers import (
+        classify_invocation,
+        get_bundled_skill_prompt,
+        get_command_description,
+    )
     from db.connection import sqlite_read
     from db.queries import query_command_detail
 
@@ -334,6 +337,7 @@ async def get_command_detail(
         # Resolve plugin command/skill content via skills info resolver
         try:
             from routers.skills import _resolve_skill_info
+
             skill_info = await _resolve_skill_info(command_name, config)
             content = skill_info.content
             description = description or skill_info.description
@@ -358,6 +362,7 @@ async def get_command_detail(
     elif category == "builtin_command":
         # Built-in CLI commands don't have prompts but we provide descriptions
         from command_helpers import BUILTIN_COMMAND_DESCRIPTIONS
+
         if not description:
             description = BUILTIN_COMMAND_DESCRIPTIONS.get(command_name)
 

@@ -28,11 +28,6 @@ from .cli_js import (
     get_cli_commands,
     get_command_description,
 )
-from .plugins import (
-    classify_invocation,
-    expand_plugin_short_name,
-    is_plugin_skill,
-)
 from .parsing import (
     aggregate_by_name,
     detect_slash_commands_in_text,
@@ -49,6 +44,9 @@ from .plugins import (
     _expand_name_cache,
     _is_plugin_skill,
     _plugin_skill_cache,
+    classify_invocation,
+    expand_plugin_short_name,
+    is_plugin_skill,
 )
 
 __all__ = [

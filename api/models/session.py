@@ -353,7 +353,9 @@ class Session(BaseModel):
         commands: Counter[tuple] = Counter()  # {(name, source): count}
         user_prompt_skills: Set[tuple] = set()  # {(name, source)}
         user_prompt_commands: Set[tuple] = set()  # {(name, source)}
-        pending_command_plugins: set[str] = set()  # plugin prefixes from most recent UserMessage command
+        pending_command_plugins: set[str] = (
+            set()
+        )  # plugin prefixes from most recent UserMessage command
         git_branches: Set[str] = set()
         working_dirs: Set[str] = set()
         models_used: Set[str] = set()
@@ -506,7 +508,7 @@ class Session(BaseModel):
         # to "command_triggered".  Done after dedup so all sources are final.
         # Also collect plugin prefixes from commands counter (Skill tool
         # invocations that classified as plugin_command, e.g. commit-commands:commit).
-        for (cmd_name, _source) in commands:
+        for cmd_name, _source in commands:
             if ":" in cmd_name:
                 pending_command_plugins.add(cmd_name.split(":")[0])
         _apply_command_triggered(pending_command_plugins, skills)

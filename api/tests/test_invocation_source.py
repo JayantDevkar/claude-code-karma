@@ -21,7 +21,7 @@ from command_helpers import (
     is_skill_category,
     parse_command_from_content,
 )
-from models.session import _dedup_invocation_sources, _apply_command_triggered
+from models.session import _apply_command_triggered, _dedup_invocation_sources
 
 
 class TestDedupInvocationSources:
@@ -519,10 +519,12 @@ class TestCommandTriggeredLinkage:
     def test_multiple_skills_first_matches(self):
         """Only same-plugin skills get command_triggered, others stay skill_tool."""
         pending_commands: set[str] = {"superpowers"}
-        skills: Counter[tuple] = Counter({
-            ("superpowers:brainstorming", "skill_tool"): 1,
-            ("oh-my-claudecode:autopilot", "skill_tool"): 1,
-        })
+        skills: Counter[tuple] = Counter(
+            {
+                ("superpowers:brainstorming", "skill_tool"): 1,
+                ("oh-my-claudecode:autopilot", "skill_tool"): 1,
+            }
+        )
         _apply_command_triggered(pending_commands, skills)
         assert skills[("superpowers:brainstorming", "command_triggered")] == 1
         assert skills[("oh-my-claudecode:autopilot", "skill_tool")] == 1

@@ -13,9 +13,9 @@ from cachetools import TTLCache
 
 from .categories import InvocationCategory
 from .cli_js import (
+    _ALL_CLAUDE_CODE_COMMANDS,
     BUILTIN_CLI_COMMANDS,
     BUNDLED_SKILL_COMMANDS,
-    _ALL_CLAUDE_CODE_COMMANDS,
     get_cli_commands,
 )
 
