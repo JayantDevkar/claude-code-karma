@@ -405,9 +405,10 @@ class Session(BaseModel):
                             expanded = expand_plugin_short_name(candidate)
                             # Only detect skills — builtins always have <command-message>
                             # tags when actually invoked, so they're caught above.
-                            if is_skill_category(classify_invocation(expanded)):
+                            kind = classify_invocation(expanded)
+                            if is_skill_category(kind):
                                 user_prompt_skills.add((expanded, "text_detection"))
-                            elif is_command_category(classify_invocation(expanded)):
+                            elif is_command_category(kind):
                                 user_prompt_commands.add((expanded, "text_detection"))
                                 # Also track plugin prefix for command→skill linkage
                                 if ":" in expanded:

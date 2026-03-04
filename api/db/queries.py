@@ -18,6 +18,10 @@ from services.session_filter import ACTIVE_THRESHOLD_SECONDS
 
 logger = logging.getLogger(__name__)
 
+# Allowlist for SQL fragments interpolated into _query_per_item_trend.
+# Prevents future callers from accidentally passing user input.
+_ALLOWED_ITEM_COLS = frozenset({"sc.command_name", "sk.skill_name", "st.tool_name"})
+
 
 def _query_per_item_trend(
     conn: sqlite3.Connection,
@@ -33,6 +37,8 @@ def _query_per_item_trend(
     directly into the SQL string. They MUST be hardcoded SQL fragments,
     never user input. All user-supplied values must go through ``params``.
     """
+    if item_col not in _ALLOWED_ITEM_COLS:
+        raise ValueError(f"Disallowed item_col: {item_col!r}")
     rows = conn.execute(
         f"""SELECT {item_col} as item, DATE(s.start_time) as date, {count_expr} as count
         {from_clause}
@@ -462,6 +468,57 @@ def query_analytics(
 # ---------------------------------------------------------------------------
 
 
+def _query_item_usage(
+    conn: sqlite3.Connection,
+    *,
+    table: str,
+    item_col: str,
+    project: Optional[str],
+    limit: int,
+    track_mentions: bool = False,
+) -> list[dict]:
+    """Shared helper for skill/command aggregate usage queries.
+
+    Args:
+        conn: SQLite connection.
+        table: Source table name (e.g. 'session_skills', 'session_commands').
+        item_col: Column holding the item name (e.g. 'skill_name', 'command_name').
+        project: Optional project encoded name filter.
+        limit: Maximum rows to return.
+        track_mentions: When True, adds a mentioned_count column using the
+            text_detection invocation_source (skills only).
+    """
+    alias = "t"
+    _where = f"WHERE s.project_encoded_name = :project" if project else ""
+    _params: dict = {"limit": limit}
+    if project:
+        _params["project"] = project
+
+    if track_mentions:
+        count_expr = (
+            f"SUM(CASE WHEN {alias}.invocation_source != 'text_detection' THEN {alias}.count ELSE 0 END) as total_count,\n"
+            f"            SUM(CASE WHEN {alias}.invocation_source = 'text_detection' THEN {alias}.count ELSE 0 END) as mentioned_count,"
+        )
+    else:
+        count_expr = f"SUM({alias}.count) as total_count,"
+
+    rows = conn.execute(
+        f"""SELECT {alias}.{item_col},
+            {count_expr}
+            COUNT(DISTINCT {alias}.session_uuid) as session_count,
+            MAX(s.end_time) as last_used,
+            GROUP_CONCAT(DISTINCT {alias}.invocation_source) as invocation_sources
+        FROM {table} {alias}
+        JOIN sessions s ON {alias}.session_uuid = s.uuid
+        {_where}
+        GROUP BY {alias}.{item_col}
+        ORDER BY total_count DESC
+        LIMIT :limit""",
+        _params,
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
 def query_skill_usage(
     conn: sqlite3.Connection,
     project: Optional[str] = None,
@@ -472,26 +529,14 @@ def query_skill_usage(
     Includes invocation_sources field showing which sources contributed
     (e.g., 'slash_command,skill_tool').
     """
-    _where = "WHERE s.project_encoded_name = :project" if project else ""
-    _params: dict = {"limit": limit}
-    if project:
-        _params["project"] = project
-    rows = conn.execute(
-        f"""SELECT sk.skill_name,
-            SUM(CASE WHEN sk.invocation_source != 'text_detection' THEN sk.count ELSE 0 END) as total_count,
-            SUM(CASE WHEN sk.invocation_source = 'text_detection' THEN sk.count ELSE 0 END) as mentioned_count,
-            COUNT(DISTINCT sk.session_uuid) as session_count,
-            MAX(s.end_time) as last_used,
-            GROUP_CONCAT(DISTINCT sk.invocation_source) as invocation_sources
-        FROM session_skills sk
-        JOIN sessions s ON sk.session_uuid = s.uuid
-        {_where}
-        GROUP BY sk.skill_name
-        ORDER BY total_count DESC
-        LIMIT :limit""",
-        _params,
-    ).fetchall()
-    return [dict(row) for row in rows]
+    return _query_item_usage(
+        conn,
+        table="session_skills",
+        item_col="skill_name",
+        project=project,
+        limit=limit,
+        track_mentions=True,
+    )
 
 
 def query_sessions_by_skill(
@@ -538,101 +583,133 @@ def query_sessions_by_skill(
     return {"sessions": sessions, "total": total}
 
 
-def query_skill_detail(
+def _query_item_detail(
     conn: sqlite3.Connection,
-    skill_name: str,
-    limit: int = 100,
-    offset: int = 0,
+    *,
+    table: str,
+    sub_table: str,
+    item_col: str,
+    item_value: str,
+    limit: int,
+    offset: int,
+    track_mentions: bool = False,
 ) -> dict | None:
-    """Detailed stats for a single skill with trend and session list."""
-    # Main session stats (exclude mentions from counts)
+    """Shared helper for skill/command detail queries.
+
+    Args:
+        conn: SQLite connection.
+        table: Main session table (e.g. 'session_skills', 'session_commands').
+        sub_table: Subagent table (e.g. 'subagent_skills', 'subagent_commands').
+        item_col: Column holding the item name (e.g. 'skill_name', 'command_name').
+        item_value: The specific item name to look up.
+        limit: Page size for session list.
+        offset: Page offset for session list.
+        track_mentions: When True, applies text_detection exclusion logic in main
+            stats and trend, and includes mentioned_calls / command_triggered_calls /
+            mention_session_count fields in the result (skills only).
+    """
+    # Alias and parameter name differ by entity to stay readable in SQL.
+    # Skills use :skill / sk alias; commands use :cmd / sc alias.
+    # We normalise to a single alias 't' and a single param ':item' here.
+    alias = "t"
+    param_name = "item"
+    item_param = {param_name: item_value}
+
+    mention_exclusion = f"AND {alias}.invocation_source != 'text_detection'" if track_mentions else ""
+
+    # Main session stats
     main_row = conn.execute(
-        """SELECT COALESCE(SUM(sk.count), 0) as total_count,
-            COUNT(DISTINCT sk.session_uuid) as session_count,
+        f"""SELECT COALESCE(SUM({alias}.count), 0) as total_count,
+            COUNT(DISTINCT {alias}.session_uuid) as session_count,
             MIN(s.start_time) as first_used,
             MAX(s.start_time) as last_used,
-            GROUP_CONCAT(DISTINCT sk.invocation_source) as invocation_sources
-        FROM session_skills sk
-        JOIN sessions s ON sk.session_uuid = s.uuid
-        WHERE sk.skill_name = :skill AND sk.invocation_source != 'text_detection'""",
-        {"skill": skill_name},
+            GROUP_CONCAT(DISTINCT {alias}.invocation_source) as invocation_sources
+        FROM {table} {alias}
+        JOIN sessions s ON {alias}.session_uuid = s.uuid
+        WHERE {alias}.{item_col} = :{param_name} {mention_exclusion}""",
+        item_param,
     ).fetchone()
 
     # Subagent stats
+    sub_alias = "sa"
     sub_row = conn.execute(
-        """SELECT COALESCE(SUM(ssk.count), 0) as total_count
-        FROM subagent_skills ssk
-        JOIN subagent_invocations si ON ssk.invocation_id = si.id
-        WHERE ssk.skill_name = :skill""",
-        {"skill": skill_name},
+        f"""SELECT COALESCE(SUM({sub_alias}.count), 0) as total_count
+        FROM {sub_table} {sub_alias}
+        JOIN subagent_invocations si ON {sub_alias}.invocation_id = si.id
+        WHERE {sub_alias}.{item_col} = :{param_name}""",
+        item_param,
     ).fetchone()
 
     main_calls = main_row["total_count"] or 0 if main_row else 0
     sub_calls = sub_row["total_count"] or 0 if sub_row else 0
 
-    # Calls by invocation source (manual vs auto vs mentioned)
-    # Must run BEFORE early-exit so mention-only skills are not hidden.
+    # Calls by invocation source — run BEFORE early-exit (skills: mention-only must not be hidden)
     source_rows = conn.execute(
-        """SELECT sk.invocation_source, COALESCE(SUM(sk.count), 0) as total
-        FROM session_skills sk
-        WHERE sk.skill_name = :skill
-        GROUP BY sk.invocation_source""",
-        {"skill": skill_name},
+        f"""SELECT {alias}.invocation_source, COALESCE(SUM({alias}.count), 0) as total
+        FROM {table} {alias}
+        WHERE {alias}.{item_col} = :{param_name}
+        GROUP BY {alias}.invocation_source""",
+        item_param,
     ).fetchall()
     source_counts = {r["invocation_source"]: r["total"] for r in source_rows}
     manual_calls = source_counts.get("slash_command", 0)
     auto_calls = source_counts.get("skill_tool", 0)
-    mentioned_calls = source_counts.get("text_detection", 0)
-    command_triggered_calls = source_counts.get("command_triggered", 0)
 
-    # Count sessions where the skill was ONLY mentioned (no actual invocation)
-    mention_session_count = conn.execute(
-        """SELECT COUNT(DISTINCT sk.session_uuid)
-        FROM session_skills sk
-        WHERE sk.skill_name = :skill AND sk.invocation_source = 'text_detection'
-            AND sk.session_uuid NOT IN (
-                SELECT session_uuid FROM session_skills
-                WHERE skill_name = :skill AND invocation_source != 'text_detection'
-            )""",
-        {"skill": skill_name},
-    ).fetchone()[0]
+    if track_mentions:
+        mentioned_calls = source_counts.get("text_detection", 0)
+        command_triggered_calls = source_counts.get("command_triggered", 0)
 
-    if main_calls == 0 and sub_calls == 0 and mentioned_calls == 0 and command_triggered_calls == 0:
-        return None
+        # Sessions where item was ONLY mentioned, never actually invoked
+        mention_session_count = conn.execute(
+            f"""SELECT COUNT(DISTINCT {alias}.session_uuid)
+            FROM {table} {alias}
+            WHERE {alias}.{item_col} = :{param_name} AND {alias}.invocation_source = 'text_detection'
+                AND {alias}.session_uuid NOT IN (
+                    SELECT session_uuid FROM {table}
+                    WHERE {item_col} = :{param_name} AND invocation_source != 'text_detection'
+                )""",
+            item_param,
+        ).fetchone()[0]
 
-    # Daily trend (exclude mentions)
+        if main_calls == 0 and sub_calls == 0 and mentioned_calls == 0 and command_triggered_calls == 0:
+            return None
+    else:
+        if main_calls == 0 and sub_calls == 0:
+            return None
+
+    # Daily trend
     trend_rows = conn.execute(
-        """SELECT DATE(s.start_time) as date,
-            SUM(sk.count) as calls,
-            COUNT(DISTINCT sk.session_uuid) as sessions
-        FROM session_skills sk
-        JOIN sessions s ON sk.session_uuid = s.uuid
-        WHERE sk.skill_name = :skill AND s.start_time IS NOT NULL
-            AND sk.invocation_source != 'text_detection'
+        f"""SELECT DATE(s.start_time) as date,
+            SUM({alias}.count) as calls,
+            COUNT(DISTINCT {alias}.session_uuid) as sessions
+        FROM {table} {alias}
+        JOIN sessions s ON {alias}.session_uuid = s.uuid
+        WHERE {alias}.{item_col} = :{param_name} AND s.start_time IS NOT NULL
+            {mention_exclusion}
         GROUP BY DATE(s.start_time)
         ORDER BY date""",
-        {"skill": skill_name},
+        item_param,
     ).fetchall()
 
     # Sessions with source tagging (main vs subagent)
-    params: dict = {"skill": skill_name, "limit": limit, "offset": offset}
+    params: dict = {param_name: item_value, "limit": limit, "offset": offset}
 
-    cte_sql = """
+    cte_sql = f"""
     WITH target_sessions AS (
-        -- Main session usage (includes mentions for filtering)
-        SELECT sk.session_uuid, 1 as has_main, 0 as has_sub, NULL as agent_id
-        FROM session_skills sk
-        JOIN sessions s ON sk.session_uuid = s.uuid
-        WHERE sk.skill_name = :skill
+        -- Main session usage
+        SELECT {alias}.session_uuid, 1 as has_main, 0 as has_sub, NULL as agent_id
+        FROM {table} {alias}
+        JOIN sessions s ON {alias}.session_uuid = s.uuid
+        WHERE {alias}.{item_col} = :{param_name}
 
         UNION ALL
 
         -- Subagent usage
         SELECT si.session_uuid, 0 as has_main, 1 as has_sub, si.agent_id
-        FROM subagent_skills ssk
-        JOIN subagent_invocations si ON ssk.invocation_id = si.id
+        FROM {sub_table} {sub_alias}
+        JOIN subagent_invocations si ON {sub_alias}.invocation_id = si.id
         JOIN sessions s ON si.session_uuid = s.uuid
-        WHERE ssk.skill_name = :skill
+        WHERE {sub_alias}.{item_col} = :{param_name}
     ),
     aggregated_sessions AS (
         SELECT session_uuid,
@@ -643,11 +720,11 @@ def query_skill_detail(
         GROUP BY session_uuid
     ),
     session_sources AS (
-        SELECT sk.session_uuid,
-               GROUP_CONCAT(DISTINCT sk.invocation_source) as invocation_sources
-        FROM session_skills sk
-        WHERE sk.skill_name = :skill
-        GROUP BY sk.session_uuid
+        SELECT {alias}.session_uuid,
+               GROUP_CONCAT(DISTINCT {alias}.invocation_source) as invocation_sources
+        FROM {table} {alias}
+        WHERE {alias}.{item_col} = :{param_name}
+        GROUP BY {alias}.session_uuid
     )
     """
 
@@ -677,7 +754,6 @@ def query_skill_detail(
     for row in rows:
         session = dict(row)
 
-        # Calculate skill_source
         has_main = session.pop("has_main")
         has_sub = session.pop("has_sub")
         if has_main and has_sub:
@@ -687,34 +763,26 @@ def query_skill_detail(
         else:
             session["tool_source"] = "main"
 
-        # Parse agent IDs
         agent_ids_str = session.pop("agent_ids")
         session["subagent_agent_ids"] = agent_ids_str.split(",") if agent_ids_str else []
 
-        # Parse invocation sources per session
         sources_str = session.pop("invocation_sources", None)
         session["invocation_sources"] = sources_str.split(",") if sources_str else []
 
-        # Parse JSON fields
         session["models_used"] = _parse_json_list(session.get("models_used"))
         session["session_titles"] = _parse_json_list(session.get("session_titles"))
         session["git_branches"] = [session["git_branch"]] if session.get("git_branch") else []
         sessions.append(session)
 
-    # Parse invocation sources from comma-separated string
     sources_str = main_row["invocation_sources"] if main_row else None
     invocation_sources = sources_str.split(",") if sources_str else []
 
-    return {
-        "name": skill_name,
+    result: dict = {
         "main_calls": main_calls,
         "subagent_calls": sub_calls,
         "total_calls": main_calls + sub_calls,
         "manual_calls": manual_calls,
         "auto_calls": auto_calls,
-        "mentioned_calls": mentioned_calls,
-        "command_triggered_calls": command_triggered_calls,
-        "mention_session_count": mention_session_count,
         "session_count": main_row["session_count"] or 0 if main_row else 0,
         "first_used": main_row["first_used"] if main_row else None,
         "last_used": main_row["last_used"] if main_row else None,
@@ -725,6 +793,36 @@ def query_skill_detail(
         "sessions": sessions,
         "total": total_sessions,
     }
+
+    if track_mentions:
+        result["mentioned_calls"] = mentioned_calls
+        result["command_triggered_calls"] = command_triggered_calls
+        result["mention_session_count"] = mention_session_count
+
+    return result
+
+
+def query_skill_detail(
+    conn: sqlite3.Connection,
+    skill_name: str,
+    limit: int = 100,
+    offset: int = 0,
+) -> dict | None:
+    """Detailed stats for a single skill with trend and session list."""
+    result = _query_item_detail(
+        conn,
+        table="session_skills",
+        sub_table="subagent_skills",
+        item_col="skill_name",
+        item_value=skill_name,
+        limit=limit,
+        offset=offset,
+        track_mentions=True,
+    )
+    if result is None:
+        return None
+    result["name"] = skill_name
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -742,25 +840,14 @@ def query_command_usage(
     Includes invocation_sources field showing which sources contributed
     (e.g., 'slash_command,skill_tool').
     """
-    _where = "WHERE s.project_encoded_name = :project" if project else ""
-    _params: dict = {"limit": limit}
-    if project:
-        _params["project"] = project
-    rows = conn.execute(
-        f"""SELECT sc.command_name,
-            SUM(sc.count) as total_count,
-            COUNT(DISTINCT sc.session_uuid) as session_count,
-            MAX(s.end_time) as last_used,
-            GROUP_CONCAT(DISTINCT sc.invocation_source) as invocation_sources
-        FROM session_commands sc
-        JOIN sessions s ON sc.session_uuid = s.uuid
-        {_where}
-        GROUP BY sc.command_name
-        ORDER BY total_count DESC
-        LIMIT :limit""",
-        _params,
-    ).fetchall()
-    return [dict(row) for row in rows]
+    return _query_item_usage(
+        conn,
+        table="session_commands",
+        item_col="command_name",
+        project=project,
+        limit=limit,
+        track_mentions=False,
+    )
 
 
 def query_command_detail(
@@ -770,174 +857,85 @@ def query_command_detail(
     offset: int = 0,
 ) -> dict | None:
     """Detailed stats for a single command with trend and session list."""
-    # Main session stats
-    main_row = conn.execute(
-        """SELECT COALESCE(SUM(sc.count), 0) as total_count,
-            COUNT(DISTINCT sc.session_uuid) as session_count,
-            MIN(s.start_time) as first_used,
-            MAX(s.start_time) as last_used
-        FROM session_commands sc
-        JOIN sessions s ON sc.session_uuid = s.uuid
-        WHERE sc.command_name = :cmd""",
-        {"cmd": command_name},
-    ).fetchone()
-
-    # Subagent stats
-    sub_row = conn.execute(
-        """SELECT COALESCE(SUM(ssc.count), 0) as total_count
-        FROM subagent_commands ssc
-        JOIN subagent_invocations si ON ssc.invocation_id = si.id
-        WHERE ssc.command_name = :cmd""",
-        {"cmd": command_name},
-    ).fetchone()
-
-    main_calls = main_row["total_count"] or 0 if main_row else 0
-    sub_calls = sub_row["total_count"] or 0 if sub_row else 0
-
-    # Calls by invocation source (manual vs auto)
-    source_rows = conn.execute(
-        """SELECT sc.invocation_source, COALESCE(SUM(sc.count), 0) as total
-        FROM session_commands sc
-        WHERE sc.command_name = :cmd
-        GROUP BY sc.invocation_source""",
-        {"cmd": command_name},
-    ).fetchall()
-    source_counts = {r["invocation_source"]: r["total"] for r in source_rows}
-    manual_calls = source_counts.get("slash_command", 0)
-    auto_calls = source_counts.get("skill_tool", 0)
-
-    if main_calls == 0 and sub_calls == 0:
-        return None
-
-    # Daily trend
-    trend_rows = conn.execute(
-        """SELECT DATE(s.start_time) as date,
-            SUM(sc.count) as calls,
-            COUNT(DISTINCT sc.session_uuid) as sessions
-        FROM session_commands sc
-        JOIN sessions s ON sc.session_uuid = s.uuid
-        WHERE sc.command_name = :cmd AND s.start_time IS NOT NULL
-        GROUP BY DATE(s.start_time)
-        ORDER BY date""",
-        {"cmd": command_name},
-    ).fetchall()
-
-    # Sessions with source tagging (main vs subagent)
-    params: dict = {"cmd": command_name, "limit": limit, "offset": offset}
-
-    cte_sql = """
-    WITH target_sessions AS (
-        -- Main session usage
-        SELECT sc.session_uuid, 1 as has_main, 0 as has_sub, NULL as agent_id
-        FROM session_commands sc
-        JOIN sessions s ON sc.session_uuid = s.uuid
-        WHERE sc.command_name = :cmd
-
-        UNION ALL
-
-        -- Subagent usage
-        SELECT si.session_uuid, 0 as has_main, 1 as has_sub, si.agent_id
-        FROM subagent_commands ssc
-        JOIN subagent_invocations si ON ssc.invocation_id = si.id
-        JOIN sessions s ON si.session_uuid = s.uuid
-        WHERE ssc.command_name = :cmd
-    ),
-    aggregated_sessions AS (
-        SELECT session_uuid,
-               MAX(has_main) as has_main,
-               MAX(has_sub) as has_sub,
-               GROUP_CONCAT(DISTINCT agent_id) as agent_ids
-        FROM target_sessions
-        GROUP BY session_uuid
-    ),
-    session_sources AS (
-        SELECT sc.session_uuid,
-               GROUP_CONCAT(DISTINCT sc.invocation_source) as invocation_sources
-        FROM session_commands sc
-        WHERE sc.command_name = :cmd
-        GROUP BY sc.session_uuid
+    result = _query_item_detail(
+        conn,
+        table="session_commands",
+        sub_table="subagent_commands",
+        item_col="command_name",
+        item_value=command_name,
+        limit=limit,
+        offset=offset,
+        track_mentions=False,
     )
-    """
+    if result is None:
+        return None
+    result["name"] = command_name
+    return result
 
-    total_sessions = conn.execute(
-        f"{cte_sql} SELECT COUNT(*) FROM aggregated_sessions",
-        params,
-    ).fetchone()[0]
 
+def query_command_sessions(
+    conn: sqlite3.Connection,
+    command_name: str,
+    limit: int = 50,
+) -> dict:
+    """Get sessions that used a specific command. Returns {name, total_uses, sessions}."""
     rows = conn.execute(
-        f"""{cte_sql}
-        SELECT
-            s.uuid, s.slug, s.project_encoded_name, s.project_path,
-            s.message_count, s.start_time, s.end_time, s.duration_seconds,
-            s.models_used, s.subagent_count, s.initial_prompt,
-            s.git_branch, s.session_titles,
-            agg.has_main, agg.has_sub, agg.agent_ids,
-            ss.invocation_sources
-        FROM sessions s
-        JOIN aggregated_sessions agg ON s.uuid = agg.session_uuid
-        LEFT JOIN session_sources ss ON s.uuid = ss.session_uuid
+        """SELECT
+            sc.session_uuid,
+            sc.count,
+            s.slug,
+            s.project_encoded_name,
+            s.start_time
+        FROM session_commands sc
+        JOIN sessions s ON sc.session_uuid = s.uuid
+        WHERE sc.command_name = :cmd
         ORDER BY s.start_time DESC
-        LIMIT :limit OFFSET :offset""",
-        params,
+        LIMIT :limit""",
+        {"cmd": command_name, "limit": limit},
     ).fetchall()
-
-    sessions = []
-    for row in rows:
-        session = dict(row)
-
-        has_main = session.pop("has_main")
-        has_sub = session.pop("has_sub")
-        if has_main and has_sub:
-            session["tool_source"] = "both"
-        elif has_sub:
-            session["tool_source"] = "subagent"
-        else:
-            session["tool_source"] = "main"
-
-        agent_ids_str = session.pop("agent_ids")
-        session["subagent_agent_ids"] = agent_ids_str.split(",") if agent_ids_str else []
-
-        sources_str = session.pop("invocation_sources", None)
-        session["invocation_sources"] = sources_str.split(",") if sources_str else []
-
-        session["models_used"] = _parse_json_list(session.get("models_used"))
-        session["session_titles"] = _parse_json_list(session.get("session_titles"))
-        session["git_branches"] = [session["git_branch"]] if session.get("git_branch") else []
-        sessions.append(session)
 
     return {
         "name": command_name,
-        "main_calls": main_calls,
-        "subagent_calls": sub_calls,
-        "total_calls": main_calls + sub_calls,
-        "manual_calls": manual_calls,
-        "auto_calls": auto_calls,
-        "session_count": main_row["session_count"] or 0 if main_row else 0,
-        "first_used": main_row["first_used"] if main_row else None,
-        "last_used": main_row["last_used"] if main_row else None,
-        "trend": [
-            {"date": r["date"], "calls": r["calls"], "sessions": r["sessions"]} for r in trend_rows
+        "total_uses": sum(r["count"] for r in rows),
+        "sessions": [
+            {
+                "uuid": row["session_uuid"],
+                "count": row["count"],
+                "slug": row["slug"],
+                "project_encoded_name": row["project_encoded_name"],
+                "start_time": row["start_time"],
+            }
+            for row in rows
         ],
-        "sessions": sessions,
-        "total": total_sessions,
     }
 
 
-def query_command_usage_trend(
+def _query_item_usage_trend(
     conn: sqlite3.Connection,
-    project: Optional[str] = None,
-    period: str = "month",
+    *,
+    table: str,
+    item_col: str,
+    item_col_qualified: str,
+    from_clause: str,
+    project: Optional[str],
+    period: str,
+    track_mentions: bool = False,
 ) -> dict:
-    """
-    Aggregate command usage with daily trend data.
+    """Shared helper for skill/command aggregate usage-trend queries.
 
     Args:
-        conn: SQLite connection
-        project: Optional project encoded name filter
-        period: Time period - "week", "month", "quarter", or "all"
+        conn: SQLite connection.
+        table: Source table alias prefix used in qualified column names.
+        item_col: Unqualified item name column (e.g. 'skill_name').
+        item_col_qualified: Table-qualified item name column (e.g. 'sk.skill_name').
+        from_clause: Full FROM … JOIN clause for all queries.
+        project: Optional project encoded name filter.
+        period: Time period - "week", "month", "quarter", or "all".
+        track_mentions: When True, adds a WHERE … != 'text_detection' filter so
+            mention-only rows are excluded from counts (skills only).
 
     Returns:
-        Dict with total, by_item, trend, trend_by_item, first_used, last_used
+        Dict with total, by_item, trend, trend_by_item, first_used, last_used.
     """
     from datetime import timedelta
 
@@ -961,27 +959,33 @@ def query_command_usage_trend(
 
     where = "WHERE " + " AND ".join(conditions) if conditions else ""
 
-    # Totals by command
+    # For skills, build a tighter where clause that excludes text_detection rows.
+    if track_mentions:
+        mention_filter = f"{table}.invocation_source != 'text_detection'"
+        where_items = (f"{where} AND {mention_filter}") if where else f"WHERE {mention_filter}"
+    else:
+        where_items = where
+
+    # Totals by item
     rows = conn.execute(
-        f"""SELECT sc.command_name, SUM(sc.count) as total_count
-        FROM session_commands sc
-        JOIN sessions s ON sc.session_uuid = s.uuid
-        {where}
-        GROUP BY sc.command_name
+        f"""SELECT {item_col_qualified}, SUM({table}.count) as total_count
+        {from_clause}
+        {where_items}
+        GROUP BY {item_col_qualified}
         ORDER BY total_count DESC""",
         params,
     ).fetchall()
 
-    by_item = {row["command_name"]: row["total_count"] for row in rows}
+    by_item = {row[item_col]: row["total_count"] for row in rows}
     total = sum(by_item.values())
 
     # Daily trend
+    and_or_where = "AND" if where_items else "WHERE"
     trend_rows = conn.execute(
-        f"""SELECT DATE(s.start_time) as date, SUM(sc.count) as count
-        FROM session_commands sc
-        JOIN sessions s ON sc.session_uuid = s.uuid
-        {where}
-        {"AND" if where else "WHERE"} s.start_time IS NOT NULL
+        f"""SELECT DATE(s.start_time) as date, SUM({table}.count) as count
+        {from_clause}
+        {where_items}
+        {and_or_where} s.start_time IS NOT NULL
         GROUP BY DATE(s.start_time)
         ORDER BY date""",
         params,
@@ -991,19 +995,18 @@ def query_command_usage_trend(
 
     trend_by_item = _query_per_item_trend(
         conn,
-        item_col="sc.command_name",
-        from_clause="FROM session_commands sc JOIN sessions s ON sc.session_uuid = s.uuid",
-        where=where,
+        item_col=item_col_qualified,
+        from_clause=from_clause,
+        where=where_items,
         params=params,
-        count_expr="SUM(sc.count)",
+        count_expr=f"SUM({table}.count)",
     )
 
     # First/last used
     time_row = conn.execute(
         f"""SELECT MIN(s.start_time) as first_used, MAX(s.start_time) as last_used
-        FROM session_commands sc
-        JOIN sessions s ON sc.session_uuid = s.uuid
-        {where}""",
+        {from_clause}
+        {where_items}""",
         params,
     ).fetchone()
 
@@ -1018,6 +1021,34 @@ def query_command_usage_trend(
         "first_used": first_used,
         "last_used": last_used,
     }
+
+
+def query_command_usage_trend(
+    conn: sqlite3.Connection,
+    project: Optional[str] = None,
+    period: str = "month",
+) -> dict:
+    """
+    Aggregate command usage with daily trend data.
+
+    Args:
+        conn: SQLite connection
+        project: Optional project encoded name filter
+        period: Time period - "week", "month", "quarter", or "all"
+
+    Returns:
+        Dict with total, by_item, trend, trend_by_item, first_used, last_used
+    """
+    return _query_item_usage_trend(
+        conn,
+        table="sc",
+        item_col="command_name",
+        item_col_qualified="sc.command_name",
+        from_clause="FROM session_commands sc JOIN sessions s ON sc.session_uuid = s.uuid",
+        project=project,
+        period=period,
+        track_mentions=False,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1671,94 +1702,18 @@ def query_skill_usage_trend(
         period: Time period - "week", "month", "quarter", or "all"
 
     Returns:
-        Dict with total, by_item, trend, first_used, last_used
+        Dict with total, by_item, trend, trend_by_item, first_used, last_used
     """
-    from datetime import timedelta
-
-    now = datetime.now(timezone.utc)
-    cutoff = None
-    if period == "week":
-        cutoff = now - timedelta(days=7)
-    elif period == "month":
-        cutoff = now - timedelta(days=30)
-    elif period == "quarter":
-        cutoff = now - timedelta(days=90)
-
-    conditions = []
-    params: dict = {}
-    if project:
-        conditions.append("s.project_encoded_name = :project")
-        params["project"] = project
-    if cutoff:
-        conditions.append("s.start_time >= :cutoff")
-        params["cutoff"] = cutoff.isoformat()
-
-    where = "WHERE " + " AND ".join(conditions) if conditions else ""
-
-    # Exclude text_detection (mentions) from skill usage analytics
-    mention_filter = "sk.invocation_source != 'text_detection'"
-    if where:
-        where_skills = f"{where} AND {mention_filter}"
-    else:
-        where_skills = f"WHERE {mention_filter}"
-
-    # Totals by skill (excluding mentions)
-    rows = conn.execute(
-        f"""SELECT sk.skill_name, SUM(sk.count) as total_count
-        FROM session_skills sk
-        JOIN sessions s ON sk.session_uuid = s.uuid
-        {where_skills}
-        GROUP BY sk.skill_name
-        ORDER BY total_count DESC""",
-        params,
-    ).fetchall()
-
-    by_item = {row["skill_name"]: row["total_count"] for row in rows}
-    total = sum(by_item.values())
-
-    # Daily trend (excluding mentions)
-    trend_rows = conn.execute(
-        f"""SELECT DATE(s.start_time) as date, SUM(sk.count) as count
-        FROM session_skills sk
-        JOIN sessions s ON sk.session_uuid = s.uuid
-        {where_skills}
-        AND s.start_time IS NOT NULL
-        GROUP BY DATE(s.start_time)
-        ORDER BY date""",
-        params,
-    ).fetchall()
-
-    trend = [{"date": row["date"], "count": row["count"]} for row in trend_rows]
-
-    trend_by_item = _query_per_item_trend(
+    return _query_item_usage_trend(
         conn,
-        item_col="sk.skill_name",
+        table="sk",
+        item_col="skill_name",
+        item_col_qualified="sk.skill_name",
         from_clause="FROM session_skills sk JOIN sessions s ON sk.session_uuid = s.uuid",
-        where=where_skills,
-        params=params,
-        count_expr="SUM(sk.count)",
+        project=project,
+        period=period,
+        track_mentions=True,
     )
-
-    # First/last used (excluding mentions)
-    time_row = conn.execute(
-        f"""SELECT MIN(s.start_time) as first_used, MAX(s.start_time) as last_used
-        FROM session_skills sk
-        JOIN sessions s ON sk.session_uuid = s.uuid
-        {where_skills}""",
-        params,
-    ).fetchone()
-
-    first_used = time_row["first_used"] if time_row else None
-    last_used = time_row["last_used"] if time_row else None
-
-    return {
-        "total": total,
-        "by_item": by_item,
-        "trend": trend,
-        "trend_by_item": trend_by_item,
-        "first_used": first_used,
-        "last_used": last_used,
-    }
 
 
 def query_agent_usage_trend(

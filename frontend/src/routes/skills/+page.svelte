@@ -411,6 +411,7 @@
 					<input
 						type="text"
 						bind:value={searchQuery}
+						aria-label="Search skills"
 						placeholder="Search skills..."
 						class="
 							pl-9 pr-4 py-2

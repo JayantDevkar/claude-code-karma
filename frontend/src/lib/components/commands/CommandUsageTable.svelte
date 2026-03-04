@@ -1,7 +1,8 @@
 <script lang="ts">
 	import type { CommandUsage } from '$lib/api-types';
-	import { formatDistanceToNow } from 'date-fns';
 	import { getCommandCategoryColorVars, getCommandCategoryLabel } from '$lib/utils';
+	import UsageTable from '$lib/components/shared/UsageTable.svelte';
+	import type { UsageColumn } from '$lib/components/shared/UsageTable.svelte';
 
 	interface Props {
 		commands: CommandUsage[];
@@ -12,6 +13,11 @@
 	// Sort state
 	let sortKey = $state<'name' | 'category' | 'uses' | 'sessions' | 'last'>('uses');
 	let sortDir = $state<'asc' | 'desc'>('desc');
+
+	const columns: UsageColumn[] = [
+		{ key: 'name', label: 'Command' },
+		{ key: 'category', label: 'Category' }
+	];
 
 	let sortedCommands = $derived.by(() => {
 		const sorted = [...commands];
@@ -41,114 +47,48 @@
 		return sorted;
 	});
 
-	function toggleSort(key: typeof sortKey) {
-		if (sortKey === key) {
+	function toggleSort(key: string) {
+		const k = key as typeof sortKey;
+		if (sortKey === k) {
 			sortDir = sortDir === 'desc' ? 'asc' : 'desc';
 		} else {
-			sortKey = key;
+			sortKey = k;
 			sortDir = 'desc';
 		}
 	}
-
-	function sortIndicator(key: typeof sortKey): string {
-		if (sortKey !== key) return '';
-		return sortDir === 'desc' ? ' ↓' : ' ↑';
-	}
 </script>
 
-<div class="overflow-x-auto border border-[var(--border)] rounded-xl">
-	<table class="w-full text-sm">
-		<thead>
-			<tr class="border-b border-[var(--border)] bg-[var(--bg-subtle)]">
-				<th class="text-left px-4 py-3 font-medium text-[var(--text-secondary)]">
-					<button
-						onclick={() => toggleSort('name')}
-						class="hover:text-[var(--text-primary)] transition-colors"
-					>
-						Command{sortIndicator('name')}
-					</button>
-				</th>
-				<th class="text-left px-4 py-3 font-medium text-[var(--text-secondary)]">
-					<button
-						onclick={() => toggleSort('category')}
-						class="hover:text-[var(--text-primary)] transition-colors"
-					>
-						Category{sortIndicator('category')}
-					</button>
-				</th>
-				<th class="text-right px-4 py-3 font-medium text-[var(--text-secondary)]">
-					<button
-						onclick={() => toggleSort('uses')}
-						class="hover:text-[var(--text-primary)] transition-colors"
-					>
-						Uses{sortIndicator('uses')}
-					</button>
-				</th>
-				<th
-					class="text-right px-4 py-3 font-medium text-[var(--text-secondary)] hidden md:table-cell"
+<UsageTable
+	items={sortedCommands}
+	getKey={(c) => c.name}
+	{columns}
+	{sortKey}
+	{sortDir}
+	onToggleSort={toggleSort}
+>
+	{#snippet customCells(command)}
+		{@const catColors = getCommandCategoryColorVars(command.category ?? 'user_command')}
+		<td class="px-4 py-3">
+			<div class="flex items-center gap-2.5">
+				<span
+					class="w-2 h-2 rounded-full flex-shrink-0"
+					style="background-color: {catColors.color};"
+				></span>
+				<a
+					href="/commands/{encodeURIComponent(command.name)}"
+					class="font-medium text-[var(--text-primary)] hover:text-[var(--accent)] transition-colors"
 				>
-					<button
-						onclick={() => toggleSort('sessions')}
-						class="hover:text-[var(--text-primary)] transition-colors"
-					>
-						Sessions{sortIndicator('sessions')}
-					</button>
-				</th>
-				<th
-					class="text-right px-4 py-3 font-medium text-[var(--text-secondary)] hidden md:table-cell"
-				>
-					<button
-						onclick={() => toggleSort('last')}
-						class="hover:text-[var(--text-primary)] transition-colors"
-					>
-						Last Used{sortIndicator('last')}
-					</button>
-				</th>
-			</tr>
-		</thead>
-		<tbody>
-			{#each sortedCommands as command (command.name)}
-				{@const catColors = getCommandCategoryColorVars(command.category ?? 'user_command')}
-				<tr class="border-b border-[var(--border)] hover:bg-[var(--bg-subtle)] transition-colors">
-					<td class="px-4 py-3">
-						<div class="flex items-center gap-2.5">
-							<span
-								class="w-2 h-2 rounded-full flex-shrink-0"
-								style="background-color: {catColors.color};"
-							></span>
-							<a
-								href="/commands/{encodeURIComponent(command.name)}"
-								class="font-medium text-[var(--text-primary)] hover:text-[var(--accent)] transition-colors"
-							>
-								/{command.name}
-							</a>
-						</div>
-					</td>
-					<td class="px-4 py-3">
-						<span
-							class="inline-flex items-center px-2 py-0.5 text-[10px] font-medium rounded-full"
-							style="color: {catColors.color}; background-color: {catColors.subtle};"
-						>
-							{getCommandCategoryLabel(command.category ?? 'user_command')}
-						</span>
-					</td>
-					<td class="px-4 py-3 text-right tabular-nums font-medium text-[var(--text-primary)]">
-						{command.count?.toLocaleString() ?? '0'}
-					</td>
-					<td
-						class="px-4 py-3 text-right tabular-nums text-[var(--text-muted)] hidden md:table-cell"
-					>
-						{command.session_count?.toLocaleString() ?? '—'}
-					</td>
-					<td class="px-4 py-3 text-right text-[var(--text-muted)] hidden md:table-cell">
-						{#if command.last_used}
-							{formatDistanceToNow(new Date(command.last_used))} ago
-						{:else}
-							Never
-						{/if}
-					</td>
-				</tr>
-			{/each}
-		</tbody>
-	</table>
-</div>
+					/{command.name}
+				</a>
+			</div>
+		</td>
+		<td class="px-4 py-3">
+			<span
+				class="inline-flex items-center px-2 py-0.5 text-[10px] font-medium rounded-full"
+				style="color: {catColors.color}; background-color: {catColors.subtle};"
+			>
+				{getCommandCategoryLabel(command.category ?? 'user_command')}
+			</span>
+		</td>
+	{/snippet}
+</UsageTable>

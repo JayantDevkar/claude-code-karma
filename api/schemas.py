@@ -620,7 +620,10 @@ class CommandUsage(BaseModel):
     name: str = Field(..., description="Command name (e.g., 'commit', 'run-tests')")
     count: int = Field(..., description="Number of times the command was invoked")
     source: str = Field(
-        "unknown", description="Source: 'builtin', 'plugin', 'project', 'user', or 'unknown'"
+        "unknown",
+        description="Legacy source field. Prefer 'category' for classification: "
+        "'builtin_command', 'bundled_skill', 'plugin_skill', 'plugin_command', "
+        "'custom_skill', 'user_command'",
     )
     plugin: Optional[str] = Field(None, description="Plugin name if source == 'plugin'")
     invocation_source: str = Field(

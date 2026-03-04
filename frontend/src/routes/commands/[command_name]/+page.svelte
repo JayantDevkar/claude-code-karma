@@ -21,7 +21,7 @@
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import Badge from '$lib/components/ui/Badge.svelte';
 	import CollapsibleGroup from '$lib/components/ui/CollapsibleGroup.svelte';
-	import { renderMarkdownEffect, getCommandCategoryColorVars, getCommandCategoryLabel, getCommandChartHex, getProjectNameFromEncoded } from '$lib/utils';
+	import { renderMarkdownEffect, getCommandCategoryColorVars, getCommandCategoryLabel, getCommandChartHex, getProjectNameFromEncoded, toSessionWithContext } from '$lib/utils';
 	import SkeletonBox from '$lib/components/skeleton/SkeletonBox.svelte';
 	import SkeletonText from '$lib/components/skeleton/SkeletonText.svelte';
 	import { SkeletonGlobalSessionCard } from '$lib/components/skeleton';
@@ -90,27 +90,6 @@
 				]
 			: []
 	);
-
-	// Convert sessions to SessionWithContext
-	function toSessionWithContext(s: any): SessionWithContext {
-		return {
-			uuid: s.uuid,
-			slug: s.slug ?? '',
-			message_count: s.message_count,
-			start_time: s.start_time ?? '',
-			end_time: s.end_time ?? undefined,
-			duration_seconds: s.duration_seconds ?? undefined,
-			models_used: s.models_used ?? [],
-			subagent_count: s.subagent_count ?? 0,
-			has_todos: false,
-			initial_prompt: s.initial_prompt ?? undefined,
-			git_branches: s.git_branches ?? [],
-			session_titles: s.session_titles ?? [],
-			project_encoded_name: s.project_encoded_name ?? undefined,
-			project_path: s.project_encoded_name ?? '',
-			project_name: getProjectNameFromEncoded(s.project_encoded_name ?? '')
-		};
-	}
 
 	let sessions = $derived<SessionWithContext[]>(
 		detail ? detail.sessions.map(toSessionWithContext) : []

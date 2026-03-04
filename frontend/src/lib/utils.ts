@@ -6,7 +6,10 @@ import type {
 	AnalyticsFilterPeriod,
 	AnalyticsFilterOption,
 	SubagentState,
-	SubagentSummary
+	SubagentSummary,
+	McpSessionSummary,
+	SessionSummary,
+	SessionWithContext
 } from './api-types';
 import { marked } from 'marked';
 import DOMPurify from 'isomorphic-dompurify';
@@ -918,6 +921,24 @@ export function getCommandColorVars(
 }
 
 /**
+ * Shared color vars for categories common to both commands and skills.
+ * Ensures `bundled_skill`, `plugin_skill`, and `custom_skill` render
+ * identically regardless of which page they appear on.
+ */
+function _getSharedCategoryColorVars(
+	category: 'bundled_skill' | 'plugin_skill' | 'custom_skill'
+): { color: string; subtle: string } {
+	switch (category) {
+		case 'bundled_skill':
+			return { color: 'var(--nav-purple)', subtle: 'oklch(0.75 0.1 300 / 0.1)' };
+		case 'plugin_skill':
+			return { color: 'var(--nav-blue)', subtle: 'oklch(0.7 0.12 250 / 0.1)' };
+		case 'custom_skill':
+			return { color: 'var(--nav-teal)', subtle: 'oklch(0.75 0.1 180 / 0.1)' };
+	}
+}
+
+/**
  * Get color vars for a command category (5-category classification).
  */
 export function getCommandCategoryColorVars(category: string): { color: string; subtle: string } {
@@ -925,12 +946,11 @@ export function getCommandCategoryColorVars(category: string): { color: string; 
 		case 'builtin_command':
 			return { color: 'var(--text-muted)', subtle: 'var(--bg-muted)' };
 		case 'bundled_skill':
-			return { color: 'var(--nav-purple)', subtle: 'oklch(0.75 0.1 300 / 0.1)' };
 		case 'plugin_skill':
+		case 'custom_skill':
+			return _getSharedCategoryColorVars(category);
 		case 'plugin_command':
 			return { color: 'var(--nav-blue)', subtle: 'oklch(0.7 0.12 250 / 0.1)' };
-		case 'custom_skill':
-			return { color: 'var(--nav-teal)', subtle: 'oklch(0.75 0.1 180 / 0.1)' };
 		case 'user_command':
 			return { color: 'var(--accent)', subtle: 'var(--accent-subtle)' };
 		default:
@@ -978,15 +998,14 @@ export function getSkillCategoryLabel(category: string): string {
 
 /**
  * Get color vars for a skill category (3-category classification).
+ * Uses the shared helper for the 3 categories common with commands.
  */
 export function getSkillCategoryColorVars(category: string): { color: string; subtle: string } {
 	switch (category) {
 		case 'bundled_skill':
-			return { color: 'var(--nav-purple)', subtle: 'rgba(124, 58, 237, 0.08)' };
 		case 'plugin_skill':
-			return { color: 'var(--nav-green)', subtle: 'rgba(16, 185, 129, 0.08)' };
 		case 'custom_skill':
-			return { color: 'var(--nav-blue)', subtle: 'rgba(59, 130, 246, 0.08)' };
+			return _getSharedCategoryColorVars(category);
 		default:
 			return { color: 'var(--text-muted)', subtle: 'var(--bg-muted)' };
 	}
@@ -1427,4 +1446,48 @@ export function renderMarkdownEffect(
 	} else {
 		processHtml(parsed);
 	}
+}
+
+// ============================================
+// Table Sort Utilities
+// ============================================
+
+/**
+ * Returns the sort indicator string for a column header.
+ * Returns ' ↓' for descending, ' ↑' for ascending, '' if not the active column.
+ */
+export function sortIndicator(activeKey: string, columnKey: string, sortDir: 'asc' | 'desc'): string {
+	if (activeKey !== columnKey) return '';
+	return sortDir === 'desc' ? ' ↓' : ' ↑';
+}
+
+// ============================================
+// Session Mapping
+// ============================================
+
+/**
+ * Convert an McpSessionSummary (returned by skills/commands/tools endpoints)
+ * into the SessionWithContext shape expected by GlobalSessionCard and session
+ * filter components.
+ */
+export function toSessionWithContext(s: McpSessionSummary | SessionSummary): SessionWithContext {
+	const encoded = ('project_encoded_name' in s ? s.project_encoded_name : undefined) ?? undefined;
+	const displayName = ('project_display_name' in s ? s.project_display_name : undefined) ?? undefined;
+	return {
+		uuid: s.uuid,
+		slug: s.slug ?? '',
+		message_count: s.message_count,
+		start_time: s.start_time ?? '',
+		end_time: s.end_time ?? undefined,
+		duration_seconds: s.duration_seconds ?? undefined,
+		models_used: s.models_used,
+		subagent_count: s.subagent_count,
+		has_todos: false,
+		initial_prompt: s.initial_prompt ?? undefined,
+		git_branches: s.git_branches,
+		session_titles: s.session_titles,
+		project_encoded_name: encoded,
+		project_path: encoded ?? '',
+		project_name: displayName || getProjectNameFromEncoded(encoded ?? '')
+	};
 }

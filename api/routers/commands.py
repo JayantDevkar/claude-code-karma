@@ -22,7 +22,7 @@ from config import Settings, settings
 from http_caching import cacheable
 from models import Project
 from parallel import run_in_thread
-from schemas import CommandContent, CommandInfo, CommandItem
+from schemas import CommandContent, CommandDetailResponse, CommandInfo, CommandItem
 
 logger = logging.getLogger(__name__)
 
@@ -151,14 +151,14 @@ def list_commands(
                         )
                     )
             except Exception as e:
-                logger.warning(f"Failed to process command entry {entry}: {e}")
+                logger.warning("Failed to process command entry %s: %s", entry, e)
 
         return items
 
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to list commands directory: {e}")
+        logger.error("Failed to list commands directory: %s", e)
         raise HTTPException(status_code=500, detail="Failed to list commands directory") from e
 
 
@@ -277,45 +277,15 @@ def get_command_usage_detail(command_name: str, request: Request):
     """Get usage detail for a specific command."""
     _validate_command_name(command_name)
     from db.connection import sqlite_read
+    from db.queries import query_command_sessions
 
     with sqlite_read() as conn:
         if conn is None:
-            return {"command_name": command_name, "sessions": []}
-
-        rows = conn.execute(
-            """
-            SELECT
-                sc.session_uuid,
-                sc.count,
-                s.slug,
-                s.project_encoded_name,
-                s.start_time
-            FROM session_commands sc
-            JOIN sessions s ON sc.session_uuid = s.uuid
-            WHERE sc.command_name = ?
-            ORDER BY s.start_time DESC
-            LIMIT 50
-        """,
-            (command_name,),
-        ).fetchall()
-
-        return {
-            "name": command_name,
-            "total_uses": sum(r["count"] for r in rows),
-            "sessions": [
-                {
-                    "uuid": row["session_uuid"],
-                    "count": row["count"],
-                    "slug": row["slug"],
-                    "project_encoded_name": row["project_encoded_name"],
-                    "start_time": row["start_time"],
-                }
-                for row in rows
-            ],
-        }
+            return {"name": command_name, "total_uses": 0, "sessions": []}
+        return query_command_sessions(conn, command_name, limit=50)
 
 
-@router.get("/commands/{command_name}/detail")
+@router.get("/commands/{command_name}/detail", response_model=CommandDetailResponse)
 @cacheable(max_age=120, stale_while_revalidate=300)
 async def get_command_detail(
     command_name: str,
@@ -348,8 +318,8 @@ async def get_command_detail(
                 project_cmd = Path(proj.path) / ".claude" / "commands" / f"{command_name}.md"
                 if project_cmd.is_file():
                     cmd_file = project_cmd
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("Failed to resolve project command %s: %s", command_name, e)
         if not cmd_file:
             user_cmd = config.commands_dir / f"{command_name}.md"
             if user_cmd.is_file():
@@ -358,8 +328,8 @@ async def get_command_detail(
             try:
                 content = await run_in_thread(safe_read_file, cmd_file, settings.max_skill_size)
                 file_path = str(cmd_file)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("Failed to read user_command content for %s: %s", command_name, e)
     elif category in ("plugin_command", "plugin_skill"):
         # Resolve plugin command/skill content via skills info resolver
         try:
@@ -368,14 +338,14 @@ async def get_command_detail(
             content = skill_info.content
             description = description or skill_info.description
             file_path = skill_info.file_path
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Failed to resolve plugin content for %s: %s", command_name, e)
     elif category == "bundled_skill":
         # Extract bundled skill prompt from cli.js
         try:
             content = get_bundled_skill_prompt(command_name)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Failed to extract bundled_skill content for %s: %s", command_name, e)
     elif category == "custom_skill":
         # User SKILL.md files in ~/.claude/skills/
         try:
@@ -383,8 +353,8 @@ async def get_command_detail(
             if skill_file.is_file():
                 content = await run_in_thread(safe_read_file, skill_file, settings.max_skill_size)
                 file_path = str(skill_file)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Failed to read custom_skill content for %s: %s", command_name, e)
     elif category == "builtin_command":
         # Built-in CLI commands don't have prompts but we provide descriptions
         from command_helpers import BUILTIN_COMMAND_DESCRIPTIONS
@@ -473,7 +443,7 @@ async def get_command_info(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to read command file: {e}")
+        logger.error("Failed to read command file: %s", e)
         raise HTTPException(status_code=500, detail="Failed to read command file") from e
 
     # Parse YAML frontmatter
@@ -490,7 +460,7 @@ async def get_command_info(
                     description = frontmatter.get("description")
                     frontmatter_name = frontmatter.get("name", command_name)
             except yaml.YAMLError as e:
-                logger.warning(f"Failed to parse YAML frontmatter for {command_name}: {e}")
+                logger.warning("Failed to parse YAML frontmatter for %s: %s", command_name, e)
 
     return CommandInfo(
         name=frontmatter_name,

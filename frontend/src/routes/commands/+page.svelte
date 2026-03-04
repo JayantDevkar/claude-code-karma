@@ -403,6 +403,7 @@
 					<input
 						type="text"
 						bind:value={searchQuery}
+						aria-label="Search commands"
 						placeholder="Search commands..."
 						class="
 							pl-9 pr-4 py-2

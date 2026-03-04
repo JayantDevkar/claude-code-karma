@@ -5,7 +5,7 @@
 	import type { CommandUsage } from '$lib/api-types';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import Modal from '$lib/components/ui/Modal.svelte';
-	import { cleanSkillName, getCommandColorVars } from '$lib/utils';
+	import { cleanSkillName, getCommandColorVars, getCommandCategoryColorVars, getCommandCategoryLabel } from '$lib/utils';
 	import { API_BASE } from '$lib/config';
 
 	interface Props {
@@ -74,10 +74,23 @@
 		}
 	});
 
+	function isPluginCommand(command: CommandUsage): boolean {
+		if (command.category) {
+			return command.category === 'plugin_skill' || command.category === 'plugin_command';
+		}
+		return command.source === 'plugin';
+	}
+
+	function isBuiltinCommand(command: CommandUsage): boolean {
+		if (command.category) {
+			return command.category === 'builtin_command';
+		}
+		return command.source === 'builtin' || command.source === 'unknown';
+	}
+
 	async function openCommand(command: CommandUsage) {
-		if (command.source === 'builtin' || command.source === 'unknown') return;
-		const displayName =
-			command.source === 'plugin' ? cleanSkillName(command.name, true) : command.name;
+		if (isBuiltinCommand(command)) return;
+		const displayName = isPluginCommand(command) ? cleanSkillName(command.name, true) : command.name;
 		modalTitle = `/${displayName}`;
 		modalContent = '';
 		modalError = null;
@@ -86,7 +99,7 @@
 
 		try {
 			let url: string;
-			if (command.source === 'plugin') {
+			if (isPluginCommand(command)) {
 				url = `${API_BASE}/skills/info/${encodeURIComponent(command.name)}`;
 			} else {
 				const base = `${API_BASE}/commands/info/${encodeURIComponent(command.name)}`;
@@ -118,8 +131,18 @@
 		}
 	}
 
-	function getBadgeLabel(source: CommandUsage['source']): string {
-		switch (source) {
+	function getCommandColors(command: CommandUsage): { color: string; subtle: string } {
+		if (command.category) {
+			return getCommandCategoryColorVars(command.category);
+		}
+		return getCommandColorVars(command.source ?? 'unknown', command.plugin);
+	}
+
+	function getBadgeLabel(command: CommandUsage): string {
+		if (command.category) {
+			return getCommandCategoryLabel(command.category);
+		}
+		switch (command.source) {
 			case 'builtin':
 				return 'Built-in';
 			case 'plugin':
@@ -145,9 +168,9 @@
 	{#if sortedCommands.length > 0}
 		<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
 			{#each sortedCommands as command (command.name)}
-				{@const cmdColors = getCommandColorVars(command.source ?? 'unknown', command.plugin)}
-				{@const Icon = command.source === 'plugin' ? Zap : TerminalSquare}
-				{@const isClickable = command.source !== 'builtin' && command.source !== 'unknown'}
+				{@const cmdColors = getCommandColors(command)}
+				{@const Icon = isPluginCommand(command) ? Zap : TerminalSquare}
+				{@const isClickable = !isBuiltinCommand(command)}
 
 				<button
 					onclick={() => openCommand(command)}
@@ -169,7 +192,7 @@
 								class="font-medium text-[var(--text-primary)] truncate"
 								title={command.name}
 							>
-								/{command.source === 'plugin'
+								/{isPluginCommand(command)
 									? cleanSkillName(command.name, true)
 									: command.name}
 							</span>
@@ -179,7 +202,7 @@
 								class="px-1.5 py-0.5 rounded text-[10px] uppercase font-medium"
 								style="background-color: {cmdColors.subtle}; color: {cmdColors.color};"
 							>
-								{getBadgeLabel(command.source)}
+								{getBadgeLabel(command)}
 							</span>
 							{#if command.plugin}
 								<span class="text-[var(--text-faint)]">{command.plugin}</span>
