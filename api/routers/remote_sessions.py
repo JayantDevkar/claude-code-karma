@@ -47,6 +47,7 @@ class RemoteManifest(BaseModel):
     session_count: int
     sessions: list[RemoteSessionSummary]
     previous_cid: Optional[str] = None
+    sync_backend: Optional[str] = None
 
 
 def _validate_path_segment(value: str, label: str) -> None:

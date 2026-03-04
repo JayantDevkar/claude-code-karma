@@ -36,6 +36,7 @@ from routers import (  # noqa: E402
     sessions,
     skills,
     subagent_sessions,
+    sync_status,
     tools,
 )
 from routers import settings as settings_router  # noqa: E402
@@ -173,6 +174,7 @@ app.include_router(
     tags=["subagent-sessions"],
 )
 app.include_router(remote_sessions.router, prefix="/remote", tags=["remote"])
+app.include_router(sync_status.router)
 app.include_router(admin.router)
 
 
