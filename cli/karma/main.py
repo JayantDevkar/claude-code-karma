@@ -503,37 +503,62 @@ def watch(team_name: str):
     click.echo(f"Watching {len(team_cfg.projects)} project(s) for team '{team_name}'...")
     click.echo("Press Ctrl+C to stop.\n")
 
+    from karma.worktree_discovery import find_worktree_dirs
+
     watchers = []
+    projects_dir = Path.home() / ".claude" / "projects"
+
     for proj_name, proj in team_cfg.projects.items():
         claude_dir = Path.home() / ".claude" / "projects" / proj.encoded_name
         if not claude_dir.is_dir():
             click.echo(f"  Skipping '{proj_name}': Claude dir not found ({claude_dir})")
             continue
 
+        # Discover worktree dirs for this project
+        wt_dirs = find_worktree_dirs(proj.encoded_name, projects_dir)
+        if wt_dirs:
+            click.echo(f"  Found {len(wt_dirs)} worktree dir(s) for '{proj_name}'")
+
         # team_name intentionally excluded — user_id provides namespace isolation.
         # Both IPFS pull and Syncthing watch converge on this same path.
         outbox = KARMA_BASE / "remote-sessions" / config.user_id / proj.encoded_name
 
-        def make_package_fn(cd=claude_dir, ob=outbox, pn=proj_name):
+        def make_package_fn(cd=claude_dir, ob=outbox, pn=proj_name, en=proj.encoded_name):
             def package():
+                # Re-discover worktrees each time (new ones may appear)
+                current_wt_dirs = find_worktree_dirs(en, projects_dir)
                 packager = SessionPackager(
                     project_dir=cd,
                     user_id=config.user_id,
                     machine_id=config.machine_id,
                     project_path=proj.path,
+                    extra_dirs=current_wt_dirs,
                 )
                 ob.mkdir(parents=True, exist_ok=True)
                 packager.package(staging_dir=ob)
-                click.echo(f"  Packaged '{pn}' -> {ob}")
+                click.echo(f"  Packaged '{pn}' -> {ob} ({len(current_wt_dirs)} worktrees)")
             return package
+
+        package_fn = make_package_fn()
 
         watcher = SessionWatcher(
             watch_dir=claude_dir,
-            package_fn=make_package_fn(),
+            package_fn=package_fn,
         )
         watcher.start()
         watchers.append(watcher)
         click.echo(f"  Watching: {proj_name} ({claude_dir})")
+
+        # Also watch each worktree dir
+        for wt_dir in wt_dirs:
+            wt_watcher = SessionWatcher(
+                watch_dir=wt_dir,
+                package_fn=package_fn,
+            )
+            wt_watcher.start()
+            watchers.append(wt_watcher)
+            wt_name = wt_dir.name.split("--claude-worktrees-")[-1] if "--claude-worktrees-" in wt_dir.name else wt_dir.name
+            click.echo(f"  Watching worktree: {wt_name} ({wt_dir})")
 
     try:
         import time
