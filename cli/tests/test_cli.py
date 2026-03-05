@@ -22,6 +22,7 @@ def init_config(tmp_path, monkeypatch):
     config_path = tmp_path / "sync-config.json"
     monkeypatch.setattr("karma.config.SYNC_CONFIG_PATH", config_path)
     monkeypatch.setattr("karma.config.KARMA_BASE", tmp_path)
+    monkeypatch.setattr("karma.main.KARMA_BASE", tmp_path)
     return config_path
 
 

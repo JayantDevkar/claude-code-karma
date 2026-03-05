@@ -319,7 +319,7 @@ def pull():
 @cli.command("ls")
 def list_remote():
     """List available remote sessions."""
-    remote_dir = Path.home() / ".claude_karma" / "remote-sessions"
+    remote_dir = KARMA_BASE / "remote-sessions"
     if not remote_dir.is_dir():
         click.echo("No remote sessions. Run: karma pull")
         return
