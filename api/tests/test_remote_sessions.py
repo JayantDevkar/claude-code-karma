@@ -389,12 +389,20 @@ class TestRemoteSessionSubagentAccess:
     def test_subagent_dir_resolves_correctly(self, karma_base):
         """Subagent files should be findable from remote session paths."""
         # Add a subagent file alongside a remote session
-        alice_sessions = karma_base / "remote-sessions" / "alice" / "-Users-jayant-acme" / "sessions"
+        alice_sessions = (
+            karma_base / "remote-sessions" / "alice" / "-Users-jayant-acme" / "sessions"
+        )
         sub_dir = alice_sessions / "sess-001" / "subagents"
         sub_dir.mkdir(parents=True)
         (sub_dir / "agent-abc.jsonl").write_text(
-            json.dumps({"type": "user", "message": {"role": "user", "content": "sub task"},
-                         "timestamp": "2026-03-03T12:00:00Z"}) + "\n"
+            json.dumps(
+                {
+                    "type": "user",
+                    "message": {"role": "user", "content": "sub task"},
+                    "timestamp": "2026-03-03T12:00:00Z",
+                }
+            )
+            + "\n"
         )
 
         with patch("services.remote_sessions.settings") as mock_settings:
