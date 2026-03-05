@@ -326,6 +326,75 @@ class TestWorktreeDiscoveryIntegration:
         assert dirs[0] == wt
 
 
+class TestEndToEndWorktreeSync:
+    def test_full_worktree_package_pipeline(self, tmp_path):
+        """End-to-end: discover worktrees, package, verify manifest."""
+        from karma.packager import SessionPackager
+        from karma.worktree_discovery import find_worktree_dirs
+        import json
+
+        projects_dir = tmp_path / "projects"
+
+        # Main project
+        main = projects_dir / "-Users-jay-karma"
+        main.mkdir(parents=True)
+        (main / "main-session.jsonl").write_text(
+            '{"type":"user","message":{"role":"user","content":"main work"}}\n'
+        )
+
+        # Worktree 1
+        wt1 = projects_dir / "-Users-jay-karma--claude-worktrees-feat-auth"
+        wt1.mkdir(parents=True)
+        (wt1 / "auth-session.jsonl").write_text(
+            '{"type":"user","message":{"role":"user","content":"auth feature"}}\n'
+        )
+        # With subagent
+        (wt1 / "auth-session" / "subagents").mkdir(parents=True)
+        (wt1 / "auth-session" / "subagents" / "agent-a1.jsonl").write_text('{"type":"agent"}\n')
+
+        # Worktree 2
+        wt2 = projects_dir / "-Users-jay-karma--claude-worktrees-fix-bug"
+        wt2.mkdir(parents=True)
+        (wt2 / "bug-session.jsonl").write_text(
+            '{"type":"user","message":{"role":"user","content":"bug fix"}}\n'
+        )
+
+        # Discover
+        wt_dirs = find_worktree_dirs("-Users-jay-karma", projects_dir)
+        assert len(wt_dirs) == 2
+
+        # Package
+        staging = tmp_path / "outbox"
+        packager = SessionPackager(
+            project_dir=main,
+            user_id="jay",
+            machine_id="mac",
+            extra_dirs=wt_dirs,
+        )
+        manifest = packager.package(staging_dir=staging)
+
+        # Verify manifest
+        assert manifest.session_count == 3
+        uuids = {s.uuid for s in manifest.sessions}
+        assert uuids == {"main-session", "auth-session", "bug-session"}
+
+        # Verify worktree tagging
+        by_uuid = {s.uuid: s for s in manifest.sessions}
+        assert by_uuid["main-session"].worktree_name is None
+        assert by_uuid["auth-session"].worktree_name == "feat-auth"
+        assert by_uuid["bug-session"].worktree_name == "fix-bug"
+
+        # Verify files on disk
+        assert (staging / "sessions" / "auth-session.jsonl").exists()
+        assert (staging / "sessions" / "auth-session" / "subagents" / "agent-a1.jsonl").exists()
+        assert (staging / "sessions" / "bug-session.jsonl").exists()
+
+        # Verify manifest JSON
+        manifest_json = json.loads((staging / "manifest.json").read_text())
+        wt_entries = [s for s in manifest_json["sessions"] if s["worktree_name"]]
+        assert len(wt_entries) == 2
+
+
 class TestStatusCommand:
     def test_status_no_teams(self, runner, mock_config):
         runner.invoke(cli, ["init", "--user-id", "alice"])
