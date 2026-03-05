@@ -308,6 +308,24 @@ class TestAcceptCommand:
         mock_st.remove_folder.assert_called_once_with("karma-out-bob-myapp")
 
 
+class TestWorktreeDiscoveryIntegration:
+    def test_watch_discovers_worktree_dirs(self, tmp_path):
+        """karma watch should find worktree dirs and pass them to packager."""
+        from karma.worktree_discovery import find_worktree_dirs
+
+        projects_dir = tmp_path / ".claude" / "projects"
+        main = projects_dir / "-Users-jay-GitHub-karma"
+        wt = projects_dir / "-Users-jay-GitHub-karma--claude-worktrees-feat-a"
+        main.mkdir(parents=True)
+        wt.mkdir(parents=True)
+        (main / "s1.jsonl").write_text('{"type":"user"}\n')
+        (wt / "s2.jsonl").write_text('{"type":"user"}\n')
+
+        dirs = find_worktree_dirs("-Users-jay-GitHub-karma", projects_dir)
+        assert len(dirs) == 1
+        assert dirs[0] == wt
+
+
 class TestStatusCommand:
     def test_status_no_teams(self, runner, mock_config):
         runner.invoke(cli, ["init", "--user-id", "alice"])
