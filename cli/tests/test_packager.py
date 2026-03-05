@@ -219,6 +219,60 @@ class TestPackagerWithWorktrees:
         assert manifest.session_count == 2
 
 
+class TestIncrementalPackaging:
+    def test_skip_unchanged_sessions(self, mock_claude_project, tmp_path):
+        """Second package should skip files that haven't changed."""
+        staging = tmp_path / "staging"
+        packager = SessionPackager(
+            project_dir=mock_claude_project,
+            user_id="alice",
+            machine_id="test-mac",
+        )
+
+        # First package
+        manifest1 = packager.package(staging_dir=staging)
+        assert manifest1.session_count == 2
+
+        # Record mtime of a copied file
+        copied = staging / "sessions" / "session-uuid-001.jsonl"
+        mtime_after_first = copied.stat().st_mtime
+
+        import time
+        time.sleep(0.05)  # ensure mtime difference is detectable
+
+        # Second package (no source changes)
+        manifest2 = packager.package(staging_dir=staging)
+        assert manifest2.session_count == 2
+
+        # File should NOT have been re-copied (mtime unchanged)
+        mtime_after_second = copied.stat().st_mtime
+        assert mtime_after_first == mtime_after_second
+
+    def test_repackage_modified_session(self, mock_claude_project, tmp_path):
+        """Modified source file should be re-copied."""
+        staging = tmp_path / "staging"
+        packager = SessionPackager(
+            project_dir=mock_claude_project,
+            user_id="alice",
+            machine_id="test-mac",
+        )
+
+        packager.package(staging_dir=staging)
+        copied = staging / "sessions" / "session-uuid-001.jsonl"
+        mtime_before = copied.stat().st_mtime
+
+        import time
+        time.sleep(0.05)
+
+        # Modify source
+        src = mock_claude_project / "session-uuid-001.jsonl"
+        src.write_text('{"type":"user","message":{"role":"user","content":"updated"}}\n')
+
+        packager.package(staging_dir=staging)
+        mtime_after = copied.stat().st_mtime
+        assert mtime_after > mtime_before
+
+
 class TestSyncManifest:
     def test_manifest_default_sync_backend_is_none(self):
         from karma.manifest import SyncManifest

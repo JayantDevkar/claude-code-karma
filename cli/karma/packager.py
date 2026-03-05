@@ -95,9 +95,11 @@ class SessionPackager:
         for entry in sessions:
             source_dir = self._source_dir_for_session(entry)
 
-            # Copy JSONL file
+            # Copy JSONL file (skip if unchanged)
             src_jsonl = source_dir / f"{entry.uuid}.jsonl"
-            shutil.copy2(src_jsonl, sessions_dir / src_jsonl.name)
+            dst_jsonl = sessions_dir / src_jsonl.name
+            if not dst_jsonl.exists() or src_jsonl.stat().st_mtime > dst_jsonl.stat().st_mtime:
+                shutil.copy2(src_jsonl, dst_jsonl)
 
             # Copy associated directories (subagents, tool-results)
             assoc_dir = source_dir / entry.uuid
