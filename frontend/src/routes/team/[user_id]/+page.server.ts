@@ -9,14 +9,40 @@ interface RemoteProject {
 	machine_id: string | null;
 }
 
+interface RemoteSession {
+	uuid: string;
+	mtime: string;
+	size_bytes: number;
+}
+
+interface ProjectWithSessions extends RemoteProject {
+	sessions: RemoteSession[];
+}
+
 export const load: PageServerLoad = async ({ params, fetch }) => {
+	const userId = encodeURIComponent(params.user_id);
 	const result = await safeFetch<RemoteProject[]>(
 		fetch,
-		`${API_BASE}/remote/users/${encodeURIComponent(params.user_id)}/projects`
+		`${API_BASE}/remote/users/${userId}/projects`
 	);
 	if (!result.ok) {
 		console.error('Failed to fetch user projects:', result.message);
 		return { user_id: params.user_id, projects: [], error: result.message };
 	}
-	return { user_id: params.user_id, projects: result.data, error: null };
+
+	// Fetch sessions for each project
+	const projects: ProjectWithSessions[] = await Promise.all(
+		result.data.map(async (project) => {
+			const sessResult = await safeFetch<RemoteSession[]>(
+				fetch,
+				`${API_BASE}/remote/users/${userId}/projects/${encodeURIComponent(project.encoded_name)}/sessions`
+			);
+			return {
+				...project,
+				sessions: sessResult.ok ? sessResult.data : []
+			};
+		})
+	);
+
+	return { user_id: params.user_id, projects, error: null };
 };

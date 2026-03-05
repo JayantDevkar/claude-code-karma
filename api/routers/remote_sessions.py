@@ -14,8 +14,18 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 REMOTE_SESSIONS_DIR = Path.home() / ".claude_karma" / "remote-sessions"
+SYNC_CONFIG_PATH = Path.home() / ".claude_karma" / "sync-config.json"
 
 _SAFE_NAME = re.compile(r"^[a-zA-Z0-9_.\-]+$")
+
+
+def _get_local_user_id() -> Optional[str]:
+    """Read local user_id from sync-config.json to skip outbox."""
+    try:
+        with open(SYNC_CONFIG_PATH) as f:
+            return json.load(f).get("user_id")
+    except (OSError, json.JSONDecodeError):
+        return None
 
 
 class RemoteUser(BaseModel):
@@ -96,9 +106,12 @@ def list_remote_users() -> list[RemoteUser]:
     if not REMOTE_SESSIONS_DIR.is_dir():
         return []
 
+    local_user = _get_local_user_id()
     users = []
     for user_dir in sorted(REMOTE_SESSIONS_DIR.iterdir()):
         if not user_dir.is_dir() or not _is_safe_dirname(user_dir.name):
+            continue
+        if user_dir.name == local_user:
             continue
         project_count = 0
         total_sessions = 0

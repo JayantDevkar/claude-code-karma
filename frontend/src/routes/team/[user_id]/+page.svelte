@@ -1,8 +1,18 @@
 <script lang="ts">
 	import PageHeader from '$lib/components/layout/PageHeader.svelte';
-	import { User, FolderGit2, Clock, Monitor } from 'lucide-svelte';
+	import { User, FolderGit2, Clock, Monitor, FileText, HardDrive } from 'lucide-svelte';
 
 	let { data } = $props();
+
+	function formatBytes(bytes: number): string {
+		if (bytes < 1024) return `${bytes} B`;
+		if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+		return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+	}
+
+	function formatDate(iso: string): string {
+		return new Date(iso).toLocaleString();
+	}
 </script>
 
 <PageHeader
@@ -12,7 +22,7 @@
 	breadcrumbs={[{ label: 'Team', href: '/team' }]}
 />
 
-<div class="space-y-3">
+<div class="space-y-4">
 	{#if data.error}
 		<div class="text-center py-8 text-red-500">
 			<p>Failed to load projects: {data.error}</p>
@@ -39,7 +49,7 @@
 					<div class="flex items-center gap-3 mt-2 text-xs text-[var(--text-muted)]">
 						<span class="flex items-center gap-1">
 							<Clock size={12} />
-							Synced: {new Date(project.synced_at).toLocaleString()}
+							Synced: {formatDate(project.synced_at)}
 						</span>
 						{#if project.machine_id}
 							<span class="flex items-center gap-1 opacity-70">
@@ -47,6 +57,35 @@
 								{project.machine_id}
 							</span>
 						{/if}
+					</div>
+				{/if}
+
+				{#if project.sessions && project.sessions.length > 0}
+					<div class="mt-3 border-t border-[var(--border)] pt-3 space-y-1.5">
+						{#each project.sessions as session}
+							<a
+								href="/projects/{project.encoded_name}/{session.uuid}"
+								class="flex items-center gap-3 px-3 py-2 rounded-[var(--radius)] hover:bg-[var(--bg-subtle)] transition-colors group"
+							>
+								<FileText
+									size={14}
+									class="text-[var(--text-muted)] group-hover:text-[var(--accent)]"
+								/>
+								<span
+									class="font-mono text-xs text-[var(--text-secondary)] group-hover:text-[var(--text-primary)]"
+								>
+									{session.uuid.slice(0, 8)}...
+								</span>
+								<span class="flex-1"></span>
+								<span class="flex items-center gap-1 text-xs text-[var(--text-muted)]">
+									<HardDrive size={10} />
+									{formatBytes(session.size_bytes)}
+								</span>
+								<span class="text-xs text-[var(--text-muted)]">
+									{formatDate(session.mtime)}
+								</span>
+							</a>
+						{/each}
 					</div>
 				{/if}
 			</div>

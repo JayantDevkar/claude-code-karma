@@ -283,8 +283,8 @@ def index_remote_sessions(conn: sqlite3.Connection) -> dict:
     """
     Index remote sessions from Syncthing-synced directories into SQLite.
 
-    Walks ~/.claude_karma/remote-sessions/{user_id}/{machine_id}/sessions/{project}/
-    and upserts session rows with source='remote'.
+    Walks ~/.claude_karma/remote-sessions/{user_id}/{encoded_name}/sessions/
+    and upserts session rows with source='remote'. Skips local user's outbox.
 
     Returns:
         Dict with sync statistics: total, indexed, skipped, errors
@@ -304,56 +304,64 @@ def index_remote_sessions(conn: sqlite3.Connection) -> dict:
     rows = conn.execute("SELECT uuid, jsonl_mtime FROM sessions WHERE source = 'remote'").fetchall()
     db_mtimes = {row["uuid"]: row["jsonl_mtime"] for row in rows}
 
+    local_user = None
+    config_path = settings.karma_base / "sync-config.json"
+    if config_path.exists():
+        try:
+            import json as _json
+            local_user = _json.loads(config_path.read_text()).get("user_id")
+        except Exception:
+            pass
+
     for user_dir in remote_base.iterdir():
         if not user_dir.is_dir():
             continue
         user_id = user_dir.name
 
-        for machine_dir in user_dir.iterdir():
-            if not machine_dir.is_dir():
-                continue
-            machine_id = machine_dir.name
+        # Skip local user's outbox
+        if user_id == local_user:
+            continue
 
-            sessions_base = machine_dir / "sessions"
-            if not sessions_base.exists():
+        for encoded_dir in user_dir.iterdir():
+            if not encoded_dir.is_dir():
+                continue
+            encoded_name = encoded_dir.name
+            local_encoded = mapping.get((user_id, encoded_name), encoded_name)
+
+            sessions_dir = encoded_dir / "sessions"
+            if not sessions_dir.exists():
                 continue
 
-            for project_dir in sessions_base.iterdir():
-                if not project_dir.is_dir():
+            for jsonl_path in sessions_dir.glob("*.jsonl"):
+                if jsonl_path.name.startswith("agent-"):
                     continue
-                remote_encoded = project_dir.name
-                local_encoded = mapping.get((user_id, remote_encoded), remote_encoded)
 
-                for jsonl_path in project_dir.glob("*.jsonl"):
-                    if jsonl_path.name.startswith("agent-"):
+                uuid = jsonl_path.stem
+                stats["total"] += 1
+
+                try:
+                    file_stat = jsonl_path.stat()
+                    current_mtime = file_stat.st_mtime
+                    current_size = file_stat.st_size
+
+                    if uuid in db_mtimes and abs(db_mtimes[uuid] - current_mtime) < 0.001:
+                        stats["skipped"] += 1
                         continue
 
-                    uuid = jsonl_path.stem
-                    stats["total"] += 1
-
-                    try:
-                        file_stat = jsonl_path.stat()
-                        current_mtime = file_stat.st_mtime
-                        current_size = file_stat.st_size
-
-                        if uuid in db_mtimes and abs(db_mtimes[uuid] - current_mtime) < 0.001:
-                            stats["skipped"] += 1
-                            continue
-
-                        _index_session(
-                            conn,
-                            jsonl_path,
-                            local_encoded,
-                            current_mtime,
-                            current_size,
-                            source="remote",
-                            remote_user_id=user_id,
-                            remote_machine_id=machine_id,
-                        )
-                        stats["indexed"] += 1
-                    except Exception as e:
-                        logger.debug("Error indexing remote session %s: %s", uuid, e)
-                        stats["errors"] += 1
+                    _index_session(
+                        conn,
+                        jsonl_path,
+                        local_encoded,
+                        current_mtime,
+                        current_size,
+                        source="remote",
+                        remote_user_id=user_id,
+                        remote_machine_id=user_id,
+                    )
+                    stats["indexed"] += 1
+                except Exception as e:
+                    logger.debug("Error indexing remote session %s: %s", uuid, e)
+                    stats["errors"] += 1
 
     conn.commit()
     return stats
@@ -697,11 +705,12 @@ def _cleanup_stale_sessions(conn: sqlite3.Connection, projects_dir: Path) -> Non
     """
     import os
 
-    # Get all sessions grouped by their actual source directory
+    # Get all non-remote sessions grouped by their actual source directory
     # source_encoded_name is set for worktree-remapped sessions;
     # for normal sessions it's NULL and we use project_encoded_name
+    # Remote sessions live outside projects_dir, so skip them here.
     session_rows = conn.execute(
-        "SELECT uuid, COALESCE(source_encoded_name, project_encoded_name) as source_dir FROM sessions"
+        "SELECT uuid, COALESCE(source_encoded_name, project_encoded_name) as source_dir FROM sessions WHERE COALESCE(source, 'local') != 'remote'"
     ).fetchall()
 
     # Group by source directory
