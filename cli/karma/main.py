@@ -577,6 +577,8 @@ def watch(team_name: str):
 @cli.command()
 def status():
     """Show sync status for all teams."""
+    from karma.worktree_discovery import find_worktree_dirs
+
     config = require_config()
 
     click.echo(f"User: {config.user_id} ({config.machine_id})")
@@ -592,6 +594,8 @@ def status():
             sync_info = f"last sync: {proj.last_sync_at}" if proj.last_sync_at else "never synced"
             click.echo(f"  {name}: {proj.path} ({sync_info})")
 
+    projects_dir = Path.home() / ".claude" / "projects"
+
     # Per-team
     for team_name, team_cfg in config.teams.items():
         click.echo(f"\n{team_name} ({team_cfg.backend}):")
@@ -599,7 +603,38 @@ def status():
             click.echo("  No projects")
         for proj_name, proj in team_cfg.projects.items():
             last = proj.last_sync_at or "never"
+            claude_dir = projects_dir / proj.encoded_name
+
+            # Count local sessions
+            local_count = 0
+            if claude_dir.is_dir():
+                local_count = sum(
+                    1 for f in claude_dir.glob("*.jsonl")
+                    if not f.name.startswith("agent-") and f.stat().st_size > 0
+                )
+
+            # Count worktree sessions
+            wt_dirs = find_worktree_dirs(proj.encoded_name, projects_dir)
+            wt_count = 0
+            for wd in wt_dirs:
+                wt_count += sum(
+                    1 for f in wd.glob("*.jsonl")
+                    if not f.name.startswith("agent-") and f.stat().st_size > 0
+                )
+
+            # Count packaged sessions
+            outbox = KARMA_BASE / "remote-sessions" / config.user_id / proj.encoded_name / "sessions"
+            packaged_count = 0
+            if outbox.is_dir():
+                packaged_count = sum(1 for f in outbox.glob("*.jsonl") if not f.name.startswith("agent-"))
+
+            total_local = local_count + wt_count
+            gap = total_local - packaged_count
+
             click.echo(f"  {proj_name}: {proj.path} (last: {last})")
+            click.echo(f"    Local: {local_count} sessions + {wt_count} worktree ({len(wt_dirs)} dirs) = {total_local}")
+            click.echo(f"    Packaged: {packaged_count}  {'(up to date)' if gap <= 0 else f'({gap} behind)'}")
+
         if team_cfg.members:
             click.echo(f"  Members: {', '.join(team_cfg.members.keys())}")
 

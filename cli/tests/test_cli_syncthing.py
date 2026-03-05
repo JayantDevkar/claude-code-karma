@@ -340,3 +340,34 @@ class TestStatusCommand:
         assert result.exit_code == 0
         assert "beta" in result.output
         assert "syncthing" in result.output.lower()
+
+    def test_status_shows_worktree_counts(self, runner, mock_config, tmp_path):
+        """karma status should show worktree session counts."""
+        runner.invoke(cli, ["init", "--user-id", "jay"])
+        runner.invoke(cli, ["team", "create", "beta", "--backend", "syncthing"])
+        project_path = tmp_path / "karma-project"
+        project_path.mkdir()
+        runner.invoke(cli, [
+            "project", "add", "karma", "--path", str(project_path), "--team", "beta"
+        ])
+
+        # Create fake project dir with sessions
+        from karma.sync import encode_project_path
+        encoded = encode_project_path(str(project_path))
+        projects_dir = tmp_path / ".claude" / "projects"
+        main_dir = projects_dir / encoded
+        main_dir.mkdir(parents=True)
+        (main_dir / "s1.jsonl").write_text('{"type":"user"}\n')
+        (main_dir / "s2.jsonl").write_text('{"type":"user"}\n')
+
+        # Create worktree dir
+        wt_dir = projects_dir / f"{encoded}--claude-worktrees-feat-x"
+        wt_dir.mkdir(parents=True)
+        (wt_dir / "s3.jsonl").write_text('{"type":"user"}\n')
+
+        with patch("karma.main.Path.home", return_value=tmp_path):
+            result = runner.invoke(cli, ["status"])
+
+        assert result.exit_code == 0
+        assert "worktree" in result.output.lower()
+        assert "3" in result.output  # total = 2 local + 1 worktree
