@@ -89,6 +89,38 @@ class TestSessionPackager:
         assert manifest.previous_cid == "QmPrevious"
 
 
+class TestSessionEntryMetadata:
+    def test_session_entry_default_no_worktree(self):
+        from karma.manifest import SessionEntry
+        entry = SessionEntry(uuid="abc", mtime="2026-01-01T00:00:00Z", size_bytes=100)
+        assert entry.worktree_name is None
+        assert entry.git_branch is None
+
+    def test_session_entry_with_worktree(self):
+        from karma.manifest import SessionEntry
+        entry = SessionEntry(
+            uuid="abc",
+            mtime="2026-01-01T00:00:00Z",
+            size_bytes=100,
+            worktree_name="syncthing-sync-design",
+            git_branch="worktree-syncthing-sync-design",
+        )
+        assert entry.worktree_name == "syncthing-sync-design"
+        assert entry.git_branch == "worktree-syncthing-sync-design"
+
+    def test_session_entry_worktree_in_dump(self):
+        from karma.manifest import SessionEntry
+        entry = SessionEntry(
+            uuid="abc",
+            mtime="2026-01-01T00:00:00Z",
+            size_bytes=100,
+            worktree_name="feat-x",
+        )
+        data = entry.model_dump()
+        assert data["worktree_name"] == "feat-x"
+        assert data["git_branch"] is None
+
+
 class TestSyncManifest:
     def test_manifest_default_sync_backend_is_none(self):
         from karma.manifest import SyncManifest

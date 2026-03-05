@@ -13,6 +13,8 @@ class SessionEntry(BaseModel):
     uuid: str
     mtime: str = Field(..., description="ISO timestamp of session file modification time")
     size_bytes: int
+    worktree_name: Optional[str] = Field(default=None, description="Worktree name if session is from a worktree")
+    git_branch: Optional[str] = Field(default=None, description="Git branch the session was on")
 
 
 class SyncManifest(BaseModel):
