@@ -234,6 +234,10 @@ class CompactionSummary(BaseModel):
 class SessionDetail(SessionSummary):
     """Detailed session info including subagents and tools."""
 
+    initial_prompt_images: List[Dict[str, str]] = Field(
+        default_factory=list,
+        description="Image attachments from the first user message",
+    )
     tools_used: dict[str, int] = Field(default_factory=dict)
     git_branches: list[str] = Field(default_factory=list)
     working_directories: list[str] = Field(default_factory=list)
@@ -471,6 +475,9 @@ class InitialPrompt(BaseModel):
 
     content: str = Field(..., description="First user message content")
     timestamp: datetime = Field(..., description="When the prompt was sent")
+    image_attachments: List[Dict[str, str]] = Field(
+        default_factory=list, description="Image attachments from the prompt"
+    )
 
 
 class TimelineEvent(BaseModel):
