@@ -1,8 +1,18 @@
 """
 Remote sessions service for Syncthing-synced session data.
 
-Reads session JSONL files from ~/.claude_karma/remote-sessions/{user_id}/{machine_id}/
-and maps them to local projects using sync-config.json.
+Directory structure (written by CLI packager, synced by Syncthing):
+  ~/.claude_karma/remote-sessions/{user_id}/{encoded_name}/
+    sessions/{uuid}.jsonl
+    sessions/{uuid}/subagents/...
+    todos/{uuid}-*.json
+    manifest.json
+
+The inbox path on the receiving machine uses the LOCAL encoded name,
+so no path mapping is needed — the encoded_name in the directory IS
+the local project's encoded name.
+
+The local user's directory is the outbox (sendonly) and should be skipped.
 """
 
 import json
@@ -18,6 +28,11 @@ from models import Session
 from services.session_filter import SessionMetadata
 
 logger = logging.getLogger(__name__)
+
+# Cache for local user_id (TTL-based)
+_local_user_cache: Optional[str] = None
+_local_user_cache_time: float = 0.0
+_LOCAL_USER_TTL = 30.0  # seconds
 
 # Cache for project mapping (TTL-based)
 _project_mapping_cache: Optional[dict] = None
@@ -48,30 +63,36 @@ def _read_sync_config() -> Optional[dict]:
         return None
 
 
+def _get_local_user_id() -> Optional[str]:
+    """Get local user_id from sync-config.json (cached with TTL)."""
+    global _local_user_cache, _local_user_cache_time
+
+    now = time.monotonic()
+    if _local_user_cache is not None and (now - _local_user_cache_time) < _LOCAL_USER_TTL:
+        return _local_user_cache
+
+    config = _read_sync_config()
+    _local_user_cache = config.get("user_id") if config else None
+    _local_user_cache_time = now
+    return _local_user_cache
+
+
 def get_project_mapping() -> dict[tuple[str, str], str]:
     """
     Build mapping from (user_id, remote_encoded) -> local_encoded_name.
 
-    Reads sync-config.json which has structure:
-    {
-        "teams": {
-            "team-name": {
-                "projects": {
-                    "project-name": {
-                        "paths": {
-                            "user-id": "encoded-path"
-                        }
-                    }
-                }
-            }
-        }
-    }
+    Supports two config formats:
 
-    Projects are joined by name key — all paths under the same project
-    map to each other. The local user's encoded path is the canonical one.
+    1. Legacy "paths" format (used in tests):
+       teams.{team}.projects.{name}.paths = {user_id: encoded_name}
+
+    2. Syncthing format (real config):
+       teams.{team}.projects.{name}.encoded_name = local_encoded
+       teams.{team}.syncthing_members = {member_name: {...}}
+       Inbox directories already use local encoded name, so mapping is identity.
 
     Returns:
-        Dict mapping (user_id, remote_encoded) to local_encoded_name.
+        Dict mapping (user_id, encoded_name) to local_encoded_name.
     """
     global _project_mapping_cache, _project_mapping_cache_time
 
@@ -89,21 +110,33 @@ def get_project_mapping() -> dict[tuple[str, str], str]:
         return _project_mapping_cache
 
     mapping: dict[tuple[str, str], str] = {}
-    local_user_id = config.get("local_user_id", "")
+    local_user_id = config.get("user_id", config.get("local_user_id", ""))
 
     teams = config.get("teams", {})
     for _team_name, team_config in teams.items():
         projects = team_config.get("projects", {})
         for _project_name, project_config in projects.items():
+            # Legacy format: paths dict mapping user_id -> encoded_name
             paths = project_config.get("paths", {})
-            # Find local user's encoded path
-            local_encoded = paths.get(local_user_id)
+            if paths:
+                local_encoded = paths.get(local_user_id)
+                if not local_encoded:
+                    continue
+                for user_id, encoded_path in paths.items():
+                    if user_id != local_user_id:
+                        mapping[(user_id, encoded_path)] = local_encoded
+                continue
+
+            # Syncthing format: encoded_name is the local encoded name
+            local_encoded = project_config.get("encoded_name", "")
             if not local_encoded:
                 continue
-            # Map all remote users' paths to local
-            for user_id, encoded_path in paths.items():
-                if user_id != local_user_id:
-                    mapping[(user_id, encoded_path)] = local_encoded
+
+            # Map each syncthing member to this project
+            syncthing_members = team_config.get("syncthing_members", {})
+            for member_name in syncthing_members:
+                if member_name != local_user_id:
+                    mapping[(member_name, local_encoded)] = local_encoded
 
     _project_mapping_cache = mapping
     _project_mapping_cache_time = now
@@ -119,7 +152,9 @@ def find_remote_session(uuid: str) -> Optional[RemoteSessionResult]:
     """
     Search for a session UUID in remote-sessions directories.
 
-    Searches: remote-sessions/{user_id}/{machine_id}/sessions/{uuid}.jsonl
+    Searches: remote-sessions/{user_id}/{encoded_name}/sessions/{uuid}.jsonl
+
+    Skips the local user's outbox directory.
 
     Args:
         uuid: Session UUID to find.
@@ -131,54 +166,49 @@ def find_remote_session(uuid: str) -> Optional[RemoteSessionResult]:
     if not remote_base.exists():
         return None
 
-    mapping = get_project_mapping()
+    local_user = _get_local_user_id()
 
     for user_dir in remote_base.iterdir():
         if not user_dir.is_dir():
             continue
         user_id = user_dir.name
 
-        for machine_dir in user_dir.iterdir():
-            if not machine_dir.is_dir():
+        # Skip local user's outbox
+        if user_id == local_user:
+            continue
+
+        for encoded_dir in user_dir.iterdir():
+            if not encoded_dir.is_dir():
                 continue
-            machine_id = machine_dir.name
+            encoded_name = encoded_dir.name
 
-            # Check each project dir for the session
-            sessions_base = machine_dir / "sessions"
-            if not sessions_base.exists():
+            sessions_dir = encoded_dir / "sessions"
+            if not sessions_dir.exists():
                 continue
 
-            for project_dir in sessions_base.iterdir():
-                if not project_dir.is_dir():
-                    continue
-                remote_encoded = project_dir.name
+            jsonl_path = sessions_dir / f"{uuid}.jsonl"
+            if not jsonl_path.exists():
+                continue
 
-                jsonl_path = project_dir / f"{uuid}.jsonl"
-                if not jsonl_path.exists():
-                    continue
-
-                # Resolve local project name
-                local_encoded = mapping.get((user_id, remote_encoded), remote_encoded)
-
-                try:
-                    session = Session.from_path(
-                        jsonl_path,
-                        claude_base_dir=project_dir,
-                    )
-                    return RemoteSessionResult(
-                        session=session,
-                        user_id=user_id,
-                        machine_id=machine_id,
-                        local_encoded_name=local_encoded,
-                    )
-                except Exception as e:
-                    logger.warning(
-                        "Failed to load remote session %s from %s: %s",
-                        uuid,
-                        jsonl_path,
-                        e,
-                    )
-                    continue
+            try:
+                session = Session.from_path(
+                    jsonl_path,
+                    claude_base_dir=encoded_dir,
+                )
+                return RemoteSessionResult(
+                    session=session,
+                    user_id=user_id,
+                    machine_id=user_id,
+                    local_encoded_name=encoded_name,
+                )
+            except Exception as e:
+                logger.warning(
+                    "Failed to load remote session %s from %s: %s",
+                    uuid,
+                    jsonl_path,
+                    e,
+                )
+                continue
 
     return None
 
@@ -186,6 +216,9 @@ def find_remote_session(uuid: str) -> Optional[RemoteSessionResult]:
 def list_remote_sessions_for_project(local_encoded: str) -> list[SessionMetadata]:
     """
     Find remote sessions that map to a local project.
+
+    Walks remote-sessions/{user_id}/{local_encoded}/sessions/ for all
+    remote users (skipping local user's outbox).
 
     Args:
         local_encoded: Local project encoded name.
@@ -197,49 +230,37 @@ def list_remote_sessions_for_project(local_encoded: str) -> list[SessionMetadata
     if not remote_base.exists():
         return []
 
-    mapping = get_project_mapping()
+    local_user = _get_local_user_id()
     results: list[SessionMetadata] = []
 
-    # Build reverse lookup: local_encoded -> set of (user_id, remote_encoded)
-    remote_dirs: list[tuple[str, str]] = []
-    for (user_id, remote_encoded), mapped_local in mapping.items():
-        if mapped_local == local_encoded:
-            remote_dirs.append((user_id, remote_encoded))
+    for user_dir in remote_base.iterdir():
+        if not user_dir.is_dir():
+            continue
+        user_id = user_dir.name
 
-    if not remote_dirs:
-        return []
-
-    for user_id, remote_encoded in remote_dirs:
-        # Walk all machine dirs for this user
-        user_dir = remote_base / user_id
-        if not user_dir.exists():
+        # Skip local user's outbox
+        if user_id == local_user:
             continue
 
-        for machine_dir in user_dir.iterdir():
-            if not machine_dir.is_dir():
+        sessions_dir = user_dir / local_encoded / "sessions"
+        if not sessions_dir.exists():
+            continue
+
+        for jsonl_path in sessions_dir.glob("*.jsonl"):
+            uuid = jsonl_path.stem
+            if uuid.startswith("agent-"):
                 continue
-            machine_id = machine_dir.name
 
-            project_dir = machine_dir / "sessions" / remote_encoded
-            if not project_dir.exists():
-                continue
-
-            for jsonl_path in project_dir.glob("*.jsonl"):
-                uuid = jsonl_path.stem
-                # Skip non-UUID filenames (e.g. agent files)
-                if uuid.startswith("agent-"):
-                    continue
-
-                meta = _build_remote_metadata(
-                    jsonl_path=jsonl_path,
-                    uuid=uuid,
-                    local_encoded=local_encoded,
-                    project_dir=project_dir,
-                    user_id=user_id,
-                    machine_id=machine_id,
-                )
-                if meta:
-                    results.append(meta)
+            meta = _build_remote_metadata(
+                jsonl_path=jsonl_path,
+                uuid=uuid,
+                local_encoded=local_encoded,
+                project_dir=sessions_dir,
+                user_id=user_id,
+                machine_id=user_id,
+            )
+            if meta:
+                results.append(meta)
 
     return results
 
@@ -248,8 +269,8 @@ def iter_all_remote_session_metadata() -> Iterator[SessionMetadata]:
     """
     Iterate over all remote session metadata.
 
-    Walks all remote-sessions directories and yields SessionMetadata
-    for each session found. Used for global /sessions/all endpoint.
+    Walks remote-sessions/{user_id}/{encoded_name}/sessions/ for all
+    remote users. Used for global /sessions/all endpoint.
 
     Yields:
         SessionMetadata with source="remote" for each remote session.
@@ -258,43 +279,41 @@ def iter_all_remote_session_metadata() -> Iterator[SessionMetadata]:
     if not remote_base.exists():
         return
 
-    mapping = get_project_mapping()
+    local_user = _get_local_user_id()
 
     for user_dir in remote_base.iterdir():
         if not user_dir.is_dir():
             continue
         user_id = user_dir.name
 
-        for machine_dir in user_dir.iterdir():
-            if not machine_dir.is_dir():
-                continue
-            machine_id = machine_dir.name
+        # Skip local user's outbox
+        if user_id == local_user:
+            continue
 
-            sessions_base = machine_dir / "sessions"
-            if not sessions_base.exists():
+        for encoded_dir in user_dir.iterdir():
+            if not encoded_dir.is_dir():
+                continue
+            encoded_name = encoded_dir.name
+
+            sessions_dir = encoded_dir / "sessions"
+            if not sessions_dir.exists():
                 continue
 
-            for project_dir in sessions_base.iterdir():
-                if not project_dir.is_dir():
+            for jsonl_path in sessions_dir.glob("*.jsonl"):
+                uuid = jsonl_path.stem
+                if uuid.startswith("agent-"):
                     continue
-                remote_encoded = project_dir.name
-                local_encoded = mapping.get((user_id, remote_encoded), remote_encoded)
 
-                for jsonl_path in project_dir.glob("*.jsonl"):
-                    uuid = jsonl_path.stem
-                    if uuid.startswith("agent-"):
-                        continue
-
-                    meta = _build_remote_metadata(
-                        jsonl_path=jsonl_path,
-                        uuid=uuid,
-                        local_encoded=local_encoded,
-                        project_dir=project_dir,
-                        user_id=user_id,
-                        machine_id=machine_id,
-                    )
-                    if meta:
-                        yield meta
+                meta = _build_remote_metadata(
+                    jsonl_path=jsonl_path,
+                    uuid=uuid,
+                    local_encoded=encoded_name,
+                    project_dir=sessions_dir,
+                    user_id=user_id,
+                    machine_id=user_id,
+                )
+                if meta:
+                    yield meta
 
 
 def _parse_timestamp(ts: Optional[str]) -> Optional[datetime]:

@@ -44,24 +44,74 @@ def _make_session_jsonl(uuid: str, prompt: str = "hello") -> str:
 
 @pytest.fixture
 def karma_base(tmp_path: Path) -> Path:
-    """Create fake karma base directory with remote sessions."""
+    """Create fake karma base directory with remote sessions.
+
+    Directory structure matches what Syncthing sync produces:
+      remote-sessions/{user_id}/{encoded_name}/sessions/{uuid}.jsonl
+
+    The local user's outbox is at remote-sessions/jayant/ and should be skipped.
+    Remote users' inboxes use the LOCAL encoded name.
+    """
     karma = tmp_path / ".claude_karma"
     karma.mkdir()
 
-    # Directory structure: remote-sessions/{user_id}/{machine_id}/sessions/{encoded_name}/{uuid}.jsonl
-    alice_proj = (
-        karma / "remote-sessions" / "alice" / "alice-mbp" / "sessions" / "-Users-alice-acme"
-    )
-    alice_proj.mkdir(parents=True)
-    (alice_proj / "sess-001.jsonl").write_text(_make_session_jsonl("001", "hello"))
-    (alice_proj / "sess-002.jsonl").write_text(_make_session_jsonl("002", "build X"))
+    local_encoded = "-Users-jayant-acme"
 
-    # Bob has a session in a different project
-    bob_proj = karma / "remote-sessions" / "bob" / "bob-desktop" / "sessions" / "-Users-bob-acme"
-    bob_proj.mkdir(parents=True)
-    (bob_proj / "sess-003.jsonl").write_text(_make_session_jsonl("003", "fix bug"))
+    # Alice's sessions (inbox from alice)
+    alice_sessions = karma / "remote-sessions" / "alice" / local_encoded / "sessions"
+    alice_sessions.mkdir(parents=True)
+    (alice_sessions / "sess-001.jsonl").write_text(_make_session_jsonl("001", "hello"))
+    (alice_sessions / "sess-002.jsonl").write_text(_make_session_jsonl("002", "build X"))
 
-    # sync-config.json mapping remote paths to local
+    # Bob's sessions (inbox from bob)
+    bob_sessions = karma / "remote-sessions" / "bob" / local_encoded / "sessions"
+    bob_sessions.mkdir(parents=True)
+    (bob_sessions / "sess-003.jsonl").write_text(_make_session_jsonl("003", "fix bug"))
+
+    # Local user's outbox (should be skipped by the service)
+    jayant_sessions = karma / "remote-sessions" / "jayant" / local_encoded / "sessions"
+    jayant_sessions.mkdir(parents=True)
+    (jayant_sessions / "sess-local.jsonl").write_text(_make_session_jsonl("local", "my session"))
+
+    # sync-config.json — Syncthing format
+    sync_config = {
+        "user_id": "jayant",
+        "machine_id": "Jayants-MacBook-Pro.local",
+        "teams": {
+            "my-team": {
+                "backend": "syncthing",
+                "projects": {
+                    "acme": {
+                        "path": "/Users/jayant/acme",
+                        "encoded_name": local_encoded,
+                    }
+                },
+                "syncthing_members": {
+                    "alice": {"syncthing_device_id": "ALICE-DEVICE-ID"},
+                    "bob": {"syncthing_device_id": "BOB-DEVICE-ID"},
+                },
+            }
+        },
+    }
+    (karma / "sync-config.json").write_text(json.dumps(sync_config))
+
+    return karma
+
+
+@pytest.fixture
+def karma_base_legacy(tmp_path: Path) -> Path:
+    """Create karma base with legacy paths-based config (for backwards compat)."""
+    karma = tmp_path / ".claude_karma_legacy"
+    karma.mkdir()
+
+    local_encoded = "-Users-jayant-acme"
+
+    # Alice's sessions
+    alice_sessions = karma / "remote-sessions" / "alice" / local_encoded / "sessions"
+    alice_sessions.mkdir(parents=True)
+    (alice_sessions / "sess-001.jsonl").write_text(_make_session_jsonl("001", "hello"))
+
+    # sync-config.json — legacy paths format
     sync_config = {
         "local_user_id": "jayant",
         "teams": {
@@ -85,12 +135,16 @@ def karma_base(tmp_path: Path) -> Path:
 
 @pytest.fixture(autouse=True)
 def _clear_cache():
-    """Clear the project mapping cache before each test."""
+    """Clear caches before each test."""
     import services.remote_sessions as mod
 
+    mod._local_user_cache = None
+    mod._local_user_cache_time = 0.0
     mod._project_mapping_cache = None
     mod._project_mapping_cache_time = 0.0
     yield
+    mod._local_user_cache = None
+    mod._local_user_cache_time = 0.0
     mod._project_mapping_cache = None
     mod._project_mapping_cache_time = 0.0
 
@@ -101,14 +155,14 @@ def _clear_cache():
 
 
 class TestGetProjectMapping:
-    def test_returns_mapping_from_sync_config(self, karma_base):
+    def test_returns_mapping_syncthing_format(self, karma_base):
         with patch("services.remote_sessions.settings") as mock_settings:
             mock_settings.karma_base = karma_base
             mapping = get_project_mapping()
 
-        # Should map remote users to local encoded name
-        assert mapping[("alice", "-Users-alice-acme")] == "-Users-jayant-acme"
-        assert mapping[("bob", "-Users-bob-acme")] == "-Users-jayant-acme"
+        # Syncthing members mapped to local encoded name
+        assert mapping[("alice", "-Users-jayant-acme")] == "-Users-jayant-acme"
+        assert mapping[("bob", "-Users-jayant-acme")] == "-Users-jayant-acme"
 
     def test_excludes_local_user(self, karma_base):
         with patch("services.remote_sessions.settings") as mock_settings:
@@ -117,6 +171,14 @@ class TestGetProjectMapping:
 
         # Local user should NOT appear in mapping
         assert ("jayant", "-Users-jayant-acme") not in mapping
+
+    def test_returns_mapping_legacy_paths_format(self, karma_base_legacy):
+        with patch("services.remote_sessions.settings") as mock_settings:
+            mock_settings.karma_base = karma_base_legacy
+            mapping = get_project_mapping()
+
+        assert mapping[("alice", "-Users-alice-acme")] == "-Users-jayant-acme"
+        assert mapping[("bob", "-Users-bob-acme")] == "-Users-jayant-acme"
 
     def test_returns_empty_when_no_config(self, tmp_path):
         with patch("services.remote_sessions.settings") as mock_settings:
@@ -147,7 +209,6 @@ class TestFindRemoteSession:
 
         assert result is not None
         assert result.user_id == "alice"
-        assert result.machine_id == "alice-mbp"
         assert result.local_encoded_name == "-Users-jayant-acme"
 
     def test_finds_session_from_different_user(self, karma_base):
@@ -157,7 +218,14 @@ class TestFindRemoteSession:
 
         assert result is not None
         assert result.user_id == "bob"
-        assert result.machine_id == "bob-desktop"
+
+    def test_skips_local_user_outbox(self, karma_base):
+        """Sessions in local user's outbox should NOT be found."""
+        with patch("services.remote_sessions.settings") as mock_settings:
+            mock_settings.karma_base = karma_base
+            result = find_remote_session("sess-local")
+
+        assert result is None
 
     def test_returns_none_for_missing_session(self, karma_base):
         with patch("services.remote_sessions.settings") as mock_settings:
@@ -180,15 +248,23 @@ class TestFindRemoteSession:
 
 
 class TestListRemoteSessionsForProject:
-    def test_lists_sessions_for_mapped_project(self, karma_base):
+    def test_lists_sessions_for_project(self, karma_base):
         with patch("services.remote_sessions.settings") as mock_settings:
             mock_settings.karma_base = karma_base
             results = list_remote_sessions_for_project("-Users-jayant-acme")
 
-        # Should find Alice's 2 sessions + Bob's 1 session
+        # Should find Alice's 2 sessions + Bob's 1 session (NOT local user's)
         assert len(results) == 3
         uuids = {r.uuid for r in results}
         assert uuids == {"sess-001", "sess-002", "sess-003"}
+
+    def test_excludes_local_user_outbox(self, karma_base):
+        with patch("services.remote_sessions.settings") as mock_settings:
+            mock_settings.karma_base = karma_base
+            results = list_remote_sessions_for_project("-Users-jayant-acme")
+
+        uuids = {r.uuid for r in results}
+        assert "sess-local" not in uuids
 
     def test_all_results_have_remote_source(self, karma_base):
         with patch("services.remote_sessions.settings") as mock_settings:
@@ -226,9 +302,18 @@ class TestIterAllRemoteSessionMetadata:
             mock_settings.karma_base = karma_base
             results = list(iter_all_remote_session_metadata())
 
+        # 3 remote sessions (NOT the local user's outbox session)
         assert len(results) == 3
         uuids = {r.uuid for r in results}
         assert uuids == {"sess-001", "sess-002", "sess-003"}
+
+    def test_excludes_local_user_outbox(self, karma_base):
+        with patch("services.remote_sessions.settings") as mock_settings:
+            mock_settings.karma_base = karma_base
+            results = list(iter_all_remote_session_metadata())
+
+        uuids = {r.uuid for r in results}
+        assert "sess-local" not in uuids
 
     def test_yields_correct_user_ids(self, karma_base):
         with patch("services.remote_sessions.settings") as mock_settings:
