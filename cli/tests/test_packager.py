@@ -121,6 +121,104 @@ class TestSessionEntryMetadata:
         assert data["git_branch"] is None
 
 
+@pytest.fixture
+def mock_project_with_worktree(tmp_path: Path) -> dict:
+    """Create a main project dir + one worktree dir."""
+    projects_dir = tmp_path / ".claude" / "projects"
+
+    # Main project
+    main_dir = projects_dir / "-Users-jay-GitHub-karma"
+    main_dir.mkdir(parents=True)
+    (main_dir / "session-main-001.jsonl").write_text(
+        '{"type":"user","message":{"role":"user","content":"hello"}}\n'
+    )
+
+    # Worktree
+    wt_dir = projects_dir / "-Users-jay-GitHub-karma--claude-worktrees-feat-a"
+    wt_dir.mkdir(parents=True)
+    (wt_dir / "session-wt-001.jsonl").write_text(
+        '{"type":"user","message":{"role":"user","content":"worktree work"}}\n'
+    )
+    # Worktree session with subagent
+    (wt_dir / "session-wt-002.jsonl").write_text(
+        '{"type":"user","message":{"role":"user","content":"more work"}}\n'
+    )
+    sub_dir = wt_dir / "session-wt-002" / "subagents"
+    sub_dir.mkdir(parents=True)
+    (sub_dir / "agent-x.jsonl").write_text('{"type":"agent"}\n')
+
+    return {
+        "main_dir": main_dir,
+        "wt_dir": wt_dir,
+        "projects_dir": projects_dir,
+    }
+
+
+class TestPackagerWithWorktrees:
+    def test_discover_includes_worktree_sessions(self, mock_project_with_worktree):
+        dirs = mock_project_with_worktree
+        packager = SessionPackager(
+            project_dir=dirs["main_dir"],
+            user_id="jay",
+            machine_id="mac",
+            extra_dirs=[dirs["wt_dir"]],
+        )
+        sessions = packager.discover_sessions()
+        uuids = {s.uuid for s in sessions}
+        assert "session-main-001" in uuids
+        assert "session-wt-001" in uuids
+        assert "session-wt-002" in uuids
+        assert len(sessions) == 3
+
+    def test_worktree_sessions_tagged_with_worktree_name(self, mock_project_with_worktree):
+        dirs = mock_project_with_worktree
+        packager = SessionPackager(
+            project_dir=dirs["main_dir"],
+            user_id="jay",
+            machine_id="mac",
+            extra_dirs=[dirs["wt_dir"]],
+        )
+        sessions = packager.discover_sessions()
+        wt_sessions = [s for s in sessions if s.worktree_name is not None]
+        assert len(wt_sessions) == 2
+        assert all(s.worktree_name == "feat-a" for s in wt_sessions)
+
+    def test_package_copies_worktree_subagents(self, mock_project_with_worktree, tmp_path):
+        dirs = mock_project_with_worktree
+        staging = tmp_path / "staging"
+        packager = SessionPackager(
+            project_dir=dirs["main_dir"],
+            user_id="jay",
+            machine_id="mac",
+            extra_dirs=[dirs["wt_dir"]],
+        )
+        packager.package(staging_dir=staging)
+        assert (staging / "sessions" / "session-wt-002" / "subagents" / "agent-x.jsonl").exists()
+
+    def test_manifest_counts_all_sessions(self, mock_project_with_worktree, tmp_path):
+        dirs = mock_project_with_worktree
+        staging = tmp_path / "staging"
+        packager = SessionPackager(
+            project_dir=dirs["main_dir"],
+            user_id="jay",
+            machine_id="mac",
+            extra_dirs=[dirs["wt_dir"]],
+        )
+        manifest = packager.package(staging_dir=staging)
+        assert manifest.session_count == 3
+
+    def test_no_extra_dirs_works_like_before(self, mock_claude_project, tmp_path):
+        """Backward compat: no extra_dirs = original behavior."""
+        staging = tmp_path / "staging"
+        packager = SessionPackager(
+            project_dir=mock_claude_project,
+            user_id="alice",
+            machine_id="test-mac",
+        )
+        manifest = packager.package(staging_dir=staging)
+        assert manifest.session_count == 2
+
+
 class TestSyncManifest:
     def test_manifest_default_sync_backend_is_none(self):
         from karma.manifest import SyncManifest

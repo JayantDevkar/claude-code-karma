@@ -1,4 +1,4 @@
-"""Session packager — collects project sessions into a staging directory for IPFS upload."""
+"""Session packager — collects project sessions into a staging directory."""
 
 import json
 import shutil
@@ -7,6 +7,21 @@ from pathlib import Path
 from typing import Optional
 
 from karma.manifest import SessionEntry, SyncManifest
+
+
+def _extract_worktree_name(dir_name: str, main_dir_name: str) -> Optional[str]:
+    """Extract human-readable worktree name from encoded dir name.
+
+    Given main="-Users-jay-GitHub-karma" and
+    dir="-Users-jay-GitHub-karma--claude-worktrees-feat-a",
+    returns "feat-a".
+    """
+    markers = ["--claude-worktrees-", "-.claude-worktrees-", "--worktrees-", "-.worktrees-"]
+    for marker in markers:
+        idx = dir_name.find(marker)
+        if idx > 0:
+            return dir_name[idx + len(marker):]
+    return None
 
 
 class SessionPackager:
@@ -19,18 +34,21 @@ class SessionPackager:
         machine_id: str,
         project_path: str = "",
         last_sync_cid: Optional[str] = None,
+        extra_dirs: Optional[list[Path]] = None,
     ):
         self.project_dir = Path(project_dir)
         self.user_id = user_id
         self.machine_id = machine_id
         self.project_path = project_path or str(self.project_dir)
         self.last_sync_cid = last_sync_cid
+        self.extra_dirs = [Path(d) for d in (extra_dirs or [])]
 
-    def discover_sessions(self) -> list[SessionEntry]:
-        """Find all session JSONL files in the project directory."""
+    def _discover_from_dir(
+        self, directory: Path, worktree_name: Optional[str] = None
+    ) -> list[SessionEntry]:
+        """Find session JSONL files in a single directory."""
         entries = []
-        for jsonl_path in sorted(self.project_dir.glob("*.jsonl")):
-            # Skip standalone agent files
+        for jsonl_path in sorted(directory.glob("*.jsonl")):
             if jsonl_path.name.startswith("agent-"):
                 continue
             stat = jsonl_path.stat()
@@ -41,25 +59,48 @@ class SessionPackager:
                     uuid=jsonl_path.stem,
                     mtime=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(),
                     size_bytes=stat.st_size,
+                    worktree_name=worktree_name,
                 )
             )
         return entries
+
+    def discover_sessions(self) -> list[SessionEntry]:
+        """Find all session JSONL files in the project and worktree directories."""
+        entries = self._discover_from_dir(self.project_dir)
+
+        for extra_dir in self.extra_dirs:
+            if not extra_dir.is_dir():
+                continue
+            wt_name = _extract_worktree_name(extra_dir.name, self.project_dir.name)
+            entries.extend(self._discover_from_dir(extra_dir, worktree_name=wt_name))
+
+        return entries
+
+    def _source_dir_for_session(self, entry: SessionEntry) -> Path:
+        """Find the directory containing the session's JSONL file."""
+        if (self.project_dir / f"{entry.uuid}.jsonl").exists():
+            return self.project_dir
+        for extra_dir in self.extra_dirs:
+            if (extra_dir / f"{entry.uuid}.jsonl").exists():
+                return extra_dir
+        return self.project_dir  # fallback
 
     def package(self, staging_dir: Path) -> SyncManifest:
         """Copy session files into staging directory and create manifest."""
         sessions = self.discover_sessions()
 
-        # Create staging structure
         sessions_dir = staging_dir / "sessions"
         sessions_dir.mkdir(parents=True, exist_ok=True)
 
         for entry in sessions:
+            source_dir = self._source_dir_for_session(entry)
+
             # Copy JSONL file
-            src_jsonl = self.project_dir / f"{entry.uuid}.jsonl"
+            src_jsonl = source_dir / f"{entry.uuid}.jsonl"
             shutil.copy2(src_jsonl, sessions_dir / src_jsonl.name)
 
             # Copy associated directories (subagents, tool-results)
-            assoc_dir = self.project_dir / entry.uuid
+            assoc_dir = source_dir / entry.uuid
             if assoc_dir.is_dir():
                 shutil.copytree(
                     assoc_dir,
@@ -67,7 +108,7 @@ class SessionPackager:
                     dirs_exist_ok=True,
                 )
 
-        # Copy todos if they exist
+        # Copy todos if they exist (from main project dir's parent)
         todos_base = self.project_dir.parent.parent / "todos"
         if todos_base.is_dir():
             todos_staging = staging_dir / "todos"
@@ -87,7 +128,6 @@ class SessionPackager:
             previous_cid=self.last_sync_cid,
         )
 
-        # Write manifest to staging
         manifest_path = staging_dir / "manifest.json"
         manifest_path.write_text(json.dumps(manifest.model_dump(), indent=2) + "\n")
 
