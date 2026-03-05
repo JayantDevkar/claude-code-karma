@@ -273,6 +273,78 @@ class TestIncrementalPackaging:
         assert mtime_after > mtime_before
 
 
+class TestTaskSyncing:
+    def test_package_copies_task_files(self, tmp_path):
+        """Tasks from ~/.claude/tasks/{uuid}/ should be copied."""
+        claude_dir = tmp_path / ".claude"
+        project_dir = claude_dir / "projects" / "-My-project"
+        project_dir.mkdir(parents=True)
+        (project_dir / "session-abc.jsonl").write_text(
+            '{"type":"user","message":{"role":"user","content":"hello"}}\n'
+        )
+
+        # Create task dir: .claude/tasks/session-abc/
+        tasks_dir = claude_dir / "tasks" / "session-abc"
+        tasks_dir.mkdir(parents=True)
+        (tasks_dir / "1.json").write_text(
+            '{"id":"1","subject":"Fix bug","status":"completed"}\n'
+        )
+        (tasks_dir / "2.json").write_text(
+            '{"id":"2","subject":"Add test","status":"pending"}\n'
+        )
+
+        staging = tmp_path / "staging"
+        packager = SessionPackager(
+            project_dir=project_dir,
+            user_id="alice",
+            machine_id="mac",
+        )
+        packager.package(staging_dir=staging)
+
+        assert (staging / "tasks" / "session-abc" / "1.json").exists()
+        assert (staging / "tasks" / "session-abc" / "2.json").exists()
+
+    def test_package_skips_missing_task_dir(self, mock_claude_project, tmp_path):
+        """Sessions without task dirs should not cause errors."""
+        staging = tmp_path / "staging"
+        packager = SessionPackager(
+            project_dir=mock_claude_project,
+            user_id="alice",
+            machine_id="mac",
+        )
+        manifest = packager.package(staging_dir=staging)
+        assert manifest.session_count == 2
+        # tasks dir should not exist if no tasks
+        assert not (staging / "tasks").exists()
+
+    def test_package_copies_worktree_tasks(self, tmp_path):
+        """Tasks for worktree sessions should also be copied."""
+        claude_dir = tmp_path / ".claude"
+        main_dir = claude_dir / "projects" / "-Users-jay-karma"
+        main_dir.mkdir(parents=True)
+        (main_dir / "main-s.jsonl").write_text('{"type":"user","message":{"role":"user","content":"hi"}}\n')
+
+        wt_dir = claude_dir / "projects" / "-Users-jay-karma--claude-worktrees-feat"
+        wt_dir.mkdir(parents=True)
+        (wt_dir / "wt-s.jsonl").write_text('{"type":"user","message":{"role":"user","content":"hi"}}\n')
+
+        # Task for worktree session
+        tasks_dir = claude_dir / "tasks" / "wt-s"
+        tasks_dir.mkdir(parents=True)
+        (tasks_dir / "1.json").write_text('{"id":"1","subject":"WT task","status":"pending"}\n')
+
+        staging = tmp_path / "staging"
+        packager = SessionPackager(
+            project_dir=main_dir,
+            user_id="jay",
+            machine_id="mac",
+            extra_dirs=[wt_dir],
+        )
+        packager.package(staging_dir=staging)
+
+        assert (staging / "tasks" / "wt-s" / "1.json").exists()
+
+
 class TestSyncManifest:
     def test_manifest_default_sync_backend_is_none(self):
         from karma.manifest import SyncManifest

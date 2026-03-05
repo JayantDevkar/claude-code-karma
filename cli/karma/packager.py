@@ -119,6 +119,20 @@ class SessionPackager:
                     todos_staging.mkdir(exist_ok=True)
                     shutil.copy2(todo_file, todos_staging / todo_file.name)
 
+        # Copy tasks if they exist (from main project dir's parent)
+        tasks_base = self.project_dir.parent.parent / "tasks"
+        if tasks_base.is_dir():
+            tasks_staging = staging_dir / "tasks"
+            for session_entry in sessions:
+                task_dir = tasks_base / session_entry.uuid
+                if task_dir.is_dir():
+                    tasks_staging.mkdir(exist_ok=True)
+                    shutil.copytree(
+                        task_dir,
+                        tasks_staging / session_entry.uuid,
+                        dirs_exist_ok=True,
+                    )
+
         # Build manifest
         manifest = SyncManifest(
             user_id=self.user_id,
