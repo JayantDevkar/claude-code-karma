@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { Brain, Copy, Check, Bot, ExternalLink, Zap } from 'lucide-svelte';
+	import { Brain, Copy, Check, Bot, ExternalLink, Zap, ChevronLeft, ChevronRight } from 'lucide-svelte';
 	import { keyboardOverrides } from '$lib/stores/keyboardOverrides';
 	import { marked } from 'marked';
 	import DOMPurify from 'isomorphic-dompurify';
@@ -98,6 +98,7 @@
 		isCopied = false; // Reset copied state when closing popup
 	}
 
+
 	// Helper to safely clear and set scroll timeout
 	function setScrollTimeout(callback: () => void, delay: number) {
 		if (userScrollTimeout) clearTimeout(userScrollTimeout);
@@ -125,6 +126,46 @@
 
 	// Pre-compute visible events (excluding gaps) for correct indexing
 	const visibleEvents = $derived(timeline.viewItems.filter((i) => !('type' in i)));
+
+	// Navigable events: visible events that have expandable/popup content
+	function isExpandable(event: TimelineEvent): boolean {
+		return !!(
+			event.event_type === 'tool_call' ||
+			event.event_type === 'todo_update' ||
+			event.metadata?.full_content ||
+			event.metadata?.full_thinking ||
+			event.metadata?.full_text ||
+			event.metadata?.result_content ||
+			(event.summary && event.summary.length > 100)
+		);
+	}
+
+	const navigableEvents = $derived(
+		(visibleEvents as TimelineEvent[]).filter(isExpandable)
+	);
+
+	const popupNavIndex = $derived(
+		popupEvent ? navigableEvents.findIndex((e) => e.id === popupEvent!.id) : -1
+	);
+
+	function navigatePrev() {
+		if (popupNavIndex > 0) openPopup(navigableEvents[popupNavIndex - 1]);
+	}
+
+	function navigateNext() {
+		if (popupNavIndex < navigableEvents.length - 1) openPopup(navigableEvents[popupNavIndex + 1]);
+	}
+
+	// Arrow key navigation when popup is open
+	$effect(() => {
+		if (!isPopupOpen) return;
+		function onKeyDown(e: KeyboardEvent) {
+			if (e.key === 'ArrowLeft') { e.preventDefault(); navigatePrev(); }
+			else if (e.key === 'ArrowRight') { e.preventDefault(); navigateNext(); }
+		}
+		window.addEventListener('keydown', onKeyDown);
+		return () => window.removeEventListener('keydown', onKeyDown);
+	});
 
 	// Search match tracking
 	let searchMatchIds = $derived.by<string[]>(() => {
@@ -325,6 +366,24 @@
 		description={formatDate(popupEvent.timestamp)}
 		maxWidth="xl"
 	>
+		{#snippet headerActions()}
+			<button
+				onclick={navigatePrev}
+				disabled={popupNavIndex <= 0}
+				class="rounded-md p-1 text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] disabled:opacity-30 disabled:cursor-not-allowed"
+				aria-label="Previous event"
+			>
+				<ChevronLeft size={20} />
+			</button>
+			<button
+				onclick={navigateNext}
+				disabled={popupNavIndex >= navigableEvents.length - 1}
+				class="rounded-md p-1 text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] disabled:opacity-30 disabled:cursor-not-allowed"
+				aria-label="Next event"
+			>
+				<ChevronRight size={20} />
+			</button>
+		{/snippet}
 		{#snippet titleSnippet()}
 			{#if popupEvent?.event_type === 'skill_invocation'}
 				{@const skillPath = popupEvent.title?.replace(/^Skill:\s*\/?/, '') ?? ''}
@@ -356,7 +415,7 @@
 			{/if}
 		{/snippet}
 
-		<div class="max-h-[70vh] overflow-auto">
+		<div class="max-h-[70vh] overflow-auto break-words">
 			{#if popupEvent.event_type === 'tool_call'}
 				<ToolCallDetail event={popupEvent} {projectPath} />
 			{:else if popupEvent.event_type === 'todo_update'}

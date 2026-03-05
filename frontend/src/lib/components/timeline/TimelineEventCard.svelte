@@ -139,6 +139,11 @@
 			(event.summary && event.summary.length > 100)
 	);
 
+	// thinking event with no stored content
+	const isMediumEffortThinking = $derived(
+		event.event_type === 'thinking' && !event.metadata?.full_thinking && !event.summary
+	);
+
 	// Dimmed when filter active but doesn't match
 	const isDimmed = $derived(hasActiveFilter && !isHighlighted);
 
@@ -211,6 +216,22 @@
 	</div>
 
 	<!-- Content card -->
+	{#if isMediumEffortThinking}
+		<div class="mb-4 flex-1 min-w-0 rounded-lg border border-dashed border-[var(--event-thinking)]/30 border-l-[3px] border-l-[var(--event-thinking)]/40 bg-[var(--bg-subtle)]/50 px-4 py-2.5 pl-5">
+			<div class="flex items-center justify-between gap-3">
+				<div class="flex items-center gap-2 min-w-0">
+					<span class="text-sm font-medium text-[var(--text-muted)]">Thinking</span>
+					<span class="text-xs text-[var(--text-muted)]/50 truncate">· content not stored</span>
+				</div>
+				<span
+					class="whitespace-nowrap font-mono text-xs text-[var(--text-muted)]/50 tabular-nums shrink-0"
+					title={formatDate(event.timestamp)}
+				>
+					{formatElapsedTime(event.timestamp, sessionStartTime)}
+				</span>
+			</div>
+		</div>
+	{:else}
 	<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 	<div
 		class="
@@ -413,4 +434,5 @@
 			<!-- todo_update uses TodoUpdateDetail inline, no extra expanded content needed -->
 		{/if}
 	</div>
+	{/if}
 </div>

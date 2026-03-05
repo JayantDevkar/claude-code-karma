@@ -11,6 +11,7 @@
 		description?: string;
 		children: Snippet;
 		footer?: Snippet;
+		headerActions?: Snippet;
 		maxWidth?: 'sm' | 'md' | 'lg' | 'xl';
 	}
 
@@ -22,6 +23,7 @@
 		description,
 		children,
 		footer,
+		headerActions,
 		maxWidth = 'md'
 	}: Props = $props();
 
@@ -83,22 +85,27 @@
 						{title}
 					{/if}
 				</Dialog.Title>
-				<Dialog.Close
-					class="
-						text-[var(--text-muted)]
-						hover:text-[var(--text-primary)]
-						transition-colors
-						focus:outline-none
-						focus-visible:ring-2
-						focus-visible:ring-[var(--accent)]
-						rounded-md
-						p-1
-					"
-					style="transition-duration: var(--duration-fast);"
-					aria-label="Close dialog"
-				>
-					<X size={20} />
-				</Dialog.Close>
+				<div class="flex items-center gap-1">
+					{#if headerActions}
+						{@render headerActions()}
+					{/if}
+					<Dialog.Close
+						class="
+							text-[var(--text-muted)]
+							hover:text-[var(--text-primary)]
+							transition-colors
+							focus:outline-none
+							focus-visible:ring-2
+							focus-visible:ring-[var(--accent)]
+							rounded-md
+							p-1
+						"
+						style="transition-duration: var(--duration-fast);"
+						aria-label="Close dialog"
+					>
+						<X size={20} />
+					</Dialog.Close>
+				</div>
 			</div>
 
 			{#if description}
