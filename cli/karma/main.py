@@ -59,6 +59,89 @@ def _auto_share_folders(st, config, team_cfg, teams, team_name, new_device_id):
                     click.echo(f"Warning: Could not create inbox for '{member_name}/{proj_name}': {e}")
 
 
+def _accept_pending_folders(st, config):
+    """Accept pending folder offers from known team members.
+
+    Security policy:
+    - Only accepts folders from device IDs registered in syncthing_members
+    - Only accepts folder IDs prefixed with 'karma-'
+    - Logs all decisions (accepted, ignored unknown, ignored non-karma)
+    - Replaces empty pre-created inbox folders that conflict on the same path
+
+    Returns the number of folders accepted.
+    """
+    pending = st.get_pending_folders()
+    if not pending:
+        return 0
+
+    # Build device_id -> (member_name, team_name) lookup
+    known_devices: dict[str, tuple[str, str]] = {}
+    for team_name, team_cfg in config.teams.items():
+        for member_name, member_cfg in team_cfg.syncthing_members.items():
+            known_devices[member_cfg.syncthing_device_id] = (member_name, team_name)
+
+    accepted = 0
+
+    for folder_id, folder_info in pending.items():
+        # Security: only accept karma-prefixed folders
+        if not folder_id.startswith("karma-"):
+            click.echo(f"  Skipped non-karma folder offer '{folder_id}' (security policy)")
+            continue
+
+        offered_by = folder_info.get("offeredBy", {})
+        for device_id, _offer in offered_by.items():
+            if device_id not in known_devices:
+                short_id = device_id[:20] + "..."
+                click.echo(f"  Skipped folder '{folder_id}' from unknown device {short_id}")
+                continue
+
+            member_name, team_name = known_devices[device_id]
+            team_cfg = config.teams[team_name]
+
+            # Find matching project by checking if project name appears in folder ID
+            matched_project = None
+            for proj_name, proj_cfg in team_cfg.projects.items():
+                if proj_name in folder_id:
+                    matched_project = (proj_name, proj_cfg)
+                    break
+
+            if not matched_project:
+                click.echo(
+                    f"  Skipped folder '{folder_id}' from {member_name} "
+                    f"(no matching project in team '{team_name}')"
+                )
+                continue
+
+            proj_name, proj_cfg = matched_project
+            inbox_path = str(KARMA_BASE / "remote-sessions" / member_name / proj_cfg.encoded_name)
+
+            # Check if we already have a folder at this path (pre-created inbox)
+            existing = st.find_folder_by_path(inbox_path)
+            if existing:
+                existing_id = existing["id"]
+                if existing_id == folder_id:
+                    click.echo(f"  Already accepted '{folder_id}' from {member_name}")
+                    continue
+                # Remove the pre-created empty folder to accept the real one
+                click.echo(f"  Replacing empty inbox '{existing_id}' with offered '{folder_id}'")
+                st.remove_folder(existing_id)
+
+            # Accept: create the folder as receiveonly
+            inbox_devices = [device_id]
+            if config.syncthing and config.syncthing.device_id:
+                inbox_devices.append(config.syncthing.device_id)
+            Path(inbox_path).mkdir(parents=True, exist_ok=True)
+            st.add_folder(folder_id, inbox_path, inbox_devices, folder_type="receiveonly")
+
+            click.echo(
+                f"  Accepted '{folder_id}' from {member_name} "
+                f"-> {inbox_path} (receive-only)"
+            )
+            accepted += 1
+
+    return accepted
+
+
 def require_config() -> SyncConfig:
     """Load config or exit with helpful message."""
     try:
@@ -346,6 +429,37 @@ def list_remote():
                 click.echo(f"  {project_dir.name}: (no manifest)")
 
 
+# --- accept ---
+
+@cli.command()
+def accept():
+    """Accept pending Syncthing folder offers from known team members.
+
+    Only accepts folders from devices registered in your team config,
+    and only folders with a 'karma-' prefix. Unknown devices and
+    non-karma folders are logged and skipped.
+    """
+    from karma.syncthing import SyncthingClient, read_local_api_key
+
+    config = require_config()
+    api_key = config.syncthing.api_key if config.syncthing else read_local_api_key()
+    if not api_key:
+        raise click.ClickException(
+            "No Syncthing API key found. Run: karma init --backend syncthing"
+        )
+
+    st = SyncthingClient(api_key=api_key)
+    if not st.is_running():
+        raise click.ClickException("Syncthing is not running. Start Syncthing first.")
+
+    click.echo("Checking for pending folder offers...")
+    n = _accept_pending_folders(st, config)
+    if n == 0:
+        click.echo("No pending folders to accept.")
+    else:
+        click.echo(f"\nDone. Accepted {n} folder(s).")
+
+
 # --- watch ---
 
 @cli.command()
@@ -372,6 +486,19 @@ def watch(team_name: str):
         raise click.ClickException(
             f"No projects in team '{team_name}'. Run: karma project add <name> --path /path --team {team_name}"
         )
+
+    # Auto-accept pending folder offers from known teammates before starting
+    try:
+        from karma.syncthing import SyncthingClient, read_local_api_key
+        api_key = config.syncthing.api_key if config.syncthing else read_local_api_key()
+        if api_key:
+            st = SyncthingClient(api_key=api_key)
+            if st.is_running():
+                n = _accept_pending_folders(st, config)
+                if n:
+                    click.echo(f"Accepted {n} pending folder(s) from known teammates.\n")
+    except Exception as e:
+        click.echo(f"Warning: Could not check pending folders: {e}\n")
 
     click.echo(f"Watching {len(team_cfg.projects)} project(s) for team '{team_name}'...")
     click.echo("Press Ctrl+C to stop.\n")
@@ -511,6 +638,12 @@ def team_add(name: str, identifier: str, team_name: Optional[str]):
 
                     # Auto-create shared folder if team has projects
                     _auto_share_folders(st, config, team_cfg, teams, team_name, identifier)
+
+                    # Auto-accept any pending folder offers from this member
+                    updated_config = config.model_copy(update={"teams": teams})
+                    n = _accept_pending_folders(st, updated_config)
+                    if n:
+                        click.echo(f"Accepted {n} pending folder(s) from known teammates.")
                 else:
                     click.echo("Warning: Syncthing not running — device saved but not paired yet.")
             except Exception as e:

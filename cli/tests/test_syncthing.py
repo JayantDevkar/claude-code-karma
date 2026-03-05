@@ -88,3 +88,38 @@ class TestSyncthingClient:
         folder = put_data["folders"][0]
         assert folder["id"] == "karma-out-alice"
         assert folder["type"] == "sendonly"
+
+    @patch("karma.syncthing.requests.get")
+    def test_get_pending_folders(self, mock_get):
+        pending = {
+            "karma-team-proj": {
+                "offeredBy": {"DEVICE-ABC": {"time": "2026-03-05T03:45:06Z"}}
+            }
+        }
+        mock_get.return_value = MagicMock(status_code=200, json=lambda: pending)
+        client = SyncthingClient(api_key="test")
+        result = client.get_pending_folders()
+        assert "karma-team-proj" in result
+        assert "DEVICE-ABC" in result["karma-team-proj"]["offeredBy"]
+
+    @patch("karma.syncthing.requests.get")
+    def test_get_pending_folders_empty(self, mock_get):
+        mock_get.return_value = MagicMock(status_code=200, json=lambda: {})
+        client = SyncthingClient(api_key="test")
+        assert client.get_pending_folders() == {}
+
+    @patch("karma.syncthing.requests.get")
+    def test_find_folder_by_path(self, mock_get):
+        mock_get.return_value = MagicMock(
+            status_code=200,
+            json=lambda: {
+                "devices": [],
+                "folders": [
+                    {"id": "f1", "path": "/tmp/inbox/alice", "type": "receiveonly"},
+                    {"id": "f2", "path": "/tmp/outbox/me", "type": "sendonly"},
+                ],
+            },
+        )
+        client = SyncthingClient(api_key="test")
+        assert client.find_folder_by_path("/tmp/inbox/alice")["id"] == "f1"
+        assert client.find_folder_by_path("/nonexistent") is None

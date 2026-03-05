@@ -18,6 +18,7 @@ def mock_config(tmp_path, monkeypatch):
     config_path = tmp_path / "sync-config.json"
     monkeypatch.setattr("karma.config.SYNC_CONFIG_PATH", config_path)
     monkeypatch.setattr("karma.config.KARMA_BASE", tmp_path)
+    monkeypatch.setattr("karma.main.KARMA_BASE", tmp_path)
     return config_path
 
 
@@ -178,6 +179,133 @@ class TestWatchCommand:
         mock_watcher_cls.assert_called_once()
         mock_watcher.start.assert_called_once()
         mock_watcher.stop.assert_called()
+
+
+class TestAcceptCommand:
+    def test_accept_requires_init(self, runner, mock_config):
+        result = runner.invoke(cli, ["accept"])
+        assert result.exit_code != 0
+
+    @patch("karma.syncthing.SyncthingClient")
+    def test_accept_no_pending(self, mock_st_cls, runner, mock_config):
+        mock_st = MagicMock()
+        mock_st.is_running.return_value = True
+        mock_st.get_device_id.return_value = "MY-DEVICE-ID"
+        mock_st.get_pending_folders.return_value = {}
+        mock_st_cls.return_value = mock_st
+
+        runner.invoke(cli, ["init", "--user-id", "alice", "--backend", "syncthing"])
+        result = runner.invoke(cli, ["accept"])
+        assert result.exit_code == 0
+        assert "No pending" in result.output
+
+    @patch("karma.syncthing.SyncthingClient")
+    def test_accept_from_known_member(self, mock_st_cls, runner, mock_config, tmp_path):
+        mock_st = MagicMock()
+        mock_st.is_running.return_value = True
+        mock_st.get_device_id.return_value = "MY-DEVICE-ID"
+        mock_st.get_pending_folders.return_value = {}
+        mock_st.find_folder_by_path.return_value = None
+        mock_st_cls.return_value = mock_st
+
+        # Setup: init + team + member + project
+        runner.invoke(cli, ["init", "--user-id", "alice", "--backend", "syncthing"])
+        runner.invoke(cli, ["team", "create", "beta", "--backend", "syncthing"])
+        runner.invoke(cli, ["team", "add", "bob", "BOB-DEVICE-ID-FULL", "--team", "beta"])
+        project_path = tmp_path / "myapp"
+        project_path.mkdir()
+        runner.invoke(cli, [
+            "project", "add", "myapp", "--path", str(project_path), "--team", "beta"
+        ])
+
+        # Now set up the pending folder for the accept call
+        mock_st.get_pending_folders.return_value = {
+            "karma-beta-myapp": {
+                "offeredBy": {
+                    "BOB-DEVICE-ID-FULL": {"time": "2026-03-05T03:45:06Z"}
+                }
+            }
+        }
+
+        result = runner.invoke(cli, ["accept"])
+        assert result.exit_code == 0
+        assert "Accepted" in result.output
+        assert "bob" in result.output
+
+    @patch("karma.syncthing.SyncthingClient")
+    def test_accept_skips_unknown_device(self, mock_st_cls, runner, mock_config):
+        mock_st = MagicMock()
+        mock_st.is_running.return_value = True
+        mock_st.get_device_id.return_value = "MY-DEVICE-ID"
+        mock_st.get_pending_folders.return_value = {}
+        mock_st_cls.return_value = mock_st
+
+        runner.invoke(cli, ["init", "--user-id", "alice", "--backend", "syncthing"])
+        runner.invoke(cli, ["team", "create", "beta", "--backend", "syncthing"])
+
+        mock_st.get_pending_folders.return_value = {
+            "karma-evil-folder": {
+                "offeredBy": {"UNKNOWN-DEVICE-XYZ": {"time": "2026-03-05T00:00:00Z"}}
+            }
+        }
+
+        result = runner.invoke(cli, ["accept"])
+        assert result.exit_code == 0
+        assert "unknown device" in result.output.lower()
+        mock_st.add_folder.assert_not_called()
+
+    @patch("karma.syncthing.SyncthingClient")
+    def test_accept_skips_non_karma_prefix(self, mock_st_cls, runner, mock_config):
+        mock_st = MagicMock()
+        mock_st.is_running.return_value = True
+        mock_st.get_device_id.return_value = "MY-DEVICE-ID"
+        mock_st.get_pending_folders.return_value = {}
+        mock_st_cls.return_value = mock_st
+
+        runner.invoke(cli, ["init", "--user-id", "alice", "--backend", "syncthing"])
+        runner.invoke(cli, ["team", "create", "beta", "--backend", "syncthing"])
+        runner.invoke(cli, ["team", "add", "bob", "BOB-DEVICE-ID", "--team", "beta"])
+
+        mock_st.get_pending_folders.return_value = {
+            "suspicious-folder": {
+                "offeredBy": {"BOB-DEVICE-ID": {"time": "2026-03-05T00:00:00Z"}}
+            }
+        }
+
+        result = runner.invoke(cli, ["accept"])
+        assert result.exit_code == 0
+        assert "non-karma" in result.output.lower()
+        mock_st.add_folder.assert_not_called()
+
+    @patch("karma.syncthing.SyncthingClient")
+    def test_accept_replaces_empty_existing_folder(self, mock_st_cls, runner, mock_config, tmp_path):
+        mock_st = MagicMock()
+        mock_st.is_running.return_value = True
+        mock_st.get_device_id.return_value = "MY-DEVICE-ID"
+        mock_st.get_pending_folders.return_value = {}
+        mock_st_cls.return_value = mock_st
+
+        runner.invoke(cli, ["init", "--user-id", "alice", "--backend", "syncthing"])
+        runner.invoke(cli, ["team", "create", "beta", "--backend", "syncthing"])
+        runner.invoke(cli, ["team", "add", "bob", "BOB-DEVICE-ID", "--team", "beta"])
+        project_path = tmp_path / "myapp"
+        project_path.mkdir()
+        runner.invoke(cli, [
+            "project", "add", "myapp", "--path", str(project_path), "--team", "beta"
+        ])
+
+        mock_st.get_pending_folders.return_value = {
+            "karma-beta-myapp": {
+                "offeredBy": {"BOB-DEVICE-ID": {"time": "2026-03-05T00:00:00Z"}}
+            }
+        }
+        # Simulate existing pre-created folder at same path
+        mock_st.find_folder_by_path.return_value = {"id": "karma-out-bob-myapp", "path": "/tmp/inbox"}
+
+        result = runner.invoke(cli, ["accept"])
+        assert result.exit_code == 0
+        assert "Replacing" in result.output
+        mock_st.remove_folder.assert_called_once_with("karma-out-bob-myapp")
 
 
 class TestStatusCommand:

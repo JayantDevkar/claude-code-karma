@@ -124,6 +124,33 @@ class SyncthingClient:
         config["folders"] = [f for f in config["folders"] if f["id"] != folder_id]
         self._set_config(config)
 
+    def get_pending_folders(self) -> dict:
+        """Get folder offers from remote devices that haven't been accepted.
+
+        Returns:
+            Dict keyed by folder_id, each with "offeredBy" mapping device_id
+            to offer details (time, label, etc).
+        """
+        resp = requests.get(
+            f"{self.api_url}/rest/cluster/pending/folders",
+            headers=self.headers,
+            timeout=10,
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    def get_folders(self) -> list[dict]:
+        """Get all configured folders."""
+        config = self._get_config()
+        return config.get("folders", [])
+
+    def find_folder_by_path(self, path: str) -> Optional[dict]:
+        """Find a configured folder by its local path."""
+        for folder in self.get_folders():
+            if folder.get("path", "").rstrip("/") == path.rstrip("/"):
+                return folder
+        return None
+
     def _get_config(self) -> dict:
         resp = requests.get(f"{self.api_url}/rest/config", headers=self.headers, timeout=10)
         resp.raise_for_status()
