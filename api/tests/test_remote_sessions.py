@@ -385,6 +385,31 @@ class TestSessionFilterSource:
 # ============================================================================
 
 
+class TestRemoteSessionSubagentAccess:
+    def test_subagent_dir_resolves_correctly(self, karma_base):
+        """Subagent files should be findable from remote session paths."""
+        # Add a subagent file alongside a remote session
+        alice_sessions = karma_base / "remote-sessions" / "alice" / "-Users-jayant-acme" / "sessions"
+        sub_dir = alice_sessions / "sess-001" / "subagents"
+        sub_dir.mkdir(parents=True)
+        (sub_dir / "agent-abc.jsonl").write_text(
+            json.dumps({"type": "user", "message": {"role": "user", "content": "sub task"},
+                         "timestamp": "2026-03-03T12:00:00Z"}) + "\n"
+        )
+
+        with patch("services.remote_sessions.settings") as mock_settings:
+            mock_settings.karma_base = karma_base
+            result = find_remote_session("sess-001")
+
+        assert result is not None
+        session = result.session
+        # subagents_dir should point to the correct location
+        assert session.subagents_dir == sub_dir
+        assert session.subagents_dir.exists()
+        agents = session.list_subagents()
+        assert len(agents) >= 1
+
+
 class TestSchemaMigration:
     def test_schema_v17_adds_remote_columns(self):
         import sqlite3
