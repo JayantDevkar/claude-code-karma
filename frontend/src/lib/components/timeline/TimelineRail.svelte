@@ -13,6 +13,7 @@
 	import Modal from '$lib/components/ui/Modal.svelte';
 	import ToolCallDetail from './ToolCallDetail.svelte';
 	import TodoUpdateDetail from './TodoUpdateDetail.svelte';
+	import ImageAttachments from '$lib/components/ImageAttachments.svelte';
 
 	interface Props {
 		events: TimelineEvent[];
@@ -466,6 +467,9 @@
 							<Copy size={14} />
 						{/if}
 					</button>
+					{#if popupEvent.metadata?.image_attachments?.length}
+						<ImageAttachments attachments={popupEvent.metadata.image_attachments} />
+					{/if}
 					<div class="markdown-preview text-sm">
 						{@html renderedPopupContent}
 					</div>

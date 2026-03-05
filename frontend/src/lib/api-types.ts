@@ -52,7 +52,17 @@ export interface TimelineEventMetadata {
 	command_name?: string;
 	is_plugin?: boolean;
 	plugin?: string;
+	image_attachments?: ImageAttachment[];
 	[key: string]: unknown;
+}
+
+// ============================================
+// Image Attachments
+// ============================================
+
+export interface ImageAttachment {
+	media_type: string;
+	data: string;
 }
 
 // ============================================
@@ -288,6 +298,8 @@ export interface SessionDetail extends SessionSummary {
 	skills_used?: SkillUsage[];
 	// Command usage tracking (user-authored slash commands)
 	commands_used?: CommandUsage[];
+	// Image attachments from the initial prompt
+	initial_prompt_images?: ImageAttachment[];
 }
 
 /**

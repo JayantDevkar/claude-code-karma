@@ -96,6 +96,11 @@ def build_conversation_timeline(
 
             content_preview = cmd_summary or (display_content[:200] if display_content else "")
             prompt_metadata: dict = {"full_content": content}
+            if msg.image_attachments:
+                prompt_metadata["image_attachments"] = [
+                    {"media_type": img["media_type"], "data": img["data"]}
+                    for img in msg.image_attachments
+                ]
             if cmd_name:
                 expanded_cmd = expand_plugin_short_name(cmd_name)
                 prompt_metadata["command_name"] = cmd_name
@@ -271,7 +276,9 @@ def _detect_command_from_content(
         # Collect ALL skill references from the text (not just the first)
         # Expand short-form plugin names for consistency with Skill tool invocations
         skills_found = [
-            expand_plugin_short_name(c) for c in slash_cmds if is_skill_category(classify_invocation(c))
+            expand_plugin_short_name(c)
+            for c in slash_cmds
+            if is_skill_category(classify_invocation(c))
         ]
         if skills_found:
             referenced_skills = skills_found
