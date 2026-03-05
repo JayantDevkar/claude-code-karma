@@ -700,6 +700,7 @@ export interface SubagentSessionDetail {
 	// Subagent-specific metadata
 	subagent_type: string | null;
 	initial_prompt: string | null;
+	initial_prompt_images?: ImageAttachment[];
 }
 
 /**

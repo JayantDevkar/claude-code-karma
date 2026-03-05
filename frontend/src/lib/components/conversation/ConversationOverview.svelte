@@ -88,7 +88,7 @@
 	{#if entity.initial_prompt}
 		<ExpandablePrompt
 			prompt={entity.initial_prompt}
-			imageAttachments={isMainSession(entity) ? entity.initial_prompt_images : undefined}
+			imageAttachments={entity.initial_prompt_images}
 		/>
 	{/if}
 

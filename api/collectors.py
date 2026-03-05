@@ -54,6 +54,7 @@ class ConversationData:
 
     # Initial prompt
     initial_prompt: Optional[str] = None
+    initial_prompt_images: List[Dict[str, str]] = field(default_factory=list)
 
 
 @dataclass
@@ -292,6 +293,8 @@ def collect_session_data(session: Session, include_subagents: bool = False) -> S
                 # Skip tool result messages
                 if not (content.strip().startswith("{") and "'tool_use_id':" in content):
                     data.initial_prompt = content[:5000] if content else None
+                    if msg.image_attachments:
+                        data.initial_prompt_images = list(msg.image_attachments)
 
         # Assistant message processing
         elif isinstance(msg, AssistantMessage):
@@ -404,6 +407,7 @@ class SubagentInfo:
     skills_used: Counter
     commands_used: Counter
     initial_prompt: Optional[str]
+    initial_prompt_images: List[Dict[str, str]]
     subagent_type: Optional[str]
     message_count: int
 
@@ -442,11 +446,14 @@ def collect_subagent_info(
         skill_counts: Counter = Counter()
         command_counts: Counter = Counter()
         initial_prompt = None
+        initial_prompt_images: List[Dict[str, str]] = []
 
         for msg in subagent.iter_messages():
             if isinstance(msg, UserMessage):
                 if initial_prompt is None:
                     initial_prompt = msg.content[:5000] if msg.content else None
+                    if msg.image_attachments:
+                        initial_prompt_images = list(msg.image_attachments)
             elif isinstance(msg, AssistantMessage):
                 for block in msg.content_blocks:
                     if isinstance(block, ToolUseBlock):
@@ -489,6 +496,7 @@ def collect_subagent_info(
                 skills_used=skill_counts,
                 commands_used=command_counts,
                 initial_prompt=initial_prompt,
+                initial_prompt_images=initial_prompt_images,
                 subagent_type=subagent_type,
                 message_count=subagent.message_count,
             )

@@ -573,6 +573,9 @@ class SubagentSessionDetail(BaseModel):
     initial_prompt: Optional[str] = Field(
         None, description="First user message to subagent (truncated)"
     )
+    initial_prompt_images: list[dict[str, str]] = Field(
+        default_factory=list, description="Image attachments from subagent's first user message"
+    )
 
 
 # =============================================================================
