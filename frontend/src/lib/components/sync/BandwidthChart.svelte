@@ -49,11 +49,15 @@
 		return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 	}
 
+	let hasData = $derived(uploadData.some((v) => v > 0) || downloadData.some((v) => v > 0));
+
 	onMount(() => {
 		registerChartDefaults();
 
-		const uploadColor = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();
-		const downloadColor = getComputedStyle(document.documentElement).getPropertyValue('--info').trim();
+		const styles = getComputedStyle(document.documentElement);
+		const uploadColor = styles.getPropertyValue('--accent').trim();
+		const downloadColor = styles.getPropertyValue('--info').trim();
+		const mutedColor = styles.getPropertyValue('--text-muted').trim() || 'rgba(128, 128, 128, 0.5)';
 
 		const responsiveConfig = createResponsiveConfig(false);
 
@@ -66,21 +70,21 @@
 						label: 'Upload',
 						data: [...uploadData],
 						borderColor: uploadColor,
-						backgroundColor: hexToRgba(uploadColor, 0.1),
+						backgroundColor: hexToRgba(uploadColor, 0.15),
 						fill: true,
 						tension: 0.3,
 						pointRadius: 0,
-						borderWidth: 1.5
+						borderWidth: 2
 					},
 					{
 						label: 'Download',
 						data: [...downloadData],
 						borderColor: downloadColor,
-						backgroundColor: hexToRgba(downloadColor, 0.1),
+						backgroundColor: hexToRgba(downloadColor, 0.15),
 						fill: true,
 						tension: 0.3,
 						pointRadius: 0,
-						borderWidth: 1.5
+						borderWidth: 2
 					}
 				]
 			},
@@ -104,15 +108,17 @@
 					},
 					y: {
 						beginAtZero: true,
+						suggestedMax: 1024,
 						grid: {
-							color: 'rgba(128, 128, 128, 0.1)'
+							color: 'rgba(128, 128, 128, 0.08)'
 						},
 						ticks: {
-							color: 'var(--text-muted)',
+							color: mutedColor,
 							font: {
 								family: 'JetBrains Mono, monospace',
 								size: 10
 							},
+							maxTicksLimit: 4,
 							callback: (value) => formatBytes(Number(value))
 						}
 					}
