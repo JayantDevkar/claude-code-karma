@@ -503,7 +503,7 @@ def watch(team_name: str):
     click.echo(f"Watching {len(team_cfg.projects)} project(s) for team '{team_name}'...")
     click.echo("Press Ctrl+C to stop.\n")
 
-    from karma.worktree_discovery import find_worktree_dirs
+    from karma.worktree_discovery import find_all_worktree_dirs
 
     watchers = []
     projects_dir = Path.home() / ".claude" / "projects"
@@ -515,7 +515,7 @@ def watch(team_name: str):
             continue
 
         # Discover worktree dirs for this project
-        wt_dirs = find_worktree_dirs(proj.encoded_name, projects_dir)
+        wt_dirs = find_all_worktree_dirs(proj.encoded_name, proj.path, projects_dir)
         if wt_dirs:
             click.echo(f"  Found {len(wt_dirs)} worktree dir(s) for '{proj_name}'")
 
@@ -523,10 +523,10 @@ def watch(team_name: str):
         # Both IPFS pull and Syncthing watch converge on this same path.
         outbox = KARMA_BASE / "remote-sessions" / config.user_id / proj.encoded_name
 
-        def make_package_fn(cd=claude_dir, ob=outbox, pn=proj_name, en=proj.encoded_name):
+        def make_package_fn(cd=claude_dir, ob=outbox, pn=proj_name, en=proj.encoded_name, pp=proj.path):
             def package():
                 # Re-discover worktrees each time (new ones may appear)
-                current_wt_dirs = find_worktree_dirs(en, projects_dir)
+                current_wt_dirs = find_all_worktree_dirs(en, pp, projects_dir)
                 packager = SessionPackager(
                     project_dir=cd,
                     user_id=config.user_id,
@@ -557,7 +557,13 @@ def watch(team_name: str):
             )
             wt_watcher.start()
             watchers.append(wt_watcher)
-            wt_name = wt_dir.name.split("--claude-worktrees-")[-1] if "--claude-worktrees-" in wt_dir.name else wt_dir.name
+            if "--claude-worktrees-" in wt_dir.name:
+                wt_name = wt_dir.name.split("--claude-worktrees-")[-1]
+            elif "-claude-worktrees-" in wt_dir.name:
+                parts = wt_dir.name.split("-claude-worktrees-")
+                wt_name = parts[-1] if parts else wt_dir.name
+            else:
+                wt_name = wt_dir.name
             click.echo(f"  Watching worktree: {wt_name} ({wt_dir})")
 
     try:
@@ -577,7 +583,7 @@ def watch(team_name: str):
 @cli.command()
 def status():
     """Show sync status for all teams."""
-    from karma.worktree_discovery import find_worktree_dirs
+    from karma.worktree_discovery import find_all_worktree_dirs
 
     config = require_config()
 
@@ -614,7 +620,7 @@ def status():
                 )
 
             # Count worktree sessions
-            wt_dirs = find_worktree_dirs(proj.encoded_name, projects_dir)
+            wt_dirs = find_all_worktree_dirs(proj.encoded_name, proj.path, projects_dir)
             wt_count = 0
             for wd in wt_dirs:
                 wt_count += sum(
