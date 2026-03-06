@@ -90,7 +90,10 @@
 	}
 
 	async function handleSyncNow(name: string) {
-		await fetch(`${API_BASE}/sync/projects/${encodeURIComponent(name)}/sync-now`, {
+		// Find the project to use encoded_name for better folder matching
+		const project = projects.find((p) => p.name === name);
+		const matchName = project?.encoded_name ?? name;
+		await fetch(`${API_BASE}/sync/projects/${encodeURIComponent(matchName)}/sync-now`, {
 			method: 'POST'
 		});
 		await loadProjects();
