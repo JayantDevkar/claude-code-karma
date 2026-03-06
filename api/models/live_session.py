@@ -276,18 +276,26 @@ class LiveSessionState(BaseModel):
 
             if is_worktree_project(primary):
                 # Primary strategy: extract project prefix from the encoded name.
-                # This is purely string-based and handles all worktree patterns
-                # (CLI, Desktop, superpowers) without depending on git_root.
+                # This is purely string-based and handles CLI and superpowers
+                # worktrees where the real project path is embedded as a prefix.
                 prefix = _extract_project_prefix_from_worktree(primary)
                 if prefix:
-                    return prefix
+                    # Validate the prefix is a real project dir on disk.
+                    # For Desktop worktrees (~/.claude-worktrees/{project}/{name}),
+                    # the prefix is just the home directory — not a project.
+                    # In that case, fall through to git_root resolution below.
+                    from config import settings
+
+                    if (settings.projects_dir / prefix).is_dir():
+                        return prefix
 
         # If transcript exists at the primary (cwd-derived) path, use it
         if primary and self.transcript_path and Path(self.transcript_path).exists():
             return primary
 
         # Fallback: use git_root to compute parent project name
-        # This handles submodule sessions (JSONL stored under parent repo)
+        # This handles submodule sessions and Desktop worktree sessions
+        # (where prefix extraction returned a non-project path)
         if self.git_root:
             encoded = "-" + self.git_root.lstrip("/").replace("/", "-")
             return encoded

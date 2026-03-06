@@ -29,20 +29,30 @@ def _get_session_mtime(transcript_path: str) -> Optional[float]:
         return None
 
 
-def _has_newer_jsonl(project_dir: Path, session_mtime: float, own_stem: str) -> bool:
-    """Check if any non-subagent JSONL in project_dir has a newer mtime."""
-    try:
-        for f in project_dir.glob("*.jsonl"):
-            # Skip subagent files and our own file
-            if f.name.startswith("agent-") or f.stem == own_stem:
-                continue
-            try:
-                if f.stat().st_mtime > session_mtime:
-                    return True
-            except OSError:
-                continue
-    except OSError:
-        pass
+def _has_newer_jsonl(
+    project_dir: Path,
+    session_mtime: float,
+    own_stem: str,
+    additional_dirs: list[Path] | None = None,
+) -> bool:
+    """Check if any non-subagent JSONL in project_dir (or additional dirs) has a newer mtime."""
+    dirs_to_check = [project_dir]
+    if additional_dirs:
+        dirs_to_check.extend(additional_dirs)
+
+    for check_dir in dirs_to_check:
+        try:
+            for f in check_dir.glob("*.jsonl"):
+                # Skip subagent files and our own file
+                if f.name.startswith("agent-") or f.stem == own_stem:
+                    continue
+                try:
+                    if f.stat().st_mtime > session_mtime:
+                        return True
+                except OSError:
+                    continue
+        except OSError:
+            pass
     return False
 
 
@@ -123,8 +133,23 @@ def _reconcile_once(idle_threshold: int) -> int:
                     reconciled += 1
                 continue
 
-            # Check for newer JSONL in same project directory
-            if _has_newer_jsonl(project_dir, session_mtime, transcript.stem):
+            # Compute additional directories to check for newer JSONL.
+            # For worktree sessions, also check the real project dir (from git_root)
+            # so cross-worktree/real-project handoffs are detected.
+            additional_dirs: list[Path] = []
+            git_root = state_data.get("git_root")
+            if git_root:
+                from config import settings
+
+                git_encoded = "-" + git_root.lstrip("/").replace("/", "-")
+                git_project_dir = settings.projects_dir / git_encoded
+                if git_project_dir.is_dir() and git_project_dir != project_dir:
+                    additional_dirs.append(git_project_dir)
+
+            # Check for newer JSONL in same project directory (and git_root dir)
+            if _has_newer_jsonl(
+                project_dir, session_mtime, transcript.stem, additional_dirs=additional_dirs
+            ):
                 slug = state_data.get("slug", state_data.get("session_id", "unknown"))
                 idle_secs = int(session.idle_seconds)
                 logger.info(
