@@ -307,7 +307,29 @@ async def sync_project_disable(project_name: str) -> Any:
 
 @router.post("/projects/{project_name}/sync-now")
 async def sync_project_sync_now(project_name: str) -> Any:
-    """Trigger an immediate sync for a project."""
+    """Trigger an immediate rescan for a project's Syncthing folder."""
     validate_project_name(project_name)
+    proxy = get_proxy()
+    try:
+        # Find the Syncthing folder ID matching this project name
+        folders = await run_sync(proxy.get_folder_status)
+        matched = [f for f in folders if project_name in f.get("id", "")]
+        if not matched:
+            raise HTTPException(404, "No Syncthing folder found for this project")
+        results = []
+        for folder in matched:
+            result = await run_sync(proxy.rescan_folder, folder["id"])
+            results.append(result)
+        return {"ok": True, "project": project_name, "scanned": [r["folder"] for r in results]}
+    except SyncthingNotRunning:
+        raise HTTPException(503, "Syncthing is not running")
 
-    return {"ok": True, "project": project_name, "message": "Sync triggered"}
+
+@router.post("/rescan")
+async def sync_rescan_all() -> Any:
+    """Trigger an immediate rescan of all Syncthing folders."""
+    proxy = get_proxy()
+    try:
+        return await run_sync(proxy.rescan_all)
+    except SyncthingNotRunning:
+        raise HTTPException(503, "Syncthing is not running")
