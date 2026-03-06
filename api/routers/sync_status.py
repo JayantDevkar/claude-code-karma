@@ -153,11 +153,18 @@ async def sync_teams():
 
     teams = []
     for name, team in config.get("teams", {}).items():
+        projects = []
+        for pname, pconfig in team.get("projects", {}).items():
+            projects.append({
+                "name": pname,
+                "encoded_name": pconfig.get("encoded_name", pname),
+                "path": pconfig.get("path"),
+            })
         teams.append(
             {
                 "name": name,
                 "backend": team["backend"],
-                "projects": list(team.get("projects", {}).keys()),
+                "projects": projects,
                 "members": list(team.get("ipfs_members", {}).keys())
                 + list(team.get("syncthing_members", {}).keys()),
             }
@@ -222,11 +229,21 @@ async def sync_projects() -> Any:
 
 @router.get("/activity")
 async def sync_activity(since: int = 0, limit: int = 50) -> Any:
-    """Get recent Syncthing events."""
+    """Get recent Syncthing events and bandwidth stats."""
     proxy = get_proxy()
     try:
         events = await run_sync(proxy.get_events, since, limit)
-        return {"events": events}
+        try:
+            bandwidth = await run_sync(proxy.get_bandwidth)
+        except Exception:
+            bandwidth = {"upload_rate": 0, "download_rate": 0, "upload_total": 0, "download_total": 0}
+        return {
+            "events": events,
+            "upload_rate": bandwidth.get("upload_rate", 0),
+            "download_rate": bandwidth.get("download_rate", 0),
+            "upload_total": bandwidth.get("upload_total", 0),
+            "download_total": bandwidth.get("download_total", 0),
+        }
     except SyncthingNotRunning:
         raise HTTPException(status_code=503, detail="Syncthing is not running")
 

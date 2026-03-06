@@ -21,14 +21,16 @@
 		session_count?: number;
 	}
 
-	interface SyncedFolder {
-		id: string;
-		label?: string;
+	interface TeamProject {
+		name: string;
+		encoded_name: string;
 		path?: string;
-		status?: string;
-		last_sync_at?: string | null;
-		machine_count?: number;
-		pending_count?: number;
+	}
+
+	interface Team {
+		name: string;
+		projects: TeamProject[];
+		members: string[];
 	}
 
 	let projects = $state<SyncProject[]>([]);
@@ -40,38 +42,36 @@
 		loading = true;
 		error = null;
 		try {
-			const [projectsRes, syncRes] = await Promise.all([
+			const [projectsRes, teamsRes] = await Promise.all([
 				fetch(`${API_BASE}/projects`),
-				fetch(`${API_BASE}/sync/projects`).catch(() => null)
+				fetch(`${API_BASE}/sync/teams`).catch(() => null)
 			]);
 
 			const apiProjects: ApiProject[] = projectsRes.ok ? await projectsRes.json() : [];
-			const syncData = syncRes?.ok ? await syncRes.json() : { folders: [] };
-			const syncedFolders: SyncedFolder[] = syncData.folders ?? [];
+			const teamsData = teamsRes?.ok ? await teamsRes.json() : { teams: [] };
+			const teams: Team[] = teamsData.teams ?? [];
 
-			const syncMap = new Map<string, SyncedFolder>(
-				syncedFolders.map((f) => [f.id, f])
-			);
+			// Collect all synced encoded_names across all teams
+			const syncedSet = new Set<string>();
+			const teamCountMap = new Map<string, number>();
+			for (const team of teams) {
+				for (const tp of team.projects) {
+					syncedSet.add(tp.encoded_name);
+					teamCountMap.set(tp.encoded_name, team.members.length);
+				}
+			}
 
 			projects = apiProjects.map((p) => {
-				const synced = syncMap.get(p.encoded_name);
-				const isSynced = !!synced;
-				let status: SyncProject['status'] = 'not-syncing';
-				if (synced) {
-					const s = synced.status ?? 'synced';
-					if (s === 'syncing') status = 'syncing';
-					else if (s === 'pending') status = 'pending';
-					else status = 'synced';
-				}
+				const isSynced = syncedSet.has(p.encoded_name);
 				return {
 					name: p.display_name ?? p.encoded_name,
 					encoded_name: p.encoded_name,
 					local_session_count: p.session_count ?? 0,
 					synced: isSynced,
-					status,
-					last_sync_at: synced?.last_sync_at ?? null,
-					machine_count: synced?.machine_count ?? 0,
-					pending_count: synced?.pending_count ?? 0
+					status: isSynced ? ('synced' as const) : ('not-syncing' as const),
+					last_sync_at: null,
+					machine_count: teamCountMap.get(p.encoded_name) ?? 0,
+					pending_count: 0
 				};
 			});
 		} catch {

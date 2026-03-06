@@ -136,7 +136,11 @@
 		try {
 			const res = await fetch(`${API_BASE}/sync/devices`);
 			if (res.ok) {
-				devices = await res.json();
+				const data = await res.json();
+				const selfId = detect?.device_id ?? null;
+				devices = (data.devices ?? []).filter(
+					(d: PairedDevice & { device_id: string }) => !selfId || d.device_id !== selfId
+				);
 			} else {
 				devicesError = 'Could not load paired devices.';
 			}

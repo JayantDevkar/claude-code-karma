@@ -161,3 +161,21 @@ class SyncthingProxy:
         )
         resp.raise_for_status()
         return resp.json()
+
+    def get_bandwidth(self) -> dict:
+        """Return current bandwidth totals from connections endpoint."""
+        client = self._require_client()
+        resp = requests.get(
+            f"{client.api_url}/rest/system/connections",
+            headers=client.headers,
+            timeout=10,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        total = data.get("total", {})
+        return {
+            "upload_total": total.get("outBytesTotal", 0),
+            "download_total": total.get("inBytesTotal", 0),
+            "upload_rate": total.get("rateSendBps", 0),
+            "download_rate": total.get("rateRecvBps", 0),
+        }
