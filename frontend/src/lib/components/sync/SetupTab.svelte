@@ -7,10 +7,12 @@
 
 	let {
 		detect = $bindable(),
-		status = $bindable()
+		status = $bindable(),
+		active = false
 	}: {
 		detect: SyncDetect | null;
 		status: SyncStatusResponse | null;
+		active?: boolean;
 	} = $props();
 
 	// --- State 1: Not Detected ---
@@ -135,7 +137,7 @@
 	}
 
 	$effect(() => {
-		if (status?.configured) {
+		if (status?.configured && active) {
 			loadOverview();
 		}
 	});
@@ -269,7 +271,7 @@
 			></span>
 			<div>
 				<span class="text-sm font-semibold text-[var(--text-primary)]">
-					Syncthing {detect.version ?? ''} running
+					Syncthing{#if detect.version} v{detect.version}{/if} running
 				</span>
 				<p class="text-xs text-[var(--text-secondary)] mt-0.5">
 					One more step — name this machine to start syncing.
@@ -366,7 +368,7 @@
 					Sync configured
 				</span>
 				<p class="text-xs text-[var(--text-secondary)] mt-0.5">
-					Syncthing {detect?.version ?? ''} is running. Manage devices in the Devices tab.
+					Syncthing{#if detect?.version} v{detect.version}{/if} is running. Manage devices in the Devices tab.
 				</p>
 			</div>
 		</div>

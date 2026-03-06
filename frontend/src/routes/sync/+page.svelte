@@ -124,19 +124,19 @@
 		</TabsList>
 
 		<TabsContent value="setup">
-			<SetupTab bind:detect={syncDetect} bind:status={syncStatus} />
+			<SetupTab bind:detect={syncDetect} bind:status={syncStatus} active={activeTab === 'setup'} />
 		</TabsContent>
 
 		<TabsContent value="devices">
-			<DevicesTab detect={syncDetect} />
+			<DevicesTab detect={syncDetect} active={activeTab === 'devices'} />
 		</TabsContent>
 
 		<TabsContent value="projects">
-			<ProjectsTab />
+			<ProjectsTab active={activeTab === 'projects'} />
 		</TabsContent>
 
 		<TabsContent value="activity">
-			<ActivityTab />
+			<ActivityTab active={activeTab === 'activity'} />
 		</TabsContent>
 	</Tabs>
 </div>

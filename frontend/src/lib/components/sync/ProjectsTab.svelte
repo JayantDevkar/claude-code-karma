@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { FolderGit2, RefreshCw } from 'lucide-svelte';
 	import type { SyncProject } from '$lib/api-types';
 	import { API_BASE } from '$lib/config';
@@ -23,6 +22,8 @@
 		members: string[];
 	}
 
+	let { active = false }: { active?: boolean } = $props();
+
 	let projects = $state<SyncProject[]>([]);
 	let loading = $state(true);
 	let error = $state<string | null>(null);
@@ -32,9 +33,10 @@
 		loading = true;
 		error = null;
 		try {
-			const [projectsRes, teamsRes] = await Promise.all([
+			const [projectsRes, teamsRes, devicesRes] = await Promise.all([
 				fetch(`${API_BASE}/projects`),
-				fetch(`${API_BASE}/sync/teams`).catch(() => null)
+				fetch(`${API_BASE}/sync/teams`).catch(() => null),
+				fetch(`${API_BASE}/sync/devices`).catch(() => null)
 			]);
 
 			const apiProjects: ApiProject[] = projectsRes.ok ? await projectsRes.json() : [];
@@ -51,6 +53,15 @@
 				}
 			}
 
+			// Count actual remote Syncthing devices (excluding self)
+			let remoteDeviceCount = 0;
+			if (devicesRes?.ok) {
+				const devData = await devicesRes.json();
+				remoteDeviceCount = (devData.devices ?? []).filter(
+					(d: { is_self?: boolean }) => !d.is_self
+				).length;
+			}
+
 			projects = apiProjects.map((p) => {
 				const isSynced = syncedSet.has(p.encoded_name);
 				return {
@@ -60,7 +71,7 @@
 					synced: isSynced,
 					status: isSynced ? ('synced' as const) : ('not-syncing' as const),
 					last_sync_at: null,
-					machine_count: teamCountMap.get(p.encoded_name) ?? 0,
+					machine_count: isSynced ? remoteDeviceCount : 0,
 					pending_count: 0
 				};
 			});
@@ -106,8 +117,10 @@
 
 	let unsyncedCount = $derived(projects.filter((p) => !p.synced).length);
 
-	onMount(() => {
-		loadProjects();
+	$effect(() => {
+		if (active) {
+			loadProjects();
+		}
 	});
 </script>
 

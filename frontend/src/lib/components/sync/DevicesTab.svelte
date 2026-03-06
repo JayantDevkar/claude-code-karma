@@ -1,11 +1,10 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
-	import { Monitor, XCircle, Plus, Loader2, Trash2 } from 'lucide-svelte';
+	import { Monitor, XCircle, Plus, Loader2, Trash2, CheckCircle2 } from 'lucide-svelte';
 	import type { SyncDetect, SyncDevice } from '$lib/api-types';
 	import { API_BASE } from '$lib/config';
 	import DeviceCard from './DeviceCard.svelte';
 
-	let { detect }: { detect: SyncDetect | null } = $props();
+	let { detect, active = false }: { detect: SyncDetect | null; active?: boolean } = $props();
 
 	let devices = $state<SyncDevice[]>([]);
 	let loading = $state(true);
@@ -18,6 +17,16 @@
 	let pairError = $state<string | null>(null);
 	let removingDeviceId = $state<string | null>(null);
 	let removeConfirmId = $state<string | null>(null);
+
+	// Flash message
+	let flashMessage = $state<string | null>(null);
+	let flashTimeout: ReturnType<typeof setTimeout> | null = null;
+
+	function showFlash(msg: string) {
+		flashMessage = msg;
+		if (flashTimeout) clearTimeout(flashTimeout);
+		flashTimeout = setTimeout(() => (flashMessage = null), 3000);
+	}
 
 	async function loadDevices() {
 		loading = true;
@@ -56,14 +65,16 @@
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
-					device_id: newDeviceId.trim(),
+					device_id: newDeviceId.trim().toUpperCase(),
 					name: newDeviceName.trim() || newDeviceId.trim()
 				})
 			});
 			if (res.ok) {
+				const addedName = newDeviceName.trim() || 'Device';
 				newDeviceId = '';
 				newDeviceName = '';
 				await loadDevices();
+				showFlash(`${addedName} paired successfully`);
 			} else {
 				const body = await res.json().catch(() => ({}));
 				pairError = body?.detail ?? 'Failed to pair device.';
@@ -76,6 +87,7 @@
 	}
 
 	async function removeDevice(deviceId: string) {
+		const deviceName = devices.find((d) => d.device_id === deviceId)?.name ?? 'Device';
 		removingDeviceId = deviceId;
 		try {
 			const res = await fetch(`${API_BASE}/sync/devices/${encodeURIComponent(deviceId)}`, {
@@ -83,6 +95,7 @@
 			});
 			if (res.ok) {
 				await loadDevices();
+				showFlash(`${deviceName} removed`);
 			}
 		} catch {
 			// ignore
@@ -92,12 +105,25 @@
 		}
 	}
 
-	onMount(() => {
-		loadDevices();
+	// Reload when tab becomes active
+	$effect(() => {
+		if (active) {
+			loadDevices();
+		}
 	});
 </script>
 
 <div class="p-6 space-y-4">
+	<!-- Flash message -->
+	{#if flashMessage}
+		<div
+			class="flex items-center gap-2 px-4 py-2.5 rounded-[var(--radius-lg)] bg-[var(--success)]/10 border border-[var(--success)]/20 text-xs font-medium text-[var(--success)]"
+		>
+			<CheckCircle2 size={14} class="shrink-0" />
+			{flashMessage}
+		</div>
+	{/if}
+
 	{#if loading}
 		<!-- Skeleton -->
 		<div class="space-y-3">
@@ -139,18 +165,20 @@
 					{#if !device.is_self}
 						<!-- Remove button overlay -->
 						{#if removeConfirmId === device.device_id}
-							<div class="absolute top-2 right-2 flex items-center gap-1.5 bg-[var(--bg-subtle)] rounded-md p-1 border border-[var(--border)]">
-								<span class="text-xs text-[var(--text-muted)] px-1">Remove?</span>
+							<div
+								class="absolute top-1.5 right-1.5 flex items-center gap-1.5 bg-[var(--bg-base)] rounded-lg px-2.5 py-1.5 border border-[var(--border)] shadow-md z-10"
+							>
+								<span class="text-xs text-[var(--text-secondary)]">Remove?</span>
 								<button
 									onclick={() => removeDevice(device.device_id)}
 									disabled={removingDeviceId === device.device_id}
-									class="px-2 py-0.5 text-xs font-medium rounded bg-[var(--error-subtle)] text-[var(--error)] border border-[var(--error)]/20 hover:bg-[var(--error)]/20 transition-colors disabled:opacity-50"
+									class="px-2.5 py-1 text-xs font-medium rounded-md bg-[var(--error)] text-white hover:opacity-90 transition-opacity disabled:opacity-50"
 								>
 									{removingDeviceId === device.device_id ? '...' : 'Yes'}
 								</button>
 								<button
 									onclick={() => (removeConfirmId = null)}
-									class="px-2 py-0.5 text-xs font-medium rounded border border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+									class="px-2.5 py-1 text-xs font-medium rounded-md border border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
 								>
 									No
 								</button>
@@ -186,8 +214,11 @@
 						type="text"
 						bind:value={newDeviceId}
 						placeholder="XXXXXXX-XXXXXXX-..."
-						class="w-full px-3 py-2 text-xs font-mono rounded-[var(--radius)] border border-[var(--border)] bg-[var(--bg-base)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40 focus:border-[var(--accent)] transition-colors"
+						class="w-full px-3 py-2 text-sm font-mono rounded-[var(--radius)] border border-[var(--border)] bg-[var(--bg-base)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40 focus:border-[var(--accent)] transition-colors uppercase"
 					/>
+					<p class="text-[11px] text-[var(--text-muted)]">
+						Find this in Syncthing &rarr; Actions &rarr; Show ID
+					</p>
 				</div>
 				<div class="space-y-1.5">
 					<label for="new-device-name" class="block text-xs font-medium text-[var(--text-secondary)]">
