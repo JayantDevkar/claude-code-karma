@@ -21,13 +21,33 @@ A solo user with 2+ machines running Claude Code. They want to unify their sessi
 |----------|--------|-----------|
 | Primary persona | Solo user, multiple machines | Simplest valuable scenario |
 | Dashboard role | Single pane of glass | Users never touch Syncthing UI or terminal |
-| CLI execution | Backend proxies CLI commands | UI buttons trigger `karma` CLI via API |
+| Backend execution | SyncthingProxy service wraps SyncthingClient | API calls SyncthingClient directly (HTTP to Syncthing daemon), plus `karma` CLI via subprocess for init/project/team commands |
 | Project selection | Toggle per-project with "select all" | Granular control, easy bulk action |
 | Navigation | New `/sync` page, keep `/team` separate | Clear separation: infrastructure vs people |
 | Page structure | Tabbed single page | Organized by concern, familiar pattern |
 | Detail level | Full Syncthing dashboard replacement | Users never need localhost:8384 |
 | Visual hierarchy | Scan > Spot > Drill (progressive disclosure) | Don't overwhelm, surface problems first |
-| Data refresh | Poll 10s + SSE for activity stream | Balance between freshness and load |
+| Data refresh | Single 10s poll at page level | Balance between freshness and load; centralized to avoid multiple intervals |
+
+## Design Token Mapping
+
+All status colors MUST use CSS custom properties from `app.css` for dark mode support. Never hardcode Tailwind color classes for semantic status.
+
+| Sync State | Dot Color Token | Card Background Token | Badge Variant |
+|---|---|---|---|
+| Connected / synced | `var(--success)` | `var(--status-active-bg)` | `success` |
+| Syncing in progress | `var(--info)` | `var(--status-waiting-bg)` | `info` |
+| Pending / stale | `var(--warning)` | `var(--status-idle-bg)` | `warning` |
+| Error / conflict | `var(--error)` | `var(--status-stale-bg)` | `error` |
+| Disconnected / stopped | `var(--text-muted)` | `var(--status-stopped-bg)` | `default` |
+| Offline / gone | `var(--text-faint)` | `var(--status-ended-bg)` | `slate` |
+
+**Additional token usage:**
+- Error banners: `bg-[var(--error-subtle)] border-[var(--error)]/20 text-[var(--error)]`
+- Progress bar track: `bg-[var(--bg-muted)]`, fill: `bg-[var(--success)]`
+- Bandwidth chart: Upload = `var(--accent)` (purple), Download = `var(--info)` (blue) — resolved via `getThemeColors()` from `chartConfig.ts`
+- Status dots should follow `LiveSessionsSection.svelte` pulse animation pattern for active states
+- Use `<Badge variant="success">` from `ui/Badge.svelte` for status badges
 
 ## Route & Navigation
 
@@ -126,9 +146,10 @@ Three progressive states: Not Installed > Not Initialized > Configured.
 +-------------------------------------------------------------+
 ```
 
-- Backend calls `karma init --backend syncthing` on Initialize
-- Machine name editable (defaults to hostname)
-- Device ID fetched from Syncthing API, displayed read-only with copy button
+- Backend calls `karma init --user-id <name> --backend syncthing` on Initialize (user ID is the identity, machine name auto-generated from hostname in config)
+- User ID editable (defaults to hostname-derived value)
+- Device ID fetched from Syncthing API via `SyncthingClient.get_device_id()`, displayed read-only with copy button
+- **Error recovery:** On failure, show contextual error banner with troubleshooting tips (e.g., "Syncthing stopped running", "API key mismatch") and a retry button. Follow settings page error pattern (`bg-[var(--error-subtle)]` banner).
 
 ### State 3: Initialized — Pair Devices
 
@@ -164,10 +185,10 @@ Three progressive states: Not Installed > Not Initialized > Configured.
 +-------------------------------------------------------------+
 ```
 
-- "Add Device" triggers backend `karma team add <name> <device-id>`
-- Connection status polled from Syncthing `/rest/system/connections`
-- Network mode maps to Syncthing's relay/announce options
-- Remove button with confirmation dialog
+- "Add Device" triggers backend which calls `SyncthingClient.add_device(device_id, name)` directly, then updates sync-config.json via `karma team add <name> <device-id> --team <team>`
+- Connection status polled from Syncthing `/rest/system/connections` via proxy service
+- Network mode: **UI-only in MVP** — radio buttons rendered but disabled with "(coming soon)" label. `PUT /sync/config` deferred to post-MVP.
+- Remove button with confirmation dialog, calls `SyncthingClient.remove_device(device_id)`
 
 ## Tab 2: Devices
 
@@ -212,13 +233,15 @@ Each device is a card. "This Machine" card first, then paired devices.
 
 ### Status Indicators
 
-| State | Display |
-|-------|---------|
-| Green "Connected" | Active TLS connection |
-| Green "Online" | This machine (always) |
-| Blue "Syncing" | Active file transfer |
-| Grey "Disconnected" | No connection |
-| Orange "Stale" | Disconnected >24h, with help text |
+Uses design tokens from `app.css` — see "Design Token Mapping" section above.
+
+| State | Dot Token | Text | Display |
+|-------|-----------|------|---------|
+| Connected | `var(--success)` | "Connected" | Active TLS connection |
+| Online (self) | `var(--success)` | "Online" | This machine (always) |
+| Syncing | `var(--info)` | "Syncing" | Active file transfer, pulse animation |
+| Disconnected | `var(--text-muted)` | "Disconnected" | No connection |
+| Stale | `var(--warning)` | "Stale" | Disconnected >24h, with help text |
 
 ### [...] Menu Per Device
 
@@ -322,16 +345,16 @@ Machine breakdown as a mini table. "Files" and "Sync History" are chevron links 
 
 ### Visual Status Cues
 
-- Green text = everything fine, no action needed
-- Orange text + action button = needs attention, here's what to do
-- Grey = inactive, opt-in available
-- Blue = something is actively happening
+- `var(--success)` text = everything fine, no action needed
+- `var(--warning)` text + action button = needs attention, here's what to do
+- `var(--text-muted)` = inactive, opt-in available
+- `var(--info)` = something is actively happening
 
 ### Action Buttons
 
-- **Enable Sync**: backend calls `karma project add <name>`
-- **Sync Now**: backend calls `karma sync <project>`
-- **Restart Watcher**: backend calls `karma watch`
+- **Enable Sync**: backend calls `karma project add <name> --path <path> --team <team>` via subprocess, then creates Syncthing shared folders via `SyncthingClient.add_folder()`
+- **Sync Now**: backend triggers the `SessionPackager` to re-package sessions for the project's outbox directory (Syncthing auto-syncs from there). Note: `karma sync` is IPFS-only — for Syncthing the packager is the sync mechanism.
+- **Restart Watcher**: backend calls `karma watch --team <team>` via subprocess
 
 ### Conflicts Section
 
@@ -420,16 +443,18 @@ Reverse chronological. Each entry:
 
 ### Event Types
 
-| Event | Dot Color | Source |
-|-------|-----------|--------|
-| Transfer complete | Green | Syncthing events API |
-| Transfer started | Blue | Syncthing events API |
-| Device connected | Green | Syncthing events API |
-| Device disconnected | Grey | Syncthing events API |
-| Conflict detected | Orange | Syncthing events API |
-| Watcher packaged | Green | `karma watch` log |
-| Scan completed | Grey | Syncthing events API |
-| Error | Red | Any source |
+| Event | Dot Token | Syncthing Event Type | Source |
+|-------|-----------|---------------------|--------|
+| Transfer complete | `var(--success)` | `ItemFinished` | Syncthing events API |
+| Transfer started | `var(--info)` | `DownloadProgress` | Syncthing events API |
+| Device connected | `var(--success)` | `DeviceConnected` | Syncthing events API |
+| Device disconnected | `var(--text-muted)` | `DeviceDisconnected` | Syncthing events API |
+| Conflict detected | `var(--warning)` | `LocalChangeDetected` | Syncthing events API |
+| Watcher packaged | `var(--success)` | N/A | `karma watch` log |
+| Scan completed | `var(--text-muted)` | `FolderSummary` | Syncthing events API |
+| Error | `var(--error)` | `FolderErrors` | Any source |
+
+**Event detail formatting:** Each event type should display structured detail (not raw JSON). For example, `ItemFinished` shows `{item} — {folder}`, `DeviceConnected` shows the address, etc.
 
 ### Filters
 
@@ -444,15 +469,15 @@ Syncthing `/rest/events` SSE endpoint proxied through backend. Live-updating wit
 
 ## API Endpoints (New)
 
-All endpoints proxy to Syncthing REST API and/or execute `karma` CLI commands.
+All endpoints proxy to Syncthing REST API via `SyncthingProxy` service layer (wraps `SyncthingClient` from `cli/karma/syncthing.py`). Init/project/team management calls `karma` CLI via subprocess. **All proxy calls must use `asyncio.run_in_executor`** since `SyncthingClient` uses synchronous `requests`.
 
 ### Setup & Configuration
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/sync/detect` | Check if Syncthing/IPFS installed, return version |
-| POST | `/sync/init` | Run `karma init`, return device ID |
-| PUT | `/sync/config` | Update network mode settings |
+| POST | `/sync/init` | Run `karma init --user-id <id> --backend syncthing` via subprocess, return device ID |
+| PUT | `/sync/config` | Update network mode settings **(post-MVP — not implemented in MVP)** |
 
 ### Device Management
 
@@ -511,12 +536,46 @@ frontend/src/lib/components/sync/
 
 ### Component Patterns
 
-- Tabs: use existing tab pattern or `bits-ui` Tabs primitive
-- Progress bars: Tailwind width utility with CSS transitions
-- Status dots: inline SVG circles with color classes
-- Expandable rows: Svelte 5 `$state` for open/closed, CSS transitions
-- SSE stream: `EventSource` in `$effect` with cleanup
-- Polling: `setInterval` in `$effect` with 10s interval, cleanup on unmount
+- **Tabs:** Use existing `bits-ui` Tabs from `$lib/components/ui/` — `<Tabs bind:value={tab}>`, `<TabsTrigger value="setup" icon={Settings2}>`, `<TabsContent value="setup">`. The `icon` prop accepts Lucide components directly.
+- **Progress bars:** `bg-[var(--bg-muted)]` track, `bg-[var(--success)]` fill, Tailwind width utility with CSS transitions
+- **Status dots:** Follow `LiveSessionsSection.svelte` pattern — `<span class="status-dot" style="background: var(--success)">` with pulse animation for active states
+- **Status badges:** Use `<Badge variant="success">` from `$lib/components/ui/Badge.svelte`
+- **Expandable rows:** Svelte 5 `$state` for open/closed, CSS transitions
+- **Polling:** Single `setInterval` at page level (10s), data distributed to tabs via props. Avoid multiple independent polling intervals.
+- **Server load:** Use `safeFetch()` from `$lib/utils/api-fetch.ts` in `+page.server.ts`
+- **Client mutations:** Use raw `fetch()` for action buttons (init, pair, enable sync) — matching the settings page pattern
+- **Error banners:** `bg-[var(--error-subtle)] border border-[var(--error)]/20 text-[var(--error)]` with retry button — matching `sessions/+page.svelte:1367` pattern
+- **Charts:** Resolve colors via `getThemeColors()` from `$lib/components/charts/chartConfig.ts` inside `onMount` — never hardcode hex values
+
+### Error Recovery
+
+Every action that can fail must have a recovery path:
+
+| Action | Failure Mode | Recovery |
+|--------|-------------|----------|
+| Check Again (detect) | Syncthing not running | Show install instructions, re-poll button |
+| Initialize | CLI error / timeout | Show error with troubleshooting tips + retry button |
+| Pair Device | Invalid device ID / Syncthing down | Inline error below form, clear on retry |
+| Enable Sync | Project path not found | Show error with path, suggest `karma project add --path` |
+| Sync Now (package) | Packager failure | Show error, suggest checking outbox directory |
+
+Error pattern: contextual inline banner with `var(--error-subtle)` background, specific cause text, and a "Try Again" action. Never just show a terse error string.
+
+### Accessibility
+
+- All status dots must have adjacent text labels (color alone is insufficient)
+- Toggle buttons (project sync dots) must have `aria-label` describing the action: `"Disable sync for {project}"` / `"Enable sync for {project}"`
+- Device remove buttons: `aria-label="Remove device {name}"`
+- Tab navigation is handled by `bits-ui` Tabs (ARIA tab pattern built-in)
+- Copy buttons: announce success via `aria-live="polite"` region
+- Respect `prefers-reduced-motion`: disable pulse animations on status dots
+
+### Input Validation
+
+Path parameters (`device_id`, `project name`) must be validated before subprocess execution:
+- Project names: `^[a-zA-Z0-9_\-]+$`, max 128 chars (matches `_SAFE_NAME` in CLI)
+- Device IDs: `^[A-Z0-9\-]+$`, max 72 chars (Syncthing format)
+- Follow `api/routers/commands.py` regex allowlist pattern
 
 ## Future Enhancements (Post-MVP)
 

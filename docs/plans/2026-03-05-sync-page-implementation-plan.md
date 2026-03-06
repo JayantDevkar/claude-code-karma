@@ -12,6 +12,189 @@
 
 ---
 
+## Architecture Review Amendments
+
+> **Date:** 2026-03-05 | **Status:** Verified against codebase
+>
+> The following corrections were identified by cross-referencing the plan against the actual codebase. Apply these changes when implementing each task.
+
+### Amendment A: SyncthingClient API Corrections (Tasks 1, 2)
+
+The plan references methods and attributes that don't exist on `SyncthingClient` (`cli/karma/syncthing.py`):
+
+| Plan references (wrong) | Actual API |
+|---|---|
+| `client.get_system_status()` | Does NOT exist. Use raw HTTP: `requests.get(f"{client.api_url}/rest/system/status", headers=client.headers)` |
+| `client._headers` | `client.headers` (no underscore prefix) |
+| `client._session` | Does NOT exist. Client uses `requests.get()`/`requests.put()` directly (no session object) |
+| `client.get_connections()` returns per-device dict with `connected` key | Returns raw Syncthing format — `connected` is a field but nested under `connections` key from the API |
+
+**Fix for `detect()` in SyncthingProxy:** Either add `get_system_status()` to SyncthingClient:
+```python
+# Add to cli/karma/syncthing.py SyncthingClient class:
+def get_system_status(self) -> dict:
+    resp = requests.get(f"{self.api_url}/rest/system/status", headers=self.headers, timeout=5)
+    resp.raise_for_status()
+    return resp.json()
+```
+Or use raw requests in the proxy (matching how `get_events()` should work):
+```python
+resp = requests.get(f"{self._client.api_url}/rest/system/status", headers=self._client.headers, timeout=5)
+```
+
+### Amendment B: Async Wrapping Required (Tasks 1, 2, 9, 10)
+
+`SyncthingClient` uses synchronous `requests` library. All FastAPI endpoints calling it MUST use `asyncio.run_in_executor` to avoid blocking the event loop:
+
+```python
+import asyncio
+from functools import partial
+
+async def _run_sync(func, *args, **kwargs):
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, partial(func, *args, **kwargs))
+
+# Example usage in router:
+@router.get("/detect")
+async def sync_detect():
+    proxy = get_proxy()
+    return await _run_sync(proxy.detect)
+```
+
+Apply to ALL endpoints: `/detect`, `/devices`, `/devices POST`, `/devices DELETE`, `/projects`, `/activity`, `/init`.
+
+### Amendment C: CLI Command Corrections (Tasks 9, 10)
+
+The `karma` CLI uses `click` (not argparse). Actual command signatures differ from the plan:
+
+| Plan assumes | Actual CLI command |
+|---|---|
+| `karma init --backend syncthing --machine-name <name>` | `karma init --user-id <id> --backend syncthing` (no `--machine-name`; machine ID auto-generated from hostname) |
+| `karma sync <project>` | **IPFS-only.** For Syncthing, use `SessionPackager` directly to re-package the outbox. |
+| `karma project add <name>` | `karma project add <name> --path <abs-path> --team <team>` (requires `--path` and `--team`) |
+| `karma project remove <name>` | `karma project remove <name> --team <team>` |
+| `karma watch` | `karma watch --team <team>` (requires `--team`) |
+
+**Fix for `POST /sync/init`:** Update `InitRequest` model:
+```python
+class InitRequest(BaseModel):
+    user_id: str  # NOT machine_name
+    backend: str = "syncthing"
+```
+And the subprocess call:
+```python
+run_karma_command(["init", "--user-id", req.user_id, "--backend", req.backend])
+```
+
+**Fix for "Sync Now":** Instead of calling `karma sync`, invoke the packager:
+```python
+@router.post("/projects/{name}/sync-now")
+async def sync_project_now(name: str):
+    name = validate_project_name(name)
+    # Import and run packager directly instead of karma sync (which is IPFS-only)
+    result = run_karma_command(["watch", "--team", _get_default_team_name()])
+    # Or better: package directly via Python import
+    return {"success": True}
+```
+
+### Amendment D: Backend Must Join Folder↔Project Data (Task 7)
+
+The frontend should NOT guess Syncthing folder naming conventions. The plan's `ProjectsTab.svelte` does:
+```typescript
+synced: syncedFolders.has(`karma-out-${p.encoded_name}`)  // WRONG
+```
+
+**Fix:** The `GET /sync/projects` endpoint must return already-joined data by reading `sync-config.json` teams→projects and matching against `SyncthingClient.get_folders()` via `find_folder_by_path()`. See the existing `services/remote_sessions.py` for the config reading pattern.
+
+### Amendment E: Design Token Usage (Tasks 5, 6, 7, 8)
+
+Replace ALL hardcoded Tailwind colors with CSS custom properties. Complete mapping:
+
+| Wrong (in plan) | Correct |
+|---|---|
+| `bg-green-500` | `bg-[var(--success)]` |
+| `bg-orange-500` | `bg-[var(--warning)]` |
+| `bg-gray-400` | `bg-[var(--text-muted)]` |
+| `bg-red-500` | `bg-[var(--error)]` |
+| `bg-blue-500` | `bg-[var(--info)]` |
+| `text-red-500` | `text-[var(--error)]` |
+| `text-purple-500` | `text-[var(--accent)]` |
+| `text-blue-500` | `text-[var(--info)]` |
+| `bg-orange-500/5`, `bg-green-500/5` | `var(--status-stale-bg)`, `var(--status-active-bg)` |
+| `border-orange-500/30`, `border-green-500/30` | `border-[var(--warning)]/30`, `border-[var(--success)]/30` |
+| `'#7c3aed'` (chart hex) | `getThemeColors().accent` from `chartConfig.ts` |
+| `'#3b82f6'` (chart hex) | Resolve `--info` via `getComputedStyle` |
+| `bg-red-50 dark:bg-red-900/20` (error) | `bg-[var(--error-subtle)]` |
+
+### Amendment F: Test Pattern Corrections (Tasks 1, 2, 9, 10)
+
+Tests use module-level `TestClient(app)` with `monkeypatch`, NOT `with patch()` context managers:
+
+```python
+# WRONG (plan's pattern):
+with patch("routers.sync_status.get_proxy") as mock_get:
+    ...
+
+# CORRECT (codebase pattern):
+from fastapi.testclient import TestClient
+from main import app
+client = TestClient(app)
+
+class TestSyncDetect:
+    def test_detect_no_syncthing(self, monkeypatch):
+        mock_proxy = MagicMock()
+        mock_proxy.detect.return_value = {...}
+        monkeypatch.setattr("routers.sync_status.get_proxy", lambda: mock_proxy)
+        resp = client.get("/sync/detect")
+        assert resp.status_code == 200
+```
+
+### Amendment G: Input Validation (Tasks 2, 9, 10)
+
+Add regex validation following `api/routers/commands.py` pattern:
+
+```python
+import re
+from fastapi import HTTPException
+
+ALLOWED_PROJECT_NAME = re.compile(r"^[a-zA-Z0-9_\-]+$")
+ALLOWED_DEVICE_ID = re.compile(r"^[A-Z0-9\-]+$")
+
+def validate_project_name(name: str) -> str:
+    if not ALLOWED_PROJECT_NAME.match(name) or len(name) > 128:
+        raise HTTPException(400, "Invalid project name")
+    return name
+
+def validate_device_id(device_id: str) -> str:
+    if not ALLOWED_DEVICE_ID.match(device_id) or len(device_id) > 72:
+        raise HTTPException(400, "Invalid device ID")
+    return device_id
+```
+
+Apply to: `DELETE /sync/devices/{device_id}`, `POST /sync/projects/{name}/enable`, `/disable`, `/sync-now`.
+
+### Amendment H: Frontend Pattern Corrections (Tasks 3, 4, 5, 6, 7, 8)
+
+1. **Tabs API:** `TabsTrigger` has an `icon` prop — use `<TabsTrigger value="setup" icon={Settings2}>Setup</TabsTrigger>` instead of wrapping icons in `<span>` children.
+
+2. **Nav insertion point:** "Sync" goes after Archived (line 161) before Team (line 169) in `Header.svelte`. Same for mobile nav after line 321.
+
+3. **Skeleton route:** Use `if (path.startsWith('/sync')) return 'settings';` (with `startsWith`, not `===`).
+
+4. **Centralize polling:** Single 10s interval at page level in `+page.svelte`, pass data to tabs via props. Remove independent `setInterval` calls from `DevicesTab` and `ActivityTab`.
+
+5. **Error recovery:** Follow settings page pattern — inline `bg-[var(--error-subtle)]` banner with retry button. Add troubleshooting context to error messages.
+
+6. **Network config:** Mark radio buttons as disabled with "(coming soon)" label.
+
+7. **Tab badges:** Add count badges to Devices and Projects triggers, activity dot to Activity trigger.
+
+8. **Accessibility:** Add `aria-label` to all toggle dots, remove buttons, and copy buttons.
+
+9. **Event data formatting:** Replace `JSON.stringify(event.data).slice(0, 100)` with structured formatters per event type.
+
+---
+
 ## Task 1: Backend — Syncthing proxy service
 
 Create a service layer that wraps `SyncthingClient` for use by the API. The CLI's `SyncthingClient` talks directly to Syncthing's REST API — this service adds error handling, response shaping, and caching suitable for the FastAPI layer.
@@ -2603,6 +2786,14 @@ Expected: No errors
 **Not in scope (future tasks):**
 - SSE streaming for real-time events (polling is MVP)
 - Conflict resolution UI (detect only in MVP)
-- Network mode persistence (radio buttons are UI-only in MVP)
+- Network mode persistence via `PUT /sync/config` (radio buttons disabled with "coming soon" in MVP)
 - Per-file sync status in Projects tab L2 (placeholder in MVP)
 - IPFS backend (greyed out)
+- QR code for device ID sharing (MVP uses copy/paste)
+- `karma sync` for Syncthing (IPFS-only; Syncthing uses packager + auto-sync)
+
+**Required reading before implementation:**
+- Architecture Review Amendments (above) — apply all corrections as you implement each task
+- Design Token Mapping in `docs/plans/2026-03-05-sync-page-ui-design.md`
+- `cli/karma/main.py` — actual CLI command signatures
+- `cli/karma/syncthing.py` — actual SyncthingClient API (no `get_system_status()`, no `_session`, `headers` not `_headers`)

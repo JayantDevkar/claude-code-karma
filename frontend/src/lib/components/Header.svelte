@@ -167,6 +167,14 @@
 					Archived
 				</a>
 				<a
+					href="/sync"
+					class="text-sm font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+					class:text-[var(--text-primary)]={$page.url.pathname.startsWith('/sync')}
+					aria-current={$page.url.pathname.startsWith('/sync') ? 'page' : undefined}
+				>
+					Sync
+				</a>
+				<a
 					href="/team"
 					class="text-sm font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
 					class:text-[var(--text-primary)]={$page.url.pathname.startsWith('/team')}
@@ -318,6 +326,16 @@
 					aria-current={$page.url.pathname.startsWith('/archived') ? 'page' : undefined}
 				>
 					Archived
+				</a>
+				<a
+					href="/sync"
+					onclick={closeMobileMenu}
+					class="text-base font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-subtle)] py-3 px-4 rounded-lg transition-colors"
+					class:text-[var(--text-primary)]={$page.url.pathname.startsWith('/sync')}
+					class:bg-[var(--bg-subtle)]={$page.url.pathname.startsWith('/sync')}
+					aria-current={$page.url.pathname.startsWith('/sync') ? 'page' : undefined}
+				>
+					Sync
 				</a>
 				<a
 					href="/team"

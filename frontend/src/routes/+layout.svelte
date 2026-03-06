@@ -71,6 +71,7 @@
 			return 'project-detail';
 		}
 		if (path === '/hooks') return 'hooks';
+		if (path.startsWith('/sync')) return 'settings';
 
 		return null;
 	});
