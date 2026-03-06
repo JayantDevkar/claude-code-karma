@@ -26,8 +26,6 @@
 	let events = $state<SyncEvent[]>([]);
 	let uploadRate = $state(0);
 	let downloadRate = $state(0);
-	let uploadTotal = $state(0);
-	let downloadTotal = $state(0);
 	let uploadHistory = $state<number[]>([]);
 	let downloadHistory = $state<number[]>([]);
 	let labels = $state<string[]>([]);
@@ -39,6 +37,7 @@
 	interface FolderStats {
 		id: string;
 		displayName: string;
+		type: string;
 		state: string;
 		globalFiles: number;
 		globalBytes: number;
@@ -46,6 +45,7 @@
 		localBytes: number;
 		needFiles: number;
 		needBytes: number;
+		inSyncBytes: number;
 		completion: number;
 	}
 
@@ -53,6 +53,18 @@
 	let deviceNameMap = $state<Map<string, string>>(new Map());
 	let folderNameMap = $state<Map<string, string>>(new Map());
 	let folderStats = $state<FolderStats[]>([]);
+
+	// Folder-level totals: sendonly = data shared out, receiveonly = data pulled in
+	let syncedUpTotal = $derived(
+		folderStats
+			.filter((f) => f.type === 'sendonly' || f.type === 'sendreceive')
+			.reduce((sum, f) => sum + f.inSyncBytes, 0)
+	);
+	let syncedDownTotal = $derived(
+		folderStats
+			.filter((f) => f.type === 'receiveonly' || f.type === 'sendreceive')
+			.reduce((sum, f) => sum + f.inSyncBytes, 0)
+	);
 
 	function formatBytes(value: number): string {
 		if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)} MB/s`;
@@ -131,6 +143,7 @@
 					stats.push({
 						id: f.id,
 						displayName,
+						type: (f.type as string) ?? 'sendreceive',
 						state: (f.state as string) ?? 'unknown',
 						globalFiles: (f.globalFiles as number) ?? 0,
 						globalBytes,
@@ -138,6 +151,7 @@
 						localBytes,
 						needFiles: (f.needFiles as number) ?? 0,
 						needBytes: (f.needBytes as number) ?? 0,
+						inSyncBytes: (f.inSyncBytes as number) ?? 0,
 						completion: globalBytes > 0 ? Math.round((localBytes / globalBytes) * 100) : 100
 					});
 				}
@@ -255,8 +269,6 @@
 				}
 				uploadRate = data.upload_rate ?? 0;
 				downloadRate = data.download_rate ?? 0;
-				uploadTotal = data.upload_total ?? 0;
-				downloadTotal = data.download_total ?? 0;
 				pushHistory(uploadRate, downloadRate);
 				error = null;
 			} else if (loading) {
@@ -304,8 +316,8 @@
 			{labels}
 		/>
 		<div class="flex items-center gap-6 mt-3 pt-3 border-t border-[var(--border-subtle)] text-xs text-[var(--text-muted)]">
-			<span>Total up: <span class="font-mono text-[var(--text-secondary)]">{formatBytesTotal(uploadTotal)}</span></span>
-			<span>Total down: <span class="font-mono text-[var(--text-secondary)]">{formatBytesTotal(downloadTotal)}</span></span>
+			<span>Synced out: <span class="font-mono text-[var(--text-secondary)]">{formatBytesTotal(syncedUpTotal)}</span></span>
+			<span>Synced in: <span class="font-mono text-[var(--text-secondary)]">{formatBytesTotal(syncedDownTotal)}</span></span>
 		</div>
 	</div>
 
