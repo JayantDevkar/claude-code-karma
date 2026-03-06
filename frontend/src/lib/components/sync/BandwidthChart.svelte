@@ -11,6 +11,7 @@
 		Tooltip
 	} from 'chart.js';
 	import { registerChartDefaults, createResponsiveConfig } from '$lib/components/charts/chartConfig';
+	import { formatBytesRate } from '$lib/utils';
 
 	Chart.register(LineController, LineElement, PointElement, LinearScale, CategoryScale, Filler, Tooltip);
 
@@ -26,12 +27,6 @@
 
 	let canvas: HTMLCanvasElement;
 	let chart: Chart | null = null;
-
-	function formatBytes(value: number): string {
-		if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)} MB/s`;
-		if (value >= 1_000) return `${(value / 1_000).toFixed(1)} KB/s`;
-		return `${value.toFixed(0)} B/s`;
-	}
 
 	function hexToRgba(hex: string, alpha: number): string {
 		// Handle css variable resolved values like "#7c3aed" or "rgb(124, 58, 237)"
@@ -98,7 +93,7 @@
 					tooltip: {
 						...responsiveConfig.plugins.tooltip,
 						callbacks: {
-							label: (ctx) => `${ctx.dataset.label}: ${formatBytes(ctx.parsed.y ?? 0)}`
+							label: (ctx) => `${ctx.dataset.label}: ${formatBytesRate(ctx.parsed.y ?? 0)}`
 						}
 					}
 				},
@@ -119,7 +114,7 @@
 								size: 10
 							},
 							maxTicksLimit: 4,
-							callback: (value) => formatBytes(Number(value))
+							callback: (value) => formatBytesRate(Number(value))
 						}
 					}
 				}

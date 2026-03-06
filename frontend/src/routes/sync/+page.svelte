@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
 	import { RefreshCw, Settings2, Monitor, FolderGit2, Activity } from 'lucide-svelte';
+	import type { SyncDetect, SyncStatusResponse } from '$lib/api-types';
 	import PageHeader from '$lib/components/layout/PageHeader.svelte';
 	import SetupTab from '$lib/components/sync/SetupTab.svelte';
 	import DevicesTab from '$lib/components/sync/DevicesTab.svelte';
@@ -11,21 +12,6 @@
 	import TabsTrigger from '$lib/components/ui/TabsTrigger.svelte';
 	import TabsContent from '$lib/components/ui/TabsContent.svelte';
 	import { POLLING_INTERVALS, API_BASE } from '$lib/config';
-
-	interface SyncDetect {
-		installed: boolean;
-		running: boolean;
-		version: string | null;
-		device_id: string | null;
-		uptime: number | null;
-	}
-
-	interface SyncStatusResponse {
-		configured: boolean;
-		user_id?: string;
-		machine_id?: string;
-		teams?: Record<string, unknown>;
-	}
 
 	let { data } = $props();
 

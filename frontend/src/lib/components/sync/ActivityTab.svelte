@@ -3,7 +3,7 @@
 	import { Activity, ArrowUp, ArrowDown, FolderSync, HardDrive, RefreshCw } from 'lucide-svelte';
 	import BandwidthChart from './BandwidthChart.svelte';
 	import { API_BASE } from '$lib/config';
-	import { getProjectNameFromEncoded } from '$lib/utils';
+	import { getProjectNameFromEncoded, formatBytes, formatBytesRate, formatRelativeTime } from '$lib/utils';
 
 	const MAX_HISTORY = 30;
 	const POLL_INTERVAL = 3000;
@@ -66,18 +66,6 @@
 			.reduce((sum, f) => sum + f.inSyncBytes, 0)
 	);
 
-	function formatBytes(value: number): string {
-		if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)} MB/s`;
-		if (value >= 1_000) return `${(value / 1_000).toFixed(1)} KB/s`;
-		return `${value.toFixed(0)} B/s`;
-	}
-
-	function formatBytesTotal(value: number): string {
-		if (value >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(1)} GB`;
-		if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)} MB`;
-		if (value >= 1_000) return `${(value / 1_000).toFixed(1)} KB`;
-		return `${value} B`;
-	}
 
 	function timeLabel(): string {
 		const d = new Date();
@@ -163,22 +151,6 @@
 		}
 	}
 
-	function formatRelativeTime(isoString: string): string {
-		const date = new Date(isoString);
-		const now = Date.now();
-		const diffMs = now - date.getTime();
-		const diffSec = Math.floor(diffMs / 1000);
-		const diffMin = Math.floor(diffSec / 60);
-		const diffHr = Math.floor(diffMin / 60);
-
-		if (diffHr >= 24) {
-			return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-		}
-		if (diffHr >= 1) return `${diffHr}h ago`;
-		if (diffMin >= 1) return `${diffMin}m ago`;
-		if (diffSec >= 5) return `${diffSec}s ago`;
-		return 'just now';
-	}
 
 	function formatEvent(event: SyncEvent): { title: string; detail: string; dotColor: string } {
 		const folder = (event.data?.folder as string) || '';
@@ -329,11 +301,11 @@
 			<div class="flex items-center gap-4 text-xs text-[var(--text-secondary)] font-mono">
 				<span class="flex items-center gap-1">
 					<ArrowUp size={11} class="text-[var(--accent)]" />
-					{formatBytes(uploadRate)}
+					{formatBytesRate(uploadRate)}
 				</span>
 				<span class="flex items-center gap-1">
 					<ArrowDown size={11} class="text-[var(--info)]" />
-					{formatBytes(downloadRate)}
+					{formatBytesRate(downloadRate)}
 				</span>
 			</div>
 		</div>
@@ -343,8 +315,8 @@
 			{labels}
 		/>
 		<div class="flex items-center gap-6 mt-3 pt-3 border-t border-[var(--border-subtle)] text-xs text-[var(--text-muted)]">
-			<span>Synced out: <span class="font-mono text-[var(--text-secondary)]">{formatBytesTotal(syncedUpTotal)}</span></span>
-			<span>Synced in: <span class="font-mono text-[var(--text-secondary)]">{formatBytesTotal(syncedDownTotal)}</span></span>
+			<span>Synced out: <span class="font-mono text-[var(--text-secondary)]">{formatBytes(syncedUpTotal)}</span></span>
+			<span>Synced in: <span class="font-mono text-[var(--text-secondary)]">{formatBytes(syncedDownTotal)}</span></span>
 		</div>
 	</div>
 
@@ -368,12 +340,12 @@
 							<div class="flex items-center gap-4 mt-1 text-xs text-[var(--text-muted)]">
 								<span>
 									<HardDrive size={10} class="inline -mt-0.5 mr-0.5" />
-									{formatBytesTotal(folder.globalBytes)}
+									{formatBytes(folder.globalBytes)}
 								</span>
 								<span>{folder.globalFiles.toLocaleString()} files</span>
 								{#if folder.needBytes > 0}
 									<span class="text-[var(--info)]">
-										{formatBytesTotal(folder.needBytes)} pending
+										{formatBytes(folder.needBytes)} pending
 									</span>
 								{/if}
 								<span class="font-mono">{folder.completion}%</span>

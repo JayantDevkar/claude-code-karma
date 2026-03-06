@@ -1,42 +1,22 @@
 <script lang="ts">
-	import { CheckCircle, XCircle, Copy, Plus, Trash2, Loader2 } from 'lucide-svelte';
+	import { onMount } from 'svelte';
+	import { CheckCircle, XCircle, Copy, Loader2, Monitor, FolderGit2, ArrowUp, ArrowDown } from 'lucide-svelte';
+	import type { SyncDetect, SyncStatusResponse } from '$lib/api-types';
+	import { formatBytes } from '$lib/utils';
 	import { API_BASE } from '$lib/config';
-
-	interface SyncDetect {
-		installed: boolean;
-		running: boolean;
-		version: string | null;
-		device_id: string | null;
-		uptime?: number | null;
-	}
-
-	interface SyncStatus {
-		configured: boolean;
-		user_id?: string;
-		machine_id?: string;
-		teams?: Record<string, unknown>;
-	}
-
-	interface PairedDevice {
-		device_id: string;
-		name: string;
-		address?: string;
-		connected: boolean;
-	}
 
 	let {
 		detect = $bindable(),
 		status = $bindable()
 	}: {
 		detect: SyncDetect | null;
-		status: SyncStatus | null;
+		status: SyncStatusResponse | null;
 	} = $props();
 
 	// --- State 1: Not Detected ---
 	let checkingAgain = $state(false);
 	let checkError = $state<string | null>(null);
 
-	// Detect OS for install instructions highlight
 	const userAgent = typeof navigator !== 'undefined' ? navigator.userAgent : '';
 	let detectedOS = $derived<'macos' | 'linux' | 'windows'>(
 		userAgent.includes('Mac')
@@ -80,7 +60,6 @@
 				body: JSON.stringify({ user_id: machineName.trim() })
 			});
 			if (res.ok) {
-				// Re-fetch both detect and status
 				const [dRes, sRes] = await Promise.all([
 					fetch(`${API_BASE}/sync/detect`),
 					fetch(`${API_BASE}/sync/status`)
@@ -98,116 +77,66 @@
 		}
 	}
 
-	async function copyToClipboard(text: string, onSuccess: () => void) {
-		try {
-			await navigator.clipboard.writeText(text);
-			onSuccess();
-		} catch {
-			// fallback — ignore
-		}
-	}
-
 	function copyDeviceId() {
 		const id = detect?.device_id ?? '';
-		copyToClipboard(id, () => {
+		navigator.clipboard.writeText(id).then(() => {
 			copiedDeviceId = true;
 			setTimeout(() => (copiedDeviceId = false), 2000);
-		});
+		}).catch(() => {});
 	}
 
-	// --- State 3: Initialized — Pair Devices ---
-	let devices = $state<PairedDevice[]>([]);
-	let devicesLoading = $state(false);
-	let devicesError = $state<string | null>(null);
+	// --- State 3: Overview stats ---
+	let totalDevices = $state(0);
+	let syncedProjects = $state(0);
+	let syncedInBytes = $state(0);
+	let syncedOutBytes = $state(0);
 
-	let newDeviceId = $state('');
-	let newDeviceName = $state('');
-	let pairingDevice = $state(false);
-	let pairError = $state<string | null>(null);
+	// Derive synced project count from status.teams (already available as prop)
+	let teamProjectCount = $derived(() => {
+		if (!status?.teams) return 0;
+		let count = 0;
+		for (const team of Object.values(status.teams) as Array<{ project_count?: number }>) {
+			count += team.project_count ?? 0;
+		}
+		return count;
+	});
 
-	let removingDeviceId = $state<string | null>(null);
-	let removeConfirmId = $state<string | null>(null);
-
-	let copiedThisDeviceId = $state(false);
-
-	async function loadDevices() {
-		devicesLoading = true;
-		devicesError = null;
+	async function loadOverview() {
+		syncedProjects = teamProjectCount();
 		try {
-			const res = await fetch(`${API_BASE}/sync/devices`);
-			if (res.ok) {
-				const data = await res.json();
+			const [devicesRes, foldersRes] = await Promise.all([
+				fetch(`${API_BASE}/sync/devices`).catch(() => null),
+				fetch(`${API_BASE}/sync/projects`).catch(() => null)
+			]);
+			if (devicesRes?.ok) {
+				const data = await devicesRes.json();
 				const selfId = detect?.device_id ?? null;
-				devices = (data.devices ?? []).filter(
-					(d: PairedDevice & { device_id: string }) => !selfId || d.device_id !== selfId
-				);
-			} else {
-				devicesError = 'Could not load paired devices.';
+				totalDevices = (data.devices ?? []).filter(
+					(d: { device_id: string }) => !selfId || d.device_id !== selfId
+				).length;
+			}
+			if (foldersRes?.ok) {
+				const data = await foldersRes.json();
+				const folders = data.folders ?? [];
+				let inBytes = 0;
+				let outBytes = 0;
+				for (const f of folders) {
+					const syncBytes = (f.inSyncBytes as number) ?? 0;
+					const fType = (f.type as string) ?? 'sendreceive';
+					if (fType === 'sendonly' || fType === 'sendreceive') outBytes += syncBytes;
+					if (fType === 'receiveonly' || fType === 'sendreceive') inBytes += syncBytes;
+				}
+				syncedInBytes = inBytes;
+				syncedOutBytes = outBytes;
 			}
 		} catch {
-			devicesError = 'Cannot reach backend.';
-		} finally {
-			devicesLoading = false;
+			// Non-critical
 		}
 	}
 
-	async function pairDevice() {
-		if (!newDeviceId.trim()) return;
-		pairingDevice = true;
-		pairError = null;
-		try {
-			const res = await fetch(`${API_BASE}/sync/devices`, {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					device_id: newDeviceId.trim(),
-					name: newDeviceName.trim() || newDeviceId.trim()
-				})
-			});
-			if (res.ok) {
-				newDeviceId = '';
-				newDeviceName = '';
-				await loadDevices();
-			} else {
-				const body = await res.json().catch(() => ({}));
-				pairError = body?.detail ?? 'Failed to pair device.';
-			}
-		} catch {
-			pairError = 'Cannot reach backend.';
-		} finally {
-			pairingDevice = false;
-		}
-	}
-
-	async function removeDevice(deviceId: string) {
-		removingDeviceId = deviceId;
-		try {
-			const res = await fetch(`${API_BASE}/sync/devices/${encodeURIComponent(deviceId)}`, {
-				method: 'DELETE'
-			});
-			if (res.ok) {
-				await loadDevices();
-			}
-		} catch {
-			// ignore
-		} finally {
-			removingDeviceId = null;
-			removeConfirmId = null;
-		}
-	}
-
-	function copyThisDeviceId() {
-		const id = detect?.device_id ?? '';
-		copyToClipboard(id, () => {
-			copiedThisDeviceId = true;
-			setTimeout(() => (copiedThisDeviceId = false), 2000);
-		});
-	}
-
-	// Load devices when entering state 3
 	$effect(() => {
 		if (status?.configured) {
-			loadDevices();
+			loadOverview();
 		}
 	});
 
@@ -237,7 +166,6 @@
 		<div>
 			<h2 class="text-sm font-semibold text-[var(--text-primary)] mb-3">Choose sync backend</h2>
 			<div class="grid grid-cols-2 gap-3">
-				<!-- Syncthing (selected) -->
 				<div
 					class="relative p-4 rounded-[var(--radius-lg)] border-2 border-[var(--accent)] bg-[var(--accent-muted)] cursor-default"
 				>
@@ -254,7 +182,6 @@
 					</p>
 				</div>
 
-				<!-- IPFS (coming soon) -->
 				<div
 					class="relative p-4 rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-subtle)] opacity-50 cursor-not-allowed"
 				>
@@ -333,7 +260,6 @@
 {:else if !status?.configured}
 	<!-- STATE 2: Detected, not initialized -->
 	<div class="p-6 space-y-5">
-		<!-- Success banner -->
 		<div
 			class="flex items-center gap-3 p-4 rounded-[var(--radius-lg)] border border-[var(--success)]/30 bg-[var(--status-active-bg)]"
 		>
@@ -351,13 +277,11 @@
 			</div>
 		</div>
 
-		<!-- Init form -->
 		<div
 			class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-subtle)] p-5 space-y-4"
 		>
 			<h3 class="text-sm font-semibold text-[var(--text-primary)]">Initialize this machine</h3>
 
-			<!-- Machine Name input -->
 			<div class="space-y-1.5">
 				<label for="machine-name" class="block text-xs font-medium text-[var(--text-secondary)]">
 					Machine Name
@@ -374,7 +298,6 @@
 				</p>
 			</div>
 
-			<!-- Device ID (read-only) -->
 			{#if detect.device_id}
 				<div class="space-y-1.5">
 					<p class="block text-xs font-medium text-[var(--text-secondary)]">Device ID</p>
@@ -432,189 +355,81 @@
 		</div>
 	</div>
 {:else}
-	<!-- STATE 3: Initialized — Pair Devices -->
-	<div class="p-6 space-y-6">
-		<!-- This Machine card -->
-		<div>
-			<h2 class="text-sm font-semibold text-[var(--text-primary)] mb-3">This Machine</h2>
-			<div
-				class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-subtle)] p-4 space-y-3"
-			>
-				<div class="flex items-center gap-2">
-					<span
-						class="w-2 h-2 rounded-full bg-[var(--success)] shrink-0"
-						aria-hidden="true"
-					></span>
-					<span class="text-sm font-semibold text-[var(--text-primary)]">
-						{status.machine_id ?? status.user_id ?? 'This Machine'}
-					</span>
-					{#if detect.version}
-						<span class="text-xs text-[var(--text-muted)]">v{detect.version}</span>
-					{/if}
-				</div>
+	<!-- STATE 3: Initialized — Summary -->
+	<div class="p-6 space-y-5">
+		<div
+			class="flex items-center gap-3 p-4 rounded-[var(--radius-lg)] border border-[var(--success)]/30 bg-[var(--status-active-bg)]"
+		>
+			<CheckCircle size={18} class="text-[var(--success)] shrink-0" />
+			<div>
+				<span class="text-sm font-semibold text-[var(--text-primary)]">
+					Sync configured
+				</span>
+				<p class="text-xs text-[var(--text-secondary)] mt-0.5">
+					Syncthing {detect?.version ?? ''} is running. Manage devices in the Devices tab.
+				</p>
+			</div>
+		</div>
 
-				{#if detect.device_id}
-					<div class="flex items-center gap-2">
-						<code
-							class="flex-1 min-w-0 px-2.5 py-1.5 text-xs font-mono rounded-[var(--radius)] border border-[var(--border)] bg-[var(--bg-muted)] text-[var(--text-secondary)] truncate"
-						>
+		<!-- Overview stats -->
+		<div class="grid grid-cols-4 gap-3">
+			<div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-subtle)] p-4 text-center">
+				<Monitor size={16} class="mx-auto text-[var(--text-muted)] mb-1.5" />
+				<p class="text-lg font-semibold text-[var(--text-primary)]">{totalDevices}</p>
+				<p class="text-[11px] text-[var(--text-muted)]">Devices</p>
+			</div>
+			<div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-subtle)] p-4 text-center">
+				<FolderGit2 size={16} class="mx-auto text-[var(--text-muted)] mb-1.5" />
+				<p class="text-lg font-semibold text-[var(--text-primary)]">{syncedProjects}</p>
+				<p class="text-[11px] text-[var(--text-muted)]">Synced Projects</p>
+			</div>
+			<div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-subtle)] p-4 text-center">
+				<ArrowDown size={16} class="mx-auto text-[var(--info)] mb-1.5" />
+				<p class="text-lg font-semibold text-[var(--text-primary)]">{formatBytes(syncedInBytes)}</p>
+				<p class="text-[11px] text-[var(--text-muted)]">Synced In</p>
+			</div>
+			<div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-subtle)] p-4 text-center">
+				<ArrowUp size={16} class="mx-auto text-[var(--accent)] mb-1.5" />
+				<p class="text-lg font-semibold text-[var(--text-primary)]">{formatBytes(syncedOutBytes)}</p>
+				<p class="text-[11px] text-[var(--text-muted)]">Synced Out</p>
+			</div>
+		</div>
+
+		<!-- Machine details -->
+		<div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-subtle)] p-5 space-y-3">
+			<div class="flex items-center justify-between">
+				<span class="text-xs font-medium text-[var(--text-secondary)]">Machine</span>
+				<span class="text-sm font-medium text-[var(--text-primary)]">
+					{status.machine_id ?? status.user_id ?? '—'}
+				</span>
+			</div>
+			{#if detect?.device_id}
+				<div class="flex items-center justify-between gap-2">
+					<span class="text-xs font-medium text-[var(--text-secondary)]">Device ID</span>
+					<div class="flex items-center gap-1.5">
+						<code class="text-xs font-mono text-[var(--text-muted)] truncate max-w-[280px]">
 							{detect.device_id}
 						</code>
 						<button
-							onclick={copyThisDeviceId}
-							aria-label="Copy this device ID to clipboard"
-							class="shrink-0 p-1.5 rounded-[var(--radius)] border border-[var(--border)] bg-[var(--bg-base)] text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-muted)] transition-colors"
+							onclick={copyDeviceId}
+							aria-label="Copy device ID"
+							class="shrink-0 p-1 rounded text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
 						>
-							{#if copiedThisDeviceId}
-								<CheckCircle size={13} class="text-[var(--success)]" />
-								<span class="sr-only">Copied</span>
+							{#if copiedDeviceId}
+								<CheckCircle size={12} class="text-[var(--success)]" />
 							{:else}
-								<Copy size={13} />
+								<Copy size={12} />
 							{/if}
 						</button>
 					</div>
-				{/if}
-			</div>
-		</div>
-
-		<!-- Paired Devices -->
-		<div>
-			<h2 class="text-sm font-semibold text-[var(--text-primary)] mb-3">Paired Devices</h2>
-
-			{#if devicesLoading}
-				<div class="flex items-center gap-2 py-6 text-sm text-[var(--text-muted)]">
-					<Loader2 size={14} class="animate-spin" />
-					Loading devices...
-				</div>
-			{:else if devicesError}
-				<div
-					class="flex items-center gap-2 p-4 rounded-[var(--radius-lg)] border border-[var(--error)]/20 bg-[var(--error-subtle)] text-xs text-[var(--error)]"
-				>
-					<XCircle size={14} class="shrink-0" />
-					{devicesError}
-					<button
-						onclick={loadDevices}
-						class="ml-auto underline hover:no-underline text-[var(--error)]"
-					>
-						Retry
-					</button>
-				</div>
-			{:else if devices.length === 0}
-				<div
-					class="py-8 text-center text-sm text-[var(--text-muted)] border border-dashed border-[var(--border)] rounded-[var(--radius-lg)]"
-				>
-					No devices paired yet. Add a device below.
-				</div>
-			{:else}
-				<div class="space-y-2">
-					{#each devices as device (device.device_id)}
-						<div
-							class="flex items-center gap-3 p-3 rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-subtle)] group"
-						>
-							<span
-								class="w-2 h-2 rounded-full shrink-0 {device.connected
-									? 'bg-[var(--success)]'
-									: 'bg-[var(--text-muted)]'}"
-								aria-hidden="true"
-							></span>
-
-							<div class="flex-1 min-w-0">
-								<p class="text-sm font-medium text-[var(--text-primary)] truncate">
-									{device.name}
-								</p>
-								<p class="text-xs text-[var(--text-muted)] truncate">
-									{device.connected ? (device.address ?? 'Connected') : 'Disconnected'}
-								</p>
-							</div>
-
-							<!-- Remove button with confirm -->
-							{#if removeConfirmId === device.device_id}
-								<div class="flex items-center gap-1.5">
-									<span class="text-xs text-[var(--text-muted)]">Remove?</span>
-									<button
-										onclick={() => removeDevice(device.device_id)}
-										disabled={removingDeviceId === device.device_id}
-										aria-label="Confirm remove device {device.name}"
-										class="px-2 py-1 text-xs font-medium rounded bg-[var(--error-subtle)] text-[var(--error)] border border-[var(--error)]/20 hover:bg-[var(--error)]/20 transition-colors disabled:opacity-50"
-									>
-										{removingDeviceId === device.device_id ? 'Removing...' : 'Yes'}
-									</button>
-									<button
-										onclick={() => (removeConfirmId = null)}
-										class="px-2 py-1 text-xs font-medium rounded border border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-muted)] transition-colors"
-									>
-										Cancel
-									</button>
-								</div>
-							{:else}
-								<button
-									onclick={() => (removeConfirmId = device.device_id)}
-									aria-label="Remove device {device.name}"
-									class="opacity-0 group-hover:opacity-100 p-1.5 rounded-[var(--radius)] text-[var(--text-muted)] hover:text-[var(--error)] hover:bg-[var(--error-subtle)] transition-all"
-								>
-									<Trash2 size={14} />
-								</button>
-							{/if}
-						</div>
-					{/each}
 				</div>
 			{/if}
-		</div>
-
-		<!-- Add Device form -->
-		<div>
-			<h2 class="text-sm font-semibold text-[var(--text-primary)] mb-3">Add Device</h2>
-			<div
-				class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-subtle)] p-5 space-y-4"
-			>
-				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-					<div class="space-y-1.5">
-						<label for="new-device-id" class="block text-xs font-medium text-[var(--text-secondary)]">
-							Device ID
-						</label>
-						<input
-							id="new-device-id"
-							type="text"
-							bind:value={newDeviceId}
-							placeholder="XXXXXXX-XXXXXXX-..."
-							class="w-full px-3 py-2 text-xs font-mono rounded-[var(--radius)] border border-[var(--border)] bg-[var(--bg-base)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40 focus:border-[var(--accent)] transition-colors"
-						/>
-					</div>
-					<div class="space-y-1.5">
-						<label
-							for="new-device-name"
-							class="block text-xs font-medium text-[var(--text-secondary)]"
-						>
-							Device Name
-						</label>
-						<input
-							id="new-device-name"
-							type="text"
-							bind:value={newDeviceName}
-							placeholder="e.g. home-desktop"
-							class="w-full px-3 py-2 text-sm rounded-[var(--radius)] border border-[var(--border)] bg-[var(--bg-base)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40 focus:border-[var(--accent)] transition-colors"
-						/>
-					</div>
+			{#if detect?.version}
+				<div class="flex items-center justify-between">
+					<span class="text-xs font-medium text-[var(--text-secondary)]">Version</span>
+					<span class="text-xs text-[var(--text-muted)]">v{detect.version}</span>
 				</div>
-
-				{#if pairError}
-					<p class="text-xs text-[var(--error)]">{pairError}</p>
-				{/if}
-
-				<button
-					onclick={pairDevice}
-					disabled={pairingDevice || !newDeviceId.trim()}
-					class="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-[var(--radius)] bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-				>
-					{#if pairingDevice}
-						<Loader2 size={14} class="animate-spin" />
-						Pairing...
-					{:else}
-						<Plus size={14} />
-						Pair Device
-					{/if}
-				</button>
-			</div>
+			{/if}
 		</div>
 	</div>
 {/if}
