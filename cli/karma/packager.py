@@ -42,6 +42,8 @@ class SessionPackager:
         self.project_path = project_path or str(self.project_dir)
         self.last_sync_cid = last_sync_cid
         self.extra_dirs = [Path(d) for d in (extra_dirs or [])]
+        # ~/.claude/ base directory (parent of projects/{encoded}/)
+        self._claude_base = self.project_dir.parent.parent
 
     def _discover_from_dir(
         self, directory: Path, worktree_name: Optional[str] = None
@@ -110,8 +112,8 @@ class SessionPackager:
                     dirs_exist_ok=True,
                 )
 
-        # Copy todos if they exist (from main project dir's parent)
-        todos_base = self.project_dir.parent.parent / "todos"
+        # Copy todos (glob pattern: {uuid}-*.json)
+        todos_base = self._claude_base / "todos"
         if todos_base.is_dir():
             todos_staging = staging_dir / "todos"
             for session_entry in sessions:
@@ -119,36 +121,23 @@ class SessionPackager:
                     todos_staging.mkdir(exist_ok=True)
                     shutil.copy2(todo_file, todos_staging / todo_file.name)
 
-        # Copy tasks if they exist (from main project dir's parent)
-        tasks_base = self.project_dir.parent.parent / "tasks"
-        if tasks_base.is_dir():
-            tasks_staging = staging_dir / "tasks"
-            for session_entry in sessions:
-                task_dir = tasks_base / session_entry.uuid
-                if task_dir.is_dir():
-                    tasks_staging.mkdir(exist_ok=True)
-                    shutil.copytree(
-                        task_dir,
-                        tasks_staging / session_entry.uuid,
-                        dirs_exist_ok=True,
-                    )
+        # Copy per-session directories (tasks, file-history)
+        for resource_name in ("tasks", "file-history"):
+            resource_base = self._claude_base / resource_name
+            if resource_base.is_dir():
+                resource_staging = staging_dir / resource_name
+                for session_entry in sessions:
+                    src_dir = resource_base / session_entry.uuid
+                    if src_dir.is_dir():
+                        resource_staging.mkdir(exist_ok=True)
+                        shutil.copytree(
+                            src_dir,
+                            resource_staging / session_entry.uuid,
+                            dirs_exist_ok=True,
+                        )
 
-        # Copy file-history if it exists
-        file_history_base = self.project_dir.parent.parent / "file-history"
-        if file_history_base.is_dir():
-            fh_staging = staging_dir / "file-history"
-            for session_entry in sessions:
-                fh_dir = file_history_base / session_entry.uuid
-                if fh_dir.is_dir():
-                    fh_staging.mkdir(exist_ok=True)
-                    shutil.copytree(
-                        fh_dir,
-                        fh_staging / session_entry.uuid,
-                        dirs_exist_ok=True,
-                    )
-
-        # Copy debug logs if they exist
-        debug_base = self.project_dir.parent.parent / "debug"
+        # Copy debug logs (single file: {uuid}.txt)
+        debug_base = self._claude_base / "debug"
         if debug_base.is_dir():
             debug_staging = staging_dir / "debug"
             for session_entry in sessions:
