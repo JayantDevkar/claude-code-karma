@@ -1726,3 +1726,46 @@ export interface SyncProject {
 	machine_count: number;
 	pending_count: number;
 }
+
+// --- New sync types for redesign ---
+
+export interface SyncTeam {
+	name: string;
+	backend: 'syncthing' | 'ipfs';
+	projects: SyncTeamProject[];
+	members: SyncTeamMember[];
+}
+
+export interface SyncTeamProject {
+	name: string;
+	encoded_name: string;
+	path: string;
+	local_count: number;
+	packaged_count: number;
+	received_counts: Record<string, number>;
+	gap: number;
+}
+
+export interface SyncTeamMember {
+	name: string;
+	device_id: string;
+	connected: boolean;
+	in_bytes_total: number;
+	out_bytes_total: number;
+}
+
+export interface SyncWatchStatus {
+	running: boolean;
+	team: string | null;
+	started_at: string | null;
+	last_packaged_at: string | null;
+	projects_watched: string[];
+}
+
+export interface SyncPendingFolder {
+	folder_id: string;
+	from_device: string;
+	from_member: string;
+	from_team: string;
+	offered_at: string | null;
+}

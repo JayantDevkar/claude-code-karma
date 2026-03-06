@@ -4,28 +4,69 @@
 	import { formatRelativeTime } from '$lib/utils';
 	import Badge from '$lib/components/ui/Badge.svelte';
 
+	interface ProjectStatus {
+		local_count: number;
+		packaged_count: number;
+		received_counts: Record<string, number>;
+		gap: number;
+	}
+
 	let {
 		project,
+		projectStatus = null,
+		subtitle,
 		onToggle,
-		onSyncNow
+		onSyncNow,
+		onaction
 	}: {
 		project: SyncProject;
+		projectStatus?: ProjectStatus | null;
+		subtitle?: string;
 		onToggle: (encodedName: string, enable: boolean) => Promise<void>;
 		onSyncNow: (encodedName: string) => Promise<void>;
+		onaction?: (message: string) => void;
 	} = $props();
 
 	let expanded = $state(false);
 	let toggling = $state(false);
 	let syncing = $state(false);
+	let confirmDisable = $state(false);
 
-	async function handleToggleDot(e: MouseEvent) {
-		e.stopPropagation();
+	async function handleCheckboxChange(e: Event) {
+		const target = e.target as HTMLInputElement;
+		const enabling = target.checked;
+
+		if (!enabling) {
+			// Disabling: show confirmation instead of immediately toggling
+			// Revert the checkbox visual state until confirmed
+			target.checked = true;
+			confirmDisable = true;
+			return;
+		}
+
+		// Enabling: proceed immediately
 		toggling = true;
 		try {
-			await onToggle(project.encoded_name, !project.synced);
+			await onToggle(project.encoded_name, true);
+			onaction?.(`Sync enabled for ${project.name}`);
 		} finally {
 			toggling = false;
 		}
+	}
+
+	async function confirmDisableSync() {
+		toggling = true;
+		confirmDisable = false;
+		try {
+			await onToggle(project.encoded_name, false);
+			onaction?.(`Sync disabled for ${project.name}`);
+		} finally {
+			toggling = false;
+		}
+	}
+
+	function cancelDisable() {
+		confirmDisable = false;
 	}
 
 	async function handleEnableSync(e: MouseEvent) {
@@ -33,6 +74,7 @@
 		toggling = true;
 		try {
 			await onToggle(project.encoded_name, true);
+			onaction?.(`Sync enabled for ${project.name}`);
 		} finally {
 			toggling = false;
 		}
@@ -43,27 +85,56 @@
 		syncing = true;
 		try {
 			await onSyncNow(project.encoded_name);
+			onaction?.(`Sync triggered for ${project.name}`);
 		} finally {
 			syncing = false;
 		}
 	}
 </script>
 
-<div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-subtle)] overflow-hidden">
+<div class="relative rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-subtle)] overflow-hidden">
+	<!-- Inline disable confirmation overlay -->
+	{#if confirmDisable}
+		<div
+			class="absolute inset-0 z-10 flex items-center justify-center bg-[var(--bg-base)]/90 rounded-[var(--radius-lg)]"
+		>
+			<div
+				class="flex items-center gap-3 px-4 py-3 rounded-lg bg-[var(--bg-base)] border border-[var(--border)] shadow-md"
+			>
+				<span class="text-xs text-[var(--text-secondary)]">
+					Stop syncing {project.name}?
+				</span>
+				<button
+					onclick={() => confirmDisableSync()}
+					disabled={toggling}
+					class="px-2.5 py-1 text-xs font-medium rounded-md bg-[var(--error)] text-white hover:opacity-90 transition-opacity disabled:opacity-50"
+				>
+					{toggling ? '...' : 'Confirm'}
+				</button>
+				<button
+					onclick={cancelDisable}
+					class="px-2.5 py-1 text-xs font-medium rounded-md border border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+				>
+					Cancel
+				</button>
+			</div>
+		</div>
+	{/if}
+
 	<!-- Collapsed row (always visible) -->
 	<div class="flex items-center gap-3 px-4 py-3 hover:bg-[var(--bg-muted)] transition-colors">
-		<!-- Toggle dot -->
-		<button
-			class="shrink-0 w-3 h-3 rounded-full border-2 transition-colors {project.synced
-				? 'bg-[var(--success)] border-[var(--success)]'
-				: 'bg-transparent border-[var(--text-muted)]'} {toggling ? 'opacity-50 cursor-wait' : 'cursor-pointer'}"
-			onclick={handleToggleDot}
+		<!-- Sync checkbox -->
+		<input
+			type="checkbox"
+			checked={project.synced}
+			onchange={handleCheckboxChange}
 			disabled={toggling}
 			aria-label={project.synced
 				? `Disable sync for ${project.name}`
 				: `Enable sync for ${project.name}`}
 			title={project.synced ? 'Click to disable sync' : 'Click to enable sync'}
-		></button>
+			class="shrink-0 w-4 h-4 rounded border-[var(--border)] text-[var(--accent)] focus:ring-[var(--accent)]/30 {toggling ? 'opacity-50 cursor-wait' : 'cursor-pointer'}"
+		/>
 
 		<!-- Expand trigger (covers name + status) -->
 		<button
@@ -71,7 +142,12 @@
 			onclick={() => (expanded = !expanded)}
 			aria-expanded={expanded}
 		>
-			<span class="text-sm font-medium text-[var(--text-primary)] truncate">{project.name}</span>
+			<div class="min-w-0">
+				<span class="text-sm font-medium text-[var(--text-primary)] truncate block">{project.name}</span>
+				{#if subtitle}
+					<span class="text-[11px] text-[var(--text-muted)] font-mono truncate block">{subtitle}</span>
+				{/if}
+			</div>
 
 			{#if project.status === 'synced'}
 				<Badge variant="success" size="sm">In sync</Badge>
@@ -148,6 +224,45 @@
 					</p>
 				{/if}
 			</div>
+
+			<!-- Sync status details -->
+			{#if projectStatus}
+				<div>
+					<p class="text-xs font-medium text-[var(--text-muted)] mb-1.5">Sync Status</p>
+					<div class="space-y-1">
+						<div class="flex items-center justify-between">
+							<span class="text-xs text-[var(--text-muted)]">Local sessions</span>
+							<span class="text-xs text-[var(--text-secondary)]">{projectStatus.local_count}</span>
+						</div>
+						<div class="flex items-center justify-between">
+							<span class="text-xs text-[var(--text-muted)]">Queued for sync</span>
+							<span class="text-xs text-[var(--text-secondary)]">{projectStatus.packaged_count}</span>
+						</div>
+					</div>
+
+					{#if projectStatus.gap > 0}
+						<p class="mt-2 text-xs text-[var(--warning)]">
+							{projectStatus.gap} session{projectStatus.gap !== 1 ? 's' : ''} pending — start the sync engine on the Overview tab to catch up
+						</p>
+					{/if}
+				</div>
+
+				{#if Object.keys(projectStatus.received_counts).length > 0}
+					<div>
+						<p class="text-xs font-medium text-[var(--text-muted)] mb-1.5">Received from members</p>
+						<div class="space-y-1">
+							{#each Object.entries(projectStatus.received_counts) as [member, count] (member)}
+								<div class="flex items-center justify-between">
+									<span class="text-xs text-[var(--text-muted)]">{member}</span>
+									<span class="text-xs text-[var(--text-secondary)]">
+										{count} session{count !== 1 ? 's' : ''}
+									</span>
+								</div>
+							{/each}
+						</div>
+					</div>
+				{/if}
+			{/if}
 
 		</div>
 	{/if}
