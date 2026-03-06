@@ -69,7 +69,8 @@ class TestTeamCreate:
 
 
 class TestTeamAddSyncthing:
-    def test_team_add_device_id(self, runner, mock_config):
+    @patch("karma.syncthing.SyncthingClient")
+    def test_team_add_device_id(self, mock_st_cls, runner, mock_config):
         runner.invoke(cli, ["init", "--user-id", "alice"])
         runner.invoke(cli, ["team", "create", "beta", "--backend", "syncthing"])
         result = runner.invoke(cli, ["team", "add", "bob", "DEVICEID123", "--team", "beta"])
@@ -125,7 +126,8 @@ class TestProjectRemoveWithTeam:
 
 
 class TestTeamMemberRemove:
-    def test_remove_syncthing_member(self, runner, mock_config):
+    @patch("karma.syncthing.SyncthingClient")
+    def test_remove_syncthing_member(self, mock_st_cls, runner, mock_config):
         runner.invoke(cli, ["init", "--user-id", "alice"])
         runner.invoke(cli, ["team", "create", "beta", "--backend", "syncthing"])
         runner.invoke(cli, ["team", "add", "bob", "DEVICEID123", "--team", "beta"])

@@ -345,6 +345,146 @@ class TestTaskSyncing:
         assert (staging / "tasks" / "wt-s" / "1.json").exists()
 
 
+class TestFileHistorySyncing:
+    def test_package_copies_file_history(self, tmp_path):
+        """File-history directories should be copied to staging."""
+        claude_dir = tmp_path / ".claude"
+        project_dir = claude_dir / "projects" / "-Users-test-repo"
+        project_dir.mkdir(parents=True)
+
+        uuid = "sess-fh-001"
+        (project_dir / f"{uuid}.jsonl").write_text(
+            '{"type":"user","message":{"role":"user","content":"hi"}}\n'
+        )
+
+        # Create file-history for this session
+        fh_dir = claude_dir / "file-history" / uuid
+        fh_dir.mkdir(parents=True)
+        (fh_dir / "snapshot-1.json").write_text('{"file": "main.py", "content": "print(1)"}')
+
+        staging = tmp_path / "staging"
+        packager = SessionPackager(
+            project_dir=project_dir,
+            user_id="test",
+            machine_id="test-machine",
+        )
+        packager.package(staging)
+
+        staged_fh = staging / "file-history" / uuid / "snapshot-1.json"
+        assert staged_fh.exists()
+        assert staged_fh.read_text() == '{"file": "main.py", "content": "print(1)"}'
+
+    def test_package_skips_missing_file_history(self, mock_claude_project, tmp_path):
+        """Sessions without file-history should not cause errors."""
+        staging = tmp_path / "staging"
+        packager = SessionPackager(
+            project_dir=mock_claude_project,
+            user_id="alice",
+            machine_id="mac",
+        )
+        manifest = packager.package(staging_dir=staging)
+        assert manifest.session_count == 2
+        assert not (staging / "file-history").exists()
+
+    def test_incremental_package_file_history(self, tmp_path):
+        """Re-packaging should not fail or duplicate file-history."""
+        claude_dir = tmp_path / ".claude"
+        project_dir = claude_dir / "projects" / "-Users-test-repo"
+        project_dir.mkdir(parents=True)
+
+        uuid = "sess-fh-002"
+        (project_dir / f"{uuid}.jsonl").write_text(
+            '{"type":"user","message":{"role":"user","content":"hi"}}\n'
+        )
+
+        fh_dir = claude_dir / "file-history" / uuid
+        fh_dir.mkdir(parents=True)
+        (fh_dir / "snapshot.json").write_text('{"file": "main.py"}')
+
+        staging = tmp_path / "staging"
+        packager = SessionPackager(
+            project_dir=project_dir,
+            user_id="test",
+            machine_id="test-machine",
+        )
+
+        # First package
+        packager.package(staging)
+        assert (staging / "file-history" / uuid / "snapshot.json").exists()
+
+        # Second package (should not crash)
+        packager.package(staging)
+        assert (staging / "file-history" / uuid / "snapshot.json").exists()
+
+
+class TestDebugLogSyncing:
+    def test_package_copies_debug_logs(self, tmp_path):
+        """Debug log files should be copied to staging."""
+        claude_dir = tmp_path / ".claude"
+        project_dir = claude_dir / "projects" / "-Users-test-repo"
+        project_dir.mkdir(parents=True)
+
+        uuid = "sess-debug-001"
+        (project_dir / f"{uuid}.jsonl").write_text(
+            '{"type":"user","message":{"role":"user","content":"hi"}}\n'
+        )
+
+        debug_dir = claude_dir / "debug"
+        debug_dir.mkdir(parents=True)
+        (debug_dir / f"{uuid}.txt").write_text("DEBUG: session started\nDEBUG: tool called")
+
+        staging = tmp_path / "staging"
+        packager = SessionPackager(
+            project_dir=project_dir,
+            user_id="test",
+            machine_id="test-machine",
+        )
+        packager.package(staging)
+
+        staged_debug = staging / "debug" / f"{uuid}.txt"
+        assert staged_debug.exists()
+        assert "DEBUG: session started" in staged_debug.read_text()
+
+    def test_package_skips_missing_debug_logs(self, mock_claude_project, tmp_path):
+        """Sessions without debug logs should not cause errors."""
+        staging = tmp_path / "staging"
+        packager = SessionPackager(
+            project_dir=mock_claude_project,
+            user_id="alice",
+            machine_id="mac",
+        )
+        manifest = packager.package(staging_dir=staging)
+        assert manifest.session_count == 2
+        assert not (staging / "debug").exists()
+
+    def test_package_copies_worktree_debug_logs(self, tmp_path):
+        """Debug logs for worktree sessions should also be copied."""
+        claude_dir = tmp_path / ".claude"
+        main_dir = claude_dir / "projects" / "-Users-jay-karma"
+        main_dir.mkdir(parents=True)
+        (main_dir / "main-s.jsonl").write_text('{"type":"user","message":{"role":"user","content":"hi"}}\n')
+
+        wt_dir = claude_dir / "projects" / "-Users-jay-karma--claude-worktrees-feat"
+        wt_dir.mkdir(parents=True)
+        (wt_dir / "wt-s.jsonl").write_text('{"type":"user","message":{"role":"user","content":"hi"}}\n')
+
+        # Debug log for worktree session
+        debug_dir = claude_dir / "debug"
+        debug_dir.mkdir(parents=True)
+        (debug_dir / "wt-s.txt").write_text("DEBUG: worktree session")
+
+        staging = tmp_path / "staging"
+        packager = SessionPackager(
+            project_dir=main_dir,
+            user_id="jay",
+            machine_id="mac",
+            extra_dirs=[wt_dir],
+        )
+        packager.package(staging_dir=staging)
+
+        assert (staging / "debug" / "wt-s.txt").exists()
+
+
 class TestSyncManifest:
     def test_manifest_default_sync_backend_is_none(self):
         from karma.manifest import SyncManifest

@@ -418,6 +418,189 @@ class TestRemoteSessionSubagentAccess:
         assert len(agents) >= 1
 
 
+class TestRemoteSessionTodos:
+    def test_todos_resolve_for_remote_session(self, karma_base):
+        """Todos packaged into remote staging dir should be loadable."""
+        encoded = "-Users-jayant-acme"
+        alice_dir = karma_base / "remote-sessions" / "alice" / encoded
+
+        sessions_dir = alice_dir / "sessions"
+        sessions_dir.mkdir(parents=True, exist_ok=True)
+        (sessions_dir / "sess-todo-001.jsonl").write_text(
+            _make_session_jsonl("todo-001")
+        )
+
+        # Create todo file in staging structure
+        todos_dir = alice_dir / "todos"
+        todos_dir.mkdir(parents=True, exist_ok=True)
+        (todos_dir / "sess-todo-001-task1.json").write_text(
+            json.dumps([{
+                "content": "Fix the bug",
+                "status": "in_progress",
+            }])
+        )
+
+        with patch("services.remote_sessions.settings") as mock_settings:
+            mock_settings.karma_base = karma_base
+            result = find_remote_session("sess-todo-001")
+
+        assert result is not None
+        session = result.session
+
+        # Verify todos_dir points to correct location
+        assert session.todos_dir == todos_dir
+        assert session.todos_dir.exists()
+
+        # Verify todos are loadable
+        todos = session.list_todos()
+        assert len(todos) >= 1
+        assert todos[0].content == "Fix the bug"
+
+
+class TestRemoteSessionTasks:
+    def test_tasks_resolve_for_remote_session(self, karma_base):
+        """Tasks packaged into remote staging dir should be loadable."""
+        encoded = "-Users-jayant-acme"
+        alice_dir = karma_base / "remote-sessions" / "alice" / encoded
+
+        sessions_dir = alice_dir / "sessions"
+        sessions_dir.mkdir(parents=True, exist_ok=True)
+        (sessions_dir / "sess-task-001.jsonl").write_text(
+            _make_session_jsonl("task-001")
+        )
+
+        # Create task files in staging structure
+        task_dir = alice_dir / "tasks" / "sess-task-001"
+        task_dir.mkdir(parents=True)
+        (task_dir / "1.json").write_text(
+            json.dumps({
+                "id": "1",
+                "subject": "Implement feature",
+                "description": "Build the thing",
+                "status": "in_progress",
+            })
+        )
+
+        with patch("services.remote_sessions.settings") as mock_settings:
+            mock_settings.karma_base = karma_base
+            result = find_remote_session("sess-task-001")
+
+        assert result is not None
+        session = result.session
+
+        assert session.tasks_dir == task_dir
+        assert session.tasks_dir.exists()
+
+        tasks = session.list_tasks()
+        assert len(tasks) >= 1
+
+
+class TestRemoteSessionToolResults:
+    def test_tool_results_resolve_for_remote_session(self, karma_base):
+        """Tool result files packaged alongside JSONL should be accessible."""
+        encoded = "-Users-jayant-acme"
+        alice_sessions = (
+            karma_base / "remote-sessions" / "alice" / encoded / "sessions"
+        )
+        alice_sessions.mkdir(parents=True, exist_ok=True)
+
+        (alice_sessions / "sess-tr-001.jsonl").write_text(
+            _make_session_jsonl("tr-001")
+        )
+
+        # Create tool-results directory
+        tr_dir = alice_sessions / "sess-tr-001" / "tool-results"
+        tr_dir.mkdir(parents=True)
+        (tr_dir / "toolu_abc123.txt").write_text("Tool output here")
+
+        with patch("services.remote_sessions.settings") as mock_settings:
+            mock_settings.karma_base = karma_base
+            result = find_remote_session("sess-tr-001")
+
+        assert result is not None
+        session = result.session
+        assert session.tool_results_dir == tr_dir
+        assert session.tool_results_dir.exists()
+
+        tool_results = session.list_tool_results()
+        assert len(tool_results) >= 1
+
+
+class TestRemoteSessionFileHistory:
+    def test_file_history_resolves_for_remote_session(self, karma_base):
+        """File-history packaged into remote staging should be accessible."""
+        encoded = "-Users-jayant-acme"
+        alice_dir = karma_base / "remote-sessions" / "alice" / encoded
+
+        sessions_dir = alice_dir / "sessions"
+        sessions_dir.mkdir(parents=True, exist_ok=True)
+        (sessions_dir / "sess-fh-001.jsonl").write_text(
+            _make_session_jsonl("fh-001")
+        )
+
+        # Create file-history in staging structure
+        fh_dir = alice_dir / "file-history" / "sess-fh-001"
+        fh_dir.mkdir(parents=True)
+        (fh_dir / "snapshot.json").write_text('{"file": "main.py"}')
+
+        with patch("services.remote_sessions.settings") as mock_settings:
+            mock_settings.karma_base = karma_base
+            result = find_remote_session("sess-fh-001")
+
+        assert result is not None
+        session = result.session
+        assert session.file_history_dir == fh_dir
+        assert session.has_file_history is True
+
+
+class TestRemoteSessionDebugLog:
+    def test_debug_log_resolves_for_remote_session(self, karma_base):
+        """Debug logs packaged into remote staging should be readable."""
+        encoded = "-Users-jayant-acme"
+        alice_dir = karma_base / "remote-sessions" / "alice" / encoded
+
+        sessions_dir = alice_dir / "sessions"
+        sessions_dir.mkdir(parents=True, exist_ok=True)
+        (sessions_dir / "sess-dbg-001.jsonl").write_text(
+            _make_session_jsonl("dbg-001")
+        )
+
+        debug_dir = alice_dir / "debug"
+        debug_dir.mkdir(parents=True)
+        (debug_dir / "sess-dbg-001.txt").write_text("DEBUG: started")
+
+        with patch("services.remote_sessions.settings") as mock_settings:
+            mock_settings.karma_base = karma_base
+            result = find_remote_session("sess-dbg-001")
+
+        assert result is not None
+        session = result.session
+        assert session.has_debug_log is True
+        assert session.read_debug_log() == "DEBUG: started"
+
+
+class TestRemoteSessionMissingResources:
+    def test_missing_todos_returns_empty(self, karma_base):
+        """Remote session without todos dir should return empty list."""
+        encoded = "-Users-jayant-acme"
+        alice_dir = karma_base / "remote-sessions" / "alice" / encoded
+        sessions_dir = alice_dir / "sessions"
+        sessions_dir.mkdir(parents=True, exist_ok=True)
+        (sessions_dir / "sess-empty-001.jsonl").write_text(
+            _make_session_jsonl("empty-001")
+        )
+
+        with patch("services.remote_sessions.settings") as mock_settings:
+            mock_settings.karma_base = karma_base
+            result = find_remote_session("sess-empty-001")
+
+        session = result.session
+        assert session.list_todos() == []
+        assert session.list_tasks() == []
+        assert session.has_file_history is False
+        assert session.has_debug_log is False
+
+
 class TestSchemaMigration:
     def test_schema_v17_adds_remote_columns(self):
         import sqlite3

@@ -357,6 +357,7 @@ def index_remote_sessions(conn: sqlite3.Connection) -> dict:
                         source="remote",
                         remote_user_id=user_id,
                         remote_machine_id=user_id,
+                        claude_base_dir=encoded_dir,
                     )
                     stats["indexed"] += 1
                 except Exception as e:
@@ -379,6 +380,7 @@ def _index_session(
     source: Optional[str] = None,
     remote_user_id: Optional[str] = None,
     remote_machine_id: Optional[str] = None,
+    claude_base_dir: Optional[Path] = None,
 ) -> None:
     """
     Extract metadata from a session JSONL and upsert into SQLite.
@@ -401,7 +403,7 @@ def _index_session(
     uuid = jsonl_path.stem
 
     # Parse session (triggers _load_metadata via property access)
-    session = Session.from_path(jsonl_path)
+    session = Session.from_path(jsonl_path, claude_base_dir=claude_base_dir)
 
     # Skip empty sessions
     if session.message_count == 0:
