@@ -133,6 +133,30 @@ class SessionPackager:
                         dirs_exist_ok=True,
                     )
 
+        # Copy file-history if it exists
+        file_history_base = self.project_dir.parent.parent / "file-history"
+        if file_history_base.is_dir():
+            fh_staging = staging_dir / "file-history"
+            for session_entry in sessions:
+                fh_dir = file_history_base / session_entry.uuid
+                if fh_dir.is_dir():
+                    fh_staging.mkdir(exist_ok=True)
+                    shutil.copytree(
+                        fh_dir,
+                        fh_staging / session_entry.uuid,
+                        dirs_exist_ok=True,
+                    )
+
+        # Copy debug logs if they exist
+        debug_base = self.project_dir.parent.parent / "debug"
+        if debug_base.is_dir():
+            debug_staging = staging_dir / "debug"
+            for session_entry in sessions:
+                debug_file = debug_base / f"{session_entry.uuid}.txt"
+                if debug_file.is_file():
+                    debug_staging.mkdir(exist_ok=True)
+                    shutil.copy2(debug_file, debug_staging / debug_file.name)
+
         # Build manifest
         manifest = SyncManifest(
             user_id=self.user_id,

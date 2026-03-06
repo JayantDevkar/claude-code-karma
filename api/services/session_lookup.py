@@ -67,17 +67,15 @@ def find_session_with_project(uuid: str) -> Optional[SessionLookupResult]:
         SessionLookupResult with session and project info, or None if not found.
     """
     projects_dir = settings.projects_dir
-    if not projects_dir.exists():
-        return None
-
-    for encoded_dir in projects_dir.iterdir():
-        if encoded_dir.is_dir() and encoded_dir.name.startswith("-"):
-            jsonl_path = encoded_dir / f"{uuid}.jsonl"
-            if jsonl_path.exists():
-                return SessionLookupResult(
-                    session=Session.from_path(jsonl_path),
-                    project_encoded_name=encoded_dir.name,
-                )
+    if projects_dir.exists():
+        for encoded_dir in projects_dir.iterdir():
+            if encoded_dir.is_dir() and encoded_dir.name.startswith("-"):
+                jsonl_path = encoded_dir / f"{uuid}.jsonl"
+                if jsonl_path.exists():
+                    return SessionLookupResult(
+                        session=Session.from_path(jsonl_path),
+                        project_encoded_name=encoded_dir.name,
+                    )
 
     # Remote fallback: search synced remote sessions
     from services.remote_sessions import find_remote_session
