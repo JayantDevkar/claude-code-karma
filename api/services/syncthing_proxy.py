@@ -151,13 +151,21 @@ class SyncthingProxy:
         return client.get_folders()
 
     def get_events(self, since: int = 0, limit: int = 100) -> list[dict]:
-        """Return recent Syncthing events."""
+        """Return recent Syncthing events.
+
+        Syncthing's /rest/events is a long-polling endpoint that blocks when
+        since > 0 until new events arrive. We pass timeout=1 (seconds) to
+        Syncthing so it returns quickly with an empty list if nothing new.
+        """
         client = self._require_client()
+        params: dict = {"since": since, "limit": limit}
+        if since > 0:
+            params["timeout"] = 1
         resp = requests.get(
             f"{client.api_url}/rest/events",
             headers=client.headers,
-            params={"since": since, "limit": limit},
-            timeout=10,
+            params=params,
+            timeout=5,
         )
         resp.raise_for_status()
         return resp.json()

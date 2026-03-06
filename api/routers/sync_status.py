@@ -232,9 +232,16 @@ async def sync_activity(since: int = 0, limit: int = 50) -> Any:
     """Get recent Syncthing events and bandwidth stats."""
     proxy = get_proxy()
     try:
-        events = await run_sync(proxy.get_events, since, limit)
+        try:
+            events = await run_sync(proxy.get_events, since, limit)
+        except SyncthingNotRunning:
+            raise
+        except Exception:
+            events = []
         try:
             bandwidth = await run_sync(proxy.get_bandwidth)
+        except SyncthingNotRunning:
+            raise
         except Exception:
             bandwidth = {"upload_rate": 0, "download_rate": 0, "upload_total": 0, "download_total": 0}
         return {
