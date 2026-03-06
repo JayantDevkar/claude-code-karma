@@ -1,12 +1,14 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-	import { RefreshCw, Settings2, Monitor, FolderGit2, Activity } from 'lucide-svelte';
-	import type { SyncDetect, SyncStatusResponse } from '$lib/api-types';
+	import { RefreshCw, LayoutDashboard, Users, FolderGit2, Activity } from 'lucide-svelte';
+	import type { SyncDetect, SyncStatusResponse, SyncTeam } from '$lib/api-types';
 	import PageHeader from '$lib/components/layout/PageHeader.svelte';
-	import SetupTab from '$lib/components/sync/SetupTab.svelte';
-	import DevicesTab from '$lib/components/sync/DevicesTab.svelte';
+	import SetupWizard from '$lib/components/sync/SetupWizard.svelte';
+	import OverviewTab from '$lib/components/sync/OverviewTab.svelte';
+	import MembersTab from '$lib/components/sync/MembersTab.svelte';
 	import ProjectsTab from '$lib/components/sync/ProjectsTab.svelte';
 	import ActivityTab from '$lib/components/sync/ActivityTab.svelte';
+	import TeamSelector from '$lib/components/sync/TeamSelector.svelte';
 	import Tabs from '$lib/components/ui/Tabs.svelte';
 	import TabsList from '$lib/components/ui/TabsList.svelte';
 	import TabsTrigger from '$lib/components/ui/TabsTrigger.svelte';
@@ -19,8 +21,37 @@
 	let syncStatus = $state<SyncStatusResponse | null>(data.status ?? null);
 
 	let activeTab = $state(
-		data.activeTab ?? (data.status?.configured ? 'devices' : 'setup')
+		data.activeTab ?? (data.status?.configured ? 'overview' : 'overview')
 	);
+
+	// ── Team selection ───────────────────────────────────────────────────────
+	let activeTeamName = $state('');
+
+	// Derive teams array from syncStatus.teams Record
+	let teamsList = $derived.by<SyncTeam[]>(() => {
+		if (!syncStatus?.teams) return [];
+		return Object.entries(syncStatus.teams).map(([name, value]) => ({
+			name,
+			backend: ((value as Record<string, unknown>).backend as 'syncthing' | 'ipfs') ?? 'syncthing',
+			projects: ((value as Record<string, unknown>).projects as SyncTeam['projects']) ?? [],
+			members: ((value as Record<string, unknown>).members as SyncTeam['members']) ?? []
+		}));
+	});
+
+	// Auto-select first team when data loads or current selection becomes invalid
+	$effect(() => {
+		const teams = teamsList;
+		if (teams.length === 0) {
+			activeTeamName = '';
+		} else if (!activeTeamName || !teams.some((t) => t.name === activeTeamName)) {
+			activeTeamName = teams[0].name;
+		}
+	});
+
+	function handleCreateTeam() {
+		// Switch to overview tab — OverviewTab handles team creation flow
+		activeTab = 'overview';
+	}
 
 	let pollInterval: ReturnType<typeof setInterval> | null = null;
 	let isFetching = $state(false);
@@ -115,28 +146,34 @@
 		{/snippet}
 	</PageHeader>
 
-	<Tabs bind:value={activeTab}>
-		<TabsList>
-			<TabsTrigger value="setup" icon={Settings2}>Setup</TabsTrigger>
-			<TabsTrigger value="devices" icon={Monitor}>Devices</TabsTrigger>
-			<TabsTrigger value="projects" icon={FolderGit2}>Projects</TabsTrigger>
-			<TabsTrigger value="activity" icon={Activity}>Activity</TabsTrigger>
-		</TabsList>
+	{#if !syncStatus?.configured}
+		<SetupWizard bind:detect={syncDetect} bind:status={syncStatus} ondone={refreshData} />
+	{:else}
+		<Tabs bind:value={activeTab}>
+			<TabsList>
+				<TabsTrigger value="overview" icon={LayoutDashboard}>Overview</TabsTrigger>
+				<TabsTrigger value="members" icon={Users}>Members</TabsTrigger>
+				<TabsTrigger value="projects" icon={FolderGit2}>Projects</TabsTrigger>
+				<TabsTrigger value="activity" icon={Activity}>Activity</TabsTrigger>
+			</TabsList>
 
-		<TabsContent value="setup">
-			<SetupTab bind:detect={syncDetect} bind:status={syncStatus} active={activeTab === 'setup'} />
-		</TabsContent>
+			<TeamSelector teams={teamsList} bind:activeTeam={activeTeamName} oncreate={handleCreateTeam} />
 
-		<TabsContent value="devices">
-			<DevicesTab detect={syncDetect} active={activeTab === 'devices'} />
-		</TabsContent>
+			<TabsContent value="overview">
+				<OverviewTab detect={syncDetect} status={syncStatus} active={activeTab === 'overview'} teamName={activeTeamName} onteamchange={refreshData} />
+			</TabsContent>
 
-		<TabsContent value="projects">
-			<ProjectsTab active={activeTab === 'projects'} />
-		</TabsContent>
+			<TabsContent value="members">
+				<MembersTab detect={syncDetect} active={activeTab === 'members'} teamName={activeTeamName} />
+			</TabsContent>
 
-		<TabsContent value="activity">
-			<ActivityTab active={activeTab === 'activity'} />
-		</TabsContent>
-	</Tabs>
+			<TabsContent value="projects">
+				<ProjectsTab active={activeTab === 'projects'} teamName={activeTeamName} />
+			</TabsContent>
+
+			<TabsContent value="activity">
+				<ActivityTab active={activeTab === 'activity'} />
+			</TabsContent>
+		</Tabs>
+	{/if}
 </div>

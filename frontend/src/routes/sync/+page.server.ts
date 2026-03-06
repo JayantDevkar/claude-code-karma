@@ -1,12 +1,14 @@
 import type { PageServerLoad } from './$types';
-import type { SyncDetect, SyncStatusResponse } from '$lib/api-types';
+import type { SyncDetect, SyncStatusResponse, SyncWatchStatus, SyncPendingFolder } from '$lib/api-types';
 import { API_BASE } from '$lib/config';
 import { safeFetch } from '$lib/utils/api-fetch';
 
 export const load: PageServerLoad = async ({ fetch, url }) => {
-	const [detectResult, statusResult] = await Promise.all([
+	const [detectResult, statusResult, watchResult, pendingResult] = await Promise.all([
 		safeFetch<SyncDetect>(fetch, `${API_BASE}/sync/detect`),
-		safeFetch<SyncStatusResponse>(fetch, `${API_BASE}/sync/status`)
+		safeFetch<SyncStatusResponse>(fetch, `${API_BASE}/sync/status`),
+		safeFetch<SyncWatchStatus>(fetch, `${API_BASE}/sync/watch/status`),
+		safeFetch<{ pending: SyncPendingFolder[] }>(fetch, `${API_BASE}/sync/pending`)
 	]);
 
 	const activeTab = url.searchParams.get('tab') || null;
@@ -14,6 +16,8 @@ export const load: PageServerLoad = async ({ fetch, url }) => {
 	return {
 		detect: detectResult.ok ? detectResult.data : null,
 		status: statusResult.ok ? statusResult.data : null,
+		watchStatus: watchResult.ok ? watchResult.data : null,
+		pending: pendingResult.ok ? pendingResult.data?.pending ?? [] : [],
 		activeTab
 	};
 };
