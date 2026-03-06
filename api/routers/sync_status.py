@@ -20,7 +20,7 @@ ALLOWED_DEVICE_ID = re.compile(r"^[A-Z0-9\-]+$")
 
 
 def validate_project_name(name: str) -> str:
-    if not ALLOWED_PROJECT_NAME.match(name) or len(name) > 128:
+    if not ALLOWED_PROJECT_NAME.match(name) or len(name) > 512:
         raise HTTPException(400, "Invalid project name")
     return name
 
@@ -312,8 +312,14 @@ async def sync_project_sync_now(project_name: str) -> Any:
     proxy = get_proxy()
     try:
         # Find the Syncthing folder ID matching this project name
+        # Match against folder ID, path, or label
         folders = await run_sync(proxy.get_folder_status)
-        matched = [f for f in folders if project_name in f.get("id", "")]
+        matched = [
+            f for f in folders
+            if project_name in f.get("id", "")
+            or project_name in f.get("path", "")
+            or project_name in f.get("label", "")
+        ]
         if not matched:
             raise HTTPException(404, "No Syncthing folder found for this project")
         results = []
