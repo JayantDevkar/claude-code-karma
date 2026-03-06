@@ -202,6 +202,8 @@ async def sync_add_device(req: AddDeviceRequest) -> Any:
         return await run_sync(proxy.add_device, req.device_id, req.name)
     except SyncthingNotRunning:
         raise HTTPException(status_code=503, detail="Syncthing is not running")
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
 
 
 @router.delete("/devices/{device_id}")

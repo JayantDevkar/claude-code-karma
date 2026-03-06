@@ -1,14 +1,24 @@
 <script lang="ts">
-	import { Monitor, ChevronDown, ChevronRight, ArrowUp, ArrowDown, Lock } from 'lucide-svelte';
+	import {
+		Monitor,
+		ChevronDown,
+		ChevronRight,
+		ArrowUp,
+		ArrowDown,
+		Lock,
+		Copy,
+		CheckCircle
+	} from 'lucide-svelte';
 	import type { SyncDevice } from '$lib/api-types';
 	import { formatBytes } from '$lib/utils';
 
 	let { device }: { device: SyncDevice } = $props();
 
 	let expanded = $state(false);
+	let copiedId = $state(false);
 
 	let statusDotClass = $derived(
-		device.connected || device.is_self ? 'bg-[var(--success)]' : 'bg-[var(--text-muted)]'
+		device.connected || device.is_self ? 'bg-[var(--success)]' : 'bg-[var(--warning)]'
 	);
 
 	let statusText = $derived(
@@ -16,11 +26,23 @@
 	);
 
 	let truncatedId = $derived(
-		device.device_id.length > 32 ? device.device_id.slice(0, 32) + '…' : device.device_id
+		device.device_id.length > 32 ? device.device_id.slice(0, 32) + '\u2026' : device.device_id
 	);
+
+	function copyDeviceId() {
+		navigator.clipboard
+			.writeText(device.device_id)
+			.then(() => {
+				copiedId = true;
+				setTimeout(() => (copiedId = false), 2000);
+			})
+			.catch(() => {});
+	}
 </script>
 
-<div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-subtle)] overflow-hidden">
+<div
+	class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-subtle)] overflow-hidden"
+>
 	<!-- Header (always visible) -->
 	<button
 		onclick={() => (expanded = !expanded)}
@@ -79,14 +101,18 @@
 		<div class="px-4 pb-4 pt-2 border-t border-[var(--border)] space-y-4">
 			<!-- Connection section -->
 			<div>
-				<h4 class="text-[11px] font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-2">
+				<h4
+					class="text-[11px] font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-2"
+				>
 					Connection
 				</h4>
 				<div class="space-y-1.5">
 					{#if device.address}
 						<div class="flex items-center justify-between gap-4">
 							<span class="text-xs text-[var(--text-secondary)]">Address</span>
-							<span class="text-xs font-mono text-[var(--text-primary)] truncate max-w-[60%] text-right">
+							<span
+								class="text-xs font-mono text-[var(--text-primary)] truncate max-w-[60%] text-right"
+							>
 								{device.address}
 							</span>
 						</div>
@@ -108,16 +134,36 @@
 					{/if}
 					<div class="flex items-center justify-between gap-4">
 						<span class="text-xs text-[var(--text-secondary)]">Device ID</span>
-						<code class="text-[11px] font-mono text-[var(--text-muted)] truncate max-w-[60%] text-right">
-							{truncatedId}
-						</code>
+						<div class="flex items-center gap-1.5">
+							<code
+								class="text-[11px] font-mono text-[var(--text-muted)] truncate max-w-[55%] text-right"
+							>
+								{truncatedId}
+							</code>
+							<button
+								onclick={(e) => {
+									e.stopPropagation();
+									copyDeviceId();
+								}}
+								aria-label="Copy device ID"
+								class="shrink-0 p-1 rounded text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+							>
+								{#if copiedId}
+									<CheckCircle size={12} class="text-[var(--success)]" />
+								{:else}
+									<Copy size={12} />
+								{/if}
+							</button>
+						</div>
 					</div>
 				</div>
 			</div>
 
 			<!-- Transfer section -->
 			<div>
-				<h4 class="text-[11px] font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-2">
+				<h4
+					class="text-[11px] font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-2"
+				>
 					Transfer
 				</h4>
 				<div class="space-y-1.5">

@@ -5,6 +5,8 @@
 	import { API_BASE } from '$lib/config';
 	import { getProjectNameFromEncoded, formatBytes, formatBytesRate, formatRelativeTime } from '$lib/utils';
 
+	let { active = false }: { active?: boolean } = $props();
+
 	const MAX_HISTORY = 30;
 	const POLL_INTERVAL = 3000;
 
@@ -268,9 +270,15 @@
 		}
 	}
 
+	// Reload when tab becomes active
+	$effect(() => {
+		if (active) {
+			loadLookupMaps();
+			fetchActivity();
+		}
+	});
+
 	onMount(() => {
-		loadLookupMaps();
-		fetchActivity();
 		pollTimer = setInterval(fetchActivity, POLL_INTERVAL);
 	});
 

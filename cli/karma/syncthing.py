@@ -88,6 +88,9 @@ class SyncthingClient:
     def add_device(self, device_id: str, name: str) -> None:
         """Pair with a remote device."""
         config = self._get_config()
+        existing_ids = {d["deviceID"] for d in config.get("devices", [])}
+        if device_id in existing_ids:
+            raise ValueError(f"Device {device_id} already configured")
         config["devices"].append({
             "deviceID": device_id,
             "name": name,
