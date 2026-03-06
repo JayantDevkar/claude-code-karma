@@ -1,28 +1,11 @@
 <script lang="ts">
 	import { Monitor, ChevronDown, ChevronRight, ArrowUp, ArrowDown, Lock } from 'lucide-svelte';
+	import type { SyncDevice } from '$lib/api-types';
+	import { formatBytes } from '$lib/utils';
 
-	interface Device {
-		device_id: string;
-		name: string;
-		connected: boolean;
-		address?: string;
-		type?: string;
-		crypto?: string;
-		in_bytes_total?: number;
-		out_bytes_total?: number;
-		is_self?: boolean;
-	}
-
-	let { device }: { device: Device } = $props();
+	let { device }: { device: SyncDevice } = $props();
 
 	let expanded = $state(false);
-
-	function formatBytes(bytes: number): string {
-		if (bytes < 1024) return `${bytes} B`;
-		if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-		if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-		return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
-	}
 
 	let statusDotClass = $derived(
 		device.connected || device.is_self ? 'bg-[var(--success)]' : 'bg-[var(--text-muted)]'

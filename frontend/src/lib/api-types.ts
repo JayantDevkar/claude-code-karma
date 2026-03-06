@@ -1685,3 +1685,44 @@ export interface HookScriptDetail {
 	line_count: number | null;
 	error: string | null;
 }
+
+// ============================================
+// Sync Types
+// ============================================
+
+export interface SyncDetect {
+	installed: boolean;
+	running: boolean;
+	version: string | null;
+	device_id: string | null;
+}
+
+export interface SyncStatusResponse {
+	configured: boolean;
+	user_id?: string;
+	machine_id?: string;
+	teams?: Record<string, unknown>;
+}
+
+export interface SyncDevice {
+	device_id: string;
+	name: string;
+	connected: boolean;
+	address?: string;
+	type?: string;
+	crypto?: string;
+	in_bytes_total?: number;
+	out_bytes_total?: number;
+	is_self?: boolean;
+}
+
+export interface SyncProject {
+	name: string;
+	encoded_name: string;
+	local_session_count: number;
+	synced: boolean;
+	status: 'synced' | 'syncing' | 'pending' | 'not-syncing';
+	last_sync_at: string | null;
+	machine_count: number;
+	pending_count: number;
+}

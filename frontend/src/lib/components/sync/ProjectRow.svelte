@@ -1,17 +1,8 @@
 <script lang="ts">
 	import { ChevronDown, ChevronRight, RefreshCw, Power } from 'lucide-svelte';
+	import type { SyncProject } from '$lib/api-types';
+	import { formatRelativeTime } from '$lib/utils';
 	import Badge from '$lib/components/ui/Badge.svelte';
-
-	interface SyncProject {
-		name: string;
-		encoded_name: string;
-		local_session_count: number;
-		synced: boolean;
-		status: 'synced' | 'syncing' | 'pending' | 'not-syncing';
-		last_sync_at: string | null;
-		machine_count: number;
-		pending_count: number;
-	}
 
 	let {
 		project,
@@ -19,33 +10,19 @@
 		onSyncNow
 	}: {
 		project: SyncProject;
-		onToggle: (name: string, enable: boolean) => Promise<void>;
-		onSyncNow: (name: string) => Promise<void>;
+		onToggle: (encodedName: string, enable: boolean) => Promise<void>;
+		onSyncNow: (encodedName: string) => Promise<void>;
 	} = $props();
 
 	let expanded = $state(false);
 	let toggling = $state(false);
 	let syncing = $state(false);
 
-	function formatRelativeTime(dateStr: string | null): string {
-		if (!dateStr) return 'Never';
-		const date = new Date(dateStr);
-		const diffMs = Date.now() - date.getTime();
-		const diffSec = Math.floor(diffMs / 1000);
-		if (diffSec < 60) return `${diffSec}s ago`;
-		const diffMin = Math.floor(diffSec / 60);
-		if (diffMin < 60) return `${diffMin}m ago`;
-		const diffHr = Math.floor(diffMin / 60);
-		if (diffHr < 24) return `${diffHr}h ago`;
-		const diffDay = Math.floor(diffHr / 24);
-		return `${diffDay}d ago`;
-	}
-
 	async function handleToggleDot(e: MouseEvent) {
 		e.stopPropagation();
 		toggling = true;
 		try {
-			await onToggle(project.name, !project.synced);
+			await onToggle(project.encoded_name, !project.synced);
 		} finally {
 			toggling = false;
 		}
@@ -55,7 +32,7 @@
 		e.stopPropagation();
 		toggling = true;
 		try {
-			await onToggle(project.name, true);
+			await onToggle(project.encoded_name, true);
 		} finally {
 			toggling = false;
 		}
@@ -65,7 +42,7 @@
 		e.stopPropagation();
 		syncing = true;
 		try {
-			await onSyncNow(project.name);
+			await onSyncNow(project.encoded_name);
 		} finally {
 			syncing = false;
 		}
@@ -113,7 +90,7 @@
 				{project.local_session_count} session{project.local_session_count !== 1 ? 's' : ''}
 			</span>
 
-			{#if project.synced}
+			{#if project.synced && project.last_sync_at}
 				<span class="text-xs text-[var(--text-muted)] hidden sm:block">
 					{formatRelativeTime(project.last_sync_at)}
 				</span>
@@ -172,17 +149,6 @@
 				{/if}
 			</div>
 
-			<!-- Placeholder links -->
-			<div class="flex items-center gap-4">
-				<button class="flex items-center gap-1 text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors">
-					<ChevronRight size={12} />
-					Files
-				</button>
-				<button class="flex items-center gap-1 text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors">
-					<ChevronRight size={12} />
-					Sync History
-				</button>
-			</div>
 		</div>
 	{/if}
 </div>

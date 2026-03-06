@@ -1,19 +1,9 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { FolderGit2, RefreshCw } from 'lucide-svelte';
+	import type { SyncProject } from '$lib/api-types';
 	import { API_BASE } from '$lib/config';
 	import ProjectRow from '$lib/components/sync/ProjectRow.svelte';
-
-	interface SyncProject {
-		name: string;
-		encoded_name: string;
-		local_session_count: number;
-		synced: boolean;
-		status: 'synced' | 'syncing' | 'pending' | 'not-syncing';
-		last_sync_at: string | null;
-		machine_count: number;
-		pending_count: number;
-	}
 
 	interface ApiProject {
 		display_name: string | null;
@@ -81,19 +71,16 @@
 		}
 	}
 
-	async function handleToggle(name: string, enable: boolean) {
+	async function handleToggle(encodedName: string, enable: boolean) {
 		const endpoint = enable ? 'enable' : 'disable';
-		await fetch(`${API_BASE}/sync/projects/${encodeURIComponent(name)}/${endpoint}`, {
+		await fetch(`${API_BASE}/sync/projects/${encodeURIComponent(encodedName)}/${endpoint}`, {
 			method: 'POST'
 		});
 		await loadProjects();
 	}
 
-	async function handleSyncNow(name: string) {
-		// Find the project to use encoded_name for better folder matching
-		const project = projects.find((p) => p.name === name);
-		const matchName = project?.encoded_name ?? name;
-		await fetch(`${API_BASE}/sync/projects/${encodeURIComponent(matchName)}/sync-now`, {
+	async function handleSyncNow(encodedName: string) {
+		await fetch(`${API_BASE}/sync/projects/${encodeURIComponent(encodedName)}/sync-now`, {
 			method: 'POST'
 		});
 		await loadProjects();
@@ -106,7 +93,7 @@
 		try {
 			await Promise.all(
 				unsynced.map((p) =>
-					fetch(`${API_BASE}/sync/projects/${encodeURIComponent(p.name)}/enable`, {
+					fetch(`${API_BASE}/sync/projects/${encodeURIComponent(p.encoded_name)}/enable`, {
 						method: 'POST'
 					})
 				)

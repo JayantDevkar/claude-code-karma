@@ -79,7 +79,9 @@ class SyncthingProxy:
             logger.debug("Failed to connect to Syncthing: %s", e)
 
     def _require_client(self) -> Any:
-        """Return the client or raise SyncthingNotRunning."""
+        """Return the client or raise SyncthingNotRunning. Retries connection if needed."""
+        if self._client is None:
+            self._try_connect()
         if self._client is None:
             raise SyncthingNotRunning("Syncthing daemon is not reachable")
         return self._client
@@ -110,7 +112,7 @@ class SyncthingProxy:
             }
         except Exception as e:
             logger.warning("Failed to get Syncthing system status: %s", e)
-            return {"installed": True, "running": True, "version": None, "device_id": None}
+            return {"installed": True, "running": False, "version": None, "device_id": None}
 
     def get_devices(self) -> list[dict]:
         """Return all configured devices with their connection status."""

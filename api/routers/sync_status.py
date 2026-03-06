@@ -1,7 +1,7 @@
 """Sync status API endpoints."""
 
-import json
 import re
+import sys
 from pathlib import Path
 from typing import Any, Optional
 
@@ -10,7 +10,10 @@ from pydantic import BaseModel
 
 from services.syncthing_proxy import SyncthingNotRunning, SyncthingProxy, run_sync
 
-SYNC_CONFIG_PATH = Path.home() / ".claude_karma" / "sync-config.json"
+# Add CLI to path once for SyncConfig / syncthing imports
+_CLI_PATH = Path(__file__).parent.parent.parent / "cli"
+if str(_CLI_PATH) not in sys.path:
+    sys.path.insert(0, str(_CLI_PATH))
 
 router = APIRouter(prefix="/sync", tags=["sync"])
 
@@ -52,28 +55,21 @@ class InitRequest(BaseModel):
     backend: str = "syncthing"
 
 
-def _load_config() -> Optional[dict]:
-    if not SYNC_CONFIG_PATH.exists():
-        return None
-    try:
-        return json.loads(SYNC_CONFIG_PATH.read_text())
-    except json.JSONDecodeError:
-        # Config may be corrupted (e.g. trailing duplicate data). Try partial parse.
-        try:
-            content = SYNC_CONFIG_PATH.read_text()
-            decoder = json.JSONDecoder()
-            obj, _ = decoder.raw_decode(content)
-            return obj if isinstance(obj, dict) else None
-        except Exception:
-            return None
-    except OSError:
-        return None
-
-
 def validate_user_id(user_id: str) -> str:
     if not ALLOWED_PROJECT_NAME.match(user_id) or len(user_id) > 128:
         raise HTTPException(400, "Invalid user_id")
     return user_id
+
+
+def _load_sync_config():
+    """Load SyncConfig from CLI module. Returns (config, SyncConfig, ProjectConfig) or (None, SyncConfig, ProjectConfig)."""
+    from karma.config import ProjectConfig, SyncConfig
+
+    try:
+        config = SyncConfig.load()
+    except RuntimeError:
+        config = None
+    return config, SyncConfig, ProjectConfig
 
 
 @router.post("/init")
@@ -82,14 +78,6 @@ async def sync_init(req: InitRequest) -> Any:
     validate_user_id(req.user_id)
     if req.backend not in ("syncthing", "ipfs"):
         raise HTTPException(400, "Invalid backend; must be 'syncthing' or 'ipfs'")
-
-    # Import CLI config models via sys.path (same approach as syncthing_proxy.py)
-    import sys
-    from pathlib import Path as _Path
-
-    cli_path = _Path(__file__).parent.parent.parent / "cli"
-    if str(cli_path) not in sys.path:
-        sys.path.insert(0, str(cli_path))
 
     from karma.config import SyncConfig, SyncthingSettings
 
@@ -132,12 +120,13 @@ async def sync_init(req: InitRequest) -> Any:
 @router.get("/status")
 async def sync_status():
     """Get sync configuration and status."""
-    config = _load_config()
+    config, _, _ = await run_sync(_load_sync_config)
     if config is None:
         return {"configured": False}
 
+    data = config.model_dump()
     teams = {}
-    for name, team in config.get("teams", {}).items():
+    for name, team in data.get("teams", {}).items():
         teams[name] = {
             "backend": team["backend"],
             "project_count": len(team.get("projects", {})),
@@ -147,8 +136,8 @@ async def sync_status():
 
     return {
         "configured": True,
-        "user_id": config.get("user_id"),
-        "machine_id": config.get("machine_id"),
+        "user_id": data.get("user_id"),
+        "machine_id": data.get("machine_id"),
         "teams": teams,
     }
 
@@ -156,12 +145,13 @@ async def sync_status():
 @router.get("/teams")
 async def sync_teams():
     """List all teams with their backend and members."""
-    config = _load_config()
+    config, _, _ = await run_sync(_load_sync_config)
     if config is None:
         return {"teams": []}
 
+    data = config.model_dump()
     teams = []
-    for name, team in config.get("teams", {}).items():
+    for name, team in data.get("teams", {}).items():
         projects = []
         for pname, pconfig in team.get("projects", {}).items():
             projects.append({
@@ -262,21 +252,6 @@ async def sync_activity(since: int = 0, limit: int = 50) -> Any:
         }
     except SyncthingNotRunning:
         raise HTTPException(status_code=503, detail="Syncthing is not running")
-
-
-def _load_sync_config():
-    """Load SyncConfig from CLI module. Returns (config_or_none, SyncConfig_class, ProjectConfig_class)."""
-    import sys
-    from pathlib import Path as _Path
-
-    cli_path = _Path(__file__).parent.parent.parent / "cli"
-    if str(cli_path) not in sys.path:
-        sys.path.insert(0, str(cli_path))
-
-    from karma.config import ProjectConfig, SyncConfig
-
-    config = SyncConfig.load()
-    return config, SyncConfig, ProjectConfig
 
 
 @router.post("/projects/{project_name}/enable")
