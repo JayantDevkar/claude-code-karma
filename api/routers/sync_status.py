@@ -57,7 +57,16 @@ def _load_config() -> Optional[dict]:
         return None
     try:
         return json.loads(SYNC_CONFIG_PATH.read_text())
-    except (json.JSONDecodeError, OSError):
+    except json.JSONDecodeError:
+        # Config may be corrupted (e.g. trailing duplicate data). Try partial parse.
+        try:
+            content = SYNC_CONFIG_PATH.read_text()
+            decoder = json.JSONDecoder()
+            obj, _ = decoder.raw_decode(content)
+            return obj if isinstance(obj, dict) else None
+        except Exception:
+            return None
+    except OSError:
         return None
 
 
