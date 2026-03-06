@@ -1,8 +1,11 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import { Activity, ArrowUp, ArrowDown } from 'lucide-svelte';
 	import BandwidthChart from './BandwidthChart.svelte';
 	import { API_BASE } from '$lib/config';
+
+	const MAX_HISTORY = 30;
+	const POLL_INTERVAL = 3000;
 
 	interface SyncEvent {
 		id: number;
@@ -15,24 +18,45 @@
 		events: SyncEvent[];
 		upload_rate: number;
 		download_rate: number;
-		upload_history: number[];
-		download_history: number[];
-		labels: string[];
+		upload_total: number;
+		download_total: number;
 	}
 
 	let events = $state<SyncEvent[]>([]);
 	let uploadRate = $state(0);
 	let downloadRate = $state(0);
+	let uploadTotal = $state(0);
+	let downloadTotal = $state(0);
 	let uploadHistory = $state<number[]>([]);
 	let downloadHistory = $state<number[]>([]);
 	let labels = $state<string[]>([]);
 	let loading = $state(true);
 	let error = $state<string | null>(null);
+	let pollTimer: ReturnType<typeof setInterval> | null = null;
+	let lastEventId = 0;
 
 	function formatBytes(value: number): string {
 		if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)} MB/s`;
 		if (value >= 1_000) return `${(value / 1_000).toFixed(1)} KB/s`;
 		return `${value.toFixed(0)} B/s`;
+	}
+
+	function formatBytesTotal(value: number): string {
+		if (value >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(1)} GB`;
+		if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)} MB`;
+		if (value >= 1_000) return `${(value / 1_000).toFixed(1)} KB`;
+		return `${value} B`;
+	}
+
+	function timeLabel(): string {
+		const d = new Date();
+		return `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}:${d.getSeconds().toString().padStart(2, '0')}`;
+	}
+
+	function pushHistory(upRate: number, downRate: number) {
+		uploadHistory = [...uploadHistory.slice(-(MAX_HISTORY - 1)), upRate];
+		downloadHistory = [...downloadHistory.slice(-(MAX_HISTORY - 1)), downRate];
+		labels = [...labels.slice(-(MAX_HISTORY - 1)), timeLabel()];
 	}
 
 	function formatRelativeTime(isoString: string): string {
@@ -81,8 +105,14 @@
 			case 'FolderSummary':
 				return {
 					title: 'Scan completed',
-					detail: 'Folder status updated',
+					detail: (event.data?.folder as string) || 'Folder status updated',
 					dotColor: 'bg-[var(--text-muted)]'
+				};
+			case 'FolderCompletion':
+				return {
+					title: 'Folder synced',
+					detail: `${(event.data?.folder as string) || ''} — ${(event.data?.completion as number) ?? 0}%`,
+					dotColor: 'bg-[var(--success)]'
 				};
 			case 'FolderErrors':
 				return {
@@ -96,6 +126,12 @@
 					detail: `${(event.data?.from as string) || ''} \u2192 ${(event.data?.to as string) || ''}`,
 					dotColor: 'bg-[var(--info)]'
 				};
+			case 'ClusterConfigReceived':
+				return {
+					title: 'Cluster config received',
+					detail: ((event.data?.device as string) || '').slice(0, 20),
+					dotColor: 'bg-[var(--info)]'
+				};
 			default:
 				return {
 					title: event.type,
@@ -105,25 +141,50 @@
 		}
 	}
 
-	onMount(async () => {
+	async function fetchActivity() {
 		try {
-			const res = await fetch(`${API_BASE}/sync/activity`);
+			const res = await fetch(`${API_BASE}/sync/activity?since=${lastEventId}&limit=50`);
 			if (res.ok) {
 				const data: ActivityResponse = await res.json();
-				events = data.events ?? [];
+				if (data.events?.length) {
+					// On first load replace; on poll, append new events
+					if (loading) {
+						events = data.events;
+					} else {
+						// Merge new events (higher IDs) at the end
+						const existingIds = new Set(events.map((e) => e.id));
+						const newEvents = data.events.filter((e) => !existingIds.has(e.id));
+						if (newEvents.length) {
+							events = [...events, ...newEvents].slice(-100);
+						}
+					}
+					lastEventId = Math.max(...data.events.map((e) => e.id));
+				}
 				uploadRate = data.upload_rate ?? 0;
 				downloadRate = data.download_rate ?? 0;
-				uploadHistory = data.upload_history ?? [];
-				downloadHistory = data.download_history ?? [];
-				labels = data.labels ?? [];
-			} else {
+				uploadTotal = data.upload_total ?? 0;
+				downloadTotal = data.download_total ?? 0;
+				pushHistory(uploadRate, downloadRate);
+				error = null;
+			} else if (loading) {
 				error = `Failed to load activity (${res.status})`;
 			}
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Failed to load activity';
+			if (loading) {
+				error = e instanceof Error ? e.message : 'Failed to load activity';
+			}
 		} finally {
 			loading = false;
 		}
+	}
+
+	onMount(() => {
+		fetchActivity();
+		pollTimer = setInterval(fetchActivity, POLL_INTERVAL);
+	});
+
+	onDestroy(() => {
+		if (pollTimer) clearInterval(pollTimer);
 	});
 </script>
 
@@ -148,6 +209,10 @@
 			downloadData={downloadHistory}
 			{labels}
 		/>
+		<div class="flex items-center gap-6 mt-3 pt-3 border-t border-[var(--border-subtle)] text-xs text-[var(--text-muted)]">
+			<span>Total up: <span class="font-mono text-[var(--text-secondary)]">{formatBytesTotal(uploadTotal)}</span></span>
+			<span>Total down: <span class="font-mono text-[var(--text-secondary)]">{formatBytesTotal(downloadTotal)}</span></span>
+		</div>
 	</div>
 
 	<!-- Event log -->
