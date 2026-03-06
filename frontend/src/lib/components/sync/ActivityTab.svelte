@@ -3,6 +3,7 @@
 	import { Activity, ArrowUp, ArrowDown } from 'lucide-svelte';
 	import BandwidthChart from './BandwidthChart.svelte';
 	import { API_BASE } from '$lib/config';
+	import { getProjectNameFromEncoded } from '$lib/utils';
 
 	const MAX_HISTORY = 30;
 	const POLL_INTERVAL = 3000;
@@ -35,6 +36,10 @@
 	let pollTimer: ReturnType<typeof setInterval> | null = null;
 	let lastEventId = 0;
 
+	// Lookup maps for resolving raw Syncthing IDs to human-readable names
+	let deviceNameMap = $state<Map<string, string>>(new Map());
+	let folderNameMap = $state<Map<string, string>>(new Map());
+
 	function formatBytes(value: number): string {
 		if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)} MB/s`;
 		if (value >= 1_000) return `${(value / 1_000).toFixed(1)} KB/s`;
@@ -59,6 +64,63 @@
 		labels = [...labels.slice(-(MAX_HISTORY - 1)), timeLabel()];
 	}
 
+	function resolveDeviceName(deviceId: string): string {
+		if (!deviceId) return '';
+		const name = deviceNameMap.get(deviceId);
+		if (name) return name;
+		// Show short ID as fallback
+		return deviceId.slice(0, 7);
+	}
+
+	function resolveFolderName(folderId: string): string {
+		if (!folderId) return '';
+		const name = folderNameMap.get(folderId);
+		if (name) return name;
+		return folderId;
+	}
+
+	async function loadLookupMaps() {
+		try {
+			const [devicesRes, foldersRes] = await Promise.all([
+				fetch(`${API_BASE}/sync/devices`).catch(() => null),
+				fetch(`${API_BASE}/sync/projects`).catch(() => null)
+			]);
+			if (devicesRes?.ok) {
+				const data = await devicesRes.json();
+				const map = new Map<string, string>();
+				for (const d of data.devices ?? []) {
+					if (d.device_id && d.name) map.set(d.device_id, d.name);
+				}
+				deviceNameMap = map;
+			}
+			if (foldersRes?.ok) {
+				const data = await foldersRes.json();
+				const map = new Map<string, string>();
+				for (const f of data.folders ?? []) {
+					if (!f.id) continue;
+					if (f.label) {
+						map.set(f.id, f.label);
+						continue;
+					}
+					// Path: .../remote-sessions/{user}/{encoded_project_path}
+					const pathStr = (f.path as string) || '';
+					const userMatch = pathStr.match(/remote-sessions\/([^/]+)\//);
+					const segments = pathStr.split('/');
+					const encoded = segments[segments.length - 1] || '';
+					// Reuse existing utility to decode encoded path → readable name
+					const projectName = encoded.startsWith('-')
+						? getProjectNameFromEncoded(encoded)
+						: encoded;
+					const user = userMatch?.[1] ?? '';
+					map.set(f.id, user ? `${projectName} (${user})` : projectName);
+				}
+				folderNameMap = map;
+			}
+		} catch {
+			// Non-critical — events still show raw IDs
+		}
+	}
+
 	function formatRelativeTime(isoString: string): string {
 		const date = new Date(isoString);
 		const now = Date.now();
@@ -77,6 +139,9 @@
 	}
 
 	function formatEvent(event: SyncEvent): { title: string; detail: string; dotColor: string } {
+		const folder = (event.data?.folder as string) || '';
+		const device = (event.data?.device as string) || (event.data?.id as string) || '';
+
 		switch (event.type) {
 			case 'ItemFinished':
 				return {
@@ -93,25 +158,25 @@
 			case 'DeviceConnected':
 				return {
 					title: 'Device connected',
-					detail: ((event.data?.id as string) || '').slice(0, 20),
+					detail: resolveDeviceName(device),
 					dotColor: 'bg-[var(--success)]'
 				};
 			case 'DeviceDisconnected':
 				return {
 					title: 'Device disconnected',
-					detail: ((event.data?.id as string) || '').slice(0, 20),
+					detail: resolveDeviceName(device),
 					dotColor: 'bg-[var(--text-muted)]'
 				};
 			case 'FolderSummary':
 				return {
 					title: 'Scan completed',
-					detail: (event.data?.folder as string) || 'Folder status updated',
+					detail: resolveFolderName(folder),
 					dotColor: 'bg-[var(--text-muted)]'
 				};
 			case 'FolderCompletion':
 				return {
 					title: 'Folder synced',
-					detail: `${(event.data?.folder as string) || ''} — ${(event.data?.completion as number) ?? 0}%`,
+					detail: `${resolveFolderName(folder)} — ${(event.data?.completion as number) ?? 0}%`,
 					dotColor: 'bg-[var(--success)]'
 				};
 			case 'FolderErrors':
@@ -123,13 +188,13 @@
 			case 'StateChanged':
 				return {
 					title: 'State changed',
-					detail: `${(event.data?.from as string) || ''} \u2192 ${(event.data?.to as string) || ''}`,
+					detail: `${resolveFolderName(folder)}: ${(event.data?.from as string) || ''} → ${(event.data?.to as string) || ''}`,
 					dotColor: 'bg-[var(--info)]'
 				};
 			case 'ClusterConfigReceived':
 				return {
 					title: 'Cluster config received',
-					detail: ((event.data?.device as string) || '').slice(0, 20),
+					detail: resolveDeviceName(device),
 					dotColor: 'bg-[var(--info)]'
 				};
 			default:
@@ -179,6 +244,7 @@
 	}
 
 	onMount(() => {
+		loadLookupMaps();
 		fetchActivity();
 		pollTimer = setInterval(fetchActivity, POLL_INTERVAL);
 	});
@@ -236,7 +302,7 @@
 			</div>
 		{:else}
 			<div class="px-4 divide-y divide-[var(--border-subtle)]">
-				{#each events as event (event.id)}
+				{#each [...events].reverse() as event (event.id)}
 					{@const fmt = formatEvent(event)}
 					<div class="flex gap-3 py-3">
 						<span class="w-2 h-2 rounded-full mt-1.5 shrink-0 {fmt.dotColor}"></span>

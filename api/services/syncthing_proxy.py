@@ -128,6 +128,10 @@ class SyncthingProxy:
                     "name": device.get("name", ""),
                     "connected": conn.get("connected", False),
                     "address": conn.get("address"),
+                    "type": conn.get("type"),
+                    "crypto": conn.get("crypto"),
+                    "in_bytes_total": conn.get("inBytesTotal", 0),
+                    "out_bytes_total": conn.get("outBytesTotal", 0),
                     **{k: v for k, v in device.items() if k not in ("deviceID", "name")},
                 }
             )
