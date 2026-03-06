@@ -52,10 +52,13 @@ def sync_project(
         )
 
     project = config.projects[project_name]
-    claude_dir = Path.home() / ".claude" / "projects" / project.encoded_name
+    projects_dir = Path.home() / ".claude" / "projects"
+    claude_dir = projects_dir / project.encoded_name
 
     if not claude_dir.is_dir():
         raise click.ClickException(f"Claude project directory not found: {claude_dir}")
+
+    from karma.worktree_discovery import find_worktree_dirs
 
     packager = SessionPackager(
         project_dir=claude_dir,
@@ -63,6 +66,7 @@ def sync_project(
         machine_id=config.machine_id,
         project_path=project.path,
         last_sync_cid=project.last_sync_cid,
+        extra_dirs=find_worktree_dirs(project.encoded_name, projects_dir),
     )
 
     with tempfile.TemporaryDirectory(prefix="karma-sync-") as staging:
