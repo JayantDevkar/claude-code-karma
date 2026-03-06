@@ -238,8 +238,9 @@
 				value={searchQuery}
 				oninput={(e) => onSearchChange(e.currentTarget.value)}
 				placeholder="Search events..."
+				data-timeline-search="true"
 				class="
-					w-full pl-8 pr-3 py-1.5
+					w-full pl-8 pr-14 py-1.5
 					text-xs
 					bg-[var(--bg-base)]
 					border border-[var(--border)]
@@ -256,6 +257,11 @@
 				>
 					<X size={12} strokeWidth={2} />
 				</button>
+			{:else}
+				<div class="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none flex items-center gap-0.5">
+					<kbd class="inline-flex items-center justify-center rounded border border-[var(--border)] bg-[var(--bg-subtle)] px-1.5 py-0.5 text-[10px] font-sans text-[var(--text-faint)]">⌘</kbd>
+					<kbd class="inline-flex items-center justify-center rounded border border-[var(--border)] bg-[var(--bg-subtle)] px-1.5 py-0.5 text-[10px] font-sans text-[var(--text-faint)]">K</kbd>
+				</div>
 			{/if}
 		</div>
 

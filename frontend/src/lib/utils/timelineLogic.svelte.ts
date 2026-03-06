@@ -272,7 +272,6 @@ export function createTimelineLogic(
 	let activeFilters = $state<Set<FilterCategory>>(new Set());
 	let searchQuery = $state('');
 	let expandedId = $state<string | null>(null);
-	let focusedIndex = $state(-1);
 	let manuallyRevealedIds = $state<Set<string>>(new Set());
 	let manuallyHiddenIds = $state<Set<string>>(new Set());
 
@@ -439,8 +438,7 @@ export function createTimelineLogic(
 		manuallyRevealedIds = new Set(); // Reset reveals on search change
 	}
 
-	function toggleExpand(index: number, eventId: string) {
-		focusedIndex = index;
+	function toggleExpand(_index: number, eventId: string) {
 		expandedId = expandedId === eventId ? null : eventId;
 	}
 
@@ -473,109 +471,6 @@ export function createTimelineLogic(
 		manuallyHiddenIds = newHidden;
 	}
 
-	/**
-	 * Handle keyboard navigation
-	 * Returns cleanup function to remove event listener
-	 */
-	function setupKeyboardNavigation(enableKeyboard: boolean) {
-		if (!enableKeyboard) return () => {};
-
-		let gKeyPressed = false;
-		let gKeyTimeout: ReturnType<typeof setTimeout> | null = null;
-
-		function handleKeyDown(e: KeyboardEvent) {
-			const target = e.target as HTMLElement;
-			// Use visible event IDs for navigation
-			const ids = eventIds;
-
-			// Don't handle if user is typing in an input
-			if (
-				target.tagName === 'INPUT' ||
-				target.tagName === 'TEXTAREA' ||
-				target.isContentEditable
-			) {
-				return;
-			}
-
-			// focusedIndex matches index in `eventIds` array (visible events only, excluding gaps)
-
-			switch (e.key) {
-				case 'j':
-				case 'ArrowDown':
-					e.preventDefault();
-					focusedIndex = Math.min(focusedIndex + 1, ids.length - 1);
-					if (focusedIndex === -1) focusedIndex = 0;
-					expandedId = ids[focusedIndex] ?? null;
-					break;
-
-				case 'k':
-				case 'ArrowUp':
-					e.preventDefault();
-					if (focusedIndex === -1) {
-						focusedIndex = ids.length - 1;
-					} else {
-						focusedIndex = Math.max(focusedIndex - 1, 0);
-					}
-					expandedId = ids[focusedIndex] ?? null;
-					break;
-
-				case 'Enter':
-				case ' ':
-					e.preventDefault();
-					if (focusedIndex >= 0 && focusedIndex < ids.length) {
-						const currentId = ids[focusedIndex];
-						expandedId = expandedId === currentId ? null : currentId;
-					}
-					break;
-
-				case 'Escape':
-					e.preventDefault();
-					expandedId = null;
-					break;
-
-				case 'g':
-					if (gKeyPressed) {
-						e.preventDefault();
-						focusedIndex = 0;
-						expandedId = ids[0] ?? null;
-						gKeyPressed = false;
-						if (gKeyTimeout) clearTimeout(gKeyTimeout);
-					} else {
-						gKeyPressed = true;
-						gKeyTimeout = setTimeout(() => {
-							gKeyPressed = false;
-						}, 500);
-					}
-					break;
-
-				case 'G':
-					e.preventDefault();
-					focusedIndex = ids.length - 1;
-					expandedId = ids[ids.length - 1] ?? null;
-					break;
-
-				case 'Home':
-					e.preventDefault();
-					focusedIndex = 0;
-					expandedId = ids[0] ?? null;
-					break;
-
-				case 'End':
-					e.preventDefault();
-					focusedIndex = ids.length - 1;
-					expandedId = ids[ids.length - 1] ?? null;
-					break;
-			}
-		}
-
-		window.addEventListener('keydown', handleKeyDown);
-
-		// Return cleanup function
-		return () => {
-			window.removeEventListener('keydown', handleKeyDown);
-			if (gKeyTimeout) clearTimeout(gKeyTimeout);
-		};
-	}
 
 	return {
 		// State (exposed as getters/setters via runes)
@@ -590,9 +485,6 @@ export function createTimelineLogic(
 		},
 		get expandedId() {
 			return expandedId;
-		},
-		get focusedIndex() {
-			return focusedIndex;
 		},
 		// Derived state
 		get counts() {
@@ -625,7 +517,6 @@ export function createTimelineLogic(
 		setSearchQuery,
 		toggleExpand,
 		setExpandedId,
-		setupKeyboardNavigation,
 		expandGap,
 		toggleHide,
 		// Utility functions
