@@ -7,9 +7,11 @@
 		open?: boolean;
 		onOpenChange?: (open: boolean) => void;
 		title: string;
+		titleSnippet?: Snippet;
 		description?: string;
 		children: Snippet;
 		footer?: Snippet;
+		headerActions?: Snippet;
 		maxWidth?: 'sm' | 'md' | 'lg' | 'xl';
 	}
 
@@ -17,9 +19,11 @@
 		open = $bindable(false),
 		onOpenChange,
 		title,
+		titleSnippet,
 		description,
 		children,
 		footer,
+		headerActions,
 		maxWidth = 'md'
 	}: Props = $props();
 
@@ -75,24 +79,33 @@
 		>
 			<div class="flex items-center justify-between mb-4">
 				<Dialog.Title class="text-lg font-semibold text-[var(--text-primary)]">
-					{title}
+					{#if titleSnippet}
+						{@render titleSnippet()}
+					{:else}
+						{title}
+					{/if}
 				</Dialog.Title>
-				<Dialog.Close
-					class="
-						text-[var(--text-muted)]
-						hover:text-[var(--text-primary)]
-						transition-colors
-						focus:outline-none
-						focus-visible:ring-2
-						focus-visible:ring-[var(--accent)]
-						rounded-md
-						p-1
-					"
-					style="transition-duration: var(--duration-fast);"
-					aria-label="Close dialog"
-				>
-					<X size={20} />
-				</Dialog.Close>
+				<div class="flex items-center gap-1">
+					{#if headerActions}
+						{@render headerActions()}
+					{/if}
+					<Dialog.Close
+						class="
+							text-[var(--text-muted)]
+							hover:text-[var(--text-primary)]
+							transition-colors
+							focus:outline-none
+							focus-visible:ring-2
+							focus-visible:ring-[var(--accent)]
+							rounded-md
+							p-1
+						"
+						style="transition-duration: var(--duration-fast);"
+						aria-label="Close dialog"
+					>
+						<X size={20} />
+					</Dialog.Close>
+				</div>
 			</div>
 
 			{#if description}
