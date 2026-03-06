@@ -116,22 +116,48 @@ class SyncthingProxy:
         """Return all configured devices with their connection status."""
         client = self._require_client()
         config = client._get_config()
-        connections = client.get_connections()
+
+        # Fetch raw connections response to get both per-device and total stats
+        resp = requests.get(
+            f"{client.api_url}/rest/system/connections",
+            headers=client.headers,
+            timeout=10,
+        )
+        resp.raise_for_status()
+        conn_data = resp.json()
+        connections = conn_data.get("connections", {})
+        total = conn_data.get("total", {})
+
+        # Detect self device ID
+        self_id = None
+        try:
+            status_resp = requests.get(
+                f"{client.api_url}/rest/system/status",
+                headers=client.headers,
+                timeout=10,
+            )
+            if status_resp.ok:
+                self_id = status_resp.json().get("myID")
+        except Exception:
+            pass
 
         result = []
         for device in config.get("devices", []):
             device_id = device.get("deviceID", "")
             conn = connections.get(device_id, {})
+            is_self = self_id and device_id == self_id
             result.append(
                 {
                     "device_id": device_id,
                     "name": device.get("name", ""),
-                    "connected": conn.get("connected", False),
+                    "connected": conn.get("connected", False) or is_self,
                     "address": conn.get("address"),
                     "type": conn.get("type"),
                     "crypto": conn.get("crypto"),
-                    "in_bytes_total": conn.get("inBytesTotal", 0),
-                    "out_bytes_total": conn.get("outBytesTotal", 0),
+                    # Self device: show aggregate totals; remote: show per-device
+                    "in_bytes_total": total.get("inBytesTotal", 0) if is_self else conn.get("inBytesTotal", 0),
+                    "out_bytes_total": total.get("outBytesTotal", 0) if is_self else conn.get("outBytesTotal", 0),
+                    "is_self": bool(is_self),
                     **{k: v for k, v in device.items() if k not in ("deviceID", "name")},
                 }
             )
@@ -150,9 +176,36 @@ class SyncthingProxy:
         return {"ok": True, "device_id": device_id}
 
     def get_folder_status(self) -> list[dict]:
-        """Return all configured folders."""
+        """Return all configured folders with their sync status."""
         client = self._require_client()
-        return client.get_folders()
+        folders = client.get_folders()
+        result = []
+        for folder in folders:
+            folder_id = folder.get("id", "")
+            entry = dict(folder)
+            # Enrich with actual sync stats from /rest/db/status
+            try:
+                status_resp = requests.get(
+                    f"{client.api_url}/rest/db/status",
+                    headers=client.headers,
+                    params={"folder": folder_id},
+                    timeout=5,
+                )
+                if status_resp.ok:
+                    status = status_resp.json()
+                    entry["globalFiles"] = status.get("globalFiles", 0)
+                    entry["globalBytes"] = status.get("globalBytes", 0)
+                    entry["localFiles"] = status.get("localFiles", 0)
+                    entry["localBytes"] = status.get("localBytes", 0)
+                    entry["needFiles"] = status.get("needFiles", 0)
+                    entry["needBytes"] = status.get("needBytes", 0)
+                    entry["state"] = status.get("state", "unknown")
+                    entry["inSyncBytes"] = status.get("inSyncBytes", 0)
+                    entry["inSyncFiles"] = status.get("inSyncFiles", 0)
+            except Exception:
+                pass
+            result.append(entry)
+        return result
 
     def get_events(self, since: int = 0, limit: int = 100) -> list[dict]:
         """Return recent Syncthing events.

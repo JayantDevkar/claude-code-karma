@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-	import { Activity, ArrowUp, ArrowDown } from 'lucide-svelte';
+	import { Activity, ArrowUp, ArrowDown, FolderSync, HardDrive } from 'lucide-svelte';
 	import BandwidthChart from './BandwidthChart.svelte';
 	import { API_BASE } from '$lib/config';
 	import { getProjectNameFromEncoded } from '$lib/utils';
@@ -36,9 +36,23 @@
 	let pollTimer: ReturnType<typeof setInterval> | null = null;
 	let lastEventId = 0;
 
+	interface FolderStats {
+		id: string;
+		displayName: string;
+		state: string;
+		globalFiles: number;
+		globalBytes: number;
+		localFiles: number;
+		localBytes: number;
+		needFiles: number;
+		needBytes: number;
+		completion: number;
+	}
+
 	// Lookup maps for resolving raw Syncthing IDs to human-readable names
 	let deviceNameMap = $state<Map<string, string>>(new Map());
 	let folderNameMap = $state<Map<string, string>>(new Map());
+	let folderStats = $state<FolderStats[]>([]);
 
 	function formatBytes(value: number): string {
 		if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)} MB/s`;
@@ -95,26 +109,40 @@
 			}
 			if (foldersRes?.ok) {
 				const data = await foldersRes.json();
-				const map = new Map<string, string>();
+				const nameMap = new Map<string, string>();
+				const stats: FolderStats[] = [];
 				for (const f of data.folders ?? []) {
 					if (!f.id) continue;
-					if (f.label) {
-						map.set(f.id, f.label);
-						continue;
+					let displayName = f.label || '';
+					if (!displayName) {
+						const pathStr = (f.path as string) || '';
+						const userMatch = pathStr.match(/remote-sessions\/([^/]+)\//);
+						const segments = pathStr.split('/');
+						const encoded = segments[segments.length - 1] || '';
+						const projectName = encoded.startsWith('-')
+							? getProjectNameFromEncoded(encoded)
+							: encoded;
+						const user = userMatch?.[1] ?? '';
+						displayName = user ? `${projectName} (${user})` : projectName;
 					}
-					// Path: .../remote-sessions/{user}/{encoded_project_path}
-					const pathStr = (f.path as string) || '';
-					const userMatch = pathStr.match(/remote-sessions\/([^/]+)\//);
-					const segments = pathStr.split('/');
-					const encoded = segments[segments.length - 1] || '';
-					// Reuse existing utility to decode encoded path → readable name
-					const projectName = encoded.startsWith('-')
-						? getProjectNameFromEncoded(encoded)
-						: encoded;
-					const user = userMatch?.[1] ?? '';
-					map.set(f.id, user ? `${projectName} (${user})` : projectName);
+					nameMap.set(f.id, displayName);
+					const globalBytes = (f.globalBytes as number) ?? 0;
+					const localBytes = (f.localBytes as number) ?? 0;
+					stats.push({
+						id: f.id,
+						displayName,
+						state: (f.state as string) ?? 'unknown',
+						globalFiles: (f.globalFiles as number) ?? 0,
+						globalBytes,
+						localFiles: (f.localFiles as number) ?? 0,
+						localBytes,
+						needFiles: (f.needFiles as number) ?? 0,
+						needBytes: (f.needBytes as number) ?? 0,
+						completion: globalBytes > 0 ? Math.round((localBytes / globalBytes) * 100) : 100
+					});
 				}
-				folderNameMap = map;
+				folderNameMap = nameMap;
+				folderStats = stats;
 			}
 		} catch {
 			// Non-critical — events still show raw IDs
@@ -280,6 +308,43 @@
 			<span>Total down: <span class="font-mono text-[var(--text-secondary)]">{formatBytesTotal(downloadTotal)}</span></span>
 		</div>
 	</div>
+
+	<!-- Sync status per folder -->
+	{#if folderStats.length > 0}
+		<div class="rounded-lg border border-[var(--border)] bg-[var(--bg-subtle)]">
+			<div class="px-4 py-3 border-b border-[var(--border-subtle)]">
+				<h3 class="text-sm font-medium text-[var(--text-primary)]">Synced Folders</h3>
+			</div>
+			<div class="px-4 divide-y divide-[var(--border-subtle)]">
+				{#each folderStats as folder (folder.id)}
+					<div class="flex items-center gap-3 py-3">
+						<FolderSync size={16} class="shrink-0 text-[var(--text-muted)]" />
+						<div class="flex-1 min-w-0">
+							<div class="flex items-center gap-2">
+								<span class="text-sm font-medium text-[var(--text-primary)] truncate">{folder.displayName}</span>
+								<span class="shrink-0 px-1.5 py-0.5 text-[10px] font-medium rounded {folder.state === 'idle' ? 'bg-[var(--success)]/10 text-[var(--success)]' : folder.state === 'syncing' ? 'bg-[var(--info)]/10 text-[var(--info)]' : 'bg-[var(--bg-muted)] text-[var(--text-muted)]'}">
+									{folder.state === 'idle' ? 'Up to date' : folder.state}
+								</span>
+							</div>
+							<div class="flex items-center gap-4 mt-1 text-xs text-[var(--text-muted)]">
+								<span>
+									<HardDrive size={10} class="inline -mt-0.5 mr-0.5" />
+									{formatBytesTotal(folder.globalBytes)}
+								</span>
+								<span>{folder.globalFiles.toLocaleString()} files</span>
+								{#if folder.needBytes > 0}
+									<span class="text-[var(--info)]">
+										{formatBytesTotal(folder.needBytes)} pending
+									</span>
+								{/if}
+								<span class="font-mono">{folder.completion}%</span>
+							</div>
+						</div>
+					</div>
+				{/each}
+			</div>
+		</div>
+	{/if}
 
 	<!-- Event log -->
 	<div class="rounded-lg border border-[var(--border)] bg-[var(--bg-subtle)]">
