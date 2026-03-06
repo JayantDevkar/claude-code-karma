@@ -129,9 +129,9 @@
 					<Power size={11} />
 					Enable Sync
 				</button>
-			{:else if project.status === 'pending'}
+			{:else}
 				<button
-					class="px-2.5 py-1 text-xs font-medium rounded-md border border-[var(--warning)]/40 text-[var(--warning)] hover:bg-[var(--warning-subtle)] transition-colors disabled:opacity-50 flex items-center gap-1"
+					class="px-2.5 py-1 text-xs font-medium rounded-md border border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-base)] transition-colors disabled:opacity-50 flex items-center gap-1"
 					onclick={handleSyncNow}
 					disabled={syncing}
 					aria-label="Sync now for {project.name}"

@@ -227,6 +227,39 @@ class SyncthingProxy:
         resp.raise_for_status()
         return resp.json()
 
+    def rescan_folder(self, folder_id: str) -> dict:
+        """Trigger an immediate rescan of a specific folder."""
+        client = self._require_client()
+        resp = requests.post(
+            f"{client.api_url}/rest/db/scan",
+            headers=client.headers,
+            params={"folder": folder_id},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        return {"ok": True, "folder": folder_id}
+
+    def rescan_all(self) -> dict:
+        """Trigger an immediate rescan of all folders."""
+        client = self._require_client()
+        folders = client.get_folders()
+        scanned = []
+        for folder in folders:
+            folder_id = folder.get("id", "")
+            if not folder_id:
+                continue
+            try:
+                requests.post(
+                    f"{client.api_url}/rest/db/scan",
+                    headers=client.headers,
+                    params={"folder": folder_id},
+                    timeout=10,
+                )
+                scanned.append(folder_id)
+            except Exception:
+                pass
+        return {"ok": True, "scanned": scanned}
+
     def get_bandwidth(self) -> dict:
         """Return current bandwidth totals from connections endpoint."""
         client = self._require_client()

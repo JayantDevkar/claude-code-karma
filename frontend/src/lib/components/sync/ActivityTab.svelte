@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-	import { Activity, ArrowUp, ArrowDown, FolderSync, HardDrive } from 'lucide-svelte';
+	import { Activity, ArrowUp, ArrowDown, FolderSync, HardDrive, RefreshCw } from 'lucide-svelte';
 	import BandwidthChart from './BandwidthChart.svelte';
 	import { API_BASE } from '$lib/config';
 	import { getProjectNameFromEncoded } from '$lib/utils';
@@ -283,6 +283,19 @@
 		}
 	}
 
+	let rescanning = $state(false);
+
+	async function handleRescanAll() {
+		rescanning = true;
+		try {
+			await fetch(`${API_BASE}/sync/rescan`, { method: 'POST' });
+			await fetchActivity();
+			await loadLookupMaps();
+		} finally {
+			rescanning = false;
+		}
+	}
+
 	onMount(() => {
 		loadLookupMaps();
 		fetchActivity();
@@ -295,6 +308,20 @@
 </script>
 
 <div class="space-y-4 p-4">
+	<!-- Sync Now header -->
+	<div class="flex items-center justify-between">
+		<h2 class="text-sm font-semibold text-[var(--text-primary)]">Activity</h2>
+		<button
+			class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md bg-[var(--accent)] text-white hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+			onclick={handleRescanAll}
+			disabled={rescanning}
+			aria-label="Rescan all folders"
+		>
+			<RefreshCw size={12} class={rescanning ? 'animate-spin' : ''} />
+			{rescanning ? 'Scanning...' : 'Sync Now'}
+		</button>
+	</div>
+
 	<!-- Bandwidth section -->
 	<div class="rounded-lg border border-[var(--border)] bg-[var(--bg-subtle)] p-4">
 		<div class="flex items-center justify-between mb-3">
