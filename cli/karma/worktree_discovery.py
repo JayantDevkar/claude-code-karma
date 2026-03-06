@@ -83,3 +83,75 @@ def find_worktree_dirs(
             matches.append(entry)
 
     return sorted(matches)
+
+
+def project_name_from_path(project_path: str) -> str:
+    """Extract the directory name from a full project path.
+
+    Examples:
+        /Users/jay/GitHub/claude-karma -> claude-karma
+        C:\\Users\\jay\\repos\\karma     -> karma
+        /Users/jay/repo/               -> repo  (trailing slash)
+        myproject                      -> myproject
+    """
+    p = project_path.replace("\\", "/").rstrip("/")
+    return p.rsplit("/", 1)[-1] if "/" in p else p
+
+
+def find_desktop_worktree_dirs(
+    project_name: str,
+    projects_dir: Path,
+    worktree_base: Path | None = None,
+) -> list[Path]:
+    """Find Desktop worktree directories for a project.
+
+    Desktop worktrees (created by Claude Desktop) live in
+    ~/.claude-worktrees/{project_name}/{random_name}/ and get encoded as:
+      -Users-{user}--claude-worktrees-{project}-{name}
+
+    These DON'T share a prefix with the main project, so we scan for
+    the marker pattern instead.
+    """
+    if worktree_base is None:
+        worktree_base = Path.home() / ".claude-worktrees"
+
+    if not projects_dir.is_dir():
+        return []
+
+    marker = f"-claude-worktrees-{project_name}-"
+
+    matches = []
+    for entry in projects_dir.iterdir():
+        if not entry.is_dir():
+            continue
+        if marker not in entry.name:
+            continue
+        matches.append(entry)
+
+    return sorted(matches)
+
+
+def find_all_worktree_dirs(
+    main_encoded_name: str,
+    project_path: str,
+    projects_dir: Path,
+    worktree_base: Path | None = None,
+) -> list[Path]:
+    """Find ALL worktree directories for a project (CLI + Desktop).
+
+    Combines find_worktree_dirs() (prefix match) and
+    find_desktop_worktree_dirs() (project name match), deduplicating results.
+    """
+    cli_dirs = find_worktree_dirs(main_encoded_name, projects_dir)
+    proj_name = project_name_from_path(project_path)
+    desktop_dirs = find_desktop_worktree_dirs(proj_name, projects_dir, worktree_base)
+
+    seen: set[Path] = set()
+    result: list[Path] = []
+    for d in cli_dirs + desktop_dirs:
+        resolved = d.resolve()
+        if resolved not in seen:
+            seen.add(resolved)
+            result.append(d)
+
+    return sorted(result)
