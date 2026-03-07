@@ -11,7 +11,9 @@ import type {
 
 interface ProjectSummary {
 	encoded_name: string;
-	name: string;
+	path: string;
+	slug?: string;
+	display_name?: string;
 	session_count: number;
 }
 
@@ -40,10 +42,11 @@ export const load: PageServerLoad = async ({ fetch, params }) => {
 	}
 
 	// Get all projects for the add-project dialog
-	const allProjects = await fetchWithFallback<{ projects: ProjectSummary[] }>(
+	// Note: /projects returns a flat array, not { projects: [...] }
+	const allProjects = await fetchWithFallback<ProjectSummary[]>(
 		fetch,
 		`${API_BASE}/projects`,
-		{ projects: [] }
+		[]
 	);
 
 	return {
@@ -52,7 +55,11 @@ export const load: PageServerLoad = async ({ fetch, params }) => {
 		devices: devices.devices,
 		joinCode: joinCodeData.ok ? joinCodeData.data.join_code : null,
 		pendingDevices: pendingData.devices,
-		allProjects: allProjects.projects,
+		allProjects: allProjects.map((p) => ({
+			encoded_name: p.encoded_name,
+			name: p.display_name || p.slug || p.encoded_name,
+			path: p.path
+		})),
 		syncStatus
 	};
 };
