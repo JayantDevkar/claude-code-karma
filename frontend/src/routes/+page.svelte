@@ -39,7 +39,7 @@
 		<NavigationCard title="Tools" href="/tools" icon={Cable} color="teal" />
 		<NavigationCard title="Hooks" href="/hooks" icon={Webhook} color="amber" />
 		<NavigationCard title="Commands" href="/commands" icon={Terminal} color="red" />
-		<NavigationCard title="Team" href="/team" icon={Users} color="indigo" />
+		<NavigationCard title="Teams" href="/team" icon={Users} color="indigo" />
 		<NavigationCard title="Sync" href="/sync" icon={RefreshCw} color="green" />
 		<NavigationCard title="Plugins" href="/plugins" icon={Puzzle} color="violet" />
 		<NavigationCard title="About" href="/about" icon={Info} color="teal" />

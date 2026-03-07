@@ -74,6 +74,7 @@
 		icon={RefreshCw}
 		iconColor="--nav-green"
 		breadcrumbs={[{ label: 'Dashboard', href: '/' }, { label: 'Sync' }]}
+		subtitle="Syncthing-powered session sharing across devices and teams"
 	>
 		{#snippet headerRight()}
 			{#if syncStatus?.configured}

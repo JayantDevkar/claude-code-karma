@@ -117,6 +117,7 @@
 	title={data.teamName}
 	icon={Users}
 	iconColor="--nav-purple"
+	subtitle="Team members, shared projects, and sync status"
 	breadcrumbs={[
 		{ label: 'Dashboard', href: '/' },
 		{ label: 'Teams', href: '/team' },
