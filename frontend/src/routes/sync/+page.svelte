@@ -20,9 +20,7 @@
 	let syncDetect = $state<SyncDetect | null>(data.detect ?? null);
 	let syncStatus = $state<SyncStatusResponse | null>(data.status ?? null);
 
-	let activeTab = $state(
-		data.activeTab ?? (data.status?.configured ? 'overview' : 'overview')
-	);
+	let activeTab = $state(data.activeTab ?? 'overview');
 
 	// ── Team selection ───────────────────────────────────────────────────────
 	let activeTeamName = $state('');
@@ -30,11 +28,13 @@
 	// Derive teams array from syncStatus.teams Record
 	let teamsList = $derived.by<SyncTeam[]>(() => {
 		if (!syncStatus?.teams) return [];
-		return Object.entries(syncStatus.teams).map(([name, value]) => ({
+		return Object.entries(syncStatus.teams).map(([name, entry]) => ({
 			name,
-			backend: ((value as Record<string, unknown>).backend as 'syncthing' | 'ipfs') ?? 'syncthing',
-			projects: ((value as Record<string, unknown>).projects as SyncTeam['projects']) ?? [],
-			members: ((value as Record<string, unknown>).members as SyncTeam['members']) ?? []
+			backend: entry.backend ?? 'syncthing',
+			projects: [],
+			members: [],
+			member_count: entry.member_count ?? 0,
+			project_count: entry.project_count ?? 0
 		}));
 	});
 
@@ -73,13 +73,6 @@
 			url.searchParams.delete('tab');
 		}
 		history.replaceState(null, '', url.toString());
-	});
-
-	// Update seconds since last update
-	$effect(() => {
-		if (lastUpdated) {
-			secondsSinceUpdate = Math.floor((Date.now() - lastUpdated.getTime()) / 1000);
-		}
 	});
 
 	async function refreshData() {

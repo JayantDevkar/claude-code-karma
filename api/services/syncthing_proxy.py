@@ -262,6 +262,40 @@ class SyncthingProxy:
                 pass
         return {"ok": True, "scanned": scanned}
 
+    def get_pending_folders_for_ui(
+        self, known_devices: dict[str, tuple[str, str]]
+    ) -> list[dict]:
+        """Get pending folder offers filtered for known team members.
+
+        Args:
+            known_devices: {device_id: (member_name, team_name)}
+
+        Returns:
+            List of pending offers from known members with karma- prefix only.
+        """
+        client = self._require_client()
+        pending = client.get_pending_folders()
+        existing_ids = {f["id"] for f in client.get_folders()}
+        result = []
+
+        for folder_id, info in pending.items():
+            if not folder_id.startswith("karma-"):
+                continue
+            if folder_id in existing_ids:
+                continue
+            for device_id, offer in info.get("offeredBy", {}).items():
+                if device_id not in known_devices:
+                    continue
+                member_name, team_name = known_devices[device_id]
+                result.append({
+                    "folder_id": folder_id,
+                    "from_device": device_id,
+                    "from_member": member_name,
+                    "from_team": team_name,
+                    "offered_at": offer.get("time"),
+                })
+        return result
+
     def get_bandwidth(self) -> dict:
         """Return current bandwidth totals from connections endpoint."""
         client = self._require_client()

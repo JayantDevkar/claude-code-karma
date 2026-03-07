@@ -1697,11 +1697,17 @@ export interface SyncDetect {
 	device_id: string | null;
 }
 
+export interface SyncStatusTeamEntry {
+	backend: 'syncthing' | 'ipfs';
+	member_count: number;
+	project_count: number;
+}
+
 export interface SyncStatusResponse {
 	configured: boolean;
 	user_id?: string;
 	machine_id?: string;
-	teams?: Record<string, unknown>;
+	teams?: Record<string, SyncStatusTeamEntry>;
 }
 
 export interface SyncDevice {
@@ -1734,6 +1740,8 @@ export interface SyncTeam {
 	backend: 'syncthing' | 'ipfs';
 	projects: SyncTeamProject[];
 	members: SyncTeamMember[];
+	member_count?: number;
+	project_count?: number;
 }
 
 export interface SyncTeamProject {

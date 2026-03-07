@@ -82,14 +82,33 @@ def _accept_pending_folders(st, config):
 
     accepted = 0
 
+    # Get existing folder IDs to avoid duplicates
+    existing_folder_ids = {f["id"] for f in st.get_folders()}
+    own_device_id = config.syncthing.device_id if config.syncthing else None
+
     for folder_id, folder_info in pending.items():
         # Security: only accept karma-prefixed folders
         if not folder_id.startswith("karma-"):
             click.echo(f"  Skipped non-karma folder offer '{folder_id}' (security policy)")
             continue
 
+        # Skip folders we already have configured (e.g. our own outbox)
+        if folder_id in existing_folder_ids:
+            # Dismiss the pending offer so it doesn't reappear
+            for device_id in folder_info.get("offeredBy", {}):
+                try:
+                    st.dismiss_pending_folder(folder_id, device_id)
+                except Exception:
+                    pass
+            click.echo(f"  Dismissed '{folder_id}' (already configured locally)")
+            continue
+
         offered_by = folder_info.get("offeredBy", {})
         for device_id, _offer in offered_by.items():
+            # Skip offers from our own device
+            if own_device_id and device_id == own_device_id:
+                continue
+
             if device_id not in known_devices:
                 short_id = device_id[:20] + "..."
                 click.echo(f"  Skipped folder '{folder_id}' from unknown device {short_id}")
@@ -128,10 +147,11 @@ def _accept_pending_folders(st, config):
 
             # Accept: create the folder as receiveonly
             inbox_devices = [device_id]
-            if config.syncthing and config.syncthing.device_id:
-                inbox_devices.append(config.syncthing.device_id)
+            if own_device_id:
+                inbox_devices.append(own_device_id)
             Path(inbox_path).mkdir(parents=True, exist_ok=True)
             st.add_folder(folder_id, inbox_path, inbox_devices, folder_type="receiveonly")
+            existing_folder_ids.add(folder_id)
 
             click.echo(
                 f"  Accepted '{folder_id}' from {member_name} "

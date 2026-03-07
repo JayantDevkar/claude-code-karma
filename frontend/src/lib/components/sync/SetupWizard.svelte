@@ -218,7 +218,7 @@
 						fetch(`${API_BASE}/sync/teams/${encodeURIComponent(name)}/projects`, {
 							method: 'POST',
 							headers: { 'Content-Type': 'application/json' },
-							body: JSON.stringify({ encoded_name: encodedName })
+							body: JSON.stringify({ name: encodedName, path: '' })
 						})
 					)
 				);

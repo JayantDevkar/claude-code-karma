@@ -18,14 +18,12 @@
 
 	let memberCount = $derived(
 		activeTeamObj
-			? ((activeTeamObj as unknown as Record<string, unknown>).member_count as number) ??
-				(Array.isArray(activeTeamObj.members) ? activeTeamObj.members.length : 0)
+			? activeTeamObj.member_count ?? activeTeamObj.members.length
 			: 0
 	);
 	let projectCount = $derived(
 		activeTeamObj
-			? ((activeTeamObj as unknown as Record<string, unknown>).project_count as number) ??
-				(Array.isArray(activeTeamObj.projects) ? activeTeamObj.projects.length : 0)
+			? activeTeamObj.project_count ?? activeTeamObj.projects.length
 			: 0
 	);
 
@@ -123,8 +121,8 @@
 							aria-label="Select team"
 						>
 							{#each teams as team (team.name)}
-								{@const tMembers = (team as unknown as Record<string, unknown>).member_count as number ?? (Array.isArray(team.members) ? team.members.length : 0)}
-								{@const tProjects = (team as unknown as Record<string, unknown>).project_count as number ?? (Array.isArray(team.projects) ? team.projects.length : 0)}
+								{@const tMembers = team.member_count ?? team.members.length}
+								{@const tProjects = team.project_count ?? team.projects.length}
 								<button
 									onclick={() => selectTeam(team.name)}
 									role="option"

@@ -41,11 +41,9 @@
 		if (!teamName) return;
 		watchActing = true;
 		try {
-			const res = await fetch(`${API_BASE}/sync/watch/start`, {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ team: teamName })
-			}).catch(() => null);
+			const url = new URL(`${API_BASE}/sync/watch/start`, window.location.origin);
+			if (teamName) url.searchParams.set('team_name', teamName);
+			const res = await fetch(url.toString(), { method: 'POST' }).catch(() => null);
 			if (res?.ok) {
 				watchStatus = await res.json();
 			}
@@ -108,7 +106,7 @@
 
 	type TeamEntry = { member_count?: number; project_count?: number; members?: unknown[] };
 
-	let derivedMemberCount = $derived(() => {
+	let derivedMemberCount = $derived.by(() => {
 		if (!status?.teams) return 0;
 		let count = 0;
 		for (const team of Object.values(status.teams) as TeamEntry[]) {
@@ -117,7 +115,7 @@
 		return count;
 	});
 
-	let derivedProjectCount = $derived(() => {
+	let derivedProjectCount = $derived.by(() => {
 		if (!status?.teams) return 0;
 		let count = 0;
 		for (const team of Object.values(status.teams) as TeamEntry[]) {
@@ -128,8 +126,8 @@
 
 	async function loadStats() {
 		statsLoading = true;
-		memberCount = derivedMemberCount();
-		projectCount = derivedProjectCount();
+		memberCount = derivedMemberCount;
+		projectCount = derivedProjectCount;
 		try {
 			const res = await fetch(`${API_BASE}/sync/projects`).catch(() => null);
 			if (res?.ok) {

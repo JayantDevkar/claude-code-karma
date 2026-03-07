@@ -142,6 +142,15 @@ class SyncthingClient:
         resp.raise_for_status()
         return resp.json()
 
+    def dismiss_pending_folder(self, folder_id: str, device_id: str) -> None:
+        """Dismiss a pending folder offer so it no longer appears."""
+        requests.delete(
+            f"{self.api_url}/rest/cluster/pending/folders",
+            headers=self.headers,
+            params={"folder": folder_id, "device": device_id},
+            timeout=10,
+        )
+
     def get_folders(self) -> list[dict]:
         """Get all configured folders."""
         config = self._get_config()
