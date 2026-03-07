@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { Play, Square, Monitor, FolderGit2, ArrowUp, ArrowDown, Bell, CheckCircle2, Loader2, Users, XCircle } from 'lucide-svelte';
 	import type { SyncDetect, SyncStatusResponse, SyncWatchStatus, SyncPendingFolder } from '$lib/api-types';
 	import { formatRelativeTime } from '$lib/utils';
@@ -174,13 +175,15 @@
 		}
 	}
 
-	// ── Load everything when tab becomes active ───────────────────────────────
+	// ── Load everything when tab becomes active or team changes ──────────────
 	$effect(() => {
-		if (active) {
+		if (!active) return;
+		const _team = teamName; // track teamName so we re-fetch on team switch
+		untrack(() => {
 			loadWatchStatus();
 			loadStats();
 			loadPending();
-		}
+		});
 	});
 </script>
 

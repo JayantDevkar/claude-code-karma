@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { Users, XCircle, Plus, Loader2, Trash2, CheckCircle2, Copy, CheckCircle, Sparkles, FolderGit2, X } from 'lucide-svelte';
 	import type { SyncDetect, SyncTeam, SyncTeamMember, SyncDevice, SyncTeamProject } from '$lib/api-types';
 	import { API_BASE } from '$lib/config';
@@ -241,7 +242,7 @@
 	// Reload when tab becomes active or teamName changes
 	$effect(() => {
 		if (active && teamName) {
-			loadData();
+			untrack(() => loadData());
 		}
 	});
 </script>

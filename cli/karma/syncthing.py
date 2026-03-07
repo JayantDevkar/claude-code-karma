@@ -62,7 +62,7 @@ class SyncthingClient:
                 timeout=5,
             )
             return True  # Any HTTP response means the daemon is up
-        except requests.ConnectionError:
+        except (requests.ConnectionError, requests.Timeout):
             return False
 
     def get_device_id(self) -> str:

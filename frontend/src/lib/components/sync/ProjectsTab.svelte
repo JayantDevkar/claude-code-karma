@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { FolderGit2, RefreshCw, Search, CheckCircle2, Users } from 'lucide-svelte';
 	import type { SyncProject } from '$lib/api-types';
 	import { API_BASE } from '$lib/config';
@@ -209,7 +210,7 @@
 
 	$effect(() => {
 		if (active && teamName) {
-			loadProjects();
+			untrack(() => loadProjects());
 		}
 	});
 </script>
