@@ -1336,7 +1336,7 @@
 			<div
 				class={viewMode === 'grid'
 					? 'grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2'
-					: 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3'}
+					: 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3'}
 			>
 				{#each recentlyEndedSessions as { session, liveSession } (session.uuid)}
 					<GlobalSessionCard {session} {liveSession} compact={viewMode === 'grid'} />
@@ -1354,7 +1354,7 @@
 					<div class="h-4 w-16 skeleton-shimmer rounded"></div>
 					<div class="h-3 w-8 skeleton-shimmer rounded"></div>
 				</div>
-				<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+				<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
 					{#each Array(6) as _}
 						<SkeletonGlobalSessionCard />
 					{/each}
@@ -1421,7 +1421,7 @@
 					</div>
 
 					<!-- Session Cards Grid -->
-					<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+					<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
 						{#each group.sessions as session (session.uuid)}
 							<GlobalSessionCard {session} liveSession={getLiveSession(session)} />
 						{/each}

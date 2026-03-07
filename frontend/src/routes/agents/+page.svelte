@@ -340,7 +340,7 @@
 						</div>
 						{#if groupIndex === 0}
 							<div class="border-t border-[var(--border)] p-4">
-								<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+								<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
 									{#each Array(3) as _}
 										<SkeletonAgentCard />
 									{/each}
@@ -533,7 +533,7 @@
 					{/snippet}
 
 					<div
-						class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 stagger-children"
+						class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 stagger-children"
 					>
 						{#each group.agents as agent (agent.subagent_type)}
 							<AgentUsageCard {agent} {maxRuns} />
@@ -562,7 +562,7 @@
 					</span>
 				{/snippet}
 
-				<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 stagger-children">
+				<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 stagger-children">
 					{#each unusedDefinitions as def (def.name)}
 						{@const colorVars = getSubagentColorVars(def.name)}
 						<a

@@ -355,7 +355,7 @@
 	});
 </script>
 
-<div class="max-w-[1100px] mx-auto space-y-6">
+<div class="space-y-6">
 	{#if isPageLoading}
 		<div class="space-y-6" role="status" aria-busy="true" aria-label="Loading...">
 			<!-- Page Header skeleton -->

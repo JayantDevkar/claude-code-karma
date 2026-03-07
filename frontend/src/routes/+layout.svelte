@@ -120,7 +120,7 @@
 		<Header />
 		<main
 			id="main-content"
-			class="flex-1 w-full max-w-[1200px] mx-auto px-6 py-8"
+			class="flex-1 w-full mx-auto py-6 sm:py-8 main-content"
 			tabindex="-1"
 		>
 			{#if navigationSkeletonType}
@@ -168,3 +168,10 @@
 	<!-- Keyboard Shortcuts Help Modal -->
 	<KeyboardShortcutsHelp bind:open={showKeyboardHelp} />
 </div>
+
+<style>
+	:global(.main-content) {
+		max-width: clamp(75rem, 90vw, 100rem);
+		padding-inline: clamp(1rem, 3vw, 2.5rem);
+	}
+</style>
