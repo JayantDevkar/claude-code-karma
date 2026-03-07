@@ -1,9 +1,49 @@
 <script lang="ts">
 	import { page } from '$app/stores';
+	import { onMount, onDestroy } from 'svelte';
+	import { browser } from '$app/environment';
 	import { Menu, X, Settings } from 'lucide-svelte';
 	import LogoIcon from '$lib/assets/LogoIcon.svelte';
+	import NavDropdown from './NavDropdown.svelte';
+
+	const navGroups = [
+		{
+			label: 'Projects',
+			items: [
+				{ label: 'Projects', href: '/projects' },
+				{ label: 'Sessions', href: '/sessions' },
+				{ label: 'Plans', href: '/plans' },
+				{ label: 'Archived', href: '/archived' }
+			]
+		},
+		{
+			label: 'Agents',
+			items: [
+				{ label: 'Agents', href: '/agents' },
+				{ label: 'Skills', href: '/skills' },
+				{ label: 'Commands', href: '/commands' }
+			]
+		},
+		{
+			label: 'Explore',
+			items: [
+				{ label: 'Tools', href: '/tools' },
+				{ label: 'Hooks', href: '/hooks' },
+				{ label: 'Plugins', href: '/plugins' }
+			]
+		},
+		{
+			label: 'Team',
+			items: [
+				{ label: 'Team', href: '/team' },
+				{ label: 'Sync', href: '/sync' }
+			]
+		}
+	] as const;
 
 	let mobileMenuOpen = $state(false);
+	let openDropdown = $state<string | null>(null);
+	let navRef = $state<HTMLElement>();
 
 	let isHome = $derived($page.url.pathname === '/');
 
@@ -15,11 +55,42 @@
 		mobileMenuOpen = false;
 	}
 
+	function toggleDropdown(label: string) {
+		openDropdown = openDropdown === label ? null : label;
+	}
+
+	function closeDropdowns() {
+		openDropdown = null;
+	}
+
 	function handleKeydown(e: KeyboardEvent) {
-		if (e.key === 'Escape' && mobileMenuOpen) {
-			closeMobileMenu();
+		if (e.key === 'Escape') {
+			if (openDropdown) closeDropdowns();
+			else if (mobileMenuOpen) closeMobileMenu();
 		}
 	}
+
+	function handleClickOutside(event: MouseEvent) {
+		if (navRef && !navRef.contains(event.target as HTMLElement)) {
+			closeDropdowns();
+		}
+	}
+
+	// Close dropdowns on route change
+	$effect(() => {
+		$page.url.pathname;
+		closeDropdowns();
+	});
+
+	onMount(() => {
+		document.addEventListener('click', handleClickOutside);
+	});
+
+	onDestroy(() => {
+		if (browser) {
+			document.removeEventListener('click', handleClickOutside);
+		}
+	});
 </script>
 
 <svelte:window onkeydown={handleKeydown} />
@@ -75,81 +146,21 @@
 
 			<!-- Center: Desktop Navigation -->
 			<nav
-				class="hidden md:flex items-center justify-center gap-4 overflow-visible"
+				bind:this={navRef}
+				class="hidden md:flex items-center justify-center gap-5 overflow-visible"
 				aria-label="Main navigation"
 			>
-				<a
-					href="/projects"
-					class="text-sm font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
-					class:text-[var(--text-primary)]={$page.url.pathname.startsWith('/projects')}
-					aria-current={$page.url.pathname.startsWith('/projects') ? 'page' : undefined}
-				>
-					Projects
-				</a>
-				<a
-					href="/sessions"
-					class="text-sm font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
-					class:text-[var(--text-primary)]={$page.url.pathname.startsWith('/sessions')}
-					aria-current={$page.url.pathname.startsWith('/sessions') ? 'page' : undefined}
-				>
-					Sessions
-				</a>
-				<a
-					href="/plans"
-					class="text-sm font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
-					class:text-[var(--text-primary)]={$page.url.pathname.startsWith('/plans')}
-					aria-current={$page.url.pathname.startsWith('/plans') ? 'page' : undefined}
-				>
-					Plans
-				</a>
-				<a
-					href="/agents"
-					class="text-sm font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
-					class:text-[var(--text-primary)]={$page.url.pathname.startsWith('/agents')}
-					aria-current={$page.url.pathname.startsWith('/agents') ? 'page' : undefined}
-				>
-					Agents
-				</a>
-				<a
-					href="/skills"
-					class="text-sm font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
-					class:text-[var(--text-primary)]={$page.url.pathname.startsWith('/skills')}
-					aria-current={$page.url.pathname.startsWith('/skills') ? 'page' : undefined}
-				>
-					Skills
-				</a>
-				<a
-					href="/commands"
-					class="text-sm font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
-					class:text-[var(--text-primary)]={$page.url.pathname.startsWith('/commands')}
-					aria-current={$page.url.pathname.startsWith('/commands') ? 'page' : undefined}
-				>
-					Commands
-				</a>
-				<a
-					href="/tools"
-					class="text-sm font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
-					class:text-[var(--text-primary)]={$page.url.pathname.startsWith('/tools')}
-					aria-current={$page.url.pathname.startsWith('/tools') ? 'page' : undefined}
-				>
-					Tools
-				</a>
-				<a
-					href="/hooks"
-					class="text-sm font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
-					class:text-[var(--text-primary)]={$page.url.pathname.startsWith('/hooks')}
-					aria-current={$page.url.pathname.startsWith('/hooks') ? 'page' : undefined}
-				>
-					Hooks
-				</a>
-				<a
-					href="/plugins"
-					class="text-sm font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
-					class:text-[var(--text-primary)]={$page.url.pathname.startsWith('/plugins')}
-					aria-current={$page.url.pathname.startsWith('/plugins') ? 'page' : undefined}
-				>
-					Plugins
-				</a>
+				{#each navGroups as group, i}
+					<NavDropdown
+						label={group.label}
+						items={group.items}
+						open={openDropdown === group.label}
+						onToggle={() => toggleDropdown(group.label)}
+						onClose={closeDropdowns}
+						align={i === navGroups.length - 1 ? 'right' : 'left'}
+					/>
+				{/each}
+
 				<a
 					href="/analytics"
 					class="text-sm font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
@@ -157,30 +168,6 @@
 					aria-current={$page.url.pathname.startsWith('/analytics') ? 'page' : undefined}
 				>
 					Analytics
-				</a>
-				<a
-					href="/archived"
-					class="text-sm font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
-					class:text-[var(--text-primary)]={$page.url.pathname.startsWith('/archived')}
-					aria-current={$page.url.pathname.startsWith('/archived') ? 'page' : undefined}
-				>
-					Archived
-				</a>
-				<a
-					href="/sync"
-					class="text-sm font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
-					class:text-[var(--text-primary)]={$page.url.pathname.startsWith('/sync')}
-					aria-current={$page.url.pathname.startsWith('/sync') ? 'page' : undefined}
-				>
-					Sync
-				</a>
-				<a
-					href="/team"
-					class="text-sm font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
-					class:text-[var(--text-primary)]={$page.url.pathname.startsWith('/team')}
-					aria-current={$page.url.pathname.startsWith('/team') ? 'page' : undefined}
-				>
-					Team
 				</a>
 			</nav>
 
@@ -216,137 +203,43 @@
 			onclick={closeMobileMenu}
 			role="presentation"
 		>
-			<nav class="flex flex-col p-6 gap-1" aria-label="Mobile navigation">
-				<a
-					href="/projects"
-					onclick={closeMobileMenu}
-					class="text-base font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-subtle)] py-3 px-4 rounded-lg transition-colors"
-					class:text-[var(--text-primary)]={$page.url.pathname.startsWith('/projects')}
-					class:bg-[var(--bg-subtle)]={$page.url.pathname.startsWith('/projects')}
-					aria-current={$page.url.pathname.startsWith('/projects') ? 'page' : undefined}
-				>
-					Projects
-				</a>
-				<a
-					href="/sessions"
-					onclick={closeMobileMenu}
-					class="text-base font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-subtle)] py-3 px-4 rounded-lg transition-colors"
-					class:text-[var(--text-primary)]={$page.url.pathname.startsWith('/sessions')}
-					class:bg-[var(--bg-subtle)]={$page.url.pathname.startsWith('/sessions')}
-					aria-current={$page.url.pathname.startsWith('/sessions') ? 'page' : undefined}
-				>
-					Sessions
-				</a>
-				<a
-					href="/plans"
-					onclick={closeMobileMenu}
-					class="text-base font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-subtle)] py-3 px-4 rounded-lg transition-colors"
-					class:text-[var(--text-primary)]={$page.url.pathname.startsWith('/plans')}
-					class:bg-[var(--bg-subtle)]={$page.url.pathname.startsWith('/plans')}
-					aria-current={$page.url.pathname.startsWith('/plans') ? 'page' : undefined}
-				>
-					Plans
-				</a>
-				<a
-					href="/agents"
-					onclick={closeMobileMenu}
-					class="text-base font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-subtle)] py-3 px-4 rounded-lg transition-colors"
-					class:text-[var(--text-primary)]={$page.url.pathname.startsWith('/agents')}
-					class:bg-[var(--bg-subtle)]={$page.url.pathname.startsWith('/agents')}
-					aria-current={$page.url.pathname.startsWith('/agents') ? 'page' : undefined}
-				>
-					Agents
-				</a>
-				<a
-					href="/skills"
-					onclick={closeMobileMenu}
-					class="text-base font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-subtle)] py-3 px-4 rounded-lg transition-colors"
-					class:text-[var(--text-primary)]={$page.url.pathname.startsWith('/skills')}
-					class:bg-[var(--bg-subtle)]={$page.url.pathname.startsWith('/skills')}
-					aria-current={$page.url.pathname.startsWith('/skills') ? 'page' : undefined}
-				>
-					Skills
-				</a>
-				<a
-					href="/commands"
-					onclick={closeMobileMenu}
-					class="text-base font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-subtle)] py-3 px-4 rounded-lg transition-colors"
-					class:text-[var(--text-primary)]={$page.url.pathname.startsWith('/commands')}
-					class:bg-[var(--bg-subtle)]={$page.url.pathname.startsWith('/commands')}
-					aria-current={$page.url.pathname.startsWith('/commands') ? 'page' : undefined}
-				>
-					Commands
-				</a>
-				<a
-					href="/tools"
-					onclick={closeMobileMenu}
-					class="text-base font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-subtle)] py-3 px-4 rounded-lg transition-colors"
-					class:text-[var(--text-primary)]={$page.url.pathname.startsWith('/tools')}
-					class:bg-[var(--bg-subtle)]={$page.url.pathname.startsWith('/tools')}
-					aria-current={$page.url.pathname.startsWith('/tools') ? 'page' : undefined}
-				>
-					Tools
-				</a>
-				<a
-					href="/hooks"
-					onclick={closeMobileMenu}
-					class="text-base font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-subtle)] py-3 px-4 rounded-lg transition-colors"
-					class:text-[var(--text-primary)]={$page.url.pathname.startsWith('/hooks')}
-					class:bg-[var(--bg-subtle)]={$page.url.pathname.startsWith('/hooks')}
-					aria-current={$page.url.pathname.startsWith('/hooks') ? 'page' : undefined}
-				>
-					Hooks
-				</a>
-				<a
-					href="/plugins"
-					onclick={closeMobileMenu}
-					class="text-base font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-subtle)] py-3 px-4 rounded-lg transition-colors"
-					class:text-[var(--text-primary)]={$page.url.pathname.startsWith('/plugins')}
-					class:bg-[var(--bg-subtle)]={$page.url.pathname.startsWith('/plugins')}
-					aria-current={$page.url.pathname.startsWith('/plugins') ? 'page' : undefined}
-				>
-					Plugins
-				</a>
-				<a
-					href="/analytics"
-					onclick={closeMobileMenu}
-					class="text-base font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-subtle)] py-3 px-4 rounded-lg transition-colors"
-					class:text-[var(--text-primary)]={$page.url.pathname.startsWith('/analytics')}
-					class:bg-[var(--bg-subtle)]={$page.url.pathname.startsWith('/analytics')}
-					aria-current={$page.url.pathname.startsWith('/analytics') ? 'page' : undefined}
-				>
-					Analytics
-				</a>
-				<a
-					href="/archived"
-					onclick={closeMobileMenu}
-					class="text-base font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-subtle)] py-3 px-4 rounded-lg transition-colors"
-					class:text-[var(--text-primary)]={$page.url.pathname.startsWith('/archived')}
-					class:bg-[var(--bg-subtle)]={$page.url.pathname.startsWith('/archived')}
-					aria-current={$page.url.pathname.startsWith('/archived') ? 'page' : undefined}
-				>
-					Archived
-				</a>
-				<a
-					href="/sync"
-					onclick={closeMobileMenu}
-					class="text-base font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-subtle)] py-3 px-4 rounded-lg transition-colors"
-					class:text-[var(--text-primary)]={$page.url.pathname.startsWith('/sync')}
-					class:bg-[var(--bg-subtle)]={$page.url.pathname.startsWith('/sync')}
-					aria-current={$page.url.pathname.startsWith('/sync') ? 'page' : undefined}
-				>
-					Sync
-				</a>
-				<a
-					href="/team"
-					onclick={closeMobileMenu}
-					class="text-base font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-subtle)] py-3 px-4 rounded-lg transition-colors"
-					class:text-[var(--text-primary)]={$page.url.pathname.startsWith('/team')}
-					class:bg-[var(--bg-subtle)]={$page.url.pathname.startsWith('/team')}
-					aria-current={$page.url.pathname.startsWith('/team') ? 'page' : undefined}
-				>
-					Team
-				</a>
+			<nav class="flex flex-col p-6 gap-4" aria-label="Mobile navigation">
+				{#each navGroups as group}
+					<div>
+						<div class="px-4 pb-1 text-[10px] font-medium uppercase tracking-wider text-[var(--text-muted)]">
+							{group.label}
+						</div>
+						{#each group.items as item (item.href)}
+							{@const active = $page.url.pathname.startsWith(item.href)}
+							<a
+								href={item.href}
+								onclick={closeMobileMenu}
+								class="text-base font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-subtle)] py-3 px-4 rounded-lg transition-colors"
+								class:text-[var(--text-primary)]={active}
+								class:bg-[var(--bg-subtle)]={active}
+								aria-current={active ? 'page' : undefined}
+							>
+								{item.label}
+							</a>
+						{/each}
+					</div>
+				{/each}
+
+				<div>
+					<div class="px-4 pb-1 text-[10px] font-medium uppercase tracking-wider text-[var(--text-muted)]">
+						Insights
+					</div>
+					<a
+						href="/analytics"
+						onclick={closeMobileMenu}
+						class="text-base font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-subtle)] py-3 px-4 rounded-lg transition-colors"
+						class:text-[var(--text-primary)]={$page.url.pathname.startsWith('/analytics')}
+						class:bg-[var(--bg-subtle)]={$page.url.pathname.startsWith('/analytics')}
+						aria-current={$page.url.pathname.startsWith('/analytics') ? 'page' : undefined}
+					>
+						Analytics
+					</a>
+				</div>
 			</nav>
 		</div>
 	{/if}
