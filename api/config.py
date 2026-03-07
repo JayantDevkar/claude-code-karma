@@ -163,6 +163,11 @@ class Settings(BaseSettings):
         """Get the SQLite metadata database path."""
         return self.karma_base / "metadata.db"
 
+    @property
+    def workflow_db_path(self) -> Path:
+        """Get the SQLite workflow database path."""
+        return self.karma_base / "workflow.db"
+
 
 # Global settings instance
 settings = Settings()

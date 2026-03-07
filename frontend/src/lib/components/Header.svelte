@@ -103,6 +103,14 @@
 					Plans
 				</a>
 				<a
+					href="/workflows"
+					class="text-sm font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+					class:text-[var(--text-primary)]={$page.url.pathname.startsWith('/workflows')}
+					aria-current={$page.url.pathname.startsWith('/workflows') ? 'page' : undefined}
+				>
+					Workflows
+				</a>
+				<a
 					href="/agents"
 					class="text-sm font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
 					class:text-[var(--text-primary)]={$page.url.pathname.startsWith('/agents')}
@@ -230,6 +238,16 @@
 					aria-current={$page.url.pathname.startsWith('/plans') ? 'page' : undefined}
 				>
 					Plans
+				</a>
+				<a
+					href="/workflows"
+					onclick={closeMobileMenu}
+					class="text-base font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-subtle)] py-3 px-4 rounded-lg transition-colors"
+					class:text-[var(--text-primary)]={$page.url.pathname.startsWith('/workflows')}
+					class:bg-[var(--bg-subtle)]={$page.url.pathname.startsWith('/workflows')}
+					aria-current={$page.url.pathname.startsWith('/workflows') ? 'page' : undefined}
+				>
+					Workflows
 				</a>
 				<a
 					href="/agents"
