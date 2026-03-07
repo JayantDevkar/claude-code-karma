@@ -1777,3 +1777,14 @@ export interface SyncPendingFolder {
 	from_team: string;
 	offered_at: string | null;
 }
+
+export interface SyncEvent {
+	id: number;
+	event_type: string;
+	team_name: string | null;
+	member_name: string | null;
+	project_encoded_name: string | null;
+	session_uuid: string | null;
+	detail: string | null;
+	created_at: string;
+}
