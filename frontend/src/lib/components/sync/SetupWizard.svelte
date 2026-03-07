@@ -326,53 +326,47 @@
 <div class="p-6 space-y-6">
 	<!-- Progress bar -->
 	<div>
-		<div class="flex items-center gap-0 mb-3">
+		<div class="flex items-start">
 			{#each STEPS as label, i}
 				{@const idx = i}
 				{@const done = step > idx}
 				{@const active = step === idx}
-				<div class="flex items-center {i < STEPS.length - 1 ? 'flex-1' : ''}">
-					<!-- Circle -->
-					<div
-						class="w-6 h-6 rounded-full flex items-center justify-center shrink-0 text-[11px] font-semibold transition-colors {done
-							? 'bg-[var(--success)] text-white'
-							: active
-								? 'bg-[var(--accent)] text-white'
-								: 'bg-[var(--bg-muted)] text-[var(--text-muted)] border border-[var(--border)]'}"
-					>
-						{#if done}
-							<Check size={12} />
-						{:else}
-							{idx + 1}
-						{/if}
+				<div class="flex {i < STEPS.length - 1 ? 'flex-1' : ''} items-start">
+					<!-- Step column (circle + label) -->
+					<div class="flex flex-col items-center shrink-0">
+						<!-- Circle -->
+						<div
+							class="w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-semibold transition-colors {done
+								? 'bg-[var(--success)] text-white'
+								: active
+									? 'bg-[var(--accent)] text-white'
+									: 'bg-[var(--bg-muted)] text-[var(--text-muted)] border border-[var(--border)]'}"
+						>
+							{#if done}
+								<Check size={12} />
+							{:else}
+								{idx + 1}
+							{/if}
+						</div>
+						<!-- Label -->
+						<span
+							class="text-[10px] font-medium uppercase tracking-wide mt-1.5 whitespace-nowrap transition-colors {done
+								? 'text-[var(--success)]'
+								: active
+									? 'text-[var(--accent)]'
+									: 'text-[var(--text-muted)]'}"
+						>
+							{label}
+						</span>
 					</div>
 					<!-- Connector line -->
 					{#if i < STEPS.length - 1}
 						<div
-							class="flex-1 h-px mx-1.5 transition-colors {done
+							class="flex-1 h-px mx-1.5 mt-3 transition-colors {done
 								? 'bg-[var(--success)]'
 								: 'bg-[var(--border)]'}"
 						></div>
 					{/if}
-				</div>
-			{/each}
-		</div>
-		<!-- Step labels -->
-		<div class="flex">
-			{#each STEPS as label, i}
-				{@const idx = i}
-				{@const done = step > idx}
-				{@const active = step === idx}
-				<div class="flex-1 {i === STEPS.length - 1 ? 'text-right' : i === 0 ? 'text-left' : 'text-center'}">
-					<span
-						class="text-[10px] font-medium uppercase tracking-wide transition-colors {done
-							? 'text-[var(--success)]'
-							: active
-								? 'text-[var(--accent)]'
-								: 'text-[var(--text-muted)]'}"
-					>
-						{label}
-					</span>
 				</div>
 			{/each}
 		</div>
