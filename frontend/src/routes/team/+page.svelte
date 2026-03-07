@@ -23,10 +23,13 @@
 		>
 			<Users size={48} strokeWidth={1} class="mb-4 opacity-40" />
 			<h3 class="text-lg font-medium text-[var(--text-primary)] mb-2">No remote sessions yet</h3>
-			<p class="mb-4">Team members can sync their sessions using the <code>karma</code> CLI.</p>
-			<pre
-				class="inline-block px-4 py-2 bg-[var(--bg-muted)] rounded-[var(--radius-md)] text-sm font-mono"
-			>karma init && karma sync &lt;project&gt;</pre>
+			<p class="mb-4 max-w-sm">Set up sync to share Claude Code sessions across your machines or with teammates — peer-to-peer, no cloud required.</p>
+			<a
+				href="/sync"
+				class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-[var(--radius)] bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)] transition-colors"
+			>
+				Set Up Sync
+			</a>
 		</div>
 	{:else}
 		<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">

@@ -8,7 +8,11 @@
 		FolderGit2,
 		MonitorSmartphone,
 		ArrowRight,
-		Check
+		Check,
+		Shield,
+		Wifi,
+		HardDrive,
+		RefreshCw
 	} from 'lucide-svelte';
 	import type { SyncDetect, SyncStatusResponse } from '$lib/api-types';
 	import { API_BASE } from '$lib/config';
@@ -26,10 +30,10 @@
 	// -----------------------------------------------
 	// Step tracking
 	// -----------------------------------------------
-	// step 1 = install, 2 = name machine, 3 = group
-	let step = $state<1 | 2 | 3>(1);
+	// step 0 = how it works, 1 = install, 2 = name machine, 3 = group
+	let step = $state<0 | 1 | 2 | 3>(0);
 
-	// Auto-advance: when detect.running becomes true, move to step 2
+	// Auto-advance: when detect.running becomes true on step 1, move to step 2
 	$effect(() => {
 		if (detect?.running && step === 1) {
 			step = 2;
@@ -72,6 +76,18 @@
 	// -----------------------------------------------
 	// Step 1 — Install & detect
 	// -----------------------------------------------
+	let copiedCommand = $state<string | null>(null);
+
+	function copyCommand(command: string) {
+		navigator.clipboard
+			.writeText(command)
+			.then(() => {
+				copiedCommand = command;
+				setTimeout(() => (copiedCommand = null), 2000);
+			})
+			.catch(() => {});
+	}
+
 	let checkingAgain = $state(false);
 	let checkError = $state<string | null>(null);
 
@@ -235,8 +251,13 @@
 		}
 	}
 
-	// "Join existing" — no API calls, just show device ID
+	// "Join existing" — create team + add leader as member
 	let copiedJoinId = $state(false);
+	let joinTeamName = $state('');
+	let leaderDeviceId = $state('');
+	let leaderName = $state('');
+	let joining = $state(false);
+	let joinError = $state<string | null>(null);
 
 	function copyJoinId() {
 		const id = detect?.device_id ?? '';
@@ -249,10 +270,56 @@
 			.catch(() => {});
 	}
 
+	async function joinGroup() {
+		if (!joinTeamName.trim() || !leaderDeviceId.trim()) return;
+		joining = true;
+		joinError = null;
+		try {
+			// 1. Create team locally
+			const teamRes = await fetch(`${API_BASE}/sync/teams`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ name: joinTeamName.trim(), backend: 'syncthing' })
+			});
+			if (!teamRes.ok) {
+				const body = await teamRes.json().catch(() => ({}));
+				joinError = body?.detail ?? 'Failed to create team.';
+				return;
+			}
+
+			// 2. Add leader as a member (pairs device in Syncthing)
+			const memberRes = await fetch(
+				`${API_BASE}/sync/teams/${encodeURIComponent(joinTeamName.trim())}/members`,
+				{
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({
+						device_id: leaderDeviceId.trim().toUpperCase(),
+						name: leaderName.trim() || 'leader'
+					})
+				}
+			);
+			if (!memberRes.ok) {
+				const body = await memberRes.json().catch(() => ({}));
+				joinError = body?.detail ?? 'Failed to add team leader.';
+				return;
+			}
+
+			// 3. Start watcher
+			await fetch(`${API_BASE}/sync/watch/start`, { method: 'POST' });
+
+			ondone();
+		} catch {
+			joinError = 'Cannot reach backend. Is the API running?';
+		} finally {
+			joining = false;
+		}
+	}
+
 	// -----------------------------------------------
 	// Progress step labels
 	// -----------------------------------------------
-	const STEPS = ['Install', 'Name Machine', 'Get Started'] as const;
+	const STEPS = ['How It Works', 'Install', 'Name Machine', 'Get Started'] as const;
 </script>
 
 <!-- Wizard shell -->
@@ -261,7 +328,7 @@
 	<div>
 		<div class="flex items-center gap-0 mb-3">
 			{#each STEPS as label, i}
-				{@const idx = i + 1}
+				{@const idx = i}
 				{@const done = step > idx}
 				{@const active = step === idx}
 				<div class="flex items-center {i < STEPS.length - 1 ? 'flex-1' : ''}">
@@ -276,7 +343,7 @@
 						{#if done}
 							<Check size={12} />
 						{:else}
-							{idx}
+							{idx + 1}
 						{/if}
 					</div>
 					<!-- Connector line -->
@@ -293,7 +360,7 @@
 		<!-- Step labels -->
 		<div class="flex">
 			{#each STEPS as label, i}
-				{@const idx = i + 1}
+				{@const idx = i}
 				{@const done = step > idx}
 				{@const active = step === idx}
 				<div class="flex-1 {i === STEPS.length - 1 ? 'text-right' : i === 0 ? 'text-left' : 'text-center'}">
@@ -312,9 +379,80 @@
 	</div>
 
 	<!-- ============================================ -->
+	<!-- STEP 0: How It Works                        -->
+	<!-- ============================================ -->
+	{#if step === 0}
+		<div class="space-y-4">
+			<div>
+				<h2 class="text-sm font-semibold text-[var(--text-primary)]">Peer-to-Peer Session Sync</h2>
+				<p class="text-xs text-[var(--text-secondary)] mt-0.5">
+					Share Claude Code sessions across your machines or with teammates — without any cloud service.
+				</p>
+			</div>
+
+			<div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-subtle)] p-5 space-y-5">
+				<p class="text-sm text-[var(--text-secondary)] leading-relaxed">
+					Claude Karma uses <strong class="text-[var(--text-primary)]">Syncthing</strong> to sync sessions
+					directly between your devices. There's no cloud server in the middle — your data travels
+					encrypted from one machine to another, and stays entirely under your control.
+				</p>
+
+				<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+					<div class="flex items-start gap-2.5">
+						<div class="w-7 h-7 rounded-[var(--radius)] bg-[var(--accent)]/10 flex items-center justify-center shrink-0 mt-0.5">
+							<Shield size={14} class="text-[var(--accent)]" />
+						</div>
+						<div>
+							<p class="text-xs font-semibold text-[var(--text-primary)]">Your data, your machines</p>
+							<p class="text-[11px] text-[var(--text-muted)] mt-0.5">Sessions never leave your devices. No accounts, no third-party storage.</p>
+						</div>
+					</div>
+
+					<div class="flex items-start gap-2.5">
+						<div class="w-7 h-7 rounded-[var(--radius)] bg-[var(--success)]/10 flex items-center justify-center shrink-0 mt-0.5">
+							<Wifi size={14} class="text-[var(--success)]" />
+						</div>
+						<div>
+							<p class="text-xs font-semibold text-[var(--text-primary)]">Encrypted in transit</p>
+							<p class="text-[11px] text-[var(--text-muted)] mt-0.5">All transfers use TLS encryption. Only paired devices can connect.</p>
+						</div>
+					</div>
+
+					<div class="flex items-start gap-2.5">
+						<div class="w-7 h-7 rounded-[var(--radius)] bg-[var(--info)]/10 flex items-center justify-center shrink-0 mt-0.5">
+							<HardDrive size={14} class="text-[var(--info)]" />
+						</div>
+						<div>
+							<p class="text-xs font-semibold text-[var(--text-primary)]">No central server</p>
+							<p class="text-[11px] text-[var(--text-muted)] mt-0.5">Direct device-to-device sync over your local network or internet.</p>
+						</div>
+					</div>
+
+					<div class="flex items-start gap-2.5">
+						<div class="w-7 h-7 rounded-[var(--radius)] bg-[var(--warning)]/10 flex items-center justify-center shrink-0 mt-0.5">
+							<RefreshCw size={14} class="text-[var(--warning)]" />
+						</div>
+						<div>
+							<p class="text-xs font-semibold text-[var(--text-primary)]">Open source & auditable</p>
+							<p class="text-[11px] text-[var(--text-muted)] mt-0.5">Syncthing is fully open source. You can inspect every line of code.</p>
+						</div>
+					</div>
+				</div>
+
+				<button
+					onclick={() => (step = 1)}
+					class="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-[var(--radius)] bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)] transition-colors"
+				>
+					Get Started
+					<ArrowRight size={14} />
+				</button>
+			</div>
+		</div>
+
+	<!-- ============================================ -->
 	<!-- STEP 1: Install Syncthing                   -->
 	<!-- ============================================ -->
-	{#if step === 1}
+	{:else if step === 1}
 		<div class="space-y-4">
 			<div>
 				<h2 class="text-sm font-semibold text-[var(--text-primary)]">Install Syncthing</h2>
@@ -355,11 +493,24 @@
 									<span class="text-[10px] text-[var(--text-muted)]">(detected)</span>
 								{/if}
 							</div>
-							<code
-								class="block text-xs font-mono text-[var(--text-secondary)] bg-[var(--bg-base)] border border-[var(--border)] rounded px-2.5 py-1.5 break-all"
-							>
-								{instr.command}
-							</code>
+							<div class="flex items-center gap-1.5">
+								<code
+									class="flex-1 text-xs font-mono text-[var(--text-secondary)] bg-[var(--bg-base)] border border-[var(--border)] rounded px-2.5 py-1.5 break-all"
+								>
+									{instr.command}
+								</code>
+								<button
+									onclick={() => copyCommand(instr.command)}
+									aria-label="Copy command to clipboard"
+									class="shrink-0 p-1.5 rounded-[var(--radius)] border border-[var(--border)] bg-[var(--bg-base)] text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-muted)] transition-colors"
+								>
+									{#if copiedCommand === instr.command}
+										<CheckCircle size={13} class="text-[var(--success)]" />
+									{:else}
+										<Copy size={13} />
+									{/if}
+								</button>
+							</div>
 						</div>
 					{/each}
 				</div>
@@ -721,13 +872,14 @@
 					>
 						<h3 class="text-sm font-semibold text-[var(--text-primary)]">Join an existing group</h3>
 						<p class="text-xs text-[var(--text-secondary)]">
-							Share your Device ID with the person who manages your sync group. Once they add you,
-							sessions will start syncing automatically.
+							Enter the team name and your teammate's Sync ID to connect.
+							Both sides need each other's IDs for syncing to work.
 						</p>
 
+						<!-- Your Device ID (copy to share) -->
 						{#if detect?.device_id}
 							<div class="space-y-1.5">
-								<p class="block text-xs font-medium text-[var(--text-secondary)]">Your Device ID</p>
+								<p class="block text-xs font-medium text-[var(--text-secondary)]">Your Sync ID</p>
 								<div class="flex items-center gap-2">
 									<code
 										class="flex-1 px-3 py-2 text-xs font-mono rounded-[var(--radius)] border border-[var(--border)] bg-[var(--bg-muted)] text-[var(--text-secondary)] break-all"
@@ -748,20 +900,91 @@
 									</button>
 								</div>
 								<p class="text-[11px] text-[var(--text-muted)]">
-									Send this to your teammate so they can add you to their group.
+									Share this with your teammate so they can add you on their side.
 								</p>
 							</div>
-						{:else}
-							<p class="text-xs text-[var(--text-muted)] italic">
-								Device ID not yet available.
-							</p>
+						{/if}
+
+						<!-- Team name -->
+						<div class="space-y-1.5">
+							<label
+								for="wizard-join-team"
+								class="block text-xs font-medium text-[var(--text-secondary)]"
+							>
+								Team Name
+							</label>
+							<input
+								id="wizard-join-team"
+								type="text"
+								bind:value={joinTeamName}
+								placeholder="Ask your teammate for the team name"
+								class="w-full px-3 py-2 text-sm rounded-[var(--radius)] border border-[var(--border)] bg-[var(--bg-base)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40 focus:border-[var(--accent)] transition-colors"
+							/>
+						</div>
+
+						<!-- Leader's Device ID -->
+						<div class="space-y-1.5">
+							<label
+								for="wizard-leader-id"
+								class="block text-xs font-medium text-[var(--text-secondary)]"
+							>
+								Teammate's Sync ID
+							</label>
+							<input
+								id="wizard-leader-id"
+								type="text"
+								bind:value={leaderDeviceId}
+								placeholder="Paste their Sync ID here"
+								class="w-full px-3 py-2 text-sm font-mono rounded-[var(--radius)] border border-[var(--border)] bg-[var(--bg-base)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40 focus:border-[var(--accent)] transition-colors uppercase"
+							/>
+						</div>
+
+						<!-- Leader's name (optional) -->
+						<div class="space-y-1.5">
+							<label
+								for="wizard-leader-name"
+								class="block text-xs font-medium text-[var(--text-secondary)]"
+							>
+								Teammate's Name <span class="text-[var(--text-muted)]">(optional)</span>
+							</label>
+							<input
+								id="wizard-leader-name"
+								type="text"
+								bind:value={leaderName}
+								placeholder="e.g. alice-laptop"
+								class="w-full px-3 py-2 text-sm rounded-[var(--radius)] border border-[var(--border)] bg-[var(--bg-base)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40 focus:border-[var(--accent)] transition-colors"
+							/>
+						</div>
+
+						<!-- Error -->
+						{#if joinError}
+							<div
+								class="flex items-start gap-2.5 p-3 rounded-[var(--radius)] bg-[var(--error-subtle)] border border-[var(--error)]/20"
+							>
+								<XCircle size={14} class="text-[var(--error)] mt-0.5 shrink-0" />
+								<div>
+									<p class="text-xs text-[var(--error)]">{joinError}</p>
+									<button
+										onclick={() => (joinError = null)}
+										class="text-[11px] text-[var(--error)] underline hover:no-underline mt-0.5"
+									>
+										Dismiss
+									</button>
+								</div>
+							</div>
 						{/if}
 
 						<button
-							onclick={ondone}
-							class="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-[var(--radius)] bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)] transition-colors"
+							onclick={joinGroup}
+							disabled={joining || !joinTeamName.trim() || !leaderDeviceId.trim()}
+							class="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-[var(--radius)] bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
 						>
-							Done — I've shared my ID
+							{#if joining}
+								<Loader2 size={14} class="animate-spin" />
+								Joining...
+							{:else}
+								Join Group
+							{/if}
 						</button>
 					</div>
 				</div>

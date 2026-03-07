@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import { Play, Square, Monitor, FolderGit2, ArrowUp, ArrowDown, Bell, CheckCircle2, Loader2, Users, XCircle } from 'lucide-svelte';
+	import { Play, Square, Monitor, FolderGit2, ArrowUp, ArrowDown, Bell, CheckCircle2, Loader2, Users, XCircle, RotateCcw } from 'lucide-svelte';
 	import type { SyncDetect, SyncStatusResponse, SyncWatchStatus, SyncPendingFolder } from '$lib/api-types';
 	import { formatRelativeTime } from '$lib/utils';
 	import { API_BASE } from '$lib/config';
@@ -172,6 +172,24 @@
 			pushSyncAction('pending_accepted', `Accepted ${count} pending folder${count !== 1 ? 's' : ''}`);
 		} finally {
 			acceptingAll = false;
+		}
+	}
+
+	// ── Reset sync ───────────────────────────────────────────────────────────
+	let resetting = $state(false);
+	let resetConfirm = $state(false);
+
+	async function resetSync() {
+		resetting = true;
+		try {
+			const res = await fetch(`${API_BASE}/sync/reset`, { method: 'POST' }).catch(() => null);
+			if (res?.ok) {
+				// Reload page to show setup wizard
+				window.location.reload();
+			}
+		} finally {
+			resetting = false;
+			resetConfirm = false;
 		}
 	}
 
@@ -381,6 +399,38 @@
 		{#if !status?.user_id && !status?.machine_id && !detect?.version}
 			<p class="text-xs text-[var(--text-muted)]">No machine details available.</p>
 		{/if}
+
+		<!-- Reset sync -->
+		<div class="pt-3 mt-3 border-t border-[var(--border-subtle)]">
+			{#if resetConfirm}
+				<div class="flex items-center justify-between gap-2">
+					<span class="text-xs text-[var(--text-secondary)]">Reset all sync config and return to setup?</span>
+					<div class="flex items-center gap-1.5">
+						<button
+							onclick={resetSync}
+							disabled={resetting}
+							class="px-2.5 py-1 text-xs font-medium rounded-md bg-[var(--error)] text-white hover:opacity-90 transition-opacity disabled:opacity-50"
+						>
+							{resetting ? 'Resetting...' : 'Yes, reset'}
+						</button>
+						<button
+							onclick={() => (resetConfirm = false)}
+							class="px-2.5 py-1 text-xs font-medium rounded-md border border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+						>
+							Cancel
+						</button>
+					</div>
+				</div>
+			{:else}
+				<button
+					onclick={() => (resetConfirm = true)}
+					class="flex items-center gap-1.5 text-xs text-[var(--text-muted)] hover:text-[var(--error)] transition-colors"
+				>
+					<RotateCcw size={12} />
+					Reset Sync Setup
+				</button>
+			{/if}
+		</div>
 	</div>
 
 </div>

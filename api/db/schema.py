@@ -285,6 +285,49 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
         current_version = 0
 
     if current_version >= SCHEMA_VERSION:
+        # Always ensure sync tables exist (may have been skipped if version
+        # was set by a different branch before sync DDL was added)
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS sync_teams (
+                name TEXT PRIMARY KEY,
+                backend TEXT NOT NULL DEFAULT 'syncthing',
+                created_at TEXT DEFAULT (datetime('now'))
+            );
+            CREATE TABLE IF NOT EXISTS sync_members (
+                team_name TEXT NOT NULL,
+                name TEXT NOT NULL,
+                device_id TEXT,
+                ipns_key TEXT,
+                added_at TEXT DEFAULT (datetime('now')),
+                PRIMARY KEY (team_name, name),
+                FOREIGN KEY (team_name) REFERENCES sync_teams(name) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_sync_members_device ON sync_members(device_id);
+            CREATE TABLE IF NOT EXISTS sync_team_projects (
+                team_name TEXT NOT NULL,
+                project_encoded_name TEXT NOT NULL,
+                path TEXT,
+                added_at TEXT DEFAULT (datetime('now')),
+                PRIMARY KEY (team_name, project_encoded_name),
+                FOREIGN KEY (team_name) REFERENCES sync_teams(name) ON DELETE CASCADE,
+                FOREIGN KEY (project_encoded_name) REFERENCES projects(encoded_name)
+            );
+            CREATE TABLE IF NOT EXISTS sync_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_type TEXT NOT NULL,
+                team_name TEXT,
+                member_name TEXT,
+                project_encoded_name TEXT,
+                session_uuid TEXT,
+                detail TEXT,
+                created_at TEXT DEFAULT (datetime('now')),
+                FOREIGN KEY (team_name) REFERENCES sync_teams(name) ON DELETE SET NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_sync_events_type ON sync_events(event_type);
+            CREATE INDEX IF NOT EXISTS idx_sync_events_team ON sync_events(team_name, created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_sync_events_time ON sync_events(created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_sync_events_member ON sync_events(member_name, created_at DESC);
+        """)
         logger.debug("Schema is up to date (version %d)", current_version)
         return
 

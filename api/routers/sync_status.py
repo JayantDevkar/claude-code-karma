@@ -192,6 +192,35 @@ async def sync_status():
     }
 
 
+@router.post("/reset")
+async def sync_reset() -> Any:
+    """Reset sync configuration: delete config file + clear sync tables."""
+    from karma.config import SYNC_CONFIG_PATH
+
+    # Stop watcher if running
+    watcher = get_watcher()
+    if watcher.is_running:
+        await run_sync(watcher.stop)
+
+    # Delete config file
+    if SYNC_CONFIG_PATH.exists():
+        SYNC_CONFIG_PATH.unlink()
+
+    # Clear sync tables
+    conn = _get_sync_conn()
+    conn.execute("DELETE FROM sync_events")
+    conn.execute("DELETE FROM sync_team_projects")
+    conn.execute("DELETE FROM sync_members")
+    conn.execute("DELETE FROM sync_teams")
+    conn.commit()
+
+    # Reset proxy so it re-detects on next call
+    global _proxy
+    _proxy = None
+
+    return {"ok": True}
+
+
 @router.get("/teams")
 async def sync_teams_list():
     """List all teams with their backend, members, and projects."""
