@@ -1,4 +1,4 @@
-"""Integration test: full sync -> pull flow with mocked IPFS."""
+"""Integration test: full team/project lifecycle with SQLite."""
 
 import json
 
@@ -9,46 +9,50 @@ from karma.main import cli
 
 
 @pytest.fixture
-def full_setup(tmp_path, monkeypatch):
+def full_setup(tmp_path, monkeypatch, mock_db):
     """Set up a complete test environment."""
-    # Config paths
     config_path = tmp_path / "sync-config.json"
     monkeypatch.setattr("karma.config.SYNC_CONFIG_PATH", config_path)
     monkeypatch.setattr("karma.config.KARMA_BASE", tmp_path)
-
-    # Create fake Claude project directory
-    claude_project = tmp_path / ".claude" / "projects" / "-test-project"
-    claude_project.mkdir(parents=True)
-    (claude_project / "session-001.jsonl").write_text('{"type":"user"}\n')
-    (claude_project / "session-002.jsonl").write_text('{"type":"user"}\n')
+    monkeypatch.setattr("karma.main.KARMA_BASE", tmp_path)
 
     return {
         "tmp": tmp_path,
         "config_path": config_path,
-        "claude_project": claude_project,
+        "db": mock_db,
     }
 
 
 class TestFullSyncFlow:
-    def test_init_add_project_sync(self, full_setup):
+    def test_init_and_team_project_flow(self, full_setup):
         runner = CliRunner()
+        tmp = full_setup["tmp"]
 
         # Step 1: Init
         result = runner.invoke(cli, ["init", "--user-id", "alice"])
         assert result.exit_code == 0
         assert "Initialized as 'alice'" in result.output
 
-        # Step 2: Add project (path must be absolute)
+        # Step 2: Create team
+        result = runner.invoke(cli, ["team", "create", "beta", "--backend", "syncthing"])
+        assert result.exit_code == 0
+
+        # Step 3: Add project (path must be absolute)
+        project_path = tmp / "test-project"
+        project_path.mkdir()
         result = runner.invoke(cli, [
             "project", "add", "test-project",
-            "--path", str(full_setup["claude_project"]),
+            "--path", str(project_path),
+            "--team", "beta",
         ])
         assert result.exit_code == 0
         assert "Added project 'test-project'" in result.output
 
-        # Verify config was updated
-        config = json.loads(full_setup["config_path"].read_text())
-        assert "test-project" in config["projects"]
+        # Verify in DB
+        row = full_setup["db"].execute(
+            "SELECT * FROM sync_team_projects WHERE team_name = 'beta'"
+        ).fetchone()
+        assert row is not None
 
     def test_team_management_flow(self, full_setup):
         runner = CliRunner()
@@ -56,11 +60,15 @@ class TestFullSyncFlow:
         # Init
         runner.invoke(cli, ["init", "--user-id", "owner"])
 
-        # Add team members
-        result = runner.invoke(cli, ["team", "add", "alice", "k51alice123"])
+        # Create team
+        result = runner.invoke(cli, ["team", "create", "alpha", "--backend", "ipfs"])
         assert result.exit_code == 0
 
-        result = runner.invoke(cli, ["team", "add", "bob", "k51bob456"])
+        # Add team members
+        result = runner.invoke(cli, ["team", "add", "alice", "k51alice123", "--team", "alpha"])
+        assert result.exit_code == 0
+
+        result = runner.invoke(cli, ["team", "add", "bob", "k51bob456", "--team", "alpha"])
         assert result.exit_code == 0
 
         # List team
@@ -69,37 +77,52 @@ class TestFullSyncFlow:
         assert "bob" in result.output
 
         # Remove member
-        result = runner.invoke(cli, ["team", "remove", "alice"])
+        result = runner.invoke(cli, ["team", "remove", "alice", "--team", "alpha"])
         assert result.exit_code == 0
 
-        # Verify alice is gone
-        config = json.loads(full_setup["config_path"].read_text())
-        assert "alice" not in config["team"]
-        assert "bob" in config["team"]
+        # Verify alice is gone from DB
+        row = full_setup["db"].execute(
+            "SELECT * FROM sync_members WHERE team_name = 'alpha' AND name = 'alice'"
+        ).fetchone()
+        assert row is None
+
+        # Bob still there
+        row = full_setup["db"].execute(
+            "SELECT * FROM sync_members WHERE team_name = 'alpha' AND name = 'bob'"
+        ).fetchone()
+        assert row is not None
 
     def test_project_lifecycle(self, full_setup):
         runner = CliRunner()
+        tmp = full_setup["tmp"]
 
         # Init
         runner.invoke(cli, ["init", "--user-id", "alice"])
 
+        # Create team
+        runner.invoke(cli, ["team", "create", "beta", "--backend", "syncthing"])
+
         # Add project
+        project_path = tmp / "my-app"
+        project_path.mkdir()
         result = runner.invoke(cli, [
             "project", "add", "my-app",
-            "--path", "/Users/alice/my-app",
+            "--path", str(project_path),
+            "--team", "beta",
         ])
         assert result.exit_code == 0
 
         # List projects
         result = runner.invoke(cli, ["project", "list"])
         assert "my-app" in result.output
-        assert "never synced" in result.output
 
         # Remove project
-        result = runner.invoke(cli, ["project", "remove", "my-app"])
+        result = runner.invoke(cli, ["project", "remove", "my-app", "--team", "beta"])
         assert result.exit_code == 0
         assert "Removed project 'my-app'" in result.output
 
-        # Verify gone
-        config = json.loads(full_setup["config_path"].read_text())
-        assert "my-app" not in config["projects"]
+        # Verify gone from DB
+        row = full_setup["db"].execute(
+            "SELECT * FROM sync_team_projects WHERE team_name = 'beta'"
+        ).fetchone()
+        assert row is None
