@@ -2,52 +2,67 @@
 
 import json
 import re
+import sys
 from pathlib import Path
 from typing import Optional
 
 import click
 
-from karma.config import (
-    SyncConfig, ProjectConfig, TeamMember, TeamConfig,
-    TeamMemberSyncthing, SyncthingSettings, SYNC_CONFIG_PATH, KARMA_BASE,
-)
-from karma.sync import sync_project, pull_remote_sessions, encode_project_path
+from karma.config import SyncConfig, SyncthingSettings, SYNC_CONFIG_PATH, KARMA_BASE
+from karma.sync import encode_project_path
+
+# Add API to path for sync_queries
+_API_PATH = Path(__file__).parent.parent.parent / "api"
+if str(_API_PATH) not in sys.path:
+    sys.path.insert(0, str(_API_PATH))
 
 _SAFE_NAME = re.compile(r"^[a-zA-Z0-9_\-]+$")
 
 
-def _auto_share_folders(st, config, team_cfg, teams, team_name, new_device_id):
+def _get_db():
+    """Get a SQLite connection with schema applied."""
+    from karma.db import get_connection
+
+    return get_connection()
+
+
+def _auto_share_folders(st, config, conn, team_name, new_device_id):
     """Auto-create Syncthing shared folders for all projects in a team.
 
     Each user gets their own outbox folder with a unique ID:
       - karma-out-{my_user_id}-{project} (send-only: my sessions → teammates)
       - karma-in-{their_user_id}-{project} (receive-only: their sessions → my machine)
-
-    This prevents Syncthing from merging sessions from different users.
     """
-    for proj_name, proj_cfg in team_cfg.projects.items():
+    from db.sync_queries import list_team_projects, list_members
+
+    projects = list_team_projects(conn, team_name)
+    members = list_members(conn, team_name)
+
+    for proj in projects:
+        encoded = proj["project_encoded_name"]
+        proj_short = Path(proj["path"]).name if proj["path"] else encoded
+
         # 1. My outbox: send my sessions to teammates
-        outbox_path = str(KARMA_BASE / "remote-sessions" / config.user_id / proj_cfg.encoded_name)
-        outbox_id = f"karma-out-{config.user_id}-{proj_name}"
+        outbox_path = str(KARMA_BASE / "remote-sessions" / config.user_id / encoded)
+        outbox_id = f"karma-out-{config.user_id}-{proj_short}"
         all_device_ids = [new_device_id]
         if config.syncthing.device_id:
             all_device_ids.append(config.syncthing.device_id)
-        for member in team_cfg.syncthing_members.values():
-            if member.syncthing_device_id not in all_device_ids:
-                all_device_ids.append(member.syncthing_device_id)
+        for m in members:
+            if m["device_id"] and m["device_id"] not in all_device_ids:
+                all_device_ids.append(m["device_id"])
         try:
             Path(outbox_path).mkdir(parents=True, exist_ok=True)
             st.add_folder(outbox_id, outbox_path, all_device_ids, folder_type="sendonly")
             click.echo(f"Outbox '{outbox_id}' -> {outbox_path} (send-only)")
         except Exception as e:
-            click.echo(f"Warning: Could not create outbox for '{proj_name}': {e}")
+            click.echo(f"Warning: Could not create outbox for '{proj_short}': {e}")
 
-        # 2. Inbox for each teammate: receive their sessions
-        # Find the member name for the new device ID
-        for member_name, member_cfg in team_cfg.syncthing_members.items():
-            if member_cfg.syncthing_device_id == new_device_id:
-                inbox_path = str(KARMA_BASE / "remote-sessions" / member_name / proj_cfg.encoded_name)
-                inbox_id = f"karma-out-{member_name}-{proj_name}"
+        # 2. Inbox for the new member
+        for m in members:
+            if m["device_id"] == new_device_id:
+                inbox_path = str(KARMA_BASE / "remote-sessions" / m["name"] / encoded)
+                inbox_id = f"karma-out-{m['name']}-{proj_short}"
                 inbox_devices = [new_device_id]
                 if config.syncthing.device_id:
                     inbox_devices.append(config.syncthing.device_id)
@@ -56,45 +71,34 @@ def _auto_share_folders(st, config, team_cfg, teams, team_name, new_device_id):
                     st.add_folder(inbox_id, inbox_path, inbox_devices, folder_type="receiveonly")
                     click.echo(f"Inbox '{inbox_id}' -> {inbox_path} (receive-only)")
                 except Exception as e:
-                    click.echo(f"Warning: Could not create inbox for '{member_name}/{proj_name}': {e}")
+                    click.echo(f"Warning: Could not create inbox for '{m['name']}/{proj_short}': {e}")
 
 
-def _accept_pending_folders(st, config):
+def _accept_pending_folders(st, config, conn):
     """Accept pending folder offers from known team members.
 
     Security policy:
-    - Only accepts folders from device IDs registered in syncthing_members
+    - Only accepts folders from device IDs registered in sync_members
     - Only accepts folder IDs prefixed with 'karma-'
-    - Logs all decisions (accepted, ignored unknown, ignored non-karma)
     - Replaces empty pre-created inbox folders that conflict on the same path
-
-    Returns the number of folders accepted.
     """
+    from db.sync_queries import get_known_devices, list_team_projects
+
     pending = st.get_pending_folders()
     if not pending:
         return 0
 
-    # Build device_id -> (member_name, team_name) lookup
-    known_devices: dict[str, tuple[str, str]] = {}
-    for team_name, team_cfg in config.teams.items():
-        for member_name, member_cfg in team_cfg.syncthing_members.items():
-            known_devices[member_cfg.syncthing_device_id] = (member_name, team_name)
-
+    known_devices = get_known_devices(conn)
     accepted = 0
-
-    # Get existing folder IDs to avoid duplicates
     existing_folder_ids = {f["id"] for f in st.get_folders()}
     own_device_id = config.syncthing.device_id if config.syncthing else None
 
     for folder_id, folder_info in pending.items():
-        # Security: only accept karma-prefixed folders
         if not folder_id.startswith("karma-"):
             click.echo(f"  Skipped non-karma folder offer '{folder_id}' (security policy)")
             continue
 
-        # Skip folders we already have configured (e.g. our own outbox)
         if folder_id in existing_folder_ids:
-            # Dismiss the pending offer so it doesn't reappear
             for device_id in folder_info.get("offeredBy", {}):
                 try:
                     st.dismiss_pending_folder(folder_id, device_id)
@@ -105,7 +109,6 @@ def _accept_pending_folders(st, config):
 
         offered_by = folder_info.get("offeredBy", {})
         for device_id, _offer in offered_by.items():
-            # Skip offers from our own device
             if own_device_id and device_id == own_device_id:
                 continue
 
@@ -115,13 +118,13 @@ def _accept_pending_folders(st, config):
                 continue
 
             member_name, team_name = known_devices[device_id]
-            team_cfg = config.teams[team_name]
+            projects = list_team_projects(conn, team_name)
 
-            # Find matching project by checking if project name appears in folder ID
             matched_project = None
-            for proj_name, proj_cfg in team_cfg.projects.items():
-                if proj_name in folder_id:
-                    matched_project = (proj_name, proj_cfg)
+            for proj in projects:
+                proj_short = Path(proj["path"]).name if proj["path"] else proj["project_encoded_name"]
+                if proj_short in folder_id:
+                    matched_project = proj
                     break
 
             if not matched_project:
@@ -131,21 +134,18 @@ def _accept_pending_folders(st, config):
                 )
                 continue
 
-            proj_name, proj_cfg = matched_project
-            inbox_path = str(KARMA_BASE / "remote-sessions" / member_name / proj_cfg.encoded_name)
+            encoded = matched_project["project_encoded_name"]
+            inbox_path = str(KARMA_BASE / "remote-sessions" / member_name / encoded)
 
-            # Check if we already have a folder at this path (pre-created inbox)
             existing = st.find_folder_by_path(inbox_path)
             if existing:
                 existing_id = existing["id"]
                 if existing_id == folder_id:
                     click.echo(f"  Already accepted '{folder_id}' from {member_name}")
                     continue
-                # Remove the pre-created empty folder to accept the real one
                 click.echo(f"  Replacing empty inbox '{existing_id}' with offered '{folder_id}'")
                 st.remove_folder(existing_id)
 
-            # Accept: create the folder as receiveonly
             inbox_devices = [device_id]
             if own_device_id:
                 inbox_devices.append(own_device_id)
@@ -176,11 +176,12 @@ def require_config() -> SyncConfig:
 @click.group()
 @click.version_option(package_name="claude-karma-cli")
 def cli():
-    """Claude Karma - IPFS/Syncthing session sync for distributed teams."""
+    """Claude Karma - Syncthing session sync for distributed teams."""
     pass
 
 
 # --- init ---
+
 
 @cli.command()
 @click.option("--user-id", prompt="Your user ID (e.g., your name)", help="Identity for syncing")
@@ -198,6 +199,7 @@ def init(user_id: str, backend: Optional[str]):
 
     if backend == "syncthing":
         from karma.syncthing import SyncthingClient, read_local_api_key
+
         api_key = read_local_api_key()
         st = SyncthingClient(api_key=api_key)
         if not st.is_running():
@@ -219,12 +221,12 @@ def init(user_id: str, backend: Optional[str]):
         click.echo(f"Initialized as '{user_id}' on '{config.machine_id}'.")
         click.echo(f"Config saved to {SYNC_CONFIG_PATH}")
         click.echo("\nNext steps:")
-        click.echo("  1. Install Kubo: https://docs.ipfs.tech/install/command-line/")
-        click.echo("  2. Start IPFS daemon: ipfs daemon &")
-        click.echo("  3. Add a project: karma project add <name> --path /path/to/project")
+        click.echo("  1. Create a team: karma team create <name> --backend syncthing")
+        click.echo("  2. Add a project: karma project add <name> --path /path --team <team>")
 
 
 # --- project ---
+
 
 @cli.group()
 def project():
@@ -235,8 +237,8 @@ def project():
 @project.command("add")
 @click.argument("name")
 @click.option("--path", required=True, help="Absolute path to the project directory")
-@click.option("--team", "team_name", default=None, help="Team to add project to")
-def project_add(name: str, path: str, team_name: Optional[str]):
+@click.option("--team", "team_name", required=True, help="Team to add project to")
+def project_add(name: str, path: str, team_name: str):
     """Add a project for syncing."""
     if not _SAFE_NAME.match(name):
         raise click.ClickException("Project name must be alphanumeric, dash, or underscore only.")
@@ -245,58 +247,67 @@ def project_add(name: str, path: str, team_name: Optional[str]):
         raise click.ClickException("Project path must be absolute (e.g., /Users/alice/my-project).")
 
     config = require_config()
+    conn = _get_db()
+
+    from db.sync_queries import get_team, add_team_project, list_members, log_event
+
+    team = get_team(conn, team_name)
+    if not team:
+        raise click.ClickException(f"Team '{team_name}' not found.")
 
     encoded = encode_project_path(path)
-    project_config = ProjectConfig(path=path, encoded_name=encoded)
 
-    if team_name:
-        if team_name not in config.teams:
-            raise click.ClickException(f"Team '{team_name}' not found.")
-        team_cfg = config.teams[team_name]
-        projects = dict(team_cfg.projects)
-        projects[name] = project_config
-        teams = dict(config.teams)
-        teams[team_name] = team_cfg.model_copy(update={"projects": projects})
-        updated = config.model_copy(update={"teams": teams})
+    # Ensure project exists in projects table (FK requirement)
+    conn.execute(
+        "INSERT OR IGNORE INTO projects (encoded_name, project_path) VALUES (?, ?)",
+        (encoded, path),
+    )
+    conn.commit()
 
-        # Auto-create shared folders if team has Syncthing members
-        if team_cfg.backend == "syncthing" and team_cfg.syncthing_members:
+    try:
+        add_team_project(conn, team_name, encoded, path)
+    except Exception as e:
+        if "UNIQUE constraint" in str(e):
+            raise click.ClickException(f"Project already exists in team '{team_name}'.")
+        raise
+
+    log_event(conn, "project_added", team_name=team_name, project_encoded_name=encoded)
+
+    # Auto-create shared folders if team has Syncthing members
+    if team["backend"] == "syncthing":
+        members = list_members(conn, team_name)
+        if members:
             try:
                 from karma.syncthing import SyncthingClient, read_local_api_key
+
                 api_key = config.syncthing.api_key or read_local_api_key()
                 st = SyncthingClient(api_key=api_key)
                 if st.is_running():
-                    # My outbox (send-only)
                     outbox_path = str(KARMA_BASE / "remote-sessions" / config.user_id / encoded)
                     outbox_id = f"karma-out-{config.user_id}-{name}"
                     device_ids = []
                     if config.syncthing.device_id:
                         device_ids.append(config.syncthing.device_id)
-                    for member in team_cfg.syncthing_members.values():
-                        device_ids.append(member.syncthing_device_id)
+                    for m in members:
+                        if m["device_id"]:
+                            device_ids.append(m["device_id"])
                     Path(outbox_path).mkdir(parents=True, exist_ok=True)
                     st.add_folder(outbox_id, outbox_path, device_ids, folder_type="sendonly")
                     click.echo(f"Outbox '{outbox_id}' -> {outbox_path} (send-only)")
 
-                    # Inbox per teammate (receive-only)
-                    for member_name, member_cfg in team_cfg.syncthing_members.items():
-                        inbox_path = str(KARMA_BASE / "remote-sessions" / member_name / encoded)
-                        inbox_id = f"karma-out-{member_name}-{name}"
-                        inbox_devices = [member_cfg.syncthing_device_id]
-                        if config.syncthing.device_id:
-                            inbox_devices.append(config.syncthing.device_id)
-                        Path(inbox_path).mkdir(parents=True, exist_ok=True)
-                        st.add_folder(inbox_id, inbox_path, inbox_devices, folder_type="receiveonly")
-                        click.echo(f"Inbox '{inbox_id}' -> {inbox_path} (receive-only)")
+                    for m in members:
+                        if m["device_id"]:
+                            inbox_path = str(KARMA_BASE / "remote-sessions" / m["name"] / encoded)
+                            inbox_id = f"karma-out-{m['name']}-{name}"
+                            inbox_devices = [m["device_id"]]
+                            if config.syncthing.device_id:
+                                inbox_devices.append(config.syncthing.device_id)
+                            Path(inbox_path).mkdir(parents=True, exist_ok=True)
+                            st.add_folder(inbox_id, inbox_path, inbox_devices, folder_type="receiveonly")
+                            click.echo(f"Inbox '{inbox_id}' -> {inbox_path} (receive-only)")
             except Exception as e:
                 click.echo(f"Warning: Could not auto-share folder: {e}")
-    else:
-        # Legacy flat projects
-        projects = dict(config.projects)
-        projects[name] = project_config
-        updated = config.model_copy(update={"projects": projects})
 
-    updated.save()
     click.echo(f"Added project '{name}' ({path})")
     click.echo(f"Encoded as: {encoded}")
 
@@ -304,120 +315,57 @@ def project_add(name: str, path: str, team_name: Optional[str]):
 @project.command("list")
 def project_list():
     """List configured projects."""
-    config = require_config()
+    require_config()
+    conn = _get_db()
 
-    if not config.projects and not config.teams:
-        click.echo("No projects configured. Run: karma project add <name> --path /path")
+    from db.sync_queries import list_teams, list_team_projects
+
+    teams = list_teams(conn)
+    if not teams:
+        click.echo("No projects configured. Run: karma project add <name> --path /path --team <team>")
         return
 
-    for name, proj in config.projects.items():
-        sync_info = f" (last sync: {proj.last_sync_at})" if proj.last_sync_at else " (never synced)"
-        click.echo(f"  {name}: {proj.path}{sync_info}")
-
-    for team_name, team_cfg in config.teams.items():
-        for name, proj in team_cfg.projects.items():
-            last = proj.last_sync_at or "never"
-            click.echo(f"  {name}: {proj.path} [team: {team_name}] (last: {last})")
+    for t in teams:
+        projects = list_team_projects(conn, t["name"])
+        for proj in projects:
+            proj_path = proj["path"] or proj["project_encoded_name"]
+            proj_short = Path(proj_path).name if proj["path"] else proj["project_encoded_name"]
+            click.echo(f"  {proj_short}: {proj_path} [team: {t['name']}]")
 
 
 @project.command("remove")
 @click.argument("name")
-@click.option("--team", "team_name", default=None, help="Team to remove project from")
-def project_remove(name: str, team_name: Optional[str]):
+@click.option("--team", "team_name", required=True, help="Team to remove project from")
+def project_remove(name: str, team_name: str):
     """Remove a project from syncing."""
-    config = require_config()
+    require_config()
+    conn = _get_db()
 
-    if team_name:
-        if team_name not in config.teams:
-            raise click.ClickException(f"Team '{team_name}' not found.")
-        team_cfg = config.teams[team_name]
-        if name not in team_cfg.projects:
-            raise click.ClickException(f"Project '{name}' not found in team '{team_name}'.")
-        projects = dict(team_cfg.projects)
-        del projects[name]
-        teams = dict(config.teams)
-        teams[team_name] = team_cfg.model_copy(update={"projects": projects})
-        updated = config.model_copy(update={"teams": teams})
-    else:
-        if name not in config.projects:
-            raise click.ClickException(f"Project '{name}' not found.")
-        projects = dict(config.projects)
-        del projects[name]
-        updated = config.model_copy(update={"projects": projects})
+    from db.sync_queries import get_team, list_team_projects, remove_team_project, log_event
 
-    updated.save()
+    team = get_team(conn, team_name)
+    if not team:
+        raise click.ClickException(f"Team '{team_name}' not found.")
+
+    # Find the project by short name (derived from path) or encoded name
+    projects = list_team_projects(conn, team_name)
+    target = None
+    for proj in projects:
+        proj_short = Path(proj["path"]).name if proj["path"] else proj["project_encoded_name"]
+        if proj_short == name or proj["project_encoded_name"] == name:
+            target = proj
+            break
+
+    if not target:
+        raise click.ClickException(f"Project '{name}' not found in team '{team_name}'.")
+
+    log_event(conn, "project_removed", team_name=team_name, project_encoded_name=target["project_encoded_name"])
+    remove_team_project(conn, team_name, target["project_encoded_name"])
     click.echo(f"Removed project '{name}'.")
 
 
-# --- sync ---
-
-@cli.command()
-@click.argument("name", required=False)
-@click.option("--all", "sync_all", is_flag=True, help="Sync all configured projects")
-def sync(name: str, sync_all: bool):
-    """Sync project sessions to IPFS."""
-    from karma.ipfs import IPFSClient
-
-    config = require_config()
-    ipfs = IPFSClient(api_url=config.ipfs_api)
-
-    if not ipfs.is_running():
-        raise click.ClickException("IPFS daemon not running. Start with: ipfs daemon &")
-
-    targets = list(config.projects.keys()) if sync_all else ([name] if name else [])
-    if not targets:
-        raise click.ClickException("Specify a project name or use --all")
-
-    for project_name in targets:
-        try:
-            click.echo(f"Syncing '{project_name}'...")
-            cid, count = sync_project(project_name, config, ipfs)
-            if count == 0:
-                click.echo("  No sessions found.")
-            else:
-                click.echo(f"  Synced {count} sessions -> {cid}")
-                projects = dict(config.projects)
-                old = projects[project_name]
-                from datetime import datetime, timezone
-                projects[project_name] = old.model_copy(update={
-                    "last_sync_cid": cid,
-                    "last_sync_at": datetime.now(timezone.utc).isoformat(),
-                })
-                config = config.model_copy(update={"projects": projects})
-                config.save()
-        except click.ClickException as e:
-            click.echo(f"  Error syncing '{project_name}': {e.message}", err=True)
-
-
-# --- pull ---
-
-@cli.command()
-def pull():
-    """Pull remote sessions from IPFS for all team members."""
-    from karma.ipfs import IPFSClient
-
-    config = require_config()
-    ipfs = IPFSClient(api_url=config.ipfs_api)
-
-    if not ipfs.is_running():
-        raise click.ClickException("IPFS daemon not running. Start with: ipfs daemon &")
-
-    if not config.team:
-        click.echo("No team members configured. Run: karma team add <name> <ipns-key>")
-        return
-
-    click.echo(f"Pulling sessions from {len(config.team)} team members...")
-    results = pull_remote_sessions(config, ipfs)
-
-    for r in results:
-        status = r["status"]
-        if status == "ok":
-            click.echo(f"  {r['member']}: pulled ({r['cid'][:12]}...)")
-        else:
-            click.echo(f"  {r['member']}: {status}")
-
-
 # --- ls ---
+
 
 @cli.command("ls")
 def list_remote():
@@ -451,6 +399,7 @@ def list_remote():
 
 # --- accept ---
 
+
 @cli.command()
 def accept():
     """Accept pending Syncthing folder offers from known team members.
@@ -462,6 +411,7 @@ def accept():
     from karma.syncthing import SyncthingClient, read_local_api_key
 
     config = require_config()
+    conn = _get_db()
     api_key = config.syncthing.api_key if config.syncthing else read_local_api_key()
     if not api_key:
         raise click.ClickException(
@@ -473,7 +423,7 @@ def accept():
         raise click.ClickException("Syncthing is not running. Start Syncthing first.")
 
     click.echo("Checking for pending folder offers...")
-    n = _accept_pending_folders(st, config)
+    n = _accept_pending_folders(st, config, conn)
     if n == 0:
         click.echo("No pending folders to accept.")
     else:
@@ -481,6 +431,7 @@ def accept():
 
 
 # --- watch ---
+
 
 @cli.command()
 @click.option("--team", "team_name", required=True, help="Team to watch for")
@@ -490,19 +441,23 @@ def watch(team_name: str):
     from karma.packager import SessionPackager
 
     config = require_config()
+    conn = _get_db()
 
-    if team_name not in config.teams:
+    from db.sync_queries import get_team, list_team_projects, log_event
+
+    team = get_team(conn, team_name)
+    if not team:
         raise click.ClickException(
             f"Team '{team_name}' not found. Run: karma team create {team_name} --backend syncthing"
         )
 
-    team_cfg = config.teams[team_name]
-    if team_cfg.backend != "syncthing":
+    if team["backend"] != "syncthing":
         raise click.ClickException(
-            f"Team '{team_name}' uses {team_cfg.backend}, not syncthing. Watch is only for Syncthing."
+            f"Team '{team_name}' uses {team['backend']}, not syncthing. Watch is only for Syncthing."
         )
 
-    if not team_cfg.projects:
+    projects = list_team_projects(conn, team_name)
+    if not projects:
         raise click.ClickException(
             f"No projects in team '{team_name}'. Run: karma project add <name> --path /path --team {team_name}"
         )
@@ -510,17 +465,18 @@ def watch(team_name: str):
     # Auto-accept pending folder offers from known teammates before starting
     try:
         from karma.syncthing import SyncthingClient, read_local_api_key
+
         api_key = config.syncthing.api_key if config.syncthing else read_local_api_key()
         if api_key:
             st = SyncthingClient(api_key=api_key)
             if st.is_running():
-                n = _accept_pending_folders(st, config)
+                n = _accept_pending_folders(st, config, conn)
                 if n:
                     click.echo(f"Accepted {n} pending folder(s) from known teammates.\n")
     except Exception as e:
         click.echo(f"Warning: Could not check pending folders: {e}\n")
 
-    click.echo(f"Watching {len(team_cfg.projects)} project(s) for team '{team_name}'...")
+    click.echo(f"Watching {len(projects)} project(s) for team '{team_name}'...")
     click.echo("Press Ctrl+C to stop.\n")
 
     from karma.worktree_discovery import find_all_worktree_dirs
@@ -528,35 +484,37 @@ def watch(team_name: str):
     watchers = []
     projects_dir = Path.home() / ".claude" / "projects"
 
-    for proj_name, proj in team_cfg.projects.items():
-        claude_dir = Path.home() / ".claude" / "projects" / proj.encoded_name
+    for proj in projects:
+        encoded = proj["project_encoded_name"]
+        proj_path = proj["path"] or ""
+        proj_short = Path(proj_path).name if proj_path else encoded
+
+        claude_dir = projects_dir / encoded
         if not claude_dir.is_dir():
-            click.echo(f"  Skipping '{proj_name}': Claude dir not found ({claude_dir})")
+            click.echo(f"  Skipping '{proj_short}': Claude dir not found ({claude_dir})")
             continue
 
         # Discover worktree dirs for this project
-        wt_dirs = find_all_worktree_dirs(proj.encoded_name, proj.path, projects_dir)
+        wt_dirs = find_all_worktree_dirs(encoded, proj_path, projects_dir)
         if wt_dirs:
-            click.echo(f"  Found {len(wt_dirs)} worktree dir(s) for '{proj_name}'")
+            click.echo(f"  Found {len(wt_dirs)} worktree dir(s) for '{proj_short}'")
 
-        # team_name intentionally excluded — user_id provides namespace isolation.
-        # Both IPFS pull and Syncthing watch converge on this same path.
-        outbox = KARMA_BASE / "remote-sessions" / config.user_id / proj.encoded_name
+        outbox = KARMA_BASE / "remote-sessions" / config.user_id / encoded
 
-        def make_package_fn(cd=claude_dir, ob=outbox, pn=proj_name, en=proj.encoded_name, pp=proj.path):
+        def make_package_fn(cd=claude_dir, ob=outbox, pn=proj_short, en=encoded, pp=proj_path):
             def package():
-                # Re-discover worktrees each time (new ones may appear)
                 current_wt_dirs = find_all_worktree_dirs(en, pp, projects_dir)
                 packager = SessionPackager(
                     project_dir=cd,
                     user_id=config.user_id,
                     machine_id=config.machine_id,
-                    project_path=proj.path,
+                    project_path=pp,
                     extra_dirs=current_wt_dirs,
                 )
                 ob.mkdir(parents=True, exist_ok=True)
                 packager.package(staging_dir=ob)
                 click.echo(f"  Packaged '{pn}' -> {ob} ({len(current_wt_dirs)} worktrees)")
+
             return package
 
         package_fn = make_package_fn()
@@ -567,7 +525,7 @@ def watch(team_name: str):
         )
         watcher.start()
         watchers.append(watcher)
-        click.echo(f"  Watching: {proj_name} ({claude_dir})")
+        click.echo(f"  Watching: {proj_short} ({claude_dir})")
 
         # Also watch each worktree dir
         for wt_dir in wt_dirs:
@@ -586,8 +544,11 @@ def watch(team_name: str):
                 wt_name = wt_dir.name
             click.echo(f"  Watching worktree: {wt_name} ({wt_dir})")
 
+    log_event(conn, "watcher_started", team_name=team_name)
+
     try:
         import time
+
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
@@ -595,10 +556,12 @@ def watch(team_name: str):
     finally:
         for w in watchers:
             w.stop()
+        log_event(conn, "watcher_stopped", team_name=team_name)
         click.echo("Done.")
 
 
 # --- status ---
+
 
 @cli.command()
 def status():
@@ -606,30 +569,33 @@ def status():
     from karma.worktree_discovery import find_all_worktree_dirs
 
     config = require_config()
+    conn = _get_db()
+
+    from db.sync_queries import list_teams, list_team_projects, list_members, query_events
 
     click.echo(f"User: {config.user_id} ({config.machine_id})")
 
-    if not config.teams and not config.projects:
-        click.echo("No teams or projects configured.")
+    teams = list_teams(conn)
+    if not teams:
+        click.echo("No teams configured.")
         return
-
-    # Legacy flat projects
-    if config.projects:
-        click.echo(f"\nLegacy projects (IPFS):")
-        for name, proj in config.projects.items():
-            sync_info = f"last sync: {proj.last_sync_at}" if proj.last_sync_at else "never synced"
-            click.echo(f"  {name}: {proj.path} ({sync_info})")
 
     projects_dir = Path.home() / ".claude" / "projects"
 
-    # Per-team
-    for team_name, team_cfg in config.teams.items():
-        click.echo(f"\n{team_name} ({team_cfg.backend}):")
-        if not team_cfg.projects:
+    for t in teams:
+        team_name = t["name"]
+        click.echo(f"\n{team_name} ({t['backend']}):")
+
+        projects = list_team_projects(conn, team_name)
+        if not projects:
             click.echo("  No projects")
-        for proj_name, proj in team_cfg.projects.items():
-            last = proj.last_sync_at or "never"
-            claude_dir = projects_dir / proj.encoded_name
+
+        for proj in projects:
+            encoded = proj["project_encoded_name"]
+            proj_path = proj["path"] or encoded
+            proj_short = Path(proj_path).name if proj["path"] else encoded
+
+            claude_dir = projects_dir / encoded
 
             # Count local sessions
             local_count = 0
@@ -640,7 +606,7 @@ def status():
                 )
 
             # Count worktree sessions
-            wt_dirs = find_all_worktree_dirs(proj.encoded_name, proj.path, projects_dir)
+            wt_dirs = find_all_worktree_dirs(encoded, proj_path, projects_dir)
             wt_count = 0
             for wd in wt_dirs:
                 wt_count += sum(
@@ -649,7 +615,7 @@ def status():
                 )
 
             # Count packaged sessions
-            outbox = KARMA_BASE / "remote-sessions" / config.user_id / proj.encoded_name / "sessions"
+            outbox = KARMA_BASE / "remote-sessions" / config.user_id / encoded / "sessions"
             packaged_count = 0
             if outbox.is_dir():
                 packaged_count = sum(1 for f in outbox.glob("*.jsonl") if not f.name.startswith("agent-"))
@@ -657,19 +623,32 @@ def status():
             total_local = local_count + wt_count
             gap = total_local - packaged_count
 
-            click.echo(f"  {proj_name}: {proj.path} (last: {last})")
+            click.echo(f"  {proj_short}: {proj_path}")
             click.echo(f"    Local: {local_count} sessions + {wt_count} worktree ({len(wt_dirs)} dirs) = {total_local}")
             click.echo(f"    Packaged: {packaged_count}  {'(up to date)' if gap <= 0 else f'({gap} behind)'}")
 
-        if team_cfg.members:
-            click.echo(f"  Members: {', '.join(team_cfg.members.keys())}")
+        members = list_members(conn, team_name)
+        if members:
+            member_names = [m["name"] for m in members]
+            click.echo(f"  Members: {', '.join(member_names)}")
+
+    # Show recent events
+    events = query_events(conn, limit=5)
+    if events:
+        click.echo("\nRecent activity:")
+        for ev in events:
+            line = f"  [{ev['created_at']}] {ev['event_type']}"
+            if ev["team_name"]:
+                line += f" ({ev['team_name']})"
+            click.echo(line)
 
 
 # --- team ---
 
+
 @cli.group()
 def team():
-    """Manage team members for pulling remote sessions."""
+    """Manage teams and team members for syncing."""
     pass
 
 
@@ -681,136 +660,147 @@ def team_create(name: str, backend: str):
     if not _SAFE_NAME.match(name):
         raise click.ClickException("Team name must be alphanumeric, dash, or underscore only.")
 
-    config = require_config()
+    require_config()
+    conn = _get_db()
 
-    team_config = TeamConfig(backend=backend, projects={})
+    from db.sync_queries import create_team, log_event
 
-    teams = dict(config.teams)
-    teams[name] = team_config
-    updated = config.model_copy(update={"teams": teams})
-    updated.save()
+    try:
+        create_team(conn, name, backend)
+    except Exception as e:
+        if "UNIQUE constraint" in str(e):
+            raise click.ClickException(f"Team '{name}' already exists.")
+        raise
 
+    log_event(conn, "team_created", team_name=name)
     click.echo(f"Created team '{name}' (backend: {backend})")
+
+
+@team.command("delete")
+@click.argument("name")
+def team_delete(name: str):
+    """Delete an entire team (cascades to members and projects)."""
+    require_config()
+    conn = _get_db()
+
+    from db.sync_queries import get_team, delete_team, log_event
+
+    team_data = get_team(conn, name)
+    if not team_data:
+        raise click.ClickException(f"Team '{name}' not found.")
+
+    log_event(conn, "team_deleted", team_name=name)
+    delete_team(conn, name)
+    click.echo(f"Deleted team '{name}' and all its members/projects.")
 
 
 @team.command("add")
 @click.argument("name")
 @click.argument("identifier")
-@click.option("--team", "team_name", default=None, help="Team to add member to (for per-team config)")
-def team_add(name: str, identifier: str, team_name: Optional[str]):
-    """Add a team member by their IPNS key or Syncthing device ID."""
+@click.option("--team", "team_name", required=True, help="Team to add member to")
+def team_add(name: str, identifier: str, team_name: str):
+    """Add a team member by their Syncthing device ID or IPNS key."""
     if not _SAFE_NAME.match(name):
         raise click.ClickException("Team member name must be alphanumeric, dash, or underscore only.")
 
     config = require_config()
+    conn = _get_db()
 
-    if team_name and team_name in config.teams:
-        # Per-team member add
-        team_cfg = config.teams[team_name]
-        if team_cfg.backend == "syncthing":
-            syncthing_members = dict(team_cfg.syncthing_members)
-            syncthing_members[name] = TeamMemberSyncthing(syncthing_device_id=identifier)
-            teams = dict(config.teams)
-            teams[team_name] = team_cfg.model_copy(update={"syncthing_members": syncthing_members})
+    from db.sync_queries import get_team, add_member, log_event
 
-            # Auto-pair device in Syncthing
-            try:
-                from karma.syncthing import SyncthingClient, read_local_api_key
-                api_key = config.syncthing.api_key or read_local_api_key()
-                st = SyncthingClient(api_key=api_key)
-                if st.is_running():
-                    st.add_device(identifier, name)
-                    click.echo(f"Paired Syncthing device '{name}' ({identifier[:7]}...)")
+    team_data = get_team(conn, team_name)
+    if not team_data:
+        raise click.ClickException(f"Team '{team_name}' not found.")
 
-                    # Auto-create shared folder if team has projects
-                    _auto_share_folders(st, config, team_cfg, teams, team_name, identifier)
+    if team_data["backend"] == "syncthing":
+        try:
+            add_member(conn, team_name, name, device_id=identifier)
+        except Exception as e:
+            if "UNIQUE constraint" in str(e):
+                raise click.ClickException(f"Member '{name}' already exists in team '{team_name}'.")
+            raise
 
-                    # Auto-accept any pending folder offers from this member
-                    updated_config = config.model_copy(update={"teams": teams})
-                    n = _accept_pending_folders(st, updated_config)
-                    if n:
-                        click.echo(f"Accepted {n} pending folder(s) from known teammates.")
-                else:
-                    click.echo("Warning: Syncthing not running — device saved but not paired yet.")
-            except Exception as e:
-                click.echo(f"Warning: Could not auto-pair device: {e}")
-                click.echo("You can pair manually in Syncthing UI (http://127.0.0.1:8384)")
-        else:
-            ipfs_members = dict(team_cfg.ipfs_members)
-            ipfs_members[name] = TeamMember(ipns_key=identifier)
-            teams = dict(config.teams)
-            teams[team_name] = team_cfg.model_copy(update={"ipfs_members": ipfs_members})
-        updated = config.model_copy(update={"teams": teams})
-        updated.save()
-        click.echo(f"Added team member '{name}' to team '{team_name}'")
+        log_event(conn, "member_added", team_name=team_name, member_name=name)
+
+        # Auto-pair device in Syncthing
+        try:
+            from karma.syncthing import SyncthingClient, read_local_api_key
+
+            api_key = config.syncthing.api_key or read_local_api_key()
+            st = SyncthingClient(api_key=api_key)
+            if st.is_running():
+                st.add_device(identifier, name)
+                click.echo(f"Paired Syncthing device '{name}' ({identifier[:7]}...)")
+
+                _auto_share_folders(st, config, conn, team_name, identifier)
+
+                n = _accept_pending_folders(st, config, conn)
+                if n:
+                    click.echo(f"Accepted {n} pending folder(s) from known teammates.")
+            else:
+                click.echo("Warning: Syncthing not running — device saved but not paired yet.")
+        except Exception as e:
+            click.echo(f"Warning: Could not auto-pair device: {e}")
+            click.echo("You can pair manually in Syncthing UI (http://127.0.0.1:8384)")
     else:
-        # Legacy flat team dict (IPFS-only backward compat)
-        if not identifier or identifier.startswith("-") or len(identifier) > 128:
-            raise click.ClickException("Invalid IPNS key: must be non-empty, not start with dash, max 128 chars.")
-        if not re.match(r"^[a-zA-Z0-9]+$", identifier):
-            raise click.ClickException("Invalid IPNS key: must be alphanumeric only.")
-        members = dict(config.team)
-        members[name] = TeamMember(ipns_key=identifier)
-        updated = config.model_copy(update={"team": members})
-        updated.save()
-        click.echo(f"Added team member '{name}' ({identifier})")
+        # IPFS member
+        try:
+            add_member(conn, team_name, name, ipns_key=identifier)
+        except Exception as e:
+            if "UNIQUE constraint" in str(e):
+                raise click.ClickException(f"Member '{name}' already exists in team '{team_name}'.")
+            raise
+
+        log_event(conn, "member_added", team_name=team_name, member_name=name)
+
+    click.echo(f"Added team member '{name}' to team '{team_name}'")
 
 
 @team.command("list")
 def team_list():
-    """List team members."""
-    config = require_config()
+    """List teams and their members."""
+    require_config()
+    conn = _get_db()
 
-    if not config.team and not config.teams:
-        click.echo("No team members. Run: karma team add <name> <ipns-key>")
+    from db.sync_queries import list_teams, list_members
+
+    teams = list_teams(conn)
+    if not teams:
+        click.echo("No teams. Run: karma team create <name> --backend syncthing")
         return
 
-    # Legacy flat team
-    for name, member in config.team.items():
-        click.echo(f"  {name}: {member.ipns_key}")
-
-    # Per-team members
-    for team_name, team_cfg in config.teams.items():
-        if team_cfg.members:
-            click.echo(f"\n  {team_name} ({team_cfg.backend}):")
-            for member_name in team_cfg.members:
-                click.echo(f"    {member_name}")
+    for t in teams:
+        click.echo(f"\n  {t['name']} ({t['backend']}):")
+        members = list_members(conn, t["name"])
+        if members:
+            for m in members:
+                id_info = m["device_id"] or m["ipns_key"] or "no-id"
+                click.echo(f"    {m['name']}: {id_info}")
+        else:
+            click.echo("    (no members)")
 
 
 @team.command("remove")
 @click.argument("name")
-@click.option("--team", "team_name", default=None, help="Team to remove member from")
-def team_remove(name: str, team_name: Optional[str]):
+@click.option("--team", "team_name", required=True, help="Team to remove member from")
+def team_remove(name: str, team_name: str):
     """Remove a team member."""
-    config = require_config()
+    require_config()
+    conn = _get_db()
 
-    if team_name:
-        if team_name not in config.teams:
-            raise click.ClickException(f"Team '{team_name}' not found.")
-        team_cfg = config.teams[team_name]
-        if team_cfg.backend == "syncthing":
-            if name not in team_cfg.syncthing_members:
-                raise click.ClickException(f"Member '{name}' not found in team '{team_name}'.")
-            members = dict(team_cfg.syncthing_members)
-            del members[name]
-            teams = dict(config.teams)
-            teams[team_name] = team_cfg.model_copy(update={"syncthing_members": members})
-        else:
-            if name not in team_cfg.ipfs_members:
-                raise click.ClickException(f"Member '{name}' not found in team '{team_name}'.")
-            members = dict(team_cfg.ipfs_members)
-            del members[name]
-            teams = dict(config.teams)
-            teams[team_name] = team_cfg.model_copy(update={"ipfs_members": members})
-        updated = config.model_copy(update={"teams": teams})
-    else:
-        if name not in config.team:
-            raise click.ClickException(f"Team member '{name}' not found.")
-        members = dict(config.team)
-        del members[name]
-        updated = config.model_copy(update={"team": members})
+    from db.sync_queries import get_team, list_members, remove_member, log_event
 
-    updated.save()
+    team_data = get_team(conn, team_name)
+    if not team_data:
+        raise click.ClickException(f"Team '{team_name}' not found.")
+
+    members = list_members(conn, team_name)
+    member_names = {m["name"] for m in members}
+    if name not in member_names:
+        raise click.ClickException(f"Member '{name}' not found in team '{team_name}'.")
+
+    log_event(conn, "member_removed", team_name=team_name, member_name=name)
+    remove_member(conn, team_name, name)
     click.echo(f"Removed team member '{name}'.")
 
 
