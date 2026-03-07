@@ -13,6 +13,7 @@
 	href="/team/{encodeURIComponent(team.name)}"
 	class="group block border border-[var(--border)] rounded-xl p-5 bg-[var(--bg-base)] hover:border-[var(--accent)]/40 hover:shadow-md transition-all"
 	style="transition-duration: var(--duration-base);"
+	aria-label="Team {team.name}, {memberCount} {memberCount === 1 ? 'member' : 'members'}, {projectCount} {projectCount === 1 ? 'project' : 'projects'}"
 >
 	<div class="flex items-start justify-between mb-4">
 		<div class="flex items-center gap-3">

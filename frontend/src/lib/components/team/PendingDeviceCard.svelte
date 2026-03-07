@@ -72,7 +72,7 @@
 						type="text"
 						bind:value={memberName}
 						placeholder="bob"
-						class="w-full px-3 py-1.5 text-sm rounded-[var(--radius)] border border-[var(--border)]
+						class="w-full px-3 py-1.5 text-sm rounded-[var(--radius-md)] border border-[var(--border)]
 							bg-[var(--bg-base)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]
 							focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40 focus:border-[var(--accent)]
 							transition-colors"
@@ -82,7 +82,7 @@
 				<button
 					onclick={handleAccept}
 					disabled={!isValid || loading}
-					class="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-[var(--radius)]
+					class="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-[var(--radius-md)]
 						bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)] transition-colors
 						disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
 				>
@@ -96,7 +96,7 @@
 			</div>
 
 			{#if error}
-				<p class="text-xs text-[var(--error)]">{error}</p>
+				<p class="text-xs text-[var(--error)]" aria-live="polite">{error}</p>
 			{/if}
 		</div>
 	</div>

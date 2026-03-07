@@ -26,10 +26,20 @@
 	let showAddProject = $state(false);
 	let deleteConfirm = $state(false);
 	let deleting = $state(false);
+	let deleteError = $state<string | null>(null);
+	let removeProjectConfirm = $state<string | null>(null);
 
 	// Polling state for pending devices and connection status
-	let pendingDevices = $state<PendingDevice[]>(data.pendingDevices ?? []);
-	let devices = $state<SyncDevice[]>(data.devices ?? []);
+	let pendingDevices = $state<PendingDevice[]>([]);
+	let devices = $state<SyncDevice[]>([]);
+
+	// Sync from server data when it changes (e.g. after invalidateAll)
+	$effect(() => {
+		pendingDevices = data.pendingDevices ?? [];
+	});
+	$effect(() => {
+		devices = data.devices ?? [];
+	});
 
 	let team = $derived(data.team);
 	let members = $derived(team?.members ?? []);
@@ -64,6 +74,7 @@
 	async function handleDeleteTeam() {
 		if (deleting) return;
 		deleting = true;
+		deleteError = null;
 		try {
 			const res = await fetch(
 				`${API_BASE}/sync/teams/${encodeURIComponent(data.teamName)}`,
@@ -71,12 +82,14 @@
 			);
 			if (res.ok) {
 				window.location.href = '/team';
+			} else {
+				const body = await res.json().catch(() => ({}));
+				deleteError = body.detail || `Failed to delete team (${res.status})`;
 			}
 		} catch {
-			// best-effort
+			deleteError = 'Network error. Could not delete team.';
 		} finally {
 			deleting = false;
-			deleteConfirm = false;
 		}
 	}
 
@@ -87,6 +100,7 @@
 				{ method: 'DELETE' }
 			);
 			if (res.ok) {
+				removeProjectConfirm = null;
 				invalidateAll();
 			}
 		} catch {
@@ -112,7 +126,7 @@
 	{#snippet headerRight()}
 		<button
 			onclick={handleRefresh}
-			class="px-3 py-1.5 text-sm font-medium rounded-[var(--radius)] border border-[var(--border)]
+			class="px-3 py-1.5 text-sm font-medium rounded-[var(--radius-md)] border border-[var(--border)]
 				text-[var(--text-secondary)] hover:bg-[var(--bg-muted)] transition-colors"
 		>
 			Refresh
@@ -166,7 +180,7 @@
 				</h2>
 				<button
 					onclick={() => (showAddMember = true)}
-					class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-[var(--radius)]
+					class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-[var(--radius-md)]
 						border border-[var(--border)] text-[var(--text-secondary)]
 						hover:bg-[var(--bg-muted)] hover:text-[var(--text-primary)] transition-colors"
 				>
@@ -200,7 +214,7 @@
 				</h2>
 				<button
 					onclick={() => (showAddProject = true)}
-					class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-[var(--radius)]
+					class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-[var(--radius-md)]
 						border border-[var(--border)] text-[var(--text-secondary)]
 						hover:bg-[var(--bg-muted)] hover:text-[var(--text-primary)] transition-colors"
 				>
@@ -224,13 +238,33 @@
 								{/if}
 							</div>
 						</div>
-						<button
-							onclick={() => handleRemoveProject(project.encoded_name)}
-							class="shrink-0 p-1.5 rounded text-[var(--text-muted)] hover:text-[var(--error)] hover:bg-[var(--error)]/10 transition-colors"
-							title="Remove from team"
-						>
-							<Trash2 size={14} />
-						</button>
+						<div class="shrink-0">
+							{#if removeProjectConfirm === project.encoded_name}
+								<div class="flex items-center gap-1.5">
+									<button
+										onclick={() => handleRemoveProject(project.encoded_name)}
+										class="px-2 py-1 text-xs font-medium rounded bg-[var(--error)] text-white hover:bg-[var(--error)]/80 transition-colors"
+									>
+										Remove
+									</button>
+									<button
+										onclick={() => (removeProjectConfirm = null)}
+										class="px-2 py-1 text-xs rounded text-[var(--text-muted)] hover:bg-[var(--bg-muted)] transition-colors"
+									>
+										Cancel
+									</button>
+								</div>
+							{:else}
+								<button
+									onclick={() => (removeProjectConfirm = project.encoded_name)}
+									class="p-1.5 rounded text-[var(--text-muted)] hover:text-[var(--error)] hover:bg-[var(--error)]/10 transition-colors"
+									title="Remove from team"
+									aria-label="Remove project {project.name || project.encoded_name}"
+								>
+									<Trash2 size={14} />
+								</button>
+							{/if}
+						</div>
 					</div>
 				{/each}
 				{#if projects.length === 0}
@@ -247,35 +281,40 @@
 				Danger Zone
 			</h2>
 			{#if deleteConfirm}
-				<div class="flex items-center gap-3 p-4 rounded-lg border border-[var(--error)]/20 bg-[var(--error)]/5">
-					<AlertTriangle size={16} class="text-[var(--error)] shrink-0" />
-					<p class="text-sm text-[var(--text-primary)] flex-1">
-						Delete team "{data.teamName}"? This will remove all members and project assignments.
-					</p>
-					<div class="flex items-center gap-2 shrink-0">
-						<button
-							onclick={handleDeleteTeam}
-							disabled={deleting}
-							class="px-3 py-1.5 text-xs font-medium rounded bg-[var(--error)] text-white hover:bg-[var(--error)]/80 transition-colors disabled:opacity-50"
-						>
-							{#if deleting}
-								<Loader2 size={12} class="animate-spin" />
-							{:else}
-								Delete
-							{/if}
-						</button>
-						<button
-							onclick={() => (deleteConfirm = false)}
-							class="px-3 py-1.5 text-xs rounded text-[var(--text-muted)] hover:bg-[var(--bg-muted)] transition-colors"
-						>
-							Cancel
-						</button>
+				<div class="space-y-2">
+					<div class="flex items-center gap-3 p-4 rounded-lg border border-[var(--error)]/20 bg-[var(--error)]/5">
+						<AlertTriangle size={16} class="text-[var(--error)] shrink-0" />
+						<p class="text-sm text-[var(--text-primary)] flex-1">
+							Delete team "{data.teamName}"? This will remove all members and project assignments.
+						</p>
+						<div class="flex items-center gap-2 shrink-0">
+							<button
+								onclick={handleDeleteTeam}
+								disabled={deleting}
+								class="px-3 py-1.5 text-xs font-medium rounded bg-[var(--error)] text-white hover:bg-[var(--error)]/80 transition-colors disabled:opacity-50"
+							>
+								{#if deleting}
+									<Loader2 size={12} class="animate-spin" />
+								{:else}
+									Delete
+								{/if}
+							</button>
+							<button
+								onclick={() => { deleteConfirm = false; deleteError = null; }}
+								class="px-3 py-1.5 text-xs rounded text-[var(--text-muted)] hover:bg-[var(--bg-muted)] transition-colors"
+							>
+								Cancel
+							</button>
+						</div>
 					</div>
+					{#if deleteError}
+						<p class="text-xs text-[var(--error)]" aria-live="polite">{deleteError}</p>
+					{/if}
 				</div>
 			{:else}
 				<button
 					onclick={() => (deleteConfirm = true)}
-					class="px-4 py-2 text-sm font-medium rounded-[var(--radius)] border border-[var(--error)]/30
+					class="px-4 py-2 text-sm font-medium rounded-[var(--radius-md)] border border-[var(--error)]/30
 						text-[var(--error)] hover:bg-[var(--error)]/10 transition-colors"
 				>
 					Delete Team

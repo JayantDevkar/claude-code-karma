@@ -31,6 +31,7 @@
 			onclick={handleCopy}
 			class="shrink-0 p-2 rounded-md hover:bg-[var(--bg-muted)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
 			title="Copy to clipboard"
+			aria-label="Copy join code to clipboard"
 		>
 			{#if copied}
 				<CheckCircle size={16} class="text-[var(--success)]" />

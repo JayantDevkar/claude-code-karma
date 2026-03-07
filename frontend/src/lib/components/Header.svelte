@@ -33,9 +33,9 @@
 			]
 		},
 		{
-			label: 'Team',
+			label: 'Teams',
 			items: [
-				{ label: 'Team', href: '/team' },
+				{ label: 'Teams', href: '/team' },
 				{ label: 'Sync', href: '/sync' }
 			]
 		}

@@ -115,6 +115,7 @@
 					onclick={() => (confirmRemove = true)}
 					class="p-1.5 rounded text-[var(--text-muted)] hover:text-[var(--error)] hover:bg-[var(--error)]/10 transition-colors"
 					title="Remove member"
+					aria-label="Remove member {member.name}"
 				>
 					<Trash2 size={14} />
 				</button>

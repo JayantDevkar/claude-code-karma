@@ -35,9 +35,10 @@
 				return;
 			}
 
+			const createdName = teamName;
 			open = false;
 			teamName = '';
-			oncreated?.(teamName);
+			oncreated?.(createdName);
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Network error';
 		} finally {
@@ -58,14 +59,14 @@
 					type="text"
 					bind:value={teamName}
 					placeholder="my-team"
-					class="w-full px-3 py-2 text-sm rounded-[var(--radius)] border border-[var(--border)]
+					class="w-full px-3 py-2 text-sm rounded-[var(--radius-md)] border border-[var(--border)]
 						bg-[var(--bg-base)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]
 						focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40 focus:border-[var(--accent)]
 						transition-colors"
 					onkeydown={(e) => e.key === 'Enter' && handleCreate()}
 				/>
 				<p class="text-[11px] text-[var(--text-muted)]">
-					Lowercase letters, numbers, dashes, underscores. Shared with teammates.
+					Letters, numbers, dashes, underscores. Shared with teammates.
 				</p>
 			</div>
 
@@ -78,7 +79,7 @@
 	{#snippet footer()}
 		<button
 			onclick={() => (open = false)}
-			class="px-4 py-2 text-sm font-medium rounded-[var(--radius)] text-[var(--text-secondary)]
+			class="px-4 py-2 text-sm font-medium rounded-[var(--radius-md)] text-[var(--text-secondary)]
 				hover:bg-[var(--bg-muted)] transition-colors"
 		>
 			Cancel
@@ -86,7 +87,7 @@
 		<button
 			onclick={handleCreate}
 			disabled={!isValid || loading}
-			class="px-4 py-2 text-sm font-medium rounded-[var(--radius)] bg-[var(--accent)] text-white
+			class="px-4 py-2 text-sm font-medium rounded-[var(--radius-md)] bg-[var(--accent)] text-white
 				hover:bg-[var(--accent-hover)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
 		>
 			{#if loading}

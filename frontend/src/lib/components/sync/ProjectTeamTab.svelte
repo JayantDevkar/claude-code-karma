@@ -34,7 +34,7 @@
 			error = 'Cannot reach backend';
 		} finally {
 			loading = false;
-			loaded = true;
+			if (!error) loaded = true;
 		}
 	}
 

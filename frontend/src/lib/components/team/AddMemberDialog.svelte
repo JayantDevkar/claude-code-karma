@@ -1,6 +1,7 @@
 <script lang="ts">
 	import Modal from '$lib/components/ui/Modal.svelte';
 	import { API_BASE } from '$lib/config';
+	import { parseJoinCode } from '$lib/utils/join-code';
 	import { Loader2 } from 'lucide-svelte';
 
 	let {
@@ -21,12 +22,9 @@
 
 	// Auto-parse join code into name + device_id
 	let parsed = $derived.by(() => {
-		const parts = joinCode.trim().split(':');
-		if (parts.length < 3) return null;
-		const [, user, ...deviceParts] = parts;
-		const device = deviceParts.join(':');
-		if (!user || !device) return null;
-		return { name: user, device_id: device };
+		const result = parseJoinCode(joinCode);
+		if (!result) return null;
+		return { name: result.user, device_id: result.device };
 	});
 
 	// Use parsed values if available, else manual
@@ -86,7 +84,7 @@
 					bind:value={joinCode}
 					placeholder="acme:bob:DEF456-GHI789-..."
 					rows={2}
-					class="w-full px-3 py-2 text-sm font-mono rounded-[var(--radius)] border border-[var(--border)]
+					class="w-full px-3 py-2 text-sm font-mono rounded-[var(--radius-md)] border border-[var(--border)]
 						bg-[var(--bg-base)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]
 						focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40 focus:border-[var(--accent)]
 						transition-colors resize-none"
@@ -120,7 +118,7 @@
 						bind:value={manualName}
 						placeholder="bob"
 						disabled={!!parsed}
-						class="w-full px-3 py-2 text-sm rounded-[var(--radius)] border border-[var(--border)]
+						class="w-full px-3 py-2 text-sm rounded-[var(--radius-md)] border border-[var(--border)]
 							bg-[var(--bg-base)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]
 							focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40 focus:border-[var(--accent)]
 							transition-colors disabled:opacity-50"
@@ -134,7 +132,7 @@
 						bind:value={manualDeviceId}
 						placeholder="DEF456-GHI789-..."
 						disabled={!!parsed}
-						class="w-full px-3 py-2 text-sm font-mono rounded-[var(--radius)] border border-[var(--border)]
+						class="w-full px-3 py-2 text-sm font-mono rounded-[var(--radius-md)] border border-[var(--border)]
 							bg-[var(--bg-base)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]
 							focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40 focus:border-[var(--accent)]
 							transition-colors disabled:opacity-50"
@@ -151,7 +149,7 @@
 	{#snippet footer()}
 		<button
 			onclick={() => (open = false)}
-			class="px-4 py-2 text-sm font-medium rounded-[var(--radius)] text-[var(--text-secondary)]
+			class="px-4 py-2 text-sm font-medium rounded-[var(--radius-md)] text-[var(--text-secondary)]
 				hover:bg-[var(--bg-muted)] transition-colors"
 		>
 			Cancel
@@ -159,7 +157,7 @@
 		<button
 			onclick={handleAdd}
 			disabled={!isValid || loading}
-			class="px-4 py-2 text-sm font-medium rounded-[var(--radius)] bg-[var(--accent)] text-white
+			class="px-4 py-2 text-sm font-medium rounded-[var(--radius-md)] bg-[var(--accent)] text-white
 				hover:bg-[var(--accent-hover)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
 		>
 			{#if loading}

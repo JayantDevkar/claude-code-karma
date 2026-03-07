@@ -6,6 +6,7 @@
 	interface ProjectOption {
 		encoded_name: string;
 		name: string;
+		path?: string;
 	}
 
 	let {
@@ -56,7 +57,7 @@
 							headers: { 'Content-Type': 'application/json' },
 							body: JSON.stringify({
 								name: encodedName,
-								path: project?.name ?? encodedName
+								path: project?.path ?? ''
 							})
 						}
 					);
@@ -92,6 +93,8 @@
 					{#each availableProjects as project (project.encoded_name)}
 						<button
 							onclick={() => toggleProject(project.encoded_name)}
+							role="checkbox"
+							aria-checked={selected.has(project.encoded_name)}
 							class="w-full flex items-center gap-3 p-2.5 rounded-lg text-left hover:bg-[var(--bg-subtle)] transition-colors"
 						>
 							<div
@@ -130,7 +133,7 @@
 	{#snippet footer()}
 		<button
 			onclick={() => (open = false)}
-			class="px-4 py-2 text-sm font-medium rounded-[var(--radius)] text-[var(--text-secondary)]
+			class="px-4 py-2 text-sm font-medium rounded-[var(--radius-md)] text-[var(--text-secondary)]
 				hover:bg-[var(--bg-muted)] transition-colors"
 		>
 			Cancel
@@ -138,7 +141,7 @@
 		<button
 			onclick={handleShare}
 			disabled={selected.size === 0 || loading}
-			class="px-4 py-2 text-sm font-medium rounded-[var(--radius)] bg-[var(--accent)] text-white
+			class="px-4 py-2 text-sm font-medium rounded-[var(--radius-md)] bg-[var(--accent)] text-white
 				hover:bg-[var(--accent-hover)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
 		>
 			{#if loading}

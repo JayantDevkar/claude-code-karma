@@ -13,6 +13,7 @@
 	} from 'lucide-svelte';
 	import type { SyncDetect, SyncStatusResponse } from '$lib/api-types';
 	import { API_BASE } from '$lib/config';
+	import { copyToClipboard } from '$lib/utils';
 
 	let {
 		detect = $bindable(),
@@ -75,14 +76,12 @@
 	// -----------------------------------------------
 	let copiedCommand = $state<string | null>(null);
 
-	function copyCommand(command: string) {
-		navigator.clipboard
-			.writeText(command)
-			.then(() => {
-				copiedCommand = command;
-				setTimeout(() => (copiedCommand = null), 2000);
-			})
-			.catch(() => {});
+	async function copyCommand(command: string) {
+		const ok = await copyToClipboard(command);
+		if (ok) {
+			copiedCommand = command;
+			setTimeout(() => (copiedCommand = null), 2000);
+		}
 	}
 
 	let checkingAgain = $state(false);
@@ -142,15 +141,12 @@
 		}
 	}
 
-	function copyDeviceId() {
-		const id = detect?.device_id ?? '';
-		navigator.clipboard
-			.writeText(id)
-			.then(() => {
-				copiedDeviceId = true;
-				setTimeout(() => (copiedDeviceId = false), 2000);
-			})
-			.catch(() => {});
+	async function copyDeviceId() {
+		const ok = await copyToClipboard(detect?.device_id ?? '');
+		if (ok) {
+			copiedDeviceId = true;
+			setTimeout(() => (copiedDeviceId = false), 2000);
+		}
 	}
 
 	// -----------------------------------------------
@@ -230,7 +226,7 @@
 
 				<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
 					<div class="flex items-start gap-2.5">
-						<div class="w-7 h-7 rounded-[var(--radius)] bg-[var(--accent)]/10 flex items-center justify-center shrink-0 mt-0.5">
+						<div class="w-7 h-7 rounded-[var(--radius-md)] bg-[var(--accent)]/10 flex items-center justify-center shrink-0 mt-0.5">
 							<Shield size={14} class="text-[var(--accent)]" />
 						</div>
 						<div>
@@ -240,7 +236,7 @@
 					</div>
 
 					<div class="flex items-start gap-2.5">
-						<div class="w-7 h-7 rounded-[var(--radius)] bg-[var(--success)]/10 flex items-center justify-center shrink-0 mt-0.5">
+						<div class="w-7 h-7 rounded-[var(--radius-md)] bg-[var(--success)]/10 flex items-center justify-center shrink-0 mt-0.5">
 							<Wifi size={14} class="text-[var(--success)]" />
 						</div>
 						<div>
@@ -250,7 +246,7 @@
 					</div>
 
 					<div class="flex items-start gap-2.5">
-						<div class="w-7 h-7 rounded-[var(--radius)] bg-[var(--info)]/10 flex items-center justify-center shrink-0 mt-0.5">
+						<div class="w-7 h-7 rounded-[var(--radius-md)] bg-[var(--info)]/10 flex items-center justify-center shrink-0 mt-0.5">
 							<HardDrive size={14} class="text-[var(--info)]" />
 						</div>
 						<div>
@@ -260,7 +256,7 @@
 					</div>
 
 					<div class="flex items-start gap-2.5">
-						<div class="w-7 h-7 rounded-[var(--radius)] bg-[var(--warning)]/10 flex items-center justify-center shrink-0 mt-0.5">
+						<div class="w-7 h-7 rounded-[var(--radius-md)] bg-[var(--warning)]/10 flex items-center justify-center shrink-0 mt-0.5">
 							<RefreshCw size={14} class="text-[var(--warning)]" />
 						</div>
 						<div>
@@ -272,7 +268,7 @@
 
 				<button
 					onclick={() => (step = 1)}
-					class="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-[var(--radius)] bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)] transition-colors"
+					class="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-[var(--radius-md)] bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)] transition-colors"
 				>
 					Get Started
 					<ArrowRight size={14} />
@@ -310,7 +306,7 @@
 				<div class="space-y-2">
 					{#each installInstructions as instr}
 						<div
-							class="rounded-[var(--radius)] px-3 py-2.5 {instr.os === detectedOS
+							class="rounded-[var(--radius-md)] px-3 py-2.5 {instr.os === detectedOS
 								? 'bg-[var(--bg-muted)]'
 								: ''}"
 						>
@@ -333,7 +329,7 @@
 								<button
 									onclick={() => copyCommand(instr.command)}
 									aria-label="Copy command to clipboard"
-									class="shrink-0 p-1.5 rounded-[var(--radius)] border border-[var(--border)] bg-[var(--bg-base)] text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-muted)] transition-colors"
+									class="shrink-0 p-1.5 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-base)] text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-muted)] transition-colors"
 								>
 									{#if copiedCommand === instr.command}
 										<CheckCircle size={13} class="text-[var(--success)]" />
@@ -354,7 +350,7 @@
 					onclick={checkAgain}
 					disabled={checkingAgain}
 					aria-label="Check if Syncthing is now running"
-					class="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-[var(--radius)] bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+					class="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-[var(--radius-md)] bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
 				>
 					{#if checkingAgain}
 						<Loader2 size={14} class="animate-spin" />
@@ -407,7 +403,7 @@
 						type="text"
 						bind:value={machineName}
 						placeholder="e.g. my-laptop, work-mac"
-						class="w-full px-3 py-2 text-sm rounded-[var(--radius)] border border-[var(--border)] bg-[var(--bg-base)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40 focus:border-[var(--accent)] transition-colors"
+						class="w-full px-3 py-2 text-sm rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-base)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40 focus:border-[var(--accent)] transition-colors"
 					/>
 					<p class="text-[11px] text-[var(--text-muted)]">
 						Used to identify this machine in the sync network.
@@ -420,14 +416,14 @@
 						<p class="block text-xs font-medium text-[var(--text-secondary)]">Device ID</p>
 						<div class="flex items-center gap-2">
 							<code
-								class="flex-1 px-3 py-2 text-xs font-mono rounded-[var(--radius)] border border-[var(--border)] bg-[var(--bg-muted)] text-[var(--text-secondary)] truncate"
+								class="flex-1 px-3 py-2 text-xs font-mono rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-muted)] text-[var(--text-secondary)] truncate"
 							>
 								{detect.device_id}
 							</code>
 							<button
 								onclick={copyDeviceId}
 								aria-label="Copy device ID to clipboard"
-								class="shrink-0 p-2 rounded-[var(--radius)] border border-[var(--border)] bg-[var(--bg-base)] text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-muted)] transition-colors"
+								class="shrink-0 p-2 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-base)] text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-muted)] transition-colors"
 							>
 								{#if copiedDeviceId}
 									<CheckCircle size={14} class="text-[var(--success)]" />
@@ -443,7 +439,7 @@
 				<!-- Error -->
 				{#if initError}
 					<div
-						class="flex items-start gap-2.5 p-3 rounded-[var(--radius)] bg-[var(--error-subtle)] border border-[var(--error)]/20"
+						class="flex items-start gap-2.5 p-3 rounded-[var(--radius-md)] bg-[var(--error-subtle)] border border-[var(--error)]/20"
 					>
 						<XCircle size={14} class="text-[var(--error)] mt-0.5 shrink-0" />
 						<div>
@@ -461,7 +457,7 @@
 				<button
 					onclick={initialize}
 					disabled={initializing || !machineName.trim()}
-					class="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-[var(--radius)] bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+					class="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-[var(--radius-md)] bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
 				>
 					{#if initializing}
 						<Loader2 size={14} class="animate-spin" />

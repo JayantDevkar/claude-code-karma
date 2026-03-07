@@ -9,8 +9,12 @@
 
 	let { data } = $props();
 
-	let syncDetect = $state<SyncDetect | null>(data.detect ?? null);
-	let syncStatus = $state<SyncStatusResponse | null>(data.status ?? null);
+	let syncDetect = $state<SyncDetect | null>(null);
+	let syncStatus = $state<SyncStatusResponse | null>(null);
+
+	// Sync from server data on load/invalidation
+	$effect(() => { syncDetect = data.detect ?? null; });
+	$effect(() => { syncStatus = data.status ?? null; });
 
 	// Auto-select first team for the overview dashboard
 	let activeTeamName = $derived.by(() => {

@@ -2,6 +2,8 @@
 	import Modal from '$lib/components/ui/Modal.svelte';
 	import JoinCodeCard from './JoinCodeCard.svelte';
 	import { API_BASE } from '$lib/config';
+	import { goto } from '$app/navigation';
+	import { parseJoinCode } from '$lib/utils/join-code';
 	import { Loader2, CheckCircle2 } from 'lucide-svelte';
 	import type { JoinTeamResponse } from '$lib/api-types';
 
@@ -20,12 +22,9 @@
 
 	// Live-parse the join code as user types
 	let parsed = $derived.by(() => {
-		const parts = joinCode.trim().split(':');
-		if (parts.length < 3) return null;
-		const [team, user, ...deviceParts] = parts;
-		const device = deviceParts.join(':');
-		if (!team || !user || !device) return null;
-		return { team, user, device: device.slice(0, 20) + '...' };
+		const result = parseJoinCode(joinCode);
+		if (!result) return null;
+		return { team: result.team, user: result.user, device: result.device.slice(0, 20) + '...' };
 	});
 
 	async function handleJoin() {
@@ -61,6 +60,12 @@
 		joinCode = '';
 		error = null;
 		joinResult = null;
+	}
+
+	function handleGoToTeam() {
+		const name = joinResult?.team_name;
+		handleClose();
+		if (name) goto(`/team/${encodeURIComponent(name)}`);
 	}
 </script>
 
@@ -101,7 +106,7 @@
 						bind:value={joinCode}
 						placeholder="acme:alice:MFZWI3D-BONSGYC-YLTMRWG-..."
 						rows={2}
-						class="w-full px-3 py-2 text-sm font-mono rounded-[var(--radius)] border border-[var(--border)]
+						class="w-full px-3 py-2 text-sm font-mono rounded-[var(--radius-md)] border border-[var(--border)]
 							bg-[var(--bg-base)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]
 							focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40 focus:border-[var(--accent)]
 							transition-colors resize-none"
@@ -132,8 +137,8 @@
 	{#snippet footer()}
 		{#if joinResult}
 			<button
-				onclick={handleClose}
-				class="px-4 py-2 text-sm font-medium rounded-[var(--radius)] bg-[var(--accent)] text-white
+				onclick={handleGoToTeam}
+				class="px-4 py-2 text-sm font-medium rounded-[var(--radius-md)] bg-[var(--accent)] text-white
 					hover:bg-[var(--accent-hover)] transition-colors"
 			>
 				Go to Team Page
@@ -141,7 +146,7 @@
 		{:else}
 			<button
 				onclick={handleClose}
-				class="px-4 py-2 text-sm font-medium rounded-[var(--radius)] text-[var(--text-secondary)]
+				class="px-4 py-2 text-sm font-medium rounded-[var(--radius-md)] text-[var(--text-secondary)]
 					hover:bg-[var(--bg-muted)] transition-colors"
 			>
 				Cancel
@@ -149,7 +154,7 @@
 			<button
 				onclick={handleJoin}
 				disabled={!joinCode.trim() || loading}
-				class="px-4 py-2 text-sm font-medium rounded-[var(--radius)] bg-[var(--accent)] text-white
+				class="px-4 py-2 text-sm font-medium rounded-[var(--radius-md)] bg-[var(--accent)] text-white
 					hover:bg-[var(--accent-hover)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
 			>
 				{#if loading}

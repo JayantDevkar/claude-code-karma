@@ -17,6 +17,7 @@
 
 	function handleTeamCreated(teamName: string) {
 		invalidateAll();
+		if (teamName) goto(`/team/${encodeURIComponent(teamName)}`);
 	}
 
 	function handleTeamJoined(result: JoinTeamResponse) {
@@ -37,7 +38,7 @@
 			<div class="flex items-center gap-2">
 				<button
 					onclick={() => (showCreateDialog = true)}
-					class="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-[var(--radius)]
+					class="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-[var(--radius-md)]
 						bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)] transition-colors"
 				>
 					<Plus size={14} />
@@ -45,7 +46,7 @@
 				</button>
 				<button
 					onclick={() => (showJoinDialog = true)}
-					class="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-[var(--radius)]
+					class="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-[var(--radius-md)]
 						border border-[var(--border)] text-[var(--text-secondary)]
 						hover:bg-[var(--bg-muted)] hover:text-[var(--text-primary)] transition-colors"
 				>
@@ -57,7 +58,7 @@
 	{/snippet}
 </PageHeader>
 
-<div class="space-y-6">
+<div class="max-w-5xl mx-auto space-y-6">
 	{#if !configured}
 		<!-- State 1: Sync not configured -->
 		<div class="flex flex-col items-center justify-center py-16 text-center">
