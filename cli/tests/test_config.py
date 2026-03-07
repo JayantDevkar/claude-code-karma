@@ -1,9 +1,8 @@
-"""Tests for sync configuration."""
-
+"""Tests for sync configuration (identity-only)."""
 
 import pytest
 
-from karma.config import SyncConfig, ProjectConfig
+from karma.config import SyncConfig, SyncthingSettings
 
 
 class TestSyncConfig:
@@ -11,9 +10,6 @@ class TestSyncConfig:
         config = SyncConfig(user_id="alice")
         assert config.user_id == "alice"
         assert config.machine_id  # auto-generated hostname
-        assert config.projects == {}
-        assert config.team == {}
-        assert config.ipfs_api == "http://127.0.0.1:5001"
 
     def test_save_and_load(self, tmp_path, monkeypatch):
         config_path = tmp_path / "sync-config.json"
@@ -33,14 +29,36 @@ class TestSyncConfig:
         monkeypatch.setattr("karma.config.SYNC_CONFIG_PATH", tmp_path / "nope.json")
         assert SyncConfig.load() is None
 
-    def test_project_config_frozen(self):
-        pc = ProjectConfig(path="/foo", encoded_name="-foo")
+    def test_frozen(self):
+        config = SyncConfig(user_id="alice")
         with pytest.raises(Exception):
-            pc.path = "/bar"
+            config.user_id = "bob"
+
+    def test_syncthing_settings_preserved(self, tmp_path, monkeypatch):
+        config_path = tmp_path / "sync-config.json"
+        monkeypatch.setattr("karma.config.SYNC_CONFIG_PATH", config_path)
+        monkeypatch.setattr("karma.config.KARMA_BASE", tmp_path)
+
+        config = SyncConfig(
+            user_id="alice",
+            machine_id="mac",
+            syncthing=SyncthingSettings(api_key="key123", device_id="DEV-1"),
+        )
+        config.save()
+
+        loaded = SyncConfig.load()
+        assert loaded.syncthing.api_key == "key123"
+        assert loaded.syncthing.device_id == "DEV-1"
 
 
-class TestProjectConfig:
-    def test_create(self):
-        pc = ProjectConfig(path="/Users/alice/acme", encoded_name="-Users-alice-acme")
-        assert pc.last_sync_cid is None
-        assert pc.last_sync_at is None
+class TestSyncthingSettings:
+    def test_defaults(self):
+        s = SyncthingSettings()
+        assert s.api_url == "http://127.0.0.1:8384"
+        assert s.api_key is None
+        assert s.device_id is None
+
+    def test_custom_values(self):
+        s = SyncthingSettings(api_url="http://localhost:9999", api_key="abc123")
+        assert s.api_url == "http://localhost:9999"
+        assert s.api_key == "abc123"
