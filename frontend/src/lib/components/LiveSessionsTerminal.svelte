@@ -339,7 +339,7 @@
 	}
 
 	.terminal-body {
-		max-height: 130px;
+		max-height: 195px;
 		overflow-y: auto;
 	}
 
