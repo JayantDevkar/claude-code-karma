@@ -150,7 +150,9 @@
 				<TabsTrigger value="activity" icon={Activity}>Activity</TabsTrigger>
 			</TabsList>
 
-			<TeamSelector teams={teamsList} bind:activeTeam={activeTeamName} oncreate={handleCreateTeam} />
+			{#if teamsList.length > 1}
+				<TeamSelector teams={teamsList} bind:activeTeam={activeTeamName} oncreate={handleCreateTeam} />
+			{/if}
 
 			<TabsContent value="overview">
 				<OverviewTab detect={syncDetect} status={syncStatus} active={activeTab === 'overview'} teamName={activeTeamName} onteamchange={refreshData} initialWatchStatus={data.watchStatus} initialPending={data.pending} />
