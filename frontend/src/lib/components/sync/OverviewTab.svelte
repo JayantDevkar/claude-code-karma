@@ -271,13 +271,13 @@
 
 	<!-- ── 2. Stats Row ──────────────────────────────────────────────────── -->
 	{#if statsLoading}
-		<div class="grid grid-cols-4 gap-3">
+		<div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
 			{#each [1, 2, 3, 4] as i (i)}
 				<div class="h-20 rounded-[var(--radius-lg)] bg-[var(--bg-muted)] animate-pulse" aria-hidden="true"></div>
 			{/each}
 		</div>
 	{:else}
-		<div class="grid grid-cols-4 gap-3">
+		<div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
 			<div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-subtle)] p-4 text-center">
 				<Users size={16} class="mx-auto text-[var(--text-muted)] mb-1.5" />
 				<p class="text-lg font-semibold text-[var(--text-primary)]">{connectedMembers}/{totalMembers}</p>

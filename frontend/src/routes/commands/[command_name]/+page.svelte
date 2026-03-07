@@ -171,7 +171,7 @@
 				</div>
 			</div>
 			<div class="rounded-2xl p-8 border border-[var(--border)]">
-				<div class="grid grid-cols-4 gap-6">
+				<div class="grid grid-cols-2 sm:grid-cols-4 gap-6">
 					{#each Array(4) as _}
 						<div class="space-y-2">
 							<SkeletonText width="80px" size="xs" />

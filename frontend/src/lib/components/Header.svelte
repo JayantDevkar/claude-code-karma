@@ -98,7 +98,7 @@
 {#if isHome}
 	<!-- Big Centered Header (Home) -->
 	<header
-		class="w-full max-w-[1000px] mx-auto pt-6 sm:pt-8 md:pt-10 pb-2 px-4 flex items-center justify-center relative"
+		class="w-full mx-auto pt-6 sm:pt-8 md:pt-10 pb-2 flex items-center justify-center relative header-container"
 	>
 		<div class="flex flex-col items-center gap-3 md:gap-4">
 			<div class="logo-wrapper logo-wrapper-lg">
@@ -125,7 +125,7 @@
 		class="sticky top-0 z-50 bg-[var(--bg-base)]/90 backdrop-blur-md border-b border-[var(--border)] h-14 flex items-center"
 	>
 		<div
-			class="w-full max-w-[1200px] mx-auto px-4 md:px-6 grid grid-cols-[auto_1fr_auto] items-center"
+			class="w-full mx-auto grid grid-cols-[auto_1fr_auto] items-center header-container"
 		>
 			<!-- Left: Brand -->
 			<div class="flex items-center gap-3">
@@ -273,5 +273,10 @@
 			width: 6.5rem;
 			height: 6.5rem;
 		}
+	}
+
+	.header-container {
+		max-width: clamp(75rem, 90vw, 100rem);
+		padding-inline: clamp(1rem, 3vw, 2.5rem);
 	}
 </style>

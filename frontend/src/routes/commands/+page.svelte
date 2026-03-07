@@ -379,7 +379,7 @@
 
 			<!-- Stats skeleton -->
 			<div class="rounded-2xl p-8 border border-[var(--border)] bg-[var(--bg-subtle)]">
-				<div class="grid grid-cols-5 gap-6">
+				<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-6">
 					{#each Array(5) as _}
 						<div class="space-y-2">
 							<SkeletonText width="80px" size="xs" />
@@ -407,7 +407,7 @@
 							<SkeletonText width="120px" size="sm" />
 							<SkeletonText width="60px" size="xs" />
 						</div>
-						<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+						<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
 							{#each Array(3) as _}
 								<div class="p-4 rounded-xl border border-[var(--border)] bg-[var(--bg-base)] space-y-3">
 									<div class="flex items-center gap-3">
@@ -603,7 +603,7 @@
 					{/snippet}
 
 					<div
-						class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 stagger-children"
+						class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 stagger-children"
 					>
 						{#each group.commands as command (command.name)}
 							<CommandUsageCard {command} {maxUsage} />

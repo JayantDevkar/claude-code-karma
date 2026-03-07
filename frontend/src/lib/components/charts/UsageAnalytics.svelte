@@ -411,7 +411,7 @@
 		</div>
 	{:else if data}
 		<!-- Stats row -->
-		<div class="grid grid-cols-3 gap-4">
+		<div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
 			<div class="bg-[var(--bg-subtle)] rounded-xl p-4">
 				<div class="flex items-center gap-2 text-[var(--text-muted)] mb-2">
 					<TrendingUp size={14} />

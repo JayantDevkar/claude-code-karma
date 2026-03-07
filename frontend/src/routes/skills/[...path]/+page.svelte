@@ -126,7 +126,7 @@
 	});
 </script>
 
-<div class="max-w-4xl mx-auto space-y-6">
+<div class="max-w-4xl lg:max-w-5xl xl:max-w-6xl mx-auto space-y-6">
 	<!-- Page Header with Breadcrumb -->
 	<PageHeader
 		title={path.split('/').pop() || 'Skill'}

@@ -425,7 +425,7 @@
 						</div>
 						{#if groupIndex === 0}
 							<div class="border-t border-[var(--border)] p-4">
-								<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+								<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
 									{#each Array(6) as _}
 										<SkeletonSkillCard />
 									{/each}
@@ -640,7 +640,7 @@
 						if (a.count > 0 && b.count > 0) return b.count - a.count;
 						return a.name.localeCompare(b.name);
 					})}
-					<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 stagger-children">
+					<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 stagger-children">
 						{#each sortedSkills as skill (skill.name)}
 							<SkillUsageCard {skill} {maxUsage} />
 						{/each}

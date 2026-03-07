@@ -21,9 +21,7 @@
 	} from 'lucide-svelte';
 </script>
 
-<div
-	class="max-w-[560px] mx-auto flex flex-col items-center justify-center scale-120 origin-top w-full px-4 -mt-4"
->
+<div class="home-container">
 	<!-- Terminal Stats Display -->
 	<div class="mb-4 w-full">
 		<TerminalDisplay />
@@ -52,3 +50,22 @@
 		<LiveSessionsTerminal />
 	</div>
 </div>
+
+<style>
+	.home-container {
+		width: 100%;
+		max-width: clamp(20rem, 90vw, 35rem);
+		margin-inline: auto;
+		margin-top: -1.25rem;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		padding-inline: 1rem;
+	}
+
+	@media (min-width: 1440px) {
+		.home-container {
+			max-width: clamp(35rem, 40vw, 45rem);
+		}
+	}
+</style>
