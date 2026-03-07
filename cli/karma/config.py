@@ -42,7 +42,7 @@ class SyncConfig(BaseModel):
     @field_validator("user_id")
     @classmethod
     def validate_user_id(cls, v: str) -> str:
-        if not re.match(r"^[a-zA-Z0-9_\\-]+$", v):
+        if not re.match(r"^[a-zA-Z0-9_-]+$", v):
             raise ValueError("user_id must be alphanumeric, dash, or underscore")
         return v
 

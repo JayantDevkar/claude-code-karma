@@ -164,6 +164,7 @@ def query_events(
         conditions.append("member_name = :member_name")
         params["member_name"] = member_name
 
+    # Safety: conditions list is built from hardcoded column names only — never from user input
     where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
     params["limit"] = limit
     params["offset"] = offset
