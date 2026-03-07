@@ -607,7 +607,7 @@ class TestSchemaMigration:
 
         from db.schema import SCHEMA_VERSION, ensure_schema
 
-        assert SCHEMA_VERSION == 17
+        assert SCHEMA_VERSION == 18
 
         conn = sqlite3.connect(":memory:")
         conn.row_factory = sqlite3.Row
