@@ -156,6 +156,24 @@
 	--scope-user: #0d9488;
 	--scope-user-subtle: rgba(13, 148, 136, 0.12);
 
+	/* Team Member Colors (remote session identity) */
+	--team-coral: #f97066;
+	--team-coral-subtle: rgba(249, 112, 102, 0.1);
+	--team-rose: #f43f5e;
+	--team-rose-subtle: rgba(244, 63, 94, 0.1);
+	--team-amber: #f59e0b;
+	--team-amber-subtle: rgba(245, 158, 11, 0.1);
+	--team-cyan: #06b6d4;
+	--team-cyan-subtle: rgba(6, 182, 212, 0.1);
+	--team-pink: #ec4899;
+	--team-pink-subtle: rgba(236, 72, 153, 0.1);
+	--team-lime: #84cc16;
+	--team-lime-subtle: rgba(132, 204, 22, 0.1);
+	--team-indigo: #6366f1;
+	--team-indigo-subtle: rgba(99, 102, 241, 0.1);
+	--team-teal: #14b8a6;
+	--team-teal-subtle: rgba(20, 184, 166, 0.1);
+
 	/* Spacing (4px Grid) */
 	--spacing-1: 4px;
 	--spacing-2: 8px;
@@ -340,6 +358,24 @@ select:focus {
 	--status-stopped-bg: rgba(148, 163, 184, 0.05);
 	--status-ended-bg: rgba(148, 163, 184, 0.04);
 	--status-stale-bg: rgba(248, 113, 113, 0.08);
+
+	/* Team Member Colors (dark mode - lighter for contrast) */
+	--team-coral: #fca5a1;
+	--team-coral-subtle: rgba(252, 165, 161, 0.15);
+	--team-rose: #fb7185;
+	--team-rose-subtle: rgba(251, 113, 133, 0.15);
+	--team-amber: #fbbf24;
+	--team-amber-subtle: rgba(251, 191, 36, 0.15);
+	--team-cyan: #22d3ee;
+	--team-cyan-subtle: rgba(34, 211, 238, 0.15);
+	--team-pink: #f472b6;
+	--team-pink-subtle: rgba(244, 114, 182, 0.15);
+	--team-lime: #a3e635;
+	--team-lime-subtle: rgba(163, 230, 53, 0.15);
+	--team-indigo: #818cf8;
+	--team-indigo-subtle: rgba(129, 140, 248, 0.15);
+	--team-teal: #2dd4bf;
+	--team-teal-subtle: rgba(45, 212, 191, 0.15);
 
 	/* Shadows (deeper for dark mode) */
 	--shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);

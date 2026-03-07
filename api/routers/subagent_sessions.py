@@ -132,6 +132,7 @@ def get_subagent_detail(
         working_directories=list(agent_data.working_directories),
         subagent_type=subagent_type,
         initial_prompt=agent_data.initial_prompt,
+        initial_prompt_images=agent_data.initial_prompt_images,
     )
 
     # Add cache headers

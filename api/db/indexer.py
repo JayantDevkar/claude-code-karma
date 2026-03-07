@@ -157,6 +157,16 @@ def sync_all_projects(conn: sqlite3.Connection) -> dict:
                 logger.warning("Error syncing worktree %s: %s", wt_dir.name, e)
                 stats["errors"] += 1
 
+        # Third pass: remote sessions from Syncthing sync
+        try:
+            remote_stats = index_remote_sessions(conn)
+            stats["total"] += remote_stats.get("total", 0)
+            stats["indexed"] += remote_stats.get("indexed", 0)
+            stats["skipped"] += remote_stats.get("skipped", 0)
+            stats["errors"] += remote_stats.get("errors", 0)
+        except Exception as e:
+            logger.warning("Error indexing remote sessions: %s", e)
+
         # Clean up stale sessions (files deleted from disk)
         _cleanup_stale_sessions(conn, projects_dir)
 
@@ -269,6 +279,107 @@ def sync_project(
     return stats
 
 
+def index_remote_sessions(conn: sqlite3.Connection) -> dict:
+    """
+    Index remote sessions from Syncthing-synced directories into SQLite.
+
+    Walks ~/.claude_karma/remote-sessions/{user_id}/{encoded_name}/sessions/
+    and upserts session rows with source='remote'. Skips local user's outbox.
+
+    Returns:
+        Dict with sync statistics: total, indexed, skipped, errors
+    """
+    from config import settings
+    from services.remote_sessions import get_project_mapping
+
+    stats = {"total": 0, "indexed": 0, "skipped": 0, "errors": 0}
+
+    remote_base = settings.karma_base / "remote-sessions"
+    if not remote_base.exists():
+        return stats
+
+    mapping = get_project_mapping()
+
+    # Load current mtimes for remote sessions
+    rows = conn.execute("SELECT uuid, jsonl_mtime FROM sessions WHERE source = 'remote'").fetchall()
+    db_mtimes = {row["uuid"]: row["jsonl_mtime"] for row in rows}
+
+    local_user = None
+    config_path = settings.karma_base / "sync-config.json"
+    if config_path.exists():
+        try:
+            import json as _json
+            local_user = _json.loads(config_path.read_text()).get("user_id")
+        except Exception:
+            pass
+
+    for user_dir in remote_base.iterdir():
+        if not user_dir.is_dir():
+            continue
+        user_id = user_dir.name
+
+        # Skip local user's outbox
+        if user_id == local_user:
+            continue
+
+        for encoded_dir in user_dir.iterdir():
+            if not encoded_dir.is_dir():
+                continue
+            encoded_name = encoded_dir.name
+            local_encoded = mapping.get((user_id, encoded_name), encoded_name)
+
+            sessions_dir = encoded_dir / "sessions"
+            if not sessions_dir.exists():
+                continue
+
+            for jsonl_path in sessions_dir.glob("*.jsonl"):
+                if jsonl_path.name.startswith("agent-"):
+                    continue
+
+                uuid = jsonl_path.stem
+                stats["total"] += 1
+
+                try:
+                    file_stat = jsonl_path.stat()
+                    current_mtime = file_stat.st_mtime
+                    current_size = file_stat.st_size
+
+                    if uuid in db_mtimes and abs(db_mtimes[uuid] - current_mtime) < 0.001:
+                        stats["skipped"] += 1
+                        continue
+
+                    _index_session(
+                        conn,
+                        jsonl_path,
+                        local_encoded,
+                        current_mtime,
+                        current_size,
+                        source="remote",
+                        remote_user_id=user_id,
+                        remote_machine_id=user_id,
+                        claude_base_dir=encoded_dir,
+                    )
+                    stats["indexed"] += 1
+
+                    # Log session_received event
+                    try:
+                        from db.sync_queries import log_event
+                        log_event(
+                            conn, "session_received",
+                            member_name=user_id,
+                            project_encoded_name=local_encoded,
+                            session_uuid=uuid,
+                        )
+                    except Exception:
+                        pass  # Best-effort logging
+                except Exception as e:
+                    logger.debug("Error indexing remote session %s: %s", uuid, e)
+                    stats["errors"] += 1
+
+    conn.commit()
+    return stats
+
+
 def _index_session(
     conn: sqlite3.Connection,
     jsonl_path: Path,
@@ -278,6 +389,10 @@ def _index_session(
     project_path_override: Optional[str] = None,
     session_source: Optional[str] = None,
     source_encoded_name: Optional[str] = None,
+    source: Optional[str] = None,
+    remote_user_id: Optional[str] = None,
+    remote_machine_id: Optional[str] = None,
+    claude_base_dir: Optional[Path] = None,
 ) -> None:
     """
     Extract metadata from a session JSONL and upsert into SQLite.
@@ -290,6 +405,9 @@ def _index_session(
         session_source: Tag session with this source (e.g., "desktop")
         source_encoded_name: The actual directory name where the JSONL lives
                             (differs from encoded_name for remapped worktree sessions)
+        source: Session source type ("local" or "remote")
+        remote_user_id: User ID of remote machine (for remote sessions)
+        remote_machine_id: Machine ID of remote machine (for remote sessions)
     """
     from models import Session
     from utils import get_initial_prompt
@@ -297,7 +415,7 @@ def _index_session(
     uuid = jsonl_path.stem
 
     # Parse session (triggers _load_metadata via property access)
-    session = Session.from_path(jsonl_path)
+    session = Session.from_path(jsonl_path, claude_base_dir=claude_base_dir)
 
     # Skip empty sessions
     if session.message_count == 0:
@@ -348,6 +466,7 @@ def _index_session(
             session_titles, is_continuation_marker, was_compacted,
             compaction_count, file_snapshot_count, subagent_count,
             jsonl_mtime, jsonl_size, session_source, source_encoded_name,
+            source, remote_user_id, remote_machine_id,
             indexed_at
         ) VALUES (
             ?, ?, ?, ?,
@@ -357,6 +476,7 @@ def _index_session(
             ?, ?, ?,
             ?, ?, ?,
             ?, ?, ?, ?,
+            ?, ?, ?,
             datetime('now')
         )
         """,
@@ -387,6 +507,9 @@ def _index_session(
             size,
             session_source,
             source_encoded_name,
+            source or "local",
+            remote_user_id,
+            remote_machine_id,
         ),
     )
 
@@ -596,11 +719,12 @@ def _cleanup_stale_sessions(conn: sqlite3.Connection, projects_dir: Path) -> Non
     """
     import os
 
-    # Get all sessions grouped by their actual source directory
+    # Get all non-remote sessions grouped by their actual source directory
     # source_encoded_name is set for worktree-remapped sessions;
     # for normal sessions it's NULL and we use project_encoded_name
+    # Remote sessions live outside projects_dir, so skip them here.
     session_rows = conn.execute(
-        "SELECT uuid, COALESCE(source_encoded_name, project_encoded_name) as source_dir FROM sessions"
+        "SELECT uuid, COALESCE(source_encoded_name, project_encoded_name) as source_dir FROM sessions WHERE COALESCE(source, 'local') != 'remote'"
     ).fetchall()
 
     # Group by source directory

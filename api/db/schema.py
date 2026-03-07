@@ -10,7 +10,7 @@ import sqlite3
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 18
 
 SCHEMA_SQL = """
 -- Schema versioning
@@ -47,6 +47,9 @@ CREATE TABLE IF NOT EXISTS sessions (
     jsonl_size INTEGER DEFAULT 0,
     session_source TEXT,
     source_encoded_name TEXT,
+    source TEXT DEFAULT 'local',
+    remote_user_id TEXT,
+    remote_machine_id TEXT,
     indexed_at TEXT DEFAULT (datetime('now'))
 );
 
@@ -55,6 +58,7 @@ CREATE INDEX IF NOT EXISTS idx_sessions_start ON sessions(start_time DESC);
 CREATE INDEX IF NOT EXISTS idx_sessions_slug ON sessions(slug);
 CREATE INDEX IF NOT EXISTS idx_sessions_branch ON sessions(project_encoded_name, git_branch);
 CREATE INDEX IF NOT EXISTS idx_sessions_mtime ON sessions(jsonl_mtime);
+CREATE INDEX IF NOT EXISTS idx_sessions_source ON sessions(source);
 
 -- Full-text search (FTS5)
 -- This is an external content FTS5 table (content=sessions) that mirrors the sessions table.
@@ -214,6 +218,55 @@ CREATE TABLE IF NOT EXISTS projects (
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_slug ON projects(slug);
+
+-- Sync teams
+CREATE TABLE IF NOT EXISTS sync_teams (
+    name TEXT PRIMARY KEY,
+    backend TEXT NOT NULL DEFAULT 'syncthing',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+
+-- Sync team members
+CREATE TABLE IF NOT EXISTS sync_members (
+    team_name TEXT NOT NULL,
+    name TEXT NOT NULL,
+    device_id TEXT,
+    ipns_key TEXT,
+    added_at TEXT DEFAULT (datetime('now')),
+    PRIMARY KEY (team_name, name),
+    FOREIGN KEY (team_name) REFERENCES sync_teams(name) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_sync_members_device ON sync_members(device_id);
+
+-- Projects shared with a team
+CREATE TABLE IF NOT EXISTS sync_team_projects (
+    team_name TEXT NOT NULL,
+    project_encoded_name TEXT NOT NULL,
+    path TEXT,
+    added_at TEXT DEFAULT (datetime('now')),
+    PRIMARY KEY (team_name, project_encoded_name),
+    FOREIGN KEY (team_name) REFERENCES sync_teams(name) ON DELETE CASCADE,
+    FOREIGN KEY (project_encoded_name) REFERENCES projects(encoded_name)
+);
+
+-- Sync activity events
+CREATE TABLE IF NOT EXISTS sync_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_type TEXT NOT NULL,
+    team_name TEXT,
+    member_name TEXT,
+    project_encoded_name TEXT,
+    session_uuid TEXT,
+    detail TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (team_name) REFERENCES sync_teams(name) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_sync_events_type ON sync_events(event_type);
+CREATE INDEX IF NOT EXISTS idx_sync_events_team ON sync_events(team_name, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_sync_events_time ON sync_events(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_sync_events_member ON sync_events(member_name, created_at DESC);
 """
 
 
@@ -232,6 +285,49 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
         current_version = 0
 
     if current_version >= SCHEMA_VERSION:
+        # Always ensure sync tables exist (may have been skipped if version
+        # was set by a different branch before sync DDL was added)
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS sync_teams (
+                name TEXT PRIMARY KEY,
+                backend TEXT NOT NULL DEFAULT 'syncthing',
+                created_at TEXT DEFAULT (datetime('now'))
+            );
+            CREATE TABLE IF NOT EXISTS sync_members (
+                team_name TEXT NOT NULL,
+                name TEXT NOT NULL,
+                device_id TEXT,
+                ipns_key TEXT,
+                added_at TEXT DEFAULT (datetime('now')),
+                PRIMARY KEY (team_name, name),
+                FOREIGN KEY (team_name) REFERENCES sync_teams(name) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_sync_members_device ON sync_members(device_id);
+            CREATE TABLE IF NOT EXISTS sync_team_projects (
+                team_name TEXT NOT NULL,
+                project_encoded_name TEXT NOT NULL,
+                path TEXT,
+                added_at TEXT DEFAULT (datetime('now')),
+                PRIMARY KEY (team_name, project_encoded_name),
+                FOREIGN KEY (team_name) REFERENCES sync_teams(name) ON DELETE CASCADE,
+                FOREIGN KEY (project_encoded_name) REFERENCES projects(encoded_name)
+            );
+            CREATE TABLE IF NOT EXISTS sync_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_type TEXT NOT NULL,
+                team_name TEXT,
+                member_name TEXT,
+                project_encoded_name TEXT,
+                session_uuid TEXT,
+                detail TEXT,
+                created_at TEXT DEFAULT (datetime('now')),
+                FOREIGN KEY (team_name) REFERENCES sync_teams(name) ON DELETE SET NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_sync_events_type ON sync_events(event_type);
+            CREATE INDEX IF NOT EXISTS idx_sync_events_team ON sync_events(team_name, created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_sync_events_time ON sync_events(created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_sync_events_member ON sync_events(member_name, created_at DESC);
+        """)
         logger.debug("Schema is up to date (version %d)", current_version)
         return
 
@@ -415,9 +511,7 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             conn.execute("UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1")
 
         if current_version < 10:
-            logger.info(
-                "Migrating → v10: re-index skills for command_triggered invocation source"
-            )
+            logger.info("Migrating → v10: re-index skills for command_triggered invocation source")
             # Clear skill/command tables so they get repopulated with new linkage logic
             conn.execute("DELETE FROM session_skills")
             conn.execute("DELETE FROM session_commands")
@@ -425,6 +519,61 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             conn.execute("DELETE FROM subagent_commands")
             # Nudge mtime to force re-index of all sessions
             conn.execute("UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1")
+
+        if current_version < 17:
+            logger.info("Migrating → v17: adding remote session columns")
+            existing_cols = {r[1] for r in conn.execute("PRAGMA table_info(sessions)").fetchall()}
+            if "source" not in existing_cols:
+                conn.execute("ALTER TABLE sessions ADD COLUMN source TEXT DEFAULT 'local'")
+            if "remote_user_id" not in existing_cols:
+                conn.execute("ALTER TABLE sessions ADD COLUMN remote_user_id TEXT")
+            if "remote_machine_id" not in existing_cols:
+                conn.execute("ALTER TABLE sessions ADD COLUMN remote_machine_id TEXT")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_source ON sessions(source)")
+
+        if current_version < 18:
+            logger.info("Migrating -> v18: adding sync tables")
+            conn.executescript("""
+                CREATE TABLE IF NOT EXISTS sync_teams (
+                    name TEXT PRIMARY KEY,
+                    backend TEXT NOT NULL DEFAULT 'syncthing',
+                    created_at TEXT DEFAULT (datetime('now'))
+                );
+                CREATE TABLE IF NOT EXISTS sync_members (
+                    team_name TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    device_id TEXT,
+                    ipns_key TEXT,
+                    added_at TEXT DEFAULT (datetime('now')),
+                    PRIMARY KEY (team_name, name),
+                    FOREIGN KEY (team_name) REFERENCES sync_teams(name) ON DELETE CASCADE
+                );
+                CREATE INDEX IF NOT EXISTS idx_sync_members_device ON sync_members(device_id);
+                CREATE TABLE IF NOT EXISTS sync_team_projects (
+                    team_name TEXT NOT NULL,
+                    project_encoded_name TEXT NOT NULL,
+                    path TEXT,
+                    added_at TEXT DEFAULT (datetime('now')),
+                    PRIMARY KEY (team_name, project_encoded_name),
+                    FOREIGN KEY (team_name) REFERENCES sync_teams(name) ON DELETE CASCADE,
+                    FOREIGN KEY (project_encoded_name) REFERENCES projects(encoded_name)
+                );
+                CREATE TABLE IF NOT EXISTS sync_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    event_type TEXT NOT NULL,
+                    team_name TEXT,
+                    member_name TEXT,
+                    project_encoded_name TEXT,
+                    session_uuid TEXT,
+                    detail TEXT,
+                    created_at TEXT DEFAULT (datetime('now')),
+                    FOREIGN KEY (team_name) REFERENCES sync_teams(name) ON DELETE SET NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_sync_events_type ON sync_events(event_type);
+                CREATE INDEX IF NOT EXISTS idx_sync_events_team ON sync_events(team_name, created_at DESC);
+                CREATE INDEX IF NOT EXISTS idx_sync_events_time ON sync_events(created_at DESC);
+                CREATE INDEX IF NOT EXISTS idx_sync_events_member ON sync_events(member_name, created_at DESC);
+            """)
 
     # Record version
     conn.execute(

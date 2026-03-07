@@ -11,6 +11,7 @@ import type {
 	SearchScope,
 	SearchScopeSelection,
 	SessionStatusFilter,
+	SessionSourceFilter,
 	SearchDateRange,
 	LiveSubStatus,
 	LiveSessionSummary,
@@ -31,7 +32,8 @@ export const DEFAULT_FILTERS: SearchFilters = {
 	scope: 'both',
 	status: 'all',
 	dateRange: 'all',
-	liveSubStatuses: [...ALL_LIVE_SUB_STATUSES]
+	liveSubStatuses: [...ALL_LIVE_SUB_STATUSES],
+	source: 'all'
 };
 
 /** Maximum number of search tokens allowed */
@@ -63,6 +65,7 @@ export function filtersToParams(filters: SearchFilters): URLSearchParams {
 	if (filters.liveSubStatuses && filters.liveSubStatuses.length < ALL_LIVE_SUB_STATUSES.length) {
 		params.set('substatus', filters.liveSubStatuses.join(','));
 	}
+	if (filters.source && filters.source !== 'all') params.set('source', filters.source);
 
 	return params;
 }
@@ -96,6 +99,7 @@ export function paramsToFilters(params: URLSearchParams): SearchFilters {
 	const statusParam = params.get('status');
 	const rangeParam = params.get('range');
 	const substatusParam = params.get('substatus');
+	const sourceParam = params.get('source');
 	const queryParam = params.get('q') || '';
 
 	// Parse tokens from query param
@@ -115,7 +119,8 @@ export function paramsToFilters(params: URLSearchParams): SearchFilters {
 					.filter((s) =>
 						ALL_LIVE_SUB_STATUSES.includes(s as LiveSubStatus)
 					) as LiveSubStatus[])
-			: [...ALL_LIVE_SUB_STATUSES]
+			: [...ALL_LIVE_SUB_STATUSES],
+		source: isValidSource(sourceParam) ? sourceParam : 'all'
 	};
 }
 
@@ -125,6 +130,10 @@ function isValidScope(value: string | null): value is SearchScope {
 
 function isValidStatus(value: string | null): value is SessionStatusFilter {
 	return value === 'all' || value === 'live' || value === 'completed';
+}
+
+function isValidSource(value: string | null): value is SessionSourceFilter {
+	return value === 'all' || value === 'local' || value === 'remote';
 }
 
 function isValidDateRange(value: string | null): value is SearchDateRange {
@@ -153,6 +162,7 @@ const ALL_FILTER_PARAM_KEYS = [
 	'from',
 	'to',
 	'substatus',
+	'source',
 	'branches',
 	'project',
 	'page'
@@ -328,6 +338,14 @@ export function getFilterChips(filters: SearchFilters): FilterChip[] {
 		});
 	}
 
+	if (filters.source && filters.source !== 'all') {
+		chips.push({
+			key: 'source',
+			label: 'Source',
+			value: filters.source === 'local' ? 'Local' : 'Remote'
+		});
+	}
+
 	return chips;
 }
 
@@ -400,13 +418,15 @@ export function hasActiveFilters(filters: SearchFilters): boolean {
 		filters.liveSubStatuses !== undefined &&
 		filters.liveSubStatuses.length < ALL_LIVE_SUB_STATUSES.length;
 	const hasTokens = filters.tokens && filters.tokens.length > 0;
+	const hasSourceFilter = filters.source !== undefined && filters.source !== 'all';
 	return (
 		hasTokens ||
 		filters.query !== '' ||
 		filters.scope !== 'both' ||
 		filters.status !== 'all' ||
 		filters.dateRange !== 'all' ||
-		hasSubStatusFilter
+		hasSubStatusFilter ||
+		hasSourceFilter
 	);
 }
 
@@ -512,6 +532,12 @@ export const STATUS_OPTIONS: { value: SessionStatusFilter; label: string; color?
 	{ value: 'all', label: 'All' },
 	{ value: 'live', label: 'Live', color: 'var(--success)' },
 	{ value: 'completed', label: 'Completed', color: 'var(--text-muted)' }
+];
+
+export const SOURCE_OPTIONS: { value: SessionSourceFilter; label: string }[] = [
+	{ value: 'all', label: 'All' },
+	{ value: 'local', label: 'Local' },
+	{ value: 'remote', label: 'Remote' }
 ];
 
 export const DATE_RANGE_OPTIONS: { value: SearchDateRange; label: string }[] = [
@@ -807,6 +833,25 @@ export function filterSessionsByBranch<T extends FilterableSession>(
 	return sessions.filter((session) =>
 		session.git_branches?.some((branch) => branchSet.has(branch))
 	);
+}
+
+/**
+ * Filter sessions by source (local vs remote).
+ *
+ * @param sessions - Array of sessions to filter
+ * @param source - Source filter: 'all', 'local', or 'remote'
+ * @returns Filtered sessions matching the source
+ */
+export function filterSessionsBySource<T extends FilterableSession>(
+	sessions: T[],
+	source: SessionSourceFilter
+): T[] {
+	if (source === 'all') return sessions;
+
+	return sessions.filter((session) => {
+		const isRemote = !!(session as SessionSummary).remote_user_id;
+		return source === 'remote' ? isRemote : !isRemote;
+	});
 }
 
 /**

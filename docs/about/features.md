@@ -134,3 +134,101 @@ All filters, sort orders, and view states are persisted in the URL query paramet
 ### SQLite Metadata Index
 
 An optional SQLite index caches session metadata for fast queries. Instead of re-parsing JSONL files on every request, the index provides instant lookups for session lists, project summaries, and analytics aggregations.
+
+---
+
+## Cross-System Session Sharing
+
+Claude Code Karma supports sharing sessions across multiple machines and teams using pluggable sync backends.
+
+### IPFS Backend
+
+Enable distributed, tamper-evident session sharing using IPFS (InterPlanetary File System). Sessions are published to IPFS, indexed via IPNS (InterPlanetary Name System), and pulled by team members on-demand.
+
+**Use IPFS when:**
+- Your team is large (10+) or loosely connected
+- You want tamper-evident audit trails (via IPFS content hashing)
+- You prefer on-demand sync (pull when needed) over continuous sync
+- You run your own IPFS infrastructure
+
+### Syncthing Backend
+
+Enable real-time, automatic session sharing using Syncthing. Sessions are packaged locally and synced bidirectionally via Syncthing's mesh network.
+
+**Use Syncthing when:**
+- Your team is small and trusted (2-10 members)
+- You want automatic, real-time sync (no pull commands needed)
+- You prefer simpler setup (no IPFS daemon required)
+- Your team is on trusted networks (local LAN, VPN, or direct connections)
+
+### Remote Sessions Browser
+
+Browse sessions synced from all team members. View projects, sessions, and manifests. Remote sessions are read-only in the dashboard; team owners can leave per-session feedback/annotations that sync back to the freelancer.
+
+### Team Management
+
+Create and manage teams with backend-specific configuration. Each team is isolated and can use either IPFS or Syncthing:
+
+- **IPFS teams** — Members exchange IPNS keys; freelancers publish, owners pull
+- **Syncthing teams** — Members exchange Syncthing device IDs; automatic bidirectional sync
+
+A single user can belong to multiple teams using different backends.
+
+### CLI Tool: Karma
+
+A command-line tool for managing session sync across machines:
+
+```bash
+# Initialize on your machine
+karma init
+
+# Create a team (IPFS or Syncthing)
+karma team create alpha --backend syncthing
+
+# Add a project to sync
+karma project add acme-app --path /Users/alice/work/acme-app --team alpha
+
+# For IPFS: manually sync when ready
+karma sync acme-app
+karma pull  # Pull sessions from all team members
+
+# For Syncthing: start automatic watcher
+karma watch --team alpha  # Auto-packages sessions as they change
+
+# Check sync status
+karma status
+
+# List remote sessions
+karma ls
+```
+
+### Session Packaging Format
+
+Both backends use an identical data format for portability:
+
+```
+remote-sessions/{user-id}/{project-encoded-name}/
+├── manifest.json           # Metadata about synced sessions
+└── sessions/
+    ├── {uuid1}.jsonl       # Session JSONL file
+    ├── {uuid1}/
+    │   ├── subagents/
+    │   │   └── agent-*.jsonl
+    │   └── tool-results/
+    │       └── toolu_*.txt
+    └── {uuid2}.jsonl
+```
+
+The manifest includes session count, sync timestamp, backend type, and per-session metadata.
+
+### Feedback and Annotations
+
+Project owners can add per-session feedback/annotations that sync back to freelancers:
+
+```
+sync-inbox/{team}/{owner-id}/{project-encoded-name}/feedback/
+├── {session-uuid}.json     # Per-session feedback
+└── project-notes.json      # General project notes
+```
+
+Available in Syncthing backend for bidirectional collaboration.

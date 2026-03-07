@@ -52,7 +52,17 @@ export interface TimelineEventMetadata {
 	command_name?: string;
 	is_plugin?: boolean;
 	plugin?: string;
+	image_attachments?: ImageAttachment[];
 	[key: string]: unknown;
+}
+
+// ============================================
+// Image Attachments
+// ============================================
+
+export interface ImageAttachment {
+	media_type: string;
+	data: string;
 }
 
 // ============================================
@@ -247,7 +257,15 @@ export interface SessionSummary {
 	chain_title?: string;
 	/** Session origin: 'desktop' for Claude Desktop sessions, undefined for CLI */
 	session_source?: 'desktop' | null;
+	/** Session source: 'local' for this machine, 'remote' for synced from another machine */
+	source?: 'local' | 'remote';
+	/** User ID of the remote machine that produced this session */
+	remote_user_id?: string;
+	/** Machine ID of the remote machine that produced this session */
+	remote_machine_id?: string;
 }
+
+export type SessionSourceFilter = 'all' | 'local' | 'remote';
 
 /**
  * Structured compaction summary with trigger and token metadata.
@@ -288,6 +306,8 @@ export interface SessionDetail extends SessionSummary {
 	skills_used?: SkillUsage[];
 	// Command usage tracking (user-authored slash commands)
 	commands_used?: CommandUsage[];
+	// Image attachments from the initial prompt
+	initial_prompt_images?: ImageAttachment[];
 }
 
 /**
@@ -680,6 +700,7 @@ export interface SubagentSessionDetail {
 	// Subagent-specific metadata
 	subagent_type: string | null;
 	initial_prompt: string | null;
+	initial_prompt_images?: ImageAttachment[];
 }
 
 /**
@@ -1239,6 +1260,8 @@ export interface SearchFilters {
 	customEnd?: Date;
 	/** Live sub-statuses to show when status is 'live' or 'all' */
 	liveSubStatuses?: LiveSubStatus[];
+	/** Filter by session source: local, remote, or all */
+	source?: SessionSourceFilter;
 }
 
 /**
@@ -1661,4 +1684,144 @@ export interface HookScriptDetail {
 	modified_at: string | null;
 	line_count: number | null;
 	error: string | null;
+}
+
+// ============================================
+// Sync Types
+// ============================================
+
+export interface SyncDetect {
+	installed: boolean;
+	running: boolean;
+	version: string | null;
+	device_id: string | null;
+}
+
+export interface SyncStatusTeamEntry {
+	backend: 'syncthing' | 'ipfs';
+	member_count: number;
+	project_count: number;
+}
+
+export interface SyncStatusResponse {
+	configured: boolean;
+	user_id?: string;
+	machine_id?: string;
+	device_id?: string | null;
+	teams?: Record<string, SyncStatusTeamEntry>;
+}
+
+export interface SyncDevice {
+	device_id: string;
+	name: string;
+	connected: boolean;
+	address?: string;
+	type?: string;
+	crypto?: string;
+	in_bytes_total?: number;
+	out_bytes_total?: number;
+	is_self?: boolean;
+}
+
+export interface SyncProject {
+	name: string;
+	encoded_name: string;
+	local_session_count: number;
+	synced: boolean;
+	status: 'synced' | 'syncing' | 'pending' | 'not-syncing';
+	last_sync_at: string | null;
+	machine_count: number;
+	pending_count: number;
+}
+
+// --- New sync types for redesign ---
+
+export interface SyncTeam {
+	name: string;
+	backend: 'syncthing' | 'ipfs';
+	projects: SyncTeamProject[];
+	members: SyncTeamMember[];
+	member_count?: number;
+	project_count?: number;
+}
+
+export interface SyncTeamProject {
+	name: string;
+	encoded_name: string;
+	path: string;
+	local_count: number;
+	packaged_count: number;
+	received_counts: Record<string, number>;
+	gap: number;
+}
+
+export interface SyncTeamMember {
+	name: string;
+	device_id: string;
+	connected: boolean;
+	in_bytes_total: number;
+	out_bytes_total: number;
+}
+
+export interface SyncWatchStatus {
+	running: boolean;
+	team: string | null;
+	started_at: string | null;
+	last_packaged_at: string | null;
+	projects_watched: string[];
+}
+
+export interface SyncPendingFolder {
+	folder_id: string;
+	from_device: string;
+	from_member: string;
+	from_team: string;
+	offered_at: string | null;
+}
+
+export interface SyncEvent {
+	id: number;
+	event_type: string;
+	team_name: string | null;
+	member_name: string | null;
+	project_encoded_name: string | null;
+	session_uuid: string | null;
+	detail: string | null;
+	created_at: string;
+}
+
+export interface JoinTeamResponse {
+	ok: boolean;
+	team_name: string;
+	leader_name: string;
+	paired: boolean;
+	accepted_folders: number;
+	your_join_code: string | null;
+}
+
+export interface JoinCodeResponse {
+	join_code: string;
+	team_name: string;
+	user_id: string;
+}
+
+export interface PendingDevice {
+	device_id: string;
+	name: string;
+	address: string;
+	time: string;
+}
+
+export interface RemoteSessionUser {
+	user_id: string;
+	machine_id: string | null;
+	synced_at: string | null;
+	session_count: number;
+	sessions: RemoteSession[];
+}
+
+export interface RemoteSession {
+	uuid: string;
+	mtime: number;
+	size_bytes: number;
 }

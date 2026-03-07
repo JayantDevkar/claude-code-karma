@@ -15,6 +15,7 @@
 	import { eventTypeConfig, getToolIcon } from './tool-icons';
 	import ToolCallDetail from './ToolCallDetail.svelte';
 	import TodoUpdateDetail from './TodoUpdateDetail.svelte';
+	import ImageAttachments from '$lib/components/ImageAttachments.svelte';
 
 	interface Props {
 		event: TimelineEvent;
@@ -425,6 +426,9 @@
 								<Copy size={14} />
 							{/if}
 						</button>
+						{#if event.metadata?.image_attachments?.length}
+							<ImageAttachments attachments={event.metadata.image_attachments} />
+						{/if}
 						<div class="markdown-preview text-sm">
 							{@html renderedExpandedContent}
 						</div>

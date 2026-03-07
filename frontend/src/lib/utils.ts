@@ -676,6 +676,58 @@ export const modelColorConfig: Record<
 };
 
 // ============================================
+// Team Member Color Utilities (Remote Sessions)
+// ============================================
+
+/** Color palette for team members, avoiding model colors (purple/blue/green) */
+const TEAM_MEMBER_PALETTE = [
+	'coral',
+	'rose',
+	'amber',
+	'cyan',
+	'pink',
+	'lime',
+	'indigo',
+	'teal'
+] as const;
+
+type TeamColor = (typeof TEAM_MEMBER_PALETTE)[number];
+
+export interface TeamMemberColorConfig {
+	border: string;
+	badge: string;
+	text: string;
+	bg: string;
+}
+
+/**
+ * Deterministic hash-based color assignment for team members.
+ * Same userId always gets the same color.
+ */
+export function getTeamMemberColor(userId: string): TeamMemberColorConfig {
+	let hash = 0;
+	for (let i = 0; i < userId.length; i++) {
+		hash = (hash << 5) - hash + userId.charCodeAt(i);
+		hash |= 0; // Convert to 32-bit int
+	}
+	const index = Math.abs(hash) % TEAM_MEMBER_PALETTE.length;
+	const color: TeamColor = TEAM_MEMBER_PALETTE[index];
+	return {
+		border: `var(--team-${color})`,
+		badge: `bg-[var(--team-${color}-subtle)] border-[var(--team-${color})]/20`,
+		text: `text-[var(--team-${color})]`,
+		bg: `var(--team-${color}-subtle)`
+	};
+}
+
+/**
+ * Check if a session is from a remote machine
+ */
+export function isRemoteSession(session: { remote_user_id?: string }): boolean {
+	return !!session.remote_user_id;
+}
+
+// ============================================
 // Subagent Color Utilities
 // ============================================
 
@@ -1490,4 +1542,31 @@ export function toSessionWithContext(s: McpSessionSummary | SessionSummary): Ses
 		project_path: encoded ?? '',
 		project_name: displayName || getProjectNameFromEncoded(encoded ?? '')
 	};
+}
+
+// ============================================
+// Byte Formatting
+// ============================================
+
+/**
+ * Format bytes into human-readable size (e.g., "1.2 MB", "3.5 GB")
+ * Uses binary units (1024-based).
+ */
+export function formatBytes(bytes: number): string {
+	if (bytes < 1024) return `${bytes} B`;
+	if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+	if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+	return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+}
+
+/**
+ * Format bytes per second into human-readable rate (e.g., "1.2 KB/s")
+ * Uses binary units (1024-based).
+ */
+export function formatBytesRate(bytesPerSec: number): string {
+	if (bytesPerSec < 1024) return `${bytesPerSec.toFixed(0)} B/s`;
+	if (bytesPerSec < 1024 * 1024) return `${(bytesPerSec / 1024).toFixed(1)} KB/s`;
+	if (bytesPerSec < 1024 * 1024 * 1024)
+		return `${(bytesPerSec / (1024 * 1024)).toFixed(1)} MB/s`;
+	return `${(bytesPerSec / (1024 * 1024 * 1024)).toFixed(1)} GB/s`;
 }

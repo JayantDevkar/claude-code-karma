@@ -86,7 +86,10 @@
 <div class="space-y-6 animate-fade-in">
 	<!-- Initial Prompt -->
 	{#if entity.initial_prompt}
-		<ExpandablePrompt prompt={entity.initial_prompt} />
+		<ExpandablePrompt
+			prompt={entity.initial_prompt}
+			imageAttachments={entity.initial_prompt_images}
+		/>
 	{/if}
 
 	<!-- Continuation Session Indicator (sessions only) -->

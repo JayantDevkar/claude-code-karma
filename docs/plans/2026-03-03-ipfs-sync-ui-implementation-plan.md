@@ -1,0 +1,1518 @@
+# IPFS Sync UI/UX Implementation Plan
+
+> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
+
+**Goal:** Add a `/sync` page showing IPFS daemon health, per-project sync freshness, team status, and sync history — backed by a new `sync_history` SQLite table, new API endpoints, and CLI enhancements for per-machine IPNS keys.
+
+**Architecture:** Four layers bottom-up: (1) SQLite schema migration adds `sync_history` table, (2) CLI gains `karma status` command and writes push/pull events to SQLite, (3) new `/sync/*` API router reads filesystem + SQLite to serve sync status, (4) SvelteKit `/sync` page renders the four-zone dashboard.
+
+**Tech Stack:** Python 3.9+ (click, Pydantic, sqlite3), FastAPI, SvelteKit/Svelte 5, Tailwind CSS 4, lucide-svelte icons.
+
+**Design docs:**
+- `docs/plans/2026-03-03-ipfs-session-sync-design.md` — IPFS architecture
+- `docs/plans/2026-03-03-ipfs-sync-ui-ux-design.md` — UI/UX design
+
+**Review fixes applied (2026-03-03):** Plan reviewed by Explorer, Architect, and Critic agents. Fixes:
+1. **Monkeypatch target** — `test_history.py` patches `"karma.history.KARMA_BASE"` (not `"karma.config.KARMA_BASE"`) since `from X import Y` binds at import time.
+2. **WAL pragma** — All `sqlite3.connect()` calls in `api/routers/sync.py` now include `PRAGMA journal_mode=WAL` to match CLI and `db/connection.py` patterns.
+3. **Session count verified** — `sync_project()` returns `manifest.session_count = len(sessions)` (cumulative total, not incremental). No fix needed.
+4. **Migration test** — Added `test_sync_history_migration_from_v9()` to verify incremental v9→v10 migration path.
+5. **API endpoint tests** — Added tests for `/sync/projects`, `/sync/team`, `/sync/history` empty-state paths.
+6. **Accurate last_pull_at** — `get_sync_team()` queries `sync_history WHERE event_type='pull'` instead of using manifest `synced_at`.
+7. **Human-readable project names** — Team zone derives display name from manifest `project_path` basename.
+8. **CLI unpushed count** — `karma status` now queries `sync_history` to show unpushed session deltas matching the design doc.
+
+---
+
+## Task 1: SQLite schema — add `sync_history` table
+
+**Files:**
+- Modify: `api/db/schema.py` (bump SCHEMA_VERSION 9→10, add migration)
+- Test: `api/tests/test_sync_history_schema.py`
+
+**Step 1: Write the failing test**
+
+Create `api/tests/test_sync_history_schema.py`:
+
+```python
+"""Tests for sync_history schema migration."""
+import sqlite3
+import pytest
+from db.schema import ensure_schema, SCHEMA_VERSION
+
+
+def test_schema_version_is_10():
+    assert SCHEMA_VERSION == 10
+
+
+def test_sync_history_table_created():
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    ensure_schema(conn)
+
+    # Table exists
+    tables = {
+        r[0] for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ).fetchall()
+    }
+    assert "sync_history" in tables
+
+    # Columns are correct
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(sync_history)").fetchall()}
+    assert cols == {
+        "id", "event_type", "user_id", "machine_id",
+        "project", "cid", "ipns_key", "session_count", "created_at",
+    }
+
+
+def test_sync_history_insert_and_query():
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    ensure_schema(conn)
+
+    conn.execute(
+        "INSERT INTO sync_history (event_type, user_id, machine_id, project, cid, ipns_key, session_count, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        ("push", "alice", "macbook-pro", "acme-app", "QmTest123", "k51abc", 5, "2026-03-03T14:00:00Z"),
+    )
+    conn.commit()
+
+    rows = conn.execute("SELECT * FROM sync_history WHERE user_id = 'alice'").fetchall()
+    assert len(rows) == 1
+    assert rows[0]["event_type"] == "push"
+    assert rows[0]["session_count"] == 5
+
+
+def test_sync_history_indexes_exist():
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    ensure_schema(conn)
+
+    indexes = {
+        r[1] for r in conn.execute(
+            "SELECT * FROM sqlite_master WHERE type='index' AND tbl_name='sync_history'"
+        ).fetchall()
+        if r[1]  # skip auto-index
+    }
+    assert "idx_sync_history_user" in indexes
+    assert "idx_sync_history_project" in indexes
+    assert "idx_sync_history_created" in indexes
+
+
+def test_sync_history_migration_from_v9():
+    """Incremental migration from v9 should add sync_history table."""
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+
+    # Simulate a v9 database (create schema_version table with version 9)
+    conn.execute("CREATE TABLE IF NOT EXISTS schema_version (version INTEGER)")
+    conn.execute("INSERT INTO schema_version (version) VALUES (9)")
+    conn.commit()
+
+    # Run migration
+    ensure_schema(conn)
+
+    # sync_history table should now exist
+    tables = {
+        r[0] for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ).fetchall()
+    }
+    assert "sync_history" in tables
+
+    # Version should be 10
+    version = conn.execute("SELECT version FROM schema_version").fetchone()[0]
+    assert version == SCHEMA_VERSION
+```
+
+**Step 2: Run test to verify it fails**
+
+Run: `cd api && python -m pytest tests/test_sync_history_schema.py -v`
+Expected: FAIL — `SCHEMA_VERSION` is 9, `sync_history` table doesn't exist.
+
+**Step 3: Implement schema migration**
+
+In `api/db/schema.py`:
+
+1. Change `SCHEMA_VERSION = 9` → `SCHEMA_VERSION = 10`
+
+2. Add to `SCHEMA_SQL` (after the `projects` table block):
+
+```sql
+-- Sync history (IPFS push/pull audit trail)
+CREATE TABLE IF NOT EXISTS sync_history (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_type    TEXT NOT NULL,
+    user_id       TEXT NOT NULL,
+    machine_id    TEXT NOT NULL,
+    project       TEXT NOT NULL,
+    cid           TEXT,
+    ipns_key      TEXT,
+    session_count INTEGER DEFAULT 0,
+    created_at    TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_sync_history_user ON sync_history(user_id);
+CREATE INDEX IF NOT EXISTS idx_sync_history_project ON sync_history(project);
+CREATE INDEX IF NOT EXISTS idx_sync_history_created ON sync_history(created_at);
+```
+
+3. Add migration block in `ensure_schema()` before the version recording:
+
+```python
+        if current_version < 10:
+            logger.info("Migrating v9 → v10: adding sync_history table")
+            conn.executescript("""
+                CREATE TABLE IF NOT EXISTS sync_history (
+                    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                    event_type    TEXT NOT NULL,
+                    user_id       TEXT NOT NULL,
+                    machine_id    TEXT NOT NULL,
+                    project       TEXT NOT NULL,
+                    cid           TEXT,
+                    ipns_key      TEXT,
+                    session_count INTEGER DEFAULT 0,
+                    created_at    TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_sync_history_user ON sync_history(user_id);
+                CREATE INDEX IF NOT EXISTS idx_sync_history_project ON sync_history(project);
+                CREATE INDEX IF NOT EXISTS idx_sync_history_created ON sync_history(created_at);
+            """)
+```
+
+**Step 4: Run test to verify it passes**
+
+Run: `cd api && python -m pytest tests/test_sync_history_schema.py -v`
+Expected: All 5 tests PASS.
+
+**Step 5: Commit**
+
+```bash
+git add api/db/schema.py api/tests/test_sync_history_schema.py
+git commit -m "feat: add sync_history SQLite table (schema v10)"
+```
+
+---
+
+## Task 2: CLI — per-machine IPNS key generation in `karma init`
+
+**Files:**
+- Modify: `cli/karma/main.py` (update `init` command)
+- Modify: `cli/karma/config.py` (add `ipns_key_name` field to SyncConfig)
+- Test: `cli/tests/test_cli.py` (add init key tests)
+
+**Step 1: Write the failing test**
+
+Add to `cli/tests/test_cli.py` inside `TestInitCommand`:
+
+```python
+class TestInitCommand:
+    # ... existing tests ...
+
+    def test_init_sets_ipns_key_name(self, runner, init_config):
+        """karma init should store a per-machine IPNS key name in config."""
+        from karma.config import SyncConfig
+        config = SyncConfig(user_id="alice")
+        assert config.ipns_key_name == f"karma-alice-{config.machine_id}"
+
+    def test_ipns_key_name_roundtrips(self, runner, init_config):
+        """ipns_key_name survives save/load cycle."""
+        result = runner.invoke(cli, ["init", "--user-id", "alice"])
+        assert result.exit_code == 0
+
+        from karma.config import SyncConfig
+        loaded = SyncConfig.load()
+        assert loaded is not None
+        assert loaded.ipns_key_name == f"karma-alice-{loaded.machine_id}"
+```
+
+**Step 2: Run test to verify it fails**
+
+Run: `cd cli && python -m pytest tests/test_cli.py::TestInitCommand::test_init_sets_ipns_key_name -v`
+Expected: FAIL — `ipns_key_name` field doesn't exist on SyncConfig.
+
+**Step 3: Implement**
+
+In `cli/karma/config.py`, add `model_validator` import and computed field to `SyncConfig`:
+
+```python
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+class SyncConfig(BaseModel):
+    # ... existing fields ...
+
+    ipns_key_name: str = Field(
+        default="",
+        description="IPNS key name for this machine (karma-{user_id}-{machine_id})",
+    )
+
+    @model_validator(mode="after")
+    def set_ipns_key_name(self) -> "SyncConfig":
+        if not self.ipns_key_name:
+            object.__setattr__(self, "ipns_key_name", f"karma-{self.user_id}-{self.machine_id}")
+        return self
+```
+
+> **Note:** `model_validator(mode="after")` is the idiomatic Pydantic v2 approach for computed
+> fields on frozen models. It runs on every construction (including `load()` round-trips),
+> and `object.__setattr__` is safe inside validators before the model is finalized as frozen.
+
+In `cli/karma/main.py`, update the `init` command to display the key name:
+
+```python
+    click.echo(f"Initialized as '{user_id}' on '{config.machine_id}'.")
+    click.echo(f"IPNS key name: {config.ipns_key_name}")
+    click.echo(f"Config saved to {SYNC_CONFIG_PATH}")
+```
+
+**Step 4: Run test to verify it passes**
+
+Run: `cd cli && python -m pytest tests/test_cli.py::TestInitCommand::test_init_sets_ipns_key_name tests/test_cli.py::TestInitCommand::test_ipns_key_name_roundtrips -v`
+Expected: PASS
+
+**Step 5: Commit**
+
+```bash
+git add cli/karma/config.py cli/karma/main.py cli/tests/test_cli.py
+git commit -m "feat: per-machine IPNS key name in karma init"
+```
+
+---
+
+## Task 3: CLI — `karma status` command
+
+**Files:**
+- Modify: `cli/karma/main.py` (add `status` command)
+- Test: `cli/tests/test_cli.py` (add status tests)
+
+**Step 1: Write the failing test**
+
+Add a new test class to `cli/tests/test_cli.py`:
+
+```python
+class TestStatusCommand:
+    def test_status_not_initialized(self, runner, tmp_path, monkeypatch):
+        """karma status should fail if not initialized."""
+        monkeypatch.setattr("karma.config.SYNC_CONFIG_PATH", tmp_path / "nope.json")
+        result = runner.invoke(cli, ["status"])
+        assert result.exit_code != 0
+        assert "Not initialized" in result.output
+
+    def test_status_shows_projects(self, runner, init_config):
+        """karma status should show project sync state."""
+        from karma.config import SyncConfig, ProjectConfig
+        runner.invoke(cli, ["init", "--user-id", "alice"])
+
+        config = SyncConfig.load()
+        projects = dict(config.projects)
+        projects["acme"] = ProjectConfig(path="/tmp/acme", encoded_name="-tmp-acme")
+        updated = config.model_copy(update={"projects": projects})
+        updated.save()
+
+        result = runner.invoke(cli, ["status"])
+        assert result.exit_code == 0
+        assert "alice" in result.output
+        assert "acme" in result.output
+```
+
+> **Note:** Uses the existing `runner` and `init_config` fixtures (consistent with other test classes).
+> Initializes via `cli` first so the config file is properly created.
+
+**Step 2: Run test to verify it fails**
+
+Run: `cd cli && python -m pytest tests/test_cli.py::TestStatusCommand -v`
+Expected: FAIL — `status` command doesn't exist.
+
+**Step 3: Implement**
+
+Add to `cli/karma/main.py`:
+
+```python
+@cli.command()
+def status():
+    """Show sync status for this machine."""
+    config = require_config()
+
+    # Identity
+    click.echo(f"Identity: {config.user_id} @ {config.machine_id}")
+    click.echo(f"IPNS Key: {config.ipns_key_name}")
+
+    # IPFS status (best-effort, don't fail if daemon isn't running)
+    try:
+        from karma.ipfs import IPFSClient
+        ipfs = IPFSClient(api_url=config.ipfs_api)
+        if ipfs.is_running():
+            peers = ipfs.swarm_peers()
+            click.echo(f"IPFS: Running ({len(peers)} peers)")
+        else:
+            click.echo("IPFS: Not running")
+    except Exception:
+        click.echo("IPFS: Unknown (could not check)")
+
+    # Projects
+    if not config.projects:
+        click.echo("\nNo projects configured.")
+        return
+
+    # Query sync_history for synced session counts per project
+    from pathlib import Path
+    synced_counts: dict[str, int] = {}
+    db_path = Path.home() / ".claude_karma" / "metadata.db"
+    if db_path.exists():
+        import sqlite3
+        try:
+            conn = sqlite3.connect(str(db_path))
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                "SELECT project, session_count FROM sync_history "
+                "WHERE event_type='push' AND id IN ("
+                "  SELECT MAX(id) FROM sync_history WHERE event_type='push' GROUP BY project"
+                ")"
+            ).fetchall()
+            synced_counts = {r["project"]: r["session_count"] for r in rows}
+            conn.close()
+        except Exception:
+            pass
+
+    click.echo(f"\nProjects ({len(config.projects)}):")
+    for name, proj in config.projects.items():
+        # Count local sessions
+        claude_dir = Path.home() / ".claude" / "projects" / proj.encoded_name
+        local_count = len(list(claude_dir.glob("*.jsonl"))) if claude_dir.is_dir() else 0
+
+        synced = synced_counts.get(name, 0)
+        unpushed = max(0, local_count - synced)
+
+        if not proj.last_sync_at:
+            status_icon = "  "
+            sync_info = "never synced"
+        elif unpushed > 0:
+            status_icon = "⚠ "
+            sync_info = f"{unpushed} unpushed ({synced}/{local_count} synced, last sync {proj.last_sync_at})"
+        else:
+            status_icon = "✓ "
+            sync_info = f"up to date ({local_count} sessions, last sync {proj.last_sync_at})"
+
+        click.echo(f"  {name}: {status_icon}{sync_info}")
+```
+
+**Step 4: Run test to verify it passes**
+
+Run: `cd cli && python -m pytest tests/test_cli.py::TestStatusCommand -v`
+Expected: PASS
+
+**Step 5: Commit**
+
+```bash
+git add cli/karma/main.py cli/tests/test_cli.py
+git commit -m "feat: add karma status command"
+```
+
+---
+
+## Task 4: CLI — record push/pull events to SQLite
+
+**Files:**
+- Create: `cli/karma/history.py` (sync_history writer)
+- Modify: `cli/karma/main.py` (call history writer after sync/pull)
+- Test: `cli/tests/test_history.py`
+
+**Step 1: Write the failing test**
+
+Create `cli/tests/test_history.py`:
+
+```python
+"""Tests for sync_history recording."""
+import sqlite3
+from karma.history import record_sync_event, get_db_path, ensure_sync_schema
+
+
+def test_record_push_event(tmp_path, monkeypatch):
+    monkeypatch.setattr("karma.history.KARMA_BASE", tmp_path)
+
+    record_sync_event(
+        event_type="push",
+        user_id="alice",
+        machine_id="macbook-pro",
+        project="acme-app",
+        cid="QmTest123",
+        ipns_key="k51abc",
+        session_count=5,
+    )
+
+    db_path = tmp_path / "metadata.db"
+    assert db_path.exists()
+
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute("SELECT * FROM sync_history").fetchall()
+    assert len(rows) == 1
+    assert rows[0]["event_type"] == "push"
+    assert rows[0]["user_id"] == "alice"
+    assert rows[0]["session_count"] == 5
+    conn.close()
+
+
+def test_record_pull_event(tmp_path, monkeypatch):
+    monkeypatch.setattr("karma.history.KARMA_BASE", tmp_path)
+
+    record_sync_event(
+        event_type="pull",
+        user_id="bob",
+        machine_id="bob-windows",
+        project="acme-app",
+        cid="QmBob456",
+        session_count=3,
+    )
+
+    db_path = tmp_path / "metadata.db"
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute("SELECT * FROM sync_history WHERE event_type='pull'").fetchall()
+    assert len(rows) == 1
+    assert rows[0]["machine_id"] == "bob-windows"
+    conn.close()
+```
+
+**Step 2: Run test to verify it fails**
+
+Run: `cd cli && python -m pytest tests/test_history.py -v`
+Expected: FAIL — `karma.history` module doesn't exist.
+
+**Step 3: Implement**
+
+Create `cli/karma/history.py`:
+
+```python
+"""Record sync events to SQLite for audit trail.
+
+Note: This module creates sync_history independently from the API's schema.py
+because the CLI must work standalone without the API server. Both define the
+same table schema — keep them in sync if either changes.
+"""
+
+import sqlite3
+from datetime import datetime, timezone
+from pathlib import Path
+
+from karma.config import KARMA_BASE
+
+SYNC_HISTORY_SCHEMA = """
+CREATE TABLE IF NOT EXISTS sync_history (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_type    TEXT NOT NULL,
+    user_id       TEXT NOT NULL,
+    machine_id    TEXT NOT NULL,
+    project       TEXT NOT NULL,
+    cid           TEXT,
+    ipns_key      TEXT,
+    session_count INTEGER DEFAULT 0,
+    created_at    TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_sync_history_user ON sync_history(user_id);
+CREATE INDEX IF NOT EXISTS idx_sync_history_project ON sync_history(project);
+CREATE INDEX IF NOT EXISTS idx_sync_history_created ON sync_history(created_at);
+"""
+
+
+def get_db_path() -> Path:
+    """Return path to the shared metadata.db."""
+    return KARMA_BASE / "metadata.db"
+
+
+def ensure_sync_schema(conn: sqlite3.Connection) -> None:
+    conn.executescript(SYNC_HISTORY_SCHEMA)
+
+
+def record_sync_event(
+    event_type: str,
+    user_id: str,
+    machine_id: str,
+    project: str,
+    cid: str = "",
+    ipns_key: str = "",
+    session_count: int = 0,
+) -> None:
+    """Write a push or pull event to sync_history."""
+    db_path = get_db_path()
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+
+    conn = sqlite3.connect(str(db_path))
+    try:
+        conn.execute("PRAGMA journal_mode=WAL")  # safe for concurrent CLI + API access
+        ensure_sync_schema(conn)
+        conn.execute(
+            "INSERT INTO sync_history (event_type, user_id, machine_id, project, cid, ipns_key, session_count, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (event_type, user_id, machine_id, project, cid, ipns_key, session_count,
+             datetime.now(timezone.utc).isoformat()),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+```
+
+> **Changes from original:** (1) Imports `KARMA_BASE` from `karma.config` instead of redefining.
+> (2) Renamed `_get_db_path` → `get_db_path` (public, matches test import).
+> (3) Added `PRAGMA journal_mode=WAL` for safe concurrent access.
+> (4) Added module docstring explaining why the schema is duplicated.
+
+Then modify `cli/karma/main.py` — in the `sync` command, after successful sync:
+
+```python
+                # Record push event
+                from karma.history import record_sync_event
+                record_sync_event(
+                    event_type="push",
+                    user_id=config.user_id,
+                    machine_id=config.machine_id,
+                    project=project_name,
+                    cid=cid,
+                    ipns_key=config.ipns_key_name,
+                    session_count=count,
+                )
+```
+
+In the `pull` command (at `cli/karma/main.py:181`), after each successful member pull, record
+per-project events using manifest data:
+
+```python
+    for r in results:
+        if r["status"] == "ok":
+            from pathlib import Path
+            from karma.history import record_sync_event
+            import json
+            # Read manifest to get accurate machine_id and per-project data
+            remote_dir = Path.home() / ".claude_karma" / "remote-sessions" / r["member"]
+            if remote_dir.is_dir():
+                for proj_dir in remote_dir.iterdir():
+                    manifest_path = proj_dir / "manifest.json"
+                    if manifest_path.exists():
+                        try:
+                            manifest = json.loads(manifest_path.read_text())
+                            record_sync_event(
+                                event_type="pull",
+                                user_id=manifest.get("user_id", r["member"]),
+                                machine_id=manifest.get("machine_id", r["member"]),
+                                project=proj_dir.name,
+                                cid=r["cid"],
+                                session_count=manifest.get("session_count", 0),
+                            )
+                        except (json.JSONDecodeError, OSError):
+                            pass
+```
+
+> **Changes from original:** (1) Records per-project pull events with `machine_id` and `session_count`
+> from the manifest instead of using `machine_id=r["member"]` and `project="all"`.
+> This ensures history records match the team display in the UI.
+> (2) Added `from pathlib import Path` — the `pull` function doesn't import `Path` at module scope
+> (only `list_remote` and `project_add` do local imports).
+
+**Step 4: Run tests**
+
+Run: `cd cli && python -m pytest tests/test_history.py -v`
+Expected: PASS
+
+**Step 5: Commit**
+
+```bash
+git add cli/karma/history.py cli/karma/main.py cli/tests/test_history.py
+git commit -m "feat: record push/pull events to sync_history SQLite"
+```
+
+---
+
+## Task 5: API — `/sync/status` endpoint
+
+**Files:**
+- Create: `api/routers/sync.py`
+- Modify: `api/main.py` (register router)
+- Test: `api/tests/api/test_sync_router.py`
+
+**Step 1: Write the failing test**
+
+Create `api/tests/api/test_sync_router.py`:
+
+```python
+"""Tests for /sync API endpoints."""
+import json
+import pytest
+from fastapi.testclient import TestClient
+
+
+@pytest.fixture
+def client():
+    from main import app
+    return TestClient(app)
+
+
+def test_sync_status_not_initialized(client, tmp_path, monkeypatch):
+    """Returns initialized=false when no sync-config.json exists."""
+    monkeypatch.setattr("routers.sync.SYNC_CONFIG_PATH", tmp_path / "nope.json")
+    resp = client.get("/sync/status")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["initialized"] is False
+
+
+def test_sync_status_initialized(client, tmp_path, monkeypatch):
+    """Returns identity info when sync-config.json exists."""
+    config_path = tmp_path / "sync-config.json"
+    config_path.write_text(json.dumps({
+        "user_id": "alice",
+        "machine_id": "macbook-pro",
+        "ipns_key_name": "karma-alice-macbook-pro",
+        "projects": {},
+        "team": {},
+        "ipfs_api": "http://127.0.0.1:5001",
+    }))
+    monkeypatch.setattr("routers.sync.SYNC_CONFIG_PATH", config_path)
+
+    resp = client.get("/sync/status")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["initialized"] is True
+    assert data["user_id"] == "alice"
+    assert data["machine_id"] == "macbook-pro"
+
+
+def test_sync_projects_not_initialized(client, tmp_path, monkeypatch):
+    """Returns empty list when no sync-config.json exists."""
+    monkeypatch.setattr("routers.sync.SYNC_CONFIG_PATH", tmp_path / "nope.json")
+    resp = client.get("/sync/projects")
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+
+def test_sync_team_not_initialized(client, tmp_path, monkeypatch):
+    """Returns empty list when no sync-config.json exists."""
+    monkeypatch.setattr("routers.sync.SYNC_CONFIG_PATH", tmp_path / "nope.json")
+    resp = client.get("/sync/team")
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+
+def test_sync_history_empty(client, tmp_path, monkeypatch):
+    """Returns empty list when no metadata.db exists."""
+    monkeypatch.setattr("routers.sync.KARMA_BASE", tmp_path)
+    resp = client.get("/sync/history")
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+
+def test_sync_history_with_limit(client, tmp_path, monkeypatch):
+    """Respects limit query parameter."""
+    monkeypatch.setattr("routers.sync.KARMA_BASE", tmp_path)
+    resp = client.get("/sync/history?limit=5&offset=0")
+    assert resp.status_code == 200
+    assert resp.json() == []
+```
+
+**Step 2: Run test to verify it fails**
+
+Run: `cd api && python -m pytest tests/api/test_sync_router.py -v`
+Expected: FAIL — `routers.sync` doesn't exist.
+
+**Step 3: Implement**
+
+Create `api/routers/sync.py`:
+
+```python
+"""Sync status API — IPFS daemon health, project sync state, team info, history."""
+
+from __future__ import annotations
+
+import json
+import logging
+import sqlite3
+from pathlib import Path
+from typing import Optional
+
+from fastapi import APIRouter, Query
+from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter()
+
+KARMA_BASE = Path.home() / ".claude_karma"
+SYNC_CONFIG_PATH = KARMA_BASE / "sync-config.json"
+REMOTE_SESSIONS_DIR = KARMA_BASE / "remote-sessions"
+
+
+class SyncStatus(BaseModel):
+    initialized: bool
+    user_id: Optional[str] = None
+    machine_id: Optional[str] = None
+    ipns_key_name: Optional[str] = None
+    ipfs_running: Optional[bool] = None
+    ipfs_peer_count: Optional[int] = None
+
+
+class ProjectSyncState(BaseModel):
+    name: str
+    path: str
+    encoded_name: str
+    local_session_count: int
+    synced_session_count: int
+    unpushed_count: int
+    last_sync_at: Optional[str] = None
+    last_sync_cid: Optional[str] = None
+    status: str  # "up_to_date", "unpushed", "never_synced"
+
+
+class TeamMachine(BaseModel):
+    machine_id: str
+    ipns_key: str
+    last_pull_at: Optional[str] = None
+    projects: list[dict]
+
+
+class TeamMember(BaseModel):
+    user_id: str
+    machines: list[TeamMachine]
+
+
+class SyncHistoryEntry(BaseModel):
+    id: int
+    event_type: str
+    user_id: str
+    machine_id: str
+    project: str
+    cid: Optional[str] = None
+    session_count: int
+    created_at: str
+
+
+def _load_sync_config() -> Optional[dict]:
+    if not SYNC_CONFIG_PATH.exists():
+        return None
+    try:
+        return json.loads(SYNC_CONFIG_PATH.read_text())
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
+def _check_ipfs_health(api_url: str) -> tuple[bool | None, int | None]:
+    """Probe the IPFS daemon for running status and peer count."""
+    import urllib.request
+    import urllib.error
+
+    try:
+        req = urllib.request.Request(f"{api_url}/api/v0/id", method="POST")
+        with urllib.request.urlopen(req, timeout=3) as resp:
+            import json as _json
+            _json.loads(resp.read())  # validates daemon is responding
+
+        # Get peer count
+        req2 = urllib.request.Request(f"{api_url}/api/v0/swarm/peers", method="POST")
+        with urllib.request.urlopen(req2, timeout=3) as resp2:
+            peers_data = _json.loads(resp2.read())
+            peer_count = len(peers_data.get("Peers") or [])
+            return True, peer_count
+    except (urllib.error.URLError, OSError, ValueError):
+        return False, None
+
+
+@router.get("/status", response_model=SyncStatus)
+def get_sync_status() -> SyncStatus:
+    """Get IPFS daemon health, identity, and initialization state."""
+    config = _load_sync_config()
+    if config is None:
+        return SyncStatus(initialized=False)
+
+    ipfs_running, ipfs_peer_count = _check_ipfs_health(
+        config.get("ipfs_api", "http://127.0.0.1:5001")
+    )
+
+    return SyncStatus(
+        initialized=True,
+        user_id=config.get("user_id"),
+        machine_id=config.get("machine_id"),
+        ipns_key_name=config.get("ipns_key_name"),
+        ipfs_running=ipfs_running,
+        ipfs_peer_count=ipfs_peer_count,
+    )
+
+
+@router.get("/projects", response_model=list[ProjectSyncState])
+def get_sync_projects() -> list[ProjectSyncState]:
+    """Get per-project sync state: local vs synced session counts."""
+    config = _load_sync_config()
+    if config is None:
+        return []
+
+    results = []
+    claude_projects_dir = Path.home() / ".claude" / "projects"
+
+    # Query sync_history for the most recent push session_count per project
+    synced_count_map: dict[str, int] = {}
+    db_path = KARMA_BASE / "metadata.db"
+    if db_path.exists():
+        try:
+            db_conn = sqlite3.connect(str(db_path))
+            db_conn.execute("PRAGMA journal_mode=WAL")
+            db_conn.row_factory = sqlite3.Row
+            rows = db_conn.execute(
+                "SELECT project, session_count FROM sync_history "
+                "WHERE event_type='push' AND id IN ("
+                "  SELECT MAX(id) FROM sync_history WHERE event_type='push' GROUP BY project"
+                ")"
+            ).fetchall()
+            synced_count_map = {r["project"]: r["session_count"] for r in rows}
+            db_conn.close()
+        except (sqlite3.OperationalError, sqlite3.DatabaseError):
+            pass
+
+    for name, proj in config.get("projects", {}).items():
+        encoded = proj.get("encoded_name", "")
+        local_dir = claude_projects_dir / encoded
+
+        # Count local session JSONL files
+        local_count = 0
+        if local_dir.is_dir():
+            local_count = len([
+                f for f in local_dir.glob("*.jsonl")
+                if not f.name.startswith("agent-")
+            ])
+
+        # Get synced count from last push event in sync_history
+        synced_count = synced_count_map.get(name, 0)
+        last_sync_cid = proj.get("last_sync_cid")
+        last_sync_at = proj.get("last_sync_at")
+
+        unpushed = local_count - synced_count
+        if not last_sync_cid:
+            status = "never_synced"
+            unpushed = local_count
+        elif unpushed > 0:
+            status = "unpushed"
+        else:
+            status = "up_to_date"
+
+        results.append(ProjectSyncState(
+            name=name,
+            path=proj.get("path", ""),
+            encoded_name=encoded,
+            local_session_count=local_count,
+            synced_session_count=synced_count,
+            unpushed_count=max(0, unpushed),
+            last_sync_at=last_sync_at,
+            last_sync_cid=last_sync_cid,
+            status=status,
+        ))
+
+    return results
+
+
+@router.get("/team", response_model=list[TeamMember])
+def get_sync_team() -> list[TeamMember]:
+    """Get team members grouped by user_id with their machines."""
+    config = _load_sync_config()
+    if config is None:
+        return []
+
+    # Query sync_history for accurate last_pull_at per member
+    pull_times: dict[str, str] = {}
+    db_path = KARMA_BASE / "metadata.db"
+    if db_path.exists():
+        try:
+            db_conn = sqlite3.connect(str(db_path))
+            db_conn.execute("PRAGMA journal_mode=WAL")
+            db_conn.row_factory = sqlite3.Row
+            rows = db_conn.execute(
+                "SELECT machine_id, MAX(created_at) as last_pull "
+                "FROM sync_history WHERE event_type='pull' GROUP BY machine_id"
+            ).fetchall()
+            pull_times = {r["machine_id"]: r["last_pull"] for r in rows}
+            db_conn.close()
+        except (sqlite3.OperationalError, sqlite3.DatabaseError):
+            pass
+
+    # Group team members by user_id (extracted from manifests)
+    user_machines: dict[str, list[TeamMachine]] = {}
+
+    for member_name, member_data in config.get("team", {}).items():
+        ipns_key = member_data.get("ipns_key", "")
+
+        # Check if we have pulled data for this member
+        member_dir = REMOTE_SESSIONS_DIR / member_name
+        projects = []
+        user_id = member_name  # default
+
+        if member_dir.is_dir():
+            for proj_dir in sorted(member_dir.iterdir()):
+                if not proj_dir.is_dir():
+                    continue
+                manifest_path = proj_dir / "manifest.json"
+                if manifest_path.exists():
+                    try:
+                        manifest = json.loads(manifest_path.read_text())
+                        user_id = manifest.get("user_id", member_name)
+                        # Derive human-readable name from project_path or encoded dir name
+                        display_name = proj_dir.name
+                        project_path = manifest.get("project_path", "")
+                        if project_path:
+                            display_name = project_path.rstrip("/").rsplit("/", 1)[-1]
+                        projects.append({
+                            "name": display_name,
+                            "encoded_name": proj_dir.name,
+                            "session_count": manifest.get("session_count", 0),
+                        })
+                    except (json.JSONDecodeError, OSError):
+                        pass
+
+        # Use sync_history pull time (accurate), fall back to manifest synced_at
+        last_pull_at = pull_times.get(member_name)
+
+        machine = TeamMachine(
+            machine_id=member_name,
+            ipns_key=ipns_key,
+            last_pull_at=last_pull_at,
+            projects=projects,
+        )
+
+        if user_id not in user_machines:
+            user_machines[user_id] = []
+        user_machines[user_id].append(machine)
+
+    return [
+        TeamMember(user_id=uid, machines=machines)
+        for uid, machines in sorted(user_machines.items())
+    ]
+
+
+@router.get("/history", response_model=list[SyncHistoryEntry])
+def get_sync_history(
+    limit: int = Query(default=50, le=200),
+    offset: int = Query(default=0, ge=0),
+) -> list[SyncHistoryEntry]:
+    """Get paginated sync history from SQLite."""
+    db_path = KARMA_BASE / "metadata.db"
+    if not db_path.exists():
+        return []
+
+    try:
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.row_factory = sqlite3.Row
+
+        # Check if sync_history table exists
+        tables = {
+            r[0] for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            ).fetchall()
+        }
+        if "sync_history" not in tables:
+            conn.close()
+            return []
+
+        rows = conn.execute(
+            "SELECT id, event_type, user_id, machine_id, project, cid, session_count, created_at "
+            "FROM sync_history ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            (limit, offset),
+        ).fetchall()
+        conn.close()
+
+        return [SyncHistoryEntry(**dict(r)) for r in rows]
+    except (sqlite3.OperationalError, sqlite3.DatabaseError):
+        return []
+```
+
+Register in `api/main.py`:
+
+1. Add `sync` to the existing `from routers import (...)` block (lines 23–40). Insert
+   alphabetically between `subagent_sessions` and `tools`:
+
+```python
+from routers import (  # noqa: E402
+    admin,
+    agents,
+    analytics,
+    commands,
+    docs,
+    history,
+    hooks,
+    live_sessions,
+    plans,
+    plugins,
+    projects,
+    remote_sessions,
+    sessions,
+    skills,
+    subagent_sessions,
+    sync,          # ← add here
+    tools,
+)
+```
+
+2. Add router registration after the `remote_sessions` line (after line 175):
+
+```python
+app.include_router(sync.router, prefix="/sync", tags=["sync"])
+```
+
+> **Note:** Uses bare import `sync` (not `sync as sync_router`) to match the existing pattern.
+> The `settings` router is special-cased on line 41 because of the name conflict with `config.settings`.
+
+**Step 4: Run tests**
+
+Run: `cd api && python -m pytest tests/api/test_sync_router.py -v`
+Expected: PASS
+
+**Step 5: Commit**
+
+```bash
+git add api/routers/sync.py api/main.py api/tests/api/test_sync_router.py
+git commit -m "feat: add /sync API router (status, projects, team, history)"
+```
+
+---
+
+## Task 6: Frontend — `/sync` page (My Status zone)
+
+**Files:**
+- Create: `frontend/src/routes/sync/+page.server.ts`
+- Create: `frontend/src/routes/sync/+page.svelte`
+- Modify: `frontend/src/lib/components/Header.svelte` (add Sync nav link — both desktop AND mobile)
+
+**Step 1: Create server load function**
+
+Create `frontend/src/routes/sync/+page.server.ts`:
+
+```typescript
+import type { PageServerLoad } from './$types';
+import { API_BASE } from '$lib/config';
+import { safeFetch } from '$lib/utils/api-fetch';
+
+interface SyncStatus {
+	initialized: boolean;
+	user_id: string | null;
+	machine_id: string | null;
+	ipns_key_name: string | null;
+	ipfs_running: boolean | null;
+	ipfs_peer_count: number | null;
+}
+
+interface ProjectSyncState {
+	name: string;
+	path: string;
+	encoded_name: string;
+	local_session_count: number;
+	synced_session_count: number;
+	unpushed_count: number;
+	last_sync_at: string | null;
+	last_sync_cid: string | null;
+	status: 'up_to_date' | 'unpushed' | 'never_synced';
+}
+
+interface TeamMachine {
+	machine_id: string;
+	ipns_key: string;
+	last_pull_at: string | null;
+	projects: Array<{ encoded_name: string; session_count: number }>;
+}
+
+interface TeamMember {
+	user_id: string;
+	machines: TeamMachine[];
+}
+
+interface SyncHistoryEntry {
+	id: number;
+	event_type: string;
+	user_id: string;
+	machine_id: string;
+	project: string;
+	cid: string | null;
+	session_count: number;
+	created_at: string;
+}
+
+export const load: PageServerLoad = async ({ fetch }) => {
+	const [statusResult, projectsResult, teamResult, historyResult] = await Promise.all([
+		safeFetch<SyncStatus>(fetch, `${API_BASE}/sync/status`),
+		safeFetch<ProjectSyncState[]>(fetch, `${API_BASE}/sync/projects`),
+		safeFetch<TeamMember[]>(fetch, `${API_BASE}/sync/team`),
+		safeFetch<SyncHistoryEntry[]>(fetch, `${API_BASE}/sync/history?limit=20`)
+	]);
+
+	return {
+		status: statusResult.ok ? statusResult.data : null,
+		projects: projectsResult.ok ? projectsResult.data : [],
+		team: teamResult.ok ? teamResult.data : [],
+		history: historyResult.ok ? historyResult.data : [],
+		error: statusResult.ok ? null : statusResult.message
+	};
+};
+```
+
+**Step 2: Create the Svelte page**
+
+Create `frontend/src/routes/sync/+page.svelte`:
+
+```svelte
+<script lang="ts">
+	import PageHeader from '$lib/components/layout/PageHeader.svelte';
+	import {
+		RefreshCw,
+		Wifi,
+		WifiOff,
+		CheckCircle,
+		AlertTriangle,
+		XCircle,
+		Monitor,
+		Clock,
+		Users,
+		FolderGit2,
+		ArrowUpCircle,
+		ArrowDownCircle
+	} from 'lucide-svelte';
+
+	let { data } = $props();
+
+	function timeAgo(iso: string | null): string {
+		if (!iso) return 'never';
+		const diff = Date.now() - new Date(iso).getTime();
+		const mins = Math.floor(diff / 60000);
+		if (mins < 1) return 'just now';
+		if (mins < 60) return `${mins}m ago`;
+		const hours = Math.floor(mins / 60);
+		if (hours < 24) return `${hours}h ago`;
+		const days = Math.floor(hours / 24);
+		return `${days}d ago`;
+	}
+</script>
+
+<PageHeader
+	title="Sync"
+	icon={RefreshCw}
+	iconColor="--nav-purple"
+	breadcrumbs={[{ label: 'Dashboard', href: '/' }, { label: 'Sync' }]}
+/>
+
+<div class="space-y-6">
+	<!-- Zone 1: My Status -->
+	<section class="border border-[var(--border)] rounded-[var(--radius-lg)] p-5 bg-[var(--bg-base)]">
+		<h2 class="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-4">
+			My Status
+		</h2>
+
+		{#if !data.status || !data.status.initialized}
+			<div class="flex items-center gap-3 text-[var(--text-muted)]">
+				<XCircle size={18} class="text-red-400" />
+				<div>
+					<p class="font-medium text-[var(--text-primary)]">Not initialized</p>
+					<p class="text-sm">
+						Run <code class="px-1.5 py-0.5 bg-[var(--bg-muted)] rounded text-xs font-mono"
+							>karma init</code
+						> to set up IPFS sync.
+					</p>
+				</div>
+			</div>
+		{:else}
+			<div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+				<div class="flex items-center gap-2">
+					<Monitor size={16} class="text-[var(--text-muted)]" />
+					<div>
+						<p class="text-xs text-[var(--text-muted)]">Identity</p>
+						<p class="font-medium text-sm">
+							{data.status.user_id}
+							<span class="text-[var(--text-muted)]">@ {data.status.machine_id}</span>
+						</p>
+					</div>
+				</div>
+				<div class="flex items-center gap-2">
+					{#if data.status.ipfs_running === true && (data.status.ipfs_peer_count ?? 0) > 0}
+						<Wifi size={16} class="text-emerald-400" />
+						<div>
+							<p class="text-xs text-[var(--text-muted)]">IPFS Daemon</p>
+							<p class="font-medium text-sm text-emerald-400">
+								Running ({data.status.ipfs_peer_count} peers)
+							</p>
+						</div>
+					{:else if data.status.ipfs_running === true && (data.status.ipfs_peer_count ?? 0) === 0}
+						<Wifi size={16} class="text-amber-400" />
+						<div>
+							<p class="text-xs text-[var(--text-muted)]">IPFS Daemon</p>
+							<p class="font-medium text-sm text-amber-400">Degraded (0 peers)</p>
+						</div>
+					{:else if data.status.ipfs_running === false}
+						<WifiOff size={16} class="text-red-400" />
+						<div>
+							<p class="text-xs text-[var(--text-muted)]">IPFS Daemon</p>
+							<p class="font-medium text-sm text-red-400">Not running</p>
+						</div>
+					{:else}
+						<Wifi size={16} class="text-[var(--text-muted)]" />
+						<div>
+							<p class="text-xs text-[var(--text-muted)]">IPFS Daemon</p>
+							<p class="font-medium text-sm text-[var(--text-muted)]">Unknown</p>
+						</div>
+					{/if}
+				</div>
+				<div class="flex items-center gap-2">
+					<RefreshCw size={16} class="text-[var(--text-muted)]" />
+					<div>
+						<p class="text-xs text-[var(--text-muted)]">IPNS Key</p>
+						<p class="font-mono text-xs text-[var(--text-secondary)] truncate max-w-[200px]">
+							{data.status.ipns_key_name ?? 'none'}
+						</p>
+					</div>
+				</div>
+			</div>
+		{/if}
+	</section>
+
+	<!-- Zone 2: My Projects -->
+	{#if data.projects.length > 0}
+		<section
+			class="border border-[var(--border)] rounded-[var(--radius-lg)] p-5 bg-[var(--bg-base)]"
+		>
+			<h2
+				class="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-4"
+			>
+				My Projects
+			</h2>
+			<div class="space-y-3">
+				{#each data.projects as project}
+					<div
+						class="flex items-center justify-between py-3 px-4 rounded-[var(--radius-md)] bg-[var(--bg-subtle)]"
+					>
+						<div class="flex items-center gap-3">
+							<FolderGit2 size={16} class="text-[var(--text-muted)]" />
+							<div>
+								<span class="font-medium text-sm text-[var(--text-primary)]">{project.name}</span>
+								<p class="text-xs text-[var(--text-muted)]">
+									{project.local_session_count} sessions
+									{#if project.last_sync_at}
+										&middot; synced {timeAgo(project.last_sync_at)}
+									{/if}
+									{#if project.last_sync_cid}
+										&middot; <span class="font-mono">{project.last_sync_cid.slice(0, 12)}...</span>
+									{/if}
+								</p>
+							</div>
+						</div>
+						<div class="flex items-center gap-2">
+							{#if project.status === 'up_to_date'}
+								<span class="flex items-center gap-1.5 text-xs text-emerald-400">
+									<CheckCircle size={14} />
+									Up to date
+								</span>
+							{:else if project.status === 'unpushed'}
+								<span class="flex items-center gap-1.5 text-xs text-amber-400">
+									<AlertTriangle size={14} />
+									{project.unpushed_count} unpushed
+								</span>
+							{:else}
+								<span class="flex items-center gap-1.5 text-xs text-[var(--text-muted)]">
+									<XCircle size={14} />
+									Never synced — run <code class="px-1 py-0.5 bg-[var(--bg-muted)] rounded text-xs font-mono">karma sync {project.name}</code>
+								</span>
+							{/if}
+						</div>
+					</div>
+				{/each}
+			</div>
+		</section>
+	{/if}
+
+	<!-- Zone 3: Team -->
+	{#if data.team.length > 0}
+		<section
+			class="border border-[var(--border)] rounded-[var(--radius-lg)] p-5 bg-[var(--bg-base)]"
+		>
+			<h2
+				class="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-4"
+			>
+				Team
+			</h2>
+			<div class="space-y-4">
+				{#each data.team as member}
+					<div>
+						<h3 class="font-medium text-sm text-[var(--text-primary)] mb-2 flex items-center gap-2">
+							<Users size={14} class="text-[var(--text-muted)]" />
+							{member.user_id}
+						</h3>
+						<div class="ml-5 space-y-2">
+							{#each member.machines as machine}
+								<div
+									class="flex items-center justify-between py-2 px-3 rounded-[var(--radius-md)] bg-[var(--bg-subtle)]"
+								>
+									<div class="flex items-center gap-2">
+										<Monitor size={14} class="text-[var(--text-muted)]" />
+										<span class="text-sm text-[var(--text-secondary)]">{machine.machine_id}</span>
+									</div>
+									<div class="flex items-center gap-3 text-xs text-[var(--text-muted)]">
+										{#each machine.projects as proj}
+											<span>{proj.name ?? proj.encoded_name}: {proj.session_count} sessions</span>
+										{/each}
+										{#if machine.last_pull_at}
+											<span class="flex items-center gap-1">
+												<Clock size={12} />
+												{timeAgo(machine.last_pull_at)}
+											</span>
+										{/if}
+									</div>
+								</div>
+							{/each}
+						</div>
+					</div>
+				{/each}
+			</div>
+		</section>
+	{/if}
+
+	<!-- Zone 4: Sync History -->
+	{#if data.history.length > 0}
+		<section
+			class="border border-[var(--border)] rounded-[var(--radius-lg)] p-5 bg-[var(--bg-base)]"
+		>
+			<h2
+				class="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-4"
+			>
+				Sync History
+			</h2>
+			<div class="overflow-x-auto">
+				<table class="w-full text-sm">
+					<thead>
+						<tr class="text-left text-xs text-[var(--text-muted)] border-b border-[var(--border)]">
+							<th class="pb-2 pr-4">Time</th>
+							<th class="pb-2 pr-4">Type</th>
+							<th class="pb-2 pr-4">User</th>
+							<th class="pb-2 pr-4">Machine</th>
+							<th class="pb-2 pr-4">Project</th>
+							<th class="pb-2 text-right">Sessions</th>
+						</tr>
+					</thead>
+					<tbody>
+						{#each data.history as entry}
+							<tr class="border-b border-[var(--border)]/50">
+								<td class="py-2 pr-4 text-[var(--text-muted)]">{timeAgo(entry.created_at)}</td>
+								<td class="py-2 pr-4">
+									{#if entry.event_type === 'push'}
+										<span class="flex items-center gap-1 text-blue-400">
+											<ArrowUpCircle size={14} />
+											push
+										</span>
+									{:else}
+										<span class="flex items-center gap-1 text-emerald-400">
+											<ArrowDownCircle size={14} />
+											pull
+										</span>
+									{/if}
+								</td>
+								<td class="py-2 pr-4 text-[var(--text-primary)]">{entry.user_id}</td>
+								<td class="py-2 pr-4 text-[var(--text-secondary)]">{entry.machine_id}</td>
+								<td class="py-2 pr-4 text-[var(--text-secondary)]">{entry.project}</td>
+								<td class="py-2 text-right text-[var(--text-primary)]">{entry.session_count}</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+		</section>
+	{/if}
+</div>
+```
+
+**Step 3: Add Sync link to Header**
+
+In `frontend/src/lib/components/Header.svelte`, add "Sync" in **two places**:
+
+**Desktop nav** — insert after the "Team" link closing `</a>` (after line 168, before `</nav>` on line 169):
+
+```svelte
+			<a
+				href="/sync"
+				class="text-sm font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+				class:text-[var(--text-primary)]={$page.url.pathname.startsWith('/sync')}
+				aria-current={$page.url.pathname.startsWith('/sync') ? 'page' : undefined}
+			>
+				Sync
+			</a>
+```
+
+**Mobile nav** — insert after the "Team" mobile link closing `</a>` (after line 313, before `</nav>` on line 314):
+
+```svelte
+			<a
+				href="/sync"
+				onclick={closeMobileMenu}
+				class="text-base font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-subtle)] py-3 px-4 rounded-lg transition-colors"
+				class:text-[var(--text-primary)]={$page.url.pathname.startsWith('/sync')}
+				class:bg-[var(--bg-subtle)]={$page.url.pathname.startsWith('/sync')}
+				aria-current={$page.url.pathname.startsWith('/sync') ? 'page' : undefined}
+			>
+				Sync
+			</a>
+```
+
+> **Note:** Both link blocks follow the exact pattern of existing nav links. Desktop links use
+> `text-sm font-medium` while mobile links use `text-base font-medium` with `onclick={closeMobileMenu}`.
+
+**Step 4: Type-check the frontend**
+
+Run: `cd frontend && npm run check`
+Expected: No type errors from new files.
+
+**Step 5: Commit**
+
+```bash
+git add frontend/src/routes/sync/ frontend/src/lib/components/Header.svelte
+git commit -m "feat: add /sync page with four-zone dashboard"
+```
+
+---
+
+## Task 7: Run all tests and verify
+
+**Step 1: Run API tests**
+
+```bash
+cd api && python -m pytest tests/ -v
+```
+
+Expected: All tests pass, including new sync tests.
+
+**Step 2: Run CLI tests**
+
+```bash
+cd cli && python -m pytest tests/ -v
+```
+
+Expected: All tests pass.
+
+**Step 3: Run frontend type check**
+
+```bash
+cd frontend && npm run check
+```
+
+Expected: No errors.
+
+**Step 4: Final commit**
+
+If any fixes were needed, commit them:
+
+```bash
+git add -A && git commit -m "fix: test and type check fixes for sync feature"
+```
+
+---
+
+## Summary of Changes
+
+| Layer | Files | What Changes |
+|-------|-------|-------------|
+| **SQLite** | `api/db/schema.py` | Schema v10: `sync_history` table + indexes |
+| **CLI** | `cli/karma/config.py` | `ipns_key_name` field on SyncConfig |
+| **CLI** | `cli/karma/main.py` | `karma status` command, push/pull event recording |
+| **CLI** | `cli/karma/history.py` | New module: write sync events to SQLite |
+| **API** | `api/routers/sync.py` | New router: `/sync/status`, `/sync/projects`, `/sync/team`, `/sync/history` |
+| **API** | `api/main.py` | Register sync router |
+| **Frontend** | `frontend/src/routes/sync/` | New `/sync` page with 4-zone layout |
+| **Frontend** | `frontend/src/lib/components/Header.svelte` | Add "Sync" nav link (desktop + mobile) |
+| **Tests** | 4 new test files | Schema (5 tests incl. migration), CLI status, CLI history, API sync endpoints (6 tests) |

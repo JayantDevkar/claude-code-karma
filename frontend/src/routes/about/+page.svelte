@@ -81,7 +81,7 @@
 	<PageHeader
 		title="About"
 		icon={BookOpen}
-		iconColor="--nav-red"
+		iconColor="--nav-teal"
 		breadcrumbs={[{ label: 'Dashboard', href: '/' }, { label: 'About' }]}
 		subtitle="Documentation & guides for Claude Code Karma"
 	/>

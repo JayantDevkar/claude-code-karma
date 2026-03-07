@@ -38,6 +38,14 @@ class SessionStatus(str, Enum):
     ERROR = "error"
 
 
+class SessionSource(str, Enum):
+    """Source filter for session search."""
+
+    ALL = "all"
+    LOCAL = "local"
+    REMOTE = "remote"
+
+
 @dataclass
 class SessionMetadata:
     """
@@ -59,6 +67,10 @@ class SessionMetadata:
     # Session title/summary for display (from sessions-index.json summary field)
     title: Optional[str] = None
     session_titles: Optional[list] = None  # All session titles (from title cache)
+    # Remote sync fields
+    source: Optional[str] = None  # "local" or "remote" (None = local)
+    remote_user_id: Optional[str] = None
+    remote_machine_id: Optional[str] = None
     # Lazy session loader - only called when we need the full Session
     _session: Optional["Session"] = None
 
@@ -145,6 +157,7 @@ class SessionFilter:
     search: Optional[str] = None
     search_scope: SearchScope = SearchScope.BOTH
     status: SessionStatus = SessionStatus.ALL
+    source: SessionSource = SessionSource.ALL
     date_from: Optional[datetime] = None
     date_to: Optional[datetime] = None
     project_encoded_name: Optional[str] = None
@@ -252,6 +265,12 @@ class SessionFilter:
         if self.branch:
             branches = meta.get_git_branches()
             if self.branch not in branches:
+                return False
+
+        # Source filter (local/remote)
+        if self.source != SessionSource.ALL:
+            meta_source = meta.source or "local"
+            if meta_source != self.source.value:
                 return False
 
         # Search filter with token-based AND logic

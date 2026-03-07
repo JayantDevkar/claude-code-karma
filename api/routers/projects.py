@@ -246,6 +246,9 @@ def session_to_summary(
     session: Session,
     chain_info: Optional[SessionChainInfoSummary] = None,
     session_source: Optional[str] = None,
+    source: Optional[str] = None,
+    remote_user_id: Optional[str] = None,
+    remote_machine_id: Optional[str] = None,
 ) -> SessionSummary:
     """Convert a Session to SessionSummary."""
     initial_prompt = get_initial_prompt(session, max_length=500)
@@ -266,6 +269,9 @@ def session_to_summary(
         chain_info=chain_info,
         session_titles=list(session.session_titles or []),
         session_source=session_source,
+        source=source,
+        remote_user_id=remote_user_id,
+        remote_machine_id=remote_machine_id,
     )
 
 
@@ -502,6 +508,9 @@ def get_project(
                             session_titles=titles,
                             chain_info=chain_info,
                             session_source=row.get("session_source"),
+                            source=row.get("source"),
+                            remote_user_id=row.get("remote_user_id"),
+                            remote_machine_id=row.get("remote_machine_id"),
                         )
                     )
 
@@ -537,6 +546,23 @@ def get_project(
         if get_session_source(s.uuid):
             desktop_uuids.add(s.uuid)
     sessions.extend(wt_sessions)
+
+    # Merge remote sessions from Syncthing sync
+    from services.remote_sessions import list_remote_sessions_for_project
+
+    remote_metas = list_remote_sessions_for_project(encoded_name)
+    remote_uuid_map: dict = {}
+    existing_uuids = {s.uuid for s in sessions}
+    for rmeta in remote_metas:
+        remote_uuid_map[rmeta.uuid] = rmeta
+        if rmeta.uuid in existing_uuids:
+            continue
+        try:
+            remote_session = rmeta.get_session()
+            sessions.append(remote_session)
+            existing_uuids.add(rmeta.uuid)
+        except Exception:
+            pass
 
     # Apply search filter (JSONL fallback path)
     if search:
@@ -593,14 +619,19 @@ def get_project(
         end_idx = offset + limit if limit else None
         sessions = sessions[offset:end_idx]
 
-    fallback_summaries = [
-        session_to_summary(
-            s,
-            chain_info_map.get(s.uuid),
-            session_source="desktop" if s.uuid in desktop_uuids else None,
+    fallback_summaries = []
+    for s in sessions:
+        rmeta = remote_uuid_map.get(s.uuid)
+        fallback_summaries.append(
+            session_to_summary(
+                s,
+                chain_info_map.get(s.uuid),
+                session_source="desktop" if s.uuid in desktop_uuids else None,
+                source=rmeta.source if rmeta else None,
+                remote_user_id=rmeta.remote_user_id if rmeta else None,
+                remote_machine_id=rmeta.remote_machine_id if rmeta else None,
+            )
         )
-        for s in sessions
-    ]
     _enrich_chain_titles(fallback_summaries)
     return ProjectDetail(
         path=project.path,
@@ -1388,3 +1419,85 @@ async def get_project_memory(encoded_name: str, request: Request):
     except OSError as e:
         logger.error(f"Error reading memory file for {encoded_name}: {e}")
         raise HTTPException(status_code=500, detail="Failed to read memory file") from e
+
+
+# ============================================================================
+# Remote Sessions (Team sync)
+# ============================================================================
+
+
+@router.get("/{encoded_name}/remote-sessions")
+async def project_remote_sessions(encoded_name: str):
+    """Get remote sessions for a project, grouped by remote user."""
+    import json
+    import re
+
+    ALLOWED_NAME = re.compile(r"^[a-zA-Z0-9_\-]+$")
+    if not ALLOWED_NAME.match(encoded_name) or len(encoded_name) > 512:
+        raise HTTPException(400, "Invalid project name")
+
+    # Load local user identity to skip own outbox
+    local_user = None
+    try:
+        _CLI_PATH = Path(__file__).parent.parent.parent / "cli"
+        if str(_CLI_PATH) not in sys.path:
+            sys.path.insert(0, str(_CLI_PATH))
+        from karma.config import SyncConfig
+
+        config = SyncConfig.load()
+        if config:
+            local_user = config.user_id
+    except Exception:
+        pass
+
+    remote_base = Path.home() / ".claude_karma" / "remote-sessions"
+    if not remote_base.is_dir():
+        return {"users": []}
+
+    users = []
+    for user_dir in sorted(remote_base.iterdir()):
+        if not user_dir.is_dir():
+            continue
+        # Skip our own outbox
+        if local_user and user_dir.name == local_user:
+            continue
+
+        project_dir = user_dir / encoded_name
+        if not project_dir.is_dir():
+            continue
+
+        sessions_dir = project_dir / "sessions"
+        manifest_path = project_dir / "manifest.json"
+
+        sessions = []
+        if sessions_dir.is_dir():
+            for f in sorted(
+                sessions_dir.glob("*.jsonl"),
+                key=lambda p: p.stat().st_mtime,
+                reverse=True,
+            ):
+                if f.name.startswith("agent-"):
+                    continue
+                sessions.append({
+                    "uuid": f.stem,
+                    "mtime": f.stat().st_mtime,
+                    "size_bytes": f.stat().st_size,
+                })
+
+        manifest = {}
+        if manifest_path.exists():
+            try:
+                manifest = json.loads(manifest_path.read_text())
+            except (json.JSONDecodeError, OSError):
+                pass
+
+        if sessions:
+            users.append({
+                "user_id": user_dir.name,
+                "machine_id": manifest.get("machine_id"),
+                "synced_at": manifest.get("synced_at"),
+                "session_count": len(sessions),
+                "sessions": sessions,
+            })
+
+    return {"users": users}

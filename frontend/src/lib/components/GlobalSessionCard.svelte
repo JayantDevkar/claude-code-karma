@@ -8,7 +8,8 @@
 		GitBranch,
 		Folder,
 		Monitor,
-		Bot
+		Bot,
+		Globe
 	} from 'lucide-svelte';
 	import type { SessionWithContext, LiveSessionSummary } from '$lib/api-types';
 	import { statusConfig } from '$lib/live-session-config';
@@ -22,7 +23,9 @@
 		getProjectNameFromEncoded,
 		getSessionDisplayName,
 		sessionHasTitle,
-		getSessionDisplayPrompt
+		getSessionDisplayPrompt,
+		isRemoteSession,
+		getTeamMemberColor
 	} from '$lib/utils';
 
 	interface Props {
@@ -46,6 +49,13 @@
 
 	const modelColor = $derived(getModelColor(session.models_used));
 	const hasBranch = $derived(session.git_branches && session.git_branches.length > 0);
+
+	// Remote session handling
+	const isRemote = $derived(isRemoteSession(session));
+	const teamMemberColor = $derived(
+		session.remote_user_id ? getTeamMemberColor(session.remote_user_id) : null
+	);
+	const remoteUserName = $derived(session.remote_user_id ?? null);
 
 	// Parse project name from encoded name to preserve hyphens (e.g., "claude-karma" not "karma")
 	const displayProjectName = $derived(
@@ -107,15 +117,20 @@
 	// - Recently ended (≤45 min) → model color
 	// - Old sessions → faint gray
 	const leftBorderColor = $derived(
-		hasLiveStatus
-			? isRecentlyEnded
-				? modelColorConfig[modelColor].border // Recently ended → model
-				: (liveStatusConfig?.color ?? modelColorConfig[modelColor].border) // Active → status
-			: 'var(--text-faint)' // Old → faint
+		isRemote && teamMemberColor
+			? teamMemberColor.border // Remote → team member color
+			: hasLiveStatus
+				? isRecentlyEnded
+					? modelColorConfig[modelColor].border // Recently ended → model
+					: (liveStatusConfig?.color ?? modelColorConfig[modelColor].border) // Active → status
+				: 'var(--text-faint)' // Old → faint
 	);
 
 	// Ring color for live sessions (used for subtle ring highlight)
 	const ringColor = $derived(liveStatusConfig?.color ?? 'var(--success)');
+
+	// Remote session hint for faster API lookup
+	const remoteQueryParam = $derived(isRemote ? '?remote=1' : '');
 
 	// Build live status text for accessibility
 	const liveStatusText = $derived(
@@ -124,7 +139,7 @@
 </script>
 
 <a
-	href="/projects/{session.project_slug || session.project_encoded_name}/{urlIdentifier}"
+	href="/projects/{session.project_slug || session.project_encoded_name}/{urlIdentifier}{remoteQueryParam}"
 	aria-label="Session {displayName}, {displayProjectName}, {displayMessageCount} messages{liveStatusText}"
 	class="
 		flex flex-col h-full
@@ -208,8 +223,17 @@
 					{displayPrompt}
 				</p>
 			{/if}
-			{#if session.session_source === 'desktop' || showSubagentBadge}
+			{#if isRemote || session.session_source === 'desktop' || showSubagentBadge}
 				<div class="flex items-center gap-2 mt-1 text-[10px] text-[var(--text-muted)]">
+					{#if isRemote && remoteUserName}
+						<div
+							class="flex items-center gap-0.5"
+							title="Remote session from {remoteUserName}"
+						>
+							<Globe size={10} strokeWidth={2} class={teamMemberColor?.text ?? ''} />
+							<span>{remoteUserName}</span>
+						</div>
+					{/if}
 					{#if session.session_source === 'desktop'}
 						<div class="flex items-center gap-0.5" title="Claude Desktop session">
 							<Monitor size={10} strokeWidth={2} />
@@ -330,6 +354,15 @@
 
 			<!-- Badges -->
 			<div class="flex items-center gap-1.5 shrink-0">
+				{#if isRemote && remoteUserName}
+					<div
+						class="flex items-center gap-1 px-2 py-0.5 rounded-full border {teamMemberColor?.badge ?? ''}"
+						title="Remote session from {remoteUserName}"
+					>
+						<Globe size={10} strokeWidth={2} class={teamMemberColor?.text ?? ''} />
+						<span class="font-medium text-[11px]">{remoteUserName}</span>
+					</div>
+				{/if}
 				{#if showSubagentBadge}
 					{#if subagentHref}
 						<button
