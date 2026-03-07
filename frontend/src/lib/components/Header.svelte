@@ -98,20 +98,20 @@
 {#if isHome}
 	<!-- Big Centered Header (Home) -->
 	<header
-		class="w-full max-w-[1000px] mx-auto pt-8 sm:pt-12 md:pt-16 pb-6 md:pb-8 px-4 flex items-center justify-center relative"
+		class="w-full max-w-[1000px] mx-auto pt-6 sm:pt-8 md:pt-10 pb-2 px-4 flex items-center justify-center relative"
 	>
-		<div class="flex flex-col items-center gap-4 md:gap-5">
+		<div class="flex flex-col items-center gap-3 md:gap-4">
 			<div class="logo-wrapper logo-wrapper-lg">
 				<img src="/logo.png" alt="Claude Code Karma" class="w-16 h-16 md:w-20 md:h-20 object-contain" />
 			</div>
-			<div class="text-center flex flex-col items-center gap-1">
+			<div class="text-center flex flex-col items-center gap-0.5">
 				<h1
 					class="text-2xl sm:text-3xl font-semibold tracking-tight text-[var(--text-primary)]"
 				>
 					Claude <span class="font-bold">Code Karma</span>
 				</h1>
 				<p
-					class="mt-1 text-sm tracking-wide"
+					class="text-sm tracking-wide"
 					style="background: linear-gradient(135deg, #a855f7, #7c3aed); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;"
 				>
 					Track work, not terminals

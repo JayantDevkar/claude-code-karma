@@ -22,8 +22,13 @@
 </script>
 
 <div
-	class="max-w-[560px] mx-auto flex flex-col items-center justify-center scale-120 origin-top w-full px-4"
+	class="max-w-[560px] mx-auto flex flex-col items-center justify-center scale-120 origin-top w-full px-4 -mt-4"
 >
+	<!-- Terminal Stats Display -->
+	<div class="mb-4 w-full">
+		<TerminalDisplay />
+	</div>
+
 	<div class="grid grid-cols-2 sm:grid-cols-3 gap-3 w-full">
 		<NavigationCard title="Projects" href="/projects" icon={FolderOpen} color="blue" />
 		<NavigationCard title="Sessions" href="/sessions" icon={MessageSquare} color="teal" />
@@ -45,10 +50,5 @@
 	<!-- Live Sessions Terminal -->
 	<div class="mt-6 w-full">
 		<LiveSessionsTerminal />
-	</div>
-
-	<!-- Terminal Stats Display -->
-	<div class="mt-4 w-full">
-		<TerminalDisplay />
 	</div>
 </div>
