@@ -10,7 +10,7 @@ import sqlite3
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 18
+SCHEMA_VERSION = 19
 
 SCHEMA_SQL = """
 -- Schema versioning
@@ -212,12 +212,14 @@ CREATE TABLE IF NOT EXISTS projects (
     project_path TEXT,
     slug TEXT,
     display_name TEXT,
+    git_identity TEXT,
     session_count INTEGER DEFAULT 0,
     last_activity TEXT,
     updated_at TEXT DEFAULT (datetime('now'))
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_slug ON projects(slug);
+CREATE INDEX IF NOT EXISTS idx_projects_git_identity ON projects(git_identity);
 
 -- Sync teams
 CREATE TABLE IF NOT EXISTS sync_teams (
@@ -244,6 +246,7 @@ CREATE TABLE IF NOT EXISTS sync_team_projects (
     team_name TEXT NOT NULL,
     project_encoded_name TEXT NOT NULL,
     path TEXT,
+    git_identity TEXT,
     added_at TEXT DEFAULT (datetime('now')),
     PRIMARY KEY (team_name, project_encoded_name),
     FOREIGN KEY (team_name) REFERENCES sync_teams(name) ON DELETE CASCADE,
@@ -307,6 +310,7 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
                 team_name TEXT NOT NULL,
                 project_encoded_name TEXT NOT NULL,
                 path TEXT,
+                git_identity TEXT,
                 added_at TEXT DEFAULT (datetime('now')),
                 PRIMARY KEY (team_name, project_encoded_name),
                 FOREIGN KEY (team_name) REFERENCES sync_teams(name) ON DELETE CASCADE,
@@ -574,6 +578,16 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
                 CREATE INDEX IF NOT EXISTS idx_sync_events_time ON sync_events(created_at DESC);
                 CREATE INDEX IF NOT EXISTS idx_sync_events_member ON sync_events(member_name, created_at DESC);
             """)
+
+        if current_version < 19:
+            logger.info("Migrating -> v19: adding git_identity columns")
+            existing_proj_cols = {r[1] for r in conn.execute("PRAGMA table_info(projects)").fetchall()}
+            if "git_identity" not in existing_proj_cols:
+                conn.execute("ALTER TABLE projects ADD COLUMN git_identity TEXT")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_projects_git_identity ON projects(git_identity)")
+            existing_stp_cols = {r[1] for r in conn.execute("PRAGMA table_info(sync_team_projects)").fetchall()}
+            if "git_identity" not in existing_stp_cols:
+                conn.execute("ALTER TABLE sync_team_projects ADD COLUMN git_identity TEXT")
 
     # Record version
     conn.execute(

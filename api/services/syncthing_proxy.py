@@ -192,6 +192,36 @@ class SyncthingProxy:
         client.add_folder(folder_id, path, devices, folder_type=folder_type)
         return {"ok": True, "folder_id": folder_id, "path": path}
 
+    def update_folder_devices(self, folder_id: str, device_ids: list[str]) -> dict:
+        """Add device(s) to an existing Syncthing folder. Skips duplicates."""
+        client = self._require_client()
+        config = client._get_config()
+        folder = None
+        for f in config.get("folders", []):
+            if f.get("id") == folder_id:
+                folder = f
+                break
+        if folder is None:
+            raise ValueError(f"Folder '{folder_id}' not found in Syncthing config")
+
+        existing_ids = {d.get("deviceID") for d in folder.get("devices", [])}
+        added = []
+        for did in device_ids:
+            if did not in existing_ids:
+                folder.setdefault("devices", []).append({"deviceID": did})
+                added.append(did)
+
+        if added:
+            resp = requests.put(
+                f"{client.api_url}/rest/config/folders/{folder_id}",
+                headers=client.headers,
+                json=folder,
+                timeout=10,
+            )
+            resp.raise_for_status()
+
+        return {"ok": True, "folder_id": folder_id, "added": added}
+
     def get_folder_status(self) -> list[dict]:
         """Return all configured folders with their sync status."""
         client = self._require_client()

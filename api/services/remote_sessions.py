@@ -138,6 +138,46 @@ def get_project_mapping() -> dict[tuple[str, str], str]:
                 if member_name != local_user_id:
                     mapping[(member_name, local_encoded)] = local_encoded
 
+    # Augment mapping with git_identity-based matching from SQLite + manifests
+    try:
+        from db.connection import create_read_connection
+
+        db_conn = create_read_connection()
+        rows = db_conn.execute(
+            "SELECT encoded_name, git_identity FROM projects WHERE git_identity IS NOT NULL"
+        ).fetchall()
+        git_lookup = {row[1]: row[0] for row in rows}
+        db_conn.close()
+
+        if git_lookup:
+            remote_base = _get_remote_sessions_dir()
+            if remote_base.exists():
+                for user_dir in remote_base.iterdir():
+                    if not user_dir.is_dir():
+                        continue
+                    user_id = user_dir.name
+                    if user_id == local_user_id:
+                        continue
+                    for encoded_dir in user_dir.iterdir():
+                        if not encoded_dir.is_dir():
+                            continue
+                        manifest_path = encoded_dir / "manifest.json"
+                        if not manifest_path.exists():
+                            continue
+                        try:
+                            with open(manifest_path) as f:
+                                manifest = json.load(f)
+                            remote_git_id = manifest.get("git_identity")
+                            if remote_git_id and remote_git_id in git_lookup:
+                                remote_encoded = encoded_dir.name
+                                local_encoded = git_lookup[remote_git_id]
+                                if (user_id, remote_encoded) not in mapping:
+                                    mapping[(user_id, remote_encoded)] = local_encoded
+                        except (json.JSONDecodeError, OSError):
+                            continue
+    except Exception as e:
+        logger.debug("git_identity augmentation failed: %s", e)
+
     _project_mapping_cache = mapping
     _project_mapping_cache_time = now
     return mapping
