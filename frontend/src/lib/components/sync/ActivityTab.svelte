@@ -1,13 +1,12 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-	import { Activity, ArrowUp, ArrowDown, FolderSync, HardDrive, RefreshCw } from 'lucide-svelte';
-	import BandwidthChart from './BandwidthChart.svelte';
+	import { Activity, ArrowUp, ArrowDown, FolderSync, HardDrive, RefreshCw, ChevronDown, ChevronRight } from 'lucide-svelte';
 	import { API_BASE } from '$lib/config';
 	import { getProjectNameFromEncoded, formatBytes, formatBytesRate, formatRelativeTime } from '$lib/utils';
+	import { getSyncActions, type SyncAction } from '$lib/stores/syncActions.svelte';
 
 	let { active = false }: { active?: boolean } = $props();
 
-	const MAX_HISTORY = 30;
 	const POLL_INTERVAL = 3000;
 
 	interface SyncEvent {
@@ -28,9 +27,6 @@
 	let events = $state<SyncEvent[]>([]);
 	let uploadRate = $state(0);
 	let downloadRate = $state(0);
-	let uploadHistory = $state<number[]>([]);
-	let downloadHistory = $state<number[]>([]);
-	let labels = $state<string[]>([]);
 	let loading = $state(true);
 	let error = $state<string | null>(null);
 	let pollTimer: ReturnType<typeof setInterval> | null = null;
@@ -55,36 +51,12 @@
 	let deviceNameMap = $state<Map<string, string>>(new Map());
 	let folderNameMap = $state<Map<string, string>>(new Map());
 	let folderStats = $state<FolderStats[]>([]);
-
-	// Folder-level totals: sendonly = data shared out, receiveonly = data pulled in
-	let syncedUpTotal = $derived(
-		folderStats
-			.filter((f) => f.type === 'sendonly' || f.type === 'sendreceive')
-			.reduce((sum, f) => sum + f.inSyncBytes, 0)
-	);
-	let syncedDownTotal = $derived(
-		folderStats
-			.filter((f) => f.type === 'receiveonly' || f.type === 'sendreceive')
-			.reduce((sum, f) => sum + f.inSyncBytes, 0)
-	);
-
-
-	function timeLabel(): string {
-		const d = new Date();
-		return `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}:${d.getSeconds().toString().padStart(2, '0')}`;
-	}
-
-	function pushHistory(upRate: number, downRate: number) {
-		uploadHistory = [...uploadHistory.slice(-(MAX_HISTORY - 1)), upRate];
-		downloadHistory = [...downloadHistory.slice(-(MAX_HISTORY - 1)), downRate];
-		labels = [...labels.slice(-(MAX_HISTORY - 1)), timeLabel()];
-	}
+	let showFolderDetails = $state(false);
 
 	function resolveDeviceName(deviceId: string): string {
 		if (!deviceId) return '';
 		const name = deviceNameMap.get(deviceId);
 		if (name) return name;
-		// Show short ID as fallback
 		return deviceId.slice(0, 7);
 	}
 
@@ -153,70 +125,109 @@
 		}
 	}
 
-
 	function formatEvent(event: SyncEvent): { title: string; detail: string; dotColor: string } {
 		const folder = (event.data?.folder as string) || '';
 		const device = (event.data?.device as string) || (event.data?.id as string) || '';
+		const folderName = resolveFolderName(folder);
+		const deviceName = resolveDeviceName(device);
 
 		switch (event.type) {
-			case 'ItemFinished':
+			case 'ItemFinished': {
+				const item = (event.data?.item as string) || '';
+				const isSession = item.endsWith('.jsonl');
+				const isManifest = item === 'manifest.json';
+				if (isSession) {
+					return {
+						title: 'Session synced',
+						detail: `${folderName} — ${item.replace('.jsonl', '').slice(0, 8)}...`,
+						dotColor: 'bg-[var(--success)]'
+					};
+				}
+				if (isManifest) {
+					return {
+						title: 'Sync manifest updated',
+						detail: folderName,
+						dotColor: 'bg-[var(--success)]'
+					};
+				}
 				return {
-					title: 'Transfer complete',
-					detail: (event.data?.item as string) || '',
+					title: 'File synced',
+					detail: `${folderName} — ${item}`,
 					dotColor: 'bg-[var(--success)]'
 				};
-			case 'DownloadProgress':
-				return {
-					title: 'Transfer started',
-					detail: (event.data?.item as string) || '',
-					dotColor: 'bg-[var(--info)]'
-				};
+			}
 			case 'DeviceConnected':
 				return {
-					title: 'Device connected',
-					detail: resolveDeviceName(device),
+					title: `${deviceName || 'Teammate'} connected`,
+					detail: 'Ready to sync sessions',
 					dotColor: 'bg-[var(--success)]'
 				};
 			case 'DeviceDisconnected':
 				return {
-					title: 'Device disconnected',
-					detail: resolveDeviceName(device),
+					title: `${deviceName || 'Teammate'} went offline`,
+					detail: '',
 					dotColor: 'bg-[var(--text-muted)]'
 				};
+			case 'FolderCompletion': {
+				const pct = (event.data?.completion as number) ?? 0;
+				if (pct >= 100) {
+					return {
+						title: 'All sessions up to date',
+						detail: folderName,
+						dotColor: 'bg-[var(--success)]'
+					};
+				}
+				return {
+					title: `Syncing sessions — ${Math.round(pct)}%`,
+					detail: folderName,
+					dotColor: 'bg-[var(--info)]'
+				};
+			}
 			case 'FolderSummary':
 				return {
 					title: 'Scan completed',
-					detail: resolveFolderName(folder),
+					detail: folderName,
 					dotColor: 'bg-[var(--text-muted)]'
 				};
-			case 'FolderCompletion':
+			case 'StateChanged': {
+				const to = (event.data?.to as string) || '';
+				if (to === 'idle') {
+					return {
+						title: 'Sync completed',
+						detail: folderName,
+						dotColor: 'bg-[var(--success)]'
+					};
+				}
+				if (to === 'syncing') {
+					return {
+						title: 'Syncing sessions...',
+						detail: folderName,
+						dotColor: 'bg-[var(--info)]'
+					};
+				}
+				if (to === 'scanning') {
+					return {
+						title: 'Scanning for changes...',
+						detail: folderName,
+						dotColor: 'bg-[var(--info)]'
+					};
+				}
 				return {
-					title: 'Folder synced',
-					detail: `${resolveFolderName(folder)} — ${(event.data?.completion as number) ?? 0}%`,
-					dotColor: 'bg-[var(--success)]'
+					title: `State: ${to}`,
+					detail: folderName,
+					dotColor: 'bg-[var(--text-muted)]'
 				};
+			}
 			case 'FolderErrors':
 				return {
-					title: 'Error',
-					detail: ((event.data?.errors as Array<{ error: string }>) || [])[0]?.error || 'Folder error',
+					title: 'Sync error',
+					detail: ((event.data?.errors as Array<{ error: string }>) || [])[0]?.error || 'Unknown error',
 					dotColor: 'bg-[var(--error)]'
-				};
-			case 'StateChanged':
-				return {
-					title: 'State changed',
-					detail: `${resolveFolderName(folder)}: ${(event.data?.from as string) || ''} → ${(event.data?.to as string) || ''}`,
-					dotColor: 'bg-[var(--info)]'
-				};
-			case 'ClusterConfigReceived':
-				return {
-					title: 'Cluster config received',
-					detail: resolveDeviceName(device),
-					dotColor: 'bg-[var(--info)]'
 				};
 			default:
 				return {
-					title: event.type,
-					detail: '',
+					title: event.type.replace(/([A-Z])/g, ' $1').trim(),
+					detail: deviceName || folderName || '',
 					dotColor: 'bg-[var(--text-muted)]'
 				};
 		}
@@ -228,11 +239,9 @@
 			if (res.ok) {
 				const data: ActivityResponse = await res.json();
 				if (data.events?.length) {
-					// On first load replace; on poll, append new events
 					if (loading) {
 						events = data.events;
 					} else {
-						// Merge new events (higher IDs) at the end
 						const existingIds = new Set(events.map((e) => e.id));
 						const newEvents = data.events.filter((e) => !existingIds.has(e.id));
 						if (newEvents.length) {
@@ -243,7 +252,6 @@
 				}
 				uploadRate = data.upload_rate ?? 0;
 				downloadRate = data.download_rate ?? 0;
-				pushHistory(uploadRate, downloadRate);
 				error = null;
 			} else if (loading) {
 				error = `Failed to load activity (${res.status})`;
@@ -302,62 +310,39 @@
 		</button>
 	</div>
 
-	<!-- Bandwidth section -->
-	<div class="rounded-lg border border-[var(--border)] bg-[var(--bg-subtle)] p-4">
-		<div class="flex items-center justify-between mb-3">
-			<h3 class="text-sm font-medium text-[var(--text-primary)]">Bandwidth</h3>
-			<div class="flex items-center gap-4 text-xs text-[var(--text-secondary)] font-mono">
-				<span class="flex items-center gap-1">
-					<ArrowUp size={11} class="text-[var(--accent)]" />
-					{formatBytesRate(uploadRate)}
-				</span>
-				<span class="flex items-center gap-1">
-					<ArrowDown size={11} class="text-[var(--info)]" />
-					{formatBytesRate(downloadRate)}
-				</span>
-			</div>
-		</div>
-		<BandwidthChart
-			uploadData={uploadHistory}
-			downloadData={downloadHistory}
-			{labels}
-		/>
-		<div class="flex items-center gap-6 mt-3 pt-3 border-t border-[var(--border-subtle)] text-xs text-[var(--text-muted)]">
-			<span>Synced out: <span class="font-mono text-[var(--text-secondary)]">{formatBytes(syncedUpTotal)}</span></span>
-			<span>Synced in: <span class="font-mono text-[var(--text-secondary)]">{formatBytes(syncedDownTotal)}</span></span>
+	<!-- Compact bandwidth status bar -->
+	<div class="flex items-center justify-between px-4 py-3 rounded-lg border border-[var(--border)] bg-[var(--bg-subtle)]">
+		<span class="text-xs font-medium text-[var(--text-secondary)]">Transfer Rate</span>
+		<div class="flex items-center gap-4 text-xs font-mono text-[var(--text-secondary)]">
+			<span class="flex items-center gap-1">
+				<ArrowUp size={11} class="text-[var(--accent)]" />
+				{formatBytesRate(uploadRate)}
+			</span>
+			<span class="flex items-center gap-1">
+				<ArrowDown size={11} class="text-[var(--info)]" />
+				{formatBytesRate(downloadRate)}
+			</span>
 		</div>
 	</div>
 
-	<!-- Sync status per folder -->
-	{#if folderStats.length > 0}
+	<!-- User actions -->
+	{#if getSyncActions().length > 0}
 		<div class="rounded-lg border border-[var(--border)] bg-[var(--bg-subtle)]">
 			<div class="px-4 py-3 border-b border-[var(--border-subtle)]">
-				<h3 class="text-sm font-medium text-[var(--text-primary)]">Synced Folders</h3>
+				<h3 class="text-sm font-medium text-[var(--text-primary)]">Your Actions</h3>
 			</div>
 			<div class="px-4 divide-y divide-[var(--border-subtle)]">
-				{#each folderStats as folder (folder.id)}
-					<div class="flex items-center gap-3 py-3">
-						<FolderSync size={16} class="shrink-0 text-[var(--text-muted)]" />
+				{#each [...getSyncActions()].reverse() as action (action.id)}
+					<div class="flex gap-3 py-3">
+						<span class="w-2 h-2 rounded-full mt-1.5 shrink-0 bg-[var(--accent)]"></span>
 						<div class="flex-1 min-w-0">
-							<div class="flex items-center gap-2">
-								<span class="text-sm font-medium text-[var(--text-primary)] truncate">{folder.displayName}</span>
-								<span class="shrink-0 px-1.5 py-0.5 text-[10px] font-medium rounded {folder.state === 'idle' ? 'bg-[var(--success)]/10 text-[var(--success)]' : folder.state === 'syncing' ? 'bg-[var(--info)]/10 text-[var(--info)]' : 'bg-[var(--bg-muted)] text-[var(--text-muted)]'}">
-									{folder.state === 'idle' ? 'Up to date' : folder.state}
-								</span>
+							<div class="flex items-center justify-between">
+								<span class="text-sm font-medium text-[var(--text-primary)]">{action.title}</span>
+								<span class="text-xs text-[var(--text-muted)] shrink-0 ml-2">{formatRelativeTime(action.time)}</span>
 							</div>
-							<div class="flex items-center gap-4 mt-1 text-xs text-[var(--text-muted)]">
-								<span>
-									<HardDrive size={10} class="inline -mt-0.5 mr-0.5" />
-									{formatBytes(folder.globalBytes)}
-								</span>
-								<span>{folder.globalFiles.toLocaleString()} files</span>
-								{#if folder.needBytes > 0}
-									<span class="text-[var(--info)]">
-										{formatBytes(folder.needBytes)} pending
-									</span>
-								{/if}
-								<span class="font-mono">{folder.completion}%</span>
-							</div>
+							{#if action.detail}
+								<p class="text-xs text-[var(--text-secondary)] mt-0.5 truncate">{action.detail}</p>
+							{/if}
 						</div>
 					</div>
 				{/each}
@@ -365,10 +350,10 @@
 		</div>
 	{/if}
 
-	<!-- Event log -->
+	<!-- Event log (session-meaningful) -->
 	<div class="rounded-lg border border-[var(--border)] bg-[var(--bg-subtle)]">
 		<div class="px-4 py-3 border-b border-[var(--border-subtle)]">
-			<h3 class="text-sm font-medium text-[var(--text-primary)]">Event Log</h3>
+			<h3 class="text-sm font-medium text-[var(--text-primary)]">Session Activity</h3>
 		</div>
 
 		{#if loading}
@@ -404,4 +389,54 @@
 			</div>
 		{/if}
 	</div>
+
+	<!-- Folder Details (collapsible) -->
+	{#if folderStats.length > 0}
+		<div class="rounded-lg border border-[var(--border)] bg-[var(--bg-subtle)]">
+			<button
+				onclick={() => (showFolderDetails = !showFolderDetails)}
+				class="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-[var(--bg-muted)] transition-colors"
+			>
+				<h3 class="text-sm font-medium text-[var(--text-primary)]">Folder Details</h3>
+				<div class="flex items-center gap-2">
+					<span class="text-xs text-[var(--text-muted)]">{folderStats.length} folders</span>
+					{#if showFolderDetails}
+						<ChevronDown size={14} class="text-[var(--text-muted)]" />
+					{:else}
+						<ChevronRight size={14} class="text-[var(--text-muted)]" />
+					{/if}
+				</div>
+			</button>
+			{#if showFolderDetails}
+				<div class="px-4 border-t border-[var(--border-subtle)] divide-y divide-[var(--border-subtle)]">
+					{#each folderStats as folder (folder.id)}
+						<div class="flex items-center gap-3 py-3">
+							<FolderSync size={16} class="shrink-0 text-[var(--text-muted)]" />
+							<div class="flex-1 min-w-0">
+								<div class="flex items-center gap-2">
+									<span class="text-sm font-medium text-[var(--text-primary)] truncate">{folder.displayName}</span>
+									<span class="shrink-0 px-1.5 py-0.5 text-[10px] font-medium rounded {folder.state === 'idle' ? 'bg-[var(--success)]/10 text-[var(--success)]' : folder.state === 'syncing' ? 'bg-[var(--info)]/10 text-[var(--info)]' : 'bg-[var(--bg-muted)] text-[var(--text-muted)]'}">
+											{folder.state === 'idle' ? 'Up to date' : folder.state}
+									</span>
+								</div>
+								<div class="flex items-center gap-4 mt-1 text-xs text-[var(--text-muted)]">
+									<span>
+										<HardDrive size={10} class="inline -mt-0.5 mr-0.5" />
+										{formatBytes(folder.globalBytes)}
+									</span>
+									<span>{folder.globalFiles.toLocaleString()} files</span>
+									{#if folder.needBytes > 0}
+										<span class="text-[var(--info)]">
+											{formatBytes(folder.needBytes)} pending
+										</span>
+									{/if}
+									<span class="font-mono">{folder.completion}%</span>
+								</div>
+							</div>
+						</div>
+					{/each}
+				</div>
+			{/if}
+		</div>
+	{/if}
 </div>

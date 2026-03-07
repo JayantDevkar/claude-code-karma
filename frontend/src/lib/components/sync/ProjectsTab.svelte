@@ -1,7 +1,8 @@
 <script lang="ts">
-	import { FolderGit2, RefreshCw, Search, CheckCircle2 } from 'lucide-svelte';
+	import { FolderGit2, RefreshCw, Search, CheckCircle2, Users } from 'lucide-svelte';
 	import type { SyncProject } from '$lib/api-types';
 	import { API_BASE } from '$lib/config';
+	import { pushSyncAction } from '$lib/stores/syncActions.svelte';
 	import ProjectRow from '$lib/components/sync/ProjectRow.svelte';
 
 	interface ApiProject {
@@ -65,7 +66,7 @@
 
 	async function loadProjects() {
 		if (!teamName) return;
-		loading = true;
+		if (projects.length === 0) loading = true;
 		error = null;
 		try {
 			const [projectsRes, teamsRes] = await Promise.all([
@@ -141,11 +142,13 @@
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ name: encodedName, encoded_name: encodedName, path: '' })
 			});
+			pushSyncAction('project_added', `Project shared with team`, teamName ?? '');
 		} else {
 			await fetch(
 				`${API_BASE}/sync/teams/${encodeURIComponent(teamName)}/projects/${encodeURIComponent(encodedName)}`,
 				{ method: 'DELETE' }
 			);
+			pushSyncAction('project_removed', `Project removed from team`, teamName ?? '');
 		}
 		await loadProjects();
 	}
@@ -222,6 +225,16 @@
 		</div>
 	{/if}
 
+	<!-- Team context banner -->
+	{#if teamName}
+		<div class="flex items-center gap-2 px-3 py-2 rounded-[var(--radius)] bg-[var(--accent)]/5 border border-[var(--accent)]/15">
+			<Users size={12} class="text-[var(--accent)] shrink-0" />
+			<span class="text-xs text-[var(--text-secondary)]">
+				Syncing with team <span class="font-semibold text-[var(--text-primary)]">{teamName}</span>
+			</span>
+		</div>
+	{/if}
+
 	<!-- Header row -->
 	<div class="flex items-center justify-between">
 		<div>
@@ -231,7 +244,7 @@
 					{#if searchQuery.trim()}
 						Showing {filteredProjects.length} of {projects.length}
 					{:else}
-						{projects.filter((p) => p.synced).length} of {projects.length} syncing
+						{projects.filter((p) => p.synced).length} of {projects.length} syncing with {teamName}
 					{/if}
 				</p>
 			{/if}

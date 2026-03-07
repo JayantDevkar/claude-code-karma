@@ -61,27 +61,7 @@
 		</div>
 	</div>
 {:else if teams.length === 1}
-	<!-- Single team: label + stats + small new team button -->
-	<div class="team-selector">
-		<div class="flex items-center justify-between w-full">
-			<div class="flex items-center gap-2 min-w-0">
-				<Users size={14} class="shrink-0 text-[var(--accent)]" />
-				<span class="text-sm font-medium text-[var(--text-primary)] truncate">
-					{teams[0].name}
-				</span>
-				<span class="text-xs text-[var(--text-muted)] shrink-0">
-					{memberCount} member{memberCount !== 1 ? 's' : ''} &middot; {projectCount} project{projectCount !== 1 ? 's' : ''}
-				</span>
-			</div>
-			<button
-				onclick={handleCreate}
-				class="flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded-[var(--radius)] border border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-muted)] transition-colors shrink-0"
-			>
-				<Plus size={10} />
-				New Team
-			</button>
-		</div>
-	</div>
+	<!-- Single team: auto-selected, no bar needed. Team name shown in Team tab header. -->
 {:else}
 	<!-- Multiple teams: dropdown selector + stats + new team button -->
 	<!-- svelte-ignore a11y_no_static_element_interactions -->

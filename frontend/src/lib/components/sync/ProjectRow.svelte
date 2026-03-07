@@ -160,11 +160,32 @@
 			{/if}
 		</button>
 
-		<!-- Right side: session count + last sync + action -->
+		<!-- Right side: session count + gap + received + last sync + action -->
 		<div class="shrink-0 flex items-center gap-3">
 			<span class="text-xs text-[var(--text-muted)] hidden sm:block">
 				{project.local_session_count} session{project.local_session_count !== 1 ? 's' : ''}
 			</span>
+
+			<!-- Gap indicator (visible without expanding) -->
+			{#if projectStatus && project.synced}
+				{#if projectStatus.gap > 0}
+					<span class="text-xs font-medium text-[var(--warning)]">
+						{projectStatus.gap} behind
+					</span>
+				{:else if projectStatus.packaged_count > 0}
+					<span class="text-xs text-[var(--success)]">up to date</span>
+				{/if}
+			{/if}
+
+			<!-- Received count summary -->
+			{#if projectStatus && project.synced}
+				{@const totalReceived = Object.values(projectStatus.received_counts).reduce((a, b) => a + b, 0)}
+				{#if totalReceived > 0}
+					<span class="text-xs text-[var(--text-muted)] hidden sm:block">
+						{totalReceived} received
+					</span>
+				{/if}
+			{/if}
 
 			{#if project.synced && project.last_sync_at}
 				<span class="text-xs text-[var(--text-muted)] hidden sm:block">
@@ -174,13 +195,13 @@
 
 			{#if project.status === 'not-syncing'}
 				<button
-					class="px-2.5 py-1 text-xs font-medium rounded-md border border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-base)] transition-colors disabled:opacity-50 flex items-center gap-1"
+					class="px-2.5 py-1 text-xs font-medium rounded-md border border-[var(--accent)]/30 text-[var(--accent)] hover:bg-[var(--accent)]/10 transition-colors disabled:opacity-50 flex items-center gap-1"
 					onclick={handleEnableSync}
 					disabled={toggling}
-					aria-label="Enable sync for {project.name}"
+					aria-label="Share {project.name} with team"
 				>
 					<Power size={11} />
-					Enable Sync
+					Share
 				</button>
 			{:else}
 				<button

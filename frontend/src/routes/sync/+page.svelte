@@ -5,7 +5,7 @@
 	import PageHeader from '$lib/components/layout/PageHeader.svelte';
 	import SetupWizard from '$lib/components/sync/SetupWizard.svelte';
 	import OverviewTab from '$lib/components/sync/OverviewTab.svelte';
-	import MembersTab from '$lib/components/sync/MembersTab.svelte';
+	import TeamTab from '$lib/components/sync/TeamTab.svelte';
 	import ProjectsTab from '$lib/components/sync/ProjectsTab.svelte';
 	import ActivityTab from '$lib/components/sync/ActivityTab.svelte';
 	import TeamSelector from '$lib/components/sync/TeamSelector.svelte';
@@ -145,7 +145,7 @@
 		<Tabs bind:value={activeTab}>
 			<TabsList>
 				<TabsTrigger value="overview" icon={LayoutDashboard}>Overview</TabsTrigger>
-				<TabsTrigger value="members" icon={Users}>Members</TabsTrigger>
+				<TabsTrigger value="team" icon={Users}>Team</TabsTrigger>
 				<TabsTrigger value="projects" icon={FolderGit2}>Projects</TabsTrigger>
 				<TabsTrigger value="activity" icon={Activity}>Activity</TabsTrigger>
 			</TabsList>
@@ -153,11 +153,11 @@
 			<TeamSelector teams={teamsList} bind:activeTeam={activeTeamName} oncreate={handleCreateTeam} />
 
 			<TabsContent value="overview">
-				<OverviewTab detect={syncDetect} status={syncStatus} active={activeTab === 'overview'} teamName={activeTeamName} onteamchange={refreshData} />
+				<OverviewTab detect={syncDetect} status={syncStatus} active={activeTab === 'overview'} teamName={activeTeamName} onteamchange={refreshData} initialWatchStatus={data.watchStatus} initialPending={data.pending} />
 			</TabsContent>
 
-			<TabsContent value="members">
-				<MembersTab detect={syncDetect} active={activeTab === 'members'} teamName={activeTeamName} />
+			<TabsContent value="team">
+				<TeamTab detect={syncDetect} active={activeTab === 'team'} teamName={activeTeamName} onteamchange={refreshData} />
 			</TabsContent>
 
 			<TabsContent value="projects">
