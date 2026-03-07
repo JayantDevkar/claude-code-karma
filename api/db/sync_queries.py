@@ -97,13 +97,14 @@ def add_team_project(
     team_name: str,
     project_encoded_name: str,
     path: Optional[str] = None,
+    git_identity: Optional[str] = None,
 ) -> dict:
     conn.execute(
-        "INSERT INTO sync_team_projects (team_name, project_encoded_name, path) VALUES (?, ?, ?)",
-        (team_name, project_encoded_name, path),
+        "INSERT INTO sync_team_projects (team_name, project_encoded_name, path, git_identity) VALUES (?, ?, ?, ?)",
+        (team_name, project_encoded_name, path, git_identity),
     )
     conn.commit()
-    return {"team_name": team_name, "project_encoded_name": project_encoded_name}
+    return {"team_name": team_name, "project_encoded_name": project_encoded_name, "git_identity": git_identity}
 
 
 def remove_team_project(conn: sqlite3.Connection, team_name: str, project_encoded_name: str) -> None:
@@ -116,7 +117,7 @@ def remove_team_project(conn: sqlite3.Connection, team_name: str, project_encode
 
 def list_team_projects(conn: sqlite3.Connection, team_name: str) -> list[dict]:
     rows = conn.execute(
-        "SELECT team_name, project_encoded_name, path, added_at FROM sync_team_projects WHERE team_name = ? ORDER BY added_at",
+        "SELECT team_name, project_encoded_name, path, git_identity, added_at FROM sync_team_projects WHERE team_name = ? ORDER BY added_at",
         (team_name,),
     ).fetchall()
     return [dict(r) for r in rows]
@@ -177,6 +178,15 @@ def query_events(
 
 
 # ── Helpers ────────────────────────────────────────────────────────────
+
+
+def find_project_by_git_identity(conn: sqlite3.Connection, git_identity: str) -> Optional[dict]:
+    """Find a local project row matching this git identity."""
+    row = conn.execute(
+        "SELECT encoded_name, project_path, git_identity FROM projects WHERE git_identity = ?",
+        (git_identity,),
+    ).fetchone()
+    return dict(row) if row else None
 
 
 def get_known_devices(conn: sqlite3.Connection) -> dict[str, tuple[str, str]]:

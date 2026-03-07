@@ -98,6 +98,69 @@ def _load_identity():
         return None
 
 
+async def _auto_share_folders(proxy, config, conn, team_name, new_device_id) -> dict:
+    """Auto-create Syncthing shared folders for all projects in a team.
+
+    For each project:
+    1. Outbox (sendonly): my sessions → teammates
+    2. Inbox (receiveonly): new member's sessions → my machine
+    Uses git_identity in folder ID when available.
+    """
+    from karma.config import KARMA_BASE
+
+    projects = list_team_projects(conn, team_name)
+    members = list_members(conn, team_name)
+
+    result = {"outboxes": 0, "inboxes": 0, "errors": []}
+
+    for proj in projects:
+        encoded = proj["project_encoded_name"]
+        git_id = proj.get("git_identity")
+        if git_id:
+            proj_suffix = git_id.replace("/", "-")
+        else:
+            proj_suffix = Path(proj["path"]).name if proj.get("path") else encoded
+
+        # 1. My outbox: send my sessions to teammates
+        outbox_id = f"karma-out-{config.user_id}-{proj_suffix}"
+        outbox_path = str(KARMA_BASE / "remote-sessions" / config.user_id / encoded)
+        Path(outbox_path).mkdir(parents=True, exist_ok=True)
+
+        all_device_ids = [new_device_id]
+        if config.syncthing.device_id and config.syncthing.device_id not in all_device_ids:
+            all_device_ids.append(config.syncthing.device_id)
+        for m in members:
+            if m["device_id"] and m["device_id"] not in all_device_ids:
+                all_device_ids.append(m["device_id"])
+
+        try:
+            # Try updating existing folder first, fall back to creating new
+            try:
+                await run_sync(proxy.update_folder_devices, outbox_id, [new_device_id])
+            except ValueError:
+                await run_sync(proxy.add_folder, outbox_id, outbox_path, all_device_ids, "sendonly")
+            result["outboxes"] += 1
+        except Exception as e:
+            result["errors"].append(f"outbox {proj_suffix}: {e}")
+
+        # 2. Inbox for the new member
+        for m in members:
+            if m["device_id"] == new_device_id:
+                inbox_path = str(KARMA_BASE / "remote-sessions" / m["name"] / encoded)
+                inbox_id = f"karma-out-{m['name']}-{proj_suffix}"
+                inbox_devices = [new_device_id]
+                if config.syncthing.device_id:
+                    inbox_devices.append(config.syncthing.device_id)
+                try:
+                    Path(inbox_path).mkdir(parents=True, exist_ok=True)
+                    await run_sync(proxy.add_folder, inbox_id, inbox_path, inbox_devices, "receiveonly")
+                    result["inboxes"] += 1
+                except Exception as e:
+                    result["errors"].append(f"inbox {m['name']}/{proj_suffix}: {e}")
+
+    return result
+
+
 class AddDeviceRequest(BaseModel):
     device_id: str
     name: str
@@ -441,6 +504,17 @@ async def sync_join_team(req: JoinTeamRequest) -> Any:
     except Exception:
         pass
 
+    # Auto-create shared folders for joiner's projects in this team
+    folders_created = None
+    if paired:
+        try:
+            folders_created = await _auto_share_folders(proxy, config, conn, team_name, device_id)
+            if folders_created["outboxes"] or folders_created["inboxes"]:
+                log_event(conn, "folders_shared", team_name=team_name, member_name=leader_name,
+                          detail={"outboxes": folders_created["outboxes"], "inboxes": folders_created["inboxes"]})
+        except Exception:
+            pass
+
     # Auto-accept pending folders from the leader
     accepted = 0
     try:
@@ -466,6 +540,7 @@ async def sync_join_team(req: JoinTeamRequest) -> Any:
         "team_name": team_name,
         "leader_name": leader_name,
         "paired": paired,
+        "folders_created": folders_created,
         "accepted_folders": accepted,
         "your_join_code": own_join_code,
     }
@@ -540,10 +615,18 @@ async def sync_add_member(team_name: str, req: AddMemberRequest) -> Any:
 
     # Pair device in Syncthing (best-effort)
     paired = False
+    folders_created = None
     try:
         proxy = get_proxy()
         await run_sync(proxy.add_device, req.device_id, req.name)
         paired = True
+
+        # Auto-create shared folders for all projects in this team
+        config = await run_sync(_load_identity)
+        if config is not None:
+            folders_created = await _auto_share_folders(proxy, config, conn, team_name, req.device_id)
+            log_event(conn, "folders_shared", team_name=team_name, member_name=req.name,
+                      detail={"outboxes": folders_created["outboxes"], "inboxes": folders_created["inboxes"]})
     except Exception:
         pass
 
@@ -552,6 +635,7 @@ async def sync_add_member(team_name: str, req: AddMemberRequest) -> Any:
         "name": req.name,
         "device_id": req.device_id,
         "paired": paired,
+        "folders_created": folders_created,
     }
 
 
@@ -600,18 +684,24 @@ async def sync_add_team_project(team_name: str, req: AddTeamProjectRequest) -> A
     if get_team(conn, team_name) is None:
         raise HTTPException(404, f"Team '{team_name}' not found")
 
-    from karma.sync import encode_project_path
+    from karma.sync import encode_project_path, detect_git_identity
 
     encoded = encode_project_path(req.path) if req.path else req.name
+    git_identity = detect_git_identity(req.path) if req.path else None
 
-    # Ensure project exists in projects table (for FK)
+    # Ensure project exists in projects table (for FK), include git_identity
     conn.execute(
-        "INSERT OR IGNORE INTO projects (encoded_name, project_path) VALUES (?, ?)",
-        (encoded, req.path),
+        "INSERT OR IGNORE INTO projects (encoded_name, project_path, git_identity) VALUES (?, ?, ?)",
+        (encoded, req.path, git_identity),
     )
+    if git_identity:
+        conn.execute(
+            "UPDATE projects SET git_identity = ? WHERE encoded_name = ? AND git_identity IS NULL",
+            (git_identity, encoded),
+        )
     conn.commit()
 
-    add_team_project(conn, team_name, encoded, req.path)
+    add_team_project(conn, team_name, encoded, req.path, git_identity=git_identity)
     log_event(conn, "project_added", team_name=team_name, project_encoded_name=encoded)
 
     # Create Syncthing shared folder so teammates see a pending offer
@@ -619,16 +709,20 @@ async def sync_add_team_project(team_name: str, req: AddTeamProjectRequest) -> A
     try:
         config = await run_sync(_load_identity)
         if config is not None:
-            from pathlib import Path as P
             from karma.config import KARMA_BASE
 
-            proj_short = P(req.path).name if req.path else encoded
+            # Use git_identity for folder ID suffix when available
+            if git_identity:
+                proj_suffix = git_identity.replace("/", "-")
+            else:
+                proj_suffix = Path(req.path).name if req.path else encoded
+
             members = list_members(conn, team_name)
 
             # Outbox: send my sessions to teammates
-            outbox_id = f"karma-out-{config.user_id}-{proj_short}"
+            outbox_id = f"karma-out-{config.user_id}-{proj_suffix}"
             outbox_path = str(KARMA_BASE / "remote-sessions" / config.user_id / encoded)
-            P(outbox_path).mkdir(parents=True, exist_ok=True)
+            Path(outbox_path).mkdir(parents=True, exist_ok=True)
 
             device_ids = []
             if config.syncthing.device_id:
@@ -638,7 +732,7 @@ async def sync_add_team_project(team_name: str, req: AddTeamProjectRequest) -> A
                     device_ids.append(m["device_id"])
 
             proxy = get_proxy()
-            proxy.add_folder(outbox_id, outbox_path, device_ids, folder_type="sendonly")
+            await run_sync(proxy.add_folder, outbox_id, outbox_path, device_ids, "sendonly")
             syncthing_ok = True
     except Exception as e:
         logger.warning("Failed to create Syncthing folder for project %s: %s", encoded, e)
@@ -647,6 +741,7 @@ async def sync_add_team_project(team_name: str, req: AddTeamProjectRequest) -> A
         "ok": True,
         "name": req.name,
         "encoded_name": encoded,
+        "git_identity": git_identity,
         "syncthing_folder_created": syncthing_ok,
     }
 

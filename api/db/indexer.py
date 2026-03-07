@@ -877,13 +877,22 @@ def _update_project_summaries(conn: sqlite3.Connection) -> None:
         slug = compute_project_slug(encoded_name, project_path)
         display_name = Path(project_path).name if project_path else encoded_name
 
+        # Detect git identity for cross-machine project matching
+        git_identity = None
+        if project_path:
+            try:
+                from karma.sync import detect_git_identity
+                git_identity = detect_git_identity(project_path)
+            except Exception:
+                pass
+
         conn.execute(
             """
             INSERT OR REPLACE INTO projects
-                (encoded_name, project_path, slug, display_name, session_count, last_activity)
-            VALUES (?, ?, ?, ?, ?, ?)
+                (encoded_name, project_path, slug, display_name, git_identity, session_count, last_activity)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            (encoded_name, project_path, slug, display_name, session_count, last_activity),
+            (encoded_name, project_path, slug, display_name, git_identity, session_count, last_activity),
         )
 
     conn.commit()

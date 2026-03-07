@@ -146,6 +146,11 @@ class SessionPackager:
                     debug_staging.mkdir(exist_ok=True)
                     shutil.copy2(debug_file, debug_staging / debug_file.name)
 
+        # Detect git identity for cross-machine project matching
+        from karma.sync import detect_git_identity
+
+        git_id = detect_git_identity(self.project_path)
+
         # Build manifest
         manifest = SyncManifest(
             user_id=self.user_id,
@@ -155,6 +160,7 @@ class SessionPackager:
             session_count=len(sessions),
             sessions=sessions,
             previous_cid=self.last_sync_cid,
+            git_identity=git_id,
         )
 
         manifest_path = staging_dir / "manifest.json"
