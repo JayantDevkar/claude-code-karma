@@ -1,10 +1,13 @@
 """Sync status API endpoints — backed by SQLite."""
 
+import logging
 import re
 import sqlite3
 import sys
 from pathlib import Path
 from typing import Any, Optional
+
+logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -611,10 +614,40 @@ async def sync_add_team_project(team_name: str, req: AddTeamProjectRequest) -> A
     add_team_project(conn, team_name, encoded, req.path)
     log_event(conn, "project_added", team_name=team_name, project_encoded_name=encoded)
 
+    # Create Syncthing shared folder so teammates see a pending offer
+    syncthing_ok = False
+    try:
+        config = await run_sync(_load_identity)
+        if config is not None:
+            from pathlib import Path as P
+            from karma.config import KARMA_BASE
+
+            proj_short = P(req.path).name if req.path else encoded
+            members = list_members(conn, team_name)
+
+            # Outbox: send my sessions to teammates
+            outbox_id = f"karma-out-{config.user_id}-{proj_short}"
+            outbox_path = str(KARMA_BASE / "remote-sessions" / config.user_id / encoded)
+            P(outbox_path).mkdir(parents=True, exist_ok=True)
+
+            device_ids = []
+            if config.syncthing.device_id:
+                device_ids.append(config.syncthing.device_id)
+            for m in members:
+                if m["device_id"] and m["device_id"] not in device_ids:
+                    device_ids.append(m["device_id"])
+
+            proxy = get_proxy()
+            proxy.add_folder(outbox_id, outbox_path, device_ids, folder_type="sendonly")
+            syncthing_ok = True
+    except Exception as e:
+        logger.warning("Failed to create Syncthing folder for project %s: %s", encoded, e)
+
     return {
         "ok": True,
         "name": req.name,
         "encoded_name": encoded,
+        "syncthing_folder_created": syncthing_ok,
     }
 
 

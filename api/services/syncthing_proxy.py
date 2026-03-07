@@ -180,6 +180,18 @@ class SyncthingProxy:
         client.remove_device(device_id)
         return {"ok": True, "device_id": device_id}
 
+    def add_folder(
+        self,
+        folder_id: str,
+        path: str,
+        devices: list[str],
+        folder_type: str = "sendonly",
+    ) -> dict:
+        """Create a shared folder in Syncthing."""
+        client = self._require_client()
+        client.add_folder(folder_id, path, devices, folder_type=folder_type)
+        return {"ok": True, "folder_id": folder_id, "path": path}
+
     def get_folder_status(self) -> list[dict]:
         """Return all configured folders with their sync status."""
         client = self._require_client()
