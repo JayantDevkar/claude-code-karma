@@ -262,6 +262,11 @@ class SyncthingProxy:
                 pass
         return {"ok": True, "scanned": scanned}
 
+    def get_pending_devices(self) -> dict:
+        """Get devices trying to connect that aren't configured yet."""
+        client = self._require_client()
+        return client.get_pending_devices()
+
     def get_pending_folders_for_ui(
         self, known_devices: dict[str, tuple[str, str]]
     ) -> list[dict]:

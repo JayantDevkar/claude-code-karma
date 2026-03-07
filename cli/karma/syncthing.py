@@ -127,6 +127,20 @@ class SyncthingClient:
         config["folders"] = [f for f in config["folders"] if f["id"] != folder_id]
         self._set_config(config)
 
+    def get_pending_devices(self) -> dict:
+        """Get devices trying to connect that aren't configured.
+
+        Returns:
+            Dict keyed by device_id with connection details.
+        """
+        resp = requests.get(
+            f"{self.api_url}/rest/cluster/pending/devices",
+            headers=self.headers,
+            timeout=10,
+        )
+        resp.raise_for_status()
+        return resp.json()
+
     def get_pending_folders(self) -> dict:
         """Get folder offers from remote devices that haven't been accepted.
 

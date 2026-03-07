@@ -1419,3 +1419,85 @@ async def get_project_memory(encoded_name: str, request: Request):
     except OSError as e:
         logger.error(f"Error reading memory file for {encoded_name}: {e}")
         raise HTTPException(status_code=500, detail="Failed to read memory file") from e
+
+
+# ============================================================================
+# Remote Sessions (Team sync)
+# ============================================================================
+
+
+@router.get("/{encoded_name}/remote-sessions")
+async def project_remote_sessions(encoded_name: str):
+    """Get remote sessions for a project, grouped by remote user."""
+    import json
+    import re
+
+    ALLOWED_NAME = re.compile(r"^[a-zA-Z0-9_\-]+$")
+    if not ALLOWED_NAME.match(encoded_name) or len(encoded_name) > 512:
+        raise HTTPException(400, "Invalid project name")
+
+    # Load local user identity to skip own outbox
+    local_user = None
+    try:
+        _CLI_PATH = Path(__file__).parent.parent.parent / "cli"
+        if str(_CLI_PATH) not in sys.path:
+            sys.path.insert(0, str(_CLI_PATH))
+        from karma.config import SyncConfig
+
+        config = SyncConfig.load()
+        if config:
+            local_user = config.user_id
+    except Exception:
+        pass
+
+    remote_base = Path.home() / ".claude_karma" / "remote-sessions"
+    if not remote_base.is_dir():
+        return {"users": []}
+
+    users = []
+    for user_dir in sorted(remote_base.iterdir()):
+        if not user_dir.is_dir():
+            continue
+        # Skip our own outbox
+        if local_user and user_dir.name == local_user:
+            continue
+
+        project_dir = user_dir / encoded_name
+        if not project_dir.is_dir():
+            continue
+
+        sessions_dir = project_dir / "sessions"
+        manifest_path = project_dir / "manifest.json"
+
+        sessions = []
+        if sessions_dir.is_dir():
+            for f in sorted(
+                sessions_dir.glob("*.jsonl"),
+                key=lambda p: p.stat().st_mtime,
+                reverse=True,
+            ):
+                if f.name.startswith("agent-"):
+                    continue
+                sessions.append({
+                    "uuid": f.stem,
+                    "mtime": f.stat().st_mtime,
+                    "size_bytes": f.stat().st_size,
+                })
+
+        manifest = {}
+        if manifest_path.exists():
+            try:
+                manifest = json.loads(manifest_path.read_text())
+            except (json.JSONDecodeError, OSError):
+                pass
+
+        if sessions:
+            users.append({
+                "user_id": user_dir.name,
+                "machine_id": manifest.get("machine_id"),
+                "synced_at": manifest.get("synced_at"),
+                "session_count": len(sessions),
+                "sessions": sessions,
+            })
+
+    return {"users": users}

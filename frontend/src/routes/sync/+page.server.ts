@@ -3,7 +3,7 @@ import type { SyncDetect, SyncStatusResponse, SyncWatchStatus, SyncPendingFolder
 import { API_BASE } from '$lib/config';
 import { safeFetch } from '$lib/utils/api-fetch';
 
-export const load: PageServerLoad = async ({ fetch, url }) => {
+export const load: PageServerLoad = async ({ fetch }) => {
 	const [detectResult, statusResult, watchResult, pendingResult] = await Promise.all([
 		safeFetch<SyncDetect>(fetch, `${API_BASE}/sync/detect`),
 		safeFetch<SyncStatusResponse>(fetch, `${API_BASE}/sync/status`),
@@ -11,13 +11,10 @@ export const load: PageServerLoad = async ({ fetch, url }) => {
 		safeFetch<{ pending: SyncPendingFolder[] }>(fetch, `${API_BASE}/sync/pending`)
 	]);
 
-	const activeTab = url.searchParams.get('tab') || null;
-
 	return {
 		detect: detectResult.ok ? detectResult.data : null,
 		status: statusResult.ok ? statusResult.data : null,
 		watchStatus: watchResult.ok ? watchResult.data : null,
-		pending: pendingResult.ok ? pendingResult.data?.pending ?? [] : [],
-		activeTab
+		pending: pendingResult.ok ? pendingResult.data?.pending ?? [] : []
 	};
 };

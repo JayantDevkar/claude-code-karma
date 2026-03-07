@@ -1707,6 +1707,7 @@ export interface SyncStatusResponse {
 	configured: boolean;
 	user_id?: string;
 	machine_id?: string;
+	device_id?: string | null;
 	teams?: Record<string, SyncStatusTeamEntry>;
 }
 
@@ -1787,4 +1788,40 @@ export interface SyncEvent {
 	session_uuid: string | null;
 	detail: string | null;
 	created_at: string;
+}
+
+export interface JoinTeamResponse {
+	ok: boolean;
+	team_name: string;
+	leader_name: string;
+	paired: boolean;
+	accepted_folders: number;
+	your_join_code: string | null;
+}
+
+export interface JoinCodeResponse {
+	join_code: string;
+	team_name: string;
+	user_id: string;
+}
+
+export interface PendingDevice {
+	device_id: string;
+	name: string;
+	address: string;
+	time: string;
+}
+
+export interface RemoteSessionUser {
+	user_id: string;
+	machine_id: string | null;
+	synced_at: string | null;
+	session_count: number;
+	sessions: RemoteSession[];
+}
+
+export interface RemoteSession {
+	uuid: string;
+	mtime: number;
+	size_bytes: number;
 }

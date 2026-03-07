@@ -24,7 +24,8 @@
 		Archive,
 		LayoutGrid,
 		List,
-		Brain
+		Brain,
+		Users
 	} from 'lucide-svelte';
 	import { isToday, isYesterday, isThisWeek, isThisMonth } from 'date-fns';
 	import TabsTrigger from '$lib/components/ui/TabsTrigger.svelte';
@@ -39,6 +40,7 @@
 	import SkillList from '$lib/components/skills/SkillList.svelte';
 	import ToolList from '$lib/components/tools/ToolList.svelte';
 	import MemoryViewer from '$lib/components/memory/MemoryViewer.svelte';
+	import ProjectTeamTab from '$lib/components/sync/ProjectTeamTab.svelte';
 	import StatsGrid from '$lib/components/StatsGrid.svelte';
 	import ActiveBranches from '$lib/components/ActiveBranches.svelte';
 	import Pagination from '$lib/components/Pagination.svelte';
@@ -306,7 +308,7 @@
 	});
 
 	// Tab state - initialize from URL immediately (not deferred to onMount)
-	const validTabs = ['overview', 'analytics', 'agents', 'skills', 'tools', 'memory', 'archived'];
+	const validTabs = ['overview', 'analytics', 'agents', 'skills', 'tools', 'memory', 'team', 'archived'];
 	const initialTab = $page.url.searchParams.get('tab');
 	let activeTab = $state(initialTab && validTabs.includes(initialTab) ? initialTab : 'overview');
 	let tabsReady = $state(false);
@@ -1046,6 +1048,7 @@
 					<TabsTrigger value="tools" icon={Cable}>Project Tools</TabsTrigger>
 					<TabsTrigger value="memory" icon={Brain}>Project Memory</TabsTrigger>
 					<TabsTrigger value="analytics" icon={BarChart3}>Analytics</TabsTrigger>
+					<TabsTrigger value="team" icon={Users}>Team</TabsTrigger>
 					{#if archived.total_sessions > 0}
 						<TabsTrigger value="archived" icon={Archive}>
 							Archived ({archived.total_sessions})
@@ -1695,6 +1698,11 @@
 				<!-- Memory Tab -->
 				<Tabs.Content value="memory" class="animate-fade-in">
 					<MemoryViewer projectEncodedName={project.encoded_name} />
+				</Tabs.Content>
+
+				<!-- Team Tab -->
+				<Tabs.Content value="team" class="animate-fade-in">
+					<ProjectTeamTab projectEncodedName={project.encoded_name} active={activeTab === 'team'} />
 				</Tabs.Content>
 
 				<!-- Archived Tab -->

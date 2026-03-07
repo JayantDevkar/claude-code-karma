@@ -120,6 +120,10 @@ class AddTeamProjectRequest(BaseModel):
     path: str
 
 
+class JoinTeamRequest(BaseModel):
+    join_code: str
+
+
 # ─── Init & Status ────────────────────────────────────────────────────
 
 
@@ -188,6 +192,7 @@ async def sync_status():
         "configured": True,
         "user_id": config.user_id,
         "machine_id": config.machine_id,
+        "device_id": config.syncthing.device_id if config.syncthing else None,
         "teams": teams,
     }
 
@@ -389,6 +394,126 @@ async def sync_delete_team(team_name: str) -> Any:
     delete_team(conn, team_name)
 
     return {"ok": True, "name": team_name}
+
+
+# ─── Join Code ────────────────────────────────────────────────────────
+
+
+@router.post("/teams/join")
+async def sync_join_team(req: JoinTeamRequest) -> Any:
+    """Join a team via a join code (team_name:user_id:device_id)."""
+    parts = req.join_code.split(":", 2)
+    if len(parts) != 3:
+        raise HTTPException(400, "Invalid join code format. Expected team:user:device_id")
+    team_name, leader_name, device_id = parts
+
+    validate_user_id(team_name)
+    validate_user_id(leader_name)
+    validate_device_id(device_id)
+
+    config = await run_sync(_load_identity)
+    if config is None:
+        raise HTTPException(400, "Not initialized. Run sync setup first.")
+
+    conn = _get_sync_conn()
+
+    # Create team locally if it doesn't exist
+    if get_team(conn, team_name) is None:
+        create_team(conn, team_name, "syncthing")
+        log_event(conn, "team_created", team_name=team_name)
+
+    # Add leader as member (idempotent)
+    try:
+        add_member(conn, team_name, leader_name, device_id=device_id)
+        log_event(conn, "member_added", team_name=team_name, member_name=leader_name)
+    except sqlite3.IntegrityError:
+        pass  # already exists
+
+    # Pair device in Syncthing (best-effort)
+    paired = False
+    try:
+        proxy = get_proxy()
+        await run_sync(proxy.add_device, device_id, leader_name)
+        paired = True
+    except Exception:
+        pass
+
+    # Auto-accept pending folders from the leader
+    accepted = 0
+    try:
+        from karma.syncthing import SyncthingClient, read_local_api_key
+
+        api_key = config.syncthing.api_key or await run_sync(read_local_api_key)
+        st = SyncthingClient(api_key=api_key)
+        if st.is_running():
+            from karma.main import _accept_pending_folders
+
+            accepted = await run_sync(_accept_pending_folders, st, config)
+            if accepted:
+                log_event(conn, "pending_accepted", detail={"count": accepted})
+    except Exception:
+        pass
+
+    # Generate joiner's own code to share back
+    own_device_id = config.syncthing.device_id if config.syncthing else None
+    own_join_code = f"{team_name}:{config.user_id}:{own_device_id}" if own_device_id else None
+
+    return {
+        "ok": True,
+        "team_name": team_name,
+        "leader_name": leader_name,
+        "paired": paired,
+        "accepted_folders": accepted,
+        "your_join_code": own_join_code,
+    }
+
+
+@router.get("/teams/{team_name}/join-code")
+async def sync_team_join_code(team_name: str) -> Any:
+    """Get the join code for a team."""
+    if not ALLOWED_PROJECT_NAME.match(team_name):
+        raise HTTPException(400, "Invalid team name")
+
+    config = await run_sync(_load_identity)
+    if config is None:
+        raise HTTPException(400, "Not initialized")
+
+    conn = _get_sync_conn()
+    if get_team(conn, team_name) is None:
+        raise HTTPException(404, f"Team '{team_name}' not found")
+
+    device_id = config.syncthing.device_id if config.syncthing else None
+    if not device_id:
+        raise HTTPException(400, "No Syncthing device ID configured")
+
+    join_code = f"{team_name}:{config.user_id}:{device_id}"
+    return {"join_code": join_code, "team_name": team_name, "user_id": config.user_id}
+
+
+@router.get("/pending-devices")
+async def sync_pending_devices() -> Any:
+    """List Syncthing devices trying to connect that aren't configured."""
+    conn = _get_sync_conn()
+    known = get_known_devices(conn)
+    known_device_ids = set(known.keys())
+
+    proxy = get_proxy()
+    try:
+        pending = await run_sync(proxy.get_pending_devices)
+    except SyncthingNotRunning:
+        return {"devices": []}
+
+    result = []
+    for device_id, info in pending.items():
+        if device_id not in known_device_ids:
+            result.append({
+                "device_id": device_id,
+                "name": info.get("name", ""),
+                "address": info.get("address", ""),
+                "time": info.get("time", ""),
+            })
+
+    return {"devices": result}
 
 
 # ─── Team member management ───────────────────────────────────────────
