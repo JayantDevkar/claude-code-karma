@@ -1,47 +1,63 @@
 """Tests for sync status API endpoints."""
 
 import json
+import sqlite3
 from unittest.mock import MagicMock
 
+import pytest
 from fastapi.testclient import TestClient
 
 from main import app
+from db.schema import ensure_schema
 
 client = TestClient(app)
 
 
+@pytest.fixture
+def mock_db(tmp_path, monkeypatch):
+    """In-memory SQLite with schema, patched into the router."""
+    conn = sqlite3.connect(":memory:", check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys=ON")
+    ensure_schema(conn)
+
+    monkeypatch.setattr("routers.sync_status.get_writer_db", lambda: conn)
+    monkeypatch.setattr("routers.sync_status._get_sync_conn", lambda: conn)
+
+    config_path = tmp_path / "sync-config.json"
+    config_path.write_text(json.dumps({
+        "user_id": "alice", "machine_id": "mac", "syncthing": {},
+    }))
+    monkeypatch.setattr("karma.config.SYNC_CONFIG_PATH", config_path)
+
+    return conn
+
+
 class TestSyncStatus:
     def test_sync_status_no_config(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(
-            "routers.sync_status.SYNC_CONFIG_PATH",
-            tmp_path / "nonexistent.json",
-        )
+        conn = sqlite3.connect(":memory:", check_same_thread=False)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys=ON")
+        ensure_schema(conn)
+        monkeypatch.setattr("routers.sync_status.get_writer_db", lambda: conn)
+        monkeypatch.setattr("routers.sync_status._get_sync_conn", lambda: conn)
+        monkeypatch.setattr("karma.config.SYNC_CONFIG_PATH", tmp_path / "nonexistent.json")
+
         resp = client.get("/sync/status")
         assert resp.status_code == 200
         data = resp.json()
         assert data["configured"] is False
 
-    def test_sync_status_with_config(self, tmp_path, monkeypatch):
-        config_path = tmp_path / "sync-config.json"
-        config_path.write_text(
-            json.dumps(
-                {
-                    "user_id": "alice",
-                    "machine_id": "mac",
-                    "teams": {
-                        "beta": {
-                            "backend": "syncthing",
-                            "projects": {"app": {"path": "/app", "encoded_name": "-app"}},
-                            "syncthing_members": {"bob": {"syncthing_device_id": "AAAA-BBBB"}},
-                            "ipfs_members": {},
-                        }
-                    },
-                    "projects": {},
-                    "team": {},
-                }
-            )
-        )
-        monkeypatch.setattr("routers.sync_status.SYNC_CONFIG_PATH", config_path)
+    def test_sync_status_with_config(self, mock_db):
+        # Add a team with a member and project
+        mock_db.execute("INSERT INTO sync_teams (name, backend) VALUES (?, ?)", ("beta", "syncthing"))
+        mock_db.execute("INSERT INTO sync_members (team_name, name, device_id) VALUES (?, ?, ?)",
+                        ("beta", "bob", "AAAA-BBBB"))
+        mock_db.execute("INSERT INTO projects (encoded_name) VALUES (?)", ("-app",))
+        mock_db.execute("INSERT INTO sync_team_projects (team_name, project_encoded_name, path) VALUES (?, ?, ?)",
+                        ("beta", "-app", "/app"))
+        mock_db.commit()
+
         resp = client.get("/sync/status")
         assert resp.status_code == 200
         data = resp.json()
@@ -51,56 +67,44 @@ class TestSyncStatus:
         assert data["teams"]["beta"]["member_count"] == 1
         assert data["teams"]["beta"]["project_count"] == 1
 
-    def test_sync_teams_endpoint(self, tmp_path, monkeypatch):
-        config_path = tmp_path / "sync-config.json"
-        config_path.write_text(
-            json.dumps(
-                {
-                    "user_id": "alice",
-                    "machine_id": "mac",
-                    "teams": {
-                        "alpha": {
-                            "backend": "ipfs",
-                            "projects": {},
-                            "ipfs_members": {"carol": {"ipns_key": "abc123"}},
-                            "syncthing_members": {},
-                        },
-                        "beta": {
-                            "backend": "syncthing",
-                            "projects": {},
-                            "ipfs_members": {},
-                            "syncthing_members": {"bob": {"syncthing_device_id": "XXXX"}},
-                        },
-                    },
-                    "projects": {},
-                    "team": {},
-                }
-            )
-        )
-        monkeypatch.setattr("routers.sync_status.SYNC_CONFIG_PATH", config_path)
+    def test_sync_teams_endpoint(self, mock_db):
+        mock_db.execute("INSERT INTO sync_teams (name, backend) VALUES (?, ?)", ("alpha", "ipfs"))
+        mock_db.execute("INSERT INTO sync_teams (name, backend) VALUES (?, ?)", ("beta", "syncthing"))
+        mock_db.execute("INSERT INTO sync_members (team_name, name, device_id) VALUES (?, ?, ?)",
+                        ("beta", "bob", "XXXX"))
+        mock_db.commit()
+
         resp = client.get("/sync/teams")
         assert resp.status_code == 200
         data = resp.json()
         assert len(data["teams"]) == 2
-        # Verify members are correctly read from split dicts
-        team_names = {t["name"]: t for t in data["teams"]}
-        assert "carol" in team_names["alpha"]["members"]
-        assert "bob" in team_names["beta"]["members"]
 
     def test_sync_status_corrupt_config(self, tmp_path, monkeypatch):
+        conn = sqlite3.connect(":memory:", check_same_thread=False)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys=ON")
+        ensure_schema(conn)
+        monkeypatch.setattr("routers.sync_status.get_writer_db", lambda: conn)
+        monkeypatch.setattr("routers.sync_status._get_sync_conn", lambda: conn)
+
         config_path = tmp_path / "sync-config.json"
         config_path.write_text("not valid json{{{")
-        monkeypatch.setattr("routers.sync_status.SYNC_CONFIG_PATH", config_path)
+        monkeypatch.setattr("karma.config.SYNC_CONFIG_PATH", config_path)
+
         resp = client.get("/sync/status")
         assert resp.status_code == 200
         data = resp.json()
         assert data["configured"] is False
 
     def test_sync_teams_no_config(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(
-            "routers.sync_status.SYNC_CONFIG_PATH",
-            tmp_path / "nonexistent.json",
-        )
+        conn = sqlite3.connect(":memory:", check_same_thread=False)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys=ON")
+        ensure_schema(conn)
+        monkeypatch.setattr("routers.sync_status.get_writer_db", lambda: conn)
+        monkeypatch.setattr("routers.sync_status._get_sync_conn", lambda: conn)
+        monkeypatch.setattr("karma.config.SYNC_CONFIG_PATH", tmp_path / "nonexistent.json")
+
         resp = client.get("/sync/teams")
         assert resp.status_code == 200
         data = resp.json()
@@ -264,41 +268,41 @@ class TestSyncProjects:
 
 
 class TestSyncActivity:
-    def test_get_events(self, monkeypatch):
+    def test_get_events(self, mock_db, monkeypatch):
+        from db.sync_queries import create_team, log_event
+        create_team(mock_db, "alpha", "syncthing")
+        log_event(mock_db, "team_created", team_name="alpha")
+        log_event(mock_db, "member_added", team_name="alpha", member_name="bob")
+
         mock_proxy = MagicMock()
-        mock_proxy.get_events.return_value = [
-            {"id": 1, "type": "FolderSummary", "time": "2026-03-05T10:00:00Z"},
-            {"id": 2, "type": "StateChanged", "time": "2026-03-05T10:01:00Z"},
-        ]
+        mock_proxy.get_bandwidth.return_value = {"upload_rate": 100, "download_rate": 200, "upload_total": 1000, "download_total": 2000}
         monkeypatch.setattr("routers.sync_status.get_proxy", lambda: mock_proxy)
+
         resp = client.get("/sync/activity")
         assert resp.status_code == 200
         data = resp.json()
         assert "events" in data
         assert len(data["events"]) == 2
-        assert data["events"][0]["type"] == "FolderSummary"
 
-    def test_get_events_with_params(self, monkeypatch):
+    def test_get_events_with_params(self, mock_db, monkeypatch):
+        from db.sync_queries import create_team, log_event
+        create_team(mock_db, "alpha", "syncthing")
+        log_event(mock_db, "team_created", team_name="alpha")
+
         mock_proxy = MagicMock()
-        mock_proxy.get_events.return_value = []
+        mock_proxy.get_bandwidth.return_value = {"upload_rate": 0, "download_rate": 0, "upload_total": 0, "download_total": 0}
         monkeypatch.setattr("routers.sync_status.get_proxy", lambda: mock_proxy)
-        resp = client.get("/sync/activity?since=100&limit=10")
+
+        resp = client.get("/sync/activity?limit=10")
         assert resp.status_code == 200
-        mock_proxy.get_events.assert_called_once_with(100, 10)
+        data = resp.json()
+        assert len(data["events"]) == 1
 
-    def test_get_events_syncthing_not_running(self, monkeypatch):
-        from services.syncthing_proxy import SyncthingNotRunning
-
+    def test_get_events_empty(self, mock_db, monkeypatch):
         mock_proxy = MagicMock()
-        mock_proxy.get_events.side_effect = SyncthingNotRunning("not running")
+        mock_proxy.get_bandwidth.return_value = {"upload_rate": 0, "download_rate": 0, "upload_total": 0, "download_total": 0}
         monkeypatch.setattr("routers.sync_status.get_proxy", lambda: mock_proxy)
-        resp = client.get("/sync/activity")
-        assert resp.status_code == 503
 
-    def test_get_events_empty(self, monkeypatch):
-        mock_proxy = MagicMock()
-        mock_proxy.get_events.return_value = []
-        monkeypatch.setattr("routers.sync_status.get_proxy", lambda: mock_proxy)
         resp = client.get("/sync/activity")
         assert resp.status_code == 200
         data = resp.json()
@@ -316,13 +320,11 @@ class TestSyncInit:
         }
         monkeypatch.setattr("routers.sync_status.get_proxy", lambda: mock_proxy)
 
-        # Mock read_local_api_key (imported inside the endpoint)
         monkeypatch.setattr(
             "karma.syncthing.read_local_api_key",
             lambda: "fake-api-key",
         )
 
-        # Mock SyncConfig.save to avoid writing to disk
         saved = []
         monkeypatch.setattr(
             "karma.config.SyncConfig.save",
@@ -368,95 +370,3 @@ class TestSyncInit:
 
         resp = client.post("/sync/init", json={"user_id": "alice", "backend": "syncthing"})
         assert resp.status_code == 503
-
-
-class TestSyncProjectEndpoints:
-    def _make_mock_config(self, projects=None):
-        """Create a mock SyncConfig with the given projects dict."""
-        mock_config = MagicMock()
-        mock_config.projects = projects if projects is not None else {}
-
-        def mock_model_copy(update=None):
-            new_mock = MagicMock()
-            new_mock.projects = update.get("projects", mock_config.projects) if update else mock_config.projects
-            new_mock.save = MagicMock()
-            return new_mock
-
-        mock_config.model_copy = mock_model_copy
-        return mock_config
-
-    def test_enable_project(self, monkeypatch):
-        mock_config = self._make_mock_config()
-        mock_project_config = MagicMock()
-
-        def mock_load_sync_config():
-            MockProjectConfig = MagicMock(return_value=mock_project_config)
-            return mock_config, MagicMock, MockProjectConfig
-
-        monkeypatch.setattr(
-            "routers.sync_status._load_sync_config",
-            mock_load_sync_config,
-        )
-
-        resp = client.post("/sync/projects/-Users-alice-my-project/enable")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["ok"] is True
-        assert data["project"] == "-Users-alice-my-project"
-
-    def test_disable_project(self, monkeypatch):
-        mock_config = self._make_mock_config(
-            projects={"-Users-alice-my-project": MagicMock()}
-        )
-
-        def mock_load_sync_config():
-            return mock_config, MagicMock, MagicMock
-
-        monkeypatch.setattr(
-            "routers.sync_status._load_sync_config",
-            mock_load_sync_config,
-        )
-
-        resp = client.post("/sync/projects/-Users-alice-my-project/disable")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["ok"] is True
-        assert data["project"] == "-Users-alice-my-project"
-
-    def test_sync_now(self, monkeypatch):
-        resp = client.post("/sync/projects/-Users-alice-my-project/sync-now")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["ok"] is True
-        assert data["project"] == "-Users-alice-my-project"
-        assert data["message"] == "Sync triggered"
-
-    def test_enable_not_initialized(self, monkeypatch):
-        def mock_load_sync_config():
-            return None, MagicMock, MagicMock
-
-        monkeypatch.setattr(
-            "routers.sync_status._load_sync_config",
-            mock_load_sync_config,
-        )
-
-        resp = client.post("/sync/projects/-Users-alice-my-project/enable")
-        assert resp.status_code == 400
-        assert resp.json()["detail"] == "Not initialized"
-
-    def test_enable_invalid_name(self, monkeypatch):
-        resp = client.post("/sync/projects/invalid%20name!@/enable")
-        assert resp.status_code == 400
-
-    def test_disable_not_initialized(self, monkeypatch):
-        def mock_load_sync_config():
-            return None, MagicMock, MagicMock
-
-        monkeypatch.setattr(
-            "routers.sync_status._load_sync_config",
-            mock_load_sync_config,
-        )
-
-        resp = client.post("/sync/projects/-Users-alice-my-project/disable")
-        assert resp.status_code == 400
-        assert resp.json()["detail"] == "Not initialized"

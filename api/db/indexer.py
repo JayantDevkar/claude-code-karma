@@ -360,6 +360,18 @@ def index_remote_sessions(conn: sqlite3.Connection) -> dict:
                         claude_base_dir=encoded_dir,
                     )
                     stats["indexed"] += 1
+
+                    # Log session_received event
+                    try:
+                        from db.sync_queries import log_event
+                        log_event(
+                            conn, "session_received",
+                            member_name=user_id,
+                            project_encoded_name=local_encoded,
+                            session_uuid=uuid,
+                        )
+                    except Exception:
+                        pass  # Best-effort logging
                 except Exception as e:
                     logger.debug("Error indexing remote session %s: %s", uuid, e)
                     stats["errors"] += 1

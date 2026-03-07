@@ -1,6 +1,7 @@
-"""Sync status API endpoints."""
+"""Sync status API endpoints — backed by SQLite."""
 
 import re
+import sqlite3
 import sys
 from pathlib import Path
 from typing import Any, Optional
@@ -8,6 +9,22 @@ from typing import Any, Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from db.connection import get_writer_db, create_read_connection
+from db.sync_queries import (
+    create_team,
+    delete_team,
+    list_teams,
+    get_team,
+    add_member,
+    remove_member,
+    list_members,
+    add_team_project,
+    remove_team_project,
+    list_team_projects,
+    log_event,
+    query_events,
+    get_known_devices,
+)
 from services.syncthing_proxy import SyncthingNotRunning, SyncthingProxy, run_sync
 from services.watcher_manager import WatcherManager
 
@@ -35,6 +52,12 @@ def validate_device_id(device_id: str) -> str:
     return device_id
 
 
+def validate_user_id(user_id: str) -> str:
+    if not ALLOWED_PROJECT_NAME.match(user_id) or len(user_id) > 128:
+        raise HTTPException(400, "Invalid user_id")
+    return user_id
+
+
 # Singleton proxy
 _proxy: SyncthingProxy | None = None
 
@@ -55,6 +78,21 @@ def get_watcher() -> WatcherManager:
     if _watcher is None:
         _watcher = WatcherManager()
     return _watcher
+
+
+def _get_sync_conn() -> sqlite3.Connection:
+    """Get writer connection for sync operations."""
+    return get_writer_db()
+
+
+def _load_identity():
+    """Load identity-only SyncConfig from JSON. Returns config or None."""
+    from karma.config import SyncConfig
+
+    try:
+        return SyncConfig.load()
+    except RuntimeError:
+        return None
 
 
 class AddDeviceRequest(BaseModel):
@@ -82,21 +120,7 @@ class AddTeamProjectRequest(BaseModel):
     path: str
 
 
-def validate_user_id(user_id: str) -> str:
-    if not ALLOWED_PROJECT_NAME.match(user_id) or len(user_id) > 128:
-        raise HTTPException(400, "Invalid user_id")
-    return user_id
-
-
-def _load_sync_config():
-    """Load SyncConfig from CLI module. Returns (config, SyncConfig, ProjectConfig) or (None, SyncConfig, ProjectConfig)."""
-    from karma.config import ProjectConfig, SyncConfig
-
-    try:
-        config = SyncConfig.load()
-    except RuntimeError:
-        config = None
-    return config, SyncConfig, ProjectConfig
+# ─── Init & Status ────────────────────────────────────────────────────
 
 
 @router.post("/init")
@@ -120,7 +144,6 @@ async def sync_init(req: InitRequest) -> Any:
         if not info.get("running"):
             raise HTTPException(503, "Syncthing is not running")
 
-        # Read API key from local Syncthing config
         from karma.syncthing import read_local_api_key
 
         api_key = await run_sync(read_local_api_key)
@@ -147,72 +170,65 @@ async def sync_init(req: InitRequest) -> Any:
 @router.get("/status")
 async def sync_status():
     """Get sync configuration and status."""
-    config, _, _ = await run_sync(_load_sync_config)
+    config = await run_sync(_load_identity)
     if config is None:
         return {"configured": False}
 
-    data = config.model_dump()
+    conn = _get_sync_conn()
+    teams_list = list_teams(conn)
     teams = {}
-    for name, team in data.get("teams", {}).items():
-        teams[name] = {
-            "backend": team["backend"],
-            "project_count": len(team.get("projects", {})),
-            "member_count": len(team.get("ipfs_members", {}))
-            + len(team.get("syncthing_members", {})),
+    for t in teams_list:
+        teams[t["name"]] = {
+            "backend": t["backend"],
+            "project_count": t["project_count"],
+            "member_count": t["member_count"],
         }
 
     return {
         "configured": True,
-        "user_id": data.get("user_id"),
-        "machine_id": data.get("machine_id"),
+        "user_id": config.user_id,
+        "machine_id": config.machine_id,
         "teams": teams,
     }
 
 
 @router.get("/teams")
-async def sync_teams():
-    """List all teams with their backend and members."""
-    config, _, _ = await run_sync(_load_sync_config)
-    if config is None:
-        return {"teams": []}
+async def sync_teams_list():
+    """List all teams with their backend, members, and projects."""
+    conn = _get_sync_conn()
+    teams_data = list_teams(conn)
 
-    data = config.model_dump()
     teams = []
-    for name, team in data.get("teams", {}).items():
-        projects = []
-        for pname, pconfig in team.get("projects", {}).items():
-            projects.append({
-                "name": pname,
-                "encoded_name": pconfig.get("encoded_name", pname),
-                "path": pconfig.get("path"),
-            })
-        members = []
-        for mname, mdata in team.get("syncthing_members", {}).items():
-            members.append({
-                "name": mname,
-                "device_id": mdata.get("syncthing_device_id", ""),
-                "connected": False,
-                "in_bytes_total": 0,
-                "out_bytes_total": 0,
-            })
-        for mname in team.get("ipfs_members", {}).keys():
-            members.append({
-                "name": mname,
-                "device_id": "",
-                "connected": False,
-                "in_bytes_total": 0,
-                "out_bytes_total": 0,
-            })
-        teams.append(
-            {
-                "name": name,
-                "backend": team["backend"],
-                "projects": projects,
-                "members": members,
-            }
-        )
+    for t in teams_data:
+        members_data = list_members(conn, t["name"])
+        projects_data = list_team_projects(conn, t["name"])
+        teams.append({
+            "name": t["name"],
+            "backend": t["backend"],
+            "projects": [
+                {
+                    "name": p["project_encoded_name"],
+                    "encoded_name": p["project_encoded_name"],
+                    "path": p["path"],
+                }
+                for p in projects_data
+            ],
+            "members": [
+                {
+                    "name": m["name"],
+                    "device_id": m["device_id"] or "",
+                    "connected": False,
+                    "in_bytes_total": 0,
+                    "out_bytes_total": 0,
+                }
+                for m in members_data
+            ],
+        })
 
     return {"teams": teams}
+
+
+# ─── Syncthing proxy endpoints (unchanged) ────────────────────────────
 
 
 @router.get("/detect")
@@ -271,77 +287,12 @@ async def sync_projects() -> Any:
         raise HTTPException(status_code=503, detail="Syncthing is not running")
 
 
-@router.get("/activity")
-async def sync_activity(since: int = 0, limit: int = 50) -> Any:
-    """Get recent Syncthing events and bandwidth stats."""
-    proxy = get_proxy()
-    try:
-        try:
-            events = await run_sync(proxy.get_events, since, limit)
-        except SyncthingNotRunning:
-            raise
-        except Exception:
-            events = []
-        try:
-            bandwidth = await run_sync(proxy.get_bandwidth)
-        except SyncthingNotRunning:
-            raise
-        except Exception:
-            bandwidth = {"upload_rate": 0, "download_rate": 0, "upload_total": 0, "download_total": 0}
-        return {
-            "events": events,
-            "upload_rate": bandwidth.get("upload_rate", 0),
-            "download_rate": bandwidth.get("download_rate", 0),
-            "upload_total": bandwidth.get("upload_total", 0),
-            "download_total": bandwidth.get("download_total", 0),
-        }
-    except SyncthingNotRunning:
-        raise HTTPException(status_code=503, detail="Syncthing is not running")
-
-
-@router.post("/projects/{project_name}/enable")
-async def sync_project_enable(project_name: str) -> Any:
-    """Enable sync for a project."""
-    validate_project_name(project_name)
-
-    config, SyncConfig, ProjectConfig = await run_sync(_load_sync_config)
-    if config is None:
-        raise HTTPException(status_code=400, detail="Not initialized")
-
-    project_config = ProjectConfig(path=project_name, encoded_name=project_name)
-    new_projects = dict(config.projects)
-    new_projects[project_name] = project_config
-    updated = config.model_copy(update={"projects": new_projects})
-    await run_sync(updated.save)
-
-    return {"ok": True, "project": project_name}
-
-
-@router.post("/projects/{project_name}/disable")
-async def sync_project_disable(project_name: str) -> Any:
-    """Disable sync for a project."""
-    validate_project_name(project_name)
-
-    config, SyncConfig, ProjectConfig = await run_sync(_load_sync_config)
-    if config is None:
-        raise HTTPException(status_code=400, detail="Not initialized")
-
-    new_projects = dict(config.projects)
-    new_projects.pop(project_name, None)
-    updated = config.model_copy(update={"projects": new_projects})
-    await run_sync(updated.save)
-
-    return {"ok": True, "project": project_name}
-
-
 @router.post("/projects/{project_name}/sync-now")
 async def sync_project_sync_now(project_name: str) -> Any:
     """Trigger an immediate rescan for a project's Syncthing folder."""
     validate_project_name(project_name)
     proxy = get_proxy()
     try:
-        # Find the Syncthing folder ID matching this project name
-        # Match against folder ID, path, or label
         folders = await run_sync(proxy.get_folder_status)
         matched = [
             f for f in folders
@@ -370,7 +321,7 @@ async def sync_rescan_all() -> Any:
         raise HTTPException(503, "Syncthing is not running")
 
 
-# ─── Task 1: Team CRUD ───────────────────────────────────────────────
+# ─── Team CRUD ─────────────────────────────────────────────────────────
 
 
 @router.post("/teams")
@@ -381,20 +332,16 @@ async def sync_create_team(req: CreateTeamRequest) -> Any:
     if req.backend not in ("syncthing", "ipfs"):
         raise HTTPException(400, "Invalid backend")
 
-    config, SyncConfig, _ = await run_sync(_load_sync_config)
+    config = await run_sync(_load_identity)
     if config is None:
         raise HTTPException(400, "Not initialized. Set up sync first.")
 
-    if req.name in config.model_dump().get("teams", {}):
+    conn = _get_sync_conn()
+    if get_team(conn, req.name) is not None:
         raise HTTPException(409, f"Team '{req.name}' already exists")
 
-    from karma.config import TeamConfig
-
-    team_cfg = TeamConfig(backend=req.backend, projects={})
-    teams = dict(config.teams)
-    teams[req.name] = team_cfg
-    updated = config.model_copy(update={"teams": teams})
-    await run_sync(updated.save)
+    create_team(conn, req.name, req.backend)
+    log_event(conn, "team_created", team_name=req.name)
 
     return {"ok": True, "name": req.name, "backend": req.backend}
 
@@ -405,23 +352,17 @@ async def sync_delete_team(team_name: str) -> Any:
     if not ALLOWED_PROJECT_NAME.match(team_name):
         raise HTTPException(400, "Invalid team name")
 
-    config, _, _ = await run_sync(_load_sync_config)
-    if config is None:
-        raise HTTPException(400, "Not initialized")
-
-    data = config.model_dump()
-    if team_name not in data.get("teams", {}):
+    conn = _get_sync_conn()
+    if get_team(conn, team_name) is None:
         raise HTTPException(404, f"Team '{team_name}' not found")
 
-    teams = dict(config.teams)
-    del teams[team_name]
-    updated = config.model_copy(update={"teams": teams})
-    await run_sync(updated.save)
+    log_event(conn, "team_deleted", team_name=team_name)
+    delete_team(conn, team_name)
 
     return {"ok": True, "name": team_name}
 
 
-# ─── Task 2: Team member management ──────────────────────────────────
+# ─── Team member management ───────────────────────────────────────────
 
 
 @router.post("/teams/{team_name}/members")
@@ -433,30 +374,14 @@ async def sync_add_member(team_name: str, req: AddMemberRequest) -> Any:
         raise HTTPException(400, "Invalid member name")
     validate_device_id(req.device_id)
 
-    config, _, _ = await run_sync(_load_sync_config)
-    if config is None:
-        raise HTTPException(400, "Not initialized")
-
-    data = config.model_dump()
-    if team_name not in data.get("teams", {}):
+    conn = _get_sync_conn()
+    if get_team(conn, team_name) is None:
         raise HTTPException(404, f"Team '{team_name}' not found")
 
-    from karma.config import TeamMemberSyncthing
+    add_member(conn, team_name, req.name, device_id=req.device_id)
+    log_event(conn, "member_added", team_name=team_name, member_name=req.name)
 
-    team_cfg = config.teams[team_name]
-
-    syncthing_members = dict(team_cfg.syncthing_members)
-    syncthing_members[req.name] = TeamMemberSyncthing(
-        syncthing_device_id=req.device_id
-    )
-    teams = dict(config.teams)
-    teams[team_name] = team_cfg.model_copy(
-        update={"syncthing_members": syncthing_members}
-    )
-    updated = config.model_copy(update={"teams": teams})
-    await run_sync(updated.save)
-
-    # Pair device in Syncthing (best-effort — config is already saved)
+    # Pair device in Syncthing (best-effort)
     paired = False
     try:
         proxy = get_proxy()
@@ -481,37 +406,30 @@ async def sync_remove_member(team_name: str, member_name: str) -> Any:
     if not ALLOWED_PROJECT_NAME.match(member_name):
         raise HTTPException(400, "Invalid member name")
 
-    config, _, _ = await run_sync(_load_sync_config)
-    if config is None:
-        raise HTTPException(400, "Not initialized")
-
-    data = config.model_dump()
-    if team_name not in data.get("teams", {}):
+    conn = _get_sync_conn()
+    if get_team(conn, team_name) is None:
         raise HTTPException(404, f"Team '{team_name}' not found")
 
-    team_cfg = config.teams[team_name]
-    if member_name not in team_cfg.syncthing_members:
+    members = list_members(conn, team_name)
+    member = next((m for m in members if m["name"] == member_name), None)
+    if member is None:
         raise HTTPException(404, f"Member '{member_name}' not found")
 
-    device_id = team_cfg.syncthing_members[member_name].syncthing_device_id
+    device_id = member["device_id"]
+    remove_member(conn, team_name, member_name)
+    log_event(conn, "member_removed", team_name=team_name, member_name=member_name)
 
-    members = dict(team_cfg.syncthing_members)
-    del members[member_name]
-    teams = dict(config.teams)
-    teams[team_name] = team_cfg.model_copy(update={"syncthing_members": members})
-    updated = config.model_copy(update={"teams": teams})
-    await run_sync(updated.save)
-
-    try:
-        proxy = get_proxy()
-        await run_sync(proxy.remove_device, device_id)
-    except Exception:
-        pass  # Best-effort device removal from Syncthing
+    if device_id:
+        try:
+            proxy = get_proxy()
+            await run_sync(proxy.remove_device, device_id)
+        except Exception:
+            pass
 
     return {"ok": True, "name": member_name}
 
 
-# ─── Task 3: Team project management ─────────────────────────────────
+# ─── Team project management ──────────────────────────────────────────
 
 
 @router.post("/teams/{team_name}/projects")
@@ -521,25 +439,23 @@ async def sync_add_team_project(team_name: str, req: AddTeamProjectRequest) -> A
     if not ALLOWED_PROJECT_NAME.match(team_name):
         raise HTTPException(400, "Invalid team name")
 
-    config, _, _ = await run_sync(_load_sync_config)
-    if config is None:
-        raise HTTPException(400, "Not initialized")
-    if team_name not in config.teams:
+    conn = _get_sync_conn()
+    if get_team(conn, team_name) is None:
         raise HTTPException(404, f"Team '{team_name}' not found")
 
     from karma.sync import encode_project_path
-    from karma.config import ProjectConfig
 
     encoded = encode_project_path(req.path) if req.path else req.name
-    project_config = ProjectConfig(path=req.path, encoded_name=encoded)
 
-    team_cfg = config.teams[team_name]
-    projects = dict(team_cfg.projects)
-    projects[req.name] = project_config
-    teams = dict(config.teams)
-    teams[team_name] = team_cfg.model_copy(update={"projects": projects})
-    updated = config.model_copy(update={"teams": teams})
-    await run_sync(updated.save)
+    # Ensure project exists in projects table (for FK)
+    conn.execute(
+        "INSERT OR IGNORE INTO projects (encoded_name, project_path) VALUES (?, ?)",
+        (encoded, req.path),
+    )
+    conn.commit()
+
+    add_team_project(conn, team_name, encoded, req.path)
+    log_event(conn, "project_added", team_name=team_name, project_encoded_name=encoded)
 
     return {
         "ok": True,
@@ -555,27 +471,21 @@ async def sync_remove_team_project(team_name: str, project_name: str) -> Any:
     if not ALLOWED_PROJECT_NAME.match(team_name):
         raise HTTPException(400, "Invalid team name")
 
-    config, _, _ = await run_sync(_load_sync_config)
-    if config is None:
-        raise HTTPException(400, "Not initialized")
-    if team_name not in config.teams:
+    conn = _get_sync_conn()
+    if get_team(conn, team_name) is None:
         raise HTTPException(404, f"Team '{team_name}' not found")
 
-    team_cfg = config.teams[team_name]
-    if project_name not in team_cfg.projects:
+    projects = list_team_projects(conn, team_name)
+    if not any(p["project_encoded_name"] == project_name for p in projects):
         raise HTTPException(404, f"Project '{project_name}' not found in team")
 
-    projects = dict(team_cfg.projects)
-    del projects[project_name]
-    teams = dict(config.teams)
-    teams[team_name] = team_cfg.model_copy(update={"projects": projects})
-    updated = config.model_copy(update={"teams": teams})
-    await run_sync(updated.save)
+    remove_team_project(conn, team_name, project_name)
+    log_event(conn, "project_removed", team_name=team_name, project_encoded_name=project_name)
 
     return {"ok": True, "name": project_name}
 
 
-# ─── Task 4: Watcher manager endpoints ───────────────────────────────
+# ─── Watcher manager endpoints ────────────────────────────────────────
 
 
 @router.get("/watch/status")
@@ -587,15 +497,15 @@ async def sync_watch_status() -> Any:
 @router.post("/watch/start")
 async def sync_watch_start(team_name: str | None = None) -> Any:
     """Start the session watcher for a team."""
-    config, _, _ = await run_sync(_load_sync_config)
+    config = await run_sync(_load_identity)
     if config is None:
         raise HTTPException(400, "Not initialized")
 
-    data = config.model_dump()
-    teams = data.get("teams", {})
+    conn = _get_sync_conn()
+    teams_data = list_teams(conn)
 
     if team_name is None:
-        syncthing_teams = [n for n, t in teams.items() if t.get("backend") == "syncthing"]
+        syncthing_teams = [t["name"] for t in teams_data if t["backend"] == "syncthing"]
         if len(syncthing_teams) == 1:
             team_name = syncthing_teams[0]
         elif len(syncthing_teams) == 0:
@@ -606,15 +516,36 @@ async def sync_watch_start(team_name: str | None = None) -> Any:
                 f"Multiple teams found. Specify team_name: {syncthing_teams}",
             )
 
-    if team_name not in teams:
+    team = get_team(conn, team_name)
+    if team is None:
         raise HTTPException(404, f"Team '{team_name}' not found")
 
     watcher = get_watcher()
     if watcher.is_running:
         raise HTTPException(409, "Watcher already running. Stop it first.")
 
+    # Build config_data dict that WatcherManager expects
+    projects = list_team_projects(conn, team_name)
+    config_data = {
+        "user_id": config.user_id,
+        "machine_id": config.machine_id,
+        "teams": {
+            team_name: {
+                "backend": team["backend"],
+                "projects": {
+                    p["project_encoded_name"]: {
+                        "encoded_name": p["project_encoded_name"],
+                        "path": p["path"] or "",
+                    }
+                    for p in projects
+                },
+            }
+        },
+    }
+
     try:
-        result = await run_sync(watcher.start, team_name, data)
+        result = await run_sync(watcher.start, team_name, config_data)
+        log_event(conn, "watcher_started", team_name=team_name)
         return result
     except Exception as e:
         raise HTTPException(500, f"Failed to start watcher: {e}")
@@ -626,23 +557,25 @@ async def sync_watch_stop() -> Any:
     watcher = get_watcher()
     if not watcher.is_running:
         return watcher.status()
-    return await run_sync(watcher.stop)
+    team = watcher._team
+    result = await run_sync(watcher.stop)
+    if team:
+        try:
+            conn = _get_sync_conn()
+            log_event(conn, "watcher_stopped", team_name=team)
+        except Exception:
+            pass
+    return result
 
 
-# ─── Task 5: Pending folders ─────────────────────────────────────────
+# ─── Pending folders ──────────────────────────────────────────────────
 
 
 @router.get("/pending")
 async def sync_pending() -> Any:
     """List pending folder offers from known team members."""
-    config, _, _ = await run_sync(_load_sync_config)
-    if config is None:
-        return {"pending": []}
-
-    known: dict[str, tuple[str, str]] = {}
-    for team_name, team_cfg in config.teams.items():
-        for member_name, member_cfg in team_cfg.syncthing_members.items():
-            known[member_cfg.syncthing_device_id] = (member_name, team_name)
+    conn = _get_sync_conn()
+    known = get_known_devices(conn)
 
     if not known:
         return {"pending": []}
@@ -658,7 +591,7 @@ async def sync_pending() -> Any:
 @router.post("/pending/accept")
 async def sync_accept_pending() -> Any:
     """Accept all pending folder offers from known team members."""
-    config, _, _ = await run_sync(_load_sync_config)
+    config = await run_sync(_load_identity)
     if config is None:
         raise HTTPException(400, "Not initialized")
 
@@ -673,6 +606,9 @@ async def sync_accept_pending() -> Any:
         from karma.main import _accept_pending_folders
 
         accepted = await run_sync(_accept_pending_folders, st, config)
+        if accepted:
+            conn = _get_sync_conn()
+            log_event(conn, "pending_accepted", detail={"count": accepted})
         return {"ok": True, "accepted": accepted}
     except SyncthingNotRunning:
         raise HTTPException(503, "Syncthing is not running")
@@ -680,7 +616,7 @@ async def sync_accept_pending() -> Any:
         raise HTTPException(500, f"Failed to accept pending folders: {e}")
 
 
-# ─── Task 6: Per-project sync status ─────────────────────────────────
+# ─── Per-project sync status ──────────────────────────────────────────
 
 
 @router.get("/teams/{team_name}/project-status")
@@ -689,22 +625,26 @@ async def sync_team_project_status(team_name: str) -> Any:
     if not ALLOWED_PROJECT_NAME.match(team_name):
         raise HTTPException(400, "Invalid team name")
 
-    config, _, _ = await run_sync(_load_sync_config)
+    config = await run_sync(_load_identity)
     if config is None:
         raise HTTPException(400, "Not initialized")
-    if team_name not in config.teams:
+
+    conn = _get_sync_conn()
+    team = get_team(conn, team_name)
+    if team is None:
         raise HTTPException(404, f"Team '{team_name}' not found")
 
-    from pathlib import Path as P
     from karma.config import KARMA_BASE
     from karma.worktree_discovery import find_worktree_dirs
 
-    team_cfg = config.teams[team_name]
-    projects_dir = P.home() / ".claude" / "projects"
+    projects = list_team_projects(conn, team_name)
+    members = list_members(conn, team_name)
+    projects_dir = Path.home() / ".claude" / "projects"
     result = []
 
-    for proj_name, proj in team_cfg.projects.items():
-        encoded = proj.encoded_name
+    for proj in projects:
+        encoded = proj["project_encoded_name"]
+        proj_path = proj["path"]
         claude_dir = projects_dir / encoded
 
         local_count = 0
@@ -732,7 +672,8 @@ async def sync_team_project_status(team_name: str) -> Any:
             )
 
         received_counts = {}
-        for mname in team_cfg.syncthing_members:
+        for m in members:
+            mname = m["name"]
             inbox = KARMA_BASE / "remote-sessions" / mname / encoded / "sessions"
             if inbox.is_dir():
                 received_counts[mname] = sum(
@@ -744,9 +685,9 @@ async def sync_team_project_status(team_name: str) -> Any:
                 received_counts[mname] = 0
 
         result.append({
-            "name": proj_name,
+            "name": encoded,
             "encoded_name": encoded,
-            "path": proj.path,
+            "path": proj_path,
             "local_count": local_count,
             "packaged_count": packaged_count,
             "received_counts": received_counts,
@@ -754,3 +695,37 @@ async def sync_team_project_status(team_name: str) -> Any:
         })
 
     return {"projects": result}
+
+
+# ─── Activity (sync events) ──────────────────────────────────────────
+
+
+@router.get("/activity")
+async def sync_activity(
+    team_name: str | None = None,
+    event_type: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> Any:
+    """Get recent sync activity events and bandwidth stats."""
+    conn = _get_sync_conn()
+    events = query_events(
+        conn, team_name=team_name, event_type=event_type,
+        limit=limit, offset=offset,
+    )
+
+    # Best-effort bandwidth from Syncthing
+    bandwidth = {"upload_rate": 0, "download_rate": 0, "upload_total": 0, "download_total": 0}
+    try:
+        proxy = get_proxy()
+        bandwidth = await run_sync(proxy.get_bandwidth)
+    except Exception:
+        pass
+
+    return {
+        "events": events,
+        "upload_rate": bandwidth.get("upload_rate", 0),
+        "download_rate": bandwidth.get("download_rate", 0),
+        "upload_total": bandwidth.get("upload_total", 0),
+        "download_total": bandwidth.get("download_total", 0),
+    }
