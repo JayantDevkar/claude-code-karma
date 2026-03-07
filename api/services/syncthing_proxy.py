@@ -88,9 +88,12 @@ class SyncthingProxy:
 
     def detect(self) -> dict:
         """Return Syncthing detection info: installed/running/version/device_id."""
-        if SyncthingClient is None or self._client is None:
-            installed = SyncthingClient is not None
-            return {"installed": installed, "running": False}
+        if SyncthingClient is None:
+            return {"installed": False, "running": False}
+        if self._client is None:
+            self._try_connect()
+        if self._client is None:
+            return {"installed": True, "running": False}
 
         client = self._client
         if not client.is_running():
