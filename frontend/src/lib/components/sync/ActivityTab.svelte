@@ -1,20 +1,14 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-	import { Activity, ArrowUp, ArrowDown, FolderSync, HardDrive, RefreshCw, ChevronDown, ChevronRight } from 'lucide-svelte';
+	import { Activity, ArrowUp, ArrowDown, FolderSync, HardDrive, RefreshCw, ChevronDown, ChevronRight, Users, UserPlus, UserMinus, FolderPlus, FolderMinus, Play, Square, Package, Download } from 'lucide-svelte';
 	import { API_BASE } from '$lib/config';
 	import { getProjectNameFromEncoded, formatBytes, formatBytesRate, formatRelativeTime } from '$lib/utils';
 	import { getSyncActions, type SyncAction } from '$lib/stores/syncActions.svelte';
+	import type { SyncEvent } from '$lib/api-types';
 
 	let { active = false }: { active?: boolean } = $props();
 
-	const POLL_INTERVAL = 3000;
-
-	interface SyncEvent {
-		id: number;
-		type: string;
-		time: string;
-		data?: Record<string, unknown>;
-	}
+	const POLL_INTERVAL = 5000;
 
 	interface ActivityResponse {
 		events: SyncEvent[];
@@ -30,7 +24,6 @@
 	let loading = $state(true);
 	let error = $state<string | null>(null);
 	let pollTimer: ReturnType<typeof setInterval> | null = null;
-	let lastEventId = 0;
 
 	interface FolderStats {
 		id: string;
@@ -47,43 +40,14 @@
 		completion: number;
 	}
 
-	// Lookup maps for resolving raw Syncthing IDs to human-readable names
-	let deviceNameMap = $state<Map<string, string>>(new Map());
-	let folderNameMap = $state<Map<string, string>>(new Map());
 	let folderStats = $state<FolderStats[]>([]);
 	let showFolderDetails = $state(false);
 
-	function resolveDeviceName(deviceId: string): string {
-		if (!deviceId) return '';
-		const name = deviceNameMap.get(deviceId);
-		if (name) return name;
-		return deviceId.slice(0, 7);
-	}
-
-	function resolveFolderName(folderId: string): string {
-		if (!folderId) return '';
-		const name = folderNameMap.get(folderId);
-		if (name) return name;
-		return folderId;
-	}
-
-	async function loadLookupMaps() {
+	async function loadFolderStats() {
 		try {
-			const [devicesRes, foldersRes] = await Promise.all([
-				fetch(`${API_BASE}/sync/devices`).catch(() => null),
-				fetch(`${API_BASE}/sync/projects`).catch(() => null)
-			]);
-			if (devicesRes?.ok) {
-				const data = await devicesRes.json();
-				const map = new Map<string, string>();
-				for (const d of data.devices ?? []) {
-					if (d.device_id && d.name) map.set(d.device_id, d.name);
-				}
-				deviceNameMap = map;
-			}
-			if (foldersRes?.ok) {
-				const data = await foldersRes.json();
-				const nameMap = new Map<string, string>();
+			const res = await fetch(`${API_BASE}/sync/projects`).catch(() => null);
+			if (res?.ok) {
+				const data = await res.json();
 				const stats: FolderStats[] = [];
 				for (const f of data.folders ?? []) {
 					if (!f.id) continue;
@@ -99,7 +63,6 @@
 						const user = userMatch?.[1] ?? '';
 						displayName = user ? `${projectName} (${user})` : projectName;
 					}
-					nameMap.set(f.id, displayName);
 					const globalBytes = (f.globalBytes as number) ?? 0;
 					const localBytes = (f.localBytes as number) ?? 0;
 					stats.push({
@@ -117,139 +80,114 @@
 						completion: globalBytes > 0 ? Math.round((localBytes / globalBytes) * 100) : 100
 					});
 				}
-				folderNameMap = nameMap;
 				folderStats = stats;
 			}
 		} catch {
-			// Non-critical — events still show raw IDs
+			// Non-critical
 		}
 	}
 
-	function formatEvent(event: SyncEvent): { title: string; detail: string; dotColor: string } {
-		const folder = (event.data?.folder as string) || '';
-		const device = (event.data?.device as string) || (event.data?.id as string) || '';
-		const folderName = resolveFolderName(folder);
-		const deviceName = resolveDeviceName(device);
+	function formatEventType(event: SyncEvent): { title: string; detail: string; dotColor: string; icon: typeof Activity } {
+		const team = event.team_name ?? '';
+		const member = event.member_name ?? '';
+		const project = event.project_encoded_name
+			? getProjectNameFromEncoded(event.project_encoded_name)
+			: '';
 
-		switch (event.type) {
-			case 'ItemFinished': {
-				const item = (event.data?.item as string) || '';
-				const isSession = item.endsWith('.jsonl');
-				const isManifest = item === 'manifest.json';
-				if (isSession) {
-					return {
-						title: 'Session synced',
-						detail: `${folderName} — ${item.replace('.jsonl', '').slice(0, 8)}...`,
-						dotColor: 'bg-[var(--success)]'
-					};
-				}
-				if (isManifest) {
-					return {
-						title: 'Sync manifest updated',
-						detail: folderName,
-						dotColor: 'bg-[var(--success)]'
-					};
-				}
+		switch (event.event_type) {
+			case 'team_created':
 				return {
-					title: 'File synced',
-					detail: `${folderName} — ${item}`,
-					dotColor: 'bg-[var(--success)]'
-				};
-			}
-			case 'DeviceConnected':
-				return {
-					title: `${deviceName || 'Teammate'} connected`,
-					detail: 'Ready to sync sessions',
-					dotColor: 'bg-[var(--success)]'
-				};
-			case 'DeviceDisconnected':
-				return {
-					title: `${deviceName || 'Teammate'} went offline`,
+					title: `Team "${team}" created`,
 					detail: '',
-					dotColor: 'bg-[var(--text-muted)]'
+					dotColor: 'bg-[var(--success)]',
+					icon: Users
 				};
-			case 'FolderCompletion': {
-				const pct = (event.data?.completion as number) ?? 0;
-				if (pct >= 100) {
-					return {
-						title: 'All sessions up to date',
-						detail: folderName,
-						dotColor: 'bg-[var(--success)]'
-					};
-				}
+			case 'team_deleted':
 				return {
-					title: `Syncing sessions — ${Math.round(pct)}%`,
-					detail: folderName,
-					dotColor: 'bg-[var(--info)]'
+					title: `Team "${team}" deleted`,
+					detail: '',
+					dotColor: 'bg-[var(--error)]',
+					icon: Users
 				};
-			}
-			case 'FolderSummary':
+			case 'member_added':
 				return {
-					title: 'Scan completed',
-					detail: folderName,
-					dotColor: 'bg-[var(--text-muted)]'
+					title: `${member || 'Member'} joined`,
+					detail: team ? `Team: ${team}` : '',
+					dotColor: 'bg-[var(--success)]',
+					icon: UserPlus
 				};
-			case 'StateChanged': {
-				const to = (event.data?.to as string) || '';
-				if (to === 'idle') {
-					return {
-						title: 'Sync completed',
-						detail: folderName,
-						dotColor: 'bg-[var(--success)]'
-					};
-				}
-				if (to === 'syncing') {
-					return {
-						title: 'Syncing sessions...',
-						detail: folderName,
-						dotColor: 'bg-[var(--info)]'
-					};
-				}
-				if (to === 'scanning') {
-					return {
-						title: 'Scanning for changes...',
-						detail: folderName,
-						dotColor: 'bg-[var(--info)]'
-					};
-				}
+			case 'member_removed':
 				return {
-					title: `State: ${to}`,
-					detail: folderName,
-					dotColor: 'bg-[var(--text-muted)]'
+					title: `${member || 'Member'} removed`,
+					detail: team ? `Team: ${team}` : '',
+					dotColor: 'bg-[var(--text-muted)]',
+					icon: UserMinus
 				};
-			}
-			case 'FolderErrors':
+			case 'project_added':
 				return {
-					title: 'Sync error',
-					detail: ((event.data?.errors as Array<{ error: string }>) || [])[0]?.error || 'Unknown error',
-					dotColor: 'bg-[var(--error)]'
+					title: `Project "${project}" added`,
+					detail: team ? `Team: ${team}` : '',
+					dotColor: 'bg-[var(--success)]',
+					icon: FolderPlus
+				};
+			case 'project_removed':
+				return {
+					title: `Project "${project}" removed`,
+					detail: team ? `Team: ${team}` : '',
+					dotColor: 'bg-[var(--text-muted)]',
+					icon: FolderMinus
+				};
+			case 'watcher_started':
+				return {
+					title: 'Watcher started',
+					detail: team ? `Team: ${team}` : '',
+					dotColor: 'bg-[var(--success)]',
+					icon: Play
+				};
+			case 'watcher_stopped':
+				return {
+					title: 'Watcher stopped',
+					detail: team ? `Team: ${team}` : '',
+					dotColor: 'bg-[var(--text-muted)]',
+					icon: Square
+				};
+			case 'session_packaged':
+				return {
+					title: 'Session packaged',
+					detail: project ? `${project}${team ? ` (${team})` : ''}` : '',
+					dotColor: 'bg-[var(--accent)]',
+					icon: Package
+				};
+			case 'session_received':
+				return {
+					title: `Session received${member ? ` from ${member}` : ''}`,
+					detail: project || '',
+					dotColor: 'bg-[var(--info)]',
+					icon: Download
+				};
+			case 'pending_accepted':
+				return {
+					title: 'Pending folder accepted',
+					detail: member ? `From: ${member}` : '',
+					dotColor: 'bg-[var(--success)]',
+					icon: FolderSync
 				};
 			default:
 				return {
-					title: event.type.replace(/([A-Z])/g, ' $1').trim(),
-					detail: deviceName || folderName || '',
-					dotColor: 'bg-[var(--text-muted)]'
+					title: event.event_type.replace(/_/g, ' '),
+					detail: team || project || '',
+					dotColor: 'bg-[var(--text-muted)]',
+					icon: Activity
 				};
 		}
 	}
 
 	async function fetchActivity() {
 		try {
-			const res = await fetch(`${API_BASE}/sync/activity?since=${lastEventId}&limit=50`);
+			const res = await fetch(`${API_BASE}/sync/activity?limit=50`);
 			if (res.ok) {
 				const data: ActivityResponse = await res.json();
-				if (data.events?.length) {
-					if (loading) {
-						events = data.events;
-					} else {
-						const existingIds = new Set(events.map((e) => e.id));
-						const newEvents = data.events.filter((e) => !existingIds.has(e.id));
-						if (newEvents.length) {
-							events = [...events, ...newEvents].slice(-100);
-						}
-					}
-					lastEventId = Math.max(...data.events.map((e) => e.id));
-				}
+				events = data.events ?? [];
 				uploadRate = data.upload_rate ?? 0;
 				downloadRate = data.download_rate ?? 0;
 				error = null;
@@ -272,7 +210,7 @@
 		try {
 			await fetch(`${API_BASE}/sync/rescan`, { method: 'POST' });
 			await fetchActivity();
-			await loadLookupMaps();
+			await loadFolderStats();
 		} finally {
 			rescanning = false;
 		}
@@ -281,7 +219,7 @@
 	// Reload when tab becomes active
 	$effect(() => {
 		if (active) {
-			loadLookupMaps();
+			loadFolderStats();
 			fetchActivity();
 		}
 	});
@@ -350,10 +288,10 @@
 		</div>
 	{/if}
 
-	<!-- Event log (session-meaningful) -->
+	<!-- Event log (sync_events from SQLite) -->
 	<div class="rounded-lg border border-[var(--border)] bg-[var(--bg-subtle)]">
 		<div class="px-4 py-3 border-b border-[var(--border-subtle)]">
-			<h3 class="text-sm font-medium text-[var(--text-primary)]">Session Activity</h3>
+			<h3 class="text-sm font-medium text-[var(--text-primary)]">Sync Events</h3>
 		</div>
 
 		{#if loading}
@@ -368,17 +306,18 @@
 			<div class="px-4 py-12 flex flex-col items-center gap-3 text-[var(--text-muted)]">
 				<Activity size={32} class="opacity-40" />
 				<span class="text-sm">No activity yet</span>
+				<span class="text-xs">Events will appear as you create teams, add members, and sync sessions</span>
 			</div>
 		{:else}
 			<div class="px-4 divide-y divide-[var(--border-subtle)]">
-				{#each [...events].reverse() as event (event.id)}
-					{@const fmt = formatEvent(event)}
+				{#each events as event (event.id)}
+					{@const fmt = formatEventType(event)}
 					<div class="flex gap-3 py-3">
 						<span class="w-2 h-2 rounded-full mt-1.5 shrink-0 {fmt.dotColor}"></span>
 						<div class="flex-1 min-w-0">
 							<div class="flex items-center justify-between">
 								<span class="text-sm font-medium text-[var(--text-primary)]">{fmt.title}</span>
-								<span class="text-xs text-[var(--text-muted)] shrink-0 ml-2">{formatRelativeTime(event.time)}</span>
+								<span class="text-xs text-[var(--text-muted)] shrink-0 ml-2">{formatRelativeTime(event.created_at)}</span>
 							</div>
 							{#if fmt.detail}
 								<p class="text-xs text-[var(--text-secondary)] mt-0.5 truncate">{fmt.detail}</p>
