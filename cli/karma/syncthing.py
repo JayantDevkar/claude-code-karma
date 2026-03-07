@@ -105,14 +105,22 @@ class SyncthingClient:
         devices: list,
         folder_type: str = "sendonly",
     ) -> None:
-        """Create a shared folder with specified devices."""
+        """Create or update a shared folder with specified devices."""
         config = self._get_config()
-        config["folders"].append({
-            "id": folder_id,
-            "path": path,
-            "devices": [{"deviceID": d} for d in devices],
-            "type": folder_type,
-        })
+        existing = next((f for f in config["folders"] if f["id"] == folder_id), None)
+        if existing is not None:
+            # Update device list on existing folder
+            current_ids = {d["deviceID"] for d in existing.get("devices", [])}
+            for d in devices:
+                if d not in current_ids:
+                    existing["devices"].append({"deviceID": d})
+        else:
+            config["folders"].append({
+                "id": folder_id,
+                "path": path,
+                "devices": [{"deviceID": d} for d in devices],
+                "type": folder_type,
+            })
         self._set_config(config)
 
     def remove_device(self, device_id: str) -> None:
