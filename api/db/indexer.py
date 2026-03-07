@@ -862,6 +862,14 @@ def _update_project_summaries(conn: sqlite3.Connection) -> None:
         """
     ).fetchall()
 
+    # Pre-fetch already-known git identities to avoid redundant subprocess calls
+    known_git_ids = {
+        r[0]: r[1]
+        for r in conn.execute(
+            "SELECT encoded_name, git_identity FROM projects WHERE git_identity IS NOT NULL"
+        ).fetchall()
+    }
+
     for row in rows:
         encoded_name = row[0]
         session_count = row[1]
@@ -877,9 +885,9 @@ def _update_project_summaries(conn: sqlite3.Connection) -> None:
         slug = compute_project_slug(encoded_name, project_path)
         display_name = Path(project_path).name if project_path else encoded_name
 
-        # Detect git identity for cross-machine project matching
-        git_identity = None
-        if project_path:
+        # Detect git identity for cross-machine project matching (skip if already known)
+        git_identity = known_git_ids.get(encoded_name)
+        if git_identity is None and project_path:
             try:
                 from karma.sync import detect_git_identity
                 git_identity = detect_git_identity(project_path)

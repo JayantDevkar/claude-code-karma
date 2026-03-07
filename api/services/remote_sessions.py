@@ -143,11 +143,13 @@ def get_project_mapping() -> dict[tuple[str, str], str]:
         from db.connection import create_read_connection
 
         db_conn = create_read_connection()
-        rows = db_conn.execute(
-            "SELECT encoded_name, git_identity FROM projects WHERE git_identity IS NOT NULL"
-        ).fetchall()
-        git_lookup = {row[1]: row[0] for row in rows}
-        db_conn.close()
+        try:
+            rows = db_conn.execute(
+                "SELECT encoded_name, git_identity FROM projects WHERE git_identity IS NOT NULL"
+            ).fetchall()
+            git_lookup = {row[1]: row[0] for row in rows}
+        finally:
+            db_conn.close()
 
         if git_lookup:
             remote_base = _get_remote_sessions_dir()

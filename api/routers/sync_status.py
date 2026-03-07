@@ -98,6 +98,33 @@ def _load_identity():
         return None
 
 
+def _compute_proj_suffix(git_identity: Optional[str], path: Optional[str], encoded: str) -> str:
+    """Compute the project suffix used in Syncthing folder IDs."""
+    if git_identity:
+        return git_identity.replace("/", "-")
+    return Path(path).name if path else encoded
+
+
+async def _ensure_outbox_folder(proxy, config, encoded: str, proj_suffix: str, device_ids: list[str]) -> None:
+    """Create or update an outbox Syncthing folder for a project.
+
+    Tries update_folder_devices first (idempotent), falls back to add_folder.
+    """
+    from karma.config import KARMA_BASE
+
+    outbox_id = f"karma-out-{config.user_id}-{proj_suffix}"
+    outbox_path = str(KARMA_BASE / "remote-sessions" / config.user_id / encoded)
+    Path(outbox_path).mkdir(parents=True, exist_ok=True)
+
+    try:
+        await run_sync(proxy.update_folder_devices, outbox_id, device_ids)
+    except ValueError:
+        all_ids = list(device_ids)
+        if config.syncthing.device_id and config.syncthing.device_id not in all_ids:
+            all_ids.append(config.syncthing.device_id)
+        await run_sync(proxy.add_folder, outbox_id, outbox_path, all_ids, "sendonly")
+
+
 async def _auto_share_folders(proxy, config, conn, team_name, new_device_id) -> dict:
     """Auto-create Syncthing shared folders for all projects in a team.
 
@@ -115,35 +142,22 @@ async def _auto_share_folders(proxy, config, conn, team_name, new_device_id) -> 
 
     for proj in projects:
         encoded = proj["project_encoded_name"]
-        git_id = proj.get("git_identity")
-        if git_id:
-            proj_suffix = git_id.replace("/", "-")
-        else:
-            proj_suffix = Path(proj["path"]).name if proj.get("path") else encoded
+        proj_suffix = _compute_proj_suffix(proj.get("git_identity"), proj.get("path"), encoded)
 
-        # 1. My outbox: send my sessions to teammates
-        outbox_id = f"karma-out-{config.user_id}-{proj_suffix}"
-        outbox_path = str(KARMA_BASE / "remote-sessions" / config.user_id / encoded)
-        Path(outbox_path).mkdir(parents=True, exist_ok=True)
-
+        # Collect all device IDs for this team (deduped)
         all_device_ids = [new_device_id]
-        if config.syncthing.device_id and config.syncthing.device_id not in all_device_ids:
-            all_device_ids.append(config.syncthing.device_id)
         for m in members:
             if m["device_id"] and m["device_id"] not in all_device_ids:
                 all_device_ids.append(m["device_id"])
 
+        # 1. My outbox: send my sessions to teammates
         try:
-            # Try updating existing folder first, fall back to creating new
-            try:
-                await run_sync(proxy.update_folder_devices, outbox_id, [new_device_id])
-            except ValueError:
-                await run_sync(proxy.add_folder, outbox_id, outbox_path, all_device_ids, "sendonly")
+            await _ensure_outbox_folder(proxy, config, encoded, proj_suffix, all_device_ids)
             result["outboxes"] += 1
         except Exception as e:
             result["errors"].append(f"outbox {proj_suffix}: {e}")
 
-        # 2. Inbox for the new member
+        # 2. Inbox for the new member (their outbox is our receiveonly inbox)
         for m in members:
             if m["device_id"] == new_device_id:
                 inbox_path = str(KARMA_BASE / "remote-sessions" / m["name"] / encoded)
@@ -509,11 +523,15 @@ async def sync_join_team(req: JoinTeamRequest) -> Any:
     if paired:
         try:
             folders_created = await _auto_share_folders(proxy, config, conn, team_name, device_id)
-            if folders_created["outboxes"] or folders_created["inboxes"]:
+        except Exception as e:
+            logger.warning("Auto-share folders failed during join: %s", e)
+
+        if folders_created and (folders_created["outboxes"] or folders_created["inboxes"]):
+            try:
                 log_event(conn, "folders_shared", team_name=team_name, member_name=leader_name,
                           detail={"outboxes": folders_created["outboxes"], "inboxes": folders_created["inboxes"]})
-        except Exception:
-            pass
+            except Exception as e:
+                logger.warning("Failed to log folders_shared event: %s", e)
 
     # Auto-accept pending folders from the leader
     accepted = 0
@@ -625,10 +643,15 @@ async def sync_add_member(team_name: str, req: AddMemberRequest) -> Any:
         config = await run_sync(_load_identity)
         if config is not None:
             folders_created = await _auto_share_folders(proxy, config, conn, team_name, req.device_id)
+    except Exception as e:
+        logger.warning("Syncthing pairing/folder setup failed for %s: %s", req.name, e)
+
+    if folders_created and (folders_created["outboxes"] or folders_created["inboxes"]):
+        try:
             log_event(conn, "folders_shared", team_name=team_name, member_name=req.name,
                       detail={"outboxes": folders_created["outboxes"], "inboxes": folders_created["inboxes"]})
-    except Exception:
-        pass
+        except Exception as e:
+            logger.warning("Failed to log folders_shared event: %s", e)
 
     return {
         "ok": True,
@@ -709,30 +732,12 @@ async def sync_add_team_project(team_name: str, req: AddTeamProjectRequest) -> A
     try:
         config = await run_sync(_load_identity)
         if config is not None:
-            from karma.config import KARMA_BASE
-
-            # Use git_identity for folder ID suffix when available
-            if git_identity:
-                proj_suffix = git_identity.replace("/", "-")
-            else:
-                proj_suffix = Path(req.path).name if req.path else encoded
-
+            proj_suffix = _compute_proj_suffix(git_identity, req.path, encoded)
             members = list_members(conn, team_name)
-
-            # Outbox: send my sessions to teammates
-            outbox_id = f"karma-out-{config.user_id}-{proj_suffix}"
-            outbox_path = str(KARMA_BASE / "remote-sessions" / config.user_id / encoded)
-            Path(outbox_path).mkdir(parents=True, exist_ok=True)
-
-            device_ids = []
-            if config.syncthing.device_id:
-                device_ids.append(config.syncthing.device_id)
-            for m in members:
-                if m["device_id"] and m["device_id"] not in device_ids:
-                    device_ids.append(m["device_id"])
+            device_ids = [m["device_id"] for m in members if m["device_id"]]
 
             proxy = get_proxy()
-            await run_sync(proxy.add_folder, outbox_id, outbox_path, device_ids, "sendonly")
+            await _ensure_outbox_folder(proxy, config, encoded, proj_suffix, device_ids)
             syncthing_ok = True
     except Exception as e:
         logger.warning("Failed to create Syncthing folder for project %s: %s", encoded, e)
