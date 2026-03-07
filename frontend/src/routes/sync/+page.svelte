@@ -72,7 +72,7 @@
 	<PageHeader
 		title="Sync"
 		icon={RefreshCw}
-		iconColor="--nav-purple"
+		iconColor="--nav-green"
 		breadcrumbs={[{ label: 'Dashboard', href: '/' }, { label: 'Sync' }]}
 	>
 		{#snippet headerRight()}

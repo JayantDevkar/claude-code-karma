@@ -30,7 +30,7 @@
 <PageHeader
 	title="Teams"
 	icon={Users}
-	iconColor="--nav-purple"
+	iconColor="--nav-indigo"
 	breadcrumbs={[{ label: 'Dashboard', href: '/' }, { label: 'Teams' }]}
 >
 	{#snippet headerRight()}
@@ -63,7 +63,7 @@
 		<!-- State 1: Sync not configured -->
 		<div class="flex flex-col items-center justify-center py-16 text-center">
 			<div
-				class="w-16 h-16 rounded-2xl flex items-center justify-center bg-[var(--nav-purple-subtle)] text-[var(--nav-purple)] mb-5"
+				class="w-16 h-16 rounded-2xl flex items-center justify-center bg-[var(--nav-indigo-subtle)] text-[var(--nav-indigo)] mb-5"
 			>
 				<Users size={32} strokeWidth={1.5} />
 			</div>
@@ -84,7 +84,7 @@
 		<!-- State 2: No teams yet -->
 		<div class="flex flex-col items-center justify-center py-16 text-center">
 			<div
-				class="w-16 h-16 rounded-2xl flex items-center justify-center bg-[var(--nav-purple-subtle)] text-[var(--nav-purple)] mb-5"
+				class="w-16 h-16 rounded-2xl flex items-center justify-center bg-[var(--nav-indigo-subtle)] text-[var(--nav-indigo)] mb-5"
 			>
 				<Users size={32} strokeWidth={1.5} />
 			</div>
