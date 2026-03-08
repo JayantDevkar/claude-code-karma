@@ -14,12 +14,14 @@
 		Users,
 		UserPlus,
 		FolderSync,
+		FolderGit2,
 		Plus,
 		Trash2,
 		Loader2,
-		AlertTriangle
+		AlertTriangle,
+		CheckCircle2
 	} from 'lucide-svelte';
-	import type { PendingDevice, SyncDevice } from '$lib/api-types';
+	import type { PendingDevice, SyncDevice, SyncPendingFolder } from '$lib/api-types';
 
 	let { data } = $props();
 
@@ -34,12 +36,19 @@
 	let pendingDevices = $state<PendingDevice[]>([]);
 	let devices = $state<SyncDevice[]>([]);
 
+	// Pending folder offers for this team
+	let pendingFolders = $state<SyncPendingFolder[]>([]);
+	let acceptingFolders = $state(false);
+
 	// Sync from server data when it changes (e.g. after invalidateAll)
 	$effect(() => {
 		pendingDevices = data.pendingDevices ?? [];
 	});
 	$effect(() => {
 		devices = data.devices ?? [];
+	});
+	$effect(() => {
+		pendingFolders = data.pendingFolders ?? [];
 	});
 
 	let team = $derived(data.team);
@@ -48,7 +57,23 @@
 	let userId = $derived(data.syncStatus?.user_id);
 	let sharedProjectNames = $derived(projects.map((p) => p.encoded_name));
 
-	// Poll for pending devices and device status
+	function parseFolderLabel(folderId: string): string {
+		const match = folderId.match(/^karma-(?:out|in)-[^-]+-(.+)$/);
+		if (match) return match[1];
+		return folderId;
+	}
+
+	async function acceptAllFolders() {
+		acceptingFolders = true;
+		try {
+			await fetch(`${API_BASE}/sync/pending/accept`, { method: 'POST' });
+			invalidateAll();
+		} finally {
+			acceptingFolders = false;
+		}
+	}
+
+	// Poll for pending devices, device status, and pending folders
 	onMount(() => {
 		let controller = new AbortController();
 
@@ -58,9 +83,10 @@
 			const { signal } = controller;
 
 			try {
-				const [pendingRes, devicesRes] = await Promise.all([
+				const [pendingRes, devicesRes, foldersRes] = await Promise.all([
 					fetch(`${API_BASE}/sync/pending-devices`, { signal }),
-					fetch(`${API_BASE}/sync/devices`, { signal })
+					fetch(`${API_BASE}/sync/devices`, { signal }),
+					fetch(`${API_BASE}/sync/pending`, { signal })
 				]);
 				if (pendingRes.ok) {
 					const pd = await pendingRes.json();
@@ -69,6 +95,12 @@
 				if (devicesRes.ok) {
 					const dd = await devicesRes.json();
 					devices = dd.devices ?? [];
+				}
+				if (foldersRes.ok) {
+					const fd = await foldersRes.json();
+					pendingFolders = (fd.pending ?? []).filter(
+						(f: SyncPendingFolder) => f.from_team === data.teamName
+					);
 				}
 			} catch (e) {
 				if (e instanceof DOMException && e.name === 'AbortError') return;
@@ -186,6 +218,52 @@
 							teamName={data.teamName}
 							onaccepted={handleRefresh}
 						/>
+					{/each}
+				</div>
+			</section>
+		{/if}
+
+		<!-- Pending Project Shares -->
+		{#if pendingFolders.length > 0}
+			<section>
+				<div class="flex items-center justify-between mb-3">
+					<div class="flex items-center gap-2">
+						<h2 class="text-sm font-semibold text-[var(--text-primary)] uppercase tracking-wider">
+							Incoming Project Shares
+						</h2>
+						<span class="px-1.5 py-0.5 text-[10px] font-medium rounded bg-[var(--warning)]/15 text-[var(--warning)] border border-[var(--warning)]/25">
+							{pendingFolders.length}
+						</span>
+					</div>
+					<button
+						onclick={acceptAllFolders}
+						disabled={acceptingFolders}
+						class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-[var(--radius-md)]
+							bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)] transition-colors
+							disabled:opacity-50 disabled:cursor-not-allowed"
+					>
+						{#if acceptingFolders}
+							<Loader2 size={12} class="animate-spin" />
+							Accepting...
+						{:else}
+							<CheckCircle2 size={12} />
+							Accept All
+						{/if}
+					</button>
+				</div>
+				<div class="space-y-2">
+					{#each pendingFolders as offer (offer.folder_id)}
+						<div class="flex items-center gap-3 p-3 rounded-lg border border-[var(--warning)]/20 bg-[var(--warning)]/5">
+							<FolderGit2 size={16} class="text-[var(--warning)] shrink-0" />
+							<div class="flex-1 min-w-0">
+								<p class="text-sm font-medium text-[var(--text-primary)] truncate">
+									{parseFolderLabel(offer.folder_id)}
+								</p>
+								<p class="text-xs text-[var(--text-muted)] mt-0.5">
+									from <span class="text-[var(--text-secondary)]">{offer.from_member}</span>
+								</p>
+							</div>
+						</div>
 					{/each}
 				</div>
 			</section>
