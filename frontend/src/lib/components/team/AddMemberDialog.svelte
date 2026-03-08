@@ -82,7 +82,7 @@
 				<textarea
 					id="member-join-code"
 					bind:value={joinCode}
-					placeholder="acme:bob:DEF456-GHI789-..."
+					placeholder="bob:DEF456-GHI789-..."
 					rows={2}
 					class="w-full px-3 py-2 text-sm font-mono rounded-[var(--radius-md)] border border-[var(--border)]
 						bg-[var(--bg-base)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]

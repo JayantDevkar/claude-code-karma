@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import { Play, Square, Monitor, FolderGit2, ArrowUp, ArrowDown, Bell, CheckCircle2, Loader2, Users, XCircle, RotateCcw, Clock, RefreshCw, ChevronDown } from 'lucide-svelte';
+	import { Play, Square, Monitor, FolderGit2, ArrowUp, ArrowDown, Bell, CheckCircle2, Loader2, Users, XCircle, RotateCcw, Clock, RefreshCw, ChevronDown, Copy, CheckCircle } from 'lucide-svelte';
 	import type { SyncDetect, SyncStatusResponse, SyncWatchStatus, SyncPendingFolder, SyncProjectStatus, SyncEvent } from '$lib/api-types';
-	import { formatRelativeTime } from '$lib/utils';
+	import { formatRelativeTime, copyToClipboard } from '$lib/utils';
 	import { API_BASE } from '$lib/config';
 
 	let {
@@ -266,6 +266,33 @@
 
 	// ── Machine Details accordion (Task 7) ───────────────────────────────────
 	let machineDetailsOpen = $state(false);
+	let copiedJoinCode = $state(false);
+	let copiedDeviceId = $state(false);
+
+	let ownDeviceId = $derived(detect?.device_id ?? status?.device_id ?? null);
+	let ownJoinCode = $derived(
+		status?.user_id && ownDeviceId
+			? `${status.user_id}:${ownDeviceId}`
+			: null
+	);
+
+	async function copyJoinCode() {
+		if (!ownJoinCode) return;
+		const ok = await copyToClipboard(ownJoinCode);
+		if (ok) {
+			copiedJoinCode = true;
+			setTimeout(() => (copiedJoinCode = false), 2000);
+		}
+	}
+
+	async function copyDeviceId() {
+		if (!ownDeviceId) return;
+		const ok = await copyToClipboard(ownDeviceId);
+		if (ok) {
+			copiedDeviceId = true;
+			setTimeout(() => (copiedDeviceId = false), 2000);
+		}
+	}
 
 	// ── Reset sync ───────────────────────────────────────────────────────────
 	let resetting = $state(false);
@@ -611,6 +638,51 @@
 						<div class="flex items-center justify-between mb-3">
 							<span class="text-xs font-medium text-[var(--text-secondary)]">Syncthing Version</span>
 							<span class="text-xs text-[var(--text-muted)]">v{detect.version}</span>
+						</div>
+					{/if}
+
+					{#if ownDeviceId}
+						<div class="flex items-center justify-between mb-3">
+							<span class="text-xs font-medium text-[var(--text-secondary)]">Device ID</span>
+							<div class="flex items-center gap-1.5">
+								<span class="text-xs text-[var(--text-primary)] font-mono truncate max-w-[200px]">{ownDeviceId}</span>
+								<button
+									onclick={copyDeviceId}
+									aria-label="Copy device ID"
+									class="shrink-0 p-1 rounded text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-muted)] transition-colors"
+								>
+									{#if copiedDeviceId}
+										<CheckCircle size={12} class="text-[var(--success)]" />
+									{:else}
+										<Copy size={12} />
+									{/if}
+								</button>
+							</div>
+						</div>
+					{/if}
+
+					{#if ownJoinCode}
+						<div class="mb-3 space-y-1.5">
+							<span class="text-xs font-medium text-[var(--text-secondary)]">Your Join Code</span>
+							<p class="text-[11px] text-[var(--text-muted)]">Share this with teammates so they can add you via "Add Member".</p>
+							<div class="flex items-center gap-2">
+								<code
+									class="flex-1 px-3 py-2 text-xs font-mono rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-muted)] text-[var(--text-primary)] break-all select-all leading-relaxed"
+								>
+									{ownJoinCode}
+								</code>
+								<button
+									onclick={copyJoinCode}
+									aria-label="Copy join code"
+									class="shrink-0 p-2 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-base)] text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-muted)] transition-colors"
+								>
+									{#if copiedJoinCode}
+										<CheckCircle size={14} class="text-[var(--success)]" />
+									{:else}
+										<Copy size={14} />
+									{/if}
+								</button>
+							</div>
 						</div>
 					{/if}
 

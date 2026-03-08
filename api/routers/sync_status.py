@@ -271,6 +271,7 @@ class AddTeamProjectRequest(BaseModel):
 
 class JoinTeamRequest(BaseModel):
     join_code: str
+    team_name: str | None = None
 
 
 # ─── Init & Status ────────────────────────────────────────────────────
@@ -550,11 +551,18 @@ async def sync_delete_team(team_name: str) -> Any:
 
 @router.post("/teams/join")
 async def sync_join_team(req: JoinTeamRequest) -> Any:
-    """Join a team via a join code (team_name:user_id:device_id)."""
+    """Join a team via a join code (user_id:device_id or team_name:user_id:device_id)."""
     parts = req.join_code.split(":", 2)
-    if len(parts) != 3:
-        raise HTTPException(400, "Invalid join code format. Expected team:user:device_id")
-    team_name, leader_name, device_id = parts
+    if len(parts) == 2:
+        # New format: user_id:device_id (team inferred from request context or must exist)
+        leader_name, device_id = parts
+        team_name = req.team_name or None
+        if not team_name:
+            raise HTTPException(400, "Join code has no team. Provide team_name or use team:user:device_id format.")
+    elif len(parts) == 3:
+        team_name, leader_name, device_id = parts
+    else:
+        raise HTTPException(400, "Invalid join code format. Expected user:device_id or team:user:device_id")
 
     validate_user_id(team_name)
     validate_user_id(leader_name)
@@ -618,9 +626,9 @@ async def sync_join_team(req: JoinTeamRequest) -> Any:
     except Exception:
         pass
 
-    # Generate joiner's own code to share back
+    # Generate joiner's own code to share back (team-agnostic)
     own_device_id = config.syncthing.device_id if config.syncthing else None
-    own_join_code = f"{team_name}:{config.user_id}:{own_device_id}" if own_device_id else None
+    own_join_code = f"{config.user_id}:{own_device_id}" if own_device_id else None
 
     return {
         "ok": True,
