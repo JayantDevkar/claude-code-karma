@@ -9,7 +9,7 @@ from typing import Optional
 import click
 
 from karma.config import SyncConfig, SyncthingSettings, SYNC_CONFIG_PATH, KARMA_BASE
-from karma.sync import encode_project_path
+from karma.sync import encode_project_path, detect_git_identity
 
 # Add API to path for sync_queries
 _API_PATH = Path(__file__).parent.parent.parent / "api"
@@ -17,6 +17,93 @@ if str(_API_PATH) not in sys.path:
     sys.path.insert(0, str(_API_PATH))
 
 _SAFE_NAME = re.compile(r"^[a-zA-Z0-9_\-]+$")
+
+
+def _resolve_local_project(conn, team_name: str, project_encoded_name: str):
+    """Resolve a team project record to the correct local Claude project.
+
+    When a joiner accepts folder offers, the DB record may have an arbitrary
+    folder suffix as ``project_encoded_name`` with ``path=None``.  This helper
+    tries to find the real local Claude project directory and fix the record.
+
+    Resolution strategy:
+      A. Read manifest from any teammate's inbox to extract ``git_identity``.
+      B. If git_identity found, look up the local ``projects`` table.
+      C. If not in DB, scan ``~/.claude/projects/`` dirs for a matching git remote.
+
+    Returns ``(resolved_encoded_name, resolved_path, git_identity)`` or ``None``.
+    """
+    from db.sync_queries import find_project_by_git_identity, upsert_team_project
+
+    git_identity = None
+
+    # ── Step A: Extract git_identity from any available manifest ──────
+    remote_base = KARMA_BASE / "remote-sessions"
+    if remote_base.is_dir():
+        for user_dir in remote_base.iterdir():
+            if not user_dir.is_dir():
+                continue
+            manifest_path = user_dir / project_encoded_name / "manifest.json"
+            if manifest_path.exists():
+                try:
+                    manifest = json.loads(manifest_path.read_text())
+                    git_identity = manifest.get("git_identity")
+                    if git_identity:
+                        break
+                except (json.JSONDecodeError, OSError):
+                    continue
+
+    if not git_identity:
+        return None
+
+    # ── Step B: Look up by git_identity in local projects table ───────
+    local = find_project_by_git_identity(conn, git_identity)
+    if local:
+        resolved_encoded = local["encoded_name"]
+        resolved_path = local.get("project_path")
+        if resolved_encoded != project_encoded_name:
+            upsert_team_project(
+                conn, team_name, resolved_encoded, resolved_path, git_identity=git_identity,
+            )
+            # Remove the stale record with the old (wrong) encoded name
+            from db.sync_queries import remove_team_project
+            try:
+                remove_team_project(conn, team_name, project_encoded_name)
+            except Exception:
+                pass
+        return resolved_encoded, resolved_path, git_identity
+
+    # ── Step C: Scan ~/.claude/projects/ dirs for matching git remote ─
+    projects_dir = Path.home() / ".claude" / "projects"
+    if not projects_dir.is_dir():
+        return None
+
+    for candidate_dir in projects_dir.iterdir():
+        if not candidate_dir.is_dir():
+            continue
+        dirname = candidate_dir.name
+        if not dirname.startswith("-"):
+            continue
+        # Reconstruct the project path from the encoded name
+        candidate_path = "/" + dirname[1:].replace("-", "/")
+        if not Path(candidate_path).is_dir():
+            continue
+        candidate_git_id = detect_git_identity(candidate_path)
+        if candidate_git_id and candidate_git_id == git_identity:
+            resolved_encoded = dirname
+            resolved_path = candidate_path
+            upsert_team_project(
+                conn, team_name, resolved_encoded, resolved_path, git_identity=git_identity,
+            )
+            if resolved_encoded != project_encoded_name:
+                from db.sync_queries import remove_team_project
+                try:
+                    remove_team_project(conn, team_name, project_encoded_name)
+                except Exception:
+                    pass
+            return resolved_encoded, resolved_path, git_identity
+
+    return None
 
 
 def _get_db():
@@ -40,7 +127,13 @@ def _auto_share_folders(st, config, conn, team_name, new_device_id):
 
     for proj in projects:
         encoded = proj["project_encoded_name"]
-        proj_short = Path(proj["path"]).name if proj["path"] else encoded
+        git_id = proj.get("git_identity")
+        if git_id:
+            proj_short = git_id.replace("/", "-")
+        elif proj["path"]:
+            proj_short = Path(proj["path"]).name
+        else:
+            proj_short = encoded
 
         # 1. My outbox: send my sessions to teammates
         outbox_path = str(KARMA_BASE / "remote-sessions" / config.user_id / encoded)
@@ -273,6 +366,22 @@ def _accept_pending_folders(st, config, conn):
                     upsert_team_project(conn, team_name, suffix, path=None)
                 except Exception:
                     pass
+
+                # Try to resolve to the correct local project
+                try:
+                    resolved = _resolve_local_project(conn, team_name, suffix)
+                    if resolved:
+                        r_encoded, r_path, r_git_id = resolved
+                        if r_encoded != suffix:
+                            correct_outbox = str(
+                                KARMA_BASE / "remote-sessions" / own_user_id / r_encoded
+                            )
+                            Path(correct_outbox).mkdir(parents=True, exist_ok=True)
+                            click.echo(
+                                f"  Resolved project '{suffix}' -> '{r_encoded}'"
+                            )
+                except Exception:
+                    pass
                 continue
 
             # ── Someone else's outbox → create receiveonly inbox ───────
@@ -310,8 +419,6 @@ def _accept_pending_folders(st, config, conn):
                 encoded = matched_project["project_encoded_name"]
                 inbox_path = str(KARMA_BASE / "remote-sessions" / sender_name / encoded)
             else:
-                inbox_path = str(KARMA_BASE / "remote-sessions" / sender_name / suffix)
-
                 # Auto-create a sync_team_projects record
                 try:
                     from db.sync_queries import upsert_team_project
@@ -324,6 +431,17 @@ def _accept_pending_folders(st, config, conn):
                     click.echo(
                         f"  Warning: Could not auto-register project '{suffix}': {e}"
                     )
+
+                # Try to resolve to the correct local project immediately
+                resolved = _resolve_local_project(conn, team_name, suffix)
+                if resolved:
+                    r_encoded, r_path, r_git_id = resolved
+                    inbox_path = str(KARMA_BASE / "remote-sessions" / sender_name / r_encoded)
+                    click.echo(
+                        f"  Resolved project '{suffix}' -> '{r_encoded}'"
+                    )
+                else:
+                    inbox_path = str(KARMA_BASE / "remote-sessions" / sender_name / suffix)
 
             existing = st.find_folder_by_path(inbox_path)
             if existing:
@@ -445,16 +563,25 @@ def project_add(name: str, path: str, team_name: str):
         raise click.ClickException(f"Team '{team_name}' not found.")
 
     encoded = encode_project_path(path)
+    git_identity = detect_git_identity(path)
 
-    # Ensure project exists in projects table (FK requirement)
+    # Ensure project exists in projects table (FK requirement), include git_identity
     conn.execute(
-        "INSERT OR IGNORE INTO projects (encoded_name, project_path) VALUES (?, ?)",
-        (encoded, path),
+        "INSERT OR IGNORE INTO projects (encoded_name, project_path, git_identity) VALUES (?, ?, ?)",
+        (encoded, path, git_identity),
     )
+    if git_identity:
+        conn.execute(
+            "UPDATE projects SET git_identity = ? WHERE encoded_name = ? AND git_identity IS NULL",
+            (git_identity, encoded),
+        )
     conn.commit()
 
+    if git_identity:
+        click.echo(f"Detected git identity: {git_identity}")
+
     try:
-        add_team_project(conn, team_name, encoded, path)
+        add_team_project(conn, team_name, encoded, path, git_identity=git_identity)
     except Exception as e:
         if "UNIQUE constraint" in str(e):
             raise click.ClickException(f"Project already exists in team '{team_name}'.")
@@ -462,40 +589,42 @@ def project_add(name: str, path: str, team_name: str):
 
     log_event(conn, "project_added", team_name=team_name, project_encoded_name=encoded)
 
+    # Compute folder suffix: prefer git_identity, fall back to CLI name
+    proj_suffix = git_identity.replace("/", "-") if git_identity else name
+
     # Auto-create shared folders if team has Syncthing members
-    if team["backend"] == "syncthing":
-        members = list_members(conn, team_name)
-        if members:
-            try:
-                from karma.syncthing import SyncthingClient, read_local_api_key
+    members = list_members(conn, team_name)
+    if members:
+        try:
+            from karma.syncthing import SyncthingClient, read_local_api_key
 
-                api_key = config.syncthing.api_key or read_local_api_key()
-                st = SyncthingClient(api_key=api_key)
-                if st.is_running():
-                    outbox_path = str(KARMA_BASE / "remote-sessions" / config.user_id / encoded)
-                    outbox_id = f"karma-out-{config.user_id}-{name}"
-                    device_ids = []
-                    if config.syncthing.device_id:
-                        device_ids.append(config.syncthing.device_id)
-                    for m in members:
-                        if m["device_id"]:
-                            device_ids.append(m["device_id"])
-                    Path(outbox_path).mkdir(parents=True, exist_ok=True)
-                    st.add_folder(outbox_id, outbox_path, device_ids, folder_type="sendonly")
-                    click.echo(f"Outbox '{outbox_id}' -> {outbox_path} (send-only)")
+            api_key = config.syncthing.api_key or read_local_api_key()
+            st = SyncthingClient(api_key=api_key)
+            if st.is_running():
+                outbox_path = str(KARMA_BASE / "remote-sessions" / config.user_id / encoded)
+                outbox_id = f"karma-out-{config.user_id}-{proj_suffix}"
+                device_ids = []
+                if config.syncthing.device_id:
+                    device_ids.append(config.syncthing.device_id)
+                for m in members:
+                    if m["device_id"]:
+                        device_ids.append(m["device_id"])
+                Path(outbox_path).mkdir(parents=True, exist_ok=True)
+                st.add_folder(outbox_id, outbox_path, device_ids, folder_type="sendonly")
+                click.echo(f"Outbox '{outbox_id}' -> {outbox_path} (send-only)")
 
-                    for m in members:
-                        if m["device_id"]:
-                            inbox_path = str(KARMA_BASE / "remote-sessions" / m["name"] / encoded)
-                            inbox_id = f"karma-out-{m['name']}-{name}"
-                            inbox_devices = [m["device_id"]]
-                            if config.syncthing.device_id:
-                                inbox_devices.append(config.syncthing.device_id)
-                            Path(inbox_path).mkdir(parents=True, exist_ok=True)
-                            st.add_folder(inbox_id, inbox_path, inbox_devices, folder_type="receiveonly")
-                            click.echo(f"Inbox '{inbox_id}' -> {inbox_path} (receive-only)")
-            except Exception as e:
-                click.echo(f"Warning: Could not auto-share folder: {e}")
+                for m in members:
+                    if m["device_id"]:
+                        inbox_path = str(KARMA_BASE / "remote-sessions" / m["name"] / encoded)
+                        inbox_id = f"karma-out-{m['name']}-{proj_suffix}"
+                        inbox_devices = [m["device_id"]]
+                        if config.syncthing.device_id:
+                            inbox_devices.append(config.syncthing.device_id)
+                        Path(inbox_path).mkdir(parents=True, exist_ok=True)
+                        st.add_folder(inbox_id, inbox_path, inbox_devices, folder_type="receiveonly")
+                        click.echo(f"Inbox '{inbox_id}' -> {inbox_path} (receive-only)")
+        except Exception as e:
+            click.echo(f"Warning: Could not auto-share folder: {e}")
 
     click.echo(f"Added project '{name}' ({path})")
     click.echo(f"Encoded as: {encoded}")
@@ -668,6 +797,9 @@ def watch(team_name: str):
     watchers = []
     projects_dir = Path.home() / ".claude" / "projects"
 
+    # Re-read projects after accept (records may have been updated by resolution)
+    projects = list_team_projects(conn, team_name)
+
     for proj in projects:
         encoded = proj["project_encoded_name"]
         proj_path = proj["path"] or ""
@@ -675,8 +807,20 @@ def watch(team_name: str):
 
         claude_dir = projects_dir / encoded
         if not claude_dir.is_dir():
-            click.echo(f"  Skipping '{proj_short}': Claude dir not found ({claude_dir})")
-            continue
+            # Try to resolve the DB record to the correct local project
+            try:
+                resolved = _resolve_local_project(conn, team_name, encoded)
+                if resolved:
+                    encoded, proj_path, _ = resolved
+                    proj_short = Path(proj_path).name if proj_path else encoded
+                    claude_dir = projects_dir / encoded
+                    click.echo(f"  Resolved project -> '{encoded}'")
+            except Exception:
+                pass
+
+            if not claude_dir.is_dir():
+                click.echo(f"  Skipping '{proj_short}': Claude dir not found ({claude_dir})")
+                continue
 
         # Discover worktree dirs for this project
         wt_dirs = find_all_worktree_dirs(encoded, proj_path, projects_dir)
