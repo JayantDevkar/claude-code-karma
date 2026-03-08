@@ -10,7 +10,7 @@ import sqlite3
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 21
+SCHEMA_VERSION = 22
 
 SCHEMA_SQL = """
 -- Schema versioning
@@ -230,18 +230,18 @@ CREATE TABLE IF NOT EXISTS sync_teams (
     created_at TEXT DEFAULT (datetime('now'))
 );
 
--- Sync team members
+-- Sync team members (keyed by device_id for uniqueness)
 CREATE TABLE IF NOT EXISTS sync_members (
     team_name TEXT NOT NULL,
     name TEXT NOT NULL,
-    device_id TEXT,
+    device_id TEXT NOT NULL,
     ipns_key TEXT,
     added_at TEXT DEFAULT (datetime('now')),
-    PRIMARY KEY (team_name, name),
+    PRIMARY KEY (team_name, device_id),
     FOREIGN KEY (team_name) REFERENCES sync_teams(name) ON DELETE CASCADE
 );
 
-CREATE INDEX IF NOT EXISTS idx_sync_members_device ON sync_members(device_id);
+CREATE INDEX IF NOT EXISTS idx_sync_members_name ON sync_members(team_name, name);
 
 -- Projects shared with a team
 CREATE TABLE IF NOT EXISTS sync_team_projects (
@@ -302,13 +302,13 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             CREATE TABLE IF NOT EXISTS sync_members (
                 team_name TEXT NOT NULL,
                 name TEXT NOT NULL,
-                device_id TEXT,
+                device_id TEXT NOT NULL,
                 ipns_key TEXT,
                 added_at TEXT DEFAULT (datetime('now')),
-                PRIMARY KEY (team_name, name),
+                PRIMARY KEY (team_name, device_id),
                 FOREIGN KEY (team_name) REFERENCES sync_teams(name) ON DELETE CASCADE
             );
-            CREATE INDEX IF NOT EXISTS idx_sync_members_device ON sync_members(device_id);
+            CREATE INDEX IF NOT EXISTS idx_sync_members_name ON sync_members(team_name, name);
             CREATE TABLE IF NOT EXISTS sync_team_projects (
                 team_name TEXT NOT NULL,
                 project_encoded_name TEXT NOT NULL,
@@ -611,6 +611,35 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             existing_cols = {r[1] for r in conn.execute("PRAGMA table_info(sync_teams)").fetchall()}
             if "join_code" not in existing_cols:
                 conn.execute("ALTER TABLE sync_teams ADD COLUMN join_code TEXT")
+
+        if current_version < 22:
+            logger.info("Migrating -> v22: sync_members PK from (team,name) to (team,device_id)")
+            lost = conn.execute(
+                "SELECT COUNT(*) FROM sync_members WHERE device_id IS NULL OR device_id = ''"
+            ).fetchone()[0]
+            if lost:
+                logger.warning("Migration v22: dropping %d members with no device_id", lost)
+            conn.execute("DROP TABLE IF EXISTS sync_members_new")
+            conn.execute("""
+                CREATE TABLE sync_members_new (
+                    team_name TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    device_id TEXT NOT NULL,
+                    ipns_key TEXT,
+                    added_at TEXT,
+                    PRIMARY KEY (team_name, device_id),
+                    FOREIGN KEY (team_name) REFERENCES sync_teams(name) ON DELETE CASCADE
+                )
+            """)
+            conn.execute("""
+                INSERT OR IGNORE INTO sync_members_new (team_name, name, device_id, ipns_key, added_at)
+                SELECT team_name, name, device_id, ipns_key, added_at
+                FROM sync_members
+                WHERE device_id IS NOT NULL AND device_id != ''
+            """)
+            conn.execute("DROP TABLE sync_members")
+            conn.execute("ALTER TABLE sync_members_new RENAME TO sync_members")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_sync_members_name ON sync_members(team_name, name)")
 
     # Record version
     conn.execute(

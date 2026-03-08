@@ -59,7 +59,7 @@ def add_member(
     conn: sqlite3.Connection,
     team_name: str,
     name: str,
-    device_id: Optional[str] = None,
+    device_id: str,
     ipns_key: Optional[str] = None,
 ) -> dict:
     conn.execute(
@@ -74,15 +74,15 @@ def upsert_member(
     conn: sqlite3.Connection,
     team_name: str,
     name: str,
-    device_id: Optional[str] = None,
+    device_id: str,
     ipns_key: Optional[str] = None,
 ) -> dict:
-    """Insert a member or update their device_id if they already exist."""
+    """Insert a member or update their name if the device already exists."""
     conn.execute(
         """INSERT INTO sync_members (team_name, name, device_id, ipns_key)
            VALUES (?, ?, ?, ?)
-           ON CONFLICT(team_name, name)
-           DO UPDATE SET device_id = COALESCE(excluded.device_id, device_id),
+           ON CONFLICT(team_name, device_id)
+           DO UPDATE SET name = excluded.name,
                          ipns_key = COALESCE(excluded.ipns_key, ipns_key)""",
         (team_name, name, device_id, ipns_key),
     )
@@ -90,10 +90,11 @@ def upsert_member(
     return {"team_name": team_name, "name": name, "device_id": device_id}
 
 
-def remove_member(conn: sqlite3.Connection, team_name: str, name: str) -> None:
+def remove_member(conn: sqlite3.Connection, team_name: str, device_id: str) -> None:
+    """Remove a member by device_id (the PK)."""
     conn.execute(
-        "DELETE FROM sync_members WHERE team_name = ? AND name = ?",
-        (team_name, name),
+        "DELETE FROM sync_members WHERE team_name = ? AND device_id = ?",
+        (team_name, device_id),
     )
     conn.commit()
 
@@ -260,6 +261,6 @@ def find_project_by_git_identity(conn: sqlite3.Connection, git_identity: str) ->
 def get_known_devices(conn: sqlite3.Connection) -> dict[str, tuple[str, str]]:
     """Return {device_id: (member_name, team_name)} for all Syncthing members."""
     rows = conn.execute(
-        "SELECT device_id, name, team_name FROM sync_members WHERE device_id IS NOT NULL"
+        "SELECT device_id, name, team_name FROM sync_members"
     ).fetchall()
     return {row["device_id"]: (row["name"], row["team_name"]) for row in rows}

@@ -1786,6 +1786,8 @@ export interface SyncPendingFolder {
 	from_member: string;
 	from_team: string;
 	offered_at: string | null;
+	label: string;
+	folder_type: 'handshake' | 'sessions' | 'unknown';
 }
 
 export interface SyncEvent {

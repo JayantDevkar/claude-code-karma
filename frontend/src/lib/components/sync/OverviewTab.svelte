@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import { Play, Square, Monitor, FolderGit2, ArrowUp, ArrowDown, Bell, CheckCircle2, Loader2, Users, XCircle, RotateCcw, Clock, RefreshCw, ChevronDown, Copy, CheckCircle } from 'lucide-svelte';
-	import type { SyncDetect, SyncStatusResponse, SyncWatchStatus, SyncPendingFolder, SyncProjectStatus, SyncEvent } from '$lib/api-types';
+	import { Play, Square, Monitor, FolderGit2, ArrowUp, ArrowDown, CheckCircle2, Loader2, Users, RotateCcw, Clock, RefreshCw, ChevronDown, Copy, CheckCircle } from 'lucide-svelte';
+	import type { SyncDetect, SyncStatusResponse, SyncWatchStatus, SyncProjectStatus, SyncEvent } from '$lib/api-types';
 	import { formatRelativeTime, copyToClipboard } from '$lib/utils';
 	import { API_BASE } from '$lib/config';
 
@@ -11,8 +11,7 @@
 		active = false,
 		teamName = null,
 		onteamchange,
-		initialWatchStatus = null,
-		initialPending = []
+		initialWatchStatus = null
 	}: {
 		detect: SyncDetect | null;
 		status: SyncStatusResponse | null;
@@ -20,7 +19,6 @@
 		teamName: string | null;
 		onteamchange?: () => void;
 		initialWatchStatus?: SyncWatchStatus | null;
-		initialPending?: SyncPendingFolder[];
 	} = $props();
 
 	// ── Sync Engine watch status ──────────────────────────────────────────────
@@ -129,46 +127,7 @@
 		}
 	}
 
-	// ── Folder label helper ──────────────────────────────────────────────────
-	function parseFolderLabel(folderId: string): string {
-		const match = folderId.match(/^karma-(?:out|in)-[^-]+-(.+)$/);
-		if (match) return `${match[1]} sessions`;
-		return folderId;
-	}
-
-	// ── Pending actions ───────────────────────────────────────────────────────
-	let pendingFolders = $state<SyncPendingFolder[]>(initialPending ?? []);
-	let pendingLoading = $state(initialPending.length === 0 && initialWatchStatus === null);
-	let acceptingAll = $state(false);
-	let pendingError = $state<string | null>(null);
-
-	async function loadPending() {
-		if (pendingFolders.length === 0 && !pendingError) pendingLoading = true;
-		pendingError = null;
-		try {
-			const res = await fetch(`${API_BASE}/sync/pending`).catch(() => null);
-			if (res?.ok) {
-				const data = await res.json();
-				pendingFolders = data.pending ?? data ?? [];
-			} else {
-				pendingFolders = [];
-			}
-		} catch {
-			pendingError = 'Failed to load pending actions.';
-		} finally {
-			pendingLoading = false;
-		}
-	}
-
-	async function acceptAll() {
-		acceptingAll = true;
-		try {
-			await fetch(`${API_BASE}/sync/pending/accept`, { method: 'POST' }).catch(() => null);
-			await loadPending();
-		} finally {
-			acceptingAll = false;
-		}
-	}
+	// Pending actions are handled on individual team detail pages
 
 	// ── Per-Project Sync Status (Task 5) ─────────────────────────────────────
 	let projectStatuses = $state<SyncProjectStatus[]>([]);
@@ -327,7 +286,6 @@
 			statsLoaded = false;
 			statsLoading = true;
 			watchLoading = true;
-			pendingLoading = true;
 			projectStatusLoading = true;
 			activityLoading = true;
 		});
@@ -340,7 +298,6 @@
 		untrack(() => {
 			loadWatchStatus();
 			loadStats();
-			loadPending();
 			loadProjectStatus();
 			loadRecentActivity();
 		});
@@ -444,72 +401,7 @@
 		</div>
 	{/if}
 
-	<!-- ── 3. Pending Actions (only when > 0) ──────────────────────────── -->
-	{#if pendingLoading}
-		<div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-subtle)]">
-			<div class="px-5 py-4 space-y-2">
-				{#each [1, 2] as i (i)}
-					<div class="h-10 rounded-[var(--radius)] bg-[var(--bg-muted)] animate-pulse" aria-hidden="true"></div>
-				{/each}
-			</div>
-		</div>
-	{:else if pendingError}
-		<div
-			class="flex items-center gap-3 p-4 rounded-[var(--radius-lg)] border border-[var(--error)]/20 bg-[var(--error-subtle)] text-xs text-[var(--error)]"
-		>
-			<XCircle size={13} class="shrink-0" />
-			<span class="flex-1">{pendingError}</span>
-			<button onclick={loadPending} class="underline hover:no-underline font-medium">Retry</button>
-		</div>
-	{:else if pendingFolders.length > 0}
-		<div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-subtle)]">
-			<!-- Header -->
-			<div class="flex items-center justify-between px-5 py-3.5 border-b border-[var(--border-subtle)]">
-				<div class="flex items-center gap-2">
-					<Bell size={14} class="text-[var(--text-muted)]" />
-					<h3 class="text-sm font-semibold text-[var(--text-primary)]">Pending Actions</h3>
-					<span class="px-1.5 py-0.5 text-[10px] font-medium rounded bg-[var(--warning)]/15 text-[var(--warning)] border border-[var(--warning)]/25">
-						{pendingFolders.length}
-					</span>
-				</div>
-				<button
-					onclick={acceptAll}
-					disabled={acceptingAll}
-					aria-label="Accept all pending folder offers"
-					class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-[var(--radius)] bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-				>
-					{#if acceptingAll}
-						<Loader2 size={12} class="animate-spin" />
-						Accepting...
-					{:else}
-						<CheckCircle2 size={12} />
-						Accept All
-					{/if}
-				</button>
-			</div>
-
-			<!-- Body -->
-			<div class="px-5 divide-y divide-[var(--border-subtle)]">
-				{#each pendingFolders as offer (offer.folder_id)}
-					<div class="flex items-start gap-3 py-3.5">
-						<FolderGit2 size={15} class="shrink-0 text-[var(--warning)] mt-0.5" />
-						<div class="flex-1 min-w-0">
-							<p class="text-sm font-medium text-[var(--text-primary)] truncate">{parseFolderLabel(offer.folder_id)}</p>
-							<div class="flex items-center gap-3 mt-0.5 text-xs text-[var(--text-muted)]">
-								<span>from <span class="text-[var(--text-secondary)]">{offer.from_member}</span></span>
-								<span class="text-[var(--border)]">&middot;</span>
-								<span>team <span class="text-[var(--text-secondary)]">{offer.from_team}</span></span>
-								{#if offer.offered_at}
-									<span class="text-[var(--border)]">&middot;</span>
-									<span>{formatRelativeTime(offer.offered_at)}</span>
-								{/if}
-							</div>
-						</div>
-					</div>
-				{/each}
-			</div>
-		</div>
-	{/if}
+	<!-- Pending actions are shown on individual team pages (teams/{name}) -->
 
 	<!-- ── 4. Per-Project Sync Status ──────────────────────────────────── -->
 	{#if projectStatusLoading}
