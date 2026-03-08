@@ -5,7 +5,6 @@ import type {
 	SyncTeam,
 	SyncDevice,
 	JoinCodeResponse,
-	PendingDevice,
 	SyncPendingFolder,
 	SyncStatusResponse,
 	SyncWatchStatus,
@@ -23,16 +22,13 @@ interface ProjectSummary {
 export const load: PageServerLoad = async ({ fetch, params }) => {
 	const teamName = params.name;
 
-	// Fetch in parallel: teams list (to find this team), devices, join code, pending devices, projects, sync status, watch status, detect
-	const [teamsData, devices, joinCodeData, pendingData, pendingFoldersData, syncStatus, watchStatus, detectData] = await Promise.all([
+	// Fetch in parallel: teams list (to find this team), devices, join code, pending folders, sync status, watch status, detect
+	const [teamsData, devices, joinCodeData, pendingFoldersData, syncStatus, watchStatus, detectData] = await Promise.all([
 		safeFetch<{ teams: SyncTeam[] }>(fetch, `${API_BASE}/sync/teams`),
 		fetchWithFallback<{ devices: SyncDevice[] }>(fetch, `${API_BASE}/sync/devices`, {
 			devices: []
 		}),
 		safeFetch<JoinCodeResponse>(fetch, `${API_BASE}/sync/teams/${encodeURIComponent(teamName)}/join-code`),
-		fetchWithFallback<{ devices: PendingDevice[] }>(fetch, `${API_BASE}/sync/pending-devices`, {
-			devices: []
-		}),
 		fetchWithFallback<{ pending: SyncPendingFolder[] }>(fetch, `${API_BASE}/sync/pending`, {
 			pending: []
 		}),
@@ -74,7 +70,6 @@ export const load: PageServerLoad = async ({ fetch, params }) => {
 		team,
 		devices: devices.devices,
 		joinCode: joinCodeData.ok ? joinCodeData.data.join_code : null,
-		pendingDevices: pendingData.devices,
 		pendingFolders,
 		allProjects: allProjects.map((p) => ({
 			encoded_name: p.encoded_name,
