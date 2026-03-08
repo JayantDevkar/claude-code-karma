@@ -218,4 +218,13 @@ class SessionPackager:
         manifest_path = staging_dir / "manifest.json"
         manifest_path.write_text(json.dumps(manifest.model_dump(), indent=2) + "\n")
 
+        # Ensure titles.json sidecar exists (best-effort)
+        try:
+            titles_path = staging_dir / "titles.json"
+            if not titles_path.exists():
+                from karma.titles_io import write_titles_bulk
+                write_titles_bulk(titles_path, {})
+        except Exception:
+            pass  # best-effort — don't break packaging
+
         return manifest

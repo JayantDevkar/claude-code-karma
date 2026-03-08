@@ -43,6 +43,10 @@ _PROJECT_MAPPING_TTL = 30.0  # seconds
 _manifest_worktree_cache: dict[tuple[str, str], tuple[float, dict[str, Optional[str]]]] = {}
 _MANIFEST_WORKTREE_TTL = 30.0  # seconds
 
+# Cache for remote titles (keyed by (user_id, encoded_name))
+_titles_cache: dict[tuple[str, str], tuple[float, dict[str, str]]] = {}
+_TITLES_TTL = 30.0  # seconds
+
 
 @dataclass
 class RemoteSessionResult:
@@ -265,6 +269,61 @@ def _load_manifest_worktree_map(
     return result
 
 
+def _load_remote_titles(
+    user_id: str, encoded_name: str
+) -> dict[str, str]:
+    """
+    Load titles.json for a (user_id, encoded_name) pair and return
+    a mapping of uuid -> title_string.
+
+    Results are cached with a TTL to avoid re-reading the file
+    for every session in the same project.
+
+    Args:
+        user_id: Remote user identifier.
+        encoded_name: Encoded project directory name.
+
+    Returns:
+        Dict mapping session UUID to title string.
+    """
+    cache_key = (user_id, encoded_name)
+    now = time.monotonic()
+
+    cached = _titles_cache.get(cache_key)
+    if cached is not None:
+        cache_time, cache_data = cached
+        if (now - cache_time) < _TITLES_TTL:
+            return cache_data
+
+    result: dict[str, str] = {}
+    titles_path = (
+        _get_remote_sessions_dir() / user_id / encoded_name / "titles.json"
+    )
+    if titles_path.exists():
+        try:
+            with open(titles_path) as f:
+                data = json.load(f)
+            if data.get("version") == 1:
+                titles = data.get("titles", {})
+                for uuid, entry in titles.items():
+                    if isinstance(entry, dict):
+                        title_str = entry.get("title")
+                        if title_str:
+                            result[uuid] = title_str
+                    elif isinstance(entry, str):
+                        result[uuid] = entry
+        except (json.JSONDecodeError, OSError) as e:
+            logger.debug(
+                "Failed to load titles for %s/%s: %s",
+                user_id,
+                encoded_name,
+                e,
+            )
+
+    _titles_cache[cache_key] = (now, result)
+    return result
+
+
 def find_remote_session(uuid: str) -> Optional[RemoteSessionResult]:
     """
     Search for a session UUID in remote-sessions directories.
@@ -365,6 +424,8 @@ def list_remote_sessions_for_project(local_encoded: str) -> list[SessionMetadata
 
         # Load manifest once per (user_id, project) for worktree attribution
         wt_map = _load_manifest_worktree_map(user_id, local_encoded)
+        # Load titles once per (user_id, project)
+        titles_map = _load_remote_titles(user_id, local_encoded)
 
         for jsonl_path in sessions_dir.glob("*.jsonl"):
             uuid = jsonl_path.stem
@@ -379,6 +440,7 @@ def list_remote_sessions_for_project(local_encoded: str) -> list[SessionMetadata
                 user_id=user_id,
                 machine_id=user_id,
                 worktree_name=wt_map.get(uuid),
+                title=titles_map.get(uuid),
             )
             if meta:
                 results.append(meta)
@@ -422,6 +484,8 @@ def iter_all_remote_session_metadata() -> Iterator[SessionMetadata]:
 
             # Load manifest once per (user_id, project) for worktree attribution
             wt_map = _load_manifest_worktree_map(user_id, encoded_name)
+            # Load titles once per (user_id, project)
+            titles_map = _load_remote_titles(user_id, encoded_name)
 
             for jsonl_path in sessions_dir.glob("*.jsonl"):
                 uuid = jsonl_path.stem
@@ -436,6 +500,7 @@ def iter_all_remote_session_metadata() -> Iterator[SessionMetadata]:
                     user_id=user_id,
                     machine_id=user_id,
                     worktree_name=wt_map.get(uuid),
+                    title=titles_map.get(uuid),
                 )
                 if meta:
                     yield meta
@@ -463,6 +528,7 @@ def _build_remote_metadata(
     user_id: str,
     machine_id: str,
     worktree_name: Optional[str] = None,
+    title: Optional[str] = None,
 ) -> Optional[SessionMetadata]:
     """
     Build SessionMetadata from a remote JSONL file.
@@ -503,6 +569,7 @@ def _build_remote_metadata(
             slug=slug,
             initial_prompt=None,  # Skip for performance
             git_branch=None,
+            session_titles=[title] if title else None,
             worktree_name=worktree_name,
             source="remote",
             remote_user_id=user_id,

@@ -487,3 +487,53 @@ class TestSyncManifest:
         )
         data = m.model_dump()
         assert data["git_identity"] is None
+
+
+class TestPackagerTitles:
+    def test_package_creates_titles_json(self, mock_claude_project, tmp_path):
+        """Verify titles.json is created alongside manifest.json."""
+        staging = tmp_path / "staging"
+        packager = SessionPackager(
+            project_dir=mock_claude_project,
+            user_id="alice",
+            machine_id="test-mac",
+        )
+        packager.package(staging_dir=staging)
+
+        assert (staging / "manifest.json").exists()
+        assert (staging / "titles.json").exists()
+
+        import json
+        data = json.loads((staging / "titles.json").read_text())
+        assert data["version"] == 1
+        assert "titles" in data
+        assert "updated_at" in data
+
+    def test_package_preserves_existing_titles(self, mock_claude_project, tmp_path):
+        """Pre-populated titles.json should not be overwritten by packaging."""
+        staging = tmp_path / "staging"
+        staging.mkdir(parents=True)
+
+        # Pre-populate titles.json with an existing title
+        from karma.titles_io import write_title
+        titles_path = staging / "titles.json"
+        write_title(titles_path, "session-uuid-001", "My Title", "haiku")
+
+        # Verify it was written
+        from karma.titles_io import read_titles
+        pre_titles = read_titles(titles_path)
+        assert "session-uuid-001" in pre_titles
+        assert pre_titles["session-uuid-001"]["title"] == "My Title"
+
+        # Now package — should preserve the existing title
+        packager = SessionPackager(
+            project_dir=mock_claude_project,
+            user_id="alice",
+            machine_id="test-mac",
+        )
+        packager.package(staging_dir=staging)
+
+        post_titles = read_titles(titles_path)
+        assert "session-uuid-001" in post_titles
+        assert post_titles["session-uuid-001"]["title"] == "My Title"
+        assert post_titles["session-uuid-001"]["source"] == "haiku"

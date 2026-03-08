@@ -142,11 +142,15 @@ def _clear_cache():
     mod._local_user_cache_time = 0.0
     mod._project_mapping_cache = None
     mod._project_mapping_cache_time = 0.0
+    mod._manifest_worktree_cache = {}
+    mod._titles_cache = {}
     yield
     mod._local_user_cache = None
     mod._local_user_cache_time = 0.0
     mod._project_mapping_cache = None
     mod._project_mapping_cache_time = 0.0
+    mod._manifest_worktree_cache = {}
+    mod._titles_cache = {}
 
 
 # ============================================================================
@@ -651,3 +655,67 @@ class TestSessionSummaryRemoteFields:
         assert s.source is None
         assert s.remote_user_id is None
         assert s.remote_machine_id is None
+
+
+# ============================================================================
+# Tests: Remote session titles
+# ============================================================================
+
+
+class TestRemoteSessionTitles:
+    def test_loads_title_from_titles_json(self, karma_base):
+        """Sessions should have session_titles populated from titles.json."""
+        # Write titles.json into alice's inbox
+        titles_dir = karma_base / "remote-sessions" / "alice" / "-Users-jayant-acme"
+        titles_data = {
+            "version": 1,
+            "titles": {
+                "sess-001": {"title": "Refactor auth module", "source": "git", "generated_at": "2026-03-08T12:00:00Z"},
+                "sess-002": {"title": "Build new dashboard", "source": "haiku", "generated_at": "2026-03-08T13:00:00Z"},
+            },
+        }
+        (titles_dir / "titles.json").write_text(json.dumps(titles_data))
+
+        with patch("services.remote_sessions.settings") as mock_settings:
+            mock_settings.karma_base = karma_base
+            results = list_remote_sessions_for_project("-Users-jayant-acme")
+
+        # Find alice's sessions and check titles
+        by_uuid = {r.uuid: r for r in results}
+        assert by_uuid["sess-001"].session_titles == ["Refactor auth module"]
+        assert by_uuid["sess-002"].session_titles == ["Build new dashboard"]
+        # Bob has no titles.json, so his session should have no titles
+        assert by_uuid["sess-003"].session_titles is None
+
+    def test_handles_missing_titles_json(self, karma_base):
+        """Sessions should still work without titles.json (backward compat)."""
+        with patch("services.remote_sessions.settings") as mock_settings:
+            mock_settings.karma_base = karma_base
+            results = list_remote_sessions_for_project("-Users-jayant-acme")
+
+        # All sessions should have session_titles=None (no titles.json exists)
+        for meta in results:
+            assert meta.session_titles is None
+
+    def test_iter_all_includes_titles(self, karma_base):
+        """iter_all_remote_session_metadata() should also include titles."""
+        # Write titles.json for alice
+        titles_dir = karma_base / "remote-sessions" / "alice" / "-Users-jayant-acme"
+        titles_data = {
+            "version": 1,
+            "titles": {
+                "sess-001": {"title": "Refactor auth module", "source": "git", "generated_at": "2026-03-08T12:00:00Z"},
+            },
+        }
+        (titles_dir / "titles.json").write_text(json.dumps(titles_data))
+
+        with patch("services.remote_sessions.settings") as mock_settings:
+            mock_settings.karma_base = karma_base
+            results = list(iter_all_remote_session_metadata())
+
+        by_uuid = {r.uuid: r for r in results}
+        assert by_uuid["sess-001"].session_titles == ["Refactor auth module"]
+        # sess-002 has no title entry
+        assert by_uuid["sess-002"].session_titles is None
+        # Bob's session has no titles.json at all
+        assert by_uuid["sess-003"].session_titles is None

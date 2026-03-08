@@ -1786,6 +1786,24 @@ def set_session_title(uuid: str, request: SetTitleRequest):
             logger.warning("Failed to update SQLite for session %s: %s", uuid, e)
             # Don't fail the request if SQLite update fails
 
+    # Best-effort write to Syncthing outbox titles.json
+    try:
+        sync_config_path = settings.karma_base / "sync-config.json"
+        if sync_config_path.is_file():
+            sync_config = json.loads(sync_config_path.read_text(encoding="utf-8"))
+            user_id = sync_config.get("user_id")
+            if user_id:
+                outbox_dir = settings.karma_base / "remote-sessions" / user_id / encoded_name
+                if outbox_dir.is_dir():
+                    cli_path = Path(__file__).parent.parent.parent / "cli"
+                    if str(cli_path) not in sys.path:
+                        sys.path.insert(0, str(cli_path))
+                    from karma.titles_io import write_title
+
+                    write_title(outbox_dir / "titles.json", uuid, title, "hook")
+    except Exception as e:
+        logger.debug("Outbox title write skipped for session %s: %s", uuid, e)
+
     return JSONResponse(
         content={"status": "ok", "uuid": uuid, "title": title},
         status_code=200,
