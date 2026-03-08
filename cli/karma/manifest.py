@@ -41,3 +41,10 @@ class SyncManifest(BaseModel):
     sync_backend: Optional[str] = Field(
         default=None, description="Sync backend used: 'ipfs', 'syncthing', or None"
     )
+    team_name: Optional[str] = Field(
+        default=None, description="Team this sync belongs to"
+    )
+    proj_suffix: Optional[str] = Field(
+        default=None,
+        description="Agreed Syncthing folder ID suffix (e.g., 'acme-org-acme-app' for git, 'experiments' for non-git)",
+    )

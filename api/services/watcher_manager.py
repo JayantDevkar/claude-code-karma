@@ -20,11 +20,11 @@ if str(_CLI_PATH) not in sys.path:
 
 
 class WatcherManager:
-    """Manages SessionWatcher instances for a single team."""
+    """Manages SessionWatcher instances across one or more teams."""
 
     def __init__(self) -> None:
         self._running = False
-        self._team: Optional[str] = None
+        self._teams: list[str] = []
         self._watchers: list = []
         self._started_at: Optional[str] = None
         self._last_packaged_at: Optional[str] = None
@@ -37,34 +37,68 @@ class WatcherManager:
     def status(self) -> dict[str, Any]:
         return {
             "running": self._running,
-            "team": self._team,
+            "teams": self._teams,
             "started_at": self._started_at,
             "last_packaged_at": self._last_packaged_at,
             "projects_watched": self._projects_watched,
         }
 
-    def start(self, team_name: str, config_data: dict) -> dict[str, Any]:
-        """Start watchers for all projects in the given team."""
+    def start_all(self, config_data: dict) -> dict[str, Any]:
+        """Start watchers for all projects across all teams.
+
+        Deduplicates projects by encoded_name so each directory is watched
+        only once, even if the same project appears in multiple teams.
+
+        Args:
+            config_data: Full config dict with "teams", "user_id", "machine_id".
+
+        Returns:
+            Current status dict.
+        """
         if self._running:
-            raise ValueError(f"Watcher already running for team '{self._team}'")
+            raise ValueError(
+                f"Watcher already running for team(s) {self._teams!r}"
+            )
 
         from karma.watcher import SessionWatcher
         from karma.packager import SessionPackager
         from karma.worktree_discovery import find_worktree_dirs
         from karma.config import KARMA_BASE
 
-        team_cfg = config_data.get("teams", {}).get(team_name, {})
-        projects = team_cfg.get("projects", {})
+        all_teams = config_data.get("teams", {})
         user_id = config_data.get("user_id", "unknown")
         machine_id = config_data.get("machine_id", "unknown")
-
         projects_dir = Path.home() / ".claude" / "projects"
+
+        # Collect unique projects across all teams, tracking which teams each belongs to
+        # Key: encoded_name -> {"proj": proj_dict, "teams": [team_names]}
+        unique_projects: dict[str, dict[str, Any]] = {}
+        team_names: list[str] = []
+
+        for team_name, team_cfg in all_teams.items():
+            team_names.append(team_name)
+            projects = team_cfg.get("projects", {})
+            for proj_name, proj in projects.items():
+                encoded = proj.get("encoded_name", proj_name)
+                if encoded not in unique_projects:
+                    unique_projects[encoded] = {
+                        "proj": proj,
+                        "proj_name": proj_name,
+                        "teams": [team_name],
+                    }
+                else:
+                    if team_name not in unique_projects[encoded]["teams"]:
+                        unique_projects[encoded]["teams"].append(team_name)
+
         watchers = []
         watched = []
 
-        for proj_name, proj in projects.items():
-            encoded = proj.get("encoded_name", proj_name)
+        for encoded, info in unique_projects.items():
+            proj = info["proj"]
+            proj_name = info["proj_name"]
+            proj_teams = info["teams"]
             claude_dir = projects_dir / encoded
+
             if not claude_dir.is_dir():
                 logger.warning("Skipping %s: dir not found %s", proj_name, claude_dir)
                 continue
@@ -73,7 +107,7 @@ class WatcherManager:
 
             def make_package_fn(
                 cd=claude_dir, ob=outbox, en=encoded, pp=proj.get("path", ""),
-                tn=team_name,
+                pt=proj_teams,
             ):
                 def package():
                     wt_dirs = find_worktree_dirs(en, projects_dir)
@@ -89,14 +123,16 @@ class WatcherManager:
                     self._last_packaged_at = (
                         datetime.now(timezone.utc).isoformat()
                     )
-                    # Log session_packaged event
+                    # Log session_packaged event for ALL teams sharing this project
                     try:
                         from db.connection import get_writer_db
                         from db.sync_queries import log_event
-                        log_event(
-                            get_writer_db(), "session_packaged",
-                            team_name=tn, project_encoded_name=en,
-                        )
+                        db = get_writer_db()
+                        for tn in pt:
+                            log_event(
+                                db, "session_packaged",
+                                team_name=tn, project_encoded_name=en,
+                            )
                     except Exception:
                         pass  # Best-effort logging
                 return package
@@ -121,15 +157,32 @@ class WatcherManager:
 
         self._watchers = watchers
         self._running = True
-        self._team = team_name
+        self._teams = team_names
         self._started_at = datetime.now(timezone.utc).isoformat()
         self._projects_watched = watched
 
         logger.info(
-            "Watcher started: team=%s, projects=%d, watchers=%d",
-            team_name, len(watched), len(watchers),
+            "Watcher started: teams=%s, projects=%d, watchers=%d",
+            team_names, len(watched), len(watchers),
         )
         return self.status()
+
+    def start(self, team_name: str, config_data: dict) -> dict[str, Any]:
+        """Start watchers for all projects in the given team.
+
+        Backward-compatible wrapper around start_all(). Filters config_data
+        to only the specified team, then delegates to start_all().
+        """
+        # Filter config_data to only the specified team
+        all_teams = config_data.get("teams", {})
+        if team_name not in all_teams:
+            raise ValueError(f"Team '{team_name}' not found in config_data")
+
+        filtered_config = {
+            **config_data,
+            "teams": {team_name: all_teams[team_name]},
+        }
+        return self.start_all(filtered_config)
 
     def stop(self) -> dict[str, Any]:
         """Stop all watchers."""
@@ -141,10 +194,10 @@ class WatcherManager:
 
         self._watchers = []
         self._running = False
-        team = self._team
-        self._team = None
+        teams = self._teams
+        self._teams = []
         self._started_at = None
         self._projects_watched = []
 
-        logger.info("Watcher stopped (was team=%s)", team)
+        logger.info("Watcher stopped (was teams=%s)", teams)
         return self.status()

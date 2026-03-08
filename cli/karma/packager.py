@@ -35,6 +35,8 @@ class SessionPackager:
         project_path: str = "",
         last_sync_cid: Optional[str] = None,
         extra_dirs: Optional[list[Path]] = None,
+        team_name: Optional[str] = None,
+        proj_suffix: Optional[str] = None,
     ):
         self.project_dir = Path(project_dir)
         self.user_id = user_id
@@ -42,6 +44,8 @@ class SessionPackager:
         self.project_path = project_path or str(self.project_dir)
         self.last_sync_cid = last_sync_cid
         self.extra_dirs = [Path(d) for d in (extra_dirs or [])]
+        self.team_name = team_name
+        self.proj_suffix = proj_suffix
         # ~/.claude/ base directory (parent of projects/{encoded}/)
         self._claude_base = self.project_dir.parent.parent
 
@@ -161,6 +165,8 @@ class SessionPackager:
             sessions=sessions,
             previous_cid=self.last_sync_cid,
             git_identity=git_id,
+            team_name=self.team_name,
+            proj_suffix=self.proj_suffix,
         )
 
         manifest_path = staging_dir / "manifest.json"

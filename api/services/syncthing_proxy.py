@@ -222,6 +222,109 @@ class SyncthingProxy:
 
         return {"ok": True, "folder_id": folder_id, "added": added}
 
+    def remove_folder(self, folder_id: str) -> dict:
+        """Remove a Syncthing shared folder.
+
+        Delegates to client.remove_folder() which removes the folder from
+        the full Syncthing config. Gracefully handles the case where the
+        folder has already been removed.
+
+        Args:
+            folder_id: The Syncthing folder ID to remove.
+
+        Returns:
+            {"ok": True, "folder_id": folder_id}
+        """
+        client = self._require_client()
+        # client.remove_folder() filters the config list — a no-op if the
+        # folder doesn't exist, so no error handling needed.
+        client.remove_folder(folder_id)
+        return {"ok": True, "folder_id": folder_id}
+
+    def remove_device_from_folder(self, folder_id: str, device_id: str) -> dict:
+        """Remove a specific device from a Syncthing folder's device list.
+
+        This is used for partial cleanup: when a member leaves a team but
+        other members still share the folder, we only remove that member's
+        device rather than deleting the entire folder.
+
+        Args:
+            folder_id: The Syncthing folder ID.
+            device_id: The device ID to remove from the folder.
+
+        Returns:
+            {"ok": True, "folder_id": folder_id, "device_id": device_id, "removed": bool}
+        """
+        client = self._require_client()
+        config = client._get_config()
+
+        folder = None
+        for f in config.get("folders", []):
+            if f.get("id") == folder_id:
+                folder = f
+                break
+
+        if folder is None:
+            # Folder doesn't exist — nothing to remove from
+            logger.debug("Folder '%s' not found; nothing to remove", folder_id)
+            return {"ok": True, "folder_id": folder_id, "device_id": device_id, "removed": False}
+
+        original_devices = folder.get("devices", [])
+        filtered_devices = [d for d in original_devices if d.get("deviceID") != device_id]
+
+        if len(filtered_devices) == len(original_devices):
+            # Device wasn't in the folder
+            return {"ok": True, "folder_id": folder_id, "device_id": device_id, "removed": False}
+
+        folder["devices"] = filtered_devices
+        resp = requests.put(
+            f"{client.api_url}/rest/config/folders/{folder_id}",
+            headers=client.headers,
+            json=folder,
+            timeout=10,
+        )
+        resp.raise_for_status()
+        return {"ok": True, "folder_id": folder_id, "device_id": device_id, "removed": True}
+
+    def get_folder_device_count(self, folder_id: str) -> int:
+        """Return the number of non-self devices sharing a folder.
+
+        Useful for deciding whether to fully remove a folder (0 remaining
+        devices) or just remove specific devices from it.
+
+        Args:
+            folder_id: The Syncthing folder ID to inspect.
+
+        Returns:
+            Number of devices in the folder excluding the local device.
+            Returns 0 if the folder is not found.
+        """
+        client = self._require_client()
+        config = client._get_config()
+
+        # Find self device ID
+        self_id = None
+        try:
+            status_resp = requests.get(
+                f"{client.api_url}/rest/system/status",
+                headers=client.headers,
+                timeout=10,
+            )
+            if status_resp.ok:
+                self_id = status_resp.json().get("myID")
+        except Exception:
+            pass
+
+        for f in config.get("folders", []):
+            if f.get("id") == folder_id:
+                devices = f.get("devices", [])
+                if self_id:
+                    return sum(1 for d in devices if d.get("deviceID") != self_id)
+                return len(devices)
+
+        # Folder not found
+        return 0
+
     def get_folder_status(self) -> list[dict]:
         """Return all configured folders with their sync status."""
         client = self._require_client()

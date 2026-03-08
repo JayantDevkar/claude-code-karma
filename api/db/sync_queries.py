@@ -123,6 +123,49 @@ def list_team_projects(conn: sqlite3.Connection, team_name: str) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def upsert_team_project(
+    conn: sqlite3.Connection,
+    team_name: str,
+    project_encoded_name: str,
+    path: Optional[str] = None,
+    git_identity: Optional[str] = None,
+) -> dict:
+    """Create or update a sync_team_projects record.
+
+    Also ensures the parent ``projects`` row exists (FK requirement).
+    Uses INSERT ... ON CONFLICT ... DO UPDATE for idempotent upsert
+    (updates in-place without triggering FK cascade deletes).
+    """
+    # Ensure FK parent row exists in projects table
+    conn.execute(
+        "INSERT OR IGNORE INTO projects (encoded_name, project_path, git_identity) VALUES (?, ?, ?)",
+        (project_encoded_name, path, git_identity),
+    )
+    # Update git_identity on the projects row if it was previously NULL
+    if git_identity:
+        conn.execute(
+            "UPDATE projects SET git_identity = ? WHERE encoded_name = ? AND git_identity IS NULL",
+            (git_identity, project_encoded_name),
+        )
+
+    # Upsert into sync_team_projects
+    conn.execute(
+        """INSERT INTO sync_team_projects (team_name, project_encoded_name, path, git_identity)
+           VALUES (?, ?, ?, ?)
+           ON CONFLICT (team_name, project_encoded_name)
+           DO UPDATE SET path = COALESCE(excluded.path, path),
+                         git_identity = COALESCE(excluded.git_identity, git_identity)""",
+        (team_name, project_encoded_name, path, git_identity),
+    )
+    conn.commit()
+    return {
+        "team_name": team_name,
+        "project_encoded_name": project_encoded_name,
+        "path": path,
+        "git_identity": git_identity,
+    }
+
+
 # ── Events ─────────────────────────────────────────────────────────────
 
 

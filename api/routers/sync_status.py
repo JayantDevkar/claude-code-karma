@@ -24,6 +24,7 @@ from db.sync_queries import (
     add_team_project,
     remove_team_project,
     list_team_projects,
+    upsert_team_project,
     log_event,
     query_events,
     get_known_devices,
@@ -163,7 +164,12 @@ async def _ensure_inbox_folders(
             inbox_devices.append(config.syncthing.device_id)
         try:
             Path(inbox_path).mkdir(parents=True, exist_ok=True)
-            await run_sync(proxy.add_folder, inbox_id, inbox_path, inbox_devices, "receiveonly")
+            # Try update first (folder may already exist from another team sharing the same project)
+            try:
+                await run_sync(proxy.update_folder_devices, inbox_id, inbox_devices)
+            except ValueError:
+                # Folder doesn't exist yet — create it
+                await run_sync(proxy.add_folder, inbox_id, inbox_path, inbox_devices, "receiveonly")
             result["inboxes"] += 1
         except Exception as e:
             result["errors"].append(f"inbox {m['name']}/{proj_suffix}: {e}")
@@ -580,7 +586,7 @@ async def sync_join_team(req: JoinTeamRequest) -> Any:
         if st.is_running():
             from karma.main import _accept_pending_folders
 
-            accepted = await run_sync(_accept_pending_folders, st, config)
+            accepted = await run_sync(_accept_pending_folders, st, config, conn)
             if accepted:
                 log_event(conn, "pending_accepted", detail={"count": accepted})
     except Exception:
@@ -721,11 +727,23 @@ async def sync_remove_member(team_name: str, member_name: str) -> Any:
     log_event(conn, "member_removed", team_name=team_name, member_name=member_name)
 
     if device_id:
-        try:
-            proxy = get_proxy()
-            await run_sync(proxy.remove_device, device_id)
-        except Exception:
-            pass
+        # Only remove the Syncthing device if it's not used by any other team
+        other_team_count = conn.execute(
+            "SELECT COUNT(*) FROM sync_members WHERE device_id = ? AND team_name != ?",
+            (device_id, team_name),
+        ).fetchone()[0]
+
+        if other_team_count == 0:
+            try:
+                proxy = get_proxy()
+                await run_sync(proxy.remove_device, device_id)
+            except Exception:
+                pass
+        else:
+            logger.info(
+                "Keeping Syncthing device %s: still used by %d other team(s)",
+                device_id, other_team_count,
+            )
 
     return {"ok": True, "name": member_name}
 
@@ -820,6 +838,75 @@ async def sync_remove_team_project(team_name: str, project_name: str) -> Any:
     return {"ok": True, "name": project_name}
 
 
+# ─── On-demand sync ────────────────────────────────────────────────────
+
+
+@router.post("/teams/{team_name}/sync-now")
+async def sync_team_sync_now(team_name: str) -> Any:
+    """Trigger an immediate session package for all projects in a team."""
+    if not ALLOWED_PROJECT_NAME.match(team_name):
+        raise HTTPException(400, "Invalid team name")
+
+    config = await run_sync(_load_identity)
+    if config is None:
+        raise HTTPException(400, "Not initialized")
+
+    conn = _get_sync_conn()
+    team = get_team(conn, team_name)
+    if team is None:
+        raise HTTPException(404, f"Team '{team_name}' not found")
+
+    from karma.config import KARMA_BASE
+    from karma.packager import SessionPackager
+    from karma.worktree_discovery import find_worktree_dirs
+
+    projects = list_team_projects(conn, team_name)
+    projects_dir = Path.home() / ".claude" / "projects"
+
+    packaged_count = 0
+    errors = []
+
+    for proj in projects:
+        encoded = proj["project_encoded_name"]
+        proj_path = proj.get("path") or ""
+        claude_dir = projects_dir / encoded
+
+        if not claude_dir.is_dir():
+            continue
+
+        outbox = KARMA_BASE / "remote-sessions" / config.user_id / encoded
+        outbox.mkdir(parents=True, exist_ok=True)
+
+        try:
+            wt_dirs = find_worktree_dirs(encoded, projects_dir)
+            packager = SessionPackager(
+                project_dir=claude_dir,
+                user_id=config.user_id,
+                machine_id=config.machine_id,
+                project_path=proj_path,
+                extra_dirs=wt_dirs,
+                team_name=team_name,
+            )
+            manifest = await run_sync(packager.package, outbox)
+            packaged_count += manifest.session_count
+        except Exception as e:
+            logger.warning("sync-now: failed to package %s: %s", encoded, e)
+            errors.append(f"{encoded}: {e}")
+
+    log_event(
+        conn, "sync_now", team_name=team_name,
+        detail={"packaged_count": packaged_count, "errors": errors},
+    )
+
+    return {
+        "ok": True,
+        "team_name": team_name,
+        "packaged_count": packaged_count,
+        "project_count": len(projects),
+        "errors": errors,
+    }
+
+
 # ─── Watcher manager endpoints ────────────────────────────────────────
 
 
@@ -831,7 +918,7 @@ async def sync_watch_status() -> Any:
 
 @router.post("/watch/start")
 async def sync_watch_start(team_name: str | None = None) -> Any:
-    """Start the session watcher for a team."""
+    """Start the session watcher for a team (or all teams if none specified)."""
     config = await run_sync(_load_identity)
     if config is None:
         raise HTTPException(400, "Not initialized")
@@ -839,48 +926,54 @@ async def sync_watch_start(team_name: str | None = None) -> Any:
     conn = _get_sync_conn()
     teams_data = list_teams(conn)
 
-    if team_name is None:
-        syncthing_teams = [t["name"] for t in teams_data if t["backend"] == "syncthing"]
-        if len(syncthing_teams) == 1:
-            team_name = syncthing_teams[0]
-        elif len(syncthing_teams) == 0:
-            raise HTTPException(400, "No syncthing teams configured")
-        else:
-            raise HTTPException(
-                400,
-                f"Multiple teams found. Specify team_name: {syncthing_teams}",
-            )
-
-    team = get_team(conn, team_name)
-    if team is None:
-        raise HTTPException(404, f"Team '{team_name}' not found")
-
     watcher = get_watcher()
     if watcher.is_running:
         raise HTTPException(409, "Watcher already running. Stop it first.")
 
-    # Build config_data dict that WatcherManager expects
-    projects = list_team_projects(conn, team_name)
+    syncthing_teams = [t for t in teams_data if t["backend"] == "syncthing"]
+    if not syncthing_teams:
+        raise HTTPException(400, "No syncthing teams configured")
+
+    if team_name is not None:
+        # Single-team mode: validate the specified team
+        team = get_team(conn, team_name)
+        if team is None:
+            raise HTTPException(404, f"Team '{team_name}' not found")
+        target_teams = [team]
+    else:
+        # Multi-team mode: aggregate all syncthing teams
+        target_teams = syncthing_teams
+
+    # Build config_data dict with all target teams' projects (deduped by encoded_name)
+    teams_config = {}
+    seen_projects = set()
+    for t in target_teams:
+        t_name = t["name"]
+        projects = list_team_projects(conn, t_name)
+        team_projects = {}
+        for p in projects:
+            enc = p["project_encoded_name"]
+            if enc not in seen_projects:
+                team_projects[enc] = {
+                    "encoded_name": enc,
+                    "path": p["path"] or "",
+                }
+                seen_projects.add(enc)
+        teams_config[t_name] = {
+            "backend": t["backend"],
+            "projects": team_projects,
+        }
+
     config_data = {
         "user_id": config.user_id,
         "machine_id": config.machine_id,
-        "teams": {
-            team_name: {
-                "backend": team["backend"],
-                "projects": {
-                    p["project_encoded_name"]: {
-                        "encoded_name": p["project_encoded_name"],
-                        "path": p["path"] or "",
-                    }
-                    for p in projects
-                },
-            }
-        },
+        "teams": teams_config,
     }
 
     try:
-        result = await run_sync(watcher.start, team_name, config_data)
-        log_event(conn, "watcher_started", team_name=team_name)
+        result = await run_sync(watcher.start_all, config_data)
+        for t in target_teams:
+            log_event(conn, "watcher_started", team_name=t["name"])
         return result
     except Exception as e:
         raise HTTPException(500, f"Failed to start watcher: {e}")
@@ -892,12 +985,13 @@ async def sync_watch_stop() -> Any:
     watcher = get_watcher()
     if not watcher.is_running:
         return watcher.status()
-    team = watcher._team
+    teams = list(watcher.status().get("teams", []))
     result = await run_sync(watcher.stop)
-    if team:
+    if teams:
         try:
             conn = _get_sync_conn()
-            log_event(conn, "watcher_stopped", team_name=team)
+            for team in teams:
+                log_event(conn, "watcher_stopped", team_name=team)
         except Exception:
             pass
     return result
@@ -940,9 +1034,9 @@ async def sync_accept_pending() -> Any:
 
         from karma.main import _accept_pending_folders
 
-        accepted = await run_sync(_accept_pending_folders, st, config)
+        conn = _get_sync_conn()
+        accepted = await run_sync(_accept_pending_folders, st, config, conn)
         if accepted:
-            conn = _get_sync_conn()
             log_event(conn, "pending_accepted", detail={"count": accepted})
         return {"ok": True, "accepted": accepted}
     except SyncthingNotRunning:

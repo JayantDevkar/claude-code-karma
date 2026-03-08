@@ -74,6 +74,39 @@ def _auto_share_folders(st, config, conn, team_name, new_device_id):
                     click.echo(f"Warning: Could not create inbox for '{m['name']}/{proj_short}': {e}")
 
 
+def _parse_folder_id(folder_id: str) -> Optional[tuple[str, str]]:
+    """Parse a karma folder ID into (member_name, suffix).
+
+    Expected format: ``karma-out-{member_name}-{suffix}``
+    where *suffix* may itself contain hyphens.
+
+    Returns ``None`` if the folder ID does not match the expected pattern.
+    """
+    # "karma-out-alice-acme-app" → member="alice", suffix="acme-app"
+    prefix = "karma-out-"
+    if not folder_id.startswith(prefix):
+        return None
+    rest = folder_id[len(prefix):]  # "alice-acme-app"
+    # Member names are validated with _SAFE_NAME (alphanum, dash, underscore).
+    # Since hyphens are allowed in member names AND suffixes, we can't split
+    # on a single hyphen. Instead, we look up known member names from the DB
+    # when available, or fall back to splitting on the first hyphen (which
+    # works when member names don't contain hyphens — the common case).
+    parts = rest.split("-")
+    if len(parts) < 2:
+        return None
+    # Try progressively longer prefixes as the member name.
+    # The first non-empty remainder wins.
+    # e.g., "alice-bob-app" tries: ("alice", "bob-app"), ("alice-bob", "app")
+    for i in range(1, len(parts)):
+        candidate_name = "-".join(parts[:i])
+        candidate_suffix = "-".join(parts[i:])
+        if candidate_name and candidate_suffix:
+            # Prefer the shortest member name (most common case)
+            return candidate_name, candidate_suffix
+    return None
+
+
 def _accept_pending_folders(st, config, conn):
     """Accept pending folder offers from known team members.
 
@@ -81,6 +114,12 @@ def _accept_pending_folders(st, config, conn):
     - Only accepts folders from device IDs registered in sync_members
     - Only accepts folder IDs prefixed with 'karma-'
     - Replaces empty pre-created inbox folders that conflict on the same path
+
+    When the joiner's local DB has no ``sync_team_projects`` records (because
+    they joined a team rather than creating it), folders are still accepted if
+    offered by a known device.  The inbox path is derived from the folder ID
+    itself, and a ``sync_team_projects`` record is auto-created so that
+    subsequent operations (watcher, status) can find the project.
     """
     from db.sync_queries import get_known_devices, list_team_projects
 
@@ -118,24 +157,59 @@ def _accept_pending_folders(st, config, conn):
                 continue
 
             member_name, team_name = known_devices[device_id]
+
+            # Try to match against a known local project first.
+            # Parse the folder ID to get the suffix, then compare against
+            # each project's computed suffix for an exact match.
             projects = list_team_projects(conn, team_name)
-
             matched_project = None
-            for proj in projects:
-                proj_short = Path(proj["path"]).name if proj["path"] else proj["project_encoded_name"]
-                if proj_short in folder_id:
-                    matched_project = proj
-                    break
+            parsed_for_match = _parse_folder_id(folder_id)
+            if parsed_for_match:
+                _, folder_suffix = parsed_for_match
+                for proj in projects:
+                    # Compute what this project's suffix would be
+                    git_id = proj.get("git_identity")
+                    if git_id:
+                        proj_suffix = git_id.replace("/", "-")
+                    elif proj["path"]:
+                        proj_suffix = Path(proj["path"]).name
+                    else:
+                        proj_suffix = proj["project_encoded_name"]
+                    if proj_suffix == folder_suffix:
+                        matched_project = proj
+                        break
 
-            if not matched_project:
-                click.echo(
-                    f"  Skipped folder '{folder_id}' from {member_name} "
-                    f"(no matching project in team '{team_name}')"
-                )
-                continue
+            if matched_project:
+                # Known project — use its encoded name for the inbox path
+                encoded = matched_project["project_encoded_name"]
+                inbox_path = str(KARMA_BASE / "remote-sessions" / member_name / encoded)
+            else:
+                # No local project match — derive inbox path from folder ID.
+                # This is the common case for joiners whose DB has no
+                # sync_team_projects records yet.
+                parsed = _parse_folder_id(folder_id)
+                if not parsed:
+                    click.echo(
+                        f"  Skipped folder '{folder_id}' from {member_name} "
+                        f"(could not parse folder ID)"
+                    )
+                    continue
+                _sender, suffix = parsed
+                inbox_path = str(KARMA_BASE / "remote-sessions" / member_name / suffix)
 
-            encoded = matched_project["project_encoded_name"]
-            inbox_path = str(KARMA_BASE / "remote-sessions" / member_name / encoded)
+                # Auto-create a sync_team_projects record so future operations
+                # (watcher, status, next accept) can find this project.
+                try:
+                    from db.sync_queries import upsert_team_project
+
+                    upsert_team_project(conn, team_name, suffix, path=None)
+                    click.echo(
+                        f"  Auto-registered project '{suffix}' in team '{team_name}'"
+                    )
+                except Exception as e:
+                    click.echo(
+                        f"  Warning: Could not auto-register project '{suffix}': {e}"
+                    )
 
             existing = st.find_folder_by_path(inbox_path)
             if existing:
