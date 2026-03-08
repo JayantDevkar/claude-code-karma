@@ -16,6 +16,8 @@ from threading import Lock
 from typing import Annotated, Optional
 from urllib.parse import unquote
 
+from utils import utc_to_local_date
+
 from fastapi import APIRouter, HTTPException, Query, Request
 
 from command_helpers import is_plugin_skill
@@ -171,7 +173,7 @@ def _query_plugin_mcp_usage_sqlite(
 
         if start_time:
             try:
-                date_key = datetime.fromisoformat(start_time).strftime("%Y-%m-%d")
+                date_key = utc_to_local_date(datetime.fromisoformat(start_time))
                 daily_usage[date_key] += count
                 by_mcp_tool_daily[short][date_key] += count
             except (ValueError, TypeError):
@@ -307,7 +309,7 @@ def _query_plugin_usage_sqlite(
         total_skill_invocations += count
 
         if start_time:
-            date_key = start_time.strftime("%Y-%m-%d")
+            date_key = utc_to_local_date(start_time)
             daily_usage[date_key]["skill_invocations"] += count
             by_skill_daily[skill_short][date_key] += count
 
@@ -331,7 +333,7 @@ def _query_plugin_usage_sqlite(
         total_cost += cost
 
         if start_time:
-            date_key = start_time.strftime("%Y-%m-%d")
+            date_key = utc_to_local_date(start_time)
             daily_usage[date_key]["agent_runs"] += 1
             daily_usage[date_key]["cost_usd"] += cost
             by_agent_daily[agent_short][date_key] += 1
@@ -352,7 +354,7 @@ def _query_plugin_usage_sqlite(
         total_command_invocations += count
 
         if start_time:
-            date_key = start_time.strftime("%Y-%m-%d")
+            date_key = utc_to_local_date(start_time)
             daily_usage[date_key]["command_invocations"] += count
             by_command_daily[cmd_short][date_key] += count
 
@@ -462,7 +464,7 @@ def _collect_plugin_usage_sync(period: str = "all") -> dict[str, dict]:
                     continue
 
                 # Get date key for daily tracking
-                date_key = session_time.strftime("%Y-%m-%d") if session_time else "unknown"
+                date_key = utc_to_local_date(session_time) if session_time else "unknown"
 
                 # Track which plugins are used in this session
                 plugins_in_session = set()
