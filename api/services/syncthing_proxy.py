@@ -458,6 +458,11 @@ class SyncthingProxy:
         client = self._require_client()
         return client.get_pending_devices()
 
+    def get_pending_folders(self) -> dict:
+        """Get raw pending folder offers from Syncthing."""
+        client = self._require_client()
+        return client.get_pending_folders()
+
     def get_pending_folders_for_ui(
         self, known_devices: dict[str, tuple[str, str]]
     ) -> list[dict]:

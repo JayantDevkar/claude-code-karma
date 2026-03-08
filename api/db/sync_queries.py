@@ -12,13 +12,18 @@ from typing import Optional
 # ── Teams ──────────────────────────────────────────────────────────────
 
 
-def create_team(conn: sqlite3.Connection, name: str, backend: str = "syncthing") -> dict:
+def create_team(
+    conn: sqlite3.Connection,
+    name: str,
+    backend: str = "syncthing",
+    join_code: Optional[str] = None,
+) -> dict:
     conn.execute(
-        "INSERT INTO sync_teams (name, backend) VALUES (?, ?)",
-        (name, backend),
+        "INSERT INTO sync_teams (name, backend, join_code) VALUES (?, ?, ?)",
+        (name, backend, join_code),
     )
     conn.commit()
-    return {"name": name, "backend": backend}
+    return {"name": name, "backend": backend, "join_code": join_code}
 
 
 def delete_team(conn: sqlite3.Connection, name: str) -> None:
@@ -28,7 +33,7 @@ def delete_team(conn: sqlite3.Connection, name: str) -> None:
 
 def list_teams(conn: sqlite3.Connection) -> list[dict]:
     rows = conn.execute(
-        """SELECT t.name, t.backend, t.created_at,
+        """SELECT t.name, t.backend, t.join_code, t.created_at,
                   (SELECT COUNT(*) FROM sync_members m WHERE m.team_name = t.name) as member_count,
                   (SELECT COUNT(*) FROM sync_team_projects p WHERE p.team_name = t.name) as project_count
            FROM sync_teams t ORDER BY t.created_at"""
@@ -38,7 +43,7 @@ def list_teams(conn: sqlite3.Connection) -> list[dict]:
 
 def get_team(conn: sqlite3.Connection, name: str) -> Optional[dict]:
     row = conn.execute(
-        """SELECT t.name, t.backend, t.created_at,
+        """SELECT t.name, t.backend, t.join_code, t.created_at,
                   (SELECT COUNT(*) FROM sync_members m WHERE m.team_name = t.name) as member_count,
                   (SELECT COUNT(*) FROM sync_team_projects p WHERE p.team_name = t.name) as project_count
            FROM sync_teams t WHERE t.name = ?""",

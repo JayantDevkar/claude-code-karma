@@ -10,7 +10,7 @@ import sqlite3
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 20
+SCHEMA_VERSION = 21
 
 SCHEMA_SQL = """
 -- Schema versioning
@@ -226,6 +226,7 @@ CREATE INDEX IF NOT EXISTS idx_projects_git_identity ON projects(git_identity);
 CREATE TABLE IF NOT EXISTS sync_teams (
     name TEXT PRIMARY KEY,
     backend TEXT NOT NULL DEFAULT 'syncthing',
+    join_code TEXT,
     created_at TEXT DEFAULT (datetime('now'))
 );
 
@@ -295,6 +296,7 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             CREATE TABLE IF NOT EXISTS sync_teams (
                 name TEXT PRIMARY KEY,
                 backend TEXT NOT NULL DEFAULT 'syncthing',
+                join_code TEXT,
                 created_at TEXT DEFAULT (datetime('now'))
             );
             CREATE TABLE IF NOT EXISTS sync_members (
@@ -603,6 +605,12 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             conn.execute(
                 "UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1 WHERE subagent_count > 0"
             )
+
+        if current_version < 21:
+            logger.info("Migrating -> v21: adding join_code to sync_teams")
+            existing_cols = {r[1] for r in conn.execute("PRAGMA table_info(sync_teams)").fetchall()}
+            if "join_code" not in existing_cols:
+                conn.execute("ALTER TABLE sync_teams ADD COLUMN join_code TEXT")
 
     # Record version
     conn.execute(

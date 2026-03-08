@@ -1,6 +1,5 @@
 <script lang="ts">
 	import Modal from '$lib/components/ui/Modal.svelte';
-	import JoinCodeCard from './JoinCodeCard.svelte';
 	import { API_BASE } from '$lib/config';
 	import { goto } from '$app/navigation';
 	import { parseJoinCode } from '$lib/utils/join-code';
@@ -85,20 +84,13 @@
 							{/if}
 						</p>
 						<p class="text-[var(--text-secondary)] mt-0.5">
-							{joinResult.paired ? 'Syncthing paired successfully.' : 'Syncthing pairing pending.'}
+							{joinResult.paired ? 'Syncthing paired successfully. Auto-pairing will complete shortly.' : 'Syncthing pairing pending.'}
 							{#if joinResult.accepted_folders > 0}
 								Accepted {joinResult.accepted_folders} shared folder{joinResult.accepted_folders > 1 ? 's' : ''}.
 							{/if}
 						</p>
 					</div>
 				</div>
-
-				{#if joinResult.your_join_code}
-					<JoinCodeCard
-						code={joinResult.your_join_code}
-						label="Share YOUR code back with {joinResult.leader_name}:"
-					/>
-				{/if}
 			</div>
 		{:else}
 			<!-- Input state -->
