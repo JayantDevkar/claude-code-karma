@@ -621,6 +621,12 @@ async def sync_create_team(req: CreateTeamRequest) -> Any:
         raise HTTPException(409, f"Team '{req.name}' already exists")
 
     create_team(conn, req.name, req.backend)
+
+    # Add creator as a member so they appear in the member list and their
+    # device_id is included when sharing folders (mirrors join flow, line 684)
+    own_device_id = config.syncthing.device_id if config.syncthing else None
+    upsert_member(conn, req.name, config.user_id, device_id=own_device_id)
+
     log_event(conn, "team_created", team_name=req.name)
 
     return {"ok": True, "name": req.name, "backend": req.backend}

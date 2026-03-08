@@ -76,6 +76,13 @@ class TestCreateTeam:
         assert row is not None
         assert row["backend"] == "syncthing"
 
+        # Verify creator added as member
+        member = mock_db.execute(
+            "SELECT * FROM sync_members WHERE team_name = ? AND name = ?",
+            ("frontend-team", "jayant"),
+        ).fetchone()
+        assert member is not None, "Creator must be added as a member of their own team"
+
         # Verify event logged
         events = mock_db.execute("SELECT * FROM sync_events WHERE event_type = 'team_created'").fetchall()
         assert len(events) == 1
