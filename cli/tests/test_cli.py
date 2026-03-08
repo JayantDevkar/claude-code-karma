@@ -37,7 +37,7 @@ class TestInitCommand:
 class TestTeamCommands:
     def test_team_create(self, runner, init_config, mock_db):
         runner.invoke(cli, ["init", "--user-id", "alice"])
-        result = runner.invoke(cli, ["team", "create", "alpha", "--backend", "syncthing"])
+        result = runner.invoke(cli, ["team", "create", "alpha"])
         assert result.exit_code == 0
         assert "Created team 'alpha'" in result.output
 
@@ -52,15 +52,15 @@ class TestTeamCommands:
 
     def test_team_create_duplicate(self, runner, init_config, mock_db):
         runner.invoke(cli, ["init", "--user-id", "alice"])
-        runner.invoke(cli, ["team", "create", "alpha", "--backend", "syncthing"])
-        result = runner.invoke(cli, ["team", "create", "alpha", "--backend", "syncthing"])
+        runner.invoke(cli, ["team", "create", "alpha"])
+        result = runner.invoke(cli, ["team", "create", "alpha"])
         assert result.exit_code != 0
         assert "already exists" in result.output
 
     def test_team_add_member(self, runner, init_config, mock_db):
         runner.invoke(cli, ["init", "--user-id", "alice"])
-        runner.invoke(cli, ["team", "create", "alpha", "--backend", "ipfs"])
-        result = runner.invoke(cli, ["team", "add", "bob", "k51testkey123", "--team", "alpha"])
+        runner.invoke(cli, ["team", "create", "alpha"])
+        result = runner.invoke(cli, ["team", "add", "bob", "BOB-DEVICE-ID", "--team", "alpha"])
         assert result.exit_code == 0
         assert "Added team member 'bob'" in result.output
 
@@ -69,11 +69,11 @@ class TestTeamCommands:
             "SELECT * FROM sync_members WHERE team_name = 'alpha' AND name = 'bob'"
         ).fetchone()
         assert row is not None
-        assert row["ipns_key"] == "k51testkey123"
+        assert row["device_id"] == "BOB-DEVICE-ID"
 
     def test_team_list(self, runner, init_config, mock_db):
         runner.invoke(cli, ["init", "--user-id", "alice"])
-        runner.invoke(cli, ["team", "create", "alpha", "--backend", "syncthing"])
+        runner.invoke(cli, ["team", "create", "alpha"])
         result = runner.invoke(cli, ["team", "list"])
         assert result.exit_code == 0
         assert "alpha" in result.output
@@ -86,8 +86,8 @@ class TestTeamCommands:
 
     def test_team_remove_member(self, runner, init_config, mock_db):
         runner.invoke(cli, ["init", "--user-id", "alice"])
-        runner.invoke(cli, ["team", "create", "alpha", "--backend", "ipfs"])
-        runner.invoke(cli, ["team", "add", "bob", "k51testkey123", "--team", "alpha"])
+        runner.invoke(cli, ["team", "create", "alpha"])
+        runner.invoke(cli, ["team", "add", "bob", "BOB-DEVICE-ID", "--team", "alpha"])
         result = runner.invoke(cli, ["team", "remove", "bob", "--team", "alpha"])
         assert result.exit_code == 0
         assert "Removed team member 'bob'" in result.output
@@ -100,14 +100,14 @@ class TestTeamCommands:
 
     def test_team_remove_member_not_found(self, runner, init_config, mock_db):
         runner.invoke(cli, ["init", "--user-id", "alice"])
-        runner.invoke(cli, ["team", "create", "alpha", "--backend", "ipfs"])
+        runner.invoke(cli, ["team", "create", "alpha"])
         result = runner.invoke(cli, ["team", "remove", "bob", "--team", "alpha"])
         assert result.exit_code != 0
         assert "not found" in result.output
 
     def test_team_leave(self, runner, init_config, mock_db):
         runner.invoke(cli, ["init", "--user-id", "alice"])
-        runner.invoke(cli, ["team", "create", "alpha", "--backend", "syncthing"])
+        runner.invoke(cli, ["team", "create", "alpha"])
         runner.invoke(cli, ["team", "add", "bob", "DEV-BOB", "--team", "alpha"])
         result = runner.invoke(cli, ["team", "leave", "alpha"])
         assert result.exit_code == 0
@@ -121,7 +121,7 @@ class TestTeamCommands:
 class TestProjectCommands:
     def test_project_add(self, runner, init_config, mock_db, tmp_path):
         runner.invoke(cli, ["init", "--user-id", "alice"])
-        runner.invoke(cli, ["team", "create", "alpha", "--backend", "syncthing"])
+        runner.invoke(cli, ["team", "create", "alpha"])
 
         project_path = tmp_path / "test-project"
         project_path.mkdir(parents=True)
@@ -152,7 +152,7 @@ class TestProjectCommands:
 
     def test_project_list(self, runner, init_config, mock_db, tmp_path):
         runner.invoke(cli, ["init", "--user-id", "alice"])
-        runner.invoke(cli, ["team", "create", "alpha", "--backend", "syncthing"])
+        runner.invoke(cli, ["team", "create", "alpha"])
 
         project_path = tmp_path / "myapp"
         project_path.mkdir(parents=True)
@@ -173,7 +173,7 @@ class TestProjectCommands:
 
     def test_project_remove(self, runner, init_config, mock_db, tmp_path):
         runner.invoke(cli, ["init", "--user-id", "alice"])
-        runner.invoke(cli, ["team", "create", "alpha", "--backend", "syncthing"])
+        runner.invoke(cli, ["team", "create", "alpha"])
 
         project_path = tmp_path / "myapp"
         project_path.mkdir(parents=True)
@@ -193,7 +193,7 @@ class TestProjectCommands:
 
     def test_project_remove_not_found(self, runner, init_config, mock_db):
         runner.invoke(cli, ["init", "--user-id", "alice"])
-        runner.invoke(cli, ["team", "create", "alpha", "--backend", "syncthing"])
+        runner.invoke(cli, ["team", "create", "alpha"])
         result = runner.invoke(cli, ["project", "remove", "nope", "--team", "alpha"])
         assert result.exit_code != 0
         assert "not found" in result.output
@@ -223,7 +223,7 @@ class TestLsCommand:
 class TestStatusCommand:
     def test_status_with_teams(self, runner, init_config, mock_db):
         runner.invoke(cli, ["init", "--user-id", "alice"])
-        runner.invoke(cli, ["team", "create", "alpha", "--backend", "syncthing"])
+        runner.invoke(cli, ["team", "create", "alpha"])
         result = runner.invoke(cli, ["status"])
         assert result.exit_code == 0
         assert "alice" in result.output

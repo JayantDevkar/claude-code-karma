@@ -68,7 +68,7 @@ class TestSyncStatus:
         assert data["teams"]["beta"]["project_count"] == 1
 
     def test_sync_teams_endpoint(self, mock_db):
-        mock_db.execute("INSERT INTO sync_teams (name, backend) VALUES (?, ?)", ("alpha", "ipfs"))
+        mock_db.execute("INSERT INTO sync_teams (name, backend) VALUES (?, ?)", ("alpha", "syncthing"))
         mock_db.execute("INSERT INTO sync_teams (name, backend) VALUES (?, ?)", ("beta", "syncthing"))
         mock_db.execute("INSERT INTO sync_members (team_name, name, device_id) VALUES (?, ?, ?)",
                         ("beta", "bob", "XXXX"))
@@ -337,22 +337,6 @@ class TestSyncInit:
         assert data["ok"] is True
         assert data["user_id"] == "alice"
         assert data["device_id"] == "AAAA-BBBB-CCCC"
-        assert data["machine_id"] is not None
-        assert len(saved) == 1
-
-    def test_init_ipfs(self, monkeypatch):
-        saved = []
-        monkeypatch.setattr(
-            "karma.config.SyncConfig.save",
-            lambda self: saved.append(self),
-        )
-
-        resp = client.post("/sync/init", json={"user_id": "bob", "backend": "ipfs"})
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["ok"] is True
-        assert data["user_id"] == "bob"
-        assert data["device_id"] is None
         assert data["machine_id"] is not None
         assert len(saved) == 1
 

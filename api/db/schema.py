@@ -235,7 +235,6 @@ CREATE TABLE IF NOT EXISTS sync_members (
     team_name TEXT NOT NULL,
     name TEXT NOT NULL,
     device_id TEXT NOT NULL,
-    ipns_key TEXT,
     added_at TEXT DEFAULT (datetime('now')),
     PRIMARY KEY (team_name, device_id),
     FOREIGN KEY (team_name) REFERENCES sync_teams(name) ON DELETE CASCADE
@@ -303,7 +302,6 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
                 team_name TEXT NOT NULL,
                 name TEXT NOT NULL,
                 device_id TEXT NOT NULL,
-                ipns_key TEXT,
                 added_at TEXT DEFAULT (datetime('now')),
                 PRIMARY KEY (team_name, device_id),
                 FOREIGN KEY (team_name) REFERENCES sync_teams(name) ON DELETE CASCADE
@@ -550,7 +548,6 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
                     team_name TEXT NOT NULL,
                     name TEXT NOT NULL,
                     device_id TEXT,
-                    ipns_key TEXT,
                     added_at TEXT DEFAULT (datetime('now')),
                     PRIMARY KEY (team_name, name),
                     FOREIGN KEY (team_name) REFERENCES sync_teams(name) ON DELETE CASCADE
@@ -625,15 +622,14 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
                     team_name TEXT NOT NULL,
                     name TEXT NOT NULL,
                     device_id TEXT NOT NULL,
-                    ipns_key TEXT,
                     added_at TEXT,
                     PRIMARY KEY (team_name, device_id),
                     FOREIGN KEY (team_name) REFERENCES sync_teams(name) ON DELETE CASCADE
                 )
             """)
             conn.execute("""
-                INSERT OR IGNORE INTO sync_members_new (team_name, name, device_id, ipns_key, added_at)
-                SELECT team_name, name, device_id, ipns_key, added_at
+                INSERT OR IGNORE INTO sync_members_new (team_name, name, device_id, added_at)
+                SELECT team_name, name, device_id, added_at
                 FROM sync_members
                 WHERE device_id IS NOT NULL AND device_id != ''
             """)

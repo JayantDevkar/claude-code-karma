@@ -512,9 +512,8 @@ class JoinTeamRequest(BaseModel):
 async def sync_init(req: InitRequest) -> Any:
     """Initialize Karma sync configuration."""
     validate_user_id(req.user_id)
-    if req.backend not in ("syncthing", "ipfs"):
-        raise HTTPException(400, "Invalid backend; must be 'syncthing' or 'ipfs'")
-
+    if req.backend != "syncthing":
+        raise HTTPException(400, "Only 'syncthing' backend is supported")
     from karma.config import SyncConfig, SyncthingSettings
 
     device_id: Optional[str] = None
@@ -840,8 +839,9 @@ async def sync_create_team(req: CreateTeamRequest) -> Any:
     """Create a new sync group."""
     if not ALLOWED_PROJECT_NAME.match(req.name) or len(req.name) < 2 or len(req.name) > 64:
         raise HTTPException(400, "Invalid team name: must be 2-64 characters, letters/numbers/dashes/underscores only")
-    if req.backend not in ("syncthing", "ipfs"):
-        raise HTTPException(400, "Invalid backend")
+
+    if req.backend != "syncthing":
+        raise HTTPException(400, "Only 'syncthing' backend is supported")
 
     config = await run_sync(_load_identity)
     if config is None:

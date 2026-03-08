@@ -34,7 +34,7 @@ class TestFullSyncFlow:
         assert "Initialized as 'alice'" in result.output
 
         # Step 2: Create team
-        result = runner.invoke(cli, ["team", "create", "beta", "--backend", "syncthing"])
+        result = runner.invoke(cli, ["team", "create", "beta"])
         assert result.exit_code == 0
 
         # Step 3: Add project (path must be absolute)
@@ -61,14 +61,14 @@ class TestFullSyncFlow:
         runner.invoke(cli, ["init", "--user-id", "owner"])
 
         # Create team
-        result = runner.invoke(cli, ["team", "create", "alpha", "--backend", "ipfs"])
+        result = runner.invoke(cli, ["team", "create", "alpha"])
         assert result.exit_code == 0
 
         # Add team members
-        result = runner.invoke(cli, ["team", "add", "alice", "k51alice123", "--team", "alpha"])
+        result = runner.invoke(cli, ["team", "add", "alice", "ALICE-DEVICE-ID", "--team", "alpha"])
         assert result.exit_code == 0
 
-        result = runner.invoke(cli, ["team", "add", "bob", "k51bob456", "--team", "alpha"])
+        result = runner.invoke(cli, ["team", "add", "bob", "BOB-DEVICE-ID", "--team", "alpha"])
         assert result.exit_code == 0
 
         # List team
@@ -100,7 +100,7 @@ class TestFullSyncFlow:
         runner.invoke(cli, ["init", "--user-id", "alice"])
 
         # Create team
-        runner.invoke(cli, ["team", "create", "beta", "--backend", "syncthing"])
+        runner.invoke(cli, ["team", "create", "beta"])
 
         # Add project
         project_path = tmp / "my-app"

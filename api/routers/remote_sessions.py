@@ -1,4 +1,4 @@
-"""Remote sessions API — serves sessions synced from IPFS."""
+"""Remote sessions API — serves sessions synced via Syncthing."""
 
 import json
 import logging
@@ -57,8 +57,6 @@ class RemoteManifest(BaseModel):
     synced_at: str
     session_count: int
     sessions: list[RemoteSessionSummary]
-    previous_cid: Optional[str] = None
-    sync_backend: Optional[str] = None
 
 
 def _validate_path_segment(value: str, label: str) -> None:
