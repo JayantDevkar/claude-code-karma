@@ -588,29 +588,26 @@ def _index_session(
     conn.execute("DELETE FROM subagent_invocations WHERE session_uuid = ?", (uuid,))
     if subagent_count > 0:
         try:
-            from services.subagent_types import get_all_subagent_types
+            from services.subagent_types import get_all_subagent_metadata
 
-            subagent_types = get_all_subagent_types(jsonl_path, subagents_dir)
+            subagent_types, subagent_names = get_all_subagent_metadata(jsonl_path, subagents_dir)
             for subagent in session.list_subagents():
                 subagent_type = subagent_types.get(subagent.agent_id, "_unknown")
-                if subagent_type == "_unknown":
-                    logger.debug(
-                        "Skipping unclassified subagent %s in session %s", subagent.agent_id, uuid
-                    )
-                    continue
+                display_name = subagent_names.get(subagent.agent_id)
                 usage = subagent.get_usage_summary()
                 duration = 0.0
                 if subagent.start_time and subagent.end_time:
                     duration = (subagent.end_time - subagent.start_time).total_seconds()
                 conn.execute(
                     """INSERT INTO subagent_invocations
-                       (session_uuid, agent_id, subagent_type, input_tokens,
-                        output_tokens, cost_usd, duration_seconds, started_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                       (session_uuid, agent_id, subagent_type, agent_display_name,
+                        input_tokens, output_tokens, cost_usd, duration_seconds, started_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         uuid,
                         subagent.agent_id,
                         subagent_type,
+                        display_name,
                         usage.total_input,
                         usage.output_tokens,
                         usage.calculate_cost(),

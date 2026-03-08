@@ -10,7 +10,7 @@ import sqlite3
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 19
+SCHEMA_VERSION = 20
 
 SCHEMA_SQL = """
 -- Schema versioning
@@ -138,6 +138,7 @@ CREATE TABLE IF NOT EXISTS subagent_invocations (
     session_uuid TEXT NOT NULL,
     agent_id TEXT NOT NULL,
     subagent_type TEXT,
+    agent_display_name TEXT,
     input_tokens INTEGER DEFAULT 0,
     output_tokens INTEGER DEFAULT 0,
     cost_usd REAL DEFAULT 0,
@@ -588,6 +589,20 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             existing_stp_cols = {r[1] for r in conn.execute("PRAGMA table_info(sync_team_projects)").fetchall()}
             if "git_identity" not in existing_stp_cols:
                 conn.execute("ALTER TABLE sync_team_projects ADD COLUMN git_identity TEXT")
+
+        if current_version < 20:
+            logger.info("Migrating -> v20: adding agent_display_name to subagent_invocations")
+            existing_cols = {r[1] for r in conn.execute("PRAGMA table_info(subagent_invocations)").fetchall()}
+            if "agent_display_name" not in existing_cols:
+                conn.execute("ALTER TABLE subagent_invocations ADD COLUMN agent_display_name TEXT")
+            # Force re-index of subagent data so display names get populated
+            conn.execute("DELETE FROM subagent_tools")
+            conn.execute("DELETE FROM subagent_skills")
+            conn.execute("DELETE FROM subagent_commands")
+            conn.execute("DELETE FROM subagent_invocations")
+            conn.execute(
+                "UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1 WHERE subagent_count > 0"
+            )
 
     # Record version
     conn.execute(

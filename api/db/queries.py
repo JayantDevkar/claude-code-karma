@@ -2035,7 +2035,8 @@ def query_agent_history(
             si.duration_seconds,
             si.input_tokens,
             si.output_tokens,
-            si.cost_usd
+            si.cost_usd,
+            si.agent_display_name
         FROM subagent_invocations si
         JOIN sessions s ON si.session_uuid = s.uuid
         WHERE si.subagent_type = :type

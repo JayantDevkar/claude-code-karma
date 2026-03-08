@@ -116,6 +116,8 @@
 	let typeIcon = $derived(getTypeIcon(subagent.subagent_type));
 	// Clean agent ID for display (removes system prefixes like "aprompt_suggestion-")
 	let displayAgentId = $derived(cleanAgentIdForDisplay(subagent.agent_id));
+	// Human-readable display name (e.g., "security-fixes") when spawned with a name
+	let agentDisplayName = $derived(subagent.display_name || null);
 
 	function handleClick(e: MouseEvent) {
 		// Don't toggle if clicking on the navigation link
@@ -198,6 +200,14 @@
 							>
 								{displayAgentId}
 							</code>
+						{/if}
+						{#if agentDisplayName}
+							<span
+								class="text-xs text-[var(--text-secondary)] truncate max-w-[160px]"
+								title={agentDisplayName}
+							>
+								{agentDisplayName}
+							</span>
 						{/if}
 						<!-- Status badge (when available from live status) -->
 						{#if status}

@@ -78,6 +78,9 @@ class SubagentSummary(BaseModel):
     subagent_type: Optional[str] = Field(
         None, description="Type of subagent: Explore, Plan, Bash, or custom agent name"
     )
+    display_name: Optional[str] = Field(
+        None, description="Human-readable display name from Agent tool input (e.g., 'security-fixes')"
+    )
     tools_used: dict[str, int] = Field(default_factory=dict, description="Tool name -> usage count")
     message_count: int = Field(0, description="Total messages in subagent conversation")
     initial_prompt: Optional[str] = Field(None, description="First user message to subagent")
@@ -569,6 +572,9 @@ class SubagentSessionDetail(BaseModel):
     # Subagent-specific metadata
     subagent_type: Optional[str] = Field(
         None, description="Type of subagent: Explore, Plan, Bash, or custom"
+    )
+    display_name: Optional[str] = Field(
+        None, description="Human-readable name given when spawning the agent (e.g., 'security-fixes')"
     )
     initial_prompt: Optional[str] = Field(
         None, description="First user message to subagent (truncated)"
@@ -1198,6 +1204,9 @@ class AgentInvocation(BaseModel):
     project_encoded_name: str = Field(..., description="Project where invocation occurred")
     project_slug: Optional[str] = Field(None, description="URL-friendly project slug")
     project_display_name: Optional[str] = Field(None, description="Human-readable project name")
+    display_name: Optional[str] = Field(
+        None, description="Human-readable display name from Agent tool input (e.g., 'security-fixes')"
+    )
     invoked_at: Optional[datetime] = Field(None, description="When the agent was invoked")
     duration_seconds: Optional[float] = Field(None, description="Invocation duration")
     input_tokens: int = Field(0, description="Input tokens used")

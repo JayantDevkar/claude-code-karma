@@ -149,6 +149,10 @@
 
 	let subtitle = $derived.by(() => {
 		if (isSubagentSession(entity)) {
+			// Show display_name as subtitle when available, with type as fallback
+			if (entity.display_name) {
+				return entity.display_name;
+			}
 			return getSubagentTypeDisplayName(effectiveSubagentType);
 		}
 		return `#${entity.uuid?.slice(0, 8)}`;

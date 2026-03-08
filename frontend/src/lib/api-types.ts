@@ -40,6 +40,7 @@ export interface TimelineEventMetadata {
 	spawned_agent_id?: string;
 	spawned_agent_slug?: string;
 	subagent_type?: string;
+	display_name?: string;
 	full_content?: string;
 	full_thinking?: string;
 	full_text?: string;
@@ -335,6 +336,7 @@ export interface SubagentSummary {
 	agent_id: string;
 	slug: string | null;
 	subagent_type: string | null;
+	display_name?: string | null;
 	tools_used: Record<string, number>;
 	message_count: number;
 	initial_prompt: string | null;
@@ -699,6 +701,7 @@ export interface SubagentSessionDetail {
 
 	// Subagent-specific metadata
 	subagent_type: string | null;
+	display_name?: string | null;
 	initial_prompt: string | null;
 	initial_prompt_images?: ImageAttachment[];
 }
@@ -900,6 +903,7 @@ export interface AgentInvocation {
 	output_tokens: number;
 	cost_usd: number;
 	description: string | null;
+	display_name?: string | null;
 }
 
 /**
