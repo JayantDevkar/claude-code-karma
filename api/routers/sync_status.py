@@ -29,6 +29,7 @@ from db.sync_queries import (
     log_event,
     query_events,
     get_known_devices,
+    find_project_by_git_identity,
 )
 from services.syncthing_proxy import SyncthingNotRunning, SyncthingProxy, run_sync
 from services.watcher_manager import WatcherManager
@@ -45,7 +46,7 @@ ALLOWED_PROJECT_NAME = re.compile(r"^[a-zA-Z0-9_\-]+$")
 ALLOWED_DEVICE_ID = re.compile(r"^[A-Z0-9\-]+$")
 _VALID_EVENT_TYPES = frozenset({
     "team_created", "team_deleted",
-    "member_added", "member_removed",
+    "member_added", "member_removed", "member_auto_accepted",
     "project_added", "project_removed",
     "folders_shared", "pending_accepted",
     "sync_now", "watcher_started", "watcher_stopped",
@@ -201,6 +202,160 @@ async def _ensure_inbox_folders(
             result["errors"].append(f"inbox {m['name']}/{proj_suffix}: {e}")
 
     return result
+
+
+def _parse_folder_id(folder_id: str):
+    """Parse a karma folder ID into (member_name, suffix).
+
+    Expected format: ``karma-out-{member_name}-{suffix}``
+    Returns None if the folder ID does not match.
+    """
+    prefix = "karma-out-"
+    if not folder_id.startswith(prefix):
+        return None
+    rest = folder_id[len(prefix):]
+    parts = rest.split("-")
+    if len(parts) < 2:
+        return None
+    for i in range(1, len(parts)):
+        candidate_name = "-".join(parts[:i])
+        candidate_suffix = "-".join(parts[i:])
+        if candidate_name and candidate_suffix:
+            return candidate_name, candidate_suffix
+    return None
+
+
+def _find_team_for_folder(conn, folder_ids: list[str]) -> Optional[str]:
+    """Find which team a set of karma folder IDs belong to, by matching project suffixes."""
+    teams = list_teams(conn)
+    # Pre-fetch all projects per team to avoid N+1 queries
+    team_projects = {t["name"]: list_team_projects(conn, t["name"]) for t in teams}
+
+    for folder_id in folder_ids:
+        parsed = _parse_folder_id(folder_id)
+        if not parsed:
+            continue
+        _, suffix = parsed
+        for team_name, projects in team_projects.items():
+            for proj in projects:
+                proj_suffix = _compute_proj_suffix(
+                    proj.get("git_identity"), proj.get("path"), proj["project_encoded_name"]
+                )
+                if proj_suffix == suffix:
+                    return team_name
+    return None
+
+
+async def _auto_accept_pending_peers(proxy, config, conn) -> tuple[int, dict]:
+    """Auto-accept pending devices that have karma folder offers.
+
+    When a new member joins via join code, their Syncthing offers karma-out-*
+    folders to us. We match the pending device against those folder offers
+    to auto-accept without manual code exchange.
+
+    Returns:
+        (accepted_count, remaining_pending_devices) — the caller can use
+        the remaining dict directly instead of re-fetching from Syncthing.
+    """
+    try:
+        pending_devices = await run_sync(proxy.get_pending_devices)
+    except Exception:
+        return 0, {}
+
+    if not pending_devices:
+        return 0, {}
+
+    try:
+        pending_folders = await run_sync(proxy.get_pending_folders)
+    except Exception:
+        return 0, pending_devices
+
+    accepted = 0
+    accepted_ids = set()
+    for device_id in list(pending_devices.keys()):
+        # Find karma folders offered by this device
+        karma_folders = []
+        for folder_id, info in pending_folders.items():
+            if not folder_id.startswith("karma-out-"):
+                continue
+            if device_id in info.get("offeredBy", {}):
+                karma_folders.append(folder_id)
+
+        if not karma_folders:
+            continue  # Not a karma user, skip
+
+        # Extract username from folder ID: karma-out-{username}-{suffix}
+        # Use the pending device's name as a hint to disambiguate hyphenated usernames
+        device_info = pending_devices.get(device_id, {})
+        device_name = device_info.get("name", "")
+
+        username = None
+        for folder_id in karma_folders:
+            parsed = _parse_folder_id(folder_id)
+            if not parsed:
+                continue
+            candidate_name, _ = parsed
+            # If the device name matches (set by add_device on the joiner's side), prefer it
+            if device_name and candidate_name == device_name:
+                username = candidate_name
+                break
+            # Try all possible splits to find one where the name matches the device name
+            if device_name:
+                prefix = "karma-out-"
+                rest = folder_id[len(prefix):]
+                parts = rest.split("-")
+                for i in range(1, len(parts)):
+                    name = "-".join(parts[:i])
+                    if name == device_name:
+                        username = name
+                        break
+                if username:
+                    break
+            if username is None:
+                username = candidate_name  # fall back to shortest split
+            break
+
+        if not username:
+            continue
+
+        # Find team by matching folder suffix against team projects
+        team_name = _find_team_for_folder(conn, karma_folders)
+        if not team_name:
+            continue
+
+        # Auto-accept device in Syncthing
+        try:
+            await run_sync(proxy.add_device, device_id, username)
+        except Exception as e:
+            logger.warning("Auto-accept: failed to add device %s: %s", device_id[:20], e)
+            continue
+
+        # Add as team member in DB
+        upsert_member(conn, team_name, username, device_id=device_id)
+        log_event(conn, "member_auto_accepted", team_name=team_name, member_name=username)
+        logger.info("Auto-accepted peer %s (%s) into team %s", username, device_id[:20], team_name)
+
+        # Auto-share folders back (my outbox → new member, includes ALL member device_ids)
+        try:
+            await _auto_share_folders(proxy, config, conn, team_name, device_id)
+        except Exception as e:
+            logger.warning("Auto-accept: failed to share folders back to %s: %s", username, e)
+
+        # Accept their pending folders (reuse the proxy's underlying client)
+        try:
+            from karma.main import _accept_pending_folders
+
+            client = proxy._require_client()
+            await run_sync(_accept_pending_folders, client, config, conn)
+        except Exception:
+            pass
+
+        accepted_ids.add(device_id)
+        accepted += 1
+
+    # Return remaining pending devices (minus the ones we accepted)
+    remaining = {did: info for did, info in pending_devices.items() if did not in accepted_ids}
+    return accepted, remaining
 
 
 async def _auto_share_folders(proxy, config, conn, team_name, new_device_id) -> dict:
@@ -620,16 +775,18 @@ async def sync_create_team(req: CreateTeamRequest) -> Any:
     if get_team(conn, req.name) is not None:
         raise HTTPException(409, f"Team '{req.name}' already exists")
 
-    create_team(conn, req.name, req.backend)
+    own_device_id = config.syncthing.device_id if config.syncthing else None
+    join_code = f"{req.name}:{config.user_id}:{own_device_id}" if own_device_id else None
+
+    create_team(conn, req.name, req.backend, join_code=join_code)
 
     # Add creator as a member so they appear in the member list and their
-    # device_id is included when sharing folders (mirrors join flow, line 684)
-    own_device_id = config.syncthing.device_id if config.syncthing else None
+    # device_id is included when sharing folders (mirrors join flow)
     upsert_member(conn, req.name, config.user_id, device_id=own_device_id)
 
     log_event(conn, "team_created", team_name=req.name)
 
-    return {"ok": True, "name": req.name, "backend": req.backend}
+    return {"ok": True, "name": req.name, "backend": req.backend, "join_code": join_code}
 
 
 @router.delete("/teams/{team_name}")
@@ -682,9 +839,10 @@ async def sync_join_team(req: JoinTeamRequest) -> Any:
     conn = _get_sync_conn()
 
     # Auto-create team if it doesn't exist locally (join codes are Syncthing-only)
+    # Store the same join code so all members share a single fixed code
     team_created = False
     if get_team(conn, team_name) is None:
-        create_team(conn, team_name, backend="syncthing")
+        create_team(conn, team_name, backend="syncthing", join_code=req.join_code.strip())
         log_event(conn, "team_created", team_name=team_name)
         # Add self as a member so the joiner appears in the team's member list
         upsert_member(conn, team_name, config.user_id, device_id=own_device_id)
@@ -718,6 +876,27 @@ async def sync_join_team(req: JoinTeamRequest) -> Any:
             except Exception as e:
                 logger.warning("Failed to log folders_shared event: %s", e)
 
+    # Auto-add local projects matching team's shared projects (bidirectional sharing)
+    auto_added_projects = 0
+    if paired:
+        try:
+            team_projects = list_team_projects(conn, team_name)
+            for tp in team_projects:
+                git_id = tp.get("git_identity")
+                if not git_id:
+                    continue
+                local = find_project_by_git_identity(conn, git_id)
+                if local and local["encoded_name"] != tp["project_encoded_name"]:
+                    encoded = local["encoded_name"]
+                    upsert_team_project(conn, team_name, encoded, local.get("project_path"), git_identity=git_id)
+                    proj_suffix = _compute_proj_suffix(git_id, local.get("project_path"), encoded)
+                    members = list_members(conn, team_name)
+                    member_device_ids = [m["device_id"] for m in members if m["device_id"]]
+                    await _ensure_outbox_folder(proxy, config, encoded, proj_suffix, member_device_ids)
+                    auto_added_projects += 1
+        except Exception as e:
+            logger.warning("Auto-add matching projects failed: %s", e)
+
     # Auto-accept pending folders from the leader
     accepted = 0
     try:
@@ -734,9 +913,6 @@ async def sync_join_team(req: JoinTeamRequest) -> Any:
     except Exception:
         pass
 
-    # Generate joiner's own code to share back (team-agnostic)
-    own_join_code = f"{config.user_id}:{own_device_id}" if own_device_id else None
-
     return {
         "ok": True,
         "team_name": team_name,
@@ -745,13 +921,17 @@ async def sync_join_team(req: JoinTeamRequest) -> Any:
         "paired": paired,
         "folders_created": folders_created,
         "accepted_folders": accepted,
-        "your_join_code": own_join_code,
+        "auto_added_projects": auto_added_projects,
     }
 
 
 @router.get("/teams/{team_name}/join-code")
 async def sync_team_join_code(team_name: str) -> Any:
-    """Get the join code for a team."""
+    """Get the join code for a team.
+
+    Returns the fixed join code stored at team creation time. All members
+    share the same code so any member can invite new people.
+    """
     if not ALLOWED_PROJECT_NAME.match(team_name):
         raise HTTPException(400, "Invalid team name")
 
@@ -760,32 +940,55 @@ async def sync_team_join_code(team_name: str) -> Any:
         raise HTTPException(400, "Not initialized")
 
     conn = _get_sync_conn()
-    if get_team(conn, team_name) is None:
+    team = get_team(conn, team_name)
+    if team is None:
         raise HTTPException(404, f"Team '{team_name}' not found")
 
-    device_id = config.syncthing.device_id if config.syncthing else None
-    if not device_id:
-        raise HTTPException(400, "No Syncthing device ID configured")
+    # Return stored join code if available, otherwise generate one (backwards compat)
+    join_code = team.get("join_code")
+    if not join_code:
+        device_id = config.syncthing.device_id if config.syncthing else None
+        if not device_id:
+            raise HTTPException(400, "No Syncthing device ID configured")
+        join_code = f"{team_name}:{config.user_id}:{device_id}"
 
-    join_code = f"{team_name}:{config.user_id}:{device_id}"
     return {"join_code": join_code, "team_name": team_name, "user_id": config.user_id}
 
 
 @router.get("/pending-devices")
 async def sync_pending_devices() -> Any:
-    """List Syncthing devices trying to connect that aren't configured."""
-    conn = _get_sync_conn()
-    known = get_known_devices(conn)
-    known_device_ids = set(known.keys())
+    """List Syncthing devices trying to connect that aren't configured.
 
-    proxy = get_proxy()
+    Before returning, auto-accepts any pending devices that have karma
+    folder offers matching a team project (seamless join handshake).
+    """
+    conn = _get_sync_conn()
+
+    # Auto-accept pending devices that match karma folder offers (best-effort).
+    # Returns remaining pending devices so we don't need to re-fetch.
+    auto_accepted = 0
+    remaining_pending = None
     try:
-        pending = await run_sync(proxy.get_pending_devices)
-    except SyncthingNotRunning:
-        return {"devices": []}
+        config = await run_sync(_load_identity)
+        if config:
+            proxy = get_proxy()
+            auto_accepted, remaining_pending = await _auto_accept_pending_peers(proxy, config, conn)
+    except Exception:
+        pass
+
+    # Use remaining from auto-accept if available, otherwise fetch fresh
+    if remaining_pending is None:
+        proxy = get_proxy()
+        try:
+            remaining_pending = await run_sync(proxy.get_pending_devices)
+        except SyncthingNotRunning:
+            return {"devices": [], "auto_accepted": auto_accepted}
+
+    # Filter out devices we already know about (team members)
+    known_device_ids = set(get_known_devices(conn).keys())
 
     result = []
-    for device_id, info in pending.items():
+    for device_id, info in remaining_pending.items():
         if device_id not in known_device_ids:
             result.append({
                 "device_id": device_id,
@@ -794,7 +997,7 @@ async def sync_pending_devices() -> Any:
                 "time": info.get("time", ""),
             })
 
-    return {"devices": result}
+    return {"devices": result, "auto_accepted": auto_accepted}
 
 
 # ─── Team member management ───────────────────────────────────────────

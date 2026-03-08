@@ -1805,7 +1805,7 @@ export interface JoinTeamResponse {
 	leader_name: string;
 	paired: boolean;
 	accepted_folders: number;
-	your_join_code: string | null;
+	auto_added_projects: number;
 	team_created: boolean;
 }
 
