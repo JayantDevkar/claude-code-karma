@@ -107,6 +107,29 @@ def _parse_folder_id(folder_id: str) -> Optional[tuple[str, str]]:
     return None
 
 
+def _extract_username_from_karma_folder(
+    folder_id: str, prefix: str, known_names: set,
+) -> Optional[tuple[str, str]]:
+    """Extract (username, remainder) from a karma folder ID.
+
+    Uses ``known_names`` (own user_id + real usernames discovered from
+    handshake folders) to correctly disambiguate multi-dash usernames.
+    Falls back to shortest-split when no known name matches.
+    """
+    rest = folder_id[len(prefix):]
+    # Try known names longest-first for greedy match
+    for name in sorted(known_names, key=len, reverse=True):
+        if rest.startswith(name + "-"):
+            remainder = rest[len(name) + 1:]
+            if remainder:
+                return name, remainder
+    # Fallback: shortest split
+    parts = rest.split("-", 1)
+    if len(parts) == 2 and parts[0] and parts[1]:
+        return parts[0], parts[1]
+    return None
+
+
 def _accept_pending_folders(st, config, conn):
     """Accept pending folder offers from known team members.
 
@@ -115,13 +138,18 @@ def _accept_pending_folders(st, config, conn):
     - Only accepts folder IDs prefixed with 'karma-'
     - Replaces empty pre-created inbox folders that conflict on the same path
 
+    Handles three folder types:
+    - ``karma-join-{user}-{team}`` — handshake folders (receiveonly)
+    - ``karma-out-{self}-{suffix}`` — own outbox offered back (sendonly)
+    - ``karma-out-{other}-{suffix}`` — other's outbox (receiveonly inbox)
+
     When the joiner's local DB has no ``sync_team_projects`` records (because
     they joined a team rather than creating it), folders are still accepted if
     offered by a known device.  The inbox path is derived from the folder ID
     itself, and a ``sync_team_projects`` record is auto-created so that
     subsequent operations (watcher, status) can find the project.
     """
-    from db.sync_queries import get_known_devices, list_team_projects
+    from db.sync_queries import get_known_devices, list_team_projects, list_teams, upsert_member
 
     pending = st.get_pending_folders()
     if not pending:
@@ -131,6 +159,45 @@ def _accept_pending_folders(st, config, conn):
     accepted = 0
     existing_folder_ids = {f["id"] for f in st.get_folders()}
     own_device_id = config.syncthing.device_id if config.syncthing else None
+    own_user_id = config.user_id
+
+    # ── Pre-scan: extract real usernames from karma-join-* folders ────
+    # Handshake folders encode the karma user_id (not the device hostname),
+    # so we can use them to fix member names that were derived from hostnames.
+    all_team_names = {t["name"] for t in list_teams(conn)}
+    real_usernames: dict[str, str] = {}  # device_id → real karma user_id
+    for folder_id, folder_info in pending.items():
+        if not folder_id.startswith("karma-join-"):
+            continue
+        rest = folder_id[len("karma-join-"):]
+        for i in range(len(rest.split("-")) - 1, 0, -1):
+            parts = rest.split("-")
+            candidate_team = "-".join(parts[i:])
+            candidate_user = "-".join(parts[:i])
+            if candidate_team in all_team_names:
+                # Found a valid team — map all offering devices to this username
+                for dev_id in folder_info.get("offeredBy", {}):
+                    if dev_id in known_devices:
+                        real_usernames[dev_id] = candidate_user
+                        # Update DB member name if it was hostname-derived.
+                        # upsert_member uses ON CONFLICT(team_name, device_id)
+                        # so this correctly updates the name in place.
+                        db_name, db_team = known_devices[dev_id]
+                        if db_name != candidate_user:
+                            click.echo(
+                                f"  Updating member name: {db_name} → {candidate_user} "
+                                f"(from handshake folder)"
+                            )
+                            upsert_member(conn, db_team, candidate_user, device_id=dev_id)
+                break
+
+    # Build set of known names for folder ID disambiguation
+    known_names = {own_user_id}
+    known_names.update(real_usernames.values())
+    known_names.update(name for name, _ in known_devices.values())
+
+    # Refresh known_devices after potential member name updates
+    known_devices = get_known_devices(conn)
 
     for folder_id, folder_info in pending.items():
         if not folder_id.startswith("karma-"):
@@ -158,47 +225,94 @@ def _accept_pending_folders(st, config, conn):
 
             member_name, team_name = known_devices[device_id]
 
-            # Try to match against a known local project first.
-            # Parse the folder ID to get the suffix, then compare against
-            # each project's computed suffix for an exact match.
+            # ── Handle karma-join-* handshake folders ─────────────────
+            # Handshake folders are just signals — parse for username
+            # discovery (done in pre-scan above), then dismiss.
+            if folder_id.startswith("karma-join-"):
+                try:
+                    st.dismiss_pending_folder(folder_id, device_id)
+                except Exception:
+                    pass
+                click.echo(
+                    f"  Dismissed handshake '{folder_id}' from {member_name} (signal processed)"
+                )
+                continue
+
+            # ── Handle karma-out-* folders ────────────────────────────
+            if not folder_id.startswith("karma-out-"):
+                continue
+
+            # Check if this is OUR outbox being offered back (create sendonly)
+            own_prefix = f"karma-out-{own_user_id}-"
+            if folder_id.startswith(own_prefix):
+                suffix = folder_id[len(own_prefix):]
+                outbox_path = str(KARMA_BASE / "remote-sessions" / own_user_id / suffix)
+                Path(outbox_path).mkdir(parents=True, exist_ok=True)
+                outbox_devices = [device_id]
+                if own_device_id:
+                    outbox_devices.append(own_device_id)
+
+                existing = st.find_folder_by_path(outbox_path)
+                if existing:
+                    if existing["id"] == folder_id:
+                        click.echo(f"  Already have outbox '{folder_id}'")
+                        continue
+                    st.remove_folder(existing["id"])
+
+                st.add_folder(folder_id, outbox_path, outbox_devices, folder_type="sendonly")
+                existing_folder_ids.add(folder_id)
+                click.echo(
+                    f"  Created outbox '{folder_id}' -> {outbox_path} (send-only)"
+                )
+                accepted += 1
+
+                # Auto-register project if not already tracked
+                try:
+                    from db.sync_queries import upsert_team_project
+
+                    upsert_team_project(conn, team_name, suffix, path=None)
+                except Exception:
+                    pass
+                continue
+
+            # ── Someone else's outbox → create receiveonly inbox ───────
+            # Use smart disambiguation to extract sender and suffix
+            parsed = _extract_username_from_karma_folder(
+                folder_id, "karma-out-", known_names,
+            )
+            if not parsed:
+                parsed = _parse_folder_id(folder_id)
+            if not parsed:
+                click.echo(
+                    f"  Skipped folder '{folder_id}' from {member_name} "
+                    f"(could not parse folder ID)"
+                )
+                continue
+
+            sender_name, suffix = parsed
+
+            # Try to match against a known local project
             projects = list_team_projects(conn, team_name)
             matched_project = None
-            parsed_for_match = _parse_folder_id(folder_id)
-            if parsed_for_match:
-                _, folder_suffix = parsed_for_match
-                for proj in projects:
-                    # Compute what this project's suffix would be
-                    git_id = proj.get("git_identity")
-                    if git_id:
-                        proj_suffix = git_id.replace("/", "-")
-                    elif proj["path"]:
-                        proj_suffix = Path(proj["path"]).name
-                    else:
-                        proj_suffix = proj["project_encoded_name"]
-                    if proj_suffix == folder_suffix:
-                        matched_project = proj
-                        break
+            for proj in projects:
+                git_id = proj.get("git_identity")
+                if git_id:
+                    proj_suffix = git_id.replace("/", "-")
+                elif proj["path"]:
+                    proj_suffix = Path(proj["path"]).name
+                else:
+                    proj_suffix = proj["project_encoded_name"]
+                if proj_suffix == suffix:
+                    matched_project = proj
+                    break
 
             if matched_project:
-                # Known project — use its encoded name for the inbox path
                 encoded = matched_project["project_encoded_name"]
-                inbox_path = str(KARMA_BASE / "remote-sessions" / member_name / encoded)
+                inbox_path = str(KARMA_BASE / "remote-sessions" / sender_name / encoded)
             else:
-                # No local project match — derive inbox path from folder ID.
-                # This is the common case for joiners whose DB has no
-                # sync_team_projects records yet.
-                parsed = _parse_folder_id(folder_id)
-                if not parsed:
-                    click.echo(
-                        f"  Skipped folder '{folder_id}' from {member_name} "
-                        f"(could not parse folder ID)"
-                    )
-                    continue
-                _sender, suffix = parsed
-                inbox_path = str(KARMA_BASE / "remote-sessions" / member_name / suffix)
+                inbox_path = str(KARMA_BASE / "remote-sessions" / sender_name / suffix)
 
-                # Auto-create a sync_team_projects record so future operations
-                # (watcher, status, next accept) can find this project.
+                # Auto-create a sync_team_projects record
                 try:
                     from db.sync_queries import upsert_team_project
 
@@ -215,7 +329,7 @@ def _accept_pending_folders(st, config, conn):
             if existing:
                 existing_id = existing["id"]
                 if existing_id == folder_id:
-                    click.echo(f"  Already accepted '{folder_id}' from {member_name}")
+                    click.echo(f"  Already accepted '{folder_id}' from {sender_name}")
                     continue
                 click.echo(f"  Replacing empty inbox '{existing_id}' with offered '{folder_id}'")
                 st.remove_folder(existing_id)
@@ -228,7 +342,7 @@ def _accept_pending_folders(st, config, conn):
             existing_folder_ids.add(folder_id)
 
             click.echo(
-                f"  Accepted '{folder_id}' from {member_name} "
+                f"  Accepted '{folder_id}' from {sender_name} "
                 f"-> {inbox_path} (receive-only)"
             )
             accepted += 1
@@ -869,12 +983,12 @@ def team_remove(name: str, team_name: str):
         raise click.ClickException(f"Team '{team_name}' not found.")
 
     members = list_members(conn, team_name)
-    member_names = {m["name"] for m in members}
-    if name not in member_names:
+    member = next((m for m in members if m["name"] == name), None)
+    if member is None:
         raise click.ClickException(f"Member '{name}' not found in team '{team_name}'.")
 
     log_event(conn, "member_removed", team_name=team_name, member_name=name)
-    remove_member(conn, team_name, name)
+    remove_member(conn, team_name, member["device_id"])
     click.echo(f"Removed team member '{name}'.")
 
 

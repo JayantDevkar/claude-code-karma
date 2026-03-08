@@ -68,7 +68,7 @@ class TestMemberCRUD:
 
         create_team(conn, "alpha", "syncthing")
         add_member(conn, "alpha", "alice", device_id="DEV-ALICE")
-        remove_member(conn, "alpha", "alice")
+        remove_member(conn, "alpha", "DEV-ALICE")
         assert list_members(conn, "alpha") == []
 
     def test_get_member_by_device_id(self, conn):

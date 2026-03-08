@@ -107,7 +107,6 @@
 			teamName={activeTeamName}
 			onteamchange={refreshData}
 			initialWatchStatus={data.watchStatus}
-			initialPending={data.pending}
 		/>
 	{/if}
 </div>

@@ -49,10 +49,11 @@
 	let userId = $derived(data.syncStatus?.user_id);
 	let sharedProjectNames = $derived(projects.map((p) => p.encoded_name));
 
-	function parseFolderLabel(folderId: string): string {
-		const match = folderId.match(/^karma-(?:out|in)-[^-]+-(.+)$/);
+	function parseFolderLabel(offer: SyncPendingFolder): string {
+		if (offer.label) return offer.label;
+		const match = offer.folder_id.match(/^karma-(?:out|in)-[^-]+-(.+)$/);
 		if (match) return match[1];
-		return folderId;
+		return offer.folder_id;
 	}
 
 	async function acceptAllFolders() {
@@ -226,7 +227,7 @@
 							<FolderGit2 size={16} class="text-[var(--warning)] shrink-0" />
 							<div class="flex-1 min-w-0">
 								<p class="text-sm font-medium text-[var(--text-primary)] truncate">
-									{parseFolderLabel(offer.folder_id)}
+									{parseFolderLabel(offer)}
 								</p>
 								<p class="text-xs text-[var(--text-muted)] mt-0.5">
 									from <span class="text-[var(--text-secondary)]">{offer.from_member}</span>
