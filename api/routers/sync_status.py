@@ -664,19 +664,25 @@ async def sync_join_team(req: JoinTeamRequest) -> Any:
     validate_user_id(leader_name)
     validate_device_id(device_id)
 
+    # Enforce same team name constraints as explicit create endpoint
+    if len(team_name) < 2 or len(team_name) > 64:
+        raise HTTPException(400, "Invalid team name in join code: must be 2-64 characters")
+
     config = await run_sync(_load_identity)
     if config is None:
         raise HTTPException(400, "Not initialized. Run sync setup first.")
 
+    own_device_id = config.syncthing.device_id if config.syncthing else None
     conn = _get_sync_conn()
 
-    # Team must already exist locally — refuse to auto-create from join codes
+    # Auto-create team if it doesn't exist locally (join codes are Syncthing-only)
+    team_created = False
     if get_team(conn, team_name) is None:
-        raise HTTPException(
-            404,
-            f"Team '{team_name}' does not exist locally. "
-            "Create it first on the Teams page, then paste the join code.",
-        )
+        create_team(conn, team_name, backend="syncthing")
+        log_event(conn, "team_created", team_name=team_name)
+        # Add self as a member so the joiner appears in the team's member list
+        upsert_member(conn, team_name, config.user_id, device_id=own_device_id)
+        team_created = True
 
     # Add or update leader as member (idempotent, updates device_id on rejoin)
     upsert_member(conn, team_name, leader_name, device_id=device_id)
@@ -723,12 +729,12 @@ async def sync_join_team(req: JoinTeamRequest) -> Any:
         pass
 
     # Generate joiner's own code to share back (team-agnostic)
-    own_device_id = config.syncthing.device_id if config.syncthing else None
     own_join_code = f"{config.user_id}:{own_device_id}" if own_device_id else None
 
     return {
         "ok": True,
         "team_name": team_name,
+        "team_created": team_created,
         "leader_name": leader_name,
         "paired": paired,
         "folders_created": folders_created,

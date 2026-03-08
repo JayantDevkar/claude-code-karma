@@ -77,7 +77,13 @@
 				<div class="flex items-center gap-3 p-4 rounded-lg bg-[var(--success)]/10 border border-[var(--success)]/20">
 					<CheckCircle2 size={20} class="text-[var(--success)] shrink-0" />
 					<div class="text-sm">
-						<p class="font-medium text-[var(--text-primary)]">Connected to {joinResult.leader_name}'s team</p>
+						<p class="font-medium text-[var(--text-primary)]">
+							{#if joinResult.team_created}
+								Created team "{joinResult.team_name}" and connected to {joinResult.leader_name}
+							{:else}
+								Connected to {joinResult.leader_name}'s team
+							{/if}
+						</p>
 						<p class="text-[var(--text-secondary)] mt-0.5">
 							{joinResult.paired ? 'Syncthing paired successfully.' : 'Syncthing pairing pending.'}
 							{#if joinResult.accepted_folders > 0}
@@ -99,8 +105,7 @@
 			<div class="space-y-4">
 				<div class="space-y-1.5">
 					<label for="join-code" class="block text-xs font-medium text-[var(--text-secondary)]">
-						Paste the join code from your team creator.
-						<span class="text-[var(--text-muted)]">The team must already exist locally — create it on the Teams page first.</span>
+						Paste the join code from your team creator
 					</label>
 					<textarea
 						id="join-code"

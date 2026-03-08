@@ -1806,6 +1806,7 @@ export interface JoinTeamResponse {
 	paired: boolean;
 	accepted_folders: number;
 	your_join_code: string | null;
+	team_created: boolean;
 }
 
 export interface JoinCodeResponse {
