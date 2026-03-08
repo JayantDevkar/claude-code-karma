@@ -34,8 +34,14 @@
 	let hasNavigated = $state(false);
 
 	// Auto-advance: when detect.running becomes true on step 1, move to step 2
+	// IMPORTANT: Read both dependencies BEFORE the conditional to avoid
+	// JavaScript && short-circuit preventing Svelte 5 from tracking `step`.
+	// Without this, when detect is null, step isn't tracked and the effect
+	// won't re-run when step changes from 0→1.
 	$effect(() => {
-		if (detect?.running && step === 1) {
+		const isRunning = detect?.running;
+		const currentStep = step;
+		if (isRunning && currentStep === 1) {
 			step = 2;
 		}
 	});
@@ -291,78 +297,98 @@
 				</p>
 			</div>
 
-			<div
-				class="rounded-[var(--radius-lg)] border border-[var(--warning)]/30 bg-[var(--status-idle-bg)] p-5 space-y-4"
-			>
-				<div class="flex items-start gap-3">
-					<XCircle size={18} class="text-[var(--warning)] mt-0.5 shrink-0" />
-					<div>
-						<h3 class="text-sm font-semibold text-[var(--text-primary)]">
-							Syncthing not detected
-						</h3>
-						<p class="text-xs text-[var(--text-secondary)] mt-0.5">
-							Install and start Syncthing, then click "Check Again".
-						</p>
+			{#if detect?.running}
+				<!-- Syncthing IS detected — show success (auto-advance effect handles transition) -->
+				<div
+					class="rounded-[var(--radius-lg)] border border-[var(--success)]/30 bg-[var(--status-active-bg)] p-5 space-y-4"
+				>
+					<div class="flex items-start gap-3">
+						<CheckCircle size={18} class="text-[var(--success)] mt-0.5 shrink-0" />
+						<div>
+							<h3 class="text-sm font-semibold text-[var(--text-primary)]">
+								Syncthing detected
+							</h3>
+							<p class="text-xs text-[var(--text-secondary)] mt-0.5">
+								Syncthing{#if detect.version}&nbsp;v{detect.version}{/if} is installed and running. Advancing...
+							</p>
+						</div>
 					</div>
 				</div>
-
-				<div class="space-y-2">
-					{#each installInstructions as instr}
-						<div
-							class="rounded-[var(--radius-md)] px-3 py-2.5 {instr.os === detectedOS
-								? 'bg-[var(--bg-muted)]'
-								: ''}"
-						>
-							<div class="flex items-center gap-2 mb-1">
-								<span
-									class="text-[11px] font-medium text-[var(--text-muted)] uppercase tracking-wide"
-								>
-									{instr.label}
-								</span>
-								{#if instr.os === detectedOS}
-									<span class="text-[10px] text-[var(--text-muted)]">(detected)</span>
-								{/if}
-							</div>
-							<div class="flex items-center gap-1.5">
-								<code
-									class="flex-1 text-xs font-mono text-[var(--text-secondary)] bg-[var(--bg-base)] border border-[var(--border)] rounded px-2.5 py-1.5 break-all"
-								>
-									{instr.command}
-								</code>
-								<button
-									onclick={() => copyCommand(instr.command)}
-									aria-label="Copy command to clipboard"
-									class="shrink-0 p-1.5 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-base)] text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-muted)] transition-colors"
-								>
-									{#if copiedCommand === instr.command}
-										<CheckCircle size={13} class="text-[var(--success)]" />
-									{:else}
-										<Copy size={13} />
-									{/if}
-								</button>
-							</div>
-						</div>
-					{/each}
-				</div>
-
-				{#if checkError}
-					<p class="text-xs text-[var(--error)]">{checkError}</p>
-				{/if}
-
-				<button
-					onclick={checkAgain}
-					disabled={checkingAgain}
-					aria-label="Check if Syncthing is now running"
-					class="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-[var(--radius-md)] bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+			{:else}
+				<!-- Syncthing NOT detected — show install instructions -->
+				<div
+					class="rounded-[var(--radius-lg)] border border-[var(--warning)]/30 bg-[var(--status-idle-bg)] p-5 space-y-4"
 				>
-					{#if checkingAgain}
-						<Loader2 size={14} class="animate-spin" />
-						Checking...
-					{:else}
-						Check Again
+					<div class="flex items-start gap-3">
+						<XCircle size={18} class="text-[var(--warning)] mt-0.5 shrink-0" />
+						<div>
+							<h3 class="text-sm font-semibold text-[var(--text-primary)]">
+								Syncthing not detected
+							</h3>
+							<p class="text-xs text-[var(--text-secondary)] mt-0.5">
+								Install and start Syncthing, then click "Check Again".
+							</p>
+						</div>
+					</div>
+
+					<div class="space-y-2">
+						{#each installInstructions as instr}
+							<div
+								class="rounded-[var(--radius-md)] px-3 py-2.5 {instr.os === detectedOS
+									? 'bg-[var(--bg-muted)]'
+									: ''}"
+							>
+								<div class="flex items-center gap-2 mb-1">
+									<span
+										class="text-[11px] font-medium text-[var(--text-muted)] uppercase tracking-wide"
+									>
+										{instr.label}
+									</span>
+									{#if instr.os === detectedOS}
+										<span class="text-[10px] text-[var(--text-muted)]">(detected)</span>
+									{/if}
+								</div>
+								<div class="flex items-center gap-1.5">
+									<code
+										class="flex-1 text-xs font-mono text-[var(--text-secondary)] bg-[var(--bg-base)] border border-[var(--border)] rounded px-2.5 py-1.5 break-all"
+									>
+										{instr.command}
+									</code>
+									<button
+										onclick={() => copyCommand(instr.command)}
+										aria-label="Copy command to clipboard"
+										class="shrink-0 p-1.5 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-base)] text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-muted)] transition-colors"
+									>
+										{#if copiedCommand === instr.command}
+											<CheckCircle size={13} class="text-[var(--success)]" />
+										{:else}
+											<Copy size={13} />
+										{/if}
+									</button>
+								</div>
+							</div>
+						{/each}
+					</div>
+
+					{#if checkError}
+						<p class="text-xs text-[var(--error)]">{checkError}</p>
 					{/if}
-				</button>
-			</div>
+
+					<button
+						onclick={checkAgain}
+						disabled={checkingAgain}
+						aria-label="Check if Syncthing is now running"
+						class="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-[var(--radius-md)] bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+					>
+						{#if checkingAgain}
+							<Loader2 size={14} class="animate-spin" />
+							Checking...
+						{:else}
+							Check Again
+						{/if}
+					</button>
+				</div>
+			{/if}
 		</div>
 
 	<!-- ============================================ -->

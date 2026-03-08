@@ -297,18 +297,26 @@
 	// ── Reset sync ───────────────────────────────────────────────────────────
 	let resetting = $state(false);
 	let resetConfirm = $state(false);
+	let uninstallSyncthing = $state(false);
+	let resetResult: Record<string, any> | null = $state(null);
 
 	async function resetSync() {
 		resetting = true;
+		resetResult = null;
 		try {
-			const res = await fetch(`${API_BASE}/sync/reset`, { method: 'POST' }).catch(() => null);
+			const res = await fetch(`${API_BASE}/sync/reset`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ uninstall_syncthing: uninstallSyncthing })
+			}).catch(() => null);
 			if (res?.ok) {
-				// Reload page to show setup wizard
-				window.location.reload();
+				const data = await res.json();
+				resetResult = data.steps;
+				// Brief delay to show result, then reload
+				setTimeout(() => window.location.reload(), 1500);
 			}
 		} finally {
 			resetting = false;
-			resetConfirm = false;
 		}
 	}
 
@@ -693,19 +701,34 @@
 
 				<!-- Reset sync -->
 				<div class="pt-3 border-t border-[var(--border-subtle)]">
-					{#if resetConfirm}
-						<div class="flex items-center justify-between gap-2">
-							<span class="text-xs text-[var(--text-secondary)]">Reset all sync config and return to setup?</span>
-							<div class="flex items-center gap-1.5">
+					{#if resetResult}
+						<div class="p-2.5 rounded-md bg-green-500/10 text-xs text-green-400">
+							Sync reset complete. Reloading...
+						</div>
+					{:else if resetConfirm}
+						<div class="space-y-2.5">
+							<p class="text-xs font-medium text-[var(--error)]">This will:</p>
+							<ul class="text-xs text-[var(--text-secondary)] space-y-1 pl-4 list-disc">
+								<li>Remove all karma shared folders from Syncthing</li>
+								<li>Remove all paired team devices</li>
+								<li>Stop the Syncthing daemon</li>
+								<li>Delete all remote session files</li>
+								<li>Clear sync config, teams, members & events</li>
+							</ul>
+							<label class="flex items-center gap-2 text-xs text-[var(--text-secondary)] cursor-pointer">
+								<input type="checkbox" bind:checked={uninstallSyncthing} class="rounded" />
+								Full uninstall (brew uninstall + remove config)
+							</label>
+							<div class="flex items-center gap-1.5 pt-1">
 								<button
 									onclick={resetSync}
 									disabled={resetting}
 									class="px-2.5 py-1 text-xs font-medium rounded-md bg-[var(--error)] text-white hover:opacity-90 transition-opacity disabled:opacity-50"
 								>
-									{resetting ? 'Resetting...' : 'Yes, reset'}
+									{resetting ? 'Resetting...' : 'Yes, nuke everything'}
 								</button>
 								<button
-									onclick={() => (resetConfirm = false)}
+									onclick={() => { resetConfirm = false; uninstallSyncthing = false; }}
 									class="px-2.5 py-1 text-xs font-medium rounded-md border border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
 								>
 									Cancel

@@ -97,6 +97,8 @@ class SyncthingProxy:
 
         client = self._client
         if not client.is_running():
+            # Syncthing stopped — clear client so next call retries fresh
+            self._client = None
             return {"installed": True, "running": False}
 
         try:
@@ -114,7 +116,12 @@ class SyncthingProxy:
                 "device_id": data.get("myID"),
             }
         except Exception as e:
+            # API call failed (CSRF, bad API key, etc.) — clear client so
+            # next call retries _try_connect() with a fresh API key lookup.
+            # Without this, a client created with a stale/missing API key
+            # stays cached forever and detect() never recovers.
             logger.warning("Failed to get Syncthing system status: %s", e)
+            self._client = None
             return {"installed": True, "running": False, "version": None, "device_id": None}
 
     def get_devices(self) -> list[dict]:
@@ -409,6 +416,25 @@ class SyncthingProxy:
             except Exception:
                 pass
         return {"ok": True, "scanned": scanned}
+
+    def shutdown(self) -> dict:
+        """Shut down the Syncthing daemon."""
+        client = self._require_client()
+        ok = client.shutdown()
+        self._client = None  # daemon is going down
+        return {"ok": ok}
+
+    def remove_karma_folders(self) -> dict:
+        """Remove all karma-* folders from Syncthing config."""
+        client = self._require_client()
+        removed = client.remove_karma_folders()
+        return {"ok": True, "removed": removed}
+
+    def remove_all_non_self_devices(self) -> dict:
+        """Remove all non-self devices from Syncthing config."""
+        client = self._require_client()
+        removed = client.remove_all_non_self_devices()
+        return {"ok": True, "removed": removed}
 
     def get_pending_devices(self) -> dict:
         """Get devices trying to connect that aren't configured yet."""

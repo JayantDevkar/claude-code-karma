@@ -347,33 +347,129 @@ async def sync_status():
     }
 
 
-@router.post("/reset")
-async def sync_reset() -> Any:
-    """Reset sync configuration: delete config file + clear sync tables."""
-    from karma.config import SYNC_CONFIG_PATH
+class ResetOptions(BaseModel):
+    """Options for sync reset."""
+    uninstall_syncthing: bool = False  # Remove Syncthing config directory
 
-    # Stop watcher if running
+
+@router.post("/reset")
+async def sync_reset(options: Optional[ResetOptions] = None) -> Any:
+    """Full sync teardown: clean Syncthing config, kill daemon, delete files & tables."""
+    import shutil
+    from karma.config import SYNC_CONFIG_PATH, KARMA_BASE
+
+    if options is None:
+        options = ResetOptions()
+
+    steps: dict[str, Any] = {}
+
+    # 1. Stop watcher if running
     watcher = get_watcher()
     if watcher.is_running:
         await run_sync(watcher.stop)
+        steps["watcher_stopped"] = True
 
-    # Delete config file
+    # 2. Clean Syncthing config (remove karma folders & team devices) then shut it down
+    try:
+        proxy = _get_or_create_proxy()
+        # Remove all karma-* shared folders
+        try:
+            result = await run_sync(proxy.remove_karma_folders)
+            steps["syncthing_folders_removed"] = result.get("removed", [])
+        except Exception as e:
+            steps["syncthing_folders_removed"] = f"error: {e}"
+
+        # Remove all non-self devices (team members)
+        try:
+            result = await run_sync(proxy.remove_all_non_self_devices)
+            steps["syncthing_devices_removed"] = result.get("removed", [])
+        except Exception as e:
+            steps["syncthing_devices_removed"] = f"error: {e}"
+
+        # Shut down the Syncthing daemon
+        try:
+            result = await run_sync(proxy.shutdown)
+            steps["syncthing_shutdown"] = result.get("ok", False)
+        except Exception as e:
+            steps["syncthing_shutdown"] = f"error: {e}"
+    except Exception:
+        steps["syncthing_cleanup"] = "skipped (not running)"
+
+    # 3. Delete remote session files
+    remote_dir = KARMA_BASE / "remote-sessions"
+    if remote_dir.exists():
+        shutil.rmtree(remote_dir, ignore_errors=True)
+        steps["remote_sessions_deleted"] = True
+    else:
+        steps["remote_sessions_deleted"] = False
+
+    # 4. Delete sync config file
     if SYNC_CONFIG_PATH.exists():
         SYNC_CONFIG_PATH.unlink()
+        steps["config_deleted"] = True
+    else:
+        steps["config_deleted"] = False
 
-    # Clear sync tables
+    # 5. Clear all sync tables
     conn = _get_sync_conn()
-    conn.execute("DELETE FROM sync_events")
-    conn.execute("DELETE FROM sync_team_projects")
-    conn.execute("DELETE FROM sync_members")
-    conn.execute("DELETE FROM sync_teams")
+    tables_cleared = []
+    for table in ["sync_events", "sync_team_projects", "sync_members", "sync_teams"]:
+        try:
+            conn.execute(f"DELETE FROM {table}")  # noqa: S608 — table names are hardcoded
+            tables_cleared.append(table)
+        except sqlite3.OperationalError:
+            pass  # table doesn't exist yet
     conn.commit()
+    steps["tables_cleared"] = tables_cleared
 
-    # Reset proxy so it re-detects on next call
+    # 6. Kill any remaining Syncthing processes
+    import subprocess
+    try:
+        subprocess.run(["pkill", "-f", "syncthing"], capture_output=True, timeout=5)
+        steps["process_killed"] = True
+    except Exception:
+        steps["process_killed"] = False
+
+    # 7. Optionally full uninstall: stop brew service, uninstall binary, remove config dirs
+    if options.uninstall_syncthing:
+        # Stop brew service
+        try:
+            r = subprocess.run(
+                ["brew", "services", "stop", "syncthing"],
+                capture_output=True, text=True, timeout=15,
+            )
+            steps["brew_service_stopped"] = r.returncode == 0
+        except Exception:
+            steps["brew_service_stopped"] = False
+
+        # Uninstall via brew
+        try:
+            r = subprocess.run(
+                ["brew", "uninstall", "syncthing"],
+                capture_output=True, text=True, timeout=30,
+            )
+            steps["brew_uninstalled"] = r.returncode == 0
+        except Exception:
+            steps["brew_uninstalled"] = False
+
+        # Remove Syncthing config directories
+        st_config_dirs = [
+            Path.home() / "Library" / "Application Support" / "Syncthing",
+            Path.home() / ".local" / "share" / "syncthing",
+            Path.home() / ".config" / "syncthing",
+        ]
+        removed_dirs = []
+        for d in st_config_dirs:
+            if d.exists():
+                shutil.rmtree(d, ignore_errors=True)
+                removed_dirs.append(str(d))
+        steps["syncthing_config_removed"] = removed_dirs
+
+    # 8. Reset proxy singleton
     global _proxy
     _proxy = None
 
-    return {"ok": True}
+    return {"ok": True, "steps": steps}
 
 
 @router.get("/teams")

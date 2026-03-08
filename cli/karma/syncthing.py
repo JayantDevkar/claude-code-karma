@@ -185,6 +185,53 @@ class SyncthingClient:
                 return folder
         return None
 
+    def shutdown(self) -> bool:
+        """Shut down the Syncthing daemon via REST API.
+
+        Returns True if shutdown was requested, False if daemon was unreachable.
+        """
+        try:
+            requests.post(
+                f"{self.api_url}/rest/system/shutdown",
+                headers=self.headers,
+                timeout=10,
+            )
+            return True
+        except (requests.ConnectionError, requests.Timeout):
+            return False
+
+    def remove_karma_folders(self) -> list[str]:
+        """Remove all karma-* folders from Syncthing config.
+
+        Returns list of removed folder IDs.
+        """
+        config = self._get_config()
+        karma_folders = [f for f in config.get("folders", []) if f.get("id", "").startswith("karma-")]
+        if not karma_folders:
+            return []
+        removed_ids = [f["id"] for f in karma_folders]
+        config["folders"] = [f for f in config["folders"] if not f.get("id", "").startswith("karma-")]
+        self._set_config(config)
+        return removed_ids
+
+    def remove_all_non_self_devices(self) -> list[str]:
+        """Remove all non-self devices from Syncthing config.
+
+        Returns list of removed device IDs.
+        """
+        try:
+            self_id = self.get_device_id()
+        except Exception:
+            self_id = None
+
+        config = self._get_config()
+        original = config.get("devices", [])
+        kept = [d for d in original if d.get("deviceID") == self_id] if self_id else []
+        removed = [d["deviceID"] for d in original if d.get("deviceID") != self_id]
+        config["devices"] = kept
+        self._set_config(config)
+        return removed
+
     def _get_config(self) -> dict:
         resp = requests.get(f"{self.api_url}/rest/config", headers=self.headers, timeout=10)
         resp.raise_for_status()
