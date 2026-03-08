@@ -60,11 +60,10 @@ def add_member(
     team_name: str,
     name: str,
     device_id: str,
-    ipns_key: Optional[str] = None,
 ) -> dict:
     conn.execute(
-        "INSERT INTO sync_members (team_name, name, device_id, ipns_key) VALUES (?, ?, ?, ?)",
-        (team_name, name, device_id, ipns_key),
+        "INSERT INTO sync_members (team_name, name, device_id) VALUES (?, ?, ?)",
+        (team_name, name, device_id),
     )
     conn.commit()
     return {"team_name": team_name, "name": name, "device_id": device_id}
@@ -75,16 +74,14 @@ def upsert_member(
     team_name: str,
     name: str,
     device_id: str,
-    ipns_key: Optional[str] = None,
 ) -> dict:
     """Insert a member or update their name if the device already exists."""
     conn.execute(
-        """INSERT INTO sync_members (team_name, name, device_id, ipns_key)
-           VALUES (?, ?, ?, ?)
+        """INSERT INTO sync_members (team_name, name, device_id)
+           VALUES (?, ?, ?)
            ON CONFLICT(team_name, device_id)
-           DO UPDATE SET name = excluded.name,
-                         ipns_key = COALESCE(excluded.ipns_key, ipns_key)""",
-        (team_name, name, device_id, ipns_key),
+           DO UPDATE SET name = excluded.name""",
+        (team_name, name, device_id),
     )
     conn.commit()
     return {"team_name": team_name, "name": name, "device_id": device_id}
@@ -101,7 +98,7 @@ def remove_member(conn: sqlite3.Connection, team_name: str, device_id: str) -> N
 
 def list_members(conn: sqlite3.Connection, team_name: str) -> list[dict]:
     rows = conn.execute(
-        "SELECT team_name, name, device_id, ipns_key, added_at FROM sync_members WHERE team_name = ? ORDER BY added_at",
+        "SELECT team_name, name, device_id, added_at FROM sync_members WHERE team_name = ? ORDER BY added_at",
         (team_name,),
     ).fetchall()
     return [dict(r) for r in rows]
@@ -109,7 +106,7 @@ def list_members(conn: sqlite3.Connection, team_name: str) -> list[dict]:
 
 def get_member_by_device_id(conn: sqlite3.Connection, device_id: str) -> Optional[dict]:
     row = conn.execute(
-        "SELECT team_name, name, device_id, ipns_key, added_at FROM sync_members WHERE device_id = ?",
+        "SELECT team_name, name, device_id, added_at FROM sync_members WHERE device_id = ?",
         (device_id,),
     ).fetchone()
     return dict(row) if row else None

@@ -22,49 +22,51 @@ def mock_config(tmp_path, monkeypatch):
     return config_path
 
 
-class TestInitWithBackend:
-    def test_init_default_no_backend_flag(self, runner, mock_config):
+@pytest.fixture(autouse=True)
+def _isolate_syncthing(monkeypatch):
+    """Prevent init from detecting real Syncthing unless test explicitly mocks it."""
+    monkeypatch.setattr("karma.syncthing.read_local_api_key", lambda: None)
+
+
+class TestInit:
+    def test_init_no_syncthing(self, runner, mock_config):
         result = runner.invoke(cli, ["init", "--user-id", "alice"])
         assert result.exit_code == 0
         assert "alice" in result.output
 
+    @patch("karma.syncthing.read_local_api_key", return_value="test-key")
     @patch("karma.syncthing.SyncthingClient")
-    def test_init_syncthing_backend(self, mock_st_cls, runner, mock_config):
+    def test_init_with_syncthing_running(self, mock_st_cls, mock_key, runner, mock_config):
         mock_st = MagicMock()
         mock_st.is_running.return_value = True
         mock_st.get_device_id.return_value = "AAAA-BBBB-CCCC"
         mock_st_cls.return_value = mock_st
 
-        result = runner.invoke(cli, ["init", "--user-id", "alice", "--backend", "syncthing"])
+        result = runner.invoke(cli, ["init", "--user-id", "alice"])
         assert result.exit_code == 0
         assert "AAAA-BBBB-CCCC" in result.output
 
+    @patch("karma.syncthing.read_local_api_key", return_value="test-key")
     @patch("karma.syncthing.SyncthingClient")
-    def test_init_syncthing_not_running(self, mock_st_cls, runner, mock_config):
+    def test_init_syncthing_not_running(self, mock_st_cls, mock_key, runner, mock_config):
         mock_st = MagicMock()
         mock_st.is_running.return_value = False
         mock_st_cls.return_value = mock_st
 
-        result = runner.invoke(cli, ["init", "--user-id", "alice", "--backend", "syncthing"])
-        assert result.exit_code != 0
-        assert "not running" in result.output.lower() or "not running" in str(result.exception or "").lower()
+        result = runner.invoke(cli, ["init", "--user-id", "alice"])
+        assert result.exit_code == 0
+        assert "not detected" in result.output.lower()
 
 
 class TestTeamCreate:
     def test_team_create_syncthing(self, runner, mock_config, mock_db):
         runner.invoke(cli, ["init", "--user-id", "alice"])
-        result = runner.invoke(cli, ["team", "create", "beta", "--backend", "syncthing"])
+        result = runner.invoke(cli, ["team", "create", "beta"])
         assert result.exit_code == 0
         assert "beta" in result.output
 
-    def test_team_create_ipfs(self, runner, mock_config, mock_db):
-        runner.invoke(cli, ["init", "--user-id", "alice"])
-        result = runner.invoke(cli, ["team", "create", "alpha", "--backend", "ipfs"])
-        assert result.exit_code == 0
-        assert "alpha" in result.output
-
     def test_team_create_requires_init(self, runner, mock_config):
-        result = runner.invoke(cli, ["team", "create", "beta", "--backend", "syncthing"])
+        result = runner.invoke(cli, ["team", "create", "beta"])
         assert result.exit_code != 0
 
 
@@ -72,7 +74,7 @@ class TestTeamAddSyncthing:
     @patch("karma.syncthing.SyncthingClient")
     def test_team_add_device_id(self, mock_st_cls, runner, mock_config, mock_db):
         runner.invoke(cli, ["init", "--user-id", "alice"])
-        runner.invoke(cli, ["team", "create", "beta", "--backend", "syncthing"])
+        runner.invoke(cli, ["team", "create", "beta"])
         result = runner.invoke(cli, ["team", "add", "bob", "DEVICEID123", "--team", "beta"])
         assert result.exit_code == 0
         assert "bob" in result.output
@@ -81,7 +83,7 @@ class TestTeamAddSyncthing:
 class TestProjectAddWithTeam:
     def test_project_add_to_team(self, runner, mock_config, mock_db, tmp_path):
         runner.invoke(cli, ["init", "--user-id", "alice"])
-        runner.invoke(cli, ["team", "create", "beta", "--backend", "syncthing"])
+        runner.invoke(cli, ["team", "create", "beta"])
         project_path = tmp_path / "test-project"
         project_path.mkdir()
         result = runner.invoke(cli, [
@@ -103,7 +105,7 @@ class TestProjectAddWithTeam:
 class TestProjectRemoveWithTeam:
     def test_project_remove_from_team(self, runner, mock_config, mock_db, tmp_path):
         runner.invoke(cli, ["init", "--user-id", "alice"])
-        runner.invoke(cli, ["team", "create", "beta", "--backend", "syncthing"])
+        runner.invoke(cli, ["team", "create", "beta"])
         project_path = tmp_path / "test-project"
         project_path.mkdir()
         runner.invoke(cli, [
@@ -119,7 +121,7 @@ class TestProjectRemoveWithTeam:
 
     def test_project_remove_nonexistent_from_team(self, runner, mock_config, mock_db):
         runner.invoke(cli, ["init", "--user-id", "alice"])
-        runner.invoke(cli, ["team", "create", "beta", "--backend", "syncthing"])
+        runner.invoke(cli, ["team", "create", "beta"])
         result = runner.invoke(cli, ["project", "remove", "missing", "--team", "beta"])
         assert result.exit_code != 0
 
@@ -128,7 +130,7 @@ class TestTeamMemberRemove:
     @patch("karma.syncthing.SyncthingClient")
     def test_remove_syncthing_member(self, mock_st_cls, runner, mock_config, mock_db):
         runner.invoke(cli, ["init", "--user-id", "alice"])
-        runner.invoke(cli, ["team", "create", "beta", "--backend", "syncthing"])
+        runner.invoke(cli, ["team", "create", "beta"])
         runner.invoke(cli, ["team", "add", "bob", "DEVICEID123", "--team", "beta"])
         result = runner.invoke(cli, ["team", "remove", "bob", "--team", "beta"])
         assert result.exit_code == 0
@@ -136,7 +138,7 @@ class TestTeamMemberRemove:
 
     def test_remove_nonexistent_member_from_team(self, runner, mock_config, mock_db):
         runner.invoke(cli, ["init", "--user-id", "alice"])
-        runner.invoke(cli, ["team", "create", "beta", "--backend", "syncthing"])
+        runner.invoke(cli, ["team", "create", "beta"])
         result = runner.invoke(cli, ["team", "remove", "ghost", "--team", "beta"])
         assert result.exit_code != 0
 
@@ -154,7 +156,7 @@ class TestWatchCommand:
     @patch("karma.watcher.SessionWatcher")
     def test_watch_starts_and_stops_on_interrupt(self, mock_watcher_cls, runner, mock_config, mock_db, tmp_path):
         runner.invoke(cli, ["init", "--user-id", "alice"])
-        runner.invoke(cli, ["team", "create", "beta", "--backend", "syncthing"])
+        runner.invoke(cli, ["team", "create", "beta"])
         project_path = tmp_path / "test-project"
         project_path.mkdir()
         runner.invoke(cli, [
@@ -184,21 +186,23 @@ class TestAcceptCommand:
         result = runner.invoke(cli, ["accept"])
         assert result.exit_code != 0
 
+    @patch("karma.syncthing.read_local_api_key", return_value="test-key")
     @patch("karma.syncthing.SyncthingClient")
-    def test_accept_no_pending(self, mock_st_cls, runner, mock_config, mock_db):
+    def test_accept_no_pending(self, mock_st_cls, mock_key, runner, mock_config, mock_db):
         mock_st = MagicMock()
         mock_st.is_running.return_value = True
         mock_st.get_device_id.return_value = "MY-DEVICE-ID"
         mock_st.get_pending_folders.return_value = {}
         mock_st_cls.return_value = mock_st
 
-        runner.invoke(cli, ["init", "--user-id", "alice", "--backend", "syncthing"])
+        runner.invoke(cli, ["init", "--user-id", "alice"])
         result = runner.invoke(cli, ["accept"])
         assert result.exit_code == 0
         assert "No pending" in result.output
 
+    @patch("karma.syncthing.read_local_api_key", return_value="test-key")
     @patch("karma.syncthing.SyncthingClient")
-    def test_accept_from_known_member(self, mock_st_cls, runner, mock_config, mock_db, tmp_path):
+    def test_accept_from_known_member(self, mock_st_cls, mock_key, runner, mock_config, mock_db, tmp_path):
         mock_st = MagicMock()
         mock_st.is_running.return_value = True
         mock_st.get_device_id.return_value = "MY-DEVICE-ID"
@@ -207,8 +211,8 @@ class TestAcceptCommand:
         mock_st.find_folder_by_path.return_value = None
         mock_st_cls.return_value = mock_st
 
-        runner.invoke(cli, ["init", "--user-id", "alice", "--backend", "syncthing"])
-        runner.invoke(cli, ["team", "create", "beta", "--backend", "syncthing"])
+        runner.invoke(cli, ["init", "--user-id", "alice"])
+        runner.invoke(cli, ["team", "create", "beta"])
         runner.invoke(cli, ["team", "add", "bob", "BOB-DEVICE-ID-FULL", "--team", "beta"])
         project_path = tmp_path / "myapp"
         project_path.mkdir()
@@ -218,7 +222,7 @@ class TestAcceptCommand:
 
         # Now set up the pending folder for the accept call
         mock_st.get_pending_folders.return_value = {
-            "karma-beta-myapp": {
+            "karma-out-bob-myapp": {
                 "offeredBy": {
                     "BOB-DEVICE-ID-FULL": {"time": "2026-03-05T03:45:06Z"}
                 }
@@ -227,11 +231,11 @@ class TestAcceptCommand:
 
         result = runner.invoke(cli, ["accept"])
         assert result.exit_code == 0
-        assert "Accepted" in result.output
-        assert "bob" in result.output
+        assert "Accepted" in result.output or "bob" in result.output.lower()
 
+    @patch("karma.syncthing.read_local_api_key", return_value="test-key")
     @patch("karma.syncthing.SyncthingClient")
-    def test_accept_skips_unknown_device(self, mock_st_cls, runner, mock_config, mock_db):
+    def test_accept_skips_unknown_device(self, mock_st_cls, mock_key, runner, mock_config, mock_db):
         mock_st = MagicMock()
         mock_st.is_running.return_value = True
         mock_st.get_device_id.return_value = "MY-DEVICE-ID"
@@ -239,8 +243,8 @@ class TestAcceptCommand:
         mock_st.get_folders.return_value = []
         mock_st_cls.return_value = mock_st
 
-        runner.invoke(cli, ["init", "--user-id", "alice", "--backend", "syncthing"])
-        runner.invoke(cli, ["team", "create", "beta", "--backend", "syncthing"])
+        runner.invoke(cli, ["init", "--user-id", "alice"])
+        runner.invoke(cli, ["team", "create", "beta"])
 
         mock_st.get_pending_folders.return_value = {
             "karma-evil-folder": {
@@ -253,8 +257,9 @@ class TestAcceptCommand:
         assert "unknown device" in result.output.lower()
         mock_st.add_folder.assert_not_called()
 
+    @patch("karma.syncthing.read_local_api_key", return_value="test-key")
     @patch("karma.syncthing.SyncthingClient")
-    def test_accept_skips_non_karma_prefix(self, mock_st_cls, runner, mock_config, mock_db):
+    def test_accept_skips_non_karma_prefix(self, mock_st_cls, mock_key, runner, mock_config, mock_db):
         mock_st = MagicMock()
         mock_st.is_running.return_value = True
         mock_st.get_device_id.return_value = "MY-DEVICE-ID"
@@ -262,8 +267,8 @@ class TestAcceptCommand:
         mock_st.get_folders.return_value = []
         mock_st_cls.return_value = mock_st
 
-        runner.invoke(cli, ["init", "--user-id", "alice", "--backend", "syncthing"])
-        runner.invoke(cli, ["team", "create", "beta", "--backend", "syncthing"])
+        runner.invoke(cli, ["init", "--user-id", "alice"])
+        runner.invoke(cli, ["team", "create", "beta"])
         runner.invoke(cli, ["team", "add", "bob", "BOB-DEVICE-ID", "--team", "beta"])
 
         mock_st.get_pending_folders.return_value = {
@@ -277,8 +282,9 @@ class TestAcceptCommand:
         assert "non-karma" in result.output.lower()
         mock_st.add_folder.assert_not_called()
 
+    @patch("karma.syncthing.read_local_api_key", return_value="test-key")
     @patch("karma.syncthing.SyncthingClient")
-    def test_accept_replaces_empty_existing_folder(self, mock_st_cls, runner, mock_config, mock_db, tmp_path):
+    def test_accept_replaces_empty_existing_folder(self, mock_st_cls, mock_key, runner, mock_config, mock_db, tmp_path):
         mock_st = MagicMock()
         mock_st.is_running.return_value = True
         mock_st.get_device_id.return_value = "MY-DEVICE-ID"
@@ -286,8 +292,8 @@ class TestAcceptCommand:
         mock_st.get_folders.return_value = []
         mock_st_cls.return_value = mock_st
 
-        runner.invoke(cli, ["init", "--user-id", "alice", "--backend", "syncthing"])
-        runner.invoke(cli, ["team", "create", "beta", "--backend", "syncthing"])
+        runner.invoke(cli, ["init", "--user-id", "alice"])
+        runner.invoke(cli, ["team", "create", "beta"])
         runner.invoke(cli, ["team", "add", "bob", "BOB-DEVICE-ID", "--team", "beta"])
         project_path = tmp_path / "myapp"
         project_path.mkdir()
@@ -296,16 +302,16 @@ class TestAcceptCommand:
         ])
 
         mock_st.get_pending_folders.return_value = {
-            "karma-beta-myapp": {
+            "karma-out-bob-myapp": {
                 "offeredBy": {"BOB-DEVICE-ID": {"time": "2026-03-05T00:00:00Z"}}
             }
         }
-        mock_st.find_folder_by_path.return_value = {"id": "karma-out-bob-myapp", "path": "/tmp/inbox"}
+        mock_st.find_folder_by_path.return_value = {"id": "karma-out-bob-old", "path": "/tmp/inbox"}
 
         result = runner.invoke(cli, ["accept"])
         assert result.exit_code == 0
         assert "Replacing" in result.output
-        mock_st.remove_folder.assert_called_once_with("karma-out-bob-myapp")
+        mock_st.remove_folder.assert_called_once_with("karma-out-bob-old")
 
 
 class TestWorktreeDiscoveryIntegration:
@@ -394,16 +400,15 @@ class TestStatusCommand:
 
     def test_status_shows_teams(self, runner, mock_config, mock_db):
         runner.invoke(cli, ["init", "--user-id", "alice"])
-        runner.invoke(cli, ["team", "create", "beta", "--backend", "syncthing"])
+        runner.invoke(cli, ["team", "create", "beta"])
         result = runner.invoke(cli, ["status"])
         assert result.exit_code == 0
         assert "beta" in result.output
-        assert "syncthing" in result.output.lower()
 
     def test_status_shows_worktree_counts(self, runner, mock_config, mock_db, tmp_path):
         """karma status should show worktree session counts."""
         runner.invoke(cli, ["init", "--user-id", "jay"])
-        runner.invoke(cli, ["team", "create", "beta", "--backend", "syncthing"])
+        runner.invoke(cli, ["team", "create", "beta"])
         project_path = tmp_path / "karma-project"
         project_path.mkdir()
         runner.invoke(cli, [

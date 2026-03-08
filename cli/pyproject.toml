@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "claude-karma-cli"
 version = "0.1.0"
-description = "CLI for syncing Claude Code sessions via IPFS"
+description = "CLI for syncing Claude Code sessions via Syncthing"
 requires-python = ">=3.9"
 dependencies = [
     "click>=8.0",

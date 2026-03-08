@@ -373,8 +373,7 @@ def cli():
 
 @cli.command()
 @click.option("--user-id", prompt="Your user ID (e.g., your name)", help="Identity for syncing")
-@click.option("--backend", type=click.Choice(["ipfs", "syncthing"]), default=None, help="Sync backend")
-def init(user_id: str, backend: Optional[str]):
+def init(user_id: str):
     """Initialize Karma sync on this machine."""
     existing = SyncConfig.load()
     if existing:
@@ -385,32 +384,34 @@ def init(user_id: str, backend: Optional[str]):
     if not _SAFE_NAME.match(user_id):
         raise click.ClickException("User ID must be alphanumeric, dash, or underscore only.")
 
-    if backend == "syncthing":
-        from karma.syncthing import SyncthingClient, read_local_api_key
+    from karma.syncthing import SyncthingClient, read_local_api_key
 
-        api_key = read_local_api_key()
+    api_key = read_local_api_key()
+    if api_key:
         st = SyncthingClient(api_key=api_key)
-        if not st.is_running():
-            raise click.ClickException("Syncthing is not running. Start Syncthing first.")
-        device_id = st.get_device_id()
-        syncthing_settings = SyncthingSettings(
-            api_url="http://127.0.0.1:8384",
-            api_key=api_key,
-            device_id=device_id,
-        )
-        config = SyncConfig(user_id=user_id, syncthing=syncthing_settings)
-        config.save()
-        click.echo(f"Initialized as '{user_id}' on '{config.machine_id}'.")
-        click.echo(f"Your Syncthing Device ID: {device_id}")
-        click.echo("Share this Device ID with your project owner.")
-    else:
-        config = SyncConfig(user_id=user_id)
-        config.save()
-        click.echo(f"Initialized as '{user_id}' on '{config.machine_id}'.")
-        click.echo(f"Config saved to {SYNC_CONFIG_PATH}")
-        click.echo("\nNext steps:")
-        click.echo("  1. Create a team: karma team create <name> --backend syncthing")
-        click.echo("  2. Add a project: karma project add <name> --path /path --team <team>")
+        if st.is_running():
+            device_id = st.get_device_id()
+            syncthing_settings = SyncthingSettings(
+                api_url="http://127.0.0.1:8384",
+                api_key=api_key,
+                device_id=device_id,
+            )
+            config = SyncConfig(user_id=user_id, syncthing=syncthing_settings)
+            config.save()
+            click.echo(f"Initialized as '{user_id}' on '{config.machine_id}'.")
+            click.echo(f"Your Syncthing Device ID: {device_id}")
+            click.echo("Share this Device ID with your team leader.")
+            return
+
+    config = SyncConfig(user_id=user_id)
+    config.save()
+    click.echo(f"Initialized as '{user_id}' on '{config.machine_id}'.")
+    click.echo(f"Config saved to {SYNC_CONFIG_PATH}")
+    click.echo("\nSyncthing not detected. Start Syncthing and re-run 'karma init' to auto-configure.")
+    click.echo("\nNext steps:")
+    click.echo("  1. Start Syncthing")
+    click.echo("  2. Create a team: karma team create <name>")
+    click.echo("  3. Add a project: karma project add <name> --path /path --team <team>")
 
 
 # --- project ---
@@ -603,7 +604,7 @@ def accept():
     api_key = config.syncthing.api_key if config.syncthing else read_local_api_key()
     if not api_key:
         raise click.ClickException(
-            "No Syncthing API key found. Run: karma init --backend syncthing"
+            "No Syncthing API key found. Run: karma init"
         )
 
     st = SyncthingClient(api_key=api_key)
@@ -636,12 +637,7 @@ def watch(team_name: str):
     team = get_team(conn, team_name)
     if not team:
         raise click.ClickException(
-            f"Team '{team_name}' not found. Run: karma team create {team_name} --backend syncthing"
-        )
-
-    if team["backend"] != "syncthing":
-        raise click.ClickException(
-            f"Team '{team_name}' uses {team['backend']}, not syncthing. Watch is only for Syncthing."
+            f"Team '{team_name}' not found. Run: karma team create {team_name}"
         )
 
     projects = list_team_projects(conn, team_name)
@@ -772,7 +768,7 @@ def status():
 
     for t in teams:
         team_name = t["name"]
-        click.echo(f"\n{team_name} ({t['backend']}):")
+        click.echo(f"\n{team_name}:")
 
         projects = list_team_projects(conn, team_name)
         if not projects:
@@ -842,9 +838,8 @@ def team():
 
 @team.command("create")
 @click.argument("name")
-@click.option("--backend", type=click.Choice(["ipfs", "syncthing"]), required=True, help="Sync backend")
-def team_create(name: str, backend: str):
-    """Create a new team with a specific sync backend."""
+def team_create(name: str):
+    """Create a new team for Syncthing-based session sharing."""
     if not _SAFE_NAME.match(name):
         raise click.ClickException("Team name must be alphanumeric, dash, or underscore only.")
 
@@ -854,14 +849,14 @@ def team_create(name: str, backend: str):
     from db.sync_queries import create_team, log_event
 
     try:
-        create_team(conn, name, backend)
+        create_team(conn, name)
     except Exception as e:
         if "UNIQUE constraint" in str(e):
             raise click.ClickException(f"Team '{name}' already exists.")
         raise
 
     log_event(conn, "team_created", team_name=name)
-    click.echo(f"Created team '{name}' (backend: {backend})")
+    click.echo(f"Created team '{name}'")
 
 
 @team.command("leave")
@@ -954,7 +949,7 @@ def team_leave(name: str):
 @click.argument("identifier")
 @click.option("--team", "team_name", required=True, help="Team to add member to")
 def team_add(name: str, identifier: str, team_name: str):
-    """Add a team member by their Syncthing device ID or IPNS key."""
+    """Add a team member by their Syncthing device ID."""
     if not _SAFE_NAME.match(name):
         raise click.ClickException("Team member name must be alphanumeric, dash, or underscore only.")
 
@@ -967,46 +962,35 @@ def team_add(name: str, identifier: str, team_name: str):
     if not team_data:
         raise click.ClickException(f"Team '{team_name}' not found.")
 
-    if team_data["backend"] == "syncthing":
-        try:
-            add_member(conn, team_name, name, device_id=identifier)
-        except Exception as e:
-            if "UNIQUE constraint" in str(e):
-                raise click.ClickException(f"Member '{name}' already exists in team '{team_name}'.")
-            raise
+    try:
+        add_member(conn, team_name, name, device_id=identifier)
+    except Exception as e:
+        if "UNIQUE constraint" in str(e):
+            raise click.ClickException(f"Member '{name}' already exists in team '{team_name}'.")
+        raise
 
-        log_event(conn, "member_added", team_name=team_name, member_name=name)
+    log_event(conn, "member_added", team_name=team_name, member_name=name)
 
-        # Auto-pair device in Syncthing
-        try:
-            from karma.syncthing import SyncthingClient, read_local_api_key
+    # Auto-pair device in Syncthing
+    try:
+        from karma.syncthing import SyncthingClient, read_local_api_key
 
-            api_key = config.syncthing.api_key or read_local_api_key()
-            st = SyncthingClient(api_key=api_key)
-            if st.is_running():
-                st.add_device(identifier, name)
-                click.echo(f"Paired Syncthing device '{name}' ({identifier[:7]}...)")
+        api_key = config.syncthing.api_key or read_local_api_key()
+        st = SyncthingClient(api_key=api_key)
+        if st.is_running():
+            st.add_device(identifier, name)
+            click.echo(f"Paired Syncthing device '{name}' ({identifier[:7]}...)")
 
-                _auto_share_folders(st, config, conn, team_name, identifier)
+            _auto_share_folders(st, config, conn, team_name, identifier)
 
-                n = _accept_pending_folders(st, config, conn)
-                if n:
-                    click.echo(f"Accepted {n} pending folder(s) from known teammates.")
-            else:
-                click.echo("Warning: Syncthing not running — device saved but not paired yet.")
-        except Exception as e:
-            click.echo(f"Warning: Could not auto-pair device: {e}")
-            click.echo("You can pair manually in Syncthing UI (http://127.0.0.1:8384)")
-    else:
-        # IPFS member — use identifier as both ipns_key and device_id placeholder
-        try:
-            add_member(conn, team_name, name, device_id=identifier, ipns_key=identifier)
-        except Exception as e:
-            if "UNIQUE constraint" in str(e):
-                raise click.ClickException(f"Member '{name}' already exists in team '{team_name}'.")
-            raise
-
-        log_event(conn, "member_added", team_name=team_name, member_name=name)
+            n = _accept_pending_folders(st, config, conn)
+            if n:
+                click.echo(f"Accepted {n} pending folder(s) from known teammates.")
+        else:
+            click.echo("Warning: Syncthing not running — device saved but not paired yet.")
+    except Exception as e:
+        click.echo(f"Warning: Could not auto-pair device: {e}")
+        click.echo("You can pair manually in Syncthing UI (http://127.0.0.1:8384)")
 
     click.echo(f"Added team member '{name}' to team '{team_name}'")
 
@@ -1021,15 +1005,15 @@ def team_list():
 
     teams = list_teams(conn)
     if not teams:
-        click.echo("No teams. Run: karma team create <name> --backend syncthing")
+        click.echo("No teams. Run: karma team create <name>")
         return
 
     for t in teams:
-        click.echo(f"\n  {t['name']} ({t['backend']}):")
+        click.echo(f"\n  {t['name']}:")
         members = list_members(conn, t["name"])
         if members:
             for m in members:
-                id_info = m["device_id"] or m["ipns_key"] or "no-id"
+                id_info = m["device_id"] or "no-id"
                 click.echo(f"    {m['name']}: {id_info}")
         else:
             click.echo("    (no members)")

@@ -1704,7 +1704,7 @@ export interface SyncDetect {
 }
 
 export interface SyncStatusTeamEntry {
-	backend: 'syncthing' | 'ipfs';
+	backend: 'syncthing';
 	member_count: number;
 	project_count: number;
 }
@@ -1744,7 +1744,7 @@ export interface SyncProject {
 
 export interface SyncTeam {
 	name: string;
-	backend: 'syncthing' | 'ipfs';
+	backend: 'syncthing';
 	projects: SyncTeamProject[];
 	members: SyncTeamMember[];
 	member_count?: number;

@@ -28,7 +28,7 @@
 				>
 					{team.name}
 				</h3>
-				<span class="text-xs text-[var(--text-muted)]">{team.backend}</span>
+				<span class="text-xs text-[var(--text-muted)]">syncthing</span>
 			</div>
 		</div>
 	</div>

@@ -32,14 +32,8 @@ class SyncManifest(BaseModel):
     )
     session_count: int
     sessions: list[SessionEntry]
-    previous_cid: Optional[str] = Field(
-        default=None, description="CID of the previous sync for chain history"
-    )
     git_identity: Optional[str] = Field(
         default=None, description="Normalized git remote identity: owner/repo"
-    )
-    sync_backend: Optional[str] = Field(
-        default=None, description="Sync backend used: 'ipfs', 'syncthing', or None"
     )
     team_name: Optional[str] = Field(
         default=None, description="Team this sync belongs to"
