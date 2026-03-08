@@ -105,13 +105,13 @@ class TestTeamCommands:
         assert result.exit_code != 0
         assert "not found" in result.output
 
-    def test_team_delete(self, runner, init_config, mock_db):
+    def test_team_leave(self, runner, init_config, mock_db):
         runner.invoke(cli, ["init", "--user-id", "alice"])
         runner.invoke(cli, ["team", "create", "alpha", "--backend", "syncthing"])
         runner.invoke(cli, ["team", "add", "bob", "DEV-BOB", "--team", "alpha"])
-        result = runner.invoke(cli, ["team", "delete", "alpha"])
+        result = runner.invoke(cli, ["team", "leave", "alpha"])
         assert result.exit_code == 0
-        assert "Deleted team 'alpha'" in result.output
+        assert "Left team 'alpha'" in result.output
 
         # Verify cascade
         assert mock_db.execute("SELECT * FROM sync_teams WHERE name = 'alpha'").fetchone() is None

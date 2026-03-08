@@ -858,16 +858,163 @@ async def sync_create_team(req: CreateTeamRequest) -> Any:
 
     # Add creator as a member so they appear in the member list and their
     # device_id is included when sharing folders (mirrors join flow)
-    upsert_member(conn, req.name, config.user_id, device_id=own_device_id)
+    if own_device_id:
+        upsert_member(conn, req.name, config.user_id, device_id=own_device_id)
 
     log_event(conn, "team_created", team_name=req.name)
 
     return {"ok": True, "name": req.name, "backend": req.backend, "join_code": join_code}
 
 
+async def _cleanup_syncthing_for_team(proxy, config, conn, team_name: str) -> dict:
+    """Clean up all Syncthing folders and devices for a team (reverse of join).
+
+    Removes:
+    - My outbox folders for this team's projects
+    - Inbox folders (other members' outboxes) for this team's projects
+    - Handshake folders for this team
+    - Team member devices (if not used by other teams)
+    """
+    members = list_members(conn, team_name)
+    projects = list_team_projects(conn, team_name)
+    result = {"folders_removed": 0, "devices_removed": 0}
+
+    # Compute project suffixes for this team
+    proj_suffixes = set()
+    for proj in projects:
+        suffix = _compute_proj_suffix(
+            proj.get("git_identity"), proj.get("path"), proj["project_encoded_name"]
+        )
+        proj_suffixes.add(suffix)
+
+    # Collect member names for matching inbox folders
+    member_names = {m["name"] for m in members}
+    if config and config.user_id:
+        member_names.add(config.user_id)
+
+    # Scan all Syncthing folders and remove matching karma folders
+    try:
+        folders = await run_sync(proxy.get_folder_status)
+        for folder in folders:
+            folder_id = folder.get("id", "")
+
+            # Check karma-out-* folders (outbox + inbox)
+            if folder_id.startswith("karma-out-"):
+                parsed = _parse_folder_id(folder_id)
+                if parsed and parsed[1] in proj_suffixes and parsed[0] in member_names:
+                    try:
+                        await run_sync(proxy.remove_folder, folder_id)
+                        result["folders_removed"] += 1
+                    except Exception as e:
+                        logger.warning("Failed to remove folder %s: %s", folder_id, e)
+
+            # Check karma-join-* folders (handshake)
+            elif folder_id.startswith("karma-join-"):
+                parsed = _parse_handshake_folder(folder_id)
+                if parsed and parsed[1] == team_name:
+                    try:
+                        await run_sync(proxy.remove_folder, folder_id)
+                        result["folders_removed"] += 1
+                    except Exception as e:
+                        logger.warning("Failed to remove handshake folder %s: %s", folder_id, e)
+    except Exception as e:
+        logger.warning("Failed to scan Syncthing folders for cleanup: %s", e)
+
+    # Remove team member devices (if not used by other teams)
+    for m in members:
+        device_id = m["device_id"]
+        if config and config.syncthing.device_id and device_id == config.syncthing.device_id:
+            continue  # Don't remove self
+        other_count = conn.execute(
+            "SELECT COUNT(*) FROM sync_members WHERE device_id = ? AND team_name != ?",
+            (device_id, team_name),
+        ).fetchone()[0]
+        if other_count == 0:
+            try:
+                await run_sync(proxy.remove_device, device_id)
+                result["devices_removed"] += 1
+            except Exception as e:
+                logger.warning("Failed to remove device %s: %s", device_id[:20], e)
+
+    return result
+
+
+async def _cleanup_syncthing_for_member(
+    proxy, config, conn, team_name: str, member_device_id: str, member_name: str,
+) -> dict:
+    """Clean up Syncthing state when removing a member (reverse of add-member).
+
+    Removes:
+    - The member's inbox folders from my machine
+    - The member's device_id from my outbox folder sharing lists
+    - The member's device (if not used by other teams)
+    """
+    projects = list_team_projects(conn, team_name)
+    result = {"folders_removed": 0, "devices_updated": 0}
+
+    proj_suffixes = set()
+    for proj in projects:
+        suffix = _compute_proj_suffix(
+            proj.get("git_identity"), proj.get("path"), proj["project_encoded_name"]
+        )
+        proj_suffixes.add(suffix)
+
+    try:
+        folders = await run_sync(proxy.get_folder_status)
+        for folder in folders:
+            folder_id = folder.get("id", "")
+            if not folder_id.startswith("karma-out-"):
+                continue
+            parsed = _parse_folder_id(folder_id)
+            if not parsed or parsed[1] not in proj_suffixes:
+                continue
+
+            username, suffix = parsed
+
+            if config and username == config.user_id:
+                # My outbox — remove the kicked member's device from sharing list
+                try:
+                    res = await run_sync(
+                        proxy.remove_device_from_folder, folder_id, member_device_id,
+                    )
+                    if res.get("removed"):
+                        result["devices_updated"] += 1
+                except Exception as e:
+                    logger.warning("Failed to remove device from folder %s: %s", folder_id, e)
+            elif username == member_name:
+                # The kicked member's inbox on my machine — remove entirely
+                try:
+                    await run_sync(proxy.remove_folder, folder_id)
+                    result["folders_removed"] += 1
+                except Exception as e:
+                    logger.warning("Failed to remove inbox folder %s: %s", folder_id, e)
+    except Exception as e:
+        logger.warning("Failed to scan Syncthing folders for member cleanup: %s", e)
+
+    # Remove handshake folder if exists
+    handshake_id = f"karma-join-{member_name}-{team_name}"
+    try:
+        await run_sync(proxy.remove_folder, handshake_id)
+    except Exception:
+        pass  # No-op if doesn't exist
+
+    # Remove device (if not used by other teams)
+    other_count = conn.execute(
+        "SELECT COUNT(*) FROM sync_members WHERE device_id = ? AND team_name != ?",
+        (member_device_id, team_name),
+    ).fetchone()[0]
+    if other_count == 0:
+        try:
+            await run_sync(proxy.remove_device, member_device_id)
+        except Exception as e:
+            logger.warning("Failed to remove device %s: %s", member_device_id[:20], e)
+
+    return result
+
+
 @router.delete("/teams/{team_name}")
 async def sync_delete_team(team_name: str) -> Any:
-    """Delete a sync group."""
+    """Leave/delete a sync team — cleans up Syncthing folders and devices."""
     if not ALLOWED_PROJECT_NAME.match(team_name):
         raise HTTPException(400, "Invalid team name")
 
@@ -875,10 +1022,20 @@ async def sync_delete_team(team_name: str) -> Any:
     if get_team(conn, team_name) is None:
         raise HTTPException(404, f"Team '{team_name}' not found")
 
-    log_event(conn, "team_deleted", team_name=team_name)
+    # Clean up Syncthing state before deleting DB records (need member/project data)
+    cleanup = {"folders_removed": 0, "devices_removed": 0}
+    try:
+        config = _load_identity()
+        if config:
+            proxy = get_proxy()
+            cleanup = await _cleanup_syncthing_for_team(proxy, config, conn, team_name)
+    except Exception as e:
+        logger.warning("Syncthing cleanup for team %s failed: %s", team_name, e)
+
+    log_event(conn, "team_left", team_name=team_name, detail=cleanup)
     delete_team(conn, team_name)
 
-    return {"ok": True, "name": team_name}
+    return {"ok": True, "name": team_name, **cleanup}
 
 
 # ─── Join Code ────────────────────────────────────────────────────────
@@ -1135,7 +1292,7 @@ async def sync_add_member(team_name: str, req: AddMemberRequest) -> Any:
 
 @router.delete("/teams/{team_name}/members/{member_name}")
 async def sync_remove_member(team_name: str, member_name: str) -> Any:
-    """Remove a member from a sync group."""
+    """Remove a member — cleans up their Syncthing folders and device."""
     if not ALLOWED_PROJECT_NAME.match(team_name):
         raise HTTPException(400, "Invalid team name")
     if not ALLOWED_PROJECT_NAME.match(member_name):
@@ -1151,29 +1308,23 @@ async def sync_remove_member(team_name: str, member_name: str) -> Any:
         raise HTTPException(404, f"Member '{member_name}' not found")
 
     device_id = member["device_id"]
-    remove_member(conn, team_name, device_id)
-    log_event(conn, "member_removed", team_name=team_name, member_name=member_name)
 
-    if device_id:
-        # Only remove the Syncthing device if it's not used by any other team
-        other_team_count = conn.execute(
-            "SELECT COUNT(*) FROM sync_members WHERE device_id = ? AND team_name != ?",
-            (device_id, team_name),
-        ).fetchone()[0]
-
-        if other_team_count == 0:
-            try:
-                proxy = get_proxy()
-                await run_sync(proxy.remove_device, device_id)
-            except Exception:
-                pass
-        else:
-            logger.info(
-                "Keeping Syncthing device %s: still used by %d other team(s)",
-                device_id, other_team_count,
+    # Clean up Syncthing state before removing DB record
+    cleanup = {"folders_removed": 0, "devices_updated": 0}
+    try:
+        config = _load_identity()
+        if config:
+            proxy = get_proxy()
+            cleanup = await _cleanup_syncthing_for_member(
+                proxy, config, conn, team_name, device_id, member_name,
             )
+    except Exception as e:
+        logger.warning("Syncthing cleanup for member %s failed: %s", member_name, e)
 
-    return {"ok": True, "name": member_name}
+    remove_member(conn, team_name, device_id)
+    log_event(conn, "member_removed", team_name=team_name, member_name=member_name, detail=cleanup)
+
+    return {"ok": True, "name": member_name, **cleanup}
 
 
 # ─── Team project management ──────────────────────────────────────────
