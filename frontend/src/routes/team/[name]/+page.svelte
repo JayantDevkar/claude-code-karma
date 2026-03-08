@@ -2,9 +2,7 @@
 	import PageHeader from '$lib/components/layout/PageHeader.svelte';
 	import SyncStatusBanner from '$lib/components/sync/SyncStatusBanner.svelte';
 	import JoinCodeCard from '$lib/components/team/JoinCodeCard.svelte';
-	import PendingDeviceCard from '$lib/components/team/PendingDeviceCard.svelte';
 	import TeamMemberCard from '$lib/components/team/TeamMemberCard.svelte';
-	import AddMemberDialog from '$lib/components/team/AddMemberDialog.svelte';
 	import AddProjectDialog from '$lib/components/team/AddProjectDialog.svelte';
 	import { API_BASE } from '$lib/config';
 	import { POLLING_INTERVALS } from '$lib/config';
@@ -12,7 +10,6 @@
 	import { onMount } from 'svelte';
 	import {
 		Users,
-		UserPlus,
 		FolderSync,
 		FolderGit2,
 		Plus,
@@ -21,19 +18,17 @@
 		AlertTriangle,
 		CheckCircle2
 	} from 'lucide-svelte';
-	import type { PendingDevice, SyncDevice, SyncPendingFolder } from '$lib/api-types';
+	import type { SyncDevice, SyncPendingFolder } from '$lib/api-types';
 
 	let { data } = $props();
 
-	let showAddMember = $state(false);
 	let showAddProject = $state(false);
 	let deleteConfirm = $state(false);
 	let deleting = $state(false);
 	let deleteError = $state<string | null>(null);
 	let removeProjectConfirm = $state<string | null>(null);
 
-	// Polling state for pending devices and connection status
-	let pendingDevices = $state<PendingDevice[]>([]);
+	// Polling state for connection status
 	let devices = $state<SyncDevice[]>([]);
 
 	// Pending folder offers for this team
@@ -41,9 +36,6 @@
 	let acceptingFolders = $state(false);
 
 	// Sync from server data when it changes (e.g. after invalidateAll)
-	$effect(() => {
-		pendingDevices = data.pendingDevices ?? [];
-	});
 	$effect(() => {
 		devices = data.devices ?? [];
 	});
@@ -83,15 +75,10 @@
 			const { signal } = controller;
 
 			try {
-				const [pendingRes, devicesRes, foldersRes] = await Promise.all([
-					fetch(`${API_BASE}/sync/pending-devices`, { signal }),
+				const [devicesRes, foldersRes] = await Promise.all([
 					fetch(`${API_BASE}/sync/devices`, { signal }),
 					fetch(`${API_BASE}/sync/pending`, { signal })
 				]);
-				if (pendingRes.ok) {
-					const pd = await pendingRes.json();
-					pendingDevices = pd.devices ?? [];
-				}
 				if (devicesRes.ok) {
 					const dd = await devicesRes.json();
 					devices = dd.devices ?? [];
@@ -205,24 +192,6 @@
 			</section>
 		{/if}
 
-		<!-- Pending Connections -->
-		{#if pendingDevices.length > 0}
-			<section>
-				<h2 class="text-sm font-semibold text-[var(--text-primary)] mb-3 uppercase tracking-wider">
-					Pending Connections
-				</h2>
-				<div class="space-y-3">
-					{#each pendingDevices as device (device.device_id)}
-						<PendingDeviceCard
-							{device}
-							teamName={data.teamName}
-							onaccepted={handleRefresh}
-						/>
-					{/each}
-				</div>
-			</section>
-		{/if}
-
 		<!-- Pending Project Shares -->
 		{#if pendingFolders.length > 0}
 			<section>
@@ -275,15 +244,6 @@
 				<h2 class="text-sm font-semibold text-[var(--text-primary)] uppercase tracking-wider">
 					Members ({members.length})
 				</h2>
-				<button
-					onclick={() => (showAddMember = true)}
-					class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-[var(--radius-md)]
-						border border-[var(--border)] text-[var(--text-secondary)]
-						hover:bg-[var(--bg-muted)] hover:text-[var(--text-primary)] transition-colors"
-				>
-					<UserPlus size={13} />
-					Add Member
-				</button>
 			</div>
 			<div class="space-y-2">
 				{#each members as member (member.name)}
@@ -421,7 +381,6 @@
 	</div>
 {/if}
 
-<AddMemberDialog bind:open={showAddMember} teamName={data.teamName} onadded={handleRefresh} />
 <AddProjectDialog
 	bind:open={showAddProject}
 	teamName={data.teamName}
