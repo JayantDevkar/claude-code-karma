@@ -4,24 +4,31 @@ import { fetchAllWithFallbacks } from '$lib/utils/api-fetch';
 import type { SyncStatusResponse, SyncTeam, PendingDevice } from '$lib/api-types';
 
 export const load: PageServerLoad = async ({ fetch }) => {
-	const [syncStatus, teamsData, pendingData] = await fetchAllWithFallbacks(fetch, [
+	// Fetch sync status + pending-devices first. The pending-devices endpoint
+	// triggers auto-accept of karma peers, which may add new team members.
+	const [syncStatus, pendingData] = await fetchAllWithFallbacks(fetch, [
 		{
 			url: `${API_BASE}/sync/status`,
 			fallback: { configured: false } as SyncStatusResponse
 		},
 		{
+			url: `${API_BASE}/sync/pending-devices`,
+			fallback: { devices: [] as PendingDevice[], auto_accepted: 0 }
+		}
+	] as const);
+
+	// Fetch teams AFTER auto-accept so member counts are up-to-date
+	const [teamsData] = await fetchAllWithFallbacks(fetch, [
+		{
 			url: `${API_BASE}/sync/teams`,
 			fallback: { teams: [] as SyncTeam[] }
-		},
-		{
-			url: `${API_BASE}/sync/pending-devices`,
-			fallback: { devices: [] as PendingDevice[] }
 		}
 	] as const);
 
 	return {
 		syncStatus,
 		teams: teamsData.teams ?? [],
-		pendingDevices: pendingData.devices ?? []
+		pendingDevices: pendingData.devices ?? [],
+		autoAccepted: (pendingData as any).auto_accepted ?? 0
 	};
 };

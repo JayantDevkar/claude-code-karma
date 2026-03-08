@@ -225,10 +225,67 @@ def _parse_folder_id(folder_id: str):
     return None
 
 
+def _parse_handshake_folder(folder_id: str):
+    """Parse a karma-join handshake folder ID into (username, team_name).
+
+    Expected format: ``karma-join-{username}-{team_name}``
+    Returns None if the folder ID does not match.
+    """
+    prefix = "karma-join-"
+    if not folder_id.startswith(prefix):
+        return None
+    rest = folder_id[len(prefix):]
+    parts = rest.split("-")
+    if len(parts) < 2:
+        return None
+    # Same ambiguity as _parse_folder_id — try shortest username first
+    for i in range(1, len(parts)):
+        candidate_name = "-".join(parts[:i])
+        candidate_team = "-".join(parts[i:])
+        if candidate_name and candidate_team:
+            return candidate_name, candidate_team
+    return None
+
+
+async def _ensure_handshake_folder(proxy, config, team_name: str, device_ids: list[str]) -> None:
+    """Create a lightweight handshake folder to signal team membership.
+
+    This folder is shared with the leader's device so they can auto-accept
+    us even before any projects are added to the team.
+    Format: karma-join-{user_id}-{team_name}
+    """
+    from karma.config import KARMA_BASE
+
+    folder_id = f"karma-join-{config.user_id}-{team_name}"
+    folder_path = str(KARMA_BASE / "handshakes" / team_name)
+    Path(folder_path).mkdir(parents=True, exist_ok=True)
+
+    try:
+        await run_sync(proxy.update_folder_devices, folder_id, device_ids)
+    except ValueError:
+        all_ids = list(device_ids)
+        if config.syncthing.device_id and config.syncthing.device_id not in all_ids:
+            all_ids.append(config.syncthing.device_id)
+        await run_sync(proxy.add_folder, folder_id, folder_path, all_ids, "sendonly")
+
+
 def _find_team_for_folder(conn, folder_ids: list[str]) -> Optional[str]:
-    """Find which team a set of karma folder IDs belong to, by matching project suffixes."""
+    """Find which team a set of karma folder IDs belong to.
+
+    First checks for karma-join-* handshake folders (direct team name).
+    Then falls back to matching karma-out-* suffixes against team projects.
+    """
+    # Fast path: handshake folders contain the team name directly
+    for folder_id in folder_ids:
+        parsed = _parse_handshake_folder(folder_id)
+        if parsed:
+            _, team_name = parsed
+            # Verify this team exists locally
+            if get_team(conn, team_name):
+                return team_name
+
+    # Slow path: match karma-out-* folder suffixes against team project suffixes
     teams = list_teams(conn)
-    # Pre-fetch all projects per team to avoid N+1 queries
     team_projects = {t["name"]: list_team_projects(conn, t["name"]) for t in teams}
 
     for folder_id in folder_ids:
@@ -249,9 +306,13 @@ def _find_team_for_folder(conn, folder_ids: list[str]) -> Optional[str]:
 async def _auto_accept_pending_peers(proxy, config, conn) -> tuple[int, dict]:
     """Auto-accept pending devices that have karma folder offers.
 
-    When a new member joins via join code, their Syncthing offers karma-out-*
+    When a new member joins via join code, their Syncthing offers karma-*
     folders to us. We match the pending device against those folder offers
     to auto-accept without manual code exchange.
+
+    Matches two types of folders:
+    - karma-join-{username}-{team_name} — handshake folders (works even without projects)
+    - karma-out-{username}-{suffix} — outbox folders (matched against team project suffixes)
 
     Returns:
         (accepted_count, remaining_pending_devices) — the caller can use
@@ -273,10 +334,10 @@ async def _auto_accept_pending_peers(proxy, config, conn) -> tuple[int, dict]:
     accepted = 0
     accepted_ids = set()
     for device_id in list(pending_devices.keys()):
-        # Find karma folders offered by this device
+        # Find ALL karma folders offered by this device (both join and out)
         karma_folders = []
         for folder_id, info in pending_folders.items():
-            if not folder_id.startswith("karma-out-"):
+            if not folder_id.startswith("karma-"):
                 continue
             if device_id in info.get("offeredBy", {}):
                 karma_folders.append(folder_id)
@@ -284,41 +345,32 @@ async def _auto_accept_pending_peers(proxy, config, conn) -> tuple[int, dict]:
         if not karma_folders:
             continue  # Not a karma user, skip
 
-        # Extract username from folder ID: karma-out-{username}-{suffix}
-        # Use the pending device's name as a hint to disambiguate hyphenated usernames
+        # Extract username: try handshake folders first, then outbox folders
         device_info = pending_devices.get(device_id, {})
         device_name = device_info.get("name", "")
 
         username = None
         for folder_id in karma_folders:
-            parsed = _parse_folder_id(folder_id)
-            if not parsed:
-                continue
-            candidate_name, _ = parsed
-            # If the device name matches (set by add_device on the joiner's side), prefer it
-            if device_name and candidate_name == device_name:
-                username = candidate_name
+            # Try handshake folder: karma-join-{username}-{team}
+            hs = _parse_handshake_folder(folder_id)
+            if hs:
+                username = hs[0]
                 break
-            # Try all possible splits to find one where the name matches the device name
-            if device_name:
-                prefix = "karma-out-"
-                rest = folder_id[len(prefix):]
-                parts = rest.split("-")
-                for i in range(1, len(parts)):
-                    name = "-".join(parts[:i])
-                    if name == device_name:
-                        username = name
-                        break
-                if username:
+            # Try outbox folder: karma-out-{username}-{suffix}
+            parsed = _parse_folder_id(folder_id)
+            if parsed:
+                candidate_name, _ = parsed
+                # Prefer device name match for disambiguation
+                if device_name and device_name == candidate_name:
+                    username = candidate_name
                     break
-            if username is None:
-                username = candidate_name  # fall back to shortest split
-            break
+                if username is None:
+                    username = candidate_name
 
         if not username:
             continue
 
-        # Find team by matching folder suffix against team projects
+        # Find team by matching folder IDs (handshake or project suffix)
         team_name = _find_team_for_folder(conn, karma_folders)
         if not team_name:
             continue
@@ -860,6 +912,13 @@ async def sync_join_team(req: JoinTeamRequest) -> Any:
         paired = True
     except Exception:
         pass
+
+    # Create handshake folder so the leader can auto-accept us (works even without projects)
+    if paired:
+        try:
+            await _ensure_handshake_folder(proxy, config, team_name, [device_id])
+        except Exception as e:
+            logger.warning("Failed to create handshake folder: %s", e)
 
     # Auto-create shared folders for joiner's projects in this team
     folders_created = None
