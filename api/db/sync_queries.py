@@ -65,6 +65,26 @@ def add_member(
     return {"team_name": team_name, "name": name, "device_id": device_id}
 
 
+def upsert_member(
+    conn: sqlite3.Connection,
+    team_name: str,
+    name: str,
+    device_id: Optional[str] = None,
+    ipns_key: Optional[str] = None,
+) -> dict:
+    """Insert a member or update their device_id if they already exist."""
+    conn.execute(
+        """INSERT INTO sync_members (team_name, name, device_id, ipns_key)
+           VALUES (?, ?, ?, ?)
+           ON CONFLICT(team_name, name)
+           DO UPDATE SET device_id = COALESCE(excluded.device_id, device_id),
+                         ipns_key = COALESCE(excluded.ipns_key, ipns_key)""",
+        (team_name, name, device_id, ipns_key),
+    )
+    conn.commit()
+    return {"team_name": team_name, "name": name, "device_id": device_id}
+
+
 def remove_member(conn: sqlite3.Connection, team_name: str, name: str) -> None:
     conn.execute(
         "DELETE FROM sync_members WHERE team_name = ? AND name = ?",

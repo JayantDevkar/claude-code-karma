@@ -1,10 +1,9 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import { Play, Square, Monitor, FolderGit2, ArrowUp, ArrowDown, Bell, CheckCircle2, Loader2, Users, XCircle, RotateCcw } from 'lucide-svelte';
-	import type { SyncDetect, SyncStatusResponse, SyncWatchStatus, SyncPendingFolder } from '$lib/api-types';
+	import { Play, Square, Monitor, FolderGit2, ArrowUp, ArrowDown, Bell, CheckCircle2, Loader2, Users, XCircle, RotateCcw, Clock, RefreshCw, ChevronDown } from 'lucide-svelte';
+	import type { SyncDetect, SyncStatusResponse, SyncWatchStatus, SyncPendingFolder, SyncProjectStatus, SyncEvent } from '$lib/api-types';
 	import { formatRelativeTime } from '$lib/utils';
 	import { API_BASE } from '$lib/config';
-	import { pushSyncAction } from '$lib/stores/syncActions.svelte';
 
 	let {
 		detect = null,
@@ -52,7 +51,6 @@
 			const res = await fetch(url.toString(), { method: 'POST' }).catch(() => null);
 			if (res?.ok) {
 				watchStatus = await res.json();
-				pushSyncAction('watch_started', 'Session watcher started', teamName ?? '');
 			}
 		} finally {
 			watchActing = false;
@@ -65,7 +63,6 @@
 			const res = await fetch(`${API_BASE}/sync/watch/stop`, { method: 'POST' }).catch(() => null);
 			if (res?.ok) {
 				watchStatus = await res.json();
-				pushSyncAction('watch_stopped', 'Session watcher stopped');
 			}
 		} finally {
 			watchActing = false;
@@ -165,15 +162,110 @@
 
 	async function acceptAll() {
 		acceptingAll = true;
-		const count = pendingFolders.length;
 		try {
 			await fetch(`${API_BASE}/sync/pending/accept`, { method: 'POST' }).catch(() => null);
 			await loadPending();
-			pushSyncAction('pending_accepted', `Accepted ${count} pending folder${count !== 1 ? 's' : ''}`);
 		} finally {
 			acceptingAll = false;
 		}
 	}
+
+	// ── Per-Project Sync Status (Task 5) ─────────────────────────────────────
+	let projectStatuses = $state<SyncProjectStatus[]>([]);
+	let projectStatusLoading = $state(true);
+	let syncAllActing = $state(false);
+
+	async function loadProjectStatus() {
+		if (!teamName) {
+			projectStatuses = [];
+			projectStatusLoading = false;
+			return;
+		}
+		try {
+			const res = await fetch(
+				`${API_BASE}/sync/teams/${encodeURIComponent(teamName)}/project-status`
+			).catch(() => null);
+			if (res?.ok) {
+				const data = await res.json();
+				projectStatuses = data.projects ?? [];
+			} else {
+				projectStatuses = [];
+			}
+		} catch {
+			projectStatuses = [];
+		} finally {
+			projectStatusLoading = false;
+		}
+	}
+
+	async function syncAllNow() {
+		if (!teamName) return;
+		syncAllActing = true;
+		try {
+			await fetch(
+				`${API_BASE}/sync/teams/${encodeURIComponent(teamName)}/sync-now`,
+				{ method: 'POST' }
+			).catch(() => null);
+			await loadProjectStatus();
+		} finally {
+			syncAllActing = false;
+		}
+	}
+
+	// ── Recent Activity (Task 6) ─────────────────────────────────────────────
+	let recentEvents = $state<SyncEvent[]>([]);
+	let activityLoading = $state(true);
+
+	async function loadRecentActivity() {
+		try {
+			const res = await fetch(`${API_BASE}/sync/activity?limit=8`).catch(() => null);
+			if (res?.ok) {
+				const data = await res.json();
+				recentEvents = data.events ?? [];
+			} else {
+				recentEvents = [];
+			}
+		} catch {
+			recentEvents = [];
+		} finally {
+			activityLoading = false;
+		}
+	}
+
+	function humanizeEvent(ev: SyncEvent): string {
+		const member = ev.member_name ?? 'Someone';
+		const team = ev.team_name ?? 'team';
+		const project = ev.project_encoded_name ?? 'project';
+		switch (ev.event_type) {
+			case 'member_added':
+				return `${member} joined ${team}`;
+			case 'member_removed':
+				return `${member} left ${team}`;
+			case 'project_added':
+				return `Project ${project} added to ${team}`;
+			case 'project_removed':
+				return `Project ${project} removed from ${team}`;
+			case 'session_packaged':
+				return `${member} packaged a session in ${project}`;
+			case 'session_received':
+				return `Received a session from ${member} in ${project}`;
+			case 'watch_started':
+				return `Session watcher started for ${team}`;
+			case 'watch_stopped':
+				return 'Session watcher stopped';
+			case 'pending_accepted':
+				return 'Pending folders accepted';
+			case 'team_created':
+				return `Team ${team} created`;
+			case 'team_deleted':
+				return `Team ${team} deleted`;
+			default:
+				return ev.detail ?? ev.event_type.replace(/_/g, ' ');
+		}
+	}
+
+	// ── Machine Details accordion (Task 7) ───────────────────────────────────
+	let machineDetailsOpen = $state(false);
 
 	// ── Reset sync ───────────────────────────────────────────────────────────
 	let resetting = $state(false);
@@ -193,6 +285,19 @@
 		}
 	}
 
+	// ── Reset loading states when team changes ──────────────────────────────
+	$effect(() => {
+		teamName; // track teamName
+		untrack(() => {
+			statsLoaded = false;
+			statsLoading = true;
+			watchLoading = true;
+			pendingLoading = true;
+			projectStatusLoading = true;
+			activityLoading = true;
+		});
+	});
+
 	// ── Load everything when tab becomes active or team changes ──────────────
 	$effect(() => {
 		if (!active) return;
@@ -201,6 +306,8 @@
 			loadWatchStatus();
 			loadStats();
 			loadPending();
+			loadProjectStatus();
+			loadRecentActivity();
 		});
 	});
 </script>
@@ -277,17 +384,18 @@
 			{/each}
 		</div>
 	{:else}
+		{@const teamHref = teamName ? '/team/' + encodeURIComponent(teamName) : '/team'}
 		<div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
-			<div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-subtle)] p-4 text-center">
+			<a href={teamHref} class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-subtle)] p-4 text-center no-underline hover:border-[var(--accent)]/40 transition-colors">
 				<Users size={16} class="mx-auto text-[var(--text-muted)] mb-1.5" />
 				<p class="text-lg font-semibold text-[var(--text-primary)]">{connectedMembers}/{totalMembers}</p>
 				<p class="text-[11px] text-[var(--text-muted)]">Members Online</p>
-			</div>
-			<div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-subtle)] p-4 text-center">
+			</a>
+			<a href={teamHref} class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-subtle)] p-4 text-center no-underline hover:border-[var(--accent)]/40 transition-colors">
 				<FolderGit2 size={16} class="mx-auto text-[var(--text-muted)] mb-1.5" />
 				<p class="text-lg font-semibold text-[var(--text-primary)]">{projectCount}</p>
 				<p class="text-[11px] text-[var(--text-muted)]">Projects</p>
-			</div>
+			</a>
 			<div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-subtle)] p-4 text-center">
 				<ArrowUp size={16} class="mx-auto text-[var(--accent)] mb-1.5" />
 				<p class="text-lg font-semibold text-[var(--text-primary)]">{sessionsSharedCount}</p>
@@ -368,69 +476,182 @@
 		</div>
 	{/if}
 
-	<!-- ── 4. Machine Details Card ───────────────────────────────────────── -->
-	<div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-subtle)] p-5 space-y-3">
-		<div class="flex items-center gap-2 mb-1">
-			<Monitor size={14} class="text-[var(--text-muted)]" />
-			<h3 class="text-sm font-semibold text-[var(--text-primary)]">Machine Details</h3>
+	<!-- ── 4. Per-Project Sync Status ──────────────────────────────────── -->
+	{#if projectStatusLoading}
+		<div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-subtle)]">
+			<div class="px-5 py-4 space-y-2">
+				{#each [1, 2, 3] as i (i)}
+					<div class="h-10 rounded-[var(--radius)] bg-[var(--bg-muted)] animate-pulse" aria-hidden="true"></div>
+				{/each}
+			</div>
 		</div>
-
-		{#if status?.user_id}
-			<div class="flex items-center justify-between">
-				<span class="text-xs font-medium text-[var(--text-secondary)]">Your Name</span>
-				<span class="text-xs text-[var(--text-primary)] font-mono">{status.user_id}</span>
-			</div>
-		{/if}
-
-		{#if status?.machine_id}
-			<div class="flex items-center justify-between">
-				<span class="text-xs font-medium text-[var(--text-secondary)]">Machine</span>
-				<span class="text-xs text-[var(--text-primary)] font-mono">{status.machine_id}</span>
-			</div>
-		{/if}
-
-		{#if detect?.version}
-			<div class="flex items-center justify-between">
-				<span class="text-xs font-medium text-[var(--text-secondary)]">Syncthing Version</span>
-				<span class="text-xs text-[var(--text-muted)]">v{detect.version}</span>
-			</div>
-		{/if}
-
-		{#if !status?.user_id && !status?.machine_id && !detect?.version}
-			<p class="text-xs text-[var(--text-muted)]">No machine details available.</p>
-		{/if}
-
-		<!-- Reset sync -->
-		<div class="pt-3 mt-3 border-t border-[var(--border-subtle)]">
-			{#if resetConfirm}
-				<div class="flex items-center justify-between gap-2">
-					<span class="text-xs text-[var(--text-secondary)]">Reset all sync config and return to setup?</span>
-					<div class="flex items-center gap-1.5">
-						<button
-							onclick={resetSync}
-							disabled={resetting}
-							class="px-2.5 py-1 text-xs font-medium rounded-md bg-[var(--error)] text-white hover:opacity-90 transition-opacity disabled:opacity-50"
-						>
-							{resetting ? 'Resetting...' : 'Yes, reset'}
-						</button>
-						<button
-							onclick={() => (resetConfirm = false)}
-							class="px-2.5 py-1 text-xs font-medium rounded-md border border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
-						>
-							Cancel
-						</button>
-					</div>
+	{:else if projectStatuses.length > 0}
+		<div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-subtle)]">
+			<!-- Header -->
+			<div class="flex items-center justify-between px-5 py-3.5 border-b border-[var(--border-subtle)]">
+				<div class="flex items-center gap-2">
+					<FolderGit2 size={14} class="text-[var(--text-muted)]" />
+					<h3 class="text-sm font-semibold text-[var(--text-primary)]">Project Sync Status</h3>
+					<span class="px-1.5 py-0.5 text-[10px] font-medium rounded bg-[var(--accent)]/10 text-[var(--accent)] border border-[var(--accent)]/20">
+						{projectStatuses.length}
+					</span>
 				</div>
-			{:else}
 				<button
-					onclick={() => (resetConfirm = true)}
-					class="flex items-center gap-1.5 text-xs text-[var(--text-muted)] hover:text-[var(--error)] transition-colors"
+					onclick={syncAllNow}
+					disabled={syncAllActing}
+					aria-label="Sync all projects now"
+					class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-[var(--radius)] bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
 				>
-					<RotateCcw size={12} />
-					Reset Sync Setup
+					{#if syncAllActing}
+						<Loader2 size={12} class="animate-spin" />
+						Syncing...
+					{:else}
+						<RefreshCw size={12} />
+						Sync All Now
+					{/if}
 				</button>
-			{/if}
+			</div>
+
+			<!-- Body -->
+			<div class="px-5 divide-y divide-[var(--border-subtle)]">
+				{#each projectStatuses as proj (proj.encoded_name)}
+					<div class="flex items-center gap-3 py-3.5">
+						<FolderGit2 size={15} class="shrink-0 text-[var(--text-muted)]" />
+						<div class="flex-1 min-w-0">
+							<a
+								href="/projects/{proj.encoded_name}"
+								class="text-sm font-medium text-[var(--text-primary)] hover:text-[var(--accent)] transition-colors truncate block"
+							>
+								{proj.name}
+							</a>
+							<p class="text-xs text-[var(--text-muted)] mt-0.5">
+								{proj.packaged_count}/{proj.local_count} sessions packaged
+							</p>
+						</div>
+						{#if proj.gap === 0}
+							<span class="shrink-0 flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded-full bg-[var(--success)]/10 text-[var(--success)] border border-[var(--success)]/20">
+								<CheckCircle2 size={11} />
+								In Sync
+							</span>
+						{:else}
+							<span class="shrink-0 flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded-full bg-[var(--warning)]/10 text-[var(--warning)] border border-[var(--warning)]/20">
+								{proj.gap} behind
+							</span>
+						{/if}
+					</div>
+				{/each}
+			</div>
 		</div>
+	{/if}
+
+	<!-- ── 5. Recent Activity ─────────────────────────────────────────── -->
+	{#if activityLoading}
+		<div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-subtle)]">
+			<div class="px-5 py-4 space-y-2">
+				{#each [1, 2, 3] as i (i)}
+					<div class="h-8 rounded-[var(--radius)] bg-[var(--bg-muted)] animate-pulse" aria-hidden="true"></div>
+				{/each}
+			</div>
+		</div>
+	{:else if recentEvents.length > 0}
+		<div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-subtle)]">
+			<!-- Header -->
+			<div class="flex items-center gap-2 px-5 py-3.5 border-b border-[var(--border-subtle)]">
+				<Clock size={14} class="text-[var(--text-muted)]" />
+				<h3 class="text-sm font-semibold text-[var(--text-primary)]">Recent Activity</h3>
+			</div>
+
+			<!-- Body -->
+			<div class="px-5 divide-y divide-[var(--border-subtle)]">
+				{#each recentEvents as ev (ev.id)}
+					<div class="flex items-center justify-between gap-3 py-3">
+						<p class="text-xs text-[var(--text-secondary)] truncate flex-1">{humanizeEvent(ev)}</p>
+						<span class="text-[11px] text-[var(--text-muted)] shrink-0 whitespace-nowrap">{formatRelativeTime(ev.created_at)}</span>
+					</div>
+				{/each}
+			</div>
+		</div>
+	{/if}
+
+	<!-- ── 6. Machine Details Card (collapsible) ───────────────────────── -->
+	<div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-subtle)]">
+		<button
+			onclick={() => (machineDetailsOpen = !machineDetailsOpen)}
+			aria-expanded={machineDetailsOpen}
+			class="flex items-center justify-between w-full px-5 py-3.5 text-left cursor-pointer hover:bg-[var(--bg-muted)]/50 transition-colors rounded-[var(--radius-lg)]"
+		>
+			<div class="flex items-center gap-2">
+				<Monitor size={14} class="text-[var(--text-muted)]" />
+				<h3 class="text-sm font-semibold text-[var(--text-primary)]">Machine Details</h3>
+			</div>
+			<ChevronDown
+				size={14}
+				class="text-[var(--text-muted)] transition-transform duration-200 {machineDetailsOpen ? 'rotate-180' : ''}"
+			/>
+		</button>
+
+		{#if machineDetailsOpen}
+			<div class="px-5 pb-5 space-y-3 border-t border-[var(--border-subtle)]">
+				<div class="pt-3">
+					{#if status?.user_id}
+						<div class="flex items-center justify-between mb-3">
+							<span class="text-xs font-medium text-[var(--text-secondary)]">Your Name</span>
+							<span class="text-xs text-[var(--text-primary)] font-mono">{status.user_id}</span>
+						</div>
+					{/if}
+
+					{#if status?.machine_id}
+						<div class="flex items-center justify-between mb-3">
+							<span class="text-xs font-medium text-[var(--text-secondary)]">Machine</span>
+							<span class="text-xs text-[var(--text-primary)] font-mono">{status.machine_id}</span>
+						</div>
+					{/if}
+
+					{#if detect?.version}
+						<div class="flex items-center justify-between mb-3">
+							<span class="text-xs font-medium text-[var(--text-secondary)]">Syncthing Version</span>
+							<span class="text-xs text-[var(--text-muted)]">v{detect.version}</span>
+						</div>
+					{/if}
+
+					{#if !status?.user_id && !status?.machine_id && !detect?.version}
+						<p class="text-xs text-[var(--text-muted)]">No machine details available.</p>
+					{/if}
+				</div>
+
+				<!-- Reset sync -->
+				<div class="pt-3 border-t border-[var(--border-subtle)]">
+					{#if resetConfirm}
+						<div class="flex items-center justify-between gap-2">
+							<span class="text-xs text-[var(--text-secondary)]">Reset all sync config and return to setup?</span>
+							<div class="flex items-center gap-1.5">
+								<button
+									onclick={resetSync}
+									disabled={resetting}
+									class="px-2.5 py-1 text-xs font-medium rounded-md bg-[var(--error)] text-white hover:opacity-90 transition-opacity disabled:opacity-50"
+								>
+									{resetting ? 'Resetting...' : 'Yes, reset'}
+								</button>
+								<button
+									onclick={() => (resetConfirm = false)}
+									class="px-2.5 py-1 text-xs font-medium rounded-md border border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+								>
+									Cancel
+								</button>
+							</div>
+						</div>
+					{:else}
+						<button
+							onclick={() => (resetConfirm = true)}
+							class="flex items-center gap-1.5 text-xs text-[var(--text-muted)] hover:text-[var(--error)] transition-colors"
+						>
+							<RotateCcw size={12} />
+							Reset Sync Setup
+						</button>
+					{/if}
+				</div>
+			</div>
+		{/if}
 	</div>
 
 </div>

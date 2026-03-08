@@ -6,7 +6,9 @@ import type {
 	SyncDevice,
 	JoinCodeResponse,
 	PendingDevice,
-	SyncStatusResponse
+	SyncStatusResponse,
+	SyncWatchStatus,
+	SyncDetect
 } from '$lib/api-types';
 
 interface ProjectSummary {
@@ -20,8 +22,8 @@ interface ProjectSummary {
 export const load: PageServerLoad = async ({ fetch, params }) => {
 	const teamName = params.name;
 
-	// Fetch in parallel: teams list (to find this team), devices, join code, pending devices, projects, sync status
-	const [teamsData, devices, joinCodeData, pendingData, syncStatus] = await Promise.all([
+	// Fetch in parallel: teams list (to find this team), devices, join code, pending devices, projects, sync status, watch status, detect
+	const [teamsData, devices, joinCodeData, pendingData, syncStatus, watchStatus, detectData] = await Promise.all([
 		safeFetch<{ teams: SyncTeam[] }>(fetch, `${API_BASE}/sync/teams`),
 		fetchWithFallback<{ devices: SyncDevice[] }>(fetch, `${API_BASE}/sync/devices`, {
 			devices: []
@@ -32,6 +34,15 @@ export const load: PageServerLoad = async ({ fetch, params }) => {
 		}),
 		fetchWithFallback<SyncStatusResponse>(fetch, `${API_BASE}/sync/status`, {
 			configured: false
+		}),
+		fetchWithFallback<SyncWatchStatus>(fetch, `${API_BASE}/sync/watch/status`, {
+			running: false
+		} as SyncWatchStatus),
+		fetchWithFallback<SyncDetect>(fetch, `${API_BASE}/sync/detect`, {
+			installed: false,
+			running: false,
+			version: null,
+			device_id: null
 		})
 	]);
 
@@ -60,6 +71,8 @@ export const load: PageServerLoad = async ({ fetch, params }) => {
 			name: p.display_name || p.slug || p.encoded_name,
 			path: p.path
 		})),
-		syncStatus
+		syncStatus,
+		watchStatus,
+		detectData
 	};
 };

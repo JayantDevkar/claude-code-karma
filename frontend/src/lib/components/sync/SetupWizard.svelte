@@ -14,6 +14,7 @@
 	import type { SyncDetect, SyncStatusResponse } from '$lib/api-types';
 	import { API_BASE } from '$lib/config';
 	import { copyToClipboard } from '$lib/utils';
+	import { goto } from '$app/navigation';
 
 	let {
 		detect = $bindable(),
@@ -30,6 +31,7 @@
 	// -----------------------------------------------
 	// step 0 = how it works, 1 = install, 2 = name machine
 	let step = $state<0 | 1 | 2>(0);
+	let hasNavigated = $state(false);
 
 	// Auto-advance: when detect.running becomes true on step 1, move to step 2
 	$effect(() => {
@@ -40,8 +42,9 @@
 
 	// After init succeeds, redirect to /team
 	$effect(() => {
-		if (status?.configured && step === 2) {
-			import('$app/navigation').then(({ goto }) => goto('/team'));
+		if (status?.configured && step === 2 && !hasNavigated) {
+			hasNavigated = true;
+			goto('/team');
 		}
 	});
 

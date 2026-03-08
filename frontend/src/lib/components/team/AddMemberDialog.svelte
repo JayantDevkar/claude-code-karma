@@ -98,7 +98,7 @@
 						<span class="text-[var(--text-muted)]">Name</span>
 						<span class="font-medium text-[var(--text-primary)]">{parsed.name}</span>
 						<span class="text-[var(--text-muted)]">Device</span>
-						<span class="font-mono text-xs text-[var(--text-secondary)]">{parsed.device_id.slice(0, 20)}...</span>
+						<span class="font-mono text-xs text-[var(--text-secondary)]">{parsed.device_id.length > 20 ? parsed.device_id.slice(0, 20) + '...' : parsed.device_id}</span>
 					</div>
 				</div>
 			{/if}

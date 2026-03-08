@@ -1,5 +1,6 @@
 <script lang="ts">
 	import PageHeader from '$lib/components/layout/PageHeader.svelte';
+	import SyncStatusBanner from '$lib/components/sync/SyncStatusBanner.svelte';
 	import JoinCodeCard from '$lib/components/team/JoinCodeCard.svelte';
 	import PendingDeviceCard from '$lib/components/team/PendingDeviceCard.svelte';
 	import TeamMemberCard from '$lib/components/team/TeamMemberCard.svelte';
@@ -49,11 +50,17 @@
 
 	// Poll for pending devices and device status
 	onMount(() => {
+		let controller = new AbortController();
+
 		const interval = setInterval(async () => {
+			controller.abort();
+			controller = new AbortController();
+			const { signal } = controller;
+
 			try {
 				const [pendingRes, devicesRes] = await Promise.all([
-					fetch(`${API_BASE}/sync/pending-devices`),
-					fetch(`${API_BASE}/sync/devices`)
+					fetch(`${API_BASE}/sync/pending-devices`, { signal }),
+					fetch(`${API_BASE}/sync/devices`, { signal })
 				]);
 				if (pendingRes.ok) {
 					const pd = await pendingRes.json();
@@ -63,12 +70,16 @@
 					const dd = await devicesRes.json();
 					devices = dd.devices ?? [];
 				}
-			} catch {
-				// polling errors are non-critical
+			} catch (e) {
+				if (e instanceof DOMException && e.name === 'AbortError') return;
+				// other polling errors are non-critical
 			}
 		}, POLLING_INTERVALS.SYNC_STATUS);
 
-		return () => clearInterval(interval);
+		return () => {
+			clearInterval(interval);
+			controller.abort();
+		};
 	});
 
 	async function handleDeleteTeam() {
@@ -134,6 +145,13 @@
 		</button>
 	{/snippet}
 </PageHeader>
+
+<div class="mb-6">
+	<SyncStatusBanner
+		running={data.watchStatus?.running ?? false}
+		syncthingUp={data.detectData?.running ?? false}
+	/>
+</div>
 
 {#if !team}
 	<div class="text-center py-16">

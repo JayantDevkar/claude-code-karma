@@ -55,7 +55,7 @@
 			<div>
 				<p class="text-sm font-medium text-[var(--text-primary)]">New device trying to connect</p>
 				<p class="text-xs font-mono text-[var(--text-muted)] mt-0.5">
-					{device.device_id.slice(0, 24)}...
+					{device.device_id.length > 24 ? device.device_id.slice(0, 24) + '...' : device.device_id}
 				</p>
 			</div>
 

@@ -15,7 +15,6 @@
 		Cable,
 		Webhook,
 		Terminal,
-		Users,
 		RefreshCw,
 		Info
 	} from 'lucide-svelte';
@@ -37,8 +36,7 @@
 		<NavigationCard title="Tools" href="/tools" icon={Cable} color="teal" />
 		<NavigationCard title="Hooks" href="/hooks" icon={Webhook} color="amber" />
 		<NavigationCard title="Commands" href="/commands" icon={Terminal} color="red" />
-		<NavigationCard title="Teams" href="/team" icon={Users} color="indigo" />
-		<NavigationCard title="Sync" href="/sync" icon={RefreshCw} color="green" />
+		<NavigationCard title="Sync & Teams" href="/sync" icon={RefreshCw} color="green" />
 		<NavigationCard title="Plugins" href="/plugins" icon={Puzzle} color="violet" />
 		<NavigationCard title="About" href="/about" icon={Info} color="teal" />
 		<NavigationCard title="Archived" href="/archived" icon={History} color="gray" />

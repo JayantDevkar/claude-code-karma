@@ -32,7 +32,7 @@
 	icon={Users}
 	iconColor="--nav-indigo"
 	breadcrumbs={[{ label: 'Dashboard', href: '/' }, { label: 'Teams' }]}
-	subtitle="Create and manage teams to share sessions with teammates"
+	subtitle="Create and manage teams to share sessions with teammates &middot; Sync status on /sync"
 >
 	{#snippet headerRight()}
 		{#if configured && teams.length > 0}

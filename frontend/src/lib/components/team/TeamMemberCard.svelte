@@ -82,7 +82,7 @@
 			</div>
 			{#if member.device_id}
 				<p class="text-[11px] font-mono text-[var(--text-muted)]">
-					{member.device_id.slice(0, 20)}...
+					{member.device_id.length > 20 ? member.device_id.slice(0, 20) + '...' : member.device_id}
 				</p>
 			{/if}
 		</div>

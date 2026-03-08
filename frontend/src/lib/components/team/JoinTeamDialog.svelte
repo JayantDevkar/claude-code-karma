@@ -99,7 +99,8 @@
 			<div class="space-y-4">
 				<div class="space-y-1.5">
 					<label for="join-code" class="block text-xs font-medium text-[var(--text-secondary)]">
-						Paste the join code from your team creator
+						Paste the join code from your team creator.
+						<span class="text-[var(--text-muted)]">The team must already exist locally — create it on the Teams page first.</span>
 					</label>
 					<textarea
 						id="join-code"

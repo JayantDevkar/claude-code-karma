@@ -19,6 +19,7 @@ from db.sync_queries import (
     list_teams,
     get_team,
     add_member,
+    upsert_member,
     remove_member,
     list_members,
     add_team_project,
@@ -42,6 +43,14 @@ router = APIRouter(prefix="/sync", tags=["sync"])
 # Input validation
 ALLOWED_PROJECT_NAME = re.compile(r"^[a-zA-Z0-9_\-]+$")
 ALLOWED_DEVICE_ID = re.compile(r"^[A-Z0-9\-]+$")
+_VALID_EVENT_TYPES = frozenset({
+    "team_created", "team_deleted",
+    "member_added", "member_removed",
+    "project_added", "project_removed",
+    "folders_shared", "pending_accepted",
+    "sync_now", "watcher_started", "watcher_stopped",
+    "session_packaged", "session_received",
+})
 
 
 def validate_project_name(name: str) -> str:
@@ -60,6 +69,23 @@ def validate_user_id(user_id: str) -> str:
     if not ALLOWED_PROJECT_NAME.match(user_id) or len(user_id) > 128:
         raise HTTPException(400, "Invalid user_id")
     return user_id
+
+
+def validate_project_path(path: str) -> str:
+    """Validate project path — reject traversal and non-absolute paths."""
+    if not path:
+        return path  # empty path is allowed (uses encoded_name instead)
+    resolved = Path(path).resolve()
+    # Must not contain .. in any part
+    if ".." in Path(path).parts:
+        raise HTTPException(400, "Invalid project path: traversal not allowed")
+    # Must be under user's home directory (use relative_to for proper ancestry check)
+    home = Path.home()
+    try:
+        resolved.relative_to(home)
+    except ValueError:
+        raise HTTPException(400, "Invalid project path: must be under home directory")
+    return str(resolved)
 
 
 # Singleton proxy
@@ -484,8 +510,8 @@ async def sync_rescan_all() -> Any:
 @router.post("/teams")
 async def sync_create_team(req: CreateTeamRequest) -> Any:
     """Create a new sync group."""
-    if not ALLOWED_PROJECT_NAME.match(req.name) or len(req.name) > 64:
-        raise HTTPException(400, "Invalid team name")
+    if not ALLOWED_PROJECT_NAME.match(req.name) or len(req.name) < 2 or len(req.name) > 64:
+        raise HTTPException(400, "Invalid team name: must be 2-64 characters, letters/numbers/dashes/underscores only")
     if req.backend not in ("syncthing", "ipfs"):
         raise HTTPException(400, "Invalid backend")
 
@@ -540,17 +566,17 @@ async def sync_join_team(req: JoinTeamRequest) -> Any:
 
     conn = _get_sync_conn()
 
-    # Create team locally if it doesn't exist
+    # Team must already exist locally — refuse to auto-create from join codes
     if get_team(conn, team_name) is None:
-        create_team(conn, team_name, "syncthing")
-        log_event(conn, "team_created", team_name=team_name)
+        raise HTTPException(
+            404,
+            f"Team '{team_name}' does not exist locally. "
+            "Create it first on the Teams page, then paste the join code.",
+        )
 
-    # Add leader as member (idempotent)
-    try:
-        add_member(conn, team_name, leader_name, device_id=device_id)
-        log_event(conn, "member_added", team_name=team_name, member_name=leader_name)
-    except sqlite3.IntegrityError:
-        pass  # already exists
+    # Add or update leader as member (idempotent, updates device_id on rejoin)
+    upsert_member(conn, team_name, leader_name, device_id=device_id)
+    log_event(conn, "member_added", team_name=team_name, member_name=leader_name)
 
     # Pair device in Syncthing (best-effort)
     paired = False
@@ -757,6 +783,7 @@ async def sync_add_team_project(team_name: str, req: AddTeamProjectRequest) -> A
     validate_project_name(req.name)
     if not ALLOWED_PROJECT_NAME.match(team_name):
         raise HTTPException(400, "Invalid team name")
+    validated_path = validate_project_path(req.path)
 
     conn = _get_sync_conn()
     if get_team(conn, team_name) is None:
@@ -764,13 +791,13 @@ async def sync_add_team_project(team_name: str, req: AddTeamProjectRequest) -> A
 
     from karma.sync import encode_project_path, detect_git_identity
 
-    encoded = encode_project_path(req.path) if req.path else req.name
-    git_identity = detect_git_identity(req.path) if req.path else None
+    encoded = encode_project_path(validated_path) if validated_path else req.name
+    git_identity = detect_git_identity(validated_path) if validated_path else None
 
     # Ensure project exists in projects table (for FK), include git_identity
     conn.execute(
         "INSERT OR IGNORE INTO projects (encoded_name, project_path, git_identity) VALUES (?, ?, ?)",
-        (encoded, req.path, git_identity),
+        (encoded, validated_path, git_identity),
     )
     if git_identity:
         conn.execute(
@@ -779,7 +806,7 @@ async def sync_add_team_project(team_name: str, req: AddTeamProjectRequest) -> A
         )
     conn.commit()
 
-    add_team_project(conn, team_name, encoded, req.path, git_identity=git_identity)
+    add_team_project(conn, team_name, encoded, validated_path, git_identity=git_identity)
     log_event(conn, "project_added", team_name=team_name, project_encoded_name=encoded)
 
     # Create Syncthing folders: outbox (my sessions → teammates) + inboxes (their sessions → me)
@@ -788,7 +815,7 @@ async def sync_add_team_project(team_name: str, req: AddTeamProjectRequest) -> A
     try:
         config = await run_sync(_load_identity)
         if config is not None:
-            proj_suffix = _compute_proj_suffix(git_identity, req.path, encoded)
+            proj_suffix = _compute_proj_suffix(git_identity, validated_path, encoded)
             members = list_members(conn, team_name)
             device_ids = [m["device_id"] for m in members if m["device_id"]]
 
@@ -976,7 +1003,8 @@ async def sync_watch_start(team_name: str | None = None) -> Any:
             log_event(conn, "watcher_started", team_name=t["name"])
         return result
     except Exception as e:
-        raise HTTPException(500, f"Failed to start watcher: {e}")
+        logger.exception("Failed to start watcher: %s", e)
+        raise HTTPException(500, "Failed to start watcher")
 
 
 @router.post("/watch/stop")
@@ -1042,7 +1070,8 @@ async def sync_accept_pending() -> Any:
     except SyncthingNotRunning:
         raise HTTPException(503, "Syncthing is not running")
     except Exception as e:
-        raise HTTPException(500, f"Failed to accept pending folders: {e}")
+        logger.exception("Failed to accept pending folders: %s", e)
+        raise HTTPException(500, "Failed to accept pending folders")
 
 
 # ─── Per-project sync status ──────────────────────────────────────────
@@ -1137,6 +1166,18 @@ async def sync_activity(
     offset: int = 0,
 ) -> Any:
     """Get recent sync activity events and bandwidth stats."""
+    # Cap limit and offset to prevent abuse
+    limit = max(1, min(limit, 200))
+    offset = max(0, min(offset, 10000))
+
+    # Validate team_name if provided
+    if team_name and not ALLOWED_PROJECT_NAME.match(team_name):
+        team_name = None
+
+    # Allowlist of valid event types — ignore invalid ones
+    if event_type and event_type not in _VALID_EVENT_TYPES:
+        event_type = None
+
     conn = _get_sync_conn()
     events = query_events(
         conn, team_name=team_name, event_type=event_type,

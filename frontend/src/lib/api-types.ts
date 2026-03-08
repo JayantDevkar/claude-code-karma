@@ -1755,6 +1755,9 @@ export interface SyncTeamProject {
 	gap: number;
 }
 
+/** Per-project sync status (alias for SyncTeamProject) */
+export type SyncProjectStatus = SyncTeamProject;
+
 export interface SyncTeamMember {
 	name: string;
 	device_id: string;

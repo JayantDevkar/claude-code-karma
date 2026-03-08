@@ -15,7 +15,7 @@
 	let loading = $state(false);
 	let error = $state<string | null>(null);
 
-	let isValid = $derived(/^[a-zA-Z0-9_-]+$/.test(teamName) && teamName.length <= 64);
+	let isValid = $derived(/^[a-zA-Z0-9_-]+$/.test(teamName) && teamName.length >= 2 && teamName.length <= 64);
 
 	async function handleCreate() {
 		if (!isValid || loading) return;
@@ -66,7 +66,7 @@
 					onkeydown={(e) => e.key === 'Enter' && handleCreate()}
 				/>
 				<p class="text-[11px] text-[var(--text-muted)]">
-					Letters, numbers, dashes, underscores. Shared with teammates.
+					2-64 characters. Letters, numbers, dashes, underscores.
 				</p>
 			</div>
 
