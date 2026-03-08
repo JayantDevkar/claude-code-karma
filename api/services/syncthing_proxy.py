@@ -42,7 +42,15 @@ class SyncthingProxy:
         self._try_connect()
 
     def _try_connect(self) -> None:
-        """Attempt to create and validate a SyncthingClient."""
+        """Attempt to create and validate a SyncthingClient.
+
+        Only caches the client if we can make a fully authenticated API call.
+        is_running() alone is not sufficient — it returns True for CSRF/403
+        responses (daemon is up but API key is wrong/missing). We must verify
+        the API key works before caching, otherwise the proxy gets stuck with
+        a broken client that can never recover (the root cause of the recurring
+        "Syncthing not detected" wizard bug).
+        """
         if SyncthingClient is None:
             logger.warning("SyncthingClient not available (import failed)")
             return
@@ -71,12 +79,21 @@ class SyncthingProxy:
 
         try:
             client = SyncthingClient(api_key=api_key)
-            if client.is_running():
-                self._client = client
-            else:
-                logger.debug("Syncthing is not running")
+            # Validate with a full authenticated API call — not just is_running().
+            # is_running() returns True for CSRF 403 responses, which means
+            # a client with no/wrong API key would pass that check but fail
+            # all subsequent calls.
+            resp = requests.get(
+                f"{client.api_url}/rest/system/status",
+                headers=client.headers,
+                timeout=5,
+            )
+            resp.raise_for_status()
+            self._client = client
+        except (requests.ConnectionError, requests.Timeout):
+            logger.debug("Syncthing is not running")
         except Exception as e:
-            logger.debug("Failed to connect to Syncthing: %s", e)
+            logger.debug("Failed to authenticate with Syncthing: %s", e)
 
     def _require_client(self) -> Any:
         """Return the client or raise SyncthingNotRunning. Retries connection if needed."""
