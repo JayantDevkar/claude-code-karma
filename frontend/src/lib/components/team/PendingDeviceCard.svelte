@@ -13,7 +13,7 @@
 		onaccepted?: () => void;
 	} = $props();
 
-	let memberName = $state('');
+	let memberName = $state(device.name || '');
 	let loading = $state(false);
 	let error = $state<string | null>(null);
 

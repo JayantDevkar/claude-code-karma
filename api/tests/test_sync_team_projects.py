@@ -93,6 +93,63 @@ class TestAddProjectToTeam:
         assert resp.status_code == 404
 
 
+    def test_add_project_creates_outbox_and_inboxes(self, mock_db, monkeypatch):
+        """Adding a project to a team with existing members creates outbox + inbox folders."""
+        from unittest.mock import MagicMock, patch
+
+        # Add a second member so we have someone to create inboxes for
+        mock_db.execute(
+            "INSERT INTO sync_members (team_name, name, device_id) VALUES (?, ?, ?)",
+            ("my-team", "bob", "BOB-ID"),
+        )
+        mock_db.commit()
+
+        # Mock SyncConfig with identity
+        mock_config = MagicMock()
+        mock_config.user_id = "jayant"
+        mock_config.syncthing.device_id = "JAYANT-ID"
+        mock_config.syncthing.api_key = None
+
+        # Mock proxy
+        mock_proxy = MagicMock()
+        mock_proxy.update_folder_devices = MagicMock(side_effect=ValueError("not found"))
+        mock_proxy.add_folder = MagicMock(return_value={"ok": True})
+
+        monkeypatch.setattr("routers.sync_status._load_identity", lambda: mock_config)
+        monkeypatch.setattr("routers.sync_status.get_proxy", lambda: mock_proxy)
+
+        from main import app
+        client = TestClient(app)
+
+        resp = client.post("/sync/teams/my-team/projects", json={
+            "name": "test-proj",
+            "path": "/tmp/test-proj",
+        })
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["ok"] is True
+        assert data["syncthing_folder_created"] is True
+
+        # Verify folders_created has both outbox and inboxes
+        fc = data["folders_created"]
+        assert fc["outboxes"] == 1
+        assert fc["inboxes"] == 2  # alice + bob
+        assert fc["errors"] == []
+
+        # Verify add_folder was called for outbox + 2 inboxes = 3 calls
+        assert mock_proxy.add_folder.call_count == 3
+
+        # Verify inbox folder IDs contain member names
+        inbox_calls = [
+            c for c in mock_proxy.add_folder.call_args_list
+            if "receiveonly" in str(c)
+        ]
+        inbox_ids = [c[0][0] for c in inbox_calls]
+        assert any("alice" in fid for fid in inbox_ids)
+        assert any("bob" in fid for fid in inbox_ids)
+
+
 class TestRemoveProjectFromTeam:
     def test_remove_project_success(self, mock_db):
         encoded = "-Users-jayant-GitHub-claude-karma"
