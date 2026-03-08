@@ -149,6 +149,7 @@
 	let project = $derived(data.project as Project);
 	let branchesData = $derived(data.branches as BranchesData);
 	let archived = $derived(data.archived as ProjectArchivedResponse);
+	let remoteSessionCount = $derived(project?.remote_session_count ?? 0);
 
 	// Analytics state - fetched client-side on-demand
 	let analytics = $state<ProjectAnalytics | null>(null);
@@ -1048,7 +1049,9 @@
 					<TabsTrigger value="tools" icon={Cable}>Project Tools</TabsTrigger>
 					<TabsTrigger value="memory" icon={Brain}>Project Memory</TabsTrigger>
 					<TabsTrigger value="analytics" icon={BarChart3}>Analytics</TabsTrigger>
-					<TabsTrigger value="team" icon={Users}>Team</TabsTrigger>
+					{#if remoteSessionCount > 0}
+						<TabsTrigger value="team" icon={Users}>Team ({remoteSessionCount})</TabsTrigger>
+					{/if}
 					{#if archived.total_sessions > 0}
 						<TabsTrigger value="archived" icon={Archive}>
 							Archived ({archived.total_sessions})

@@ -374,6 +374,9 @@ class ProjectDetail(ProjectSummary):
     """Detailed project info with sessions list."""
 
     sessions: list[SessionSummary] = Field(default_factory=list)
+    remote_session_count: int = Field(
+        0, description="Number of remote sessions from team members"
+    )
 
 
 class TimeDistribution(BaseModel):

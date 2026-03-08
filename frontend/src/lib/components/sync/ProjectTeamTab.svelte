@@ -2,6 +2,8 @@
 	import { Users, Loader2, WifiOff, FileText } from 'lucide-svelte';
 	import { API_BASE } from '$lib/config';
 	import type { RemoteSessionUser } from '$lib/api-types';
+	import SessionCard from '$lib/components/SessionCard.svelte';
+	import { formatRelativeTime, getTeamMemberColor } from '$lib/utils';
 
 	let {
 		projectEncodedName,
@@ -15,6 +17,7 @@
 	let loading = $state(false);
 	let loaded = $state(false);
 	let error = $state<string | null>(null);
+	let expandedUsers = $state<Set<string>>(new Set());
 
 	async function loadRemoteSessions() {
 		if (loaded || loading) return;
@@ -44,21 +47,14 @@
 		}
 	});
 
-	function formatBytes(bytes: number): string {
-		if (bytes < 1024) return `${bytes} B`;
-		if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-		return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-	}
-
-	function formatRelative(mtime: number): string {
-		const diff = Date.now() - mtime * 1000;
-		const mins = Math.floor(diff / 60000);
-		if (mins < 1) return 'just now';
-		if (mins < 60) return `${mins}m ago`;
-		const hours = Math.floor(mins / 60);
-		if (hours < 24) return `${hours}h ago`;
-		const days = Math.floor(hours / 24);
-		return `${days}d ago`;
+	function toggleExpanded(userId: string) {
+		const next = new Set(expandedUsers);
+		if (next.has(userId)) {
+			next.delete(userId);
+		} else {
+			next.add(userId);
+		}
+		expandedUsers = next;
 	}
 
 	let totalSessions = $derived(users.reduce((sum, u) => sum + u.session_count, 0));
@@ -113,12 +109,17 @@
 		<!-- User cards -->
 		<div class="space-y-4">
 			{#each users as user (user.user_id)}
+				{@const color = getTeamMemberColor(user.user_id)}
+				{@const isExpanded = expandedUsers.has(user.user_id)}
+				{@const visibleSessions = isExpanded ? user.sessions : user.sessions.slice(0, 10)}
+				{@const hiddenCount = Math.max(0, user.sessions.length - 10)}
 				<div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-subtle)]">
 					<!-- User header -->
 					<div class="flex items-center justify-between px-5 py-3.5 border-b border-[var(--border-subtle)]">
 						<div class="flex items-center gap-3">
 							<div
-								class="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold bg-[var(--accent)]/10 text-[var(--accent)]"
+								class="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold"
+								style="background-color: {color.bg}; color: {color.border}"
 							>
 								{user.user_id.charAt(0).toUpperCase()}
 							</div>
@@ -127,32 +128,25 @@
 								<p class="text-[11px] text-[var(--text-muted)]">
 									{user.session_count} session{user.session_count !== 1 ? 's' : ''}
 									{#if user.synced_at}
-										&middot; synced {formatRelative(new Date(user.synced_at).getTime() / 1000)}
+										&middot; synced {formatRelativeTime(user.synced_at)}
 									{/if}
 								</p>
 							</div>
 						</div>
 					</div>
 
-					<!-- Session list -->
-					<div class="px-5 divide-y divide-[var(--border-subtle)]">
-						{#each user.sessions.slice(0, 10) as session (session.uuid)}
-							<div class="flex items-center justify-between py-2.5">
-								<div class="min-w-0">
-									<p class="text-xs font-mono text-[var(--text-secondary)] truncate">
-										{session.uuid.slice(0, 12)}...
-									</p>
-								</div>
-								<div class="flex items-center gap-3 text-[11px] text-[var(--text-muted)] shrink-0">
-									<span>{formatBytes(session.size_bytes)}</span>
-									<span>{formatRelative(session.mtime)}</span>
-								</div>
-							</div>
+					<!-- Session list using SessionCard -->
+					<div class="p-3 space-y-2">
+						{#each visibleSessions as session (session.uuid)}
+							<SessionCard {session} {projectEncodedName} compact showBranch={false} />
 						{/each}
-						{#if user.sessions.length > 10}
-							<p class="py-2.5 text-xs text-[var(--text-muted)]">
-								+{user.sessions.length - 10} more sessions
-							</p>
+						{#if hiddenCount > 0}
+							<button
+								onclick={() => toggleExpanded(user.user_id)}
+								class="w-full py-2 text-xs font-medium text-[var(--accent)] hover:text-[var(--accent-hover)] transition-colors"
+							>
+								{isExpanded ? 'Show less' : `+${hiddenCount} more sessions`}
+							</button>
 						{/if}
 					</div>
 				</div>

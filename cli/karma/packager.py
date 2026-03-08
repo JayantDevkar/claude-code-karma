@@ -2,11 +2,37 @@
 
 import json
 import shutil
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
 from karma.manifest import SessionEntry, SyncManifest
+
+
+def _detect_git_branch(project_path: str) -> Optional[str]:
+    """Detect the current git branch for a project/worktree path.
+
+    Tries ``git rev-parse --abbrev-ref HEAD`` in the given directory.
+    Returns None if git is not available, the path doesn't exist, or
+    the repo is in detached-HEAD state.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode != 0:
+            return None
+        branch = result.stdout.strip()
+        if not branch or branch == "HEAD":
+            return None
+        return branch
+    except (subprocess.SubprocessError, OSError):
+        return None
 
 
 def _extract_worktree_name(dir_name: str, main_dir_name: str) -> Optional[str]:
@@ -50,7 +76,10 @@ class SessionPackager:
         self._claude_base = self.project_dir.parent.parent
 
     def _discover_from_dir(
-        self, directory: Path, worktree_name: Optional[str] = None
+        self,
+        directory: Path,
+        worktree_name: Optional[str] = None,
+        git_branch: Optional[str] = None,
     ) -> list[SessionEntry]:
         """Find session JSONL files in a single directory."""
         entries = []
@@ -66,19 +95,37 @@ class SessionPackager:
                     mtime=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(),
                     size_bytes=stat.st_size,
                     worktree_name=worktree_name,
+                    git_branch=git_branch,
                 )
             )
         return entries
 
     def discover_sessions(self) -> list[SessionEntry]:
         """Find all session JSONL files in the project and worktree directories."""
-        entries = self._discover_from_dir(self.project_dir)
+        # Detect git branch for the main project directory
+        main_branch = _detect_git_branch(self.project_path)
+        entries = self._discover_from_dir(self.project_dir, git_branch=main_branch)
 
         for extra_dir in self.extra_dirs:
             if not extra_dir.is_dir():
                 continue
             wt_name = _extract_worktree_name(extra_dir.name, self.project_dir.name)
-            entries.extend(self._discover_from_dir(extra_dir, worktree_name=wt_name))
+
+            # For worktrees, construct the real worktree path from the project path
+            wt_branch: Optional[str] = None
+            if wt_name:
+                wt_path = Path(self.project_path) / ".claude" / "worktrees" / wt_name
+                if wt_path.is_dir():
+                    wt_branch = _detect_git_branch(str(wt_path))
+                if wt_branch is None:
+                    # Fallback: try .worktrees/ (alternate location)
+                    wt_path_alt = Path(self.project_path) / ".worktrees" / wt_name
+                    if wt_path_alt.is_dir():
+                        wt_branch = _detect_git_branch(str(wt_path_alt))
+
+            entries.extend(
+                self._discover_from_dir(extra_dir, worktree_name=wt_name, git_branch=wt_branch)
+            )
 
         return entries
 

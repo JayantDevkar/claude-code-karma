@@ -885,7 +885,7 @@ async def sync_team_sync_now(team_name: str) -> Any:
 
     from karma.config import KARMA_BASE
     from karma.packager import SessionPackager
-    from karma.worktree_discovery import find_worktree_dirs
+    from karma.worktree_discovery import find_all_worktree_dirs
 
     projects = list_team_projects(conn, team_name)
     projects_dir = Path.home() / ".claude" / "projects"
@@ -905,7 +905,7 @@ async def sync_team_sync_now(team_name: str) -> Any:
         outbox.mkdir(parents=True, exist_ok=True)
 
         try:
-            wt_dirs = find_worktree_dirs(encoded, projects_dir)
+            wt_dirs = find_all_worktree_dirs(encoded, proj_path, projects_dir)
             packager = SessionPackager(
                 project_dir=claude_dir,
                 user_id=config.user_id,
@@ -1093,7 +1093,7 @@ async def sync_team_project_status(team_name: str) -> Any:
         raise HTTPException(404, f"Team '{team_name}' not found")
 
     from karma.config import KARMA_BASE
-    from karma.worktree_discovery import find_worktree_dirs
+    from karma.worktree_discovery import find_all_worktree_dirs
 
     projects = list_team_projects(conn, team_name)
     members = list_members(conn, team_name)
@@ -1102,7 +1102,7 @@ async def sync_team_project_status(team_name: str) -> Any:
 
     for proj in projects:
         encoded = proj["project_encoded_name"]
-        proj_path = proj["path"]
+        proj_path = proj.get("path") or ""
         claude_dir = projects_dir / encoded
 
         local_count = 0
@@ -1112,7 +1112,7 @@ async def sync_team_project_status(team_name: str) -> Any:
                 for f in claude_dir.glob("*.jsonl")
                 if not f.name.startswith("agent-") and f.stat().st_size > 0
             )
-        wt_dirs = find_worktree_dirs(encoded, projects_dir)
+        wt_dirs = find_all_worktree_dirs(encoded, proj_path, projects_dir)
         for wd in wt_dirs:
             local_count += sum(
                 1
