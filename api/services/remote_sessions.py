@@ -149,9 +149,30 @@ def get_project_mapping() -> dict[tuple[str, str], str]:
         db_conn = create_read_connection()
         try:
             rows = db_conn.execute(
-                "SELECT encoded_name, git_identity FROM projects WHERE git_identity IS NOT NULL"
+                "SELECT encoded_name, git_identity FROM projects"
+                " WHERE git_identity IS NOT NULL ORDER BY encoded_name"
             ).fetchall()
-            git_lookup = {row[1]: row[0] for row in rows}
+            # When multiple projects share the same git_identity (e.g. monorepo
+            # and old submodule dirs), prefer the one registered in sync_team_projects.
+            # Secondary tiebreaker: shorter encoded_name (typically the monorepo root).
+            team_projects = {
+                r[0]
+                for r in db_conn.execute(
+                    "SELECT project_encoded_name FROM sync_team_projects"
+                ).fetchall()
+            }
+            git_lookup: dict[str, str] = {}
+            for row in rows:
+                encoded, git_id = row[0], row[1]
+                existing = git_lookup.get(git_id)
+                if existing is None:
+                    git_lookup[git_id] = encoded
+                elif encoded in team_projects and existing not in team_projects:
+                    git_lookup[git_id] = encoded
+                elif encoded in team_projects and existing in team_projects:
+                    # Both in team — prefer shorter name (monorepo root)
+                    if len(encoded) < len(existing):
+                        git_lookup[git_id] = encoded
         finally:
             db_conn.close()
 

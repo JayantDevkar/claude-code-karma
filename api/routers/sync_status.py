@@ -601,7 +601,7 @@ async def sync_reset(options: Optional[ResetOptions] = None) -> Any:
 
     # 2. Clean Syncthing config (remove karma folders & team devices) then shut it down
     try:
-        proxy = _get_or_create_proxy()
+        proxy = get_proxy()
         # Remove all karma-* shared folders
         try:
             result = await run_sync(proxy.remove_karma_folders)
@@ -640,7 +640,7 @@ async def sync_reset(options: Optional[ResetOptions] = None) -> Any:
     else:
         steps["config_deleted"] = False
 
-    # 5. Clear all sync tables
+    # 5. Clear all sync tables + orphan remote sessions
     conn = _get_sync_conn()
     tables_cleared = []
     for table in ["sync_events", "sync_team_projects", "sync_members", "sync_teams"]:
@@ -649,6 +649,16 @@ async def sync_reset(options: Optional[ResetOptions] = None) -> Any:
             tables_cleared.append(table)
         except sqlite3.OperationalError:
             pass  # table doesn't exist yet
+
+    # Clean up remote session rows — the files on disk were already deleted
+    # in step 3, so these would be orphans after reset.
+    try:
+        cursor = conn.execute("DELETE FROM sessions WHERE source = 'remote'")
+        remote_deleted = cursor.rowcount
+        steps["remote_sessions_db_deleted"] = remote_deleted
+    except sqlite3.OperationalError:
+        steps["remote_sessions_db_deleted"] = 0
+
     conn.commit()
     steps["tables_cleared"] = tables_cleared
 
@@ -1412,10 +1422,40 @@ async def sync_remove_team_project(team_name: str, project_name: str) -> Any:
     if not any(p["project_encoded_name"] == project_name for p in projects):
         raise HTTPException(404, f"Project '{project_name}' not found in team")
 
+    # Clean up Syncthing folders (outbox + inboxes) before removing DB row
+    folders_removed = 0
+    try:
+        proj = next(p for p in projects if p["project_encoded_name"] == project_name)
+        git_identity = proj.get("git_identity")
+        proj_suffix = _compute_proj_suffix(git_identity, proj.get("path"), project_name)
+        config = await run_sync(_load_identity)
+        if config is not None:
+            proxy = get_proxy()
+            # Remove outbox folder
+            outbox_id = f"karma-out-{config.user_id}-{proj_suffix}"
+            try:
+                await run_sync(proxy.remove_folder, outbox_id)
+                folders_removed += 1
+            except Exception as e:
+                logger.debug("Failed to remove outbox folder %s: %s", outbox_id, e)
+            # Remove inbox folders for each member
+            members = list_members(conn, team_name)
+            for m in members:
+                if m["device_id"] == config.syncthing.device_id:
+                    continue
+                inbox_id = f"karma-out-{m['name']}-{proj_suffix}"
+                try:
+                    await run_sync(proxy.remove_folder, inbox_id)
+                    folders_removed += 1
+                except Exception as e:
+                    logger.debug("Failed to remove inbox folder %s: %s", inbox_id, e)
+    except Exception as e:
+        logger.warning("Syncthing cleanup for project %s failed: %s", project_name, e)
+
     remove_team_project(conn, team_name, project_name)
     log_event(conn, "project_removed", team_name=team_name, project_encoded_name=project_name)
 
-    return {"ok": True, "name": project_name}
+    return {"ok": True, "name": project_name, "folders_removed": folders_removed}
 
 
 # ─── On-demand sync ────────────────────────────────────────────────────
