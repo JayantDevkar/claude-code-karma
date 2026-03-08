@@ -91,19 +91,23 @@ def get_subagent_detail(
         if isinstance(msg, AssistantMessage) and msg.usage:
             total_cost += msg.usage.calculate_cost(msg.model)
 
-    # Determine subagent type: SQLite fast-path, then JSONL fallback
+    # Determine subagent type and display name: SQLite fast-path, then JSONL fallback
     subagent_type = None
+    display_name = None
     from db.connection import sqlite_read
 
     with sqlite_read() as conn:
         if conn is not None:
             row = conn.execute(
-                "SELECT subagent_type FROM subagent_invocations "
+                "SELECT subagent_type, agent_display_name FROM subagent_invocations "
                 "WHERE session_uuid = ? AND agent_id = ?",
                 (session_uuid, agent_id),
             ).fetchone()
-            if row and row[0]:
-                subagent_type = row[0]
+            if row:
+                if row[0]:
+                    subagent_type = row[0]
+                if row[1]:
+                    display_name = row[1]
 
     if not subagent_type:
         subagent_type = _determine_subagent_type(parent_session, agent_id)
@@ -131,6 +135,7 @@ def get_subagent_detail(
         git_branches=list(agent_data.git_branches),
         working_directories=list(agent_data.working_directories),
         subagent_type=subagent_type,
+        display_name=display_name,
         initial_prompt=agent_data.initial_prompt,
         initial_prompt_images=agent_data.initial_prompt_images,
     )

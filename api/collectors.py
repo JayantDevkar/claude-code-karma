@@ -85,6 +85,7 @@ class SessionData:
 
     # Subagent spawning info
     task_tool_to_type: Dict[str, str] = field(default_factory=dict)  # tool_use_id -> subagent_type
+    task_tool_to_name: Dict[str, str] = field(default_factory=dict)  # tool_use_id -> display_name
     task_descriptions: Dict[str, str] = field(
         default_factory=dict
     )  # normalized_desc -> subagent_type
@@ -333,21 +334,24 @@ def collect_session_data(session: Session, include_subagents: bool = False) -> S
                     if file_op:
                         data.file_operations.append(file_op)
 
-                    # Extract Task -> subagent_type mapping
+                    # Extract Task -> subagent_type and name mappings
                     if tool_name in ("Task", "Agent"):
-                        subagent_type = block.input.get("subagent_type")
-                        if subagent_type:
-                            data.task_tool_to_type[block.id] = subagent_type
-                            # Store both description and prompt for fallback matching
-                            # The subagent's initial_prompt comes from Task's "prompt" field,
-                            # not the "description" field, so we need to match by prompt
-                            prompt = block.input.get("prompt", "")[:100]
-                            if prompt:
-                                data.task_descriptions[normalize_key(prompt)] = subagent_type
-                            # Also store description as secondary fallback
-                            desc = block.input.get("description", "")[:100]
-                            if desc:
-                                data.task_descriptions[normalize_key(desc)] = subagent_type
+                        subagent_type = block.input.get("subagent_type") or "general-purpose"
+                        data.task_tool_to_type[block.id] = subagent_type
+                        # Store both description and prompt for fallback matching
+                        # The subagent's initial_prompt comes from Task's "prompt" field,
+                        # not the "description" field, so we need to match by prompt
+                        prompt = block.input.get("prompt", "")[:100]
+                        if prompt:
+                            data.task_descriptions[normalize_key(prompt)] = subagent_type
+                        # Also store description as secondary fallback
+                        desc = block.input.get("description", "")[:100]
+                        if desc:
+                            data.task_descriptions[normalize_key(desc)] = subagent_type
+                        # Extract display name from `name` input field
+                        agent_display_name = block.input.get("name")
+                        if agent_display_name:
+                            data.task_tool_to_name[block.id] = agent_display_name
 
     # Collect subagent data if requested
     if include_subagents:
@@ -409,6 +413,7 @@ class SubagentInfo:
     initial_prompt: Optional[str]
     initial_prompt_images: List[Dict[str, str]]
     subagent_type: Optional[str]
+    display_name: Optional[str]
     message_count: int
 
 
@@ -426,8 +431,9 @@ def collect_subagent_info(
     Returns:
         List of SubagentInfo for each subagent
     """
-    # Build agent_id -> subagent_type mapping from tool results
+    # Build agent_id -> subagent_type and agent_id -> display_name mappings from tool results
     agent_id_to_type: Dict[str, str] = {}
+    agent_id_to_name: Dict[str, str] = {}
 
     for tool_use_id, subagent_type in session_data.task_tool_to_type.items():
         result_data = tool_results.get(tool_use_id)
@@ -437,6 +443,15 @@ def collect_subagent_info(
             and result_data.spawned_agent_id
         ):
             agent_id_to_type[result_data.spawned_agent_id] = subagent_type
+
+    for tool_use_id, display_name in session_data.task_tool_to_name.items():
+        result_data = tool_results.get(tool_use_id)
+        if (
+            result_data
+            and hasattr(result_data, "spawned_agent_id")
+            and result_data.spawned_agent_id
+        ):
+            agent_id_to_name[result_data.spawned_agent_id] = display_name
 
     subagents_info: List[SubagentInfo] = []
 
@@ -498,6 +513,7 @@ def collect_subagent_info(
                 initial_prompt=initial_prompt,
                 initial_prompt_images=initial_prompt_images,
                 subagent_type=subagent_type,
+                display_name=agent_id_to_name.get(subagent.agent_id),
                 message_count=subagent.message_count,
             )
         )
