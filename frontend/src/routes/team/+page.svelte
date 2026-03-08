@@ -226,14 +226,27 @@
 										</div>
 									</div>
 								{:else}
-									<button
-										onclick={() => startAccept(device)}
-										class="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-[var(--radius-md)]
-											bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)] transition-colors"
-									>
-										<UserPlus size={14} />
-										Accept & Create Team
-									</button>
+									<div class="flex items-center gap-2 flex-wrap">
+										<button
+											onclick={() => (showJoinDialog = true)}
+											class="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-[var(--radius-md)]
+												bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)] transition-colors"
+										>
+											<UserPlus size={14} />
+											Join with Code
+										</button>
+										<button
+											onclick={() => startAccept(device)}
+											class="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-[var(--radius-md)]
+												border border-[var(--border)] text-[var(--text-secondary)]
+												hover:bg-[var(--bg-muted)] hover:text-[var(--text-primary)] transition-colors"
+										>
+											Accept Manually
+										</button>
+									</div>
+									<p class="text-xs text-[var(--text-muted)] mt-1">
+										Ask them for their join code — it auto-fills team name and member details.
+									</p>
 								{/if}
 							</div>
 						</div>
