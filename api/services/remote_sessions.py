@@ -39,6 +39,10 @@ _project_mapping_cache: Optional[dict] = None
 _project_mapping_cache_time: float = 0.0
 _PROJECT_MAPPING_TTL = 30.0  # seconds
 
+# Cache for manifest worktree lookups (keyed by (user_id, encoded_name))
+_manifest_worktree_cache: dict[tuple[str, str], tuple[float, dict[str, Optional[str]]]] = {}
+_MANIFEST_WORKTREE_TTL = 30.0  # seconds
+
 
 @dataclass
 class RemoteSessionResult:
@@ -190,6 +194,56 @@ def _get_remote_sessions_dir() -> Path:
     return settings.karma_base / "remote-sessions"
 
 
+def _load_manifest_worktree_map(
+    user_id: str, encoded_name: str
+) -> dict[str, Optional[str]]:
+    """
+    Load manifest.json for a (user_id, encoded_name) pair and return
+    a mapping of uuid -> worktree_name.
+
+    Results are cached with a TTL to avoid re-reading the manifest
+    for every session in the same project.
+
+    Args:
+        user_id: Remote user identifier.
+        encoded_name: Encoded project directory name.
+
+    Returns:
+        Dict mapping session UUID to worktree_name (may be None per session).
+    """
+    cache_key = (user_id, encoded_name)
+    now = time.monotonic()
+
+    cached = _manifest_worktree_cache.get(cache_key)
+    if cached is not None:
+        cache_time, cache_data = cached
+        if (now - cache_time) < _MANIFEST_WORKTREE_TTL:
+            return cache_data
+
+    result: dict[str, Optional[str]] = {}
+    manifest_path = (
+        _get_remote_sessions_dir() / user_id / encoded_name / "manifest.json"
+    )
+    if manifest_path.exists():
+        try:
+            with open(manifest_path) as f:
+                manifest = json.load(f)
+            for entry in manifest.get("sessions", []):
+                uuid = entry.get("uuid")
+                if uuid:
+                    result[uuid] = entry.get("worktree_name")
+        except (json.JSONDecodeError, OSError) as e:
+            logger.debug(
+                "Failed to load manifest for %s/%s: %s",
+                user_id,
+                encoded_name,
+                e,
+            )
+
+    _manifest_worktree_cache[cache_key] = (now, result)
+    return result
+
+
 def find_remote_session(uuid: str) -> Optional[RemoteSessionResult]:
     """
     Search for a session UUID in remote-sessions directories.
@@ -288,6 +342,9 @@ def list_remote_sessions_for_project(local_encoded: str) -> list[SessionMetadata
         if not sessions_dir.exists():
             continue
 
+        # Load manifest once per (user_id, project) for worktree attribution
+        wt_map = _load_manifest_worktree_map(user_id, local_encoded)
+
         for jsonl_path in sessions_dir.glob("*.jsonl"):
             uuid = jsonl_path.stem
             if uuid.startswith("agent-"):
@@ -300,6 +357,7 @@ def list_remote_sessions_for_project(local_encoded: str) -> list[SessionMetadata
                 project_dir=sessions_dir,
                 user_id=user_id,
                 machine_id=user_id,
+                worktree_name=wt_map.get(uuid),
             )
             if meta:
                 results.append(meta)
@@ -341,6 +399,9 @@ def iter_all_remote_session_metadata() -> Iterator[SessionMetadata]:
             if not sessions_dir.exists():
                 continue
 
+            # Load manifest once per (user_id, project) for worktree attribution
+            wt_map = _load_manifest_worktree_map(user_id, encoded_name)
+
             for jsonl_path in sessions_dir.glob("*.jsonl"):
                 uuid = jsonl_path.stem
                 if uuid.startswith("agent-"):
@@ -353,6 +414,7 @@ def iter_all_remote_session_metadata() -> Iterator[SessionMetadata]:
                     project_dir=sessions_dir,
                     user_id=user_id,
                     machine_id=user_id,
+                    worktree_name=wt_map.get(uuid),
                 )
                 if meta:
                     yield meta
@@ -379,6 +441,7 @@ def _build_remote_metadata(
     project_dir: Path,
     user_id: str,
     machine_id: str,
+    worktree_name: Optional[str] = None,
 ) -> Optional[SessionMetadata]:
     """
     Build SessionMetadata from a remote JSONL file.
@@ -419,6 +482,7 @@ def _build_remote_metadata(
             slug=slug,
             initial_prompt=None,  # Skip for performance
             git_branch=None,
+            worktree_name=worktree_name,
             source="remote",
             remote_user_id=user_id,
             remote_machine_id=machine_id,

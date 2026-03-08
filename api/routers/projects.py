@@ -645,6 +645,7 @@ def get_project(
         git_root_path=project.git_root_path,
         is_nested_project=project.is_nested_project,
         sessions=fallback_summaries,
+        remote_session_count=len(remote_uuid_map),
     )
 
 
@@ -1428,76 +1429,72 @@ async def get_project_memory(encoded_name: str, request: Request):
 
 @router.get("/{encoded_name}/remote-sessions")
 async def project_remote_sessions(encoded_name: str):
-    """Get remote sessions for a project, grouped by remote user."""
+    """Get remote sessions for a project, grouped by remote user.
+
+    Returns full SessionSummary data for each remote session, grouped by user.
+    """
     import json
     import re
+    from collections import defaultdict
 
     ALLOWED_NAME = re.compile(r"^[a-zA-Z0-9_\-]+$")
     if not ALLOWED_NAME.match(encoded_name) or len(encoded_name) > 512:
         raise HTTPException(400, "Invalid project name")
 
-    # Load local user identity to skip own outbox
-    local_user = None
-    try:
-        _CLI_PATH = Path(__file__).parent.parent.parent / "cli"
-        if str(_CLI_PATH) not in sys.path:
-            sys.path.insert(0, str(_CLI_PATH))
-        from karma.config import SyncConfig
+    from services.remote_sessions import list_remote_sessions_for_project
 
-        config = SyncConfig.load()
-        if config:
-            local_user = config.user_id
-    except Exception:
-        pass
-
-    remote_base = Path.home() / ".claude_karma" / "remote-sessions"
-    if not remote_base.is_dir():
+    remote_metas = list_remote_sessions_for_project(encoded_name)
+    if not remote_metas:
         return {"users": []}
 
+    # Group by remote_user_id and build summaries from metadata (lightweight).
+    # _build_remote_metadata already extracts timestamps/slug/message_count
+    # from first/last lines, so we avoid full JSONL parsing here.
+    user_sessions: dict[str, list[SessionSummary]] = defaultdict(list)
+    user_machine: dict[str, str | None] = {}
+
+    for meta in remote_metas:
+        user_id = meta.remote_user_id or "unknown"
+        if user_id not in user_machine:
+            user_machine[user_id] = meta.remote_machine_id
+
+        summary = SessionSummary(
+            uuid=meta.uuid,
+            slug=meta.slug,
+            message_count=meta.message_count,
+            start_time=meta.start_time,
+            end_time=meta.end_time,
+            session_titles=list(meta.session_titles or []),
+            source="remote",
+            remote_user_id=meta.remote_user_id,
+            remote_machine_id=meta.remote_machine_id,
+        )
+        user_sessions[user_id].append(summary)
+
+    # Load manifest data for synced_at timestamps and build response
+    remote_base = Path.home() / ".claude_karma" / "remote-sessions"
     users = []
-    for user_dir in sorted(remote_base.iterdir()):
-        if not user_dir.is_dir():
-            continue
-        # Skip our own outbox
-        if local_user and user_dir.name == local_user:
-            continue
+    for user_id, sessions in user_sessions.items():
+        sessions.sort(
+            key=lambda s: s.start_time.isoformat() if s.start_time else "",
+            reverse=True,
+        )
 
-        project_dir = user_dir / encoded_name
-        if not project_dir.is_dir():
-            continue
-
-        sessions_dir = project_dir / "sessions"
-        manifest_path = project_dir / "manifest.json"
-
-        sessions = []
-        if sessions_dir.is_dir():
-            for f in sorted(
-                sessions_dir.glob("*.jsonl"),
-                key=lambda p: p.stat().st_mtime,
-                reverse=True,
-            ):
-                if f.name.startswith("agent-"):
-                    continue
-                sessions.append({
-                    "uuid": f.stem,
-                    "mtime": f.stat().st_mtime,
-                    "size_bytes": f.stat().st_size,
-                })
-
-        manifest = {}
+        synced_at = None
+        manifest_path = remote_base / user_id / encoded_name / "manifest.json"
         if manifest_path.exists():
             try:
                 manifest = json.loads(manifest_path.read_text())
+                synced_at = manifest.get("synced_at")
             except (json.JSONDecodeError, OSError):
                 pass
 
-        if sessions:
-            users.append({
-                "user_id": user_dir.name,
-                "machine_id": manifest.get("machine_id"),
-                "synced_at": manifest.get("synced_at"),
-                "session_count": len(sessions),
-                "sessions": sessions,
-            })
+        users.append({
+            "user_id": user_id,
+            "machine_id": user_machine.get(user_id),
+            "synced_at": synced_at,
+            "session_count": len(sessions),
+            "sessions": sessions,
+        })
 
     return {"users": users}

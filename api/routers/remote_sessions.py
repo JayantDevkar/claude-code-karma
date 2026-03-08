@@ -45,6 +45,7 @@ class RemoteSessionSummary(BaseModel):
     uuid: str
     mtime: str
     size_bytes: int
+    worktree_name: Optional[str] = None
 
 
 class RemoteManifest(BaseModel):

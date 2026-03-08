@@ -67,6 +67,8 @@ class SessionMetadata:
     # Session title/summary for display (from sessions-index.json summary field)
     title: Optional[str] = None
     session_titles: Optional[list] = None  # All session titles (from title cache)
+    # Worktree attribution
+    worktree_name: Optional[str] = None
     # Remote sync fields
     source: Optional[str] = None  # "local" or "remote" (None = local)
     remote_user_id: Optional[str] = None

@@ -379,6 +379,8 @@ export interface Project {
 	latest_session_time?: string;
 	/** Sessions array (only populated in project detail API) */
 	sessions?: SessionSummary[];
+	/** Number of remote sessions from team members */
+	remote_session_count?: number;
 }
 
 export interface BranchSummary {
@@ -1824,9 +1826,10 @@ export interface RemoteSessionUser {
 	machine_id: string | null;
 	synced_at: string | null;
 	session_count: number;
-	sessions: RemoteSession[];
+	sessions: SessionSummary[];
 }
 
+/** @deprecated Use SessionSummary instead — kept for backwards compat */
 export interface RemoteSession {
 	uuid: string;
 	mtime: number;
