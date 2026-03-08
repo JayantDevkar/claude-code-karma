@@ -102,7 +102,7 @@
 		};
 	});
 
-	async function handleDeleteTeam() {
+	async function handleLeaveTeam() {
 		if (deleting) return;
 		deleting = true;
 		deleteError = null;
@@ -115,10 +115,10 @@
 				window.location.href = '/team';
 			} else {
 				const body = await res.json().catch(() => ({}));
-				deleteError = body.detail || `Failed to delete team (${res.status})`;
+				deleteError = body.detail || `Failed to leave team (${res.status})`;
 			}
 		} catch {
-			deleteError = 'Network error. Could not delete team.';
+			deleteError = 'Network error. Could not leave team.';
 		} finally {
 			deleting = false;
 		}
@@ -343,18 +343,18 @@
 					<div class="flex items-center gap-3 p-4 rounded-lg border border-[var(--error)]/20 bg-[var(--error)]/5">
 						<AlertTriangle size={16} class="text-[var(--error)] shrink-0" />
 						<p class="text-sm text-[var(--text-primary)] flex-1">
-							Delete team "{data.teamName}"? This will remove all members and project assignments.
+							Leave team "{data.teamName}"? This will stop syncing with all members and clean up Syncthing folders.
 						</p>
 						<div class="flex items-center gap-2 shrink-0">
 							<button
-								onclick={handleDeleteTeam}
+								onclick={handleLeaveTeam}
 								disabled={deleting}
 								class="px-3 py-1.5 text-xs font-medium rounded bg-[var(--error)] text-white hover:bg-[var(--error)]/80 transition-colors disabled:opacity-50"
 							>
 								{#if deleting}
 									<Loader2 size={12} class="animate-spin" />
 								{:else}
-									Delete
+									Leave
 								{/if}
 							</button>
 							<button
@@ -375,7 +375,7 @@
 					class="px-4 py-2 text-sm font-medium rounded-[var(--radius-md)] border border-[var(--error)]/30
 						text-[var(--error)] hover:bg-[var(--error)]/10 transition-colors"
 				>
-					Delete Team
+					Leave Team
 				</button>
 			{/if}
 		</section>

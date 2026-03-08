@@ -864,22 +864,89 @@ def team_create(name: str, backend: str):
     click.echo(f"Created team '{name}' (backend: {backend})")
 
 
-@team.command("delete")
+@team.command("leave")
 @click.argument("name")
-def team_delete(name: str):
-    """Delete an entire team (cascades to members and projects)."""
-    require_config()
+def team_leave(name: str):
+    """Leave a team — cleans up Syncthing folders/devices and removes local data."""
+    config = require_config()
     conn = _get_db()
 
-    from db.sync_queries import get_team, delete_team, log_event
+    from db.sync_queries import get_team, list_members, list_team_projects, delete_team, log_event
 
     team_data = get_team(conn, name)
     if not team_data:
         raise click.ClickException(f"Team '{name}' not found.")
 
-    log_event(conn, "team_deleted", team_name=name)
+    # Clean up Syncthing state before deleting DB records
+    folders_removed = 0
+    devices_removed = 0
+    try:
+        from karma.syncthing import SyncthingClient, read_local_api_key
+
+        api_key = config.syncthing.api_key or read_local_api_key()
+        st = SyncthingClient(api_key=api_key)
+        if st.is_running():
+            members = list_members(conn, name)
+            projects = list_team_projects(conn, name)
+
+            # Compute project suffixes
+            from karma.sync import detect_git_identity
+            proj_suffixes = set()
+            for proj in projects:
+                git_id = proj.get("git_identity")
+                suffix = git_id.replace("/", "-") if git_id else proj["project_encoded_name"]
+                proj_suffixes.add(suffix)
+
+            # Collect all relevant member names (including self)
+            member_names = {m["name"] for m in members}
+            member_names.add(config.user_id)
+
+            # Remove matching karma folders
+            for folder in st.get_folders():
+                folder_id = folder.get("id", "")
+                if folder_id.startswith("karma-out-"):
+                    parts = folder_id[len("karma-out-"):].split("-", 1)
+                    if len(parts) == 2:
+                        # Check all possible name lengths against known members
+                        rest = folder_id[len("karma-out-"):]
+                        matched = False
+                        for mname in sorted(member_names, key=len, reverse=True):
+                            if rest.startswith(mname + "-"):
+                                remainder = rest[len(mname) + 1:]
+                                if remainder in proj_suffixes:
+                                    st.remove_folder(folder_id)
+                                    folders_removed += 1
+                                    matched = True
+                                    break
+                        if not matched and parts[1] in proj_suffixes:
+                            st.remove_folder(folder_id)
+                            folders_removed += 1
+                elif folder_id.startswith("karma-join-") and folder_id.endswith(f"-{name}"):
+                    st.remove_folder(folder_id)
+                    folders_removed += 1
+
+            # Remove team member devices (if not used by other teams)
+            my_device_id = config.syncthing.device_id
+            for m in members:
+                did = m["device_id"]
+                if did == my_device_id:
+                    continue
+                other = conn.execute(
+                    "SELECT COUNT(*) FROM sync_members WHERE device_id = ? AND team_name != ?",
+                    (did, name),
+                ).fetchone()[0]
+                if other == 0:
+                    try:
+                        st.remove_device(did)
+                        devices_removed += 1
+                    except Exception:
+                        pass
+    except Exception as e:
+        click.echo(f"Warning: Syncthing cleanup failed: {e}", err=True)
+
+    log_event(conn, "team_left", team_name=name)
     delete_team(conn, name)
-    click.echo(f"Deleted team '{name}' and all its members/projects.")
+    click.echo(f"Left team '{name}'. Removed {folders_removed} folders, {devices_removed} devices.")
 
 
 @team.command("add")
@@ -931,9 +998,9 @@ def team_add(name: str, identifier: str, team_name: str):
             click.echo(f"Warning: Could not auto-pair device: {e}")
             click.echo("You can pair manually in Syncthing UI (http://127.0.0.1:8384)")
     else:
-        # IPFS member
+        # IPFS member — use identifier as both ipns_key and device_id placeholder
         try:
-            add_member(conn, team_name, name, ipns_key=identifier)
+            add_member(conn, team_name, name, device_id=identifier, ipns_key=identifier)
         except Exception as e:
             if "UNIQUE constraint" in str(e):
                 raise click.ClickException(f"Member '{name}' already exists in team '{team_name}'.")

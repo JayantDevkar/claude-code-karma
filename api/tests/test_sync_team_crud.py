@@ -38,7 +38,7 @@ def mock_db(tmp_path, monkeypatch):
 
     # Provide identity config
     config_path = tmp_path / "sync-config.json"
-    config_path.write_text('{"user_id": "jayant", "machine_id": "mac", "syncthing": {}}')
+    config_path.write_text('{"user_id": "jayant", "machine_id": "mac", "syncthing": {"device_id": "TEST-DEV-ID"}}')
     monkeypatch.setattr("karma.config.SYNC_CONFIG_PATH", config_path)
 
     return conn
