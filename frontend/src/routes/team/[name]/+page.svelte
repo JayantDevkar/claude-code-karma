@@ -41,23 +41,26 @@
 	let tabsReady = $state(false);
 
 	// Team data — $state so polling can update it directly
-	let team = $state<SyncTeam | null>(null);
-	$effect(() => { team = data.team ?? null; });
+	// Initialize from data directly (not via $effect) so SSR renders correctly
+	let team = $state<SyncTeam | null>(data.team ?? null);
+	$effect(() => {
+		team = data.team ?? null;
+	});
 	let members = $derived(team?.members ?? []);
 	let projects = $derived(team?.projects ?? []);
 
 	// Per-project sync status
-	let projectStatuses = $state<SyncProjectStatus[]>([]);
+	let projectStatuses = $state<SyncProjectStatus[]>(data.projectStatuses ?? []);
 	$effect(() => {
 		projectStatuses = data.projectStatuses ?? [];
 	});
 
 	// Activity feed
-	let activity = $state<SyncEvent[]>([]);
+	let activity = $state<SyncEvent[]>(data.activity ?? []);
 	$effect(() => { activity = data.activity ?? []; });
 
 	// Session stats
-	let sessionStats = $state<TeamSessionStat[]>([]);
+	let sessionStats = $state<TeamSessionStat[]>(data.sessionStats ?? []);
 	$effect(() => { sessionStats = data.sessionStats ?? []; });
 
 	// Polling state for connection status
@@ -481,7 +484,7 @@
 
 {#if team}
 	<Tabs.Root bind:value={activeTab} class="space-y-6">
-		<Tabs.List class="flex gap-1 p-1 bg-[var(--bg-subtle)] border border-[var(--border)] rounded-lg w-fit">
+		<Tabs.List class="flex gap-1 p-1 bg-[var(--bg-subtle)] border border-[var(--border)] rounded-lg w-fit mx-auto">
 			<TabsTrigger value="overview" icon={LayoutDashboard}>Overview</TabsTrigger>
 			<TabsTrigger value="members" icon={Users}>Members ({members.length})</TabsTrigger>
 			<TabsTrigger value="projects" icon={FolderSync}>Projects ({projects.length})</TabsTrigger>
@@ -533,6 +536,7 @@
 				teamName={data.teamName}
 				{activity}
 				{sessionStats}
+				{members}
 			/>
 		</Tabs.Content>
 	</Tabs.Root>

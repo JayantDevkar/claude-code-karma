@@ -21,9 +21,12 @@
 	let confirmRemove = $state<string | null>(null);
 	let removing = $state(false);
 
+	function getDeviceInfo(member: SyncTeamMember): SyncDevice | undefined {
+		return devices.find((d) => d.device_id === member.device_id);
+	}
+
 	function isConnected(member: SyncTeamMember): boolean {
-		const deviceInfo = devices.find((d) => d.device_id === member.device_id);
-		return deviceInfo?.connected ?? member.connected ?? false;
+		return getDeviceInfo(member)?.connected ?? member.connected ?? false;
 	}
 
 	function isSelf(member: SyncTeamMember): boolean {
@@ -80,8 +83,11 @@
 			{#each members as member (member.name)}
 				{@const colors = getTeamMemberColor(member.name)}
 				{@const hexColor = getTeamMemberHexColor(member.name)}
-				{@const connected = isConnected(member)}
+				{@const device = getDeviceInfo(member)}
+				{@const connected = device?.connected ?? member.connected ?? false}
 				{@const self = isSelf(member)}
+				{@const inBytes = device?.in_bytes_total ?? member.in_bytes_total ?? 0}
+				{@const outBytes = device?.out_bytes_total ?? member.out_bytes_total ?? 0}
 				{@const sparkline = buildSparklineData(member.name)}
 				<div
 					class="relative flex flex-col gap-2 p-3 rounded-lg border border-[var(--border)] bg-[var(--bg-base)]"
@@ -119,12 +125,12 @@
 					<!-- Bottom row: data transfer + sparkline + remove -->
 					<div class="flex items-center justify-between gap-2">
 						<div class="flex items-center gap-3 text-[11px] text-[var(--text-muted)]">
-							{#if member.in_bytes_total > 0 || member.out_bytes_total > 0}
+							{#if inBytes > 0 || outBytes > 0}
 								<span title="Data received">
-									&darr; {formatBytes(member.in_bytes_total)}
+									&darr; {formatBytes(inBytes)}
 								</span>
 								<span title="Data sent">
-									&uarr; {formatBytes(member.out_bytes_total)}
+									&uarr; {formatBytes(outBytes)}
 								</span>
 							{:else}
 								<span>No transfer data</span>

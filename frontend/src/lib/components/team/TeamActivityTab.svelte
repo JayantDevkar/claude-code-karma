@@ -19,7 +19,7 @@
 	} from '$lib/components/charts/chartConfig';
 	import { getTeamMemberHexColor, getUserChartLabel } from '$lib/utils';
 	import { API_BASE } from '$lib/config';
-	import type { SyncEvent, TeamSessionStat } from '$lib/api-types';
+	import type { SyncEvent, TeamSessionStat, SyncTeamMember } from '$lib/api-types';
 	import TeamActivityFeed from './TeamActivityFeed.svelte';
 
 	// Register Chart.js components
@@ -38,10 +38,11 @@
 		teamName: string;
 		activity: SyncEvent[];
 		sessionStats: TeamSessionStat[];
+		members?: SyncTeamMember[];
 		userNames?: Record<string, string>;
 	}
 
-	let { teamName, activity, sessionStats, userNames }: Props = $props();
+	let { teamName, activity, sessionStats, members = [], userNames }: Props = $props();
 
 	// Period selector
 	const periods = [
@@ -130,7 +131,7 @@
 			allDateKeys.add(stat.date);
 			if (!byDateMember[stat.date]) byDateMember[stat.date] = {};
 			byDateMember[stat.date][stat.member_name] =
-				(byDateMember[stat.date][stat.member_name] || 0) + stat.packaged;
+				(byDateMember[stat.date][stat.member_name] || 0) + stat.packaged + stat.received;
 		}
 
 		const filledDates = fillDateRange([...allDateKeys]);
@@ -170,42 +171,43 @@
 
 	onMount(() => {
 		registerChartDefaults();
-		const colors = getThemeColors();
-
-		chart = new Chart(canvas, {
-			type: 'line',
-			data: {
-				labels: chartInput.labels,
-				datasets: chartInput.datasets
-			},
-			options: {
-				...createResponsiveConfig(),
-				plugins: {
-					...createResponsiveConfig().plugins,
-					legend: { display: false },
-					tooltip: {
-						...createResponsiveConfig().plugins.tooltip,
-						backgroundColor: colors.bgBase,
-						titleColor: colors.text,
-						bodyColor: colors.textSecondary,
-						borderColor: colors.border,
-						borderWidth: 1,
-						mode: 'index',
-						intersect: false
-					}
-				},
-				scales: createCommonScaleConfig()
-			}
-		});
 	});
 
 	onDestroy(() => {
 		chart?.destroy();
 	});
 
-	// Rebuild chart when data or visible members change
+	// Create or update chart when canvas becomes available and data changes
 	$effect(() => {
-		if (chart) {
+		if (!canvas) return;
+		if (!chart) {
+			const colors = getThemeColors();
+			chart = new Chart(canvas, {
+				type: 'line',
+				data: {
+					labels: chartInput.labels,
+					datasets: chartInput.datasets
+				},
+				options: {
+					...createResponsiveConfig(),
+					plugins: {
+						...createResponsiveConfig().plugins,
+						legend: { display: false },
+						tooltip: {
+							...createResponsiveConfig().plugins.tooltip,
+							backgroundColor: colors.bgBase,
+							titleColor: colors.text,
+							bodyColor: colors.textSecondary,
+							borderColor: colors.border,
+							borderWidth: 1,
+							mode: 'index',
+							intersect: false
+						}
+					},
+					scales: createCommonScaleConfig()
+				}
+			});
+		} else {
 			chart.data.labels = chartInput.labels;
 			chart.data.datasets = chartInput.datasets;
 			chart.update();
@@ -234,9 +236,15 @@
 		</div>
 
 		<!-- Chart -->
-		<div class="h-[220px]">
-			<canvas bind:this={canvas}></canvas>
-		</div>
+		{#if activeStats.length === 0}
+			<div class="h-[220px] flex items-center justify-center">
+				<p class="text-sm text-[var(--text-muted)]">No session data yet — chart will appear once sessions are packaged or received</p>
+			</div>
+		{:else}
+			<div class="h-[220px]">
+				<canvas bind:this={canvas}></canvas>
+			</div>
+		{/if}
 
 		<!-- Member filter chips -->
 		{#if allMembers.length > 0}
@@ -263,5 +271,5 @@
 	</div>
 
 	<!-- Activity feed -->
-	<TeamActivityFeed events={activity} {teamName} />
+	<TeamActivityFeed events={activity} {teamName} {members} />
 </div>

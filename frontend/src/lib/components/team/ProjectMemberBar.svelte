@@ -19,24 +19,26 @@
 
 	let segments = $derived.by(() => {
 		const result: Segment[] = [];
+		const receivedCounts = project.received_counts ?? {};
+		const localCount = project.local_count ?? 0;
 		const total =
-			project.local_count +
-			Object.values(project.received_counts).reduce((sum, n) => sum + n, 0);
+			localCount +
+			Object.values(receivedCounts).reduce((sum, n) => sum + n, 0);
 
 		if (total === 0) return result;
 
 		// Local user segment
-		if (project.local_count > 0) {
+		if (localCount > 0) {
 			result.push({
 				name: 'You',
-				count: project.local_count,
+				count: localCount,
 				color: LOCAL_USER_HEX,
-				pct: Math.max(2, (project.local_count / total) * 100)
+				pct: Math.max(2, (localCount / total) * 100)
 			});
 		}
 
 		// Remote member segments
-		for (const [memberId, count] of Object.entries(project.received_counts)) {
+		for (const [memberId, count] of Object.entries(receivedCounts)) {
 			if (count > 0) {
 				result.push({
 					name: getUserChartLabel(memberId, userNames),
