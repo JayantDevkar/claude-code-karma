@@ -1825,6 +1825,13 @@ export interface SyncEvent {
 	created_at: string;
 }
 
+export interface TeamSessionStat {
+	date: string;
+	member_name: string;
+	packaged: number;
+	received: number;
+}
+
 export interface MatchingProject {
 	encoded_name: string;
 	path: string;
