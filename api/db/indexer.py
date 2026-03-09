@@ -945,7 +945,8 @@ def _extract_skill_definitions_from_session(
       Pass 2: If no category from marker, fall back to manifest classification_overrides.
               Uses the raw UserMessage content as skill body when it looks like markdown.
 
-    Only persists custom_skill and user_command categories; skips plugin_skill/bundled.
+    Persists custom_skill, user_command, and remote plugin_skill definitions.
+    Skips local plugin_skill and bundled categories.
     Upserts new definitions into skill_definitions; skips if already present.
 
     Best-effort: all errors are logged as warnings, never raised.
@@ -1031,9 +1032,22 @@ def _extract_skill_definitions_from_session(
                             content_text = raw
                             description = _parse_yaml_description(content_text)
 
-                # Only persist custom_skill and user_command (not plugin_skill or bundled)
+                # Pass 3: Fallback for unclassified plugin-style skills (name contains ":")
+                if category is None and ":" in skill_name:
+                    category = "plugin_skill"
+                    # Try to grab content from next UserMessage (skill body injected by Claude Code)
+                    if not content_text and next_user_content and next_user_content.strip():
+                        raw = next_user_content.strip()
+                        if raw.startswith("---") or raw.startswith("#") or len(raw) > 200:
+                            content_text = raw
+                            description = _parse_yaml_description(content_text)
+
+                # Persist custom_skill, user_command, and remote plugin_skill definitions.
+                # Remote plugin skills need definitions for the "Inherit Skill" feature.
+                is_remote = source_user_id and source_user_id != "__local__"
                 if category not in ("custom_skill", "user_command"):
-                    continue
+                    if not (category == "plugin_skill" and is_remote):
+                        continue
 
                 conn.execute(
                     """
