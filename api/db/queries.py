@@ -78,6 +78,45 @@ def _query_per_item_trend(
     return result
 
 
+def _resolve_user_names(conn: sqlite3.Connection, user_ids: list[str]) -> dict[str, str]:
+    """Resolve user_ids to display names from sync_members table."""
+    if not user_ids:
+        return {}
+    placeholders = ",".join("?" * len(user_ids))
+    rows = conn.execute(
+        f"SELECT DISTINCT device_id, name FROM sync_members WHERE device_id IN ({placeholders})",
+        user_ids,
+    ).fetchall()
+    return {row["device_id"]: row["name"] for row in rows}
+
+
+def _query_per_user_trend(
+    conn: sqlite3.Connection,
+    from_clause: str,
+    where: str,
+    params: dict,
+    count_expr: str = "COUNT(*)",
+) -> dict[str, list[dict]]:
+    """Per-user daily trend. Returns {user_id: [{date, count}, ...]}."""
+    and_or_where = "AND" if where else "WHERE"
+    rows = conn.execute(
+        f"""SELECT COALESCE(s.remote_user_id, '_local') as user_id,
+            {_tz_date()} as date, {count_expr} as count
+        {from_clause}
+        {where}
+        {and_or_where} s.start_time IS NOT NULL
+        GROUP BY user_id, {_tz_date()}
+        ORDER BY user_id, date""",
+        params,
+    ).fetchall()
+    result: dict[str, list[dict]] = {}
+    for row in rows:
+        result.setdefault(row["user_id"], []).append(
+            {"date": row["date"], "count": row["count"]}
+        )
+    return result
+
+
 def query_all_sessions(
     conn: sqlite3.Connection,
     search: Optional[str] = None,
@@ -485,11 +524,29 @@ def query_analytics(
     time_rows = conn.execute(f"SELECT start_time FROM sessions s {time_where}", params).fetchall()
     start_times = [row["start_time"] for row in time_rows]
 
+    # 4b. Start times with user_id for per-user breakdowns
+    time_user_rows = conn.execute(
+        f"""SELECT COALESCE(s.remote_user_id, '_local') as user_id, s.start_time
+        FROM sessions s
+        {time_where}""",
+        params,
+    ).fetchall()
+    start_times_with_user = [
+        {"user_id": row["user_id"], "start_time": row["start_time"]}
+        for row in time_user_rows
+    ]
+
+    # 5. Resolve user display names from sync_members
+    user_ids = list({e["user_id"] for e in start_times_with_user if e["user_id"] != "_local"})
+    user_names = _resolve_user_names(conn, user_ids) if user_ids else {}
+
     return {
         "totals": totals,
         "tools": tools,
         "models_used_list": models_used_list,
         "start_times": start_times,
+        "start_times_with_user": start_times_with_user,
+        "user_names": user_names,
     }
 
 
@@ -1055,11 +1112,25 @@ def _query_item_usage_trend(
     first_used = time_row["first_used"] if time_row else None
     last_used = time_row["last_used"] if time_row else None
 
+    # Per-user trend
+    trend_by_user = _query_per_user_trend(
+        conn,
+        from_clause=from_clause,
+        where=where_items,
+        params=params,
+        count_expr=f"SUM({table}.count)",
+    )
+    # Resolve user names
+    trend_user_ids = [uid for uid in trend_by_user if uid != "_local"]
+    user_names = _resolve_user_names(conn, trend_user_ids) if trend_user_ids else {}
+
     return {
         "total": total,
         "by_item": by_item,
         "trend": trend,
         "trend_by_item": trend_by_item,
+        "trend_by_user": trend_by_user,
+        "user_names": user_names,
         "first_used": first_used,
         "last_used": last_used,
     }

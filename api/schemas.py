@@ -438,6 +438,14 @@ class ProjectAnalytics(BaseModel):
         default_factory=WorkModeDistribution,
         description="Work mode distribution based on tool usage",
     )
+    sessions_by_date_by_user: dict[str, dict[str, int]] = Field(
+        default_factory=dict,
+        description="Per-user session counts: user_id -> {date -> count}. '_local' = local user.",
+    )
+    user_names: dict[str, str] = Field(
+        default_factory=dict,
+        description="user_id -> display name from sync_members",
+    )
 
 
 class DashboardStats(BaseModel):
@@ -1503,6 +1511,14 @@ class UsageTrendResponse(BaseModel):
     )
     first_used: Optional[datetime] = Field(None, description="First usage timestamp")
     last_used: Optional[datetime] = Field(None, description="Most recent usage timestamp")
+    trend_by_user: dict[str, list[UsageTrendItem]] = Field(
+        default_factory=dict,
+        description="Per-user daily trend: user_id -> [{date, count}]",
+    )
+    user_names: dict[str, str] = Field(
+        default_factory=dict,
+        description="user_id -> display name",
+    )
 
 
 class PluginDetail(BaseModel):

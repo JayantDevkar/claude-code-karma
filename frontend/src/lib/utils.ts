@@ -700,24 +700,69 @@ export interface TeamMemberColorConfig {
 	bg: string;
 }
 
+/** Deterministic hash to palette index for a userId */
+function teamMemberPaletteIndex(userId: string): number {
+	let hash = 0;
+	for (let i = 0; i < userId.length; i++) {
+		hash = (hash << 5) - hash + userId.charCodeAt(i);
+		hash |= 0;
+	}
+	return Math.abs(hash) % TEAM_MEMBER_PALETTE.length;
+}
+
 /**
  * Deterministic hash-based color assignment for team members.
  * Same userId always gets the same color.
  */
 export function getTeamMemberColor(userId: string): TeamMemberColorConfig {
-	let hash = 0;
-	for (let i = 0; i < userId.length; i++) {
-		hash = (hash << 5) - hash + userId.charCodeAt(i);
-		hash |= 0; // Convert to 32-bit int
-	}
-	const index = Math.abs(hash) % TEAM_MEMBER_PALETTE.length;
-	const color: TeamColor = TEAM_MEMBER_PALETTE[index];
+	const color: TeamColor = TEAM_MEMBER_PALETTE[teamMemberPaletteIndex(userId)];
 	return {
 		border: `var(--team-${color})`,
 		badge: `bg-[var(--team-${color}-subtle)] border-[var(--team-${color})]/20`,
 		text: `text-[var(--team-${color})]`,
 		bg: `var(--team-${color}-subtle)`
 	};
+}
+
+// ============================================
+// Chart Hex Color Utilities (for Chart.js canvas)
+// ============================================
+
+/** Hex colors matching TEAM_MEMBER_PALETTE CSS var names — for Chart.js canvas rendering */
+const TEAM_HEX_COLORS: Record<string, string> = {
+	coral: '#f97066',
+	rose: '#f43f5e',
+	amber: '#f59e0b',
+	cyan: '#06b6d4',
+	pink: '#ec4899',
+	lime: '#84cc16',
+	indigo: '#6366f1',
+	teal: '#14b8a6'
+};
+
+/** Accent purple used for local user in charts */
+export const LOCAL_USER_HEX = '#7c3aed';
+
+/**
+ * Get hex color for a team member (for Chart.js).
+ * Uses same hash as getTeamMemberColor() for consistency.
+ */
+export function getTeamMemberHexColor(userId: string): string {
+	return TEAM_HEX_COLORS[TEAM_MEMBER_PALETTE[teamMemberPaletteIndex(userId)]];
+}
+
+/** Get hex color for a user_id. '_local' → accent purple, others → team color */
+export function getUserChartColor(userId: string): string {
+	return userId === '_local' ? LOCAL_USER_HEX : getTeamMemberHexColor(userId);
+}
+
+/** Get display label for a user in charts */
+export function getUserChartLabel(
+	userId: string,
+	userNames?: Record<string, string>
+): string {
+	if (userId === '_local') return 'You';
+	return userNames?.[userId] ?? userId.slice(0, 8);
 }
 
 /**

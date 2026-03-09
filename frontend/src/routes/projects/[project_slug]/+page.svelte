@@ -1671,7 +1671,11 @@
 							<!-- Additional Detailed Charts or Analysis -->
 							<div class="mt-6">
 								<!-- Sessions Chart - uses full history from analytics API -->
-								<SessionsChart sessionsByDate={analytics.sessions_by_date} />
+								<SessionsChart
+									sessionsByDate={analytics.sessions_by_date}
+									sessionsByDateByUser={analytics.sessions_by_date_by_user}
+									userNames={analytics.user_names}
+								/>
 							</div>
 						{:else}
 							<EmptyState

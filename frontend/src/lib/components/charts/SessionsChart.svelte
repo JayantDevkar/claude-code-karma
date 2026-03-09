@@ -18,6 +18,7 @@
 		chartColorPalette,
 		getThemeColors
 	} from './chartConfig';
+	import { getUserChartColor, getUserChartLabel } from '$lib/utils';
 
 	// Register Chart.js components
 	Chart.register(
@@ -31,12 +32,63 @@
 		Tooltip
 	);
 
+	// Shared date utilities (used by buildChartData and multi-user paths)
+	function getLocalDateKey(d: Date): string {
+		const year = d.getFullYear();
+		const month = String(d.getMonth() + 1).padStart(2, '0');
+		const day = String(d.getDate()).padStart(2, '0');
+		return `${year}-${month}-${day}`;
+	}
+
+	function formatLocalDate(dateKey: string): string {
+		const [year, month, day] = dateKey.split('-').map(Number);
+		const date = new Date(year, month - 1, day);
+		return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+	}
+
+	/** Fill all dates between min and max (with single-day padding) */
+	function fillDateRange(dateKeys: string[]): string[] {
+		if (dateKeys.length === 0) return [];
+
+		const minDateKey = dateKeys[0];
+		const maxDateKey = dateKeys[dateKeys.length - 1];
+		const isSingleDay = minDateKey === maxDateKey;
+		const result: string[] = [];
+
+		if (isSingleDay) {
+			const [y, m, d] = minDateKey.split('-').map(Number);
+			result.push(getLocalDateKey(new Date(y, m - 1, d - 1)));
+		}
+
+		const [minY, minM, minD] = minDateKey.split('-').map(Number);
+		const [maxY, maxM, maxD] = maxDateKey.split('-').map(Number);
+		let cur = new Date(minY, minM - 1, minD);
+		const end = new Date(maxY, maxM - 1, maxD);
+		while (cur <= end) {
+			result.push(getLocalDateKey(cur));
+			cur = new Date(cur.getTime() + 86400000);
+		}
+
+		if (isSingleDay) {
+			const [y, m, d] = maxDateKey.split('-').map(Number);
+			result.push(getLocalDateKey(new Date(y, m - 1, d + 1)));
+		}
+
+		return result;
+	}
+
 	interface Props {
 		sessionsByDate: Record<string, number>;
+		sessionsByDateByUser?: Record<string, Record<string, number>>;
+		userNames?: Record<string, string>;
 		class?: string;
 	}
 
-	let { sessionsByDate, class: className = '' }: Props = $props();
+	let { sessionsByDate, sessionsByDateByUser, userNames, class: className = '' }: Props = $props();
+
+	let hasMultiUser = $derived(
+		!!sessionsByDateByUser && Object.keys(sessionsByDateByUser).length > 1
+	);
 
 	let canvas: HTMLCanvasElement;
 	let chart: Chart | null = null;
@@ -53,12 +105,6 @@
 			return { labels: [], data: [], dateRange: '' };
 		}
 
-		const formatLocalDate = (dateKey: string): string => {
-			const [year, month, day] = dateKey.split('-').map(Number);
-			const date = new Date(year, month - 1, day);
-			return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-		};
-
 		const formatLocalDateFull = (dateKey: string): string => {
 			const [year, month, day] = dateKey.split('-').map(Number);
 			const date = new Date(year, month - 1, day);
@@ -69,49 +115,13 @@
 			});
 		};
 
-		const getLocalDateKey = (d: Date): string => {
-			const year = d.getFullYear();
-			const month = String(d.getMonth() + 1).padStart(2, '0');
-			const day = String(d.getDate()).padStart(2, '0');
-			return `${year}-${month}-${day}`;
-		};
+		const allDates = fillDateRange(dateKeys);
+		const labels = allDates.map(formatLocalDate);
+		const data = allDates.map((d) => byDate[d] || 0);
 
 		const minDateKey = dateKeys[0];
 		const maxDateKey = dateKeys[dateKeys.length - 1];
 		const isSingleDay = minDateKey === maxDateKey;
-
-		const labels: string[] = [];
-		const data: number[] = [];
-
-		// For single day, add padding day before to center the point
-		if (isSingleDay) {
-			const [year, month, day] = minDateKey.split('-').map(Number);
-			const prevDate = new Date(year, month - 1, day - 1);
-			labels.push(formatLocalDate(getLocalDateKey(prevDate)));
-			data.push(0);
-		}
-
-		// Fill all dates between min and max (including gaps)
-		const [minYear, minMonth, minDay] = minDateKey.split('-').map(Number);
-		const [maxYear, maxMonth, maxDay] = maxDateKey.split('-').map(Number);
-
-		let currentDate = new Date(minYear, minMonth - 1, minDay);
-		const endDate = new Date(maxYear, maxMonth - 1, maxDay);
-
-		while (currentDate <= endDate) {
-			const dateKey = getLocalDateKey(currentDate);
-			labels.push(formatLocalDate(dateKey));
-			data.push(byDate[dateKey] || 0);
-			currentDate = new Date(currentDate.getTime() + 24 * 60 * 60 * 1000);
-		}
-
-		// For single day, add padding day after to center the point
-		if (isSingleDay) {
-			const [year, month, day] = maxDateKey.split('-').map(Number);
-			const nextDate = new Date(year, month - 1, day + 1);
-			labels.push(formatLocalDate(getLocalDateKey(nextDate)));
-			data.push(0);
-		}
 
 		const dateRange = isSingleDay
 			? formatLocalDateFull(minDateKey)
@@ -126,48 +136,112 @@
 	onMount(() => {
 		registerChartDefaults();
 		const { labels, data } = chartData;
-
-		// Get resolved theme colors
 		const colors = getThemeColors();
 
-		chart = new Chart(canvas, {
-			type: 'line',
-			data: {
-				labels,
-				datasets: [
-					{
-						label: 'Sessions',
-						data,
-						borderColor: chartColorPalette[0],
-						backgroundColor: 'rgba(124, 58, 237, 0.1)',
-						fill: true,
-						tension: 0.4,
-						pointRadius: 4,
-						pointBackgroundColor: chartColorPalette[0],
-						pointBorderColor: colors.bgBase,
-						pointBorderWidth: 2
-					}
-				]
-			},
-			options: {
-				...createResponsiveConfig(),
-				plugins: {
-					...createResponsiveConfig().plugins,
-					legend: {
-						display: false
+		if (hasMultiUser) {
+			const userIds = Object.keys(sessionsByDateByUser!);
+			const sorted = userIds.filter((id) => id !== '_local').sort();
+			if (userIds.includes('_local')) sorted.unshift('_local');
+
+			// Build filled date range with same padding as buildChartData
+			const dateKeys = Object.keys(sessionsByDate)
+				.filter((k) => sessionsByDate[k] != null)
+				.sort();
+			const allDates = fillDateRange(dateKeys);
+			const multiLabels = allDates.map(formatLocalDate);
+
+			const datasets = sorted.map((userId) => {
+				const isLocal = userId === '_local';
+				const hex = getUserChartColor(userId);
+				const userData = sessionsByDateByUser![userId] ?? {};
+				return {
+					label: getUserChartLabel(userId, userNames),
+					data: allDates.map((d) => userData[d] ?? 0),
+					borderColor: hex,
+					backgroundColor: isLocal ? 'rgba(124, 58, 237, 0.1)' : 'transparent',
+					fill: isLocal,
+					tension: 0.4,
+					pointRadius: 3,
+					pointBackgroundColor: hex,
+					pointBorderColor: colors.bgBase,
+					pointBorderWidth: 2,
+					borderWidth: isLocal ? 2 : 1.5
+				};
+			});
+
+			chart = new Chart(canvas, {
+				type: 'line',
+				data: { labels: multiLabels, datasets },
+				options: {
+					...createResponsiveConfig(),
+					plugins: {
+						...createResponsiveConfig().plugins,
+						legend: {
+							display: true,
+							position: 'top',
+							align: 'end',
+							labels: {
+								boxWidth: 8,
+								boxHeight: 8,
+								usePointStyle: true,
+								pointStyle: 'circle',
+								font: { size: 10 },
+								padding: 12
+							}
+						},
+						tooltip: {
+							...createResponsiveConfig().plugins.tooltip,
+							backgroundColor: colors.bgBase,
+							titleColor: colors.text,
+							bodyColor: colors.textSecondary,
+							borderColor: colors.border,
+							borderWidth: 1,
+							mode: 'index',
+							intersect: false
+						}
 					},
-					tooltip: {
-						...createResponsiveConfig().plugins.tooltip,
-						backgroundColor: colors.bgBase,
-						titleColor: colors.text,
-						bodyColor: colors.textSecondary,
-						borderColor: colors.border,
-						borderWidth: 1
-					}
+					scales: createCommonScaleConfig()
+				}
+			});
+		} else {
+			// Original single-line behavior
+			chart = new Chart(canvas, {
+				type: 'line',
+				data: {
+					labels,
+					datasets: [
+						{
+							label: 'Sessions',
+							data,
+							borderColor: chartColorPalette[0],
+							backgroundColor: 'rgba(124, 58, 237, 0.1)',
+							fill: true,
+							tension: 0.4,
+							pointRadius: 4,
+							pointBackgroundColor: chartColorPalette[0],
+							pointBorderColor: colors.bgBase,
+							pointBorderWidth: 2
+						}
+					]
 				},
-				scales: createCommonScaleConfig()
-			}
-		});
+				options: {
+					...createResponsiveConfig(),
+					plugins: {
+						...createResponsiveConfig().plugins,
+						legend: { display: false },
+						tooltip: {
+							...createResponsiveConfig().plugins.tooltip,
+							backgroundColor: colors.bgBase,
+							titleColor: colors.text,
+							bodyColor: colors.textSecondary,
+							borderColor: colors.border,
+							borderWidth: 1
+						}
+					},
+					scales: createCommonScaleConfig()
+				}
+			});
+		}
 	});
 
 	onDestroy(() => {
@@ -179,7 +253,27 @@
 		if (chart && sessionsByDate) {
 			const { labels, data } = chartData;
 			chart.data.labels = labels;
-			chart.data.datasets[0].data = data;
+
+			if (hasMultiUser && sessionsByDateByUser) {
+				const dateKeys = Object.keys(sessionsByDate)
+					.filter((k) => sessionsByDate[k] != null)
+					.sort();
+				const allDates = fillDateRange(dateKeys);
+				chart.data.labels = allDates.map(formatLocalDate);
+
+				const userIds = Object.keys(sessionsByDateByUser);
+				const sorted = userIds.filter((id) => id !== '_local').sort();
+				if (userIds.includes('_local')) sorted.unshift('_local');
+
+				sorted.forEach((userId, i) => {
+					if (chart!.data.datasets[i]) {
+						const userData = sessionsByDateByUser[userId] ?? {};
+						chart!.data.datasets[i].data = allDates.map((d) => userData[d] ?? 0);
+					}
+				});
+			} else {
+				chart.data.datasets[0].data = data;
+			}
 			chart.update();
 		}
 	});

@@ -17,7 +17,9 @@
 		analyticsFilterOptions,
 		getTimestampRangeForFilter,
 		isHourBasedFilter,
-		getAnalyticsFilterLabel
+		getAnalyticsFilterLabel,
+		getUserChartColor,
+		getUserChartLabel
 	} from '$lib/utils';
 
 	// Read filter directly from URL
@@ -68,6 +70,8 @@
 		cache_hit_rate: number;
 		tools_used: Record<string, number>;
 		sessions_by_date: Record<string, number>;
+		sessions_by_date_by_user?: Record<string, Record<string, number>>;
+		user_names?: Record<string, string>;
 		projects_active: number;
 		temporal_heatmap: number[][];
 		peak_hours: number[];
@@ -122,6 +126,11 @@
 			}
 		};
 	});
+
+	let hasMultiUser = $derived(
+		!!analytics.sessions_by_date_by_user &&
+		Object.keys(analytics.sessions_by_date_by_user).length > 1
+	);
 
 	// --- Helpers ---
 	const formatK = (n: number) => {
@@ -291,11 +300,26 @@
 
 	$effect(() => {
 		if (chartInstance && sortedDates) {
-			const newCounts = sortedDates.map((date) => analytics.sessions_by_date[date]);
 			const newLabels = sortedDates.map((date) => formatDateLabel(date));
-
 			chartInstance.data.labels = newLabels;
-			chartInstance.data.datasets[0].data = newCounts;
+
+			if (hasMultiUser && analytics.sessions_by_date_by_user) {
+				const userIds = Object.keys(analytics.sessions_by_date_by_user);
+				const sorted = userIds.filter(id => id !== '_local').sort();
+				if (userIds.includes('_local')) sorted.unshift('_local');
+
+				// Update each dataset's data
+				sorted.forEach((userId, i) => {
+					if (chartInstance.data.datasets[i]) {
+						chartInstance.data.datasets[i].data = sortedDates.map(
+							date => analytics.sessions_by_date_by_user![userId]?.[date] ?? 0
+						);
+					}
+				});
+			} else {
+				const newCounts = sortedDates.map((date) => analytics.sessions_by_date[date]);
+				chartInstance.data.datasets[0].data = newCounts;
+			}
 			chartInstance.update();
 		}
 	});
@@ -308,50 +332,118 @@
 		const textPrimary = style.getPropertyValue('--text-primary').trim() || '#0f172a';
 		const border = style.getPropertyValue('--border').trim() || 'rgba(0,0,0,0.08)';
 
-		const sessionCounts = sortedDates.map((date) => analytics.sessions_by_date[date]);
+		const labels = sortedDates.map((date) => formatDateLabel(date));
 
-		chartInstance = new Chart(chartCanvas, {
-			type: 'bar',
-			data: {
-				labels: sortedDates.map((date) => formatDateLabel(date)),
-				datasets: [
-					{
-						label: 'Sessions',
-						data: sessionCounts,
-						backgroundColor: textMuted,
-						hoverBackgroundColor: colors[0],
-						borderRadius: 3,
-						barThickness: 'flex',
-						maxBarThickness: 14
-					}
-				]
-			},
-			options: {
-				responsive: true,
-				maintainAspectRatio: false,
-				plugins: {
-					legend: { display: false },
-					tooltip: {
-						backgroundColor: textPrimary,
-						padding: 10,
-						cornerRadius: 6,
-						displayColors: false
-					}
-				},
-				scales: {
-					y: { beginAtZero: true, grid: { color: border }, ticks: { display: false } },
-					x: {
-						grid: { display: false },
-						ticks: {
-							font: { size: 10 },
-							color: textMuted,
-							maxTicksLimit: 8,
-							maxRotation: 0
+		if (hasMultiUser) {
+			// Build sorted user list: _local first, then remotes alphabetically
+			const userIds = Object.keys(analytics.sessions_by_date_by_user!);
+			const sorted = userIds.filter(id => id !== '_local').sort();
+			if (userIds.includes('_local')) sorted.unshift('_local');
+
+			const datasets = sorted.map(userId => ({
+				label: getUserChartLabel(userId, analytics.user_names),
+				data: sortedDates.map(date => analytics.sessions_by_date_by_user![userId]?.[date] ?? 0),
+				backgroundColor: getUserChartColor(userId),
+				hoverBackgroundColor: getUserChartColor(userId),
+				borderRadius: 3,
+				barThickness: 'flex' as const,
+				maxBarThickness: 14
+			}));
+
+			chartInstance = new Chart(chartCanvas, {
+				type: 'bar',
+				data: { labels, datasets },
+				options: {
+					responsive: true,
+					maintainAspectRatio: false,
+					plugins: {
+						legend: {
+							display: true,
+							position: 'top',
+							align: 'end',
+							labels: {
+								boxWidth: 8,
+								boxHeight: 8,
+								usePointStyle: true,
+								pointStyle: 'circle',
+								font: { size: 10 },
+								color: textMuted,
+								padding: 12
+							}
+						},
+						tooltip: {
+							backgroundColor: textPrimary,
+							padding: 10,
+							cornerRadius: 6,
+							mode: 'index'
+						}
+					},
+					scales: {
+						y: {
+							beginAtZero: true,
+							stacked: true,
+							grid: { color: border },
+							ticks: { display: false }
+						},
+						x: {
+							stacked: true,
+							grid: { display: false },
+							ticks: {
+								font: { size: 10 },
+								color: textMuted,
+								maxTicksLimit: 8,
+								maxRotation: 0
+							}
 						}
 					}
 				}
-			}
-		});
+			});
+		} else {
+			// Original single-dataset behavior
+			const sessionCounts = sortedDates.map((date) => analytics.sessions_by_date[date]);
+			chartInstance = new Chart(chartCanvas, {
+				type: 'bar',
+				data: {
+					labels,
+					datasets: [
+						{
+							label: 'Sessions',
+							data: sessionCounts,
+							backgroundColor: textMuted,
+							hoverBackgroundColor: colors[0],
+							borderRadius: 3,
+							barThickness: 'flex',
+							maxBarThickness: 14
+						}
+					]
+				},
+				options: {
+					responsive: true,
+					maintainAspectRatio: false,
+					plugins: {
+						legend: { display: false },
+						tooltip: {
+							backgroundColor: textPrimary,
+							padding: 10,
+							cornerRadius: 6,
+							displayColors: false
+						}
+					},
+					scales: {
+						y: { beginAtZero: true, grid: { color: border }, ticks: { display: false } },
+						x: {
+							grid: { display: false },
+							ticks: {
+								font: { size: 10 },
+								color: textMuted,
+								maxTicksLimit: 8,
+								maxRotation: 0
+							}
+						}
+					}
+				}
+			});
+		}
 	});
 </script>
 

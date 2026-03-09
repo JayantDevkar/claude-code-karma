@@ -23,6 +23,7 @@
 	} from './chartConfig';
 	import SegmentedControl from '$lib/components/ui/SegmentedControl.svelte';
 	import { API_BASE } from '$lib/config';
+	import { getUserChartColor, getUserChartLabel } from '$lib/utils';
 
 	Chart.register(
 		LineController,
@@ -75,6 +76,9 @@
 	type RangeKey = '7d' | '30d' | '90d';
 	let selectedRange = $state<RangeKey>('30d');
 
+	type ViewMode = 'by-item' | 'by-user';
+	let viewMode = $state<ViewMode>('by-item');
+
 	const rangeOptions = [
 		{ label: '7d', value: '7d' },
 		{ label: '30d', value: '30d' },
@@ -124,6 +128,12 @@
 	);
 
 	let hasData = $derived(data !== null && filteredTotal > 0);
+
+	let hasUserData = $derived(
+		data !== null &&
+		data.trend_by_user !== undefined &&
+		Object.keys(data.trend_by_user).length > 1
+	);
 
 	const DEFAULT_VISIBLE = 5;
 	const EXPANDED_VISIBLE = 10;
@@ -290,6 +300,79 @@
 		return datasets;
 	});
 
+	// Per-user chart datasets
+	let userChartDatasets = $derived.by(() => {
+		if (!data?.trend_by_user || !filteredTrend.length) return [];
+
+		const trendByUser = data.trend_by_user;
+		const dateLabels = filteredTrend.map(d => d.date);
+		const showPoints = filteredTrend.length <= 14;
+
+		// Sort users: _local first, then remotes alphabetically
+		const userIds = Object.keys(trendByUser);
+		const sorted = userIds.filter(id => id !== '_local').sort();
+		if (userIds.includes('_local')) sorted.unshift('_local');
+
+		const datasets: ChartDataset<'line'>[] = [];
+
+		for (const userId of sorted) {
+			const points = trendByUser[userId] ?? [];
+			const dateMap = new Map(points.map(p => [p.date, p.count]));
+			const userData = dateLabels.map(d => dateMap.get(d) ?? 0);
+			const hex = getUserChartColor(userId);
+			const isLocal = userId === '_local';
+
+			datasets.push({
+				label: getUserChartLabel(userId, data.user_names),
+				data: userData,
+				borderColor: hex,
+				backgroundColor: hexToRgba(hex, isLocal ? 0.08 : 0.03),
+				fill: isLocal,
+				tension: 0.4,
+				pointRadius: showPoints ? 2.5 : 0,
+				pointHoverRadius: 4,
+				pointBackgroundColor: hex,
+				borderWidth: isLocal ? 2 : 1.5
+			});
+		}
+
+		return datasets;
+	});
+
+	// Per-user top items (sorted by total usage)
+	let userTopItems = $derived.by(() => {
+		if (!data?.trend_by_user) return [];
+		const trendByUser = data.trend_by_user;
+		const userIds = Object.keys(trendByUser);
+		const sorted = userIds.filter(id => id !== '_local').sort();
+		if (userIds.includes('_local')) sorted.unshift('_local');
+
+		const items = sorted.map(userId => {
+			const total = (trendByUser[userId] ?? []).reduce((sum, p) => sum + p.count, 0);
+			return { name: userId, count: total };
+		});
+
+		const max = items.length > 0 ? Math.max(...items.map(i => i.count), 1) : 1;
+		return items.map(item => ({
+			name: getUserChartLabel(item.name, data?.user_names),
+			count: item.count,
+			pct: (item.count / max) * 100,
+			color: getUserChartColor(item.name)
+		}));
+	});
+
+	// Per-user legend items
+	let userLegendItems = $derived.by(() => {
+		if (!data?.trend_by_user) return [];
+		const userIds = Object.keys(data.trend_by_user);
+		const sorted = userIds.filter(id => id !== '_local').sort();
+		if (userIds.includes('_local')) sorted.unshift('_local');
+		return sorted.map(userId => ({
+			name: getUserChartLabel(userId, data?.user_names),
+			color: getUserChartColor(userId)
+		}));
+	});
+
 	// Legend items for the mini legend — derived from shared topItemNames
 	let legendItems = $derived.by(() => {
 		if (!data) return [];
@@ -308,7 +391,8 @@
 	let chart: Chart | null = null;
 
 	function createChart() {
-		if (!canvas || filteredTrend.length === 0 || chartDatasets.length === 0) return;
+		const activeDatasets = viewMode === 'by-user' ? userChartDatasets : chartDatasets;
+		if (!canvas || filteredTrend.length === 0 || activeDatasets.length === 0) return;
 
 		chart?.destroy();
 		registerChartDefaults();
@@ -318,7 +402,7 @@
 			type: 'line',
 			data: {
 				labels: trendLabels,
-				datasets: chartDatasets
+				datasets: activeDatasets
 			},
 			options: {
 				...createResponsiveConfig(),
@@ -353,14 +437,15 @@
 		chart?.destroy();
 	});
 
-	// Rebuild chart when datasets or filter changes
+	// Rebuild chart when datasets, filter, or view mode changes
 	$effect(() => {
-		const hasDatasets = chartDatasets.length > 0;
+		const activeDatasets = viewMode === 'by-user' ? userChartDatasets : chartDatasets;
+		const hasDatasets = activeDatasets.length > 0;
 
 		if (canvas && hasDatasets) {
 			if (chart) {
 				chart.data.labels = trendLabels;
-				chart.data.datasets = chartDatasets;
+				chart.data.datasets = activeDatasets;
 				chart.update();
 			} else {
 				createChart();
@@ -388,7 +473,17 @@
 
 	<!-- Range selector — always visible so users can switch ranges even when current range has no data -->
 	{#if !loading || data}
-		<div class="flex justify-end">
+		<div class="flex justify-end gap-2">
+			{#if hasUserData}
+				<SegmentedControl
+					options={[
+						{ label: 'By ' + itemLabel.slice(0, -1), value: 'by-item' },
+						{ label: 'By User', value: 'by-user' }
+					]}
+					bind:value={viewMode}
+					size="sm"
+				/>
+			{/if}
 			<SegmentedControl options={rangeOptions} bind:value={selectedRange} size="sm" />
 		</div>
 	{/if}
@@ -458,7 +553,7 @@
 				<!-- Mini legend -->
 				{#if legendItems.length > 0}
 					<div class="flex flex-wrap gap-x-4 gap-y-1 mb-3">
-						{#each legendItems as item}
+						{#each viewMode === 'by-user' ? userLegendItems : legendItems as item}
 							<span class="flex items-center gap-1.5 text-xs text-[var(--text-muted)]">
 								<span
 									class="inline-block w-2 h-2 rounded-full flex-shrink-0"
@@ -482,9 +577,9 @@
 					Top {itemLabel}
 				</h4>
 				<div class="space-y-3">
-					{#each topItems as { name, count, pct, color }, i}
-						{@const displayName = itemDisplayFn ? itemDisplayFn(name) : name}
-						{@const href = itemLinkFn ? itemLinkFn(name) : itemLinkPrefix ? `${itemLinkPrefix}${encodeURIComponent(name)}` : null}
+					{#each viewMode === 'by-user' ? userTopItems : topItems as { name, count, pct, color }, i}
+						{@const displayName = viewMode === 'by-user' ? name : itemDisplayFn ? itemDisplayFn(name) : name}
+						{@const href = viewMode === 'by-user' ? null : itemLinkFn ? itemLinkFn(name) : itemLinkPrefix ? `${itemLinkPrefix}${encodeURIComponent(name)}` : null}
 						<div>
 							<div class="flex items-center justify-between text-sm mb-1">
 								{#snippet dotLabel()}

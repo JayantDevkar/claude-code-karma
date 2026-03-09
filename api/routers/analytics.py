@@ -70,6 +70,18 @@ def _get_analytics_sqlite(
             except (ValueError, TypeError):
                 continue
 
+        # Per-user session counts
+        sessions_by_date_by_user: dict[str, Counter[str]] = {}
+        for entry in data.get("start_times_with_user", []):
+            user_id = entry["user_id"]
+            try:
+                ts = datetime.fromisoformat(entry["start_time"])
+                local_time = ts.astimezone(local_tz)
+                date_key = local_time.strftime("%Y-%m-%d")
+                sessions_by_date_by_user.setdefault(user_id, Counter())[date_key] += 1
+            except (ValueError, TypeError):
+                continue
+
         # Peak hours
         hour_totals = [(sum(temporal_heatmap[d][h] for d in range(7)), h) for h in range(24)]
         hour_totals.sort(reverse=True)
@@ -104,6 +116,8 @@ def _get_analytics_sqlite(
             time_distribution=time_distribution,
             work_mode_distribution=work_mode_distribution,
             projects_active=totals.get("projects_active", 0),
+            sessions_by_date_by_user={k: dict(v) for k, v in sessions_by_date_by_user.items()},
+            user_names=data.get("user_names", {}),
         )
     except sqlite3.Error as e:
         logger.warning("SQLite analytics query failed, falling back: %s", e)

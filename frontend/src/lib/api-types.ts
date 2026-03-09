@@ -178,6 +178,8 @@ export interface ProjectAnalytics {
 	cache_hit_rate: number;
 	tools_used: Record<string, number>;
 	sessions_by_date: Record<string, number>;
+	sessions_by_date_by_user?: Record<string, Record<string, number>>;
+	user_names?: Record<string, string>;
 	projects_active: number;
 	temporal_heatmap: number[][];
 	peak_hours: number[];
@@ -1329,6 +1331,8 @@ export interface UsageTrendResponse {
 	trend_by_item?: Record<string, UsageTrendItem[]>;
 	first_used: string | null;
 	last_used: string | null;
+	trend_by_user?: Record<string, { date: string; count: number }[]>;
+	user_names?: Record<string, string>;
 }
 
 // ============================================================================
