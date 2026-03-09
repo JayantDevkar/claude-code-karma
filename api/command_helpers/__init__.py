@@ -43,10 +43,13 @@ from .plugins import (
     _entry_map_cache,
     _entry_type_cache,
     _expand_name_cache,
+    _is_custom_skill,
     _is_plugin_skill,
     _plugin_skill_cache,
     classify_invocation,
     expand_plugin_short_name,
+    is_custom_skill_local,
+    is_plugin_installed_locally,
     is_plugin_skill,
 )
 
@@ -66,6 +69,8 @@ __all__ = [
     # plugins
     "classify_invocation",
     "expand_plugin_short_name",
+    "is_custom_skill_local",
+    "is_plugin_installed_locally",
     "is_plugin_skill",
     # parsing
     "parse_command_from_content",

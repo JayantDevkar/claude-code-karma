@@ -27,6 +27,8 @@ from command_helpers import (
     classify_invocation,
     get_bundled_skill_prompt,
     get_command_description,
+    is_custom_skill_local,
+    is_plugin_installed_locally,
     is_plugin_skill,
 )
 from config import Settings, settings
@@ -429,6 +431,26 @@ def get_skill_usage(
                         if raw_remote_ids
                         else []
                     )
+                    category = classify_invocation(skill_name)
+                    # Check if the skill exists locally to avoid tagging
+                    # locally-available skills as "remote-only" when all
+                    # usage happens to come from remote sessions.
+                    #   - Plugin skills: check if plugin directory exists
+                    #   - Bundled skills/commands: always available locally
+                    #   - Custom skills: check if SKILL.md exists on disk
+                    #   - User commands: check if .md exists in commands dir
+                    if ":" in skill_name:
+                        exists_locally = is_plugin_installed_locally(skill_name.split(":")[0])
+                    elif is_plugin:
+                        exists_locally = is_plugin_installed_locally(skill_name)
+                    elif category in ("bundled_skill", "bundled_command"):
+                        exists_locally = True
+                    elif category == "custom_skill":
+                        exists_locally = is_custom_skill_local(skill_name)
+                    elif category == "user_command":
+                        exists_locally = (settings.commands_dir / f"{skill_name}.md").is_file()
+                    else:
+                        exists_locally = False
                     results.append(
                         {
                             "name": skill_name,
@@ -437,12 +459,12 @@ def get_skill_usage(
                             "plugin": plugin_name,
                             "last_used": row.get("last_used"),
                             "session_count": row.get("session_count", 0),
-                            "category": classify_invocation(skill_name),
+                            "category": category,
                             "description": get_command_description(skill_name),
                             "remote_count": remote_count,
                             "local_count": local_count,
                             "remote_user_ids": remote_user_ids,
-                            "is_remote_only": local_count == 0 and remote_count > 0,
+                            "is_remote_only": local_count == 0 and remote_count > 0 and not exists_locally,
                         }
                     )
                 return results
@@ -643,7 +665,14 @@ async def get_skill_detail(
         except Exception as e:
             logger.warning("Failed to fetch remote/local split for skill %s: %s", skill_name, e)
 
-        is_remote_only = local_count == 0 and remote_count > 0
+        # Only mark as remote-only if the skill file doesn't exist locally.
+        # Without this, locally-installed skills (e.g. superpowers:executing-plans)
+        # get incorrectly tagged as remote when all usage happens to be from remote sessions.
+        # Note: `skill_info is None` is used as proxy for "not locally available" —
+        # _resolve_skill_info succeeds for all locally-present skills (bundled,
+        # custom, plugin, user commands) and only raises HTTPException (caught
+        # above) when no local file is found.
+        is_remote_only = local_count == 0 and remote_count > 0 and skill_info is None
 
         if is_remote_only:
             try:
@@ -712,7 +741,7 @@ async def get_skill_detail(
         description=skill_info.description if skill_info else None,
         content=skill_info.content if skill_info else None,
         is_plugin=skill_info.is_plugin if skill_info else is_plugin_skill(skill_name),
-        plugin=skill_info.plugin if skill_info else None,
+        plugin=skill_info.plugin if skill_info else (skill_name.split(":")[0] if ":" in skill_name else None),
         file_path=skill_info.file_path if skill_info else None,
         category=classify_invocation(skill_name),
         calls=usage_data["total_calls"] if usage_data else 0,

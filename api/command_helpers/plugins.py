@@ -277,6 +277,29 @@ def is_plugin_skill(name: str) -> bool:
     return _is_plugin_skill(name)
 
 
+def is_plugin_installed_locally(name: str) -> bool:
+    """Check if a plugin directory exists in the local plugins cache.
+
+    Unlike ``is_plugin_skill`` this does NOT return True for colon-containing
+    names — it only checks the filesystem for the directory.
+
+    Args:
+        name: Plugin name (e.g. 'superpowers', 'oh-my-claudecode').
+    """
+    return _is_plugin_skill(name)
+
+
+def is_custom_skill_local(name: str) -> bool:
+    """Check if a custom skill file exists on disk.
+
+    Looks for:
+      - ~/.claude/skills/{name}/SKILL.md
+      - ~/.claude/skills/{name}/skill.md
+      - ~/.claude/skills/{name}.md
+    """
+    return _is_custom_skill(name)
+
+
 def classify_invocation(name: str, *, source: str = "") -> str:
     """Classify a command/skill invocation name into one of 6 categories.
 
