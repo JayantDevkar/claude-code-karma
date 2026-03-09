@@ -32,7 +32,7 @@ export const load: PageServerLoad = async ({ fetch, params }) => {
 		.catch(() => ({ devices: [] as PendingDevice[], auto_accepted: 0 }));
 
 	// Fetch in parallel: teams list (to find this team), devices, join code, pending folders, sync status, watch status, detect, project status
-	const [teamsData, devices, joinCodeData, pendingFoldersData, syncStatus, watchStatus, detectData, projectStatusData, activityData] = await Promise.all([
+	const [teamsData, devices, joinCodeData, pendingFoldersData, syncStatus, watchStatus, detectData, projectStatusData, activityData, sessionStatsData] = await Promise.all([
 		safeFetch<{ teams: SyncTeam[] }>(fetch, `${API_BASE}/sync/teams`),
 		fetchWithFallback<{ devices: SyncDevice[] }>(fetch, `${API_BASE}/sync/devices`, {
 			devices: []
@@ -62,6 +62,11 @@ export const load: PageServerLoad = async ({ fetch, params }) => {
 			fetch,
 			`${API_BASE}/sync/teams/${encodeURIComponent(teamName)}/activity?limit=20`,
 			{ events: [] }
+		),
+		fetchWithFallback<{ stats: any[] }>(
+			fetch,
+			`${API_BASE}/sync/teams/${encodeURIComponent(teamName)}/session-stats?days=30`,
+			{ stats: [] }
 		)
 	]);
 
@@ -100,6 +105,7 @@ export const load: PageServerLoad = async ({ fetch, params }) => {
 		watchStatus,
 		detectData,
 		projectStatuses: projectStatusData.projects ?? [],
-		activity: activityData.events ?? []
+		activity: activityData.events ?? [],
+		sessionStats: sessionStatsData.stats ?? []
 	};
 };
