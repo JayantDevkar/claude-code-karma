@@ -34,6 +34,7 @@ from db.sync_queries import (
     find_project_by_git_identity,
     find_project_by_git_suffix,
     update_team_session_limit,
+    query_session_stats_by_member,
 )
 from schemas import (
     AcceptPendingDeviceRequest,
@@ -2241,6 +2242,25 @@ async def sync_team_activity(
         limit=limit, offset=offset,
     )
     return {"events": events}
+
+
+@router.get("/teams/{team_name}/session-stats")
+async def sync_team_session_stats(
+    team_name: str,
+    days: int = 30,
+) -> Any:
+    """Session activity stats per member per day for charts."""
+    if not ALLOWED_PROJECT_NAME.match(team_name):
+        raise HTTPException(400, "Invalid team name")
+
+    days = max(1, min(days, 365))
+
+    conn = _get_sync_conn()
+    if not conn.execute("SELECT 1 FROM sync_teams WHERE name = ?", (team_name,)).fetchone():
+        raise HTTPException(404, f"Team '{team_name}' not found")
+
+    stats = query_session_stats_by_member(conn, team_name, days)
+    return {"stats": stats, "days": days}
 
 
 _VALID_SESSION_LIMITS = frozenset({"all", "recent_100", "recent_10"})
