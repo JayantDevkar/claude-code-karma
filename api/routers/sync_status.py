@@ -43,6 +43,23 @@ if str(_CLI_PATH) not in sys.path:
 
 router = APIRouter(prefix="/sync", tags=["sync"])
 
+
+async def _trigger_remote_reindex_bg() -> None:
+    """Trigger remote session reindex in background thread.
+
+    Called after sync actions (folder/device acceptance, project sharing,
+    member addition) so newly arrived remote sessions appear immediately
+    in the dashboard instead of waiting for the 5-minute periodic cycle.
+    """
+    import asyncio
+
+    from db.indexer import trigger_remote_reindex
+
+    try:
+        await asyncio.to_thread(trigger_remote_reindex)
+    except Exception as e:
+        logger.debug("Background remote reindex failed: %s", e)
+
 # Input validation
 ALLOWED_PROJECT_NAME = re.compile(r"^[a-zA-Z0-9_\-]+$")
 ALLOWED_MEMBER_NAME = re.compile(r"^[a-zA-Z0-9_\-\.]+$")  # hostnames have dots
@@ -1341,6 +1358,9 @@ async def sync_accept_pending_device(device_id: str, req: AcceptPendingDeviceReq
         except Exception as e:
             logger.warning("Failed to auto-share folders with accepted device: %s", e)
 
+    # Reindex remote sessions so any already-synced files appear immediately
+    await _trigger_remote_reindex_bg()
+
     return {
         "ok": True,
         "device_id": device_id,
@@ -1407,6 +1427,9 @@ async def sync_add_member(team_name: str, req: AddMemberRequest) -> Any:
                       detail={"outboxes": folders_created["outboxes"], "inboxes": folders_created["inboxes"]})
         except Exception as e:
             logger.warning("Failed to log folders_shared event: %s", e)
+
+    # Reindex remote sessions so any already-synced files appear immediately
+    await _trigger_remote_reindex_bg()
 
     return {
         "ok": True,
@@ -1520,6 +1543,9 @@ async def sync_add_team_project(team_name: str, req: AddTeamProjectRequest) -> A
             syncthing_ok = True
     except Exception as e:
         logger.warning("Failed to create Syncthing folder for project %s: %s", encoded, e)
+
+    # Reindex remote sessions so any already-synced files appear immediately
+    await _trigger_remote_reindex_bg()
 
     return {
         "ok": True,
@@ -1939,6 +1965,10 @@ async def sync_accept_pending() -> Any:
         if accepted:
             log_event(conn, "pending_accepted", member_name=config.user_id,
                       detail={"count": accepted, "phase": "manual"})
+
+        # Reindex remote sessions so any already-synced files appear immediately
+        await _trigger_remote_reindex_bg()
+
         return {"ok": True, "accepted": accepted}
     except SyncthingNotRunning:
         raise HTTPException(503, "Syncthing is not running")
@@ -1978,6 +2008,10 @@ async def sync_accept_single_folder(folder_id: str) -> Any:
         if accepted:
             log_event(conn, "pending_accepted", member_name=config.user_id,
                       detail={"folder_id": folder_id, "phase": "individual"})
+
+        # Reindex remote sessions so any already-synced files appear immediately
+        await _trigger_remote_reindex_bg()
+
         return {"ok": True, "accepted": accepted, "folder_id": folder_id}
     except SyncthingNotRunning:
         raise HTTPException(503, "Syncthing is not running")

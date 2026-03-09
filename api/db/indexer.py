@@ -31,6 +31,7 @@ _ready = threading.Event()
 _indexing_lock = threading.Lock()
 _last_health: dict = {}
 _last_sync_complete: float = 0.0
+_reindex_lock = threading.Lock()  # Separate lock for on-demand remote reindex
 
 
 def is_db_ready() -> bool:
@@ -458,6 +459,35 @@ def index_remote_sessions(conn: sqlite3.Connection) -> dict:
 
     conn.commit()
     return stats
+
+
+def trigger_remote_reindex() -> dict:
+    """Trigger an immediate remote session reindex.
+
+    Called after sync actions (folder acceptance, device pairing) so that
+    newly arrived remote sessions appear in the dashboard without waiting
+    for the periodic 5-minute reindex cycle.
+
+    Uses a separate lock to avoid blocking the full periodic indexer.
+    Skips silently if a reindex is already in progress.
+
+    Returns:
+        Dict with sync statistics, or {"status": "skipped"} if already running.
+    """
+    if not _reindex_lock.acquire(blocking=False):
+        return {"status": "skipped"}
+    try:
+        from .connection import get_writer_db
+
+        conn = get_writer_db()
+        stats = index_remote_sessions(conn)
+        logger.info("On-demand remote reindex complete: %s", stats)
+        return stats
+    except Exception as e:
+        logger.warning("On-demand remote reindex failed: %s", e)
+        return {"status": "error", "error": str(e)}
+    finally:
+        _reindex_lock.release()
 
 
 def _index_session(
