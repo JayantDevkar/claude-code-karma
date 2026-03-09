@@ -10,8 +10,8 @@
 		ExternalLink,
 		Puzzle
 	} from 'lucide-svelte';
-	import { browser } from '$app/environment';
 	import { navigating } from '$app/stores';
+	import { createUrlViewState } from '$lib/utils/url-view-state';
 	import { listNavigation } from '$lib/actions/listNavigation';
 	import PageHeader from '$lib/components/layout/PageHeader.svelte';
 	import SkeletonBox from '$lib/components/skeleton/SkeletonBox.svelte';
@@ -39,21 +39,15 @@
 	const validViews = ['servers', 'tools', 'analytics', 'members'] as const;
 
 	// URL state persistence for view mode
-	let viewReady = $state(false);
-	$effect(() => {
-		if (!browser || viewReady) return;
-		const params = new URLSearchParams(window.location.search);
-		const view = params.get('view');
-		if (view && (validViews as readonly string[]).includes(view)) viewMode = view as typeof viewMode;
-		viewReady = true;
-	});
-	$effect(() => {
-		if (!browser || !viewReady) return;
-		const url = new URL(window.location.href);
-		if (viewMode === 'servers') url.searchParams.delete('view');
-		else url.searchParams.set('view', viewMode);
-		history.replaceState({}, '', url.toString());
-	});
+	const { initFromUrl, syncToUrl } = createUrlViewState(
+		'servers', validViews,
+		() => viewMode, (v) => viewMode = v
+	);
+	$effect(initFromUrl);
+	$effect(syncToUrl);
+
+	// Reset sub-filter when entering members view
+	$effect(() => { if (viewMode === 'members') sourceFilter = 'all'; });
 
 	const viewOptions = [
 		{ label: 'By Server', value: 'servers' },

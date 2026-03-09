@@ -12,8 +12,8 @@
 		ExternalLink,
 		Download
 	} from 'lucide-svelte';
-	import { browser } from '$app/environment';
 	import { navigating } from '$app/stores';
+	import { createUrlViewState } from '$lib/utils/url-view-state';
 	import { listNavigation } from '$lib/actions/listNavigation';
 	import PageHeader from '$lib/components/layout/PageHeader.svelte';
 	import SkeletonBox from '$lib/components/skeleton/SkeletonBox.svelte';
@@ -43,21 +43,15 @@
 	const validViews = ['groups', 'table', 'analytics', 'members'] as const;
 
 	// URL state persistence for view mode
-	let viewReady = $state(false);
-	$effect(() => {
-		if (!browser || viewReady) return;
-		const params = new URLSearchParams(window.location.search);
-		const view = params.get('view');
-		if (view && (validViews as readonly string[]).includes(view)) activeView = view as typeof activeView;
-		viewReady = true;
-	});
-	$effect(() => {
-		if (!browser || !viewReady) return;
-		const url = new URL(window.location.href);
-		if (activeView === 'groups') url.searchParams.delete('view');
-		else url.searchParams.set('view', activeView);
-		history.replaceState({}, '', url.toString());
-	});
+	const { initFromUrl, syncToUrl } = createUrlViewState(
+		'groups', validViews,
+		() => activeView, (v) => activeView = v
+	);
+	$effect(initFromUrl);
+	$effect(syncToUrl);
+
+	// Reset sub-filter when entering members view
+	$effect(() => { if (activeView === 'members') selectedFilter = 'all'; });
 
 	// Filter state
 	let searchQuery = $state('');
