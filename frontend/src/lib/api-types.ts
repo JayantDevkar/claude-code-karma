@@ -1801,6 +1801,7 @@ export interface SyncPendingFolder {
 	from_team: string;
 	offered_at: string | null;
 	label: string;
+	description: string;
 	folder_type: 'handshake' | 'sessions' | 'unknown';
 }
 

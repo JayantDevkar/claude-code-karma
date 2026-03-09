@@ -152,7 +152,8 @@
 		if (foldersRes.ok) {
 			const fd = await foldersRes.json();
 			pendingFolders = (fd.pending ?? []).filter(
-				(f: SyncPendingFolder) => f.from_team === data.teamName
+				(f: SyncPendingFolder) =>
+					f.from_team === data.teamName && f.folder_type === 'sessions'
 			);
 		}
 		if (projectStatusRes.ok) {
@@ -294,7 +295,7 @@
 				<div class="flex items-center justify-between mb-3">
 					<div class="flex items-center gap-2">
 						<h2 class="text-sm font-semibold text-[var(--text-primary)] uppercase tracking-wider">
-							Incoming Project Shares
+							Pending Session Shares
 						</h2>
 						<span class="px-1.5 py-0.5 text-[10px] font-medium rounded bg-[var(--warning)]/15 text-[var(--warning)] border border-[var(--warning)]/25">
 							{pendingFolders.length}
@@ -323,10 +324,10 @@
 							<FolderGit2 size={16} class="text-[var(--warning)] shrink-0" />
 							<div class="flex-1 min-w-0">
 								<p class="text-sm font-medium text-[var(--text-primary)] truncate">
-									{parseFolderLabel(offer)}
+									{offer.description || parseFolderLabel(offer)}
 								</p>
 								<p class="text-xs text-[var(--text-muted)] mt-0.5">
-									from <span class="text-[var(--text-secondary)]">{offer.from_member}</span>
+									Accept to start receiving <span class="text-[var(--text-secondary)]">{offer.from_member}</span>'s sessions for this project
 								</p>
 							</div>
 							<div class="flex items-center gap-1.5 shrink-0">
