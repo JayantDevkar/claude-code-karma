@@ -64,7 +64,7 @@
 	{/snippet}
 </PageHeader>
 
-<div class="max-w-5xl mx-auto space-y-6">
+<div class="space-y-6">
 	{#if !configured}
 		<!-- State 1: Sync not configured -->
 		<div class="flex flex-col items-center justify-center py-16 text-center">
@@ -193,7 +193,7 @@
 		{/if}
 
 		<!-- State 3: Has teams -->
-		<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+		<div class="space-y-2">
 			{#each teams as team (team.name)}
 				<TeamCard {team} />
 			{/each}
