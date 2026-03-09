@@ -383,7 +383,7 @@
 					{:else}
 						<span class="text-sm text-[var(--text-muted)]">-</span>
 					{/if}
-					{#if isMainSession(entity) && isRemoteSession(entity) && entity.remote_user_id}
+					{#if entity.remote_user_id}
 						{@const teamColor = getTeamMemberColor(entity.remote_user_id)}
 						<div
 							class="flex items-center gap-1 px-2 py-0.5 rounded-full border {teamColor.badge} text-xs"

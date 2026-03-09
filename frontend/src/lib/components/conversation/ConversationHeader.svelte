@@ -58,16 +58,12 @@
 		isRefreshing = false
 	}: Props = $props();
 
-	// Remote session handling
-	const isRemote = $derived(isMainSession(entity) && isRemoteSession(entity));
+	// Remote session handling (works for both main sessions and subagent sessions)
+	const isRemote = $derived(isRemoteSession(entity));
 	const teamMemberColor = $derived(
-		isMainSession(entity) && entity.remote_user_id
-			? getTeamMemberColor(entity.remote_user_id)
-			: null
+		entity.remote_user_id ? getTeamMemberColor(entity.remote_user_id) : null
 	);
-	const remoteUserName = $derived(
-		isMainSession(entity) ? entity.remote_user_id ?? null : null
-	);
+	const remoteUserName = $derived(entity.remote_user_id ?? null);
 
 	// Debounced refresh indicator - ensures minimum visibility duration
 	const MIN_DISPLAY_MS = 600;
