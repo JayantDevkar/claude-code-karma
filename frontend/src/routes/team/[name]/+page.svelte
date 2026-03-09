@@ -21,7 +21,7 @@
 		CheckCircle2,
 		RefreshCw
 	} from 'lucide-svelte';
-	import type { SyncDevice, SyncPendingFolder, SyncProjectStatus } from '$lib/api-types';
+	import type { SyncDevice, SyncPendingFolder, SyncProjectStatus, SyncTeam, SyncEvent } from '$lib/api-types';
 
 	let { data } = $props();
 
@@ -31,12 +31,23 @@
 	let deleteError = $state<string | null>(null);
 	let removeProjectConfirm = $state<string | null>(null);
 	let syncAllActing = $state(false);
+	let isRefreshing = $state(false);
+
+	// Team data — $state so polling can update it directly
+	let team = $state<SyncTeam | null>(null);
+	$effect(() => { team = data.team ?? null; });
+	let members = $derived(team?.members ?? []);
+	let projects = $derived(team?.projects ?? []);
 
 	// Per-project sync status
 	let projectStatuses = $state<SyncProjectStatus[]>([]);
 	$effect(() => {
 		projectStatuses = data.projectStatuses ?? [];
 	});
+
+	// Activity feed
+	let activity = $state<SyncEvent[]>([]);
+	$effect(() => { activity = data.activity ?? []; });
 
 	function getProjectStatus(encodedName: string): SyncProjectStatus | undefined {
 		return projectStatuses.find((p) => p.encoded_name === encodedName);
@@ -70,9 +81,6 @@
 		pendingFolders = data.pendingFolders ?? [];
 	});
 
-	let team = $derived(data.team);
-	let members = $derived(team?.members ?? []);
-	let projects = $derived(team?.projects ?? []);
 	let userId = $derived(data.syncStatus?.user_id);
 	let sharedProjectNames = $derived(projects.map((p) => p.encoded_name));
 
@@ -93,33 +101,53 @@
 		}
 	}
 
-	// Poll for pending devices, device status, and pending folders
+	// Fetch all team data (used by both polling and manual refresh)
+	async function fetchTeamData(signal?: AbortSignal) {
+		const teamNameEnc = encodeURIComponent(data.teamName);
+		const [teamsRes, devicesRes, foldersRes, projectStatusRes, activityRes] = await Promise.all([
+			fetch(`${API_BASE}/sync/teams`, { signal }),
+			fetch(`${API_BASE}/sync/devices`, { signal }),
+			fetch(`${API_BASE}/sync/pending`, { signal }),
+			fetch(`${API_BASE}/sync/teams/${teamNameEnc}/project-status`, { signal }),
+			fetch(`${API_BASE}/sync/teams/${teamNameEnc}/activity?limit=20`, { signal })
+		]);
+
+		if (teamsRes.ok) {
+			const td = await teamsRes.json();
+			const found = (td.teams ?? []).find((t: SyncTeam) => t.name === data.teamName);
+			if (found) team = found;
+		}
+		if (devicesRes.ok) {
+			const dd = await devicesRes.json();
+			devices = dd.devices ?? [];
+		}
+		if (foldersRes.ok) {
+			const fd = await foldersRes.json();
+			pendingFolders = (fd.pending ?? []).filter(
+				(f: SyncPendingFolder) => f.from_team === data.teamName
+			);
+		}
+		if (projectStatusRes.ok) {
+			const ps = await projectStatusRes.json();
+			projectStatuses = ps.projects ?? [];
+		}
+		if (activityRes.ok) {
+			const ad = await activityRes.json();
+			activity = ad.events ?? [];
+		}
+	}
+
+	// Poll for team data, devices, pending folders, project status, and activity
 	onMount(() => {
 		let controller = new AbortController();
 
 		const interval = setInterval(async () => {
 			controller.abort();
 			controller = new AbortController();
-			const { signal } = controller;
-
 			try {
-				const [devicesRes, foldersRes] = await Promise.all([
-					fetch(`${API_BASE}/sync/devices`, { signal }),
-					fetch(`${API_BASE}/sync/pending`, { signal })
-				]);
-				if (devicesRes.ok) {
-					const dd = await devicesRes.json();
-					devices = dd.devices ?? [];
-				}
-				if (foldersRes.ok) {
-					const fd = await foldersRes.json();
-					pendingFolders = (fd.pending ?? []).filter(
-						(f: SyncPendingFolder) => f.from_team === data.teamName
-					);
-				}
+				await fetchTeamData(controller.signal);
 			} catch (e) {
 				if (e instanceof DOMException && e.name === 'AbortError') return;
-				// other polling errors are non-critical
 			}
 		}, POLLING_INTERVALS.SYNC_STATUS);
 
@@ -166,8 +194,17 @@
 		}
 	}
 
-	function handleRefresh() {
-		invalidateAll();
+	async function handleRefresh() {
+		if (isRefreshing) return;
+		isRefreshing = true;
+		try {
+			await fetchTeamData();
+		} catch {
+			// fall back to invalidateAll on error
+			invalidateAll();
+		} finally {
+			isRefreshing = false;
+		}
 	}
 </script>
 
@@ -185,9 +222,12 @@
 	{#snippet headerRight()}
 		<button
 			onclick={handleRefresh}
-			class="px-3 py-1.5 text-sm font-medium rounded-[var(--radius-md)] border border-[var(--border)]
-				text-[var(--text-secondary)] hover:bg-[var(--bg-muted)] transition-colors"
+			disabled={isRefreshing}
+			class="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-[var(--radius-md)] border border-[var(--border)]
+				text-[var(--text-secondary)] hover:bg-[var(--bg-muted)] transition-colors
+				disabled:opacity-50 disabled:cursor-not-allowed"
 		>
+			<RefreshCw size={14} class={isRefreshing ? 'animate-spin' : ''} />
 			Refresh
 		</button>
 	{/snippet}
@@ -412,7 +452,7 @@
 		<!-- Activity -->
 		<section class="pt-4 border-t border-[var(--border)]">
 			<TeamActivityFeed
-				events={data.activity}
+				events={activity}
 				teamName={data.teamName}
 			/>
 		</section>
