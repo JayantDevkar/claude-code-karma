@@ -6,12 +6,15 @@ from sessions.py, subagent_sessions.py, and live_sessions.py into a single
 service with consistent error handling and return types.
 """
 
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
 from config import settings
 from models import Agent, Session
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -58,7 +61,7 @@ def find_session_with_project(uuid: str) -> Optional[SessionLookupResult]:
     """
     Find a session by UUID and return both session and project encoded name.
 
-    Searches all projects in ~/.claude/projects/ for a session with the given UUID.
+    Uses DB for O(1) project lookup when available, falls back to O(n) directory scan.
 
     Args:
         uuid: Session UUID to find
@@ -67,6 +70,29 @@ def find_session_with_project(uuid: str) -> Optional[SessionLookupResult]:
         SessionLookupResult with session and project info, or None if not found.
     """
     projects_dir = settings.projects_dir
+
+    # DB fast path: O(1) project lookup instead of scanning all directories
+    try:
+        from db.connection import sqlite_read
+
+        with sqlite_read() as conn:
+            if conn is not None:
+                row = conn.execute(
+                    "SELECT project_encoded_name, source_encoded_name FROM sessions WHERE uuid = ?",
+                    (uuid,),
+                ).fetchone()
+                if row:
+                    source_enc = row["source_encoded_name"] or row["project_encoded_name"]
+                    jsonl_path = projects_dir / source_enc / f"{uuid}.jsonl"
+                    if jsonl_path.exists():
+                        return SessionLookupResult(
+                            session=Session.from_path(jsonl_path),
+                            project_encoded_name=row["project_encoded_name"],
+                        )
+    except Exception:
+        logger.debug("DB fast path failed for session %s, falling back to dir scan", uuid, exc_info=True)
+
+    # JSONL fallback: O(n) directory scan
     if projects_dir.exists():
         for encoded_dir in projects_dir.iterdir():
             if encoded_dir.is_dir() and encoded_dir.name.startswith("-"):
@@ -111,10 +137,8 @@ def find_session_by_message_uuid(message_uuid: str) -> Optional[SessionLookupRes
     """
     Find a session that contains a message with the given UUID.
 
-    Searches all sessions across all projects for a message with matching UUID.
-    Used to link continuation marker sessions to their continuation sessions.
-
-    Note: This is an expensive operation that may scan many JSONL files.
+    Uses DB message_uuids table for O(1) lookup when available,
+    falls back to O(n*m) JSONL scan.
 
     Args:
         message_uuid: The UUID of a message to search for
@@ -123,6 +147,27 @@ def find_session_by_message_uuid(message_uuid: str) -> Optional[SessionLookupRes
         SessionLookupResult with session and project info, or None if not found.
     """
     projects_dir = settings.projects_dir
+
+    # DB fast path: O(1) lookup via message_uuids table
+    try:
+        from db.connection import sqlite_read
+        from db.queries import query_session_by_message_uuid as db_lookup
+
+        with sqlite_read() as conn:
+            if conn is not None:
+                row = db_lookup(conn, message_uuid)
+                if row:
+                    source_enc = row.get("source_encoded_name") or row["project_encoded_name"]
+                    jsonl_path = projects_dir / source_enc / f"{row['session_uuid']}.jsonl"
+                    if jsonl_path.exists():
+                        return SessionLookupResult(
+                            session=Session.from_path(jsonl_path),
+                            project_encoded_name=row["project_encoded_name"],
+                        )
+    except Exception:
+        logger.debug("DB fast path failed for message UUID %s, falling back to scan", message_uuid, exc_info=True)
+
+    # JSONL fallback: O(n*m) scan of all sessions
     if not projects_dir.exists():
         return None
 
@@ -130,14 +175,12 @@ def find_session_by_message_uuid(message_uuid: str) -> Optional[SessionLookupRes
         if not encoded_dir.is_dir() or not encoded_dir.name.startswith("-"):
             continue
 
-        # Search all session JSONL files in this project
         for jsonl_path in encoded_dir.glob("*.jsonl"):
             if not _is_valid_session_filename(jsonl_path):
                 continue
 
             try:
                 session = Session.from_path(jsonl_path)
-                # Search messages for matching UUID
                 for msg in session.iter_messages():
                     if hasattr(msg, "uuid") and msg.uuid == message_uuid:
                         return SessionLookupResult(
@@ -145,7 +188,6 @@ def find_session_by_message_uuid(message_uuid: str) -> Optional[SessionLookupRes
                             project_encoded_name=encoded_dir.name,
                         )
             except Exception:
-                # Skip invalid session files
                 continue
 
     return None

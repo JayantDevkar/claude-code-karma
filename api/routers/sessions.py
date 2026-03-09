@@ -159,6 +159,142 @@ def detect_command_source(
 
 
 # =============================================================================
+# Parse-once: Direct filesystem helpers (no Session object needed)
+# =============================================================================
+
+
+def _load_todos_direct(uuid: str) -> list[TodoItemSchema]:
+    """Load todos from filesystem without creating a Session object."""
+    from models.todo import load_todos_from_file
+
+    todos_dir = settings.claude_base / "todos"
+    if not todos_dir.exists():
+        return []
+
+    todos: list[TodoItemSchema] = []
+    for todo_file in todos_dir.glob(f"{uuid}-*.json"):
+        try:
+            for t in load_todos_from_file(todo_file):
+                todos.append(
+                    TodoItemSchema(
+                        content=t.content,
+                        status=t.status,
+                        active_form=t.active_form,
+                    )
+                )
+        except Exception:
+            continue
+    return todos
+
+
+def _load_tasks_direct(uuid: str) -> list[TaskSchema]:
+    """Load tasks from filesystem without creating a Session object."""
+    from models.task import load_tasks_from_directory
+
+    tasks_dir = settings.claude_base / "tasks" / uuid
+    tasks = load_tasks_from_directory(tasks_dir)
+    return [
+        TaskSchema(
+            id=t.id,
+            subject=t.subject,
+            description=t.description,
+            status=t.status,
+            active_form=t.active_form,
+            blocks=t.blocks,
+            blocked_by=t.blocked_by,
+        )
+        for t in tasks
+    ]
+
+
+def _build_session_detail_from_db(
+    detail: dict,
+    todos: list[TodoItemSchema],
+    tasks: list[TaskSchema],
+) -> SessionDetail:
+    """Build a SessionDetail schema from DB query result + filesystem data."""
+    project_encoded_name = detail.get("project_encoded_name")
+    uuid = detail["uuid"]
+
+    # Session titles with title_cache fallback
+    session_titles = detail.get("session_titles") or []
+    if not session_titles and project_encoded_name:
+        session_titles = title_cache.get_titles(project_encoded_name, uuid) or []
+
+    # Build skill usage list
+    skills_used = []
+    for skill_name, inv_source, count in detail.get("skills_used_raw", []):
+        skills_used.append(
+            SkillUsage(
+                name=skill_name,
+                count=count,
+                is_plugin=is_plugin_skill(skill_name),
+                plugin=_skill_plugin_name(skill_name),
+                invocation_source=inv_source,
+            )
+        )
+
+    # Build command usage list
+    commands_used = []
+    for cmd_name, inv_source, count in detail.get("commands_used_raw", []):
+        source, plugin = detect_command_source(cmd_name, project_encoded_name)
+        commands_used.append(
+            CommandUsage(
+                name=cmd_name,
+                count=count,
+                source=source,
+                plugin=plugin,
+                invocation_source=inv_source,
+            )
+        )
+
+    return SessionDetail(
+        uuid=uuid,
+        slug=detail.get("slug"),
+        project_encoded_name=project_encoded_name,
+        project_display_name=detail.get("project_display_name"),
+        message_count=detail.get("message_count") or 0,
+        start_time=detail.get("start_time"),
+        end_time=detail.get("end_time"),
+        duration_seconds=detail.get("duration_seconds"),
+        models_used=detail.get("models_used") or [],
+        subagent_count=detail.get("subagent_count") or 0,
+        has_todos=len(todos) > 0,
+        todo_count=len(todos),
+        initial_prompt=detail.get("initial_prompt"),
+        session_source=detail.get("session_source"),
+        source=detail.get("source"),
+        remote_user_id=detail.get("remote_user_id"),
+        remote_machine_id=detail.get("remote_machine_id"),
+        # SessionDetail-specific fields
+        initial_prompt_images=[],  # Not indexed in DB
+        tools_used=detail.get("tools_used") or {},
+        git_branches=detail.get("git_branches") or [],
+        working_directories=detail.get("working_directories") or [],
+        total_input_tokens=detail.get("input_tokens") or 0,
+        total_output_tokens=detail.get("output_tokens") or 0,
+        cache_hit_rate=detail.get("cache_hit_rate") or 0.0,
+        total_cost=detail.get("total_cost") or 0.0,
+        todos=todos,
+        tasks=tasks,
+        has_tasks=len(tasks) > 0,
+        has_chain=detail.get("has_chain", False),
+        is_continuation_marker=bool(detail.get("is_continuation_marker")),
+        file_snapshot_count=detail.get("file_snapshot_count") or 0,
+        project_context_summaries=[],  # Not indexed in DB
+        project_context_leaf_uuids=detail.get("project_context_leaf_uuids") or [],
+        session_titles=session_titles,
+        was_compacted=bool(detail.get("was_compacted")),
+        compaction_summary_count=detail.get("compaction_count") or 0,
+        compaction_summaries=[],  # Full text not indexed in DB
+        message_type_breakdown={},  # Not indexed in DB
+        skills_used=skills_used,
+        skills_mentioned=[],  # DB doesn't distinguish used vs mentioned
+        commands_used=commands_used,
+    )
+
+
+# =============================================================================
 # All Sessions Listing Endpoint (Global Sessions Page)
 # =============================================================================
 
@@ -958,14 +1094,49 @@ def get_session(uuid: str, request: Request, fresh: bool = False):
     """
     Get detailed session information.
 
-    Phase 3: Supports HTTP caching with ETag and conditional requests.
-    Returns 304 Not Modified if content hasn't changed.
+    Parse-once: Uses DB fast path for historical sessions. Falls back to
+    JSONL when DB unavailable or fresh=True (live polling).
 
     Args:
         uuid: Session UUID
         fresh: If true, use minimal cache (1s) for live session polling
                and clear in-memory session cache to get fresh values
     """
+    # DB fast path (skip for fresh=True — live polling needs latest JSONL)
+    if not fresh:
+        try:
+            from db.connection import sqlite_read
+            from db.queries import query_session_detail
+
+            with sqlite_read() as conn:
+                if conn is not None:
+                    detail = query_session_detail(conn, uuid)
+                    if detail:
+                        todos = _load_todos_direct(uuid)
+                        tasks = _load_tasks_direct(uuid)
+                        response_data = _build_session_detail_from_db(detail, todos, tasks)
+
+                        # ETag from DB jsonl_mtime
+                        jsonl_mtime = detail.get("jsonl_mtime")
+                        etag = f'"{uuid}-{jsonl_mtime}"' if jsonl_mtime else None
+                        conditional_response = check_conditional_request(request, etag, None)
+                        if conditional_response:
+                            return conditional_response
+
+                        cache_headers = build_cache_headers(
+                            etag=etag,
+                            max_age=60,
+                            stale_while_revalidate=300,
+                            private=True,
+                        )
+                        return JSONResponse(
+                            content=response_data.model_dump(mode="json"),
+                            headers=cache_headers,
+                        )
+        except Exception:
+            logger.debug("DB fast path failed for session %s, falling back to JSONL", uuid, exc_info=True)
+
+    # JSONL fallback (also used for fresh=True live polling)
     result = find_session_with_project(uuid)
     if not result:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -1166,9 +1337,25 @@ def get_session_todos(uuid: str, request: Request) -> list[TodoItemSchema]:
     """
     Get all todo items for a session.
 
-    Returns the current state of todos from ~/.claude/todos/{uuid}-*.json
-    Phase 3: Cached for 60s with stale-while-revalidate.
+    Parse-once: Verifies session exists via DB, loads todos directly from
+    filesystem without parsing JSONL.
     """
+    # DB fast path: verify session exists without JSONL parse
+    try:
+        from db.connection import sqlite_read
+
+        with sqlite_read() as conn:
+            if conn is not None:
+                row = conn.execute(
+                    "SELECT 1 FROM sessions WHERE uuid = ?", (uuid,)
+                ).fetchone()
+                if row:
+                    return _load_todos_direct(uuid)
+                # Not in DB — might be unindexed, fall through to JSONL
+    except Exception:
+        pass
+
+    # JSONL fallback
     session = find_session(uuid)
     if session is None:
         raise HTTPException(status_code=404, detail=f"Session {uuid} not found")
@@ -1184,7 +1371,6 @@ def get_session_todos(uuid: str, request: Request) -> list[TodoItemSchema]:
             for todo in todos
         ]
     except Exception as e:
-        # Log error but return empty list (todos are optional)
         logger.warning(f"Failed to load todos for session {uuid}: {e}")
         return []
 
@@ -1199,8 +1385,8 @@ def get_session_tasks(
     """
     Get task items for a session (new task system with dependency tracking).
 
-    Returns the current state of tasks from ~/.claude/tasks/{uuid}/*.json
-    Tasks have dependency tracking via blocks/blockedBy fields.
+    Parse-once: Verifies session exists via DB when possible, avoids JSONL parse.
+    Falls back to JSONL for reconstructed tasks.
 
     Args:
         uuid: Session UUID
@@ -1211,9 +1397,26 @@ def get_session_tasks(
     Returns:
         List of TaskSchema with updated_at timestamps
     """
-    session = find_session(uuid)
-    if session is None:
-        raise HTTPException(status_code=404, detail=f"Session {uuid} not found")
+    # DB fast path: verify session exists + try filesystem-only task loading
+    session = None
+    session_verified = False
+    try:
+        from db.connection import sqlite_read
+
+        with sqlite_read() as conn:
+            if conn is not None:
+                row = conn.execute(
+                    "SELECT 1 FROM sessions WHERE uuid = ?", (uuid,)
+                ).fetchone()
+                if row:
+                    session_verified = True
+    except Exception:
+        pass
+
+    if not session_verified:
+        session = find_session(uuid)
+        if session is None:
+            raise HTTPException(status_code=404, detail=f"Session {uuid} not found")
 
     # Parse the since parameter if provided
     since_dt: Optional[datetime] = None
@@ -1227,31 +1430,37 @@ def get_session_tasks(
             # Continue without filtering
 
     try:
-        tasks = session.list_tasks()
-        tasks_dir = session.tasks_dir
+        from models.task import load_tasks_from_directory
+
+        tasks_dir = settings.claude_base / "tasks" / uuid
+
+        # Try filesystem first; fall back to JSONL reconstruction if needed
+        tasks = load_tasks_from_directory(tasks_dir)
+        if not tasks and session is not None:
+            # Fallback: reconstruct from JSONL (only if Session was loaded)
+            tasks = session.list_tasks()
 
         task_schemas = []
         for task in tasks:
-            # Determine updated_at from file mtime or session end time
+            # Determine updated_at from file mtime or fallback
             updated_at: Optional[datetime] = None
             task_file = tasks_dir / f"{task.id}.json"
 
             if task_file.exists():
-                # Use file modification time
                 mtime = task_file.stat().st_mtime
                 updated_at = datetime.fromtimestamp(mtime, tz=timezone.utc)
-            else:
-                # For reconstructed tasks, use session end time or current time
+            elif session is not None:
                 updated_at = session.end_time or datetime.now(timezone.utc)
+            else:
+                updated_at = datetime.now(timezone.utc)
 
             # Filter by since parameter if provided
             if since_dt and updated_at:
-                # Use normalize_timezone for proper timezone comparison
                 normalized_updated = normalize_timezone(updated_at)
                 normalized_since = normalize_timezone(since_dt)
 
                 if normalized_updated <= normalized_since:
-                    continue  # Skip tasks not modified since the given time
+                    continue
 
             task_schemas.append(
                 TaskSchema(
@@ -1266,7 +1475,6 @@ def get_session_tasks(
                 )
             )
 
-        # Add cache headers - minimal cache for live polling
         response_data = [t.model_dump(mode="json") for t in task_schemas]
         headers = {
             "Cache-Control": f"private, max-age={1 if fresh else 60}, stale-while-revalidate={2 if fresh else 300}"
@@ -1274,7 +1482,6 @@ def get_session_tasks(
         return JSONResponse(content=response_data, headers=headers)
 
     except Exception as e:
-        # Log error but return empty list (tasks are optional)
         logger.warning(f"Failed to load tasks for session {uuid}: {e}")
         return JSONResponse(content=[], headers={"Cache-Control": "private, max-age=1"})
 
@@ -1439,9 +1646,8 @@ def get_tools(uuid: str, request: Request, fresh: bool = False):
     """
     Get tool usage breakdown for a session.
 
-    Phase 2 optimization: Uses single-pass data collection.
-    Phase 3: Cached for 5min (historical data rarely changes).
-    Phase 3 DRY: Uses shared conversation_endpoints service.
+    Parse-once: Uses DB fast path for tool counts. Falls back to JSONL
+    when DB unavailable or fresh=True (live polling).
 
     Args:
         uuid: Session UUID
@@ -1449,20 +1655,40 @@ def get_tools(uuid: str, request: Request, fresh: bool = False):
     """
     from services.conversation_endpoints import build_tool_usage_summaries
 
+    # DB fast path
+    if not fresh:
+        try:
+            from db.connection import sqlite_read
+            from db.queries import query_session_tool_breakdown
+
+            with sqlite_read() as conn:
+                if conn is not None:
+                    session_counts, subagent_counts = query_session_tool_breakdown(conn, uuid)
+                    if session_counts is not None:
+                        from collections import Counter
+                        summaries = build_tool_usage_summaries(
+                            Counter(session_counts), Counter(subagent_counts)
+                        )
+                        response_data = [s.model_dump(mode="json") for s in summaries]
+                        headers = {
+                            "Cache-Control": "private, max-age=300, stale-while-revalidate=600"
+                        }
+                        return JSONResponse(content=response_data, headers=headers)
+        except Exception:
+            logger.debug("DB fast path failed for tools %s, falling back to JSONL", uuid, exc_info=True)
+
+    # JSONL fallback
     session = find_session(uuid)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    # Single-pass collection with subagents
     data = collect_session_data(session, include_subagents=True)
 
-    # Use shared service for building tool summaries
     summaries = build_tool_usage_summaries(
         data.session_tool_counts,
         data.subagent_tool_counts,
     )
 
-    # Add cache headers - minimal cache for live polling
     response_data = [s.model_dump(mode="json") for s in summaries]
     headers = {
         "Cache-Control": f"private, max-age={1 if fresh else 300}, stale-while-revalidate={2 if fresh else 600}"

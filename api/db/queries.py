@@ -1382,7 +1382,7 @@ def query_continuation_session(
 def query_session_by_message_uuid(conn: sqlite3.Connection, message_uuid: str) -> dict | None:
     """Look up a session by a message UUID it contains."""
     row = conn.execute(
-        """SELECT mu.session_uuid, s.slug, s.project_encoded_name
+        """SELECT mu.session_uuid, s.slug, s.project_encoded_name, s.source_encoded_name
         FROM message_uuids mu
         JOIN sessions s ON mu.session_uuid = s.uuid
         WHERE mu.message_uuid = :msg_uuid""",
@@ -3976,3 +3976,125 @@ def query_subagent_command_usage(
         params,
     ).fetchall()
     return [dict(row) for row in rows]
+
+
+# ---------------------------------------------------------------------------
+# Parse-once: Session detail & tool breakdown queries
+# ---------------------------------------------------------------------------
+
+
+def query_session_detail(conn: sqlite3.Connection, uuid: str) -> dict | None:
+    """
+    Fetch all SessionDetail fields available in the DB for a single session.
+
+    Returns a dict ready to be mapped to the SessionDetail schema, or None
+    if the session is not in the DB.
+    """
+    # 1. Core session row
+    row = conn.execute(
+        """SELECT uuid, slug, project_encoded_name, project_path,
+                  message_count, start_time, end_time, duration_seconds,
+                  input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens,
+                  total_cost, initial_prompt, git_branch, models_used,
+                  session_titles, is_continuation_marker, was_compacted,
+                  compaction_count, file_snapshot_count, subagent_count,
+                  session_source, source, remote_user_id, remote_machine_id,
+                  jsonl_mtime
+        FROM sessions WHERE uuid = ?""",
+        (uuid,),
+    ).fetchone()
+    if not row:
+        return None
+
+    session = dict(row)
+
+    # Parse JSON columns
+    session["models_used"] = _parse_json_list(session.get("models_used"))
+    session["session_titles"] = _parse_json_list(session.get("session_titles"))
+
+    # Compute derived fields
+    input_tokens = session.get("input_tokens") or 0
+    cache_read = session.get("cache_read_tokens") or 0
+    denom = input_tokens + cache_read
+    session["cache_hit_rate"] = cache_read / denom if denom > 0 else 0.0
+
+    git_branch = session.get("git_branch")
+    session["git_branches"] = [git_branch] if git_branch else []
+
+    project_path = session.get("project_path") or ""
+    session["working_directories"] = [project_path] if project_path else []
+    session["project_display_name"] = Path(project_path).name if project_path else None
+
+    # 2. Tool counts
+    tool_rows = conn.execute(
+        "SELECT tool_name, count FROM session_tools WHERE session_uuid = ?",
+        (uuid,),
+    ).fetchall()
+    session["tools_used"] = {r["tool_name"]: r["count"] for r in tool_rows}
+
+    # 3. Skill usage (with invocation_source)
+    skill_rows = conn.execute(
+        "SELECT skill_name, invocation_source, count FROM session_skills WHERE session_uuid = ?",
+        (uuid,),
+    ).fetchall()
+    session["skills_used_raw"] = [
+        (r["skill_name"], r["invocation_source"], r["count"]) for r in skill_rows
+    ]
+
+    # 4. Command usage (with invocation_source)
+    cmd_rows = conn.execute(
+        "SELECT command_name, invocation_source, count FROM session_commands WHERE session_uuid = ?",
+        (uuid,),
+    ).fetchall()
+    session["commands_used_raw"] = [
+        (r["command_name"], r["invocation_source"], r["count"]) for r in cmd_rows
+    ]
+
+    # 5. Leaf UUIDs (for project_context_leaf_uuids display)
+    leaf_rows = conn.execute(
+        "SELECT leaf_uuid FROM session_leaf_refs WHERE session_uuid = ?",
+        (uuid,),
+    ).fetchall()
+    session["project_context_leaf_uuids"] = [r["leaf_uuid"] for r in leaf_rows]
+
+    # 6. Chain detection
+    session["has_chain"] = query_session_has_chain(conn, uuid)
+
+    return session
+
+
+def query_session_tool_breakdown(
+    conn: sqlite3.Connection, uuid: str
+) -> tuple[dict[str, int] | None, dict[str, int]]:
+    """
+    Fetch session + subagent tool counts from DB.
+
+    Returns (session_tool_counts, subagent_tool_counts).
+    Returns (None, {}) if session not found.
+    """
+    # Verify session exists
+    exists = conn.execute(
+        "SELECT 1 FROM sessions WHERE uuid = ?", (uuid,)
+    ).fetchone()
+    if not exists:
+        return None, {}
+
+    # Session tools
+    session_rows = conn.execute(
+        "SELECT tool_name, count FROM session_tools WHERE session_uuid = ?",
+        (uuid,),
+    ).fetchall()
+    session_counts = {r["tool_name"]: r["count"] for r in session_rows}
+
+    # Subagent tools (aggregated across all invocations)
+    subagent_rows = conn.execute(
+        """SELECT sat.tool_name, SUM(sat.count) as count
+        FROM subagent_tools sat
+        JOIN subagent_invocations si ON sat.invocation_id = si.id
+        WHERE si.session_uuid = ?
+        GROUP BY sat.tool_name""",
+        (uuid,),
+    ).fetchall()
+    subagent_counts = {r["tool_name"]: r["count"] for r in subagent_rows}
+
+    return session_counts, subagent_counts
