@@ -47,18 +47,23 @@ _MANIFEST_WORKTREE_TTL = 30.0  # seconds
 _titles_cache: dict[tuple[str, str], tuple[float, dict[str, str]]] = {}
 _TITLES_TTL = 30.0  # seconds
 
+# Cache for resolved user_id from manifest (keyed by dir_name)
+_resolved_user_cache: dict[str, tuple[float, str]] = {}
+_RESOLVED_USER_TTL = 60.0  # seconds
+
 
 def invalidate_caches() -> None:
     """Clear all in-memory caches. Called on sync reset."""
     global _local_user_cache, _local_user_cache_time
     global _project_mapping_cache, _project_mapping_cache_time
-    global _manifest_worktree_cache, _titles_cache
+    global _manifest_worktree_cache, _titles_cache, _resolved_user_cache
     _local_user_cache = None
     _local_user_cache_time = 0.0
     _project_mapping_cache = None
     _project_mapping_cache_time = 0.0
     _manifest_worktree_cache.clear()
     _titles_cache.clear()
+    _resolved_user_cache.clear()
 
 
 @dataclass
@@ -232,6 +237,47 @@ def _get_remote_sessions_dir() -> Path:
     return settings.karma_base / "remote-sessions"
 
 
+def _resolve_user_id(user_dir: Path) -> str:
+    """
+    Resolve a clean user_id for a remote-sessions user directory.
+
+    The directory name may be a machine hostname (e.g. 'Jayants-Mac-mini.local')
+    when Syncthing creates the folder. The manifest.json inside each project
+    subdirectory contains the canonical user_id set by the sender.
+
+    Reads the first manifest.json found under the user_dir, caches the result.
+    Falls back to directory name if no manifest is available.
+    """
+    dir_name = user_dir.name
+    now = time.monotonic()
+
+    cached = _resolved_user_cache.get(dir_name)
+    if cached is not None:
+        cache_time, cached_id = cached
+        if (now - cache_time) < _RESOLVED_USER_TTL:
+            return cached_id
+
+    # Scan project subdirs for a manifest with user_id
+    resolved = dir_name
+    try:
+        for project_dir in user_dir.iterdir():
+            if not project_dir.is_dir():
+                continue
+            manifest_path = project_dir / "manifest.json"
+            if manifest_path.exists():
+                with open(manifest_path) as f:
+                    manifest = json.load(f)
+                manifest_uid = manifest.get("user_id")
+                if manifest_uid:
+                    resolved = manifest_uid
+                    break
+    except (json.JSONDecodeError, OSError) as e:
+        logger.debug("Failed to resolve user_id from manifest in %s: %s", dir_name, e)
+
+    _resolved_user_cache[dir_name] = (now, resolved)
+    return resolved
+
+
 def _load_manifest_worktree_map(
     user_id: str, encoded_name: str
 ) -> dict[str, Optional[str]]:
@@ -360,10 +406,11 @@ def find_remote_session(uuid: str) -> Optional[RemoteSessionResult]:
     for user_dir in remote_base.iterdir():
         if not user_dir.is_dir():
             continue
-        user_id = user_dir.name
+        dir_name = user_dir.name
+        user_id = _resolve_user_id(user_dir)
 
-        # Skip local user's outbox
-        if user_id == local_user:
+        # Skip local user's outbox (check both dir name and resolved id)
+        if dir_name == local_user or user_id == local_user:
             continue
 
         for encoded_dir in user_dir.iterdir():
@@ -387,7 +434,7 @@ def find_remote_session(uuid: str) -> Optional[RemoteSessionResult]:
                 return RemoteSessionResult(
                     session=session,
                     user_id=user_id,
-                    machine_id=user_id,
+                    machine_id=dir_name,
                     local_encoded_name=encoded_name,
                 )
             except Exception as e:
@@ -425,20 +472,21 @@ def list_remote_sessions_for_project(local_encoded: str) -> list[SessionMetadata
     for user_dir in remote_base.iterdir():
         if not user_dir.is_dir():
             continue
-        user_id = user_dir.name
+        dir_name = user_dir.name
+        user_id = _resolve_user_id(user_dir)
 
-        # Skip local user's outbox
-        if user_id == local_user:
+        # Skip local user's outbox (check both dir name and resolved id)
+        if dir_name == local_user or user_id == local_user:
             continue
 
         sessions_dir = user_dir / local_encoded / "sessions"
         if not sessions_dir.exists():
             continue
 
-        # Load manifest once per (user_id, project) for worktree attribution
-        wt_map = _load_manifest_worktree_map(user_id, local_encoded)
-        # Load titles once per (user_id, project)
-        titles_map = _load_remote_titles(user_id, local_encoded)
+        # Load manifest once per (dir_name, project) for worktree attribution
+        wt_map = _load_manifest_worktree_map(dir_name, local_encoded)
+        # Load titles once per (dir_name, project)
+        titles_map = _load_remote_titles(dir_name, local_encoded)
 
         for jsonl_path in sessions_dir.glob("*.jsonl"):
             uuid = jsonl_path.stem
@@ -451,7 +499,7 @@ def list_remote_sessions_for_project(local_encoded: str) -> list[SessionMetadata
                 local_encoded=local_encoded,
                 project_dir=sessions_dir,
                 user_id=user_id,
-                machine_id=user_id,
+                machine_id=dir_name,
                 worktree_name=wt_map.get(uuid),
                 title=titles_map.get(uuid),
             )
@@ -480,10 +528,11 @@ def iter_all_remote_session_metadata() -> Iterator[SessionMetadata]:
     for user_dir in remote_base.iterdir():
         if not user_dir.is_dir():
             continue
-        user_id = user_dir.name
+        dir_name = user_dir.name
+        user_id = _resolve_user_id(user_dir)
 
-        # Skip local user's outbox
-        if user_id == local_user:
+        # Skip local user's outbox (check both dir name and resolved id)
+        if dir_name == local_user or user_id == local_user:
             continue
 
         for encoded_dir in user_dir.iterdir():
@@ -495,10 +544,10 @@ def iter_all_remote_session_metadata() -> Iterator[SessionMetadata]:
             if not sessions_dir.exists():
                 continue
 
-            # Load manifest once per (user_id, project) for worktree attribution
-            wt_map = _load_manifest_worktree_map(user_id, encoded_name)
-            # Load titles once per (user_id, project)
-            titles_map = _load_remote_titles(user_id, encoded_name)
+            # Load manifest once per (dir_name, project) for worktree attribution
+            wt_map = _load_manifest_worktree_map(dir_name, encoded_name)
+            # Load titles once per (dir_name, project)
+            titles_map = _load_remote_titles(dir_name, encoded_name)
 
             for jsonl_path in sessions_dir.glob("*.jsonl"):
                 uuid = jsonl_path.stem
@@ -511,7 +560,7 @@ def iter_all_remote_session_metadata() -> Iterator[SessionMetadata]:
                     local_encoded=encoded_name,
                     project_dir=sessions_dir,
                     user_id=user_id,
-                    machine_id=user_id,
+                    machine_id=dir_name,
                     worktree_name=wt_map.get(uuid),
                     title=titles_map.get(uuid),
                 )

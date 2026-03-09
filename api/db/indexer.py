@@ -343,53 +343,83 @@ def index_remote_sessions(conn: sqlite3.Connection) -> dict:
         except Exception:
             pass
 
+    from services.remote_sessions import _resolve_user_id
+
+    # One-time fixup: correct stale remote_user_id values (e.g. hostname → clean user_id).
+    # Runs cheaply — only when dir_name != resolved_uid for any user directory.
     for user_dir in remote_base.iterdir():
         if not user_dir.is_dir():
             continue
-        user_id = user_dir.name
+        dn = user_dir.name
+        ru = _resolve_user_id(user_dir)
+        if dn != ru:
+            updated = conn.execute(
+                "UPDATE sessions SET remote_user_id = ? WHERE remote_user_id = ? AND source = 'remote'",
+                (ru, dn),
+            ).rowcount
+            if updated:
+                logger.info("Corrected remote_user_id '%s' → '%s' for %d sessions", dn, ru, updated)
 
-        # Skip local user's outbox
-        if user_id == local_user:
+    for user_dir in remote_base.iterdir():
+        if not user_dir.is_dir():
+            continue
+        dir_name = user_dir.name
+        resolved_uid = _resolve_user_id(user_dir)
+
+        # Skip local user's outbox (check both dir name and resolved id)
+        if dir_name == local_user or resolved_uid == local_user:
             continue
 
         for encoded_dir in user_dir.iterdir():
             if not encoded_dir.is_dir():
                 continue
             encoded_name = encoded_dir.name
-            local_encoded = mapping.get((user_id, encoded_name), encoded_name)
+            # Mapping keys use dir_name (filesystem identity)
+            local_encoded = mapping.get((dir_name, encoded_name), encoded_name)
 
             sessions_dir = encoded_dir / "sessions"
             if not sessions_dir.exists():
                 continue
 
-            # Load manifest classifications once per (user_id, project)
+            # Load manifest classifications once per (dir_name, project)
             classification_overrides = _load_manifest_classifications(encoded_dir)
 
-            # Force re-index when manifest has classification data and has been updated.
+            # Load titles once per (dir_name, project) for remote session title display
+            from services.remote_sessions import _load_remote_titles
+            titles_map = _load_remote_titles(dir_name, encoded_name)
+
+            # Force re-index when manifest/titles have been updated since last index.
             # Without this, the mtime-based skip would prevent reclassification of
             # sessions already indexed (their JSONL files haven't changed).
             force_reindex = False
+            # Check both manifest.json (classifications) and titles.json (session titles)
+            metadata_files = []
             if classification_overrides:
                 manifest_path = encoded_dir / "manifest.json"
                 if manifest_path.exists():
-                    manifest_mtime = manifest_path.stat().st_mtime
-                    # Check if any session for this remote user+project was indexed
-                    # before the manifest was last modified
-                    oldest_indexed = conn.execute(
-                        "SELECT MIN(indexed_at) FROM sessions WHERE remote_user_id = ? AND project_encoded_name = ? AND source = 'remote'",
-                        (user_id, local_encoded),
-                    ).fetchone()
-                    if oldest_indexed and oldest_indexed[0]:
-                        from datetime import datetime, timezone
-                        try:
-                            indexed_dt = datetime.fromisoformat(oldest_indexed[0])
-                            # indexed_at is UTC (from SQLite datetime('now')),
-                            # manifest_mtime is a POSIX timestamp — convert to UTC too
-                            manifest_dt = datetime.fromtimestamp(manifest_mtime, tz=timezone.utc).replace(tzinfo=None)
-                            if manifest_dt > indexed_dt:
+                    metadata_files.append(manifest_path)
+            if titles_map:
+                titles_path = encoded_dir / "titles.json"
+                if titles_path.exists():
+                    metadata_files.append(titles_path)
+
+            if metadata_files:
+                oldest_indexed = conn.execute(
+                    "SELECT MIN(indexed_at) FROM sessions WHERE remote_user_id IN (?, ?) AND project_encoded_name = ? AND source = 'remote'",
+                    (resolved_uid, dir_name, local_encoded),
+                ).fetchone()
+                if oldest_indexed and oldest_indexed[0]:
+                    from datetime import datetime, timezone
+                    try:
+                        indexed_dt = datetime.fromisoformat(oldest_indexed[0])
+                        for meta_file in metadata_files:
+                            meta_mtime = meta_file.stat().st_mtime
+                            meta_dt = datetime.fromtimestamp(meta_mtime, tz=timezone.utc).replace(tzinfo=None)
+                            if meta_dt > indexed_dt:
                                 force_reindex = True
-                        except (ValueError, OSError):
-                            pass
+                                break
+                    except (ValueError, OSError):
+                        pass
 
             for jsonl_path in sessions_dir.glob("*.jsonl"):
                 if jsonl_path.name.startswith("agent-"):
@@ -411,15 +441,15 @@ def index_remote_sessions(conn: sqlite3.Connection) -> dict:
                     from services.file_validator import quarantine_file, validate_received_file
                     valid, reason = validate_received_file(jsonl_path)
                     if not valid:
-                        quarantine_file(jsonl_path, reason, member_name=user_id)
+                        quarantine_file(jsonl_path, reason, member_name=resolved_uid)
                         logger.warning(
-                            "Rejected remote file %s from %s: %s", jsonl_path.name, user_id, reason
+                            "Rejected remote file %s from %s: %s", jsonl_path.name, resolved_uid, reason
                         )
                         try:
                             from db.sync_queries import log_event
                             log_event(
                                 conn, "file_rejected",
-                                member_name=user_id,
+                                member_name=resolved_uid,
                                 project_encoded_name=local_encoded,
                                 session_uuid=uuid,
                                 detail={"reason": reason, "file": jsonl_path.name},
@@ -436,10 +466,11 @@ def index_remote_sessions(conn: sqlite3.Connection) -> dict:
                         current_mtime,
                         current_size,
                         source="remote",
-                        remote_user_id=user_id,
-                        remote_machine_id=user_id,
+                        remote_user_id=resolved_uid,
+                        remote_machine_id=dir_name,
                         claude_base_dir=encoded_dir,
                         classification_overrides=classification_overrides,
+                        session_titles_override=[titles_map[uuid]] if uuid in titles_map else None,
                     )
                     stats["indexed"] += 1
 
@@ -448,8 +479,8 @@ def index_remote_sessions(conn: sqlite3.Connection) -> dict:
                     _extract_skill_definitions_from_session(
                         conn,
                         jsonl_path,
-                        source_user_id=user_id,
-                        source_machine_id=user_id,
+                        source_user_id=resolved_uid,
+                        source_machine_id=dir_name,
                         session_uuid=uuid,
                         claude_base_dir=encoded_dir,
                         classification_overrides=classification_overrides,
@@ -469,7 +500,7 @@ def index_remote_sessions(conn: sqlite3.Connection) -> dict:
                                     log_event(
                                         conn, "session_received",
                                         team_name=tn,
-                                        member_name=user_id,
+                                        member_name=resolved_uid,
                                         project_encoded_name=local_encoded,
                                         session_uuid=uuid,
                                     )
@@ -477,7 +508,7 @@ def index_remote_sessions(conn: sqlite3.Connection) -> dict:
                                 # No team found — log without team_name as fallback
                                 log_event(
                                     conn, "session_received",
-                                    member_name=user_id,
+                                    member_name=resolved_uid,
                                     project_encoded_name=local_encoded,
                                     session_uuid=uuid,
                                 )
@@ -534,6 +565,7 @@ def _index_session(
     remote_machine_id: Optional[str] = None,
     claude_base_dir: Optional[Path] = None,
     classification_overrides: Optional[dict[str, str]] = None,
+    session_titles_override: Optional[list[str]] = None,
 ) -> None:
     """
     Extract metadata from a session JSONL and upsert into SQLite.
@@ -552,6 +584,8 @@ def _index_session(
         classification_overrides: Manifest-provided name→category map for remote sessions.
             When present, overrides local classify_invocation() results to fix
             misclassification of remote skills/commands.
+        session_titles_override: Titles from external source (e.g., titles.json) to use
+            when the JSONL doesn't contain title data (remote sessions).
     """
     from models import Session
     from utils import get_initial_prompt
@@ -664,7 +698,7 @@ def _index_session(
 
     models_used = list(session.get_models_used())
     git_branches = list(session.get_git_branches())
-    session_titles = session.session_titles or []
+    session_titles = session.session_titles or session_titles_override or []
     initial_prompt = get_initial_prompt(session, max_length=500)
 
     # Count subagents via filesystem (fast, no JSONL parse)
