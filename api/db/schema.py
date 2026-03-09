@@ -10,7 +10,7 @@ import sqlite3
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 22
+SCHEMA_VERSION = 23
 
 SCHEMA_SQL = """
 -- Schema versioning
@@ -227,6 +227,7 @@ CREATE TABLE IF NOT EXISTS sync_teams (
     name TEXT PRIMARY KEY,
     backend TEXT NOT NULL DEFAULT 'syncthing',
     join_code TEXT,
+    sync_session_limit TEXT DEFAULT 'all',
     created_at TEXT DEFAULT (datetime('now'))
 );
 
@@ -296,7 +297,8 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
                 name TEXT PRIMARY KEY,
                 backend TEXT NOT NULL DEFAULT 'syncthing',
                 join_code TEXT,
-                created_at TEXT DEFAULT (datetime('now'))
+                created_at TEXT DEFAULT (datetime('now')),
+                sync_session_limit TEXT DEFAULT 'all'
             );
             CREATE TABLE IF NOT EXISTS sync_members (
                 team_name TEXT NOT NULL,
@@ -636,6 +638,14 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             conn.execute("DROP TABLE sync_members")
             conn.execute("ALTER TABLE sync_members_new RENAME TO sync_members")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_sync_members_name ON sync_members(team_name, name)")
+
+        if current_version < 23:
+            try:
+                conn.execute(
+                    "ALTER TABLE sync_teams ADD COLUMN sync_session_limit TEXT DEFAULT 'all'"
+                )
+            except sqlite3.OperationalError:
+                pass  # Column already exists
 
     # Record version
     conn.execute(

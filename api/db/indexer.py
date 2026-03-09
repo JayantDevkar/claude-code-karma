@@ -285,15 +285,21 @@ def _load_manifest_classifications(encoded_dir: Path) -> dict[str, str]:
     Returns a mapping of invocation name → InvocationCategory string
     (e.g. {'feature-dev:feature-dev': 'plugin_command'}).
     Returns empty dict if manifest doesn't exist or lacks the field.
+
+    Uses validate_manifest() to ensure the manifest is safe before reading.
     """
     manifest_path = encoded_dir / "manifest.json"
     if not manifest_path.exists():
         return {}
     try:
-        with open(manifest_path) as f:
-            manifest = json.load(f)
-        return manifest.get("skill_classifications", {})
-    except (json.JSONDecodeError, OSError):
+        from services.file_validator import validate_manifest
+        manifest, reason = validate_manifest(manifest_path)
+        if manifest is None:
+            logger.warning("Invalid manifest at %s: %s", manifest_path, reason)
+            return {}
+        return manifest.skill_classifications
+    except Exception as e:
+        logger.warning("Error loading manifest at %s: %s", manifest_path, e)
         return {}
 
 
@@ -398,6 +404,28 @@ def index_remote_sessions(conn: sqlite3.Connection) -> dict:
                         stats["skipped"] += 1
                         continue
 
+                    # Validate file before indexing
+                    from services.file_validator import quarantine_file, validate_received_file
+                    valid, reason = validate_received_file(jsonl_path)
+                    if not valid:
+                        quarantine_file(jsonl_path, reason, member_name=user_id)
+                        logger.warning(
+                            "Rejected remote file %s from %s: %s", jsonl_path.name, user_id, reason
+                        )
+                        try:
+                            from db.sync_queries import log_event
+                            log_event(
+                                conn, "file_rejected",
+                                member_name=user_id,
+                                project_encoded_name=local_encoded,
+                                session_uuid=uuid,
+                                detail={"reason": reason, "file": jsonl_path.name},
+                            )
+                        except Exception:
+                            pass  # Best-effort logging
+                        stats["errors"] += 1
+                        continue
+
                     _index_session(
                         conn,
                         jsonl_path,
@@ -412,17 +440,18 @@ def index_remote_sessions(conn: sqlite3.Connection) -> dict:
                     )
                     stats["indexed"] += 1
 
-                    # Log session_received event
-                    try:
-                        from db.sync_queries import log_event
-                        log_event(
-                            conn, "session_received",
-                            member_name=user_id,
-                            project_encoded_name=local_encoded,
-                            session_uuid=uuid,
-                        )
-                    except Exception:
-                        pass  # Best-effort logging
+                    # Log session_received only for truly new sessions (not re-index)
+                    if uuid not in db_mtimes:
+                        try:
+                            from db.sync_queries import log_event
+                            log_event(
+                                conn, "session_received",
+                                member_name=user_id,
+                                project_encoded_name=local_encoded,
+                                session_uuid=uuid,
+                            )
+                        except Exception:
+                            pass  # Best-effort logging
                 except Exception as e:
                     logger.debug("Error indexing remote session %s: %s", uuid, e)
                     stats["errors"] += 1

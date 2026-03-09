@@ -9,7 +9,8 @@ import type {
 	SyncStatusResponse,
 	SyncWatchStatus,
 	SyncDetect,
-	SyncProjectStatus
+	SyncProjectStatus,
+	SyncEvent
 } from '$lib/api-types';
 
 interface ProjectSummary {
@@ -24,7 +25,7 @@ export const load: PageServerLoad = async ({ fetch, params }) => {
 	const teamName = params.name;
 
 	// Fetch in parallel: teams list (to find this team), devices, join code, pending folders, sync status, watch status, detect, project status
-	const [teamsData, devices, joinCodeData, pendingFoldersData, syncStatus, watchStatus, detectData, projectStatusData] = await Promise.all([
+	const [teamsData, devices, joinCodeData, pendingFoldersData, syncStatus, watchStatus, detectData, projectStatusData, activityData] = await Promise.all([
 		safeFetch<{ teams: SyncTeam[] }>(fetch, `${API_BASE}/sync/teams`),
 		fetchWithFallback<{ devices: SyncDevice[] }>(fetch, `${API_BASE}/sync/devices`, {
 			devices: []
@@ -49,6 +50,11 @@ export const load: PageServerLoad = async ({ fetch, params }) => {
 			fetch,
 			`${API_BASE}/sync/teams/${encodeURIComponent(teamName)}/project-status`,
 			{ projects: [] }
+		),
+		fetchWithFallback<{ events: SyncEvent[] }>(
+			fetch,
+			`${API_BASE}/sync/teams/${encodeURIComponent(teamName)}/activity?limit=20`,
+			{ events: [] }
 		)
 	]);
 
@@ -85,6 +91,7 @@ export const load: PageServerLoad = async ({ fetch, params }) => {
 		syncStatus,
 		watchStatus,
 		detectData,
-		projectStatuses: projectStatusData.projects ?? []
+		projectStatuses: projectStatusData.projects ?? [],
+		activity: activityData.events ?? []
 	};
 };

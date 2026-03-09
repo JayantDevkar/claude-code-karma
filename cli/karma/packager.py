@@ -12,6 +12,24 @@ from karma.manifest import SessionEntry, SyncManifest
 
 logger = logging.getLogger(__name__)
 
+MIN_FREE_BYTES = 10 * 1024 * 1024 * 1024  # 10 GiB
+
+
+def get_session_limit(team_session_limit: str, dest_path: Path) -> int | None:
+    """Return max sessions to package, or None for unlimited.
+
+    If disk has < 10 GiB free, force recent 100 regardless of setting.
+    """
+    try:
+        free = shutil.disk_usage(dest_path).free
+    except OSError:
+        return 100  # Can't check disk → be conservative
+    if free < MIN_FREE_BYTES:
+        return 100  # safety cap
+
+    limits = {"all": None, "recent_100": 100, "recent_10": 10}
+    return limits.get(team_session_limit, None)
+
 
 def _build_skill_classifications_from_db(
     session_uuids: list[str],
@@ -214,9 +232,16 @@ class SessionPackager:
                 return extra_dir
         return self.project_dir  # fallback
 
-    def package(self, staging_dir: Path) -> SyncManifest:
+    def package(self, staging_dir: Path, session_limit: str = "all") -> SyncManifest:
         """Copy session files into staging directory and create manifest."""
         sessions = self.discover_sessions()
+
+        # Apply session limit (disk space aware)
+        limit = get_session_limit(session_limit, staging_dir)
+        if limit is not None and len(sessions) > limit:
+            # Sort by mtime descending (most recent first), take top N
+            sessions.sort(key=lambda s: s.mtime, reverse=True)
+            sessions = sessions[:limit]
 
         sessions_dir = staging_dir / "sessions"
         sessions_dir.mkdir(parents=True, exist_ok=True)

@@ -4,6 +4,8 @@
 	import JoinCodeCard from '$lib/components/team/JoinCodeCard.svelte';
 	import TeamMemberCard from '$lib/components/team/TeamMemberCard.svelte';
 	import AddProjectDialog from '$lib/components/team/AddProjectDialog.svelte';
+	import TeamActivityFeed from '$lib/components/team/TeamActivityFeed.svelte';
+	import SessionLimitSelector from '$lib/components/team/SessionLimitSelector.svelte';
 	import { API_BASE } from '$lib/config';
 	import { POLLING_INTERVALS } from '$lib/config';
 	import { invalidateAll } from '$app/navigation';
@@ -396,6 +398,23 @@
 					</p>
 				{/if}
 			</div>
+			<!-- Session limit setting -->
+			{#if projects.length > 0}
+				<div class="mt-3 pt-3 border-t border-[var(--border)]/50">
+					<SessionLimitSelector
+						teamName={data.teamName}
+						currentLimit={data.team?.sync_session_limit ?? 'all'}
+					/>
+				</div>
+			{/if}
+		</section>
+
+		<!-- Activity -->
+		<section class="pt-4 border-t border-[var(--border)]">
+			<TeamActivityFeed
+				events={data.activity}
+				teamName={data.teamName}
+			/>
 		</section>
 
 		<!-- Danger Zone -->

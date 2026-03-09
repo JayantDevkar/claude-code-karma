@@ -4,7 +4,8 @@
 	import { goto } from '$app/navigation';
 	import { parseJoinCode } from '$lib/utils/join-code';
 	import { Loader2, CheckCircle2 } from 'lucide-svelte';
-	import type { JoinTeamResponse } from '$lib/api-types';
+	import type { JoinTeamResponse, MatchingProject } from '$lib/api-types';
+	import { FolderGit2 } from 'lucide-svelte';
 
 	let {
 		open = $bindable(false),
@@ -16,8 +17,10 @@
 
 	let joinCode = $state('');
 	let loading = $state(false);
+	let sharing = $state(false);
 	let error = $state<string | null>(null);
 	let joinResult = $state<JoinTeamResponse | null>(null);
+	let selectedProjects = $state<Set<string>>(new Set());
 
 	// Live-parse the join code as user types
 	let parsed = $derived.by(() => {
@@ -46,11 +49,46 @@
 
 			const result: JoinTeamResponse = await res.json();
 			joinResult = result;
+			// Pre-select all matching projects
+			selectedProjects = new Set(result.matching_projects?.map((p) => p.encoded_name) ?? []);
 			onjoined?.(result);
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Network error';
 		} finally {
 			loading = false;
+		}
+	}
+
+	function toggleProject(encodedName: string) {
+		const next = new Set(selectedProjects);
+		if (next.has(encodedName)) next.delete(encodedName);
+		else next.add(encodedName);
+		selectedProjects = next;
+	}
+
+	async function handleShareSelected() {
+		if (!joinResult || selectedProjects.size === 0) return;
+		sharing = true;
+		error = null;
+		try {
+			for (const proj of joinResult.matching_projects ?? []) {
+				if (!selectedProjects.has(proj.encoded_name)) continue;
+				const pathParts = proj.path.split('/');
+				const name = pathParts[pathParts.length - 1] || proj.encoded_name;
+				await fetch(
+					`${API_BASE}/sync/teams/${encodeURIComponent(joinResult.team_name)}/projects`,
+					{
+						method: 'POST',
+						headers: { 'Content-Type': 'application/json' },
+						body: JSON.stringify({ name: proj.encoded_name, path: proj.path })
+					}
+				);
+			}
+			handleGoToTeam();
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Failed to share projects';
+		} finally {
+			sharing = false;
 		}
 	}
 
@@ -84,13 +122,49 @@
 							{/if}
 						</p>
 						<p class="text-[var(--text-secondary)] mt-0.5">
-							{joinResult.paired ? 'Syncthing paired successfully. Auto-pairing will complete shortly.' : 'Syncthing pairing pending.'}
-							{#if joinResult.accepted_folders > 0}
-								Accepted {joinResult.accepted_folders} shared folder{joinResult.accepted_folders > 1 ? 's' : ''}.
-							{/if}
+							{joinResult.paired ? 'Syncthing paired successfully.' : 'Syncthing pairing pending.'}
 						</p>
 					</div>
 				</div>
+
+				{#if joinResult.matching_projects && joinResult.matching_projects.length > 0}
+					<div class="space-y-2">
+						<p class="text-xs font-medium text-[var(--text-secondary)]">
+							These local projects match the team — share them to start syncing:
+						</p>
+						{#each joinResult.matching_projects as project (project.encoded_name)}
+							<label
+								class="flex items-center gap-3 p-3 rounded-lg border border-[var(--border)] bg-[var(--bg-base)]
+									cursor-pointer hover:bg-[var(--bg-subtle)] transition-colors"
+							>
+								<input
+									type="checkbox"
+									checked={selectedProjects.has(project.encoded_name)}
+									onchange={() => toggleProject(project.encoded_name)}
+									class="rounded border-[var(--border)] text-[var(--accent)] focus:ring-[var(--accent)]/40"
+								/>
+								<FolderGit2 size={16} class="text-[var(--text-muted)] shrink-0" />
+								<div class="flex-1 min-w-0">
+									<p class="text-sm font-medium text-[var(--text-primary)] truncate">
+										{project.path.split('/').pop() || project.encoded_name}
+									</p>
+									<p class="text-xs text-[var(--text-muted)] truncate">{project.path}</p>
+								</div>
+								<span class="text-xs text-[var(--text-muted)] shrink-0">
+									{project.session_count} session{project.session_count !== 1 ? 's' : ''}
+								</span>
+							</label>
+						{/each}
+					</div>
+				{:else}
+					<p class="text-xs text-[var(--text-muted)]">
+						No matching local projects found. You can share projects later from the team page.
+					</p>
+				{/if}
+
+				{#if error}
+					<p class="text-xs text-[var(--error)]">{error}</p>
+				{/if}
 			</div>
 		{:else}
 			<!-- Input state -->
@@ -134,13 +208,38 @@
 
 	{#snippet footer()}
 		{#if joinResult}
-			<button
-				onclick={handleGoToTeam}
-				class="px-4 py-2 text-sm font-medium rounded-[var(--radius-md)] bg-[var(--accent)] text-white
-					hover:bg-[var(--accent-hover)] transition-colors"
-			>
-				Go to Team Page
-			</button>
+			{#if joinResult.matching_projects && joinResult.matching_projects.length > 0}
+				<button
+					onclick={handleGoToTeam}
+					class="px-4 py-2 text-sm font-medium rounded-[var(--radius-md)] text-[var(--text-secondary)]
+						hover:bg-[var(--bg-muted)] transition-colors"
+				>
+					Skip for Now
+				</button>
+				<button
+					onclick={handleShareSelected}
+					disabled={selectedProjects.size === 0 || sharing}
+					class="px-4 py-2 text-sm font-medium rounded-[var(--radius-md)] bg-[var(--accent)] text-white
+						hover:bg-[var(--accent-hover)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+				>
+					{#if sharing}
+						<span class="flex items-center gap-2">
+							<Loader2 size={14} class="animate-spin" />
+							Sharing...
+						</span>
+					{:else}
+						Share {selectedProjects.size} Project{selectedProjects.size !== 1 ? 's' : ''}
+					{/if}
+				</button>
+			{:else}
+				<button
+					onclick={handleGoToTeam}
+					class="px-4 py-2 text-sm font-medium rounded-[var(--radius-md)] bg-[var(--accent)] text-white
+						hover:bg-[var(--accent-hover)] transition-colors"
+				>
+					Go to Team Page
+				</button>
+			{/if}
 		{:else}
 			<button
 				onclick={handleClose}

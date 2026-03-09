@@ -33,7 +33,7 @@ def delete_team(conn: sqlite3.Connection, name: str) -> None:
 
 def list_teams(conn: sqlite3.Connection) -> list[dict]:
     rows = conn.execute(
-        """SELECT t.name, t.backend, t.join_code, t.created_at,
+        """SELECT t.name, t.backend, t.join_code, t.created_at, t.sync_session_limit,
                   (SELECT COUNT(*) FROM sync_members m WHERE m.team_name = t.name) as member_count,
                   (SELECT COUNT(*) FROM sync_team_projects p WHERE p.team_name = t.name) as project_count
            FROM sync_teams t ORDER BY t.created_at"""
@@ -43,13 +43,29 @@ def list_teams(conn: sqlite3.Connection) -> list[dict]:
 
 def get_team(conn: sqlite3.Connection, name: str) -> Optional[dict]:
     row = conn.execute(
-        """SELECT t.name, t.backend, t.join_code, t.created_at,
+        """SELECT t.name, t.backend, t.join_code, t.created_at, t.sync_session_limit,
                   (SELECT COUNT(*) FROM sync_members m WHERE m.team_name = t.name) as member_count,
                   (SELECT COUNT(*) FROM sync_team_projects p WHERE p.team_name = t.name) as project_count
            FROM sync_teams t WHERE t.name = ?""",
         (name,),
     ).fetchone()
     return dict(row) if row else None
+
+
+def update_team_session_limit(
+    conn: sqlite3.Connection,
+    team_name: str,
+    limit: str,
+) -> None:
+    """Update the sync session limit for a team.
+
+    Valid values: 'all', 'recent_100', 'recent_10'.
+    """
+    conn.execute(
+        "UPDATE sync_teams SET sync_session_limit = ? WHERE name = ?",
+        (limit, team_name),
+    )
+    conn.commit()
 
 
 # ── Members ────────────────────────────────────────────────────────────

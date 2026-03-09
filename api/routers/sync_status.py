@@ -30,6 +30,7 @@ from db.sync_queries import (
     query_events,
     get_known_devices,
     find_project_by_git_identity,
+    update_team_session_limit,
 )
 from services.syncthing_proxy import SyncthingNotRunning, SyncthingProxy, run_sync
 from services.watcher_manager import WatcherManager
@@ -45,12 +46,15 @@ router = APIRouter(prefix="/sync", tags=["sync"])
 ALLOWED_PROJECT_NAME = re.compile(r"^[a-zA-Z0-9_\-]+$")
 ALLOWED_DEVICE_ID = re.compile(r"^[A-Z0-9\-]+$")
 _VALID_EVENT_TYPES = frozenset({
-    "team_created", "team_deleted",
+    "team_created", "team_deleted", "team_left",
     "member_added", "member_removed", "member_auto_accepted",
+    "member_joined", "project_shared",
     "project_added", "project_removed",
     "folders_shared", "pending_accepted",
     "sync_now", "watcher_started", "watcher_stopped",
     "session_packaged", "session_received",
+    "file_rejected", "sync_paused",
+    "settings_changed",
 })
 
 
@@ -81,7 +85,7 @@ def validate_project_path(path: str) -> str:
     if ".." in Path(path).parts:
         raise HTTPException(400, "Invalid project path: traversal not allowed")
     # Must be under user's home directory (use relative_to for proper ancestry check)
-    home = Path.home()
+    home = Path.home().resolve()
     try:
         resolved.relative_to(home)
     except ValueError:
@@ -424,7 +428,8 @@ async def _auto_accept_pending_peers(proxy, config, conn) -> tuple[int, dict]:
             folders_accepted = await run_sync(_accept_pending_folders, st, config, conn)
             if folders_accepted:
                 accepted += folders_accepted
-                log_event(conn, "pending_accepted", detail={"count": folders_accepted})
+                log_event(conn, "pending_accepted", member_name=config.user_id,
+                          detail={"count": folders_accepted, "phase": "auto_accept"})
                 logger.info("Auto-accepted %d pending folders from known devices", folders_accepted)
     except Exception as e:
         logger.warning("Phase 2 auto-accept pending folders failed: %s", e)
@@ -503,6 +508,10 @@ class AddTeamProjectRequest(BaseModel):
 class JoinTeamRequest(BaseModel):
     join_code: str
     team_name: str | None = None
+
+
+class UpdateTeamSettingsRequest(BaseModel):
+    sync_session_limit: str  # 'all', 'recent_100', 'recent_10'
 
 
 # ─── Init & Status ────────────────────────────────────────────────────
@@ -665,7 +674,7 @@ async def sync_reset(options: Optional[ResetOptions] = None) -> Any:
     # 6. Kill any remaining Syncthing processes
     import subprocess
     try:
-        subprocess.run(["pkill", "-f", "syncthing"], capture_output=True, timeout=5)
+        subprocess.run(["pkill", "syncthing"], capture_output=True, timeout=5)
         steps["process_killed"] = True
     except Exception:
         steps["process_killed"] = False
@@ -1111,57 +1120,36 @@ async def sync_join_team(req: JoinTeamRequest) -> Any:
         except Exception as e:
             logger.warning("Failed to create handshake folder: %s", e)
 
-    # Auto-create shared folders for joiner's projects in this team
-    folders_created = None
-    if paired:
-        try:
-            folders_created = await _auto_share_folders(proxy, config, conn, team_name, device_id)
-        except Exception as e:
-            logger.warning("Auto-share folders failed during join: %s", e)
-
-        if folders_created and (folders_created["outboxes"] or folders_created["inboxes"]):
-            try:
-                log_event(conn, "folders_shared", team_name=team_name, member_name=leader_name,
-                          detail={"outboxes": folders_created["outboxes"], "inboxes": folders_created["inboxes"]})
-            except Exception as e:
-                logger.warning("Failed to log folders_shared event: %s", e)
-
-    # Auto-add local projects matching team's shared projects (bidirectional sharing)
-    auto_added_projects = 0
-    if paired:
-        try:
-            team_projects = list_team_projects(conn, team_name)
-            for tp in team_projects:
-                git_id = tp.get("git_identity")
-                if not git_id:
-                    continue
-                local = find_project_by_git_identity(conn, git_id)
-                if local and local["encoded_name"] != tp["project_encoded_name"]:
-                    encoded = local["encoded_name"]
-                    upsert_team_project(conn, team_name, encoded, local.get("project_path"), git_identity=git_id)
-                    proj_suffix = _compute_proj_suffix(git_id, local.get("project_path"), encoded)
-                    members = list_members(conn, team_name)
-                    member_device_ids = [m["device_id"] for m in members if m["device_id"]]
-                    await _ensure_outbox_folder(proxy, config, encoded, proj_suffix, member_device_ids)
-                    auto_added_projects += 1
-        except Exception as e:
-            logger.warning("Auto-add matching projects failed: %s", e)
-
-    # Auto-accept pending folders from the leader
-    accepted = 0
+    # Find local projects matching team's shared projects (suggestions, NOT auto-shared)
+    matching_projects = []
     try:
-        from karma.syncthing import SyncthingClient, read_local_api_key
+        team_projects = list_team_projects(conn, team_name)
+        for tp in team_projects:
+            git_id = tp.get("git_identity")
+            if not git_id:
+                continue
+            local = find_project_by_git_identity(conn, git_id)
+            if local:
+                session_count = 0
+                try:
+                    row = conn.execute(
+                        "SELECT COUNT(*) FROM sessions WHERE project_encoded_name = ?",
+                        (local["encoded_name"],),
+                    ).fetchone()
+                    session_count = row[0] if row else 0
+                except Exception:
+                    pass
+                matching_projects.append({
+                    "encoded_name": local["encoded_name"],
+                    "path": local.get("project_path", ""),
+                    "git_identity": git_id,
+                    "session_count": session_count,
+                })
+    except Exception as e:
+        logger.warning("Failed to find matching projects: %s", e)
 
-        api_key = config.syncthing.api_key or await run_sync(read_local_api_key)
-        st = SyncthingClient(api_key=api_key)
-        if st.is_running():
-            from karma.main import _accept_pending_folders
-
-            accepted = await run_sync(_accept_pending_folders, st, config, conn)
-            if accepted:
-                log_event(conn, "pending_accepted", detail={"count": accepted})
-    except Exception:
-        pass
+    log_event(conn, "member_joined", team_name=team_name,
+              member_name=config.user_id, detail={"via": "join_code", "leader": leader_name})
 
     return {
         "ok": True,
@@ -1169,9 +1157,7 @@ async def sync_join_team(req: JoinTeamRequest) -> Any:
         "team_created": team_created,
         "leader_name": leader_name,
         "paired": paired,
-        "folders_created": folders_created,
-        "accepted_folders": accepted,
-        "auto_added_projects": auto_added_projects,
+        "matching_projects": matching_projects,
     }
 
 
@@ -1370,7 +1356,21 @@ async def sync_add_team_project(team_name: str, req: AddTeamProjectRequest) -> A
     conn.commit()
 
     add_team_project(conn, team_name, encoded, validated_path, git_identity=git_identity)
-    log_event(conn, "project_added", team_name=team_name, project_encoded_name=encoded)
+
+    # Count sessions for activity detail
+    session_count = 0
+    try:
+        row = conn.execute(
+            "SELECT COUNT(*) FROM sessions WHERE project_encoded_name = ?", (encoded,)
+        ).fetchone()
+        session_count = row[0] if row else 0
+    except Exception:
+        pass
+
+    config = await run_sync(_load_identity)
+    member_name = config.user_id if config else None
+    log_event(conn, "project_shared", team_name=team_name, member_name=member_name,
+              project_encoded_name=encoded, detail={"session_count": session_count})
 
     # Create Syncthing folders: outbox (my sessions → teammates) + inboxes (their sessions → me)
     syncthing_ok = False
@@ -1703,7 +1703,8 @@ async def sync_accept_pending() -> Any:
         conn = _get_sync_conn()
         accepted = await run_sync(_accept_pending_folders, st, config, conn)
         if accepted:
-            log_event(conn, "pending_accepted", detail={"count": accepted})
+            log_event(conn, "pending_accepted", member_name=config.user_id,
+                      detail={"count": accepted, "phase": "manual"})
         return {"ok": True, "accepted": accepted}
     except SyncthingNotRunning:
         raise HTTPException(503, "Syncthing is not running")
@@ -1836,4 +1837,64 @@ async def sync_activity(
         "download_rate": bandwidth.get("download_rate", 0),
         "upload_total": bandwidth.get("upload_total", 0),
         "download_total": bandwidth.get("download_total", 0),
+    }
+
+
+@router.get("/teams/{team_name}/activity")
+async def sync_team_activity(
+    team_name: str,
+    event_type: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> Any:
+    """Team-scoped activity feed for the team detail page."""
+    if not ALLOWED_PROJECT_NAME.match(team_name):
+        raise HTTPException(400, "Invalid team name")
+
+    limit = max(1, min(limit, 200))
+    offset = max(0, min(offset, 10000))
+
+    if event_type and event_type not in _VALID_EVENT_TYPES:
+        event_type = None
+
+    conn = _get_sync_conn()
+    if get_team(conn, team_name) is None:
+        raise HTTPException(404, f"Team '{team_name}' not found")
+
+    events = query_events(
+        conn, team_name=team_name, event_type=event_type,
+        limit=limit, offset=offset,
+    )
+    return {"events": events}
+
+
+_VALID_SESSION_LIMITS = frozenset({"all", "recent_100", "recent_10"})
+
+
+@router.patch("/teams/{team_name}/settings")
+async def sync_update_team_settings(team_name: str, req: UpdateTeamSettingsRequest) -> Any:
+    """Update team sync settings (session limit)."""
+    if not ALLOWED_PROJECT_NAME.match(team_name):
+        raise HTTPException(400, "Invalid team name")
+
+    if req.sync_session_limit not in _VALID_SESSION_LIMITS:
+        raise HTTPException(400, f"Invalid session limit. Must be one of: {', '.join(sorted(_VALID_SESSION_LIMITS))}")
+
+    conn = _get_sync_conn()
+    team = get_team(conn, team_name)
+    if team is None:
+        raise HTTPException(404, f"Team '{team_name}' not found")
+
+    old_limit = team.get("sync_session_limit", "all")
+    update_team_session_limit(conn, team_name, req.sync_session_limit)
+
+    config = await run_sync(_load_identity)
+    member_name = config.user_id if config else None
+    log_event(conn, "settings_changed", team_name=team_name, member_name=member_name,
+              detail={"sync_session_limit": req.sync_session_limit, "previous": old_limit})
+
+    return {
+        "ok": True,
+        "team_name": team_name,
+        "sync_session_limit": req.sync_session_limit,
     }

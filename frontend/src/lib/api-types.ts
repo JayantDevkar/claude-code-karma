@@ -1750,6 +1750,8 @@ export interface SyncProject {
 
 // --- New sync types for redesign ---
 
+export type SyncSessionLimit = 'all' | 'recent_100' | 'recent_10';
+
 export interface SyncTeam {
 	name: string;
 	backend: 'syncthing';
@@ -1757,6 +1759,7 @@ export interface SyncTeam {
 	members: SyncTeamMember[];
 	member_count?: number;
 	project_count?: number;
+	sync_session_limit?: SyncSessionLimit;
 }
 
 export interface SyncTeamProject {
@@ -1809,14 +1812,20 @@ export interface SyncEvent {
 	created_at: string;
 }
 
+export interface MatchingProject {
+	encoded_name: string;
+	path: string;
+	git_identity: string;
+	session_count: number;
+}
+
 export interface JoinTeamResponse {
 	ok: boolean;
 	team_name: string;
 	leader_name: string;
 	paired: boolean;
-	accepted_folders: number;
-	auto_added_projects: number;
 	team_created: boolean;
+	matching_projects: MatchingProject[];
 }
 
 export interface JoinCodeResponse {

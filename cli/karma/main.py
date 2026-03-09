@@ -17,6 +17,7 @@ if str(_API_PATH) not in sys.path:
     sys.path.insert(0, str(_API_PATH))
 
 _SAFE_NAME = re.compile(r"^[a-zA-Z0-9_\-]+$")
+SAFE_PATH_PART = re.compile(r"^[a-zA-Z0-9_\-\.]+$")
 
 
 def _resolve_local_project(conn, team_name: str, project_encoded_name: str):
@@ -339,6 +340,9 @@ def _accept_pending_folders(st, config, conn):
             own_prefix = f"karma-out-{own_user_id}-"
             if folder_id.startswith(own_prefix):
                 suffix = folder_id[len(own_prefix):]
+                if not SAFE_PATH_PART.match(suffix):
+                    click.echo(f"  Skipped own outbox '{folder_id}' — unsafe suffix: {suffix!r}")
+                    continue
                 outbox_path = str(KARMA_BASE / "remote-sessions" / own_user_id / suffix)
                 Path(outbox_path).mkdir(parents=True, exist_ok=True)
                 outbox_devices = [device_id]
@@ -399,6 +403,17 @@ def _accept_pending_folders(st, config, conn):
                 continue
 
             sender_name, suffix = parsed
+
+            # Validate path components from remote data
+            if not SAFE_PATH_PART.match(sender_name) or not SAFE_PATH_PART.match(suffix):
+                click.echo(
+                    f"  Skipped folder '{folder_id}' — unsafe path components "
+                    f"(sender={sender_name!r}, suffix={suffix!r})"
+                )
+                continue
+            if ".." in sender_name or ".." in suffix:
+                click.echo(f"  Skipped folder '{folder_id}' — path traversal attempt")
+                continue
 
             # Try to match against a known local project
             projects = list_team_projects(conn, team_name)
