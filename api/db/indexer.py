@@ -960,8 +960,8 @@ def _extract_skill_definitions_from_session(
 
                 # Check if definition already exists for this (skill_name, source_user_id)
                 existing = conn.execute(
-                    "SELECT 1 FROM skill_definitions WHERE skill_name = ? AND COALESCE(source_user_id, '__local__') = COALESCE(?, '__local__')",
-                    (skill_name, source_user_id),
+                    "SELECT 1 FROM skill_definitions WHERE skill_name = ? AND source_user_id = ?",
+                    (skill_name, source_user_id or "__local__"),
                 ).fetchone()
                 if existing:
                     continue
@@ -1009,8 +1009,8 @@ def _extract_skill_definitions_from_session(
                         (skill_name, source_user_id, source_machine_id, category,
                          content, base_directory, description, extracted_from_session,
                          updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-                    ON CONFLICT(skill_name, COALESCE(source_user_id, '__local__')) DO NOTHING
+                    VALUES (?, COALESCE(?, '__local__'), ?, ?, ?, ?, ?, ?, datetime('now'))
+                    ON CONFLICT(skill_name, source_user_id) DO NOTHING
                     """,
                     (
                         skill_name,

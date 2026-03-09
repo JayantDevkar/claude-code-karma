@@ -274,10 +274,9 @@ CREATE INDEX IF NOT EXISTS idx_sync_events_time ON sync_events(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_sync_events_member ON sync_events(member_name, created_at DESC);
 
 -- Skill definitions (content + metadata extracted from JSONL or manifest)
--- PRIMARY KEY uses COALESCE so NULL source_user_id doesn't break uniqueness
 CREATE TABLE IF NOT EXISTS skill_definitions (
     skill_name TEXT NOT NULL,
-    source_user_id TEXT,
+    source_user_id TEXT NOT NULL DEFAULT '__local__',
     source_machine_id TEXT,
     category TEXT NOT NULL,
     content TEXT,
@@ -285,7 +284,7 @@ CREATE TABLE IF NOT EXISTS skill_definitions (
     description TEXT,
     extracted_from_session TEXT,
     updated_at TEXT DEFAULT (datetime('now')),
-    PRIMARY KEY (skill_name, COALESCE(source_user_id, '__local__'))
+    PRIMARY KEY (skill_name, source_user_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_skill_definitions_name ON skill_definitions(skill_name);
@@ -364,7 +363,7 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
         conn.executescript("""
             CREATE TABLE IF NOT EXISTS skill_definitions (
                 skill_name TEXT NOT NULL,
-                source_user_id TEXT,
+                source_user_id TEXT NOT NULL DEFAULT '__local__',
                 source_machine_id TEXT,
                 category TEXT NOT NULL,
                 content TEXT,
@@ -372,7 +371,7 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
                 description TEXT,
                 extracted_from_session TEXT,
                 updated_at TEXT DEFAULT (datetime('now')),
-                PRIMARY KEY (skill_name, COALESCE(source_user_id, '__local__'))
+                PRIMARY KEY (skill_name, source_user_id)
             );
             CREATE INDEX IF NOT EXISTS idx_skill_definitions_name ON skill_definitions(skill_name);
             CREATE INDEX IF NOT EXISTS idx_skill_definitions_user ON skill_definitions(source_user_id);
@@ -652,7 +651,7 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             conn.executescript("""
                 CREATE TABLE IF NOT EXISTS skill_definitions (
                     skill_name TEXT NOT NULL,
-                    source_user_id TEXT,
+                    source_user_id TEXT NOT NULL DEFAULT '__local__',
                     source_machine_id TEXT,
                     category TEXT NOT NULL,
                     content TEXT,
@@ -660,7 +659,7 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
                     description TEXT,
                     extracted_from_session TEXT,
                     updated_at TEXT DEFAULT (datetime('now')),
-                    PRIMARY KEY (skill_name, COALESCE(source_user_id, '__local__'))
+                    PRIMARY KEY (skill_name, source_user_id)
                 );
                 CREATE INDEX IF NOT EXISTS idx_skill_definitions_name ON skill_definitions(skill_name);
                 CREATE INDEX IF NOT EXISTS idx_skill_definitions_user ON skill_definitions(source_user_id);
