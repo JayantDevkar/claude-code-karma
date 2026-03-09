@@ -13,7 +13,7 @@ import sqlite3
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
@@ -421,6 +421,14 @@ def get_skill_usage(
                         if ":" in skill_name
                         else (skill_name if is_plugin else None)
                     )
+                    remote_count = row.get("remote_count") or 0
+                    local_count = row.get("local_count") or 0
+                    raw_remote_ids = row.get("remote_user_ids") or ""
+                    remote_user_ids = (
+                        [uid for uid in raw_remote_ids.split(",") if uid]
+                        if raw_remote_ids
+                        else []
+                    )
                     results.append(
                         {
                             "name": skill_name,
@@ -431,6 +439,10 @@ def get_skill_usage(
                             "session_count": row.get("session_count", 0),
                             "category": classify_invocation(skill_name),
                             "description": get_command_description(skill_name),
+                            "remote_count": remote_count,
+                            "local_count": local_count,
+                            "remote_user_ids": remote_user_ids,
+                            "is_remote_only": local_count == 0 and remote_count > 0,
                         }
                     )
                 return results
@@ -600,7 +612,57 @@ async def get_skill_detail(
             detail=f"Skill '{skill_name}' not found",
         )
 
-    # 3. Build sessions list with title enrichment
+    # 3. Compute remote/local split and optionally fetch remote_definition
+    remote_count = 0
+    local_count = 0
+    remote_user_ids: list[str] = []
+    is_remote_only = False
+    remote_definition = None
+
+    if usage_data:
+        # query_skill_detail does not return these fields directly, so query usage for them
+        try:
+            from db.connection import sqlite_read
+            from db.queries import query_skill_usage
+
+            with sqlite_read() as conn:
+                if conn is not None:
+                    usage_rows = query_skill_usage(conn, limit=9999)
+                    for urow in usage_rows:
+                        if urow.get("skill_name") == skill_name:
+                            remote_count = urow.get("remote_count") or 0
+                            local_count = urow.get("local_count") or 0
+                            raw_ids = urow.get("remote_user_ids") or ""
+                            remote_user_ids = [uid for uid in raw_ids.split(",") if uid] if raw_ids else []
+                            break
+        except Exception as e:
+            logger.warning("Failed to fetch remote/local split for skill %s: %s", skill_name, e)
+
+        is_remote_only = local_count == 0 and remote_count > 0
+
+        if is_remote_only:
+            try:
+                from db.connection import sqlite_read
+
+                with sqlite_read() as conn:
+                    if conn is not None:
+                        row = conn.execute(
+                            "SELECT content, category, source_user_id, base_directory, description"
+                            " FROM skill_definitions WHERE skill_name = ? AND source_user_id IS NOT NULL LIMIT 1",
+                            (skill_name,),
+                        ).fetchone()
+                        if row:
+                            remote_definition = {
+                                "content": row["content"],
+                                "category": row["category"],
+                                "source_user_id": row["source_user_id"],
+                                "base_directory": row["base_directory"],
+                                "description": row["description"],
+                            }
+            except Exception as e:
+                logger.warning("Failed to fetch remote_definition for skill %s: %s", skill_name, e)
+
+    # 4. Build sessions list with title enrichment
     sessions = []
     if usage_data:
         for row in usage_data["sessions"]:
@@ -665,6 +727,11 @@ async def get_skill_detail(
         ],
         sessions=sessions,
         sessions_total=usage_data["total"] if usage_data else 0,
+        remote_count=remote_count,
+        local_count=local_count,
+        remote_user_ids=remote_user_ids,
+        is_remote_only=is_remote_only,
+        remote_definition=remote_definition,
     )
 
 
@@ -1007,3 +1074,70 @@ async def get_skill_info(
 ) -> SkillInfo:
     """Get detailed information about a skill (cached endpoint wrapper)."""
     return await _resolve_skill_info(skill_name, config)
+
+
+def _validate_skill_name(skill_name: str) -> None:
+    """Validate skill_name to prevent path traversal and injection."""
+    import re
+
+    if not skill_name or not re.match(r"^[a-zA-Z0-9_\-.:]+$", skill_name):
+        raise HTTPException(status_code=400, detail="Invalid skill name")
+    if ".." in skill_name:
+        raise HTTPException(status_code=400, detail="Path traversal not allowed")
+
+
+@router.post("/skills/{skill_name}/inherit")
+async def inherit_skill(
+    skill_name: str,
+    scope: Annotated[str, Query(..., pattern="^(user|project)$")],
+    project_encoded_name: Annotated[Optional[str], Query()] = None,
+) -> dict:
+    """
+    Inherit a remote skill by creating the SKILL.md file locally.
+
+    scope: "user"    -> ~/.claude/skills/{name}/SKILL.md
+    scope: "project" -> {project_path}/.claude/skills/{name}/SKILL.md
+    """
+    _validate_skill_name(skill_name)
+
+    from db.connection import sqlite_read
+
+    # 1. Get the skill content from skill_definitions
+    with sqlite_read() as conn:
+        if conn is None:
+            raise HTTPException(status_code=503, detail="Database unavailable")
+        row = conn.execute(
+            "SELECT content, category, description FROM skill_definitions"
+            " WHERE skill_name = ? AND source_user_id IS NOT NULL"
+            " ORDER BY updated_at DESC LIMIT 1",
+            (skill_name,),
+        ).fetchone()
+
+    if not row or not row["content"]:
+        raise HTTPException(status_code=404, detail="No remote skill definition found for this skill")
+
+    content = row["content"]
+
+    # 2. Determine target path
+    if scope == "user":
+        target_dir = settings.claude_base / "skills" / skill_name
+    else:  # project
+        if not project_encoded_name:
+            raise HTTPException(status_code=400, detail="project_encoded_name required for project scope")
+        from models.project import Project
+
+        project_path = Project.decode_path(project_encoded_name)
+        target_dir = Path(project_path) / ".claude" / "skills" / skill_name
+
+    # 3. Verify resolved path stays under intended base (defense-in-depth)
+    target_dir = target_dir.resolve()
+    target_file = target_dir / "SKILL.md"
+
+    if target_file.exists():
+        raise HTTPException(status_code=409, detail=f"Skill file already exists at {target_file}")
+
+    target_dir.mkdir(parents=True, exist_ok=True)
+    target_file.write_text(content)
+
+    logger.info("Inherited remote skill %r to %s", skill_name, target_file)
+    return {"status": "created", "path": str(target_file), "skill_name": skill_name, "scope": scope}

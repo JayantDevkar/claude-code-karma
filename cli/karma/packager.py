@@ -59,43 +59,52 @@ def _build_skill_classifications_from_db(
     placeholders = ",".join("?" * len(session_uuids))
 
     try:
-        # Skills from session_skills table (only plugin colon-format names)
-        rows = conn.execute(
-            f"SELECT DISTINCT skill_name FROM session_skills WHERE session_uuid IN ({placeholders}) AND skill_name LIKE '%:%'",
-            session_uuids,
-        ).fetchall()
-        for row in rows:
-            classifications[row[0]] = "plugin_skill"
+        # Import classify_invocation from API (CLI adds API to sys.path via karma.db)
+        try:
+            from command_helpers import classify_invocation
+            _classify = classify_invocation
+        except ImportError:
+            # Fallback: colon-format → plugin, otherwise unknown (will be reclassified on import)
+            def _classify(name, source="skill_tool"):  # type: ignore[misc]
+                return "plugin_skill" if ":" in name else "custom_skill"
 
-        # Commands from session_commands table (only plugin colon-format names)
+        # Skills from session_skills table (all names, not just colon-format)
         rows = conn.execute(
-            f"SELECT DISTINCT command_name FROM session_commands WHERE session_uuid IN ({placeholders}) AND command_name LIKE '%:%'",
+            f"SELECT DISTINCT skill_name FROM session_skills WHERE session_uuid IN ({placeholders})",
             session_uuids,
         ).fetchall()
         for row in rows:
-            classifications[row[0]] = "plugin_command"
+            classifications[row[0]] = _classify(row[0], source="skill_tool")
+
+        # Commands from session_commands table (all names, not just colon-format)
+        rows = conn.execute(
+            f"SELECT DISTINCT command_name FROM session_commands WHERE session_uuid IN ({placeholders})",
+            session_uuids,
+        ).fetchall()
+        for row in rows:
+            classifications[row[0]] = _classify(row[0], source="slash_command")
 
         # Subagent skills
         rows = conn.execute(
             f"""SELECT DISTINCT ss.skill_name FROM subagent_skills ss
                 JOIN subagent_invocations si ON ss.invocation_id = si.id
-                WHERE si.session_uuid IN ({placeholders}) AND ss.skill_name LIKE '%:%'""",
+                WHERE si.session_uuid IN ({placeholders})""",
             session_uuids,
         ).fetchall()
         for row in rows:
             if row[0] not in classifications:
-                classifications[row[0]] = "plugin_skill"
+                classifications[row[0]] = _classify(row[0], source="skill_tool")
 
         # Subagent commands
         rows = conn.execute(
             f"""SELECT DISTINCT sc.command_name FROM subagent_commands sc
                 JOIN subagent_invocations si ON sc.invocation_id = si.id
-                WHERE si.session_uuid IN ({placeholders}) AND sc.command_name LIKE '%:%'""",
+                WHERE si.session_uuid IN ({placeholders})""",
             session_uuids,
         ).fetchall()
         for row in rows:
             if row[0] not in classifications:
-                classifications[row[0]] = "plugin_command"
+                classifications[row[0]] = _classify(row[0], source="slash_command")
 
     except Exception as e:
         logger.warning("Failed to extract skill classifications from DB: %s", e)

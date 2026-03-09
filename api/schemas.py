@@ -764,6 +764,18 @@ class SkillDetailResponse(BaseModel):
         default_factory=list, description="Sessions using this skill"
     )
     sessions_total: int = Field(0, description="Total session count (before pagination)")
+    remote_count: int = Field(0, description="Invocations from remote sessions")
+    local_count: int = Field(0, description="Invocations from local sessions")
+    remote_user_ids: list[str] = Field(
+        default_factory=list, description="Distinct remote user IDs that used this skill"
+    )
+    is_remote_only: bool = Field(
+        False, description="True when skill has only been used in remote sessions"
+    )
+    remote_definition: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Skill definition from skill_definitions table (populated for remote-only skills)",
+    )
 
 
 class AgentSessionsResponse(BaseModel):

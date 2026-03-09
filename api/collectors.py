@@ -45,6 +45,12 @@ class ConversationData:
     skills: Counter = field(default_factory=Counter)
     commands: Counter = field(default_factory=Counter)
 
+    # Skill categories extracted from JSONL path ("Base directory for this skill:" lines).
+    # Maps skill_name → category string (e.g. "custom_skill", "user_command", "plugin_skill").
+    # This is a secondary source of truth — more reliable than local classify_invocation()
+    # for remote sessions where the plugin may not be installed locally.
+    skill_categories: Dict[str, str] = field(default_factory=dict)
+
     # File activity
     file_operations: List[FileOperation] = field(default_factory=list)
 
@@ -150,6 +156,24 @@ def _extract_file_operation(
     )
 
 
+def _category_from_base_directory(base_dir: str) -> Optional[str]:
+    """Infer skill category from a 'Base directory for this skill:' path.
+
+    Args:
+        base_dir: The base directory path extracted from the skill invocation context.
+
+    Returns:
+        Category string or None if the path doesn't match any known pattern.
+    """
+    if "/skills/" in base_dir:
+        return "custom_skill"
+    if "/commands/" in base_dir:
+        return "user_command"
+    if "/plugins/cache/" in base_dir:
+        return "plugin_skill"
+    return None
+
+
 def _collect_conversation_data_core(
     entity: ConversationEntity,
     actor: str,
@@ -172,6 +196,10 @@ def _collect_conversation_data_core(
     """
     data = ConversationData()
 
+    # Track the last Skill tool invocation so we can look for the base directory
+    # in the next UserMessage (Claude Code injects skill content as a user turn).
+    _pending_skill_name: Optional[str] = None
+
     for msg in entity.iter_messages():
         # Extract context from any message
         git_branch = getattr(msg, "git_branch", None)
@@ -182,13 +210,32 @@ def _collect_conversation_data_core(
         if cwd:
             data.working_directories.add(cwd)
 
-        # User message - get initial prompt
+        # User message - get initial prompt and check for skill base directory
         if isinstance(msg, UserMessage):
             if data.initial_prompt is None:
                 content = msg.content or ""
                 # Skip tool result and internal messages
                 if not msg.is_tool_result and not msg.is_internal_message:
                     data.initial_prompt = content[:5000] if content else None
+
+            # If we had a pending Skill invocation, check if this message carries
+            # the base directory line injected by Claude Code.
+            if _pending_skill_name is not None:
+                content = msg.content or ""
+                if "Base directory for this skill:" in content:
+                    try:
+                        # Extract first line after the marker
+                        marker = "Base directory for this skill:"
+                        idx = content.index(marker)
+                        after = content[idx + len(marker):]
+                        first_line = after.strip().splitlines()[0].strip() if after.strip() else ""
+                        if first_line:
+                            cat = _category_from_base_directory(first_line)
+                            if cat:
+                                data.skill_categories[_pending_skill_name] = cat
+                    except (ValueError, IndexError):
+                        pass
+                _pending_skill_name = None
 
         # Assistant message - extract tools and file operations
         elif isinstance(msg, AssistantMessage):
@@ -206,11 +253,17 @@ def _collect_conversation_data_core(
                                 data.skills[skill_name] += 1
                             elif is_command_category(kind):
                                 data.commands[skill_name] += 1
+                            # Track for base-directory lookahead in next UserMessage
+                            _pending_skill_name = skill_name
 
                     # Extract file operations using shared utility
                     file_op = _extract_file_operation(block, msg.timestamp, actor, actor_type)
                     if file_op:
                         data.file_operations.append(file_op)
+        else:
+            # Non-user, non-assistant message clears the pending skill tracker
+            # (the injected content always comes in the very next message)
+            _pending_skill_name = None
 
     return data
 

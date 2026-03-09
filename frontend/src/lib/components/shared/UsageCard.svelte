@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Play, Clock, MessageSquare } from 'lucide-svelte';
+	import { Play, Clock, MessageSquare, Globe } from 'lucide-svelte';
 	import { formatDistanceToNow } from 'date-fns';
 	import type { Snippet } from 'svelte';
 	import Badge from '$lib/components/ui/Badge.svelte';
@@ -25,6 +25,8 @@
 		description?: string | null;
 		lastUsed?: string | null;
 		sessionCount?: number | null;
+		isRemoteOnly?: boolean;
+		remoteUserIds?: string[];
 		icon: Snippet;
 		subheader?: Snippet;
 		statsOverride?: Snippet;
@@ -46,6 +48,8 @@
 		description = null,
 		lastUsed = null,
 		sessionCount = null,
+		isRemoteOnly = false,
+		remoteUserIds = [],
 		icon,
 		subheader,
 		statsOverride,
