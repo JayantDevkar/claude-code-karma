@@ -1104,6 +1104,8 @@ export function getSkillCategoryLabel(category: string): string {
 			return 'Plugin';
 		case 'custom_skill':
 			return 'Custom';
+		case 'inherited_skill':
+			return 'Inherited';
 		default:
 			return category;
 	}
@@ -1119,6 +1121,8 @@ export function getSkillCategoryColorVars(category: string): { color: string; su
 		case 'plugin_skill':
 		case 'custom_skill':
 			return _getSharedCategoryColorVars(category);
+		case 'inherited_skill':
+			return { color: 'var(--nav-amber)', subtle: 'oklch(0.75 0.1 80 / 0.1)' };
 		default:
 			return { color: 'var(--text-muted)', subtle: 'var(--bg-muted)' };
 	}

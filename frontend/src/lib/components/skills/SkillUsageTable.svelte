@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { SkillUsage } from '$lib/api-types';
-	import { getSkillColorVars, cleanSkillName } from '$lib/utils';
+	import { getSkillColorVars, getSkillCategoryLabel, cleanSkillName } from '$lib/utils';
 	import UsageTable from '$lib/components/shared/UsageTable.svelte';
 	import type { UsageColumn } from '$lib/components/shared/UsageTable.svelte';
 
@@ -88,7 +88,7 @@
 		</td>
 		<td class="px-4 py-3">
 			<span class="text-[var(--text-secondary)]">
-				{skill.is_plugin ? 'Plugin' : 'Custom'}
+				{skill.category ? getSkillCategoryLabel(skill.category) : skill.is_plugin ? 'Plugin' : 'Custom'}
 			</span>
 		</td>
 		<td class="px-4 py-3">

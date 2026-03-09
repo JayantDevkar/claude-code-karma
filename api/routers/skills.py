@@ -766,6 +766,7 @@ async def get_skill_detail(
         remote_user_ids=remote_user_ids,
         is_remote_only=is_remote_only,
         remote_definition=remote_definition,
+        inherited_from=skill_info.inherited_from if skill_info else None,
     )
 
 
@@ -985,6 +986,15 @@ async def _resolve_skill_info(skill_name: str, config: Settings) -> SkillInfo:
                         break
                 if skill_file:
                     break
+
+        # Fallback: check if this plugin skill was inherited locally
+        # Check both colon-form (legacy) and dash-form (new convention)
+        if not skill_file:
+            for candidate_name in (skill_name, skill_name.replace(":", "-")):
+                inherited_skill = config.claude_base / "skills" / candidate_name / "SKILL.md"
+                if inherited_skill.is_file():
+                    skill_file = inherited_skill
+                    break
     else:
         # For skills without plugin prefix (e.g., "commit" instead of "commit-commands:commit"),
         # search in multiple locations:
@@ -1065,6 +1075,7 @@ async def _resolve_skill_info(skill_name: str, config: Settings) -> SkillInfo:
     # Parse YAML frontmatter
     description = None
     frontmatter_name = skill_name
+    inherited_from = None
 
     if content.startswith("---"):
         # Split frontmatter from content
@@ -1076,6 +1087,7 @@ async def _resolve_skill_info(skill_name: str, config: Settings) -> SkillInfo:
                 if isinstance(frontmatter, dict):
                     description = frontmatter.get("description")
                     frontmatter_name = frontmatter.get("name", skill_name)
+                    inherited_from = frontmatter.get("inherited_from")
             except yaml.YAMLError as e:
                 logger.warning(f"Failed to parse YAML frontmatter for {skill_name}: {e}")
 
@@ -1086,6 +1098,7 @@ async def _resolve_skill_info(skill_name: str, config: Settings) -> SkillInfo:
         is_plugin=is_plugin,
         plugin=plugin_full_name,
         file_path=str(skill_file),
+        inherited_from=inherited_from,
     )
 
 
@@ -1119,10 +1132,19 @@ async def inherit_skill(
     """
     Inherit a remote skill by creating the SKILL.md file locally.
 
-    scope: "user"    -> ~/.claude/skills/{name}/SKILL.md
-    scope: "project" -> {project_path}/.claude/skills/{name}/SKILL.md
+    Plugin skill names (with ``:``) are converted to dash-form for the
+    directory name so Claude Code discovers them as custom skills:
+      ``oh-my-claudecode:deepsearch`` → ``oh-my-claudecode-deepsearch``
+
+    scope: "user"    -> ~/.claude/skills/{inherited_name}/SKILL.md
+    scope: "project" -> {project_path}/.claude/skills/{inherited_name}/SKILL.md
     """
     _validate_skill_name(skill_name)
+
+    import yaml
+
+    # Convert colon-form to dash-form for filesystem-safe directory name
+    inherited_name = skill_name.replace(":", "-")
 
     from db.connection import sqlite_read
 
@@ -1131,7 +1153,7 @@ async def inherit_skill(
         if conn is None:
             raise HTTPException(status_code=503, detail="Database unavailable")
         row = conn.execute(
-            "SELECT content, category, description FROM skill_definitions"
+            "SELECT content, category, description, source_user_id FROM skill_definitions"
             " WHERE skill_name = ? AND source_user_id IS NOT NULL"
             " ORDER BY updated_at DESC LIMIT 1",
             (skill_name,),
@@ -1141,27 +1163,82 @@ async def inherit_skill(
         raise HTTPException(status_code=404, detail="No remote skill definition found for this skill")
 
     content = row["content"]
+    source_user_id = row["source_user_id"]
+    description = row["description"]
 
-    # 2. Determine target path
+    # 2. Build frontmatter with provenance tracking
+    inherit_meta: dict[str, str] = {"inherited_from": skill_name}
+    if source_user_id:
+        inherit_meta["source_user_id"] = source_user_id
+    if description:
+        inherit_meta["description"] = description
+
+    # Parse existing frontmatter (if any) and merge with inherit metadata
+    existing_fm: dict = {}
+    body = content
+    if content.startswith("---"):
+        parts = content.split("---", 2)
+        if len(parts) >= 3:
+            try:
+                existing_fm = yaml.safe_load(parts[1]) or {}
+            except yaml.YAMLError:
+                existing_fm = {}
+            body = parts[2].lstrip("\n")
+
+    merged = {**existing_fm, **inherit_meta}
+    fm_str = yaml.dump(merged, default_flow_style=False, sort_keys=False).strip()
+    content = f"---\n{fm_str}\n---\n{body}"
+
+    # 3. Determine target path using the dash-form name
     if scope == "user":
-        target_dir = settings.claude_base / "skills" / skill_name
+        target_dir = settings.claude_base / "skills" / inherited_name
     else:  # project
         if not project_encoded_name:
             raise HTTPException(status_code=400, detail="project_encoded_name required for project scope")
         from models.project import Project
 
         project_path = Project.decode_path(project_encoded_name)
-        target_dir = Path(project_path) / ".claude" / "skills" / skill_name
+        target_dir = Path(project_path) / ".claude" / "skills" / inherited_name
 
-    # 3. Verify resolved path stays under intended base (defense-in-depth)
+    # 4. Verify resolved path stays under intended base (defense-in-depth)
     target_dir = target_dir.resolve()
     target_file = target_dir / "SKILL.md"
 
+    # 5. Handle collisions
     if target_file.exists():
-        raise HTTPException(status_code=409, detail=f"Skill file already exists at {target_file}")
+        # Check if this is an idempotent re-inherit
+        try:
+            head = target_file.read_text(encoding="utf-8", errors="ignore")[:512]
+            if f"inherited_from: {skill_name}" in head:
+                return {
+                    "status": "already_exists",
+                    "path": str(target_file),
+                    "skill_name": skill_name,
+                    "inherited_name": inherited_name,
+                    "scope": scope,
+                }
+        except OSError:
+            pass
+        raise HTTPException(
+            status_code=409,
+            detail=f"Skill '{inherited_name}' already exists at {target_file}. "
+            "Delete it first or choose a different name.",
+        )
 
     target_dir.mkdir(parents=True, exist_ok=True)
     target_file.write_text(content)
 
-    logger.info("Inherited remote skill %r to %s", skill_name, target_file)
-    return {"status": "created", "path": str(target_file), "skill_name": skill_name, "scope": scope}
+    # Evict classification caches so the new skill is recognized immediately
+    from command_helpers.plugins import _inherited_skill_cache, _custom_skill_cache
+
+    _inherited_skill_cache.pop(inherited_name, None)
+    _custom_skill_cache.pop(inherited_name, None)
+
+    logger.info("Inherited remote skill %r as %r to %s", skill_name, inherited_name, target_file)
+    return {
+        "status": "created",
+        "path": str(target_file),
+        "skill_name": skill_name,
+        "inherited_name": inherited_name,
+        "scope": scope,
+    }

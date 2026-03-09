@@ -17,7 +17,8 @@
 		TrendingUp,
 		Layers,
 		Globe,
-		Download
+		Download,
+		Check
 	} from 'lucide-svelte';
 	import { formatDistanceToNow, isToday, isYesterday, isThisWeek, isThisMonth } from 'date-fns';
 	import { onMount, tick } from 'svelte';
@@ -662,8 +663,21 @@
 			</CollapsibleGroup>
 		{/if}
 
+		<!-- Inherited skill banner -->
+		{#if detail.inherited_from}
+			<div class="flex items-center gap-3 px-5 py-4 rounded-xl border border-[var(--nav-amber)]/30 bg-[var(--nav-amber-subtle)]">
+				<Check size={18} class="text-[var(--nav-amber)] shrink-0" />
+				<div class="min-w-0">
+					<p class="text-sm font-medium text-[var(--nav-amber)]">
+						Inherited from <span class="font-semibold">{detail.inherited_from}</span>
+					</p>
+					<p class="text-xs text-[var(--text-muted)] mt-0.5">
+						Invocable as <code class="font-mono text-[var(--text-secondary)]">/{detail.name}</code>
+					</p>
+				</div>
+			</div>
 		<!-- Remote origin banner -->
-		{#if detail.is_remote_only && detail.remote_definition?.content}
+		{:else if detail.is_remote_only && detail.remote_definition?.content}
 			<div class="flex items-center justify-between gap-4 px-5 py-4 rounded-xl border border-[var(--info)]/30 bg-[var(--info-subtle)]">
 				<div class="flex items-center gap-3 min-w-0">
 					<Globe size={18} class="text-[var(--info)] shrink-0" />
