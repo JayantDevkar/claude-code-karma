@@ -249,15 +249,23 @@ def query_events(
         conditions.append("team_name = :team_name")
         params["team_name"] = team_name
     if event_type:
-        conditions.append("event_type = :event_type")
-        params["event_type"] = event_type
+        # Support comma-separated event types for multi-filter (e.g. "session_packaged,session_received")
+        types = [t.strip() for t in event_type.split(",") if t.strip()]
+        if len(types) == 1:
+            conditions.append("event_type = :event_type")
+            params["event_type"] = types[0]
+        elif types:
+            placeholders = ", ".join(f":evt_{i}" for i in range(len(types)))
+            conditions.append(f"event_type IN ({placeholders})")
+            for i, t in enumerate(types):
+                params[f"evt_{i}"] = t
     if member_name:
         conditions.append("member_name = :member_name")
         params["member_name"] = member_name
 
     # Safety: verify all filter param keys are in the allowlist before SQL interpolation
     # (belt-and-suspenders — params are built from hardcoded branches above, never from raw user input)
-    unknown = set(params.keys()) - _ALLOWED_EVENT_FILTERS - {"limit", "offset"}
+    unknown = set(params.keys()) - _ALLOWED_EVENT_FILTERS - {"limit", "offset"} - {k for k in params if k.startswith("evt_")}
     if unknown:
         raise ValueError(f"Unexpected filter columns: {unknown}")
 

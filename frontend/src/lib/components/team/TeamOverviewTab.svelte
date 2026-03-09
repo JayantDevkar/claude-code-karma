@@ -66,7 +66,7 @@
 	let members = $derived(team.members ?? []);
 	let projects = $derived(team.projects ?? []);
 	let onlineCount = $derived(members.filter((m) => m.connected).length);
-	let inSyncCount = $derived(projectStatuses.filter((p) => p.gap === 0).length);
+	let totalUnsyncedSessions = $derived(projectStatuses.reduce((sum, p) => sum + (p.gap ?? 0), 0));
 
 	// Aggregate session stats by member
 	let memberTotals = $derived.by(() => {
@@ -97,11 +97,11 @@
 			color: 'green'
 		},
 		{
-			title: 'Projects',
-			value: `${inSyncCount}/${projects.length}`,
-			description: 'in sync',
+			title: 'Unsynced Sessions',
+			value: totalUnsyncedSessions,
+			description: `across ${projects.length} project${projects.length !== 1 ? 's' : ''}`,
 			icon: FolderSync,
-			color: 'blue'
+			color: totalUnsyncedSessions === 0 ? 'green' : 'orange'
 		},
 		{
 			title: 'Sessions Shared',
@@ -125,73 +125,68 @@
 	);
 
 	onMount(() => {
-		if (memberTotals.size === 0) return;
-
 		registerChartDefaults();
-		const colors = getThemeColors();
-		const scaleConfig = createCommonScaleConfig();
-
-		const sentColors = chartMemberIds.map((id) => getTeamMemberHexColor(id));
-		const receivedColors = chartMemberIds.map((id) => {
-			const hex = getTeamMemberHexColor(id);
-			return hex + '66'; // 40% opacity for lighter variant
-		});
-
-		chart = new Chart(canvas, {
-			type: 'bar',
-			data: {
-				labels: chartLabels,
-				datasets: [
-					{
-						label: 'Sent',
-						data: chartSentData,
-						backgroundColor: sentColors,
-						borderRadius: 4
-					},
-					{
-						label: 'Received',
-						data: chartReceivedData,
-						backgroundColor: receivedColors,
-						borderRadius: 4
-					}
-				]
-			},
-			options: {
-				...createResponsiveConfig(),
-				scales: scaleConfig,
-				plugins: {
-					...createResponsiveConfig().plugins,
-					legend: {
-						...createResponsiveConfig().plugins.legend,
-						position: 'bottom'
-					},
-					tooltip: {
-						...createResponsiveConfig().plugins.tooltip,
-						backgroundColor: colors.bgBase,
-						titleColor: colors.text,
-						bodyColor: colors.textSecondary,
-						borderColor: colors.border,
-						borderWidth: 1,
-						displayColors: true
-					}
-				}
-			}
-		});
 	});
 
 	onDestroy(() => {
 		chart?.destroy();
 	});
 
-	// Update chart when data changes
+	// Create or update chart when canvas is available and data changes
 	$effect(() => {
-		if (chart && memberTotals.size > 0) {
-			const sentColors = chartMemberIds.map((id) => getTeamMemberHexColor(id));
-			const receivedColors = chartMemberIds.map((id) => {
-				const hex = getTeamMemberHexColor(id);
-				return hex + '66';
-			});
+		if (!canvas || memberTotals.size === 0) return;
 
+		const sentColors = chartMemberIds.map((id) => getTeamMemberHexColor(id));
+		const receivedColors = chartMemberIds.map((id) => {
+			const hex = getTeamMemberHexColor(id);
+			return hex + '66';
+		});
+
+		if (!chart) {
+			const colors = getThemeColors();
+			const scaleConfig = createCommonScaleConfig();
+
+			chart = new Chart(canvas, {
+				type: 'bar',
+				data: {
+					labels: chartLabels,
+					datasets: [
+						{
+							label: 'Sent',
+							data: chartSentData,
+							backgroundColor: sentColors,
+							borderRadius: 4
+						},
+						{
+							label: 'Received',
+							data: chartReceivedData,
+							backgroundColor: receivedColors,
+							borderRadius: 4
+						}
+					]
+				},
+				options: {
+					...createResponsiveConfig(),
+					scales: scaleConfig,
+					plugins: {
+						...createResponsiveConfig().plugins,
+						legend: {
+							...createResponsiveConfig().plugins.legend,
+							position: 'bottom'
+						},
+						tooltip: {
+							...createResponsiveConfig().plugins.tooltip,
+							backgroundColor: colors.bgBase,
+							titleColor: colors.text,
+							bodyColor: colors.textSecondary,
+							borderColor: colors.border,
+							borderWidth: 1,
+							displayColors: true
+						}
+					}
+				}
+			});
+		} else {
 			chart.data.labels = chartLabels;
 			chart.data.datasets[0].data = chartSentData;
 			chart.data.datasets[0].backgroundColor = sentColors;

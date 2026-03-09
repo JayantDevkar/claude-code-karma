@@ -2189,9 +2189,11 @@ async def sync_activity(
     if team_name and not ALLOWED_PROJECT_NAME.match(team_name):
         team_name = None
 
-    # Allowlist of valid event types — ignore invalid ones
-    if event_type and event_type not in _VALID_EVENT_TYPES:
-        event_type = None
+    # Support comma-separated event types — validate each part
+    if event_type:
+        parts = [t.strip() for t in event_type.split(",") if t.strip()]
+        valid_parts = [t for t in parts if t in _VALID_EVENT_TYPES]
+        event_type = ",".join(valid_parts) if valid_parts else None
 
     conn = _get_sync_conn()
     events = query_events(
@@ -2220,6 +2222,7 @@ async def sync_activity(
 async def sync_team_activity(
     team_name: str,
     event_type: Optional[str] = None,
+    member_name: Optional[str] = None,
     limit: int = 50,
     offset: int = 0,
 ) -> Any:
@@ -2230,8 +2233,15 @@ async def sync_team_activity(
     limit = max(1, min(limit, 200))
     offset = max(0, min(offset, 10000))
 
-    if event_type and event_type not in _VALID_EVENT_TYPES:
-        event_type = None
+    # Support comma-separated event types — validate each part
+    if event_type:
+        parts = [t.strip() for t in event_type.split(",") if t.strip()]
+        valid_parts = [t for t in parts if t in _VALID_EVENT_TYPES]
+        event_type = ",".join(valid_parts) if valid_parts else None
+
+    # Validate member_name
+    if member_name and not ALLOWED_MEMBER_NAME.match(member_name):
+        member_name = None
 
     conn = _get_sync_conn()
     if not conn.execute("SELECT 1 FROM sync_teams WHERE name = ?", (team_name,)).fetchone():
@@ -2239,7 +2249,7 @@ async def sync_team_activity(
 
     events = query_events(
         conn, team_name=team_name, event_type=event_type,
-        limit=limit, offset=offset,
+        member_name=member_name, limit=limit, offset=offset,
     )
     return {"events": events}
 

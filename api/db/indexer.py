@@ -455,16 +455,32 @@ def index_remote_sessions(conn: sqlite3.Connection) -> dict:
                         classification_overrides=classification_overrides,
                     )
 
-                    # Log session_received only for truly new sessions (not re-index)
+                    # Log session_received for truly new sessions (not re-index).
+                    # Resolve team_name from the project so the chart query can filter by team.
                     if uuid not in db_mtimes:
                         try:
                             from db.sync_queries import log_event
-                            log_event(
-                                conn, "session_received",
-                                member_name=user_id,
-                                project_encoded_name=local_encoded,
-                                session_uuid=uuid,
-                            )
+                            team_names = conn.execute(
+                                "SELECT team_name FROM sync_team_projects WHERE project_encoded_name = ?",
+                                (local_encoded,),
+                            ).fetchall()
+                            if team_names:
+                                for (tn,) in team_names:
+                                    log_event(
+                                        conn, "session_received",
+                                        team_name=tn,
+                                        member_name=user_id,
+                                        project_encoded_name=local_encoded,
+                                        session_uuid=uuid,
+                                    )
+                            else:
+                                # No team found — log without team_name as fallback
+                                log_event(
+                                    conn, "session_received",
+                                    member_name=user_id,
+                                    project_encoded_name=local_encoded,
+                                    session_uuid=uuid,
+                                )
                         except Exception:
                             pass  # Best-effort logging
                 except Exception as e:
