@@ -1832,6 +1832,38 @@ export interface TeamSessionStat {
 	received: number;
 }
 
+export interface MemberTeamProject {
+	encoded_name: string;
+	name: string;
+	session_count: number;
+}
+
+export interface MemberTeam {
+	name: string;
+	member_count: number;
+	project_count: number;
+	online_count: number;
+	projects: MemberTeamProject[];
+}
+
+export interface MemberStats {
+	total_sessions: number;
+	total_projects: number;
+	last_active: string | null;
+}
+
+export interface MemberProfile {
+	user_id: string;
+	device_id: string;
+	connected: boolean;
+	in_bytes_total: number;
+	out_bytes_total: number;
+	teams: MemberTeam[];
+	stats: MemberStats;
+	session_stats: TeamSessionStat[];
+	activity: SyncEvent[];
+}
+
 export interface MatchingProject {
 	encoded_name: string;
 	path: string;

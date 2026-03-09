@@ -89,8 +89,9 @@
 				{@const inBytes = device?.in_bytes_total ?? member.in_bytes_total ?? 0}
 				{@const outBytes = device?.out_bytes_total ?? member.out_bytes_total ?? 0}
 				{@const sparkline = buildSparklineData(member.name)}
-				<div
-					class="relative flex flex-col gap-2 p-3 rounded-lg border border-[var(--border)] bg-[var(--bg-base)]"
+				<a
+					href="/members/{encodeURIComponent(member.name)}"
+					class="relative flex flex-col gap-2 p-3 rounded-lg border border-[var(--border)] bg-[var(--bg-base)] hover:border-[var(--accent)]/30 hover:shadow-sm transition-all"
 					style="border-left: 3px solid {colors.border};"
 				>
 					<!-- Top row: name + connection status -->
@@ -146,7 +147,7 @@
 								{#if confirmRemove === member.name}
 									<div class="flex items-center gap-1">
 										<button
-											onclick={() => handleRemove(member.name)}
+											onclick={(e) => { e.preventDefault(); e.stopPropagation(); handleRemove(member.name); }}
 											disabled={removing}
 											class="px-2 py-1 text-xs font-medium rounded bg-[var(--error)] text-white hover:bg-[var(--error)]/80 transition-colors disabled:opacity-50"
 										>
@@ -157,7 +158,7 @@
 											{/if}
 										</button>
 										<button
-											onclick={() => (confirmRemove = null)}
+											onclick={(e) => { e.preventDefault(); e.stopPropagation(); confirmRemove = null; }}
 											class="px-2 py-1 text-xs rounded text-[var(--text-muted)] hover:bg-[var(--bg-muted)] transition-colors"
 										>
 											Cancel
@@ -165,7 +166,7 @@
 									</div>
 								{:else}
 									<button
-										onclick={() => (confirmRemove = member.name)}
+										onclick={(e) => { e.preventDefault(); e.stopPropagation(); confirmRemove = member.name; }}
 										class="p-1 rounded text-[var(--text-muted)] hover:text-[var(--error)] hover:bg-[var(--error)]/10 transition-colors"
 										title="Remove member"
 										aria-label="Remove member {member.name}"
@@ -176,7 +177,7 @@
 							{/if}
 						</div>
 					</div>
-				</div>
+				</a>
 			{/each}
 		</div>
 	{/if}

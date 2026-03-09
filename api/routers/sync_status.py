@@ -2273,6 +2273,152 @@ async def sync_team_session_stats(
     return {"stats": stats, "days": days}
 
 
+# ─── Member profile ────────────────────────────────────────────────────
+
+
+@router.get("/members/{member_name}")
+async def sync_member_profile(member_name: str) -> Any:
+    """Aggregated member profile across all teams."""
+    if not ALLOWED_MEMBER_NAME.match(member_name) or len(member_name) > 128:
+        raise HTTPException(400, "Invalid member name")
+
+    conn = _get_sync_conn()
+
+    # Find all teams this member belongs to
+    rows = conn.execute(
+        "SELECT team_name, device_id, added_at FROM sync_members WHERE name = ? ORDER BY added_at",
+        (member_name,),
+    ).fetchall()
+    if not rows:
+        raise HTTPException(404, f"Member '{member_name}' not found")
+
+    member_rows = [dict(r) for r in rows]
+    # Use the first device_id found (a member typically has one device)
+    device_id = member_rows[0]["device_id"]
+    team_names = [r["team_name"] for r in member_rows]
+
+    # Get device connection info from Syncthing (graceful fallback)
+    connected = False
+    in_bytes_total = 0
+    out_bytes_total = 0
+    devices: list[dict] = []
+    try:
+        proxy = get_proxy()
+        devices = await run_sync(proxy.get_devices)
+        for dev in devices:
+            if dev.get("device_id") == device_id:
+                connected = dev.get("connected", False)
+                in_bytes_total = dev.get("in_bytes_total", 0)
+                out_bytes_total = dev.get("out_bytes_total", 0)
+                break
+    except Exception:
+        pass  # Syncthing not running — use defaults
+
+    # Build per-team info and aggregate stats
+    teams = []
+    total_sessions = 0
+    project_set = set()
+
+    # Build a device-connected lookup from already-fetched devices
+    connected_device_ids: set[str] = {
+        dev["device_id"] for dev in devices if dev.get("connected")
+    }
+
+    for team_name in team_names:
+        members = list_members(conn, team_name)
+        projects = list_team_projects(conn, team_name)
+
+        online_count = sum(
+            1 for m in members if m["device_id"] in connected_device_ids
+        )
+
+        # Per-project session counts for this member (via sync_events)
+        team_projects = []
+        for p in projects:
+            encoded = p["project_encoded_name"]
+            project_set.add(encoded)
+            count_row = conn.execute(
+                """SELECT COUNT(*) FROM sync_events
+                   WHERE team_name = ? AND member_name = ? AND project_encoded_name = ?
+                     AND event_type IN ('session_packaged', 'session_received')""",
+                (team_name, member_name, encoded),
+            ).fetchone()
+            session_count = count_row[0] if count_row else 0
+            total_sessions += session_count
+            team_projects.append({
+                "encoded_name": encoded,
+                "name": p.get("path", "").split("/")[-1] if p.get("path") else encoded,
+                "session_count": session_count,
+            })
+
+        teams.append({
+            "name": team_name,
+            "member_count": len(members),
+            "project_count": len(projects),
+            "online_count": online_count,
+            "projects": team_projects,
+        })
+
+    # Last active: most recent event by this member
+    last_row = conn.execute(
+        "SELECT created_at FROM sync_events WHERE member_name = ? ORDER BY created_at DESC LIMIT 1",
+        (member_name,),
+    ).fetchone()
+    last_active = last_row[0] if last_row else None
+
+    # Session stats across all teams
+    all_session_stats = []
+    for team_name in team_names:
+        all_session_stats.extend(query_session_stats_by_member(conn, team_name, 30))
+    # Filter to only this member's stats
+    session_stats = [s for s in all_session_stats if s["member_name"] == member_name]
+
+    # Recent activity events
+    activity_rows = query_events(conn, member_name=member_name, limit=50)
+
+    return {
+        "user_id": member_name,
+        "device_id": device_id,
+        "connected": connected,
+        "in_bytes_total": in_bytes_total,
+        "out_bytes_total": out_bytes_total,
+        "teams": teams,
+        "stats": {
+            "total_sessions": total_sessions,
+            "total_projects": len(project_set),
+            "last_active": last_active,
+        },
+        "session_stats": session_stats,
+        "activity": activity_rows,
+    }
+
+
+@router.get("/members/{member_name}/activity")
+async def sync_member_activity(
+    member_name: str,
+    event_type: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> Any:
+    """Activity feed for a single member across all teams."""
+    if not ALLOWED_MEMBER_NAME.match(member_name) or len(member_name) > 128:
+        raise HTTPException(400, "Invalid member name")
+
+    limit = max(1, min(limit, 200))
+    offset = max(0, min(offset, 10000))
+
+    if event_type:
+        parts = [t.strip() for t in event_type.split(",") if t.strip()]
+        valid_parts = [t for t in parts if t in _VALID_EVENT_TYPES]
+        event_type = ",".join(valid_parts) if valid_parts else None
+
+    conn = _get_sync_conn()
+    events = query_events(
+        conn, event_type=event_type, member_name=member_name, limit=limit, offset=offset
+    )
+    return {"events": events}
+
+
 _VALID_SESSION_LIMITS = frozenset({"all", "recent_100", "recent_10"})
 
 
