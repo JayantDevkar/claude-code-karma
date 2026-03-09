@@ -309,24 +309,18 @@ def _find_team_for_folder(conn, folder_ids: list[str]) -> Optional[str]:
 
 
 async def _auto_accept_pending_peers(proxy, config, conn) -> tuple[int, dict]:
-    """Auto-accept pending devices AND pending folders from known devices.
+    """Auto-accept pending devices that offer karma-* folders.
 
-    Phase 1 — Device acceptance (two strategies):
-    1. **Folder matching**: If the pending device offers karma-* folders,
-       match them against team projects or handshake folders.
-    2. **Join code trust**: If we have teams with join codes, any pending
-       device must have our device_id (from the join code) to connect.
+    Only accepts devices when we can verify their identity via folder
+    matching — the device must offer a karma-join-* handshake folder or
+    karma-out-* session folder that matches a known team.
 
-    Phase 2 — Folder acceptance (independent of Phase 1):
-    Accepts pending folder offers from any already-known device. This
-    handles folders that weren't accepted during device acceptance
-    (e.g., device was accepted in a previous poll cycle but folder
-    acceptance failed, or folders arrived after device was accepted).
+    This ensures usernames are always correct (extracted from the real
+    karma user_id in the folder ID, never derived from hostnames).
 
     Returns:
         (accepted_count, remaining_pending_devices)
     """
-    # ── Phase 1: Accept pending devices ──────────────────────────────
     try:
         pending_devices = await run_sync(proxy.get_pending_devices)
     except Exception:
@@ -341,15 +335,11 @@ async def _auto_accept_pending_peers(proxy, config, conn) -> tuple[int, dict]:
         except Exception:
             pending_folders = {}
 
-        # Pre-compute: teams with join codes (for fallback strategy)
-        all_teams = list_teams(conn)
-        teams_with_codes = [t for t in all_teams if t.get("join_code")]
-
         for device_id in list(pending_devices.keys()):
             device_info = pending_devices.get(device_id, {})
             device_name = device_info.get("name", "")
 
-            # Strategy 1: Match via karma folder offers
+            # Collect karma-* folders offered by this device
             karma_folders = []
             for folder_id, info in pending_folders.items():
                 if not folder_id.startswith("karma-"):
@@ -357,42 +347,30 @@ async def _auto_accept_pending_peers(proxy, config, conn) -> tuple[int, dict]:
                 if device_id in info.get("offeredBy", {}):
                     karma_folders.append(folder_id)
 
+            if not karma_folders:
+                # No karma folders offered — cannot verify identity.
+                # Device stays pending until handshake folder arrives.
+                continue
+
+            # Extract username from folder IDs (prefer handshake folders)
             username = None
-            team_name = None
-
-            if karma_folders:
-                # Extract username from folder IDs
-                for folder_id in karma_folders:
-                    hs = _parse_handshake_folder(folder_id)
-                    if hs:
-                        username = hs[0]
+            for folder_id in karma_folders:
+                hs = _parse_handshake_folder(folder_id)
+                if hs:
+                    username = hs[0]
+                    break
+                parsed = _parse_folder_id(folder_id)
+                if parsed:
+                    candidate_name, _ = parsed
+                    if device_name and device_name == candidate_name:
+                        username = candidate_name
                         break
-                    parsed = _parse_folder_id(folder_id)
-                    if parsed:
-                        candidate_name, _ = parsed
-                        if device_name and device_name == candidate_name:
-                            username = candidate_name
-                            break
-                        if username is None:
-                            username = candidate_name
+                    if username is None:
+                        username = candidate_name
 
-                team_name = _find_team_for_folder(conn, karma_folders)
+            team_name = _find_team_for_folder(conn, karma_folders)
 
-            # Strategy 2: Fallback — if we have teams, accept the pending device.
-            # Trust signal: they must have our device_id (from join code) to connect.
-            if not team_name and teams_with_codes:
-                team_name = teams_with_codes[0]["name"]
-                if not username:
-                    if device_name:
-                        username = device_name.split(".")[0].lower().replace(" ", "-")
-                    else:
-                        username = f"peer-{device_id[:7].lower()}"
-                logger.info(
-                    "Auto-accept (join-code trust): pending device %s → team %s as %s",
-                    device_id[:20], team_name, username,
-                )
-
-            if not team_name:
+            if not team_name or not username:
                 continue
 
             # Auto-accept device in Syncthing
@@ -415,11 +393,6 @@ async def _auto_accept_pending_peers(proxy, config, conn) -> tuple[int, dict]:
 
             accepted_ids.add(device_id)
             accepted += 1
-
-    # Phase 2 (auto-accept pending folders) removed — project share folders
-    # now require explicit user acceptance via POST /sync/pending/accept/{folder_id}.
-    # Only handshake folders and own-outbox folders are auto-processed by the
-    # watcher (auto_only=True in _accept_pending_folders).
 
     # Return remaining pending devices (minus the ones we accepted)
     remaining = {did: info for did, info in pending_devices.items() if did not in accepted_ids}
@@ -1685,10 +1658,12 @@ async def sync_pending() -> Any:
 
     for item in pending:
         folder_id = item["folder_id"]
+        member = item.get("from_member", "unknown")
 
         if folder_id.startswith("karma-join-"):
             item["label"] = "Team handshake"
             item["folder_type"] = "handshake"
+            item["description"] = f"Device pairing signal from {member}"
         elif folder_id.startswith("karma-out-"):
             item["folder_type"] = "sessions"
             parsed = _parse_folder_id(folder_id)
@@ -1703,15 +1678,18 @@ async def sync_pending() -> Any:
                     )
                     if proj_suffix == suffix:
                         git_id = proj.get("git_identity")
-                        # "jayantdevkar/claude-code-karma" → "claude-code-karma"
                         project_label = git_id.split("/")[-1] if git_id else proj["project_encoded_name"]
                         break
-                item["label"] = project_label or suffix
+                label = project_label or suffix
+                item["label"] = label
+                item["description"] = f"Receive sessions from {member} for {label}"
             else:
                 item["label"] = folder_id
+                item["description"] = f"Receive sessions from {member}"
         else:
             item["label"] = folder_id
             item["folder_type"] = "unknown"
+            item["description"] = folder_id
 
     return {"pending": pending}
 

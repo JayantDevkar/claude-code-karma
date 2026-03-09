@@ -278,8 +278,8 @@ def _accept_pending_folders(st, config, conn, *, auto_only=False, only_folder_id
     own_user_id = config.user_id
 
     # ── Pre-scan: extract real usernames from karma-join-* folders ────
-    # Handshake folders encode the karma user_id (not the device hostname),
-    # so we can use them to fix member names that were derived from hostnames.
+    # Handshake folders encode the karma user_id, so we use them to build
+    # the known_names set for folder ID disambiguation below.
     all_team_names = {t["name"] for t in list_teams(conn)}
     real_usernames: dict[str, str] = {}  # device_id → real karma user_id
     for folder_id, folder_info in pending.items():
@@ -291,13 +291,14 @@ def _accept_pending_folders(st, config, conn, *, auto_only=False, only_folder_id
             candidate_team = "-".join(parts[i:])
             candidate_user = "-".join(parts[:i])
             if candidate_team in all_team_names:
-                # Found a valid team — map all offering devices to this username
                 for dev_id in folder_info.get("offeredBy", {}):
                     if dev_id in known_devices:
                         real_usernames[dev_id] = candidate_user
-                        # Update DB member name if it was hostname-derived.
-                        # upsert_member uses ON CONFLICT(team_name, device_id)
-                        # so this correctly updates the name in place.
+                        # Safety net: correct DB member name if it ever
+                        # drifted (e.g. from a prior version's hostname
+                        # derivation). No folder cleanup needed — device
+                        # acceptance now requires folder matching which
+                        # always provides the correct username upfront.
                         db_name, db_team = known_devices[dev_id]
                         if db_name != candidate_user:
                             click.echo(
@@ -305,27 +306,6 @@ def _accept_pending_folders(st, config, conn, *, auto_only=False, only_folder_id
                                 f"(from handshake folder)"
                             )
                             upsert_member(conn, db_team, candidate_user, device_id=dev_id)
-
-                            # Remove Syncthing folders created with the old
-                            # (hostname-derived) name. _auto_share_folders may
-                            # have created inbox folders like
-                            # "karma-out-jayants-macbook-pro-{suffix}" before
-                            # the handshake arrived with the real username.
-                            # Removing them lets the pending-folder loop below
-                            # recreate them with the correct name from the
-                            # remote's actual folder offers.
-                            old_prefix = f"karma-out-{db_name}-"
-                            for folder in st.get_folders():
-                                if folder["id"].startswith(old_prefix):
-                                    try:
-                                        st.remove_folder(folder["id"])
-                                        existing_folder_ids.discard(folder["id"])
-                                        click.echo(
-                                            f"  Removed stale folder '{folder['id']}' "
-                                            f"(old member name '{db_name}')"
-                                        )
-                                    except Exception:
-                                        pass
                 break
 
     # Build set of known names for folder ID disambiguation
