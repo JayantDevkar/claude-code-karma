@@ -1331,7 +1331,7 @@ export interface UsageTrendResponse {
 	trend_by_item?: Record<string, UsageTrendItem[]>;
 	first_used: string | null;
 	last_used: string | null;
-	trend_by_user?: Record<string, { date: string; count: number }[]>;
+	trend_by_user?: Record<string, UsageTrendItem[]>;
 	user_names?: Record<string, string>;
 }
 
@@ -1602,6 +1602,11 @@ export interface SkillDetailResponse {
 	trend: SkillTrendItem[];
 	sessions: McpSessionSummary[];
 	sessions_total: number;
+	remote_count?: number;
+	local_count?: number;
+	remote_user_ids?: string[];
+	is_remote_only?: boolean;
+	remote_definition?: RemoteDefinition | null;
 }
 
 // ============================================================================

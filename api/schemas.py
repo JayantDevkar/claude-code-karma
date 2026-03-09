@@ -1509,16 +1509,16 @@ class UsageTrendResponse(BaseModel):
         default_factory=dict,
         description="Per-item daily trend for top items (item name -> daily counts)",
     )
-    first_used: Optional[datetime] = Field(None, description="First usage timestamp")
-    last_used: Optional[datetime] = Field(None, description="Most recent usage timestamp")
     trend_by_user: dict[str, list[UsageTrendItem]] = Field(
         default_factory=dict,
-        description="Per-user daily trend: user_id -> [{date, count}]",
+        description="Per-user daily trend (user_id -> daily counts)",
     )
     user_names: dict[str, str] = Field(
         default_factory=dict,
-        description="user_id -> display name",
+        description="user_id -> display name mapping for sync members",
     )
+    first_used: Optional[datetime] = Field(None, description="First usage timestamp")
+    last_used: Optional[datetime] = Field(None, description="Most recent usage timestamp")
 
 
 class PluginDetail(BaseModel):

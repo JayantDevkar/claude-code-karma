@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Set
 
-from command_helpers import classify_invocation, is_command_category, is_skill_category
+from command_helpers import category_from_base_directory, classify_invocation, is_command_category, is_skill_category
 from config import FILE_TOOL_MAPPINGS
 from models import AssistantMessage, Session, ToolUseBlock, UserMessage
 from models.conversation import ConversationEntity
@@ -156,23 +156,6 @@ def _extract_file_operation(
     )
 
 
-def _category_from_base_directory(base_dir: str) -> Optional[str]:
-    """Infer skill category from a 'Base directory for this skill:' path.
-
-    Args:
-        base_dir: The base directory path extracted from the skill invocation context.
-
-    Returns:
-        Category string or None if the path doesn't match any known pattern.
-    """
-    if "/skills/" in base_dir:
-        return "custom_skill"
-    if "/commands/" in base_dir:
-        return "user_command"
-    if "/plugins/cache/" in base_dir:
-        return "plugin_skill"
-    return None
-
 
 def _collect_conversation_data_core(
     entity: ConversationEntity,
@@ -217,6 +200,8 @@ def _collect_conversation_data_core(
                 # Skip tool result and internal messages
                 if not msg.is_tool_result and not msg.is_internal_message:
                     data.initial_prompt = content[:5000] if content else None
+                    if msg.image_attachments:
+                        data.initial_prompt_images = list(msg.image_attachments)
 
             # If we had a pending Skill invocation, check if this message carries
             # the base directory line injected by Claude Code.
@@ -230,7 +215,7 @@ def _collect_conversation_data_core(
                         after = content[idx + len(marker):]
                         first_line = after.strip().splitlines()[0].strip() if after.strip() else ""
                         if first_line:
-                            cat = _category_from_base_directory(first_line)
+                            cat = category_from_base_directory(first_line)
                             if cat:
                                 data.skill_categories[_pending_skill_name] = cat
                     except (ValueError, IndexError):
@@ -509,33 +494,13 @@ def collect_subagent_info(
     subagents_info: List[SubagentInfo] = []
 
     for subagent in session.list_subagents():
-        # Count tools, skills, and commands for this subagent - single pass
-        tool_counts: Counter = Counter()
-        skill_counts: Counter = Counter()
-        command_counts: Counter = Counter()
-        initial_prompt = None
-        initial_prompt_images: List[Dict[str, str]] = []
-
-        for msg in subagent.iter_messages():
-            if isinstance(msg, UserMessage):
-                if initial_prompt is None:
-                    initial_prompt = msg.content[:5000] if msg.content else None
-                    if msg.image_attachments:
-                        initial_prompt_images = list(msg.image_attachments)
-            elif isinstance(msg, AssistantMessage):
-                for block in msg.content_blocks:
-                    if isinstance(block, ToolUseBlock):
-                        tool_counts[block.name] += 1
-
-                        # Extract skill/command names from Skill tool inputs
-                        if block.name == "Skill" and block.input:
-                            skill_name = block.input.get("skill")
-                            if skill_name:
-                                kind = classify_invocation(skill_name, source="skill_tool")
-                                if is_skill_category(kind):
-                                    skill_counts[skill_name] += 1
-                                elif is_command_category(kind):
-                                    command_counts[skill_name] += 1
+        # Collect all subagent data in a single pass via collect_agent_data
+        agent_data = collect_agent_data(subagent)
+        tool_counts = agent_data.tool_counts
+        skill_counts = agent_data.skills
+        command_counts = agent_data.commands
+        initial_prompt = agent_data.initial_prompt
+        initial_prompt_images = list(agent_data.initial_prompt_images)
 
         # Match subagent to Task invocation
         subagent_type = agent_id_to_type.get(subagent.agent_id)

@@ -1910,6 +1910,15 @@ def query_agent_usage_trend(
         count_expr="COUNT(*)",
     )
 
+    trend_by_user = _query_per_user_trend(
+        conn,
+        from_clause="FROM subagent_invocations si JOIN sessions s ON si.session_uuid = s.uuid",
+        where=where,
+        params=params,
+        count_expr="COUNT(*)",
+    )
+    user_names = _resolve_user_names(conn, [u for u in trend_by_user if u != "_local"])
+
     # First/last used
     time_row = conn.execute(
         f"""SELECT MIN(s.start_time) as first_used, MAX(s.start_time) as last_used
@@ -1927,6 +1936,8 @@ def query_agent_usage_trend(
         "by_item": by_item,
         "trend": trend,
         "trend_by_item": trend_by_item,
+        "trend_by_user": trend_by_user,
+        "user_names": user_names,
         "first_used": first_used,
         "last_used": last_used,
     }
