@@ -2281,7 +2281,7 @@ async def sync_list_members() -> Any:
     """List all unique members across all teams."""
     conn = _get_sync_conn()
     rows = conn.execute(
-        """SELECT DISTINCT m.name, m.device_id, MIN(m.added_at) as first_added,
+        """SELECT m.name, m.device_id, MIN(m.added_at) as first_added,
                   GROUP_CONCAT(m.team_name) as team_names
            FROM sync_members m
            GROUP BY m.device_id
@@ -2314,12 +2314,10 @@ async def sync_list_members() -> Any:
     return {"members": members, "total": len(members)}
 
 
-@router.get("/members/{identifier}")
-async def sync_member_profile(identifier: str) -> Any:
-    """Aggregated member profile across all teams. Accepts member name or device_id."""
-    conn = _get_sync_conn()
-
-    # Try lookup by name first, then by device_id
+def _resolve_member(conn, identifier: str):
+    """Resolve identifier (name or device_id) to member rows. Raises 404 if not found."""
+    if not (ALLOWED_MEMBER_NAME.match(identifier) or ALLOWED_DEVICE_ID.match(identifier)) or len(identifier) > 128:
+        raise HTTPException(400, "Invalid member identifier")
     rows = conn.execute(
         "SELECT team_name, name, device_id, added_at FROM sync_members WHERE name = ? ORDER BY added_at",
         (identifier,),
@@ -2331,7 +2329,14 @@ async def sync_member_profile(identifier: str) -> Any:
         ).fetchall()
     if not rows:
         raise HTTPException(404, f"Member '{identifier}' not found")
+    return rows
 
+
+@router.get("/members/{identifier}")
+async def sync_member_profile(identifier: str) -> Any:
+    """Aggregated member profile across all teams. Accepts member name or device_id."""
+    conn = _get_sync_conn()
+    rows = _resolve_member(conn, identifier)
     member_name = rows[0]["name"]
 
     member_rows = [dict(r) for r in rows]
@@ -2452,18 +2457,8 @@ async def sync_member_activity(
         event_type = ",".join(valid_parts) if valid_parts else None
 
     conn = _get_sync_conn()
-
-    # Resolve identifier to member_name (try name first, then device_id)
-    member_name = identifier
-    row = conn.execute(
-        "SELECT name FROM sync_members WHERE name = ? LIMIT 1", (identifier,)
-    ).fetchone()
-    if not row:
-        row = conn.execute(
-            "SELECT name FROM sync_members WHERE device_id = ? LIMIT 1", (identifier,)
-        ).fetchone()
-        if row:
-            member_name = row["name"]
+    rows = _resolve_member(conn, identifier)
+    member_name = rows[0]["name"]
 
     events = query_events(
         conn, event_type=event_type, member_name=member_name, limit=limit, offset=offset

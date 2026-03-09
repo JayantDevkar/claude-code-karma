@@ -1,7 +1,7 @@
 <script lang="ts">
 	import PageHeader from '$lib/components/layout/PageHeader.svelte';
 	import { Users, Wifi, WifiOff, AlertTriangle } from 'lucide-svelte';
-	import { getTeamMemberColor, getTeamMemberHexColor } from '$lib/utils';
+	import { getTeamMemberHexColor } from '$lib/utils';
 
 	let { data } = $props();
 
@@ -51,7 +51,6 @@
 	<!-- Members Grid -->
 	<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
 		{#each data.members as member (member.device_id)}
-			{@const colors = getTeamMemberColor(member.name)}
 			{@const hexColor = getTeamMemberHexColor(member.name)}
 			<a
 				href="/members/{encodeURIComponent(member.device_id)}"
