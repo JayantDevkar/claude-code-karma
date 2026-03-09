@@ -238,7 +238,7 @@ def _extract_username_from_karma_folder(
     return None
 
 
-def _accept_pending_folders(st, config, conn):
+def _accept_pending_folders(st, config, conn, *, auto_only=False, only_folder_id=None):
     """Accept pending folder offers from known team members.
 
     Security policy:
@@ -247,9 +247,17 @@ def _accept_pending_folders(st, config, conn):
     - Replaces empty pre-created inbox folders that conflict on the same path
 
     Handles three folder types:
-    - ``karma-join-{user}-{team}`` — handshake folders (receiveonly)
-    - ``karma-out-{self}-{suffix}`` — own outbox offered back (sendonly)
-    - ``karma-out-{other}-{suffix}`` — other's outbox (receiveonly inbox)
+    - ``karma-join-{user}-{team}`` — handshake folders (dismissed after reading)
+    - ``karma-out-{self}-{suffix}`` — own outbox offered back (auto-accept)
+    - ``karma-out-{other}-{suffix}`` — other's outbox (requires explicit accept)
+
+    Args:
+        auto_only: When True, only process handshake folders and own outbox.
+            Skip ``karma-out-{other}`` folders — those require explicit user
+            acceptance via the API. Used by the watcher and background polling.
+            When False (explicit user action), accept everything.
+        only_folder_id: When set, only process this specific folder ID.
+            Overrides auto_only (explicit user action for one folder).
 
     When the joiner's local DB has no ``sync_team_projects`` records (because
     they joined a team rather than creating it), folders are still accepted if
@@ -329,6 +337,10 @@ def _accept_pending_folders(st, config, conn):
     known_devices = get_known_devices(conn)
 
     for folder_id, folder_info in pending.items():
+        # When accepting a single folder, skip everything else
+        if only_folder_id and folder_id != only_folder_id:
+            continue
+
         if not folder_id.startswith("karma-"):
             click.echo(f"  Skipped non-karma folder offer '{folder_id}' (security policy)")
             continue
@@ -429,6 +441,12 @@ def _accept_pending_folders(st, config, conn):
                 continue
 
             # ── Someone else's outbox → create receiveonly inbox ───────
+            # In auto_only mode, skip other people's outboxes — they require
+            # explicit user acceptance (per-folder Accept in the UI).
+            # Exception: only_folder_id overrides auto_only (explicit action).
+            if auto_only and not only_folder_id:
+                continue
+
             # Use smart disambiguation to extract sender and suffix
             parsed = _extract_username_from_karma_folder(
                 folder_id, "karma-out-", known_names,
@@ -838,7 +856,9 @@ def watch(team_name: str):
         if api_key:
             st = SyncthingClient(api_key=api_key)
             if st.is_running():
-                n = _accept_pending_folders(st, config, conn)
+                # auto_only=True: only handshake + own outbox at startup.
+                # Other people's project shares require explicit acceptance.
+                n = _accept_pending_folders(st, config, conn, auto_only=True)
                 if n:
                     click.echo(f"Accepted {n} pending folder(s) from known teammates.\n")
     except Exception as e:
@@ -1182,7 +1202,9 @@ def team_add(name: str, identifier: str, team_name: str):
 
             _auto_share_folders(st, config, conn, team_name, identifier)
 
-            n = _accept_pending_folders(st, config, conn)
+            # auto_only=True: during join, only process handshake + own outbox.
+            # Project shares from the new member require explicit acceptance.
+            n = _accept_pending_folders(st, config, conn, auto_only=True)
             if n:
                 click.echo(f"Accepted {n} pending folder(s) from known teammates.")
         else:
