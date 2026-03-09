@@ -586,6 +586,11 @@ class SubagentSessionDetail(BaseModel):
         default_factory=list, description="Image attachments from subagent's first user message"
     )
 
+    # Remote session metadata
+    remote_user_id: Optional[str] = Field(
+        None, description="User ID of the remote machine that produced the parent session"
+    )
+
 
 # =============================================================================
 # Agent and Skill Schemas

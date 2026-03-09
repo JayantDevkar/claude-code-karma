@@ -117,7 +117,7 @@ def get_subagent_detail(
         slug=agent.slug,
         is_subagent=True,
         context=ConversationContext(
-            project_encoded_name=encoded_name,
+            project_encoded_name=result.project_encoded_name,
             parent_session_uuid=session_uuid,
             parent_session_slug=parent_session.slug,
         ),
@@ -138,6 +138,7 @@ def get_subagent_detail(
         display_name=display_name,
         initial_prompt=agent_data.initial_prompt,
         initial_prompt_images=agent_data.initial_prompt_images,
+        remote_user_id=result.remote_user_id,
     )
 
     # Add cache headers

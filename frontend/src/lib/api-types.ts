@@ -706,6 +706,9 @@ export interface SubagentSessionDetail {
 	display_name?: string | null;
 	initial_prompt: string | null;
 	initial_prompt_images?: ImageAttachment[];
+
+	// Remote session metadata
+	remote_user_id?: string;
 }
 
 /**

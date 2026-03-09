@@ -806,8 +806,16 @@ def _get_all_sessions_jsonl(
         models_used: list[str] = []
         subagent_count = 0
 
-        project_dir = settings.projects_dir / meta.encoded_name
-        subagent_count = _count_subagents_fast(project_dir, meta.uuid)
+        # For remote sessions, subagents are under the remote-sessions dir;
+        # for local, under the project dir. Both use {base}/{uuid}/subagents/.
+        if meta.source == "remote" and meta.remote_user_id:
+            sessions_dir = (
+                settings.karma_base / "remote-sessions" / meta.remote_user_id
+                / meta.encoded_name / "sessions"
+            )
+        else:
+            sessions_dir = settings.projects_dir / meta.encoded_name
+        subagent_count = _count_subagents_fast(sessions_dir, meta.uuid)
 
         if meta._session is not None:
             try:
@@ -983,7 +991,7 @@ def get_continuation_session(session_uuid: str) -> ContinuationSessionInfo:
                             slug=row["slug"],
                         )
     except Exception:
-        pass
+        logger.debug("DB fast path failed for continuation lookup", exc_info=True)
 
     # JSONL fallback
     source_result = find_session_with_project(session_uuid)
@@ -995,16 +1003,17 @@ def get_continuation_session(session_uuid: str) -> ContinuationSessionInfo:
     source_slug = source_session.slug
     source_end_time = source_session.end_time
 
-    # Get the project directory
-    projects_dir = settings.projects_dir
-    project_dir = projects_dir / project_encoded_name
+    # Search sibling JSONL files in the same directory as the source session.
+    # This works for both local (~/.claude/projects/{enc}/) and
+    # remote (~/.claude_karma/remote-sessions/{user}/{enc}/sessions/) sessions.
+    sessions_dir = source_session.jsonl_path.parent
 
-    if not project_dir.exists():
+    if not sessions_dir.exists():
         raise HTTPException(status_code=404, detail="Project not found")
 
     # Search for continuation session with same slug
     candidates = []
-    for jsonl_path in project_dir.glob("*.jsonl"):
+    for jsonl_path in sessions_dir.glob("*.jsonl"):
         if not _is_valid_session_filename(jsonl_path):
             continue
         # Skip the source session itself
@@ -1038,7 +1047,8 @@ def get_continuation_session(session_uuid: str) -> ContinuationSessionInfo:
         )
 
     # Return the most recent candidate (most likely the actual continuation)
-    best_candidate = max(candidates, key=lambda s: s.start_time or s.end_time)
+    _epoch = datetime.min.replace(tzinfo=timezone.utc)
+    best_candidate = max(candidates, key=lambda s: s.start_time or s.end_time or _epoch)
 
     return ContinuationSessionInfo(
         session_uuid=best_candidate.uuid,
