@@ -87,44 +87,20 @@
 			</a>
 		</div>
 	{:else if teams.length === 0}
-		<!-- Pending connections (shown even with 0 teams) -->
+		<!-- Pending connections banner (points to Join Team) -->
 		{#if pendingDevices.length > 0}
-			<div class="space-y-3 mb-8">
-				<h2 class="text-sm font-semibold text-[var(--text-primary)] uppercase tracking-wider">
-					Incoming Connections
-				</h2>
-				{#each pendingDevices as device (device.device_id)}
-					<div class="p-4 rounded-lg border border-[var(--warning)]/20 bg-[var(--warning)]/5">
-						<div class="flex items-start gap-3">
-							<div class="mt-0.5">
-								<Radio size={16} class="text-[var(--warning)]" />
-							</div>
-							<div class="flex-1 space-y-3">
-								<div>
-									<p class="text-sm font-medium text-[var(--text-primary)]">
-										{device.name || 'Unknown device'} wants to connect
-									</p>
-									<p class="text-xs font-mono text-[var(--text-muted)] mt-0.5">
-										{device.device_id.length > 24 ? device.device_id.slice(0, 24) + '...' : device.device_id}
-									</p>
-								</div>
-								<div>
-									<button
-										onclick={() => (showJoinDialog = true)}
-										class="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-[var(--radius-md)]
-											bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)] transition-colors"
-									>
-										<UserPlus size={14} />
-										Join with Code
-									</button>
-									<p class="text-xs text-[var(--text-muted)] mt-1.5">
-										Ask them for their join code — it carries team name and member details.
-									</p>
-								</div>
-							</div>
-						</div>
+			<div class="p-4 rounded-lg border border-[var(--warning)]/20 bg-[var(--warning)]/5 mb-8">
+				<div class="flex items-center gap-3">
+					<Radio size={16} class="text-[var(--warning)] shrink-0" />
+					<div class="flex-1 min-w-0">
+						<p class="text-sm font-medium text-[var(--text-primary)]">
+							{pendingDevices.length} device{pendingDevices.length > 1 ? 's' : ''} waiting to connect
+						</p>
+						<p class="text-xs text-[var(--text-muted)] mt-0.5">
+							Create or join a team to accept incoming connections.
+						</p>
 					</div>
-				{/each}
+				</div>
 			</div>
 		{/if}
 
@@ -160,35 +136,16 @@
 			</div>
 		</div>
 	{:else}
-		<!-- Pending connections (shown above teams) -->
+		<!-- Pending connections banner (directs to team detail page) -->
 		{#if pendingDevices.length > 0}
-			<div class="space-y-3 mb-6">
-				<h2 class="text-sm font-semibold text-[var(--text-primary)] uppercase tracking-wider">
-					Incoming Connections
-				</h2>
-				{#each pendingDevices as device (device.device_id)}
-					<div class="p-4 rounded-lg border border-[var(--warning)]/20 bg-[var(--warning)]/5">
-						<div class="flex items-center gap-3">
-							<Radio size={16} class="text-[var(--warning)] shrink-0" />
-							<div class="flex-1 min-w-0">
-								<p class="text-sm font-medium text-[var(--text-primary)]">
-									{device.name || 'Unknown device'} wants to connect
-								</p>
-								<p class="text-xs font-mono text-[var(--text-muted)] truncate">
-									{device.device_id.length > 24 ? device.device_id.slice(0, 24) + '...' : device.device_id}
-								</p>
-							</div>
-							<button
-								onclick={() => (showJoinDialog = true)}
-								class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-[var(--radius-md)]
-									bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)] transition-colors shrink-0"
-							>
-								<UserPlus size={13} />
-								Join with Code
-							</button>
-						</div>
-					</div>
-				{/each}
+			<div class="p-3 rounded-lg border border-[var(--warning)]/20 bg-[var(--warning)]/5 mb-4">
+				<div class="flex items-center gap-3">
+					<Radio size={16} class="text-[var(--warning)] shrink-0" />
+					<p class="text-sm text-[var(--text-primary)] flex-1">
+						<span class="font-medium">{pendingDevices.length} pending request{pendingDevices.length > 1 ? 's' : ''}</span>
+						<span class="text-[var(--text-muted)]"> — open your team to review and accept.</span>
+					</p>
+				</div>
 			</div>
 		{/if}
 

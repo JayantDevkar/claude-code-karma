@@ -20,9 +20,10 @@
 		AlertTriangle,
 		CheckCircle2,
 		RefreshCw,
+		Radio,
 		X
 	} from 'lucide-svelte';
-	import type { SyncDevice, SyncPendingFolder, SyncProjectStatus, SyncTeam, SyncEvent } from '$lib/api-types';
+	import type { SyncDevice, SyncPendingFolder, SyncProjectStatus, SyncTeam, SyncEvent, PendingDevice } from '$lib/api-types';
 
 	let { data } = $props();
 
@@ -127,11 +128,63 @@
 		}
 	}
 
+	// Pending device requests
+	let pendingDevices = $state<PendingDevice[]>([]);
+	$effect(() => {
+		pendingDevices = data.pendingDevices ?? [];
+	});
+
+	// Track per-device accept state
+	let deviceActing = $state<Record<string, string>>({});
+
+	async function acceptDevice(device: PendingDevice) {
+		deviceActing = { ...deviceActing, [device.device_id]: 'accepting' };
+		try {
+			const res = await fetch(
+				`${API_BASE}/sync/pending-devices/${encodeURIComponent(device.device_id)}/accept`,
+				{
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ team_name: data.teamName })
+				}
+			);
+			if (res.ok) {
+				pendingDevices = pendingDevices.filter((d) => d.device_id !== device.device_id);
+				await fetchTeamData();
+			} else {
+				const body = await res.json().catch(() => ({}));
+				console.error('Accept device failed:', body);
+				deviceActing = { ...deviceActing, [device.device_id]: 'error' };
+			}
+		} catch {
+			deviceActing = { ...deviceActing, [device.device_id]: 'error' };
+		}
+	}
+
+	async function dismissDevice(deviceId: string) {
+		deviceActing = { ...deviceActing, [deviceId]: 'dismissing' };
+		try {
+			await fetch(
+				`${API_BASE}/sync/pending-devices/${encodeURIComponent(deviceId)}`,
+				{ method: 'DELETE' }
+			);
+		} catch {
+			// best-effort — remove from UI regardless
+		}
+		pendingDevices = pendingDevices.filter((d) => d.device_id !== deviceId);
+		const { [deviceId]: _, ...rest } = deviceActing;
+		deviceActing = rest;
+	}
+
 	// Fetch all team data (used by both polling and manual refresh)
 	async function fetchTeamData(signal?: AbortSignal) {
 		const teamNameEnc = encodeURIComponent(data.teamName);
 		// pending-devices triggers auto-accept of karma peers, must resolve before teams fetch
-		await fetch(`${API_BASE}/sync/pending-devices`, { signal }).catch(() => {});
+		const pendingDevicesRes = await fetch(`${API_BASE}/sync/pending-devices`, { signal }).catch(() => null);
+		if (pendingDevicesRes?.ok) {
+			const pd = await pendingDevicesRes.json();
+			pendingDevices = pd.devices ?? [];
+		}
 		const [teamsRes, devicesRes, foldersRes, projectStatusRes, activityRes] = await Promise.all([
 			fetch(`${API_BASE}/sync/teams`, { signal }),
 			fetch(`${API_BASE}/sync/devices`, { signal }),
@@ -289,6 +342,67 @@
 			</section>
 		{/if}
 
+		<!-- Pending Device Requests -->
+		{#if pendingDevices.length > 0}
+			<section>
+				<div class="flex items-center justify-between mb-3">
+					<div class="flex items-center gap-2">
+						<h2 class="text-sm font-semibold text-[var(--text-primary)] uppercase tracking-wider">
+							Pending Requests
+						</h2>
+						<span class="px-1.5 py-0.5 text-[10px] font-medium rounded bg-[var(--warning)]/15 text-[var(--warning)] border border-[var(--warning)]/25">
+							{pendingDevices.length}
+						</span>
+					</div>
+				</div>
+				<div class="space-y-2">
+					{#each pendingDevices as device (device.device_id)}
+						{@const acting = deviceActing[device.device_id]}
+						<div class="flex items-center gap-3 p-3 rounded-lg border border-[var(--warning)]/20 bg-[var(--warning)]/5">
+							<Radio size={16} class="text-[var(--warning)] shrink-0" />
+							<div class="flex-1 min-w-0">
+								<p class="text-sm font-medium text-[var(--text-primary)] truncate">
+									{device.name || 'Unknown device'} wants to join
+								</p>
+								<p class="text-xs text-[var(--text-muted)] mt-0.5">
+									Accept to add this device as a team member and start syncing sessions
+								</p>
+							</div>
+							<div class="flex items-center gap-1.5 shrink-0">
+								{#if acting === 'error'}
+									<span class="text-xs text-[var(--error)] mr-1">Failed</span>
+								{/if}
+								<button
+									onclick={() => acceptDevice(device)}
+									disabled={acting === 'accepting'}
+									class="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-[var(--radius)]
+										bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)] transition-colors
+										disabled:opacity-50 disabled:cursor-not-allowed"
+								>
+									{#if acting === 'accepting'}
+										<Loader2 size={11} class="animate-spin" />
+									{:else}
+										<CheckCircle2 size={11} />
+									{/if}
+									Accept
+								</button>
+								<button
+									onclick={() => dismissDevice(device.device_id)}
+									disabled={acting === 'accepting'}
+									class="flex items-center gap-1 px-2 py-1.5 text-xs font-medium rounded-[var(--radius)]
+										border border-[var(--border)] text-[var(--text-muted)] hover:bg-[var(--bg-muted)] transition-colors
+										disabled:opacity-50 disabled:cursor-not-allowed"
+								>
+									<X size={11} />
+									Dismiss
+								</button>
+							</div>
+						</div>
+					{/each}
+				</div>
+			</section>
+		{/if}
+
 		<!-- Pending Project Shares -->
 		{#if pendingFolders.length > 0}
 			<section>
@@ -391,6 +505,48 @@
 					</p>
 				{/if}
 			</div>
+
+			<!-- Diagnostic hints when waiting for members -->
+			{#if members.length <= 1 && pendingDevices.length === 0 && pendingFolders.length === 0}
+				<div class="mt-4 p-4 rounded-lg border border-[var(--border)]/50 bg-[var(--bg-subtle)]">
+					<p class="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-2">
+						Waiting for members?
+					</p>
+					<ul class="space-y-1.5 text-xs text-[var(--text-muted)]">
+						<li class="flex items-start gap-2">
+							<span class="shrink-0 mt-0.5 w-1 h-1 rounded-full bg-[var(--text-muted)]"></span>
+							Share the join code above with your teammate
+						</li>
+						<li class="flex items-start gap-2">
+							<span class="shrink-0 mt-0.5 w-1 h-1 rounded-full bg-[var(--text-muted)]"></span>
+							Both machines need <span class="font-medium text-[var(--text-secondary)]">Syncthing running</span> — check with <code class="px-1 py-0.5 rounded bg-[var(--bg-muted)] text-[10px] font-mono">brew services info syncthing</code>
+						</li>
+						<li class="flex items-start gap-2">
+							<span class="shrink-0 mt-0.5 w-1 h-1 rounded-full bg-[var(--text-muted)]"></span>
+							Discovery via relay can take 15-60 seconds after joining
+						</li>
+						<li class="flex items-start gap-2">
+							<span class="shrink-0 mt-0.5 w-1 h-1 rounded-full bg-[var(--text-muted)]"></span>
+							If the request doesn't appear, ask the member to restart Syncthing: <code class="px-1 py-0.5 rounded bg-[var(--bg-muted)] text-[10px] font-mono">brew services restart syncthing</code>
+						</li>
+					</ul>
+					<div class="mt-3 flex items-center gap-2 text-xs">
+						{#if data.detectData?.running}
+							<span class="flex items-center gap-1 text-[var(--success)]">
+								<span class="w-1.5 h-1.5 rounded-full bg-[var(--success)]"></span>
+								Your Syncthing is running
+							</span>
+						{:else}
+							<span class="flex items-center gap-1 text-[var(--error)]">
+								<span class="w-1.5 h-1.5 rounded-full bg-[var(--error)]"></span>
+								Your Syncthing is not running
+							</span>
+							<span class="text-[var(--text-muted)]"> — start with</span>
+							<code class="px-1 py-0.5 rounded bg-[var(--bg-muted)] text-[10px] font-mono">brew services start syncthing</code>
+						{/if}
+					</div>
+				</div>
+			{/if}
 		</section>
 
 		<!-- Shared Projects -->

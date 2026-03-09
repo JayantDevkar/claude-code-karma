@@ -45,6 +45,7 @@ router = APIRouter(prefix="/sync", tags=["sync"])
 
 # Input validation
 ALLOWED_PROJECT_NAME = re.compile(r"^[a-zA-Z0-9_\-]+$")
+ALLOWED_MEMBER_NAME = re.compile(r"^[a-zA-Z0-9_\-\.]+$")  # hostnames have dots
 ALLOWED_DEVICE_ID = re.compile(r"^[A-Z0-9\-]+$")
 _VALID_EVENT_TYPES = frozenset({
     "team_created", "team_deleted", "team_left",
@@ -72,7 +73,7 @@ def validate_device_id(device_id: str) -> str:
 
 
 def validate_user_id(user_id: str) -> str:
-    if not ALLOWED_PROJECT_NAME.match(user_id) or len(user_id) > 128:
+    if not ALLOWED_MEMBER_NAME.match(user_id) or len(user_id) > 128:
         raise HTTPException(400, "Invalid user_id")
     return user_id
 
@@ -228,6 +229,78 @@ def _parse_folder_id(folder_id: str):
         if candidate_name and candidate_suffix:
             return candidate_name, candidate_suffix
     return None
+
+
+def _friendly_project_label(conn, folder_id: str, parsed_suffix: str) -> str:
+    """Extract a human-readable project label from a folder ID.
+
+    The folder ID is ``karma-out-{user_id}-{git_org}-{repo}``. Since user_id
+    can contain hyphens, we can't reliably split it. Instead we match known
+    git identities against the folder ID tail.
+
+    Tries these strategies in order:
+    1. Match git_identity from projects DB against the folder ID (most reliable)
+    2. Match encoded_name from projects DB against the folder ID
+    3. Fallback: last component of the suffix
+
+    Example: folder_id "karma-out-my-mac-mini-jayantdevkar-claude-code-karma"
+             git_identity "jayantdevkar/claude-code-karma"
+             → label "claude-code-karma"
+    """
+    rest = folder_id[len("karma-out-"):] if folder_id.startswith("karma-out-") else parsed_suffix
+
+    # Strategy 1: Find a git_identity whose normalized form appears in the folder ID
+    try:
+        rows = conn.execute(
+            "SELECT git_identity FROM projects WHERE git_identity IS NOT NULL"
+        ).fetchall()
+        for row in rows:
+            git_id = row[0] if isinstance(row, (tuple, list)) else row["git_identity"]
+            if not git_id:
+                continue
+            normalized = git_id.replace("/", "-")
+            if rest.endswith(normalized):
+                return git_id.split("/")[-1]  # "claude-code-karma"
+    except Exception:
+        pass
+
+    # Strategy 2: Find an encoded_name that the folder ID ends with
+    try:
+        rows = conn.execute("SELECT encoded_name FROM projects").fetchall()
+        for row in rows:
+            enc = row[0] if isinstance(row, (tuple, list)) else row["encoded_name"]
+            if rest.endswith(enc):
+                return enc
+    except Exception:
+        pass
+
+    # Strategy 3: Fallback — return the suffix as-is
+    return parsed_suffix
+
+
+def _parse_folder_id_with_hints(folder_id: str, known_user_ids: set[str]):
+    """Parse a karma folder ID using known user IDs for accurate splitting.
+
+    The ambiguity in ``karma-out-{user}-{suffix}`` is that both user and
+    suffix can contain hyphens. By checking against known user IDs, we can
+    split correctly.
+
+    Falls back to _parse_folder_id() if no known user matches.
+    """
+    prefix = "karma-out-"
+    if not folder_id.startswith(prefix):
+        return None
+    rest = folder_id[len(prefix):]
+
+    # Try known user IDs (longest first to match most specific)
+    for uid in sorted(known_user_ids, key=len, reverse=True):
+        if rest.startswith(uid + "-"):
+            suffix = rest[len(uid) + 1:]
+            if suffix:
+                return uid, suffix
+
+    # Fallback to greedy parse
+    return _parse_folder_id(folder_id)
 
 
 def _parse_handshake_folder(folder_id: str):
@@ -1201,6 +1274,99 @@ async def sync_pending_devices() -> Any:
     return {"devices": result, "auto_accepted": auto_accepted}
 
 
+class AcceptPendingDeviceRequest(BaseModel):
+    team_name: str
+    member_name: str | None = None  # Optional — falls back to device hostname
+
+
+@router.post("/pending-devices/{device_id}/accept")
+async def sync_accept_pending_device(device_id: str, req: AcceptPendingDeviceRequest) -> Any:
+    """Manually accept a pending device and add it as a team member.
+
+    This handles the chicken-and-egg problem where auto-accept requires
+    karma-* folders but Syncthing can't deliver folder offers from an
+    unpaired device.  The user sees the pending request in the UI and
+    clicks Accept, which:
+      1. Pairs the device in Syncthing
+      2. Adds the device as a team member (using member_name or hostname)
+      3. Creates a handshake folder so the new member can discover us
+      4. Shares existing project folders with the new member
+    """
+    validate_device_id(device_id)
+    team_name = req.team_name
+    if not ALLOWED_PROJECT_NAME.match(team_name):
+        raise HTTPException(400, "Invalid team name")
+
+    conn = _get_sync_conn()
+    team = get_team(conn, team_name)
+    if team is None:
+        raise HTTPException(404, f"Team '{team_name}' not found")
+
+    proxy = get_proxy()
+
+    # Verify this device is actually pending in Syncthing
+    try:
+        pending = await run_sync(proxy.get_pending_devices)
+    except SyncthingNotRunning:
+        raise HTTPException(503, "Syncthing is not running")
+
+    if device_id not in pending:
+        raise HTTPException(404, "Device is not in the pending list")
+
+    device_info = pending[device_id]
+    member_name = req.member_name or device_info.get("name", "unknown")
+
+    # 1. Accept device in Syncthing
+    try:
+        await run_sync(proxy.add_device, device_id, member_name)
+    except Exception as e:
+        raise HTTPException(500, f"Failed to pair device: {e}")
+
+    # 2. Add as team member
+    upsert_member(conn, team_name, member_name, device_id=device_id)
+    log_event(conn, "pending_accepted", team_name=team_name, member_name=member_name)
+    logger.info("Manually accepted pending device %s (%s) into team %s", member_name, device_id[:20], team_name)
+
+    # 3. Create handshake folder so new member discovers us
+    config = await run_sync(_load_identity)
+    if config:
+        try:
+            await _ensure_handshake_folder(proxy, config, team_name, [device_id])
+        except Exception as e:
+            logger.warning("Failed to create handshake folder for accepted device: %s", e)
+
+        # 4. Share existing project folders with the new member
+        try:
+            await _auto_share_folders(proxy, config, conn, team_name, device_id)
+        except Exception as e:
+            logger.warning("Failed to auto-share folders with accepted device: %s", e)
+
+    return {
+        "ok": True,
+        "device_id": device_id,
+        "member_name": member_name,
+        "team_name": team_name,
+    }
+
+
+@router.delete("/pending-devices/{device_id}")
+async def sync_dismiss_pending_device(device_id: str) -> Any:
+    """Dismiss a pending device request without accepting it.
+
+    Tells Syncthing to stop showing this device as pending.
+    The device can re-appear if it attempts to connect again.
+    """
+    validate_device_id(device_id)
+    proxy = get_proxy()
+    try:
+        await run_sync(proxy.dismiss_pending_device, device_id)
+    except SyncthingNotRunning:
+        raise HTTPException(503, "Syncthing is not running")
+    except Exception as e:
+        raise HTTPException(500, f"Failed to dismiss device: {e}")
+    return {"ok": True, "device_id": device_id}
+
+
 # ─── Team member management ───────────────────────────────────────────
 
 
@@ -1209,7 +1375,7 @@ async def sync_add_member(team_name: str, req: AddMemberRequest) -> Any:
     """Add a member to a sync group."""
     if not ALLOWED_PROJECT_NAME.match(team_name):
         raise HTTPException(400, "Invalid team name")
-    if not ALLOWED_PROJECT_NAME.match(req.name) or len(req.name) > 64:
+    if not ALLOWED_MEMBER_NAME.match(req.name) or len(req.name) > 64:
         raise HTTPException(400, "Invalid member name")
     validate_device_id(req.device_id)
 
@@ -1256,7 +1422,7 @@ async def sync_remove_member(team_name: str, member_name: str) -> Any:
     """Remove a member — cleans up their Syncthing folders and device."""
     if not ALLOWED_PROJECT_NAME.match(team_name):
         raise HTTPException(400, "Invalid team name")
-    if not ALLOWED_PROJECT_NAME.match(member_name):
+    if not ALLOWED_MEMBER_NAME.match(member_name):
         raise HTTPException(400, "Invalid member name")
 
     conn = _get_sync_conn()
@@ -1647,6 +1813,35 @@ async def sync_pending() -> Any:
     except SyncthingNotRunning:
         return {"pending": []}
 
+    # Load identity to filter out own outbox folders
+    config = await run_sync(_load_identity)
+    own_user_id = config.user_id if config else None
+
+    # Collect all known user_ids for smarter folder ID parsing
+    all_user_ids = set()
+    if own_user_id:
+        all_user_ids.add(own_user_id)
+    for device_id, (member_name, _team) in known.items():
+        all_user_ids.add(member_name)
+    # Also add member names from DB
+    for tn in {item.get("from_team") for item in pending if item.get("from_team")}:
+        for m in list_members(conn, tn):
+            all_user_ids.add(m["name"])
+
+    # Filter out own outbox folders (your sessions offered back by remote)
+    # and handshake folders (auto-handled by the system)
+    filtered = []
+    for item in pending:
+        folder_id = item["folder_id"]
+        # Skip handshake folders — handled automatically
+        if folder_id.startswith("karma-join-"):
+            continue
+        # Skip own outbox folders — you don't need to accept your own sessions
+        if own_user_id and folder_id.startswith(f"karma-out-{own_user_id}-"):
+            continue
+        filtered.append(item)
+    pending = filtered
+
     # Pre-fetch team projects for label enrichment (avoids N+1)
     team_names = {item["from_team"] for item in pending if item.get("from_team")}
     team_projects_map: dict[str, list] = {}
@@ -1660,15 +1855,11 @@ async def sync_pending() -> Any:
         folder_id = item["folder_id"]
         member = item.get("from_member", "unknown")
 
-        if folder_id.startswith("karma-join-"):
-            item["label"] = "Team handshake"
-            item["folder_type"] = "handshake"
-            item["description"] = f"Device pairing signal from {member}"
-        elif folder_id.startswith("karma-out-"):
+        if folder_id.startswith("karma-out-"):
             item["folder_type"] = "sessions"
-            parsed = _parse_folder_id(folder_id)
+            parsed = _parse_folder_id_with_hints(folder_id, all_user_ids)
             if parsed:
-                _, suffix = parsed
+                owner, suffix = parsed
                 # Try to find a matching project for a friendly label
                 projects = team_projects_map.get(item.get("from_team", ""), [])
                 project_label = None
@@ -1680,7 +1871,12 @@ async def sync_pending() -> Any:
                         git_id = proj.get("git_identity")
                         project_label = git_id.split("/")[-1] if git_id else proj["project_encoded_name"]
                         break
-                label = project_label or suffix
+                # Fallback: try to extract a readable project name from the suffix.
+                # Suffix is typically "{github-org}-{repo-name}" e.g. "jayantdevkar-claude-code-karma".
+                # Try git_identity lookup in DB, or split on the first dash as org/repo.
+                if not project_label:
+                    project_label = _friendly_project_label(conn, folder_id, suffix)
+                label = project_label
                 item["label"] = label
                 item["description"] = f"Receive sessions from {member} for {label}"
             else:
