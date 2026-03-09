@@ -27,7 +27,8 @@
 	let activeTab = $state('overview');
 	let tabsReady = $state(false);
 
-	let colors = $derived(getTeamMemberColor(data.userId));
+	let displayName = $derived(data.profile?.user_id ?? data.deviceId);
+	let colors = $derived(getTeamMemberColor(displayName));
 	let profile = $derived(data.profile);
 
 	onMount(() => {
@@ -60,14 +61,14 @@
 </script>
 
 <PageHeader
-	title={data.userId}
+	title={displayName}
 	icon={User}
 	iconColor="--nav-purple"
 	subtitle="Member profile and activity"
 	breadcrumbs={[
 		{ label: 'Dashboard', href: '/' },
-		{ label: 'Teams', href: '/team' },
-		{ label: data.userId }
+		{ label: 'Members', href: '/members' },
+		{ label: displayName }
 	]}
 />
 
@@ -83,14 +84,14 @@
 				class="w-14 h-14 rounded-full flex items-center justify-center text-xl font-bold shrink-0"
 				style="background: {colors.border}; color: white; box-shadow: 0 0 0 3px {colors.border}33;"
 			>
-				{data.userId.charAt(0).toUpperCase()}
+				{displayName.charAt(0).toUpperCase()}
 			</div>
 
 			<!-- Info -->
 			<div class="flex-1 min-w-0">
 				<div class="flex items-center gap-2 mb-1">
 					<h2 class="text-lg font-semibold text-[var(--text-primary)] truncate">
-						{data.userId}
+						{displayName}
 					</h2>
 					{#if profile.connected}
 						<span class="flex items-center gap-1 text-xs text-[var(--success)]">
@@ -149,8 +150,8 @@
 		{#if data.error}
 			<p class="text-sm text-[var(--text-muted)] mt-1">{data.error}</p>
 		{/if}
-		<a href="/team" class="text-sm text-[var(--accent)] hover:underline mt-2 inline-block">
-			Back to Teams
+		<a href="/members" class="text-sm text-[var(--accent)] hover:underline mt-2 inline-block">
+			Back to Members
 		</a>
 	</div>
 {/if}
