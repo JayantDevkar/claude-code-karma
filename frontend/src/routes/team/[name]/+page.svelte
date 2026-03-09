@@ -206,7 +206,7 @@
 			const fd = await foldersRes.json();
 			pendingFolders = (fd.pending ?? []).filter(
 				(f: SyncPendingFolder) =>
-					f.from_team === data.teamName && f.folder_type === 'sessions'
+					f.from_team === data.teamName && (f.folder_type === 'sessions' || f.folder_type === 'outbox')
 			);
 		}
 		if (projectStatusRes.ok) {
@@ -434,14 +434,19 @@
 				<div class="space-y-2">
 					{#each pendingFolders as offer (offer.folder_id)}
 						{@const acting = folderActing[offer.folder_id]}
-						<div class="flex items-center gap-3 p-3 rounded-lg border border-[var(--warning)]/20 bg-[var(--warning)]/5">
-							<FolderGit2 size={16} class="text-[var(--warning)] shrink-0" />
+						{@const isOutbox = offer.folder_type === 'outbox'}
+						<div class="flex items-center gap-3 p-3 rounded-lg border {isOutbox ? 'border-[var(--accent)]/20 bg-[var(--accent)]/5' : 'border-[var(--warning)]/20 bg-[var(--warning)]/5'}">
+							<FolderGit2 size={16} class="{isOutbox ? 'text-[var(--accent)]' : 'text-[var(--warning)]'} shrink-0" />
 							<div class="flex-1 min-w-0">
 								<p class="text-sm font-medium text-[var(--text-primary)] truncate">
 									{offer.description || parseFolderLabel(offer)}
 								</p>
 								<p class="text-xs text-[var(--text-muted)] mt-0.5">
-									Accept to start receiving <span class="text-[var(--text-secondary)]">{offer.from_member}</span>'s sessions for this project
+									{#if isOutbox}
+										Accept to start sending your sessions for this project
+									{:else}
+										Accept to start receiving <span class="text-[var(--text-secondary)]">{offer.from_member}</span>'s sessions for this project
+									{/if}
 								</p>
 							</div>
 							<div class="flex items-center gap-1.5 shrink-0">

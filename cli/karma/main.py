@@ -363,9 +363,16 @@ def _accept_pending_folders(st, config, conn, *, auto_only=False, only_folder_id
             if not folder_id.startswith("karma-out-"):
                 continue
 
-            # Check if this is OUR outbox being offered back (create sendonly)
-            own_prefix = f"karma-out-{own_user_id}-"
-            if folder_id.startswith(own_prefix):
+            # Check if this is OUR outbox being offered back (create sendonly).
+            # The leader may have used our user_id OR machine_id when creating
+            # the folder, so check both.
+            own_prefixes = [f"karma-out-{own_user_id}-"]
+            if config.machine_id and config.machine_id != own_user_id:
+                own_prefixes.append(f"karma-out-{config.machine_id}-")
+            own_prefix = next(
+                (p for p in own_prefixes if folder_id.startswith(p)), None
+            )
+            if own_prefix is not None:
                 suffix = folder_id[len(own_prefix):]
                 if not SAFE_PATH_PART.match(suffix):
                     click.echo(f"  Skipped own outbox '{folder_id}' — unsafe suffix: {suffix!r}")

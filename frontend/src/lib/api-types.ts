@@ -1802,7 +1802,7 @@ export interface SyncPendingFolder {
 	offered_at: string | null;
 	label: string;
 	description: string;
-	folder_type: 'handshake' | 'sessions' | 'unknown';
+	folder_type: 'handshake' | 'sessions' | 'outbox' | 'unknown';
 }
 
 export interface SyncEvent {

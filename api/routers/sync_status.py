@@ -1816,11 +1816,22 @@ async def sync_pending() -> Any:
     # Load identity to filter out own outbox folders
     config = await run_sync(_load_identity)
     own_user_id = config.user_id if config else None
+    own_machine_id = config.machine_id if config else None
+
+    # Build set of names that identify THIS machine (user_id, machine_id, etc.)
+    # The remote leader may have used any of these when creating our outbox folder.
+    own_names = set()
+    if own_user_id:
+        own_names.add(own_user_id)
+    if own_machine_id:
+        own_names.add(own_machine_id)
 
     # Collect all known user_ids for smarter folder ID parsing
     all_user_ids = set()
     if own_user_id:
         all_user_ids.add(own_user_id)
+    if own_machine_id:
+        all_user_ids.add(own_machine_id)
     for device_id, (member_name, _team) in known.items():
         all_user_ids.add(member_name)
     # Also add member names from DB
@@ -1828,19 +1839,28 @@ async def sync_pending() -> Any:
         for m in list_members(conn, tn):
             all_user_ids.add(m["name"])
 
-    # Filter out own outbox folders (your sessions offered back by remote)
-    # and handshake folders (auto-handled by the system)
+    def _is_own_outbox(folder_id: str) -> bool:
+        """Check if folder is our own outbox (leader may have used user_id OR machine_id)."""
+        for name in own_names:
+            if folder_id.startswith(f"karma-out-{name}-"):
+                return True
+        return False
+
+    # Separate own outbox folders from other people's outboxes.
+    # Own outbox = leader created a receiveonly folder for us, we accept as sendonly.
+    # Other outbox = leader's sendonly outbox, we accept as receiveonly.
     filtered = []
+    own_outbox_pending = []
     for item in pending:
         folder_id = item["folder_id"]
         # Skip handshake folders — handled automatically
         if folder_id.startswith("karma-join-"):
             continue
-        # Skip own outbox folders — you don't need to accept your own sessions
-        if own_user_id and folder_id.startswith(f"karma-out-{own_user_id}-"):
-            continue
-        filtered.append(item)
-    pending = filtered
+        if _is_own_outbox(folder_id):
+            own_outbox_pending.append(item)
+        else:
+            filtered.append(item)
+    pending = own_outbox_pending + filtered
 
     # Pre-fetch team projects for label enrichment (avoids N+1)
     team_names = {item["from_team"] for item in pending if item.get("from_team")}
@@ -1856,7 +1876,8 @@ async def sync_pending() -> Any:
         member = item.get("from_member", "unknown")
 
         if folder_id.startswith("karma-out-"):
-            item["folder_type"] = "sessions"
+            is_own = _is_own_outbox(folder_id)
+            item["folder_type"] = "outbox" if is_own else "sessions"
             parsed = _parse_folder_id_with_hints(folder_id, all_user_ids)
             if parsed:
                 owner, suffix = parsed
@@ -1878,10 +1899,16 @@ async def sync_pending() -> Any:
                     project_label = _friendly_project_label(conn, folder_id, suffix)
                 label = project_label
                 item["label"] = label
-                item["description"] = f"Receive sessions from {member} for {label}"
+                if is_own:
+                    item["description"] = f"Send your sessions for {label}"
+                else:
+                    item["description"] = f"Receive sessions from {member} for {label}"
             else:
                 item["label"] = folder_id
-                item["description"] = f"Receive sessions from {member}"
+                if is_own:
+                    item["description"] = "Send your sessions"
+                else:
+                    item["description"] = f"Receive sessions from {member}"
         else:
             item["label"] = folder_id
             item["folder_type"] = "unknown"
