@@ -4,6 +4,8 @@ import logging
 import re
 import sqlite3
 import sys
+import threading
+import time
 from pathlib import Path
 from typing import Any, Optional
 
@@ -32,6 +34,17 @@ from db.sync_queries import (
     find_project_by_git_identity,
     find_project_by_git_suffix,
     update_team_session_limit,
+)
+from schemas import (
+    AcceptPendingDeviceRequest,
+    AddDeviceRequest,
+    AddMemberRequest,
+    AddTeamProjectRequest,
+    CreateTeamRequest,
+    InitRequest,
+    JoinTeamRequest,
+    ResetOptions,
+    UpdateTeamSettingsRequest,
 )
 from services.syncthing_proxy import SyncthingNotRunning, SyncthingProxy, run_sync
 from services.watcher_manager import WatcherManager
@@ -115,13 +128,15 @@ def validate_project_path(path: str) -> str:
 
 # Singleton proxy
 _proxy: SyncthingProxy | None = None
+_singleton_lock = threading.Lock()
 
 
 def get_proxy() -> SyncthingProxy:
     global _proxy
-    if _proxy is None:
-        _proxy = SyncthingProxy()
-    return _proxy
+    with _singleton_lock:
+        if _proxy is None:
+            _proxy = SyncthingProxy()
+        return _proxy
 
 
 # Singleton watcher manager
@@ -130,9 +145,10 @@ _watcher: WatcherManager | None = None
 
 def get_watcher() -> WatcherManager:
     global _watcher
-    if _watcher is None:
-        _watcher = WatcherManager()
-    return _watcher
+    with _singleton_lock:
+        if _watcher is None:
+            _watcher = WatcherManager()
+        return _watcher
 
 
 def _get_sync_conn() -> sqlite3.Connection:
@@ -140,14 +156,41 @@ def _get_sync_conn() -> sqlite3.Connection:
     return get_writer_db()
 
 
+# TTL cache for _load_identity
+_identity_cache = None
+_identity_cache_time: float = 0.0
+_IDENTITY_TTL = 5  # seconds
+
+
+def _invalidate_identity_cache():
+    """Clear the identity cache (useful for tests)."""
+    global _identity_cache, _identity_cache_time
+    _identity_cache = None
+    _identity_cache_time = 0.0
+
+
 def _load_identity():
-    """Load identity-only SyncConfig from JSON. Returns config or None."""
+    """Load identity-only SyncConfig from JSON. Returns config or None (TTL-cached)."""
+    global _identity_cache, _identity_cache_time
     from karma.config import SyncConfig
 
+    now = time.monotonic()
+    if _identity_cache is not None and (now - _identity_cache_time) < _IDENTITY_TTL:
+        return _identity_cache
+
     try:
-        return SyncConfig.load()
+        result = SyncConfig.load()
     except RuntimeError:
-        return None
+        result = None
+
+    # Only cache successful loads — don't cache None so "not initialized" is always fresh
+    if result is not None:
+        _identity_cache = result
+        _identity_cache_time = now
+    else:
+        _identity_cache = None
+        _identity_cache_time = 0.0
+    return result
 
 
 def _compute_proj_suffix(git_identity: Optional[str], path: Optional[str], encoded: str) -> str:
@@ -279,8 +322,8 @@ def _friendly_project_label(conn, folder_id: str, parsed_suffix: str) -> str:
             normalized = git_id.replace("/", "-")
             if rest.endswith(normalized):
                 return git_id.split("/")[-1]  # "claude-code-karma"
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("Folder label strategy 1 (git_identity) failed: %s", e)
 
     # Strategy 2: Find an encoded_name that the folder ID ends with
     try:
@@ -289,8 +332,8 @@ def _friendly_project_label(conn, folder_id: str, parsed_suffix: str) -> str:
             enc = row[0] if isinstance(row, (tuple, list)) else row["encoded_name"]
             if rest.endswith(enc):
                 return enc
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("Folder label strategy 2 (encoded_name) failed: %s", e)
 
     # Strategy 3: Fallback — return the suffix as-is
     return parsed_suffix
@@ -414,7 +457,8 @@ async def _auto_accept_pending_peers(proxy, config, conn) -> tuple[int, dict]:
     """
     try:
         pending_devices = await run_sync(proxy.get_pending_devices)
-    except Exception:
+    except Exception as e:
+        logger.debug("Failed to fetch pending devices: %s", e)
         pending_devices = {}
 
     accepted = 0
@@ -423,7 +467,8 @@ async def _auto_accept_pending_peers(proxy, config, conn) -> tuple[int, dict]:
     if pending_devices:
         try:
             pending_folders = await run_sync(proxy.get_pending_folders)
-        except Exception:
+        except Exception as e:
+            logger.debug("Failed to fetch pending folders: %s", e)
             pending_folders = {}
 
         for device_id in list(pending_devices.keys()):
@@ -531,38 +576,11 @@ async def _auto_share_folders(proxy, config, conn, team_name, new_device_id) -> 
     return result
 
 
-class AddDeviceRequest(BaseModel):
-    device_id: str
-    name: str
 
 
-class InitRequest(BaseModel):
-    user_id: str
-    backend: str = "syncthing"
 
 
-class CreateTeamRequest(BaseModel):
-    name: str
-    backend: str = "syncthing"
 
-
-class AddMemberRequest(BaseModel):
-    name: str
-    device_id: str
-
-
-class AddTeamProjectRequest(BaseModel):
-    name: str
-    path: str
-
-
-class JoinTeamRequest(BaseModel):
-    join_code: str
-    team_name: str | None = None
-
-
-class UpdateTeamSettingsRequest(BaseModel):
-    sync_session_limit: str  # 'all', 'recent_100', 'recent_10'
 
 
 # ─── Init & Status ────────────────────────────────────────────────────
@@ -636,10 +654,6 @@ async def sync_status():
         "teams": teams,
     }
 
-
-class ResetOptions(BaseModel):
-    """Options for sync reset."""
-    uninstall_syncthing: bool = False  # Remove Syncthing config directory
 
 
 @router.post("/reset")
@@ -736,13 +750,15 @@ async def sync_reset(options: Optional[ResetOptions] = None) -> Any:
             capture_output=True, text=True, timeout=15,
         )
         steps["brew_service_stopped"] = r.returncode == 0
-    except Exception:
+    except Exception as e:
+        logger.debug("brew services stop failed: %s", e)
         steps["brew_service_stopped"] = False
 
     try:
         subprocess.run(["pkill", "syncthing"], capture_output=True, timeout=5)
         steps["process_killed"] = True
-    except Exception:
+    except Exception as e:
+        logger.debug("pkill syncthing failed: %s", e)
         steps["process_killed"] = False
 
     # 7. Optionally full uninstall: uninstall binary, remove config dirs
@@ -754,7 +770,8 @@ async def sync_reset(options: Optional[ResetOptions] = None) -> Any:
                 capture_output=True, text=True, timeout=30,
             )
             steps["brew_uninstalled"] = r.returncode == 0
-        except Exception:
+        except Exception as e:
+            logger.debug("brew uninstall syncthing failed: %s", e)
             steps["brew_uninstalled"] = False
 
         # Remove Syncthing config directories
@@ -778,7 +795,8 @@ async def sync_reset(options: Optional[ResetOptions] = None) -> Any:
         from services.remote_sessions import invalidate_caches
         invalidate_caches()
         steps["caches_invalidated"] = True
-    except Exception:
+    except Exception as e:
+        logger.debug("Cache invalidation failed: %s", e)
         steps["caches_invalidated"] = False
 
     return {"ok": True, "steps": steps}
@@ -1077,8 +1095,8 @@ async def _cleanup_syncthing_for_member(
     handshake_id = f"karma-join-{member_name}-{team_name}"
     try:
         await run_sync(proxy.remove_folder, handshake_id)
-    except Exception:
-        pass  # No-op if doesn't exist
+    except Exception as e:
+        logger.debug("Remove handshake folder %s no-op: %s", handshake_id, e)
 
     # Remove device (if not used by other teams)
     other_count = conn.execute(
@@ -1173,8 +1191,8 @@ async def sync_join_team(req: JoinTeamRequest) -> Any:
         proxy = get_proxy()
         await run_sync(proxy.add_device, device_id, leader_name)
         paired = True
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("Failed to pair device %s in Syncthing: %s", device_id, e)
 
     # Create handshake folder so the leader can auto-accept us (works even without projects)
     if paired:
@@ -1265,8 +1283,8 @@ async def sync_pending_devices() -> Any:
         if config:
             proxy = get_proxy()
             auto_accepted, remaining_pending = await _auto_accept_pending_peers(proxy, config, conn)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("Auto-accept pending peers failed: %s", e)
 
     # Use remaining from auto-accept if available, otherwise fetch fresh
     if remaining_pending is None:
@@ -1291,10 +1309,6 @@ async def sync_pending_devices() -> Any:
 
     return {"devices": result, "auto_accepted": auto_accepted}
 
-
-class AcceptPendingDeviceRequest(BaseModel):
-    team_name: str
-    member_name: str | None = None  # Optional — falls back to device hostname
 
 
 @router.post("/pending-devices/{device_id}/accept")
@@ -1658,8 +1672,8 @@ async def sync_team_sync_now(team_name: str) -> Any:
                     )
                     try:
                         remove_team_project(conn, team_name, old_suffix)
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug("Failed to remove stale team project entry %s: %s", old_suffix, e)
                     encoded = resolved_encoded
                     proj_path = resolved_path
                     claude_dir = resolved_dir
@@ -1677,8 +1691,8 @@ async def sync_team_sync_now(team_name: str) -> Any:
                         # recreates it with the correct path
                         try:
                             await run_sync(proxy.remove_folder, outbox_id)
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            logger.debug("Remove old outbox folder %s no-op: %s", outbox_id, e)
                         members = list_members(conn, team_name)
                         all_device_ids = [
                             m["device_id"] for m in members
@@ -1736,7 +1750,7 @@ async def sync_watch_status() -> Any:
 
 
 @router.post("/watch/start")
-async def sync_watch_start(team_name: str | None = None) -> Any:
+async def sync_watch_start(team_name: Optional[str] = None) -> Any:
     """Start the session watcher for a team (or all teams if none specified)."""
     config = await run_sync(_load_identity)
     if config is None:
@@ -1812,8 +1826,8 @@ async def sync_watch_stop() -> Any:
             conn = _get_sync_conn()
             for team in teams:
                 log_event(conn, "watcher_stopped", team_name=team)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Failed to log watcher_stopped events: %s", e)
     return result
 
 
@@ -1895,7 +1909,8 @@ async def sync_pending() -> Any:
     for tn in team_names:
         try:
             team_projects_map[tn] = list_team_projects(conn, tn)
-        except Exception:
+        except Exception as e:
+            logger.debug("Failed to fetch team projects for %s: %s", tn, e)
             team_projects_map[tn] = []
 
     for item in pending:
@@ -2053,8 +2068,8 @@ async def sync_reject_single_folder(folder_id: str) -> Any:
             try:
                 st.dismiss_pending_folder(folder_id, device_id)
                 dismissed += 1
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Failed to dismiss pending folder %s for device %s: %s", folder_id, device_id, e)
 
         conn = _get_sync_conn()
         log_event(conn, "pending_rejected", member_name=config.user_id,
@@ -2159,8 +2174,8 @@ async def sync_team_project_status(team_name: str) -> Any:
 
 @router.get("/activity")
 async def sync_activity(
-    team_name: str | None = None,
-    event_type: str | None = None,
+    team_name: Optional[str] = None,
+    event_type: Optional[str] = None,
     limit: int = 50,
     offset: int = 0,
 ) -> Any:
@@ -2188,8 +2203,8 @@ async def sync_activity(
     try:
         proxy = get_proxy()
         bandwidth = await run_sync(proxy.get_bandwidth)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("Failed to fetch bandwidth stats: %s", e)
 
     return {
         "events": events,
@@ -2203,7 +2218,7 @@ async def sync_activity(
 @router.get("/teams/{team_name}/activity")
 async def sync_team_activity(
     team_name: str,
-    event_type: str | None = None,
+    event_type: Optional[str] = None,
     limit: int = 50,
     offset: int = 0,
 ) -> Any:

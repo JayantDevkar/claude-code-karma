@@ -1,6 +1,8 @@
 <script lang="ts">
+	import { AlertTriangle, Circle } from 'lucide-svelte';
 	import type { SyncEvent } from '$lib/api-types';
 	import { formatRelativeTime } from '$lib/utils';
+	import { formatSyncEvent, syncEventColor, isSyncEventWarning } from '$lib/utils/sync-events';
 	import { API_BASE } from '$lib/config';
 
 	let { events: initialEvents = [], teamName = '' }: { events: SyncEvent[]; teamName: string } =
@@ -12,89 +14,6 @@
 	let hasMore = $state(initialEvents.length >= 20);
 	let filterType = $state<string>('');
 
-	const EVENT_META: Record<string, { icon: string; color: string; label: string }> = {
-		team_created: { icon: 'plus-circle', color: 'text-[var(--success)]', label: 'created the team' },
-		team_deleted: { icon: 'trash-2', color: 'text-[var(--error)]', label: 'deleted the team' },
-		team_left: { icon: 'log-out', color: 'text-[var(--warning)]', label: 'left the team' },
-		member_joined: { icon: 'user-plus', color: 'text-[var(--success)]', label: 'joined the team' },
-		member_added: { icon: 'user-plus', color: 'text-[var(--success)]', label: 'was added' },
-		member_auto_accepted: {
-			icon: 'user-check',
-			color: 'text-[var(--success)]',
-			label: 'was auto-accepted'
-		},
-		member_removed: { icon: 'user-minus', color: 'text-[var(--error)]', label: 'was removed' },
-		project_shared: { icon: 'folder-plus', color: 'text-[var(--accent)]', label: 'shared a project' },
-		project_added: { icon: 'folder-plus', color: 'text-[var(--accent)]', label: 'added a project' },
-		project_removed: { icon: 'folder-minus', color: 'text-[var(--warning)]', label: 'removed a project' },
-		folders_shared: { icon: 'share-2', color: 'text-[var(--accent)]', label: 'synced folders' },
-		pending_accepted: {
-			icon: 'check-circle',
-			color: 'text-[var(--success)]',
-			label: 'accepted pending folders'
-		},
-		session_packaged: { icon: 'package', color: 'text-[var(--accent)]', label: 'packaged a session' },
-		session_received: {
-			icon: 'download',
-			color: 'text-[var(--accent)]',
-			label: 'received a session'
-		},
-		file_rejected: { icon: 'shield-alert', color: 'text-[var(--error)]', label: 'file rejected' },
-		sync_paused: { icon: 'pause-circle', color: 'text-[var(--warning)]', label: 'sync paused' },
-		settings_changed: { icon: 'settings', color: 'text-[var(--accent)]', label: 'changed settings' },
-		sync_now: { icon: 'refresh-cw', color: 'text-[var(--accent)]', label: 'triggered sync' },
-		watcher_started: { icon: 'play-circle', color: 'text-[var(--success)]', label: 'watcher started' },
-		watcher_stopped: { icon: 'stop-circle', color: 'text-[var(--warning)]', label: 'watcher stopped' }
-	};
-
-	function describeEvent(event: SyncEvent): string {
-		const meta = EVENT_META[event.event_type];
-		const actor = event.member_name || 'System';
-		const base = meta ? `${actor} ${meta.label}` : `${actor}: ${event.event_type}`;
-
-		let detail = '';
-		if (event.detail) {
-			try {
-				const d = typeof event.detail === 'string' ? JSON.parse(event.detail) : event.detail;
-				if (event.event_type === 'project_shared' && d.session_count !== undefined) {
-					detail = ` (${d.session_count} sessions)`;
-				} else if (event.event_type === 'pending_accepted' && d.count) {
-					detail = ` (${d.count} folders)`;
-				} else if (event.event_type === 'folders_shared') {
-					detail = ` (${d.outboxes || 0} out, ${d.inboxes || 0} in)`;
-				} else if (event.event_type === 'file_rejected' && d.reason) {
-					detail = `: ${d.reason}`;
-				} else if (event.event_type === 'settings_changed' && d.sync_session_limit) {
-					const labels: Record<string, string> = {
-						all: 'All',
-						recent_100: 'Recent 100',
-						recent_10: 'Recent 10'
-					};
-					detail = ` → ${labels[d.sync_session_limit] || d.sync_session_limit}`;
-				}
-			} catch {
-				/* ignore parse errors */
-			}
-		}
-
-		if (
-			event.project_encoded_name &&
-			!['settings_changed', 'pending_accepted'].includes(event.event_type)
-		) {
-			const projName = event.project_encoded_name.split('-').pop() || event.project_encoded_name;
-			return `${base} in ${projName}${detail}`;
-		}
-
-		return `${base}${detail}`;
-	}
-
-	function eventColor(type: string): string {
-		return EVENT_META[type]?.color || 'text-[var(--text-muted)]';
-	}
-
-	function isWarning(type: string): boolean {
-		return ['file_rejected', 'sync_paused'].includes(type);
-	}
 
 	async function loadMore() {
 		loading = true;
@@ -165,12 +84,12 @@
 		<div class="space-y-1">
 			{#each events as event (event.id)}
 				<div
-					class="flex items-start gap-2 rounded-md px-2 py-1.5 text-sm {isWarning(event.event_type)
+					class="flex items-start gap-2 rounded-md px-2 py-1.5 text-sm {isSyncEventWarning(event.event_type)
 						? 'bg-amber-500/5'
 						: ''}"
 				>
-					<span class="mt-0.5 {eventColor(event.event_type)}">
-						{#if isWarning(event.event_type)}
+					<span class="mt-0.5 {syncEventColor(event.event_type)}">
+						{#if isSyncEventWarning(event.event_type)}
 							<svg
 								class="h-3.5 w-3.5"
 								fill="none"
@@ -192,7 +111,7 @@
 							</svg>
 						{/if}
 					</span>
-					<span class="flex-1 text-[var(--text-secondary)]">{describeEvent(event)}</span>
+					<span class="flex-1 text-[var(--text-secondary)]">{formatSyncEvent(event)}</span>
 					<span class="shrink-0 text-xs text-[var(--text-muted)]">
 						{formatRelativeTime(event.created_at)}
 					</span>

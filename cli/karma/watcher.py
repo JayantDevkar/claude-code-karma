@@ -1,7 +1,6 @@
 """Filesystem watcher for automatic session packaging."""
 
 import logging
-import sys
 import threading
 from pathlib import Path
 from typing import Callable, Optional
@@ -61,8 +60,8 @@ class SessionWatcher(FileSystemEventHandler):
         """Execute the packaging function."""
         try:
             self.package_fn()
-        except Exception as e:
-            print(f"[karma watch] Packaging error: {e}", file=sys.stderr)
+        except Exception:
+            logger.exception("Packaging error during watch")
 
     def _maybe_check_peers(self):
         """Check for new team members periodically."""

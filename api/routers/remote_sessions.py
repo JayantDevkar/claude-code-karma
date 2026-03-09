@@ -9,23 +9,16 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ValidationError
 
+from config import settings
+from services.remote_sessions import _get_local_user_id
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-REMOTE_SESSIONS_DIR = Path.home() / ".claude_karma" / "remote-sessions"
-SYNC_CONFIG_PATH = Path.home() / ".claude_karma" / "sync-config.json"
+REMOTE_SESSIONS_DIR = settings.karma_base / "remote-sessions"
 
 _SAFE_NAME = re.compile(r"^[a-zA-Z0-9_.\-]+$")
-
-
-def _get_local_user_id() -> Optional[str]:
-    """Read local user_id from sync-config.json to skip outbox."""
-    try:
-        with open(SYNC_CONFIG_PATH) as f:
-            return json.load(f).get("user_id")
-    except (OSError, json.JSONDecodeError):
-        return None
 
 
 class RemoteUser(BaseModel):

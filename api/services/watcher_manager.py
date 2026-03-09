@@ -48,8 +48,14 @@ class RemoteSessionWatcher(FileSystemEventHandler):
         return self._observer is not None and self._observer.is_alive()
 
     def _should_process(self, path: str) -> bool:
-        """Only process session JSONL files (not agent files)."""
+        """Only process session JSONL files (not agent files or Syncthing temp files)."""
         p = Path(path)
+        if ".stversions" in p.parts:
+            return False
+        if p.name.startswith(".syncthing."):
+            return False
+        if ".sync-conflict-" in p.name:
+            return False
         return p.suffix == ".jsonl" and not p.name.startswith("agent-")
 
     def on_created(self, event):

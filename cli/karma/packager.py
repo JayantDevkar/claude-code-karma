@@ -189,7 +189,11 @@ class SessionPackager:
         for jsonl_path in sorted(directory.glob("*.jsonl")):
             if jsonl_path.name.startswith("agent-"):
                 continue
-            stat = jsonl_path.stat()
+            try:
+                stat = jsonl_path.stat()
+            except (PermissionError, OSError) as e:
+                logger.debug("Skipping unreadable file %s: %s", jsonl_path, e)
+                continue
             if stat.st_size == 0:
                 continue
             entries.append(
@@ -262,16 +266,23 @@ class SessionPackager:
             src_jsonl = source_dir / f"{entry.uuid}.jsonl"
             dst_jsonl = sessions_dir / src_jsonl.name
             if not dst_jsonl.exists() or src_jsonl.stat().st_mtime > dst_jsonl.stat().st_mtime:
-                shutil.copy2(src_jsonl, dst_jsonl)
+                try:
+                    shutil.copy2(src_jsonl, dst_jsonl)
+                except (PermissionError, OSError) as e:
+                    logger.warning("Failed to copy %s: %s", src_jsonl, e)
+                    continue
 
             # Copy associated directories (subagents, tool-results)
             assoc_dir = source_dir / entry.uuid
             if assoc_dir.is_dir():
-                shutil.copytree(
-                    assoc_dir,
-                    sessions_dir / entry.uuid,
-                    dirs_exist_ok=True,
-                )
+                try:
+                    shutil.copytree(
+                        assoc_dir,
+                        sessions_dir / entry.uuid,
+                        dirs_exist_ok=True,
+                    )
+                except (PermissionError, OSError) as e:
+                    logger.warning("Failed to copy directory %s: %s", assoc_dir, e)
 
         # Copy todos (glob pattern: {uuid}-*.json)
         todos_base = self._claude_base / "todos"
@@ -280,7 +291,10 @@ class SessionPackager:
             for session_entry in sessions:
                 for todo_file in todos_base.glob(f"{session_entry.uuid}-*.json"):
                     todos_staging.mkdir(exist_ok=True)
-                    shutil.copy2(todo_file, todos_staging / todo_file.name)
+                    try:
+                        shutil.copy2(todo_file, todos_staging / todo_file.name)
+                    except (PermissionError, OSError) as e:
+                        logger.warning("Failed to copy %s: %s", todo_file, e)
 
         # Copy per-session directories (tasks, file-history)
         for resource_name in ("tasks", "file-history"):
@@ -291,11 +305,14 @@ class SessionPackager:
                     src_dir = resource_base / session_entry.uuid
                     if src_dir.is_dir():
                         resource_staging.mkdir(exist_ok=True)
-                        shutil.copytree(
-                            src_dir,
-                            resource_staging / session_entry.uuid,
-                            dirs_exist_ok=True,
-                        )
+                        try:
+                            shutil.copytree(
+                                src_dir,
+                                resource_staging / session_entry.uuid,
+                                dirs_exist_ok=True,
+                            )
+                        except (PermissionError, OSError) as e:
+                            logger.warning("Failed to copy directory %s: %s", src_dir, e)
 
         # Copy debug logs (single file: {uuid}.txt)
         debug_base = self._claude_base / "debug"
@@ -305,7 +322,10 @@ class SessionPackager:
                 debug_file = debug_base / f"{session_entry.uuid}.txt"
                 if debug_file.is_file():
                     debug_staging.mkdir(exist_ok=True)
-                    shutil.copy2(debug_file, debug_staging / debug_file.name)
+                    try:
+                        shutil.copy2(debug_file, debug_staging / debug_file.name)
+                    except (PermissionError, OSError) as e:
+                        logger.warning("Failed to copy %s: %s", debug_file, e)
 
         # Detect git identity for cross-machine project matching
         from karma.sync import detect_git_identity
@@ -343,7 +363,7 @@ class SessionPackager:
             if not titles_path.exists():
                 from karma.titles_io import write_titles_bulk
                 write_titles_bulk(titles_path, {})
-        except Exception:
-            pass  # best-effort — don't break packaging
+        except Exception as e:
+            logger.debug("titles.json sidecar creation failed (best-effort): %s", e)
 
         return manifest

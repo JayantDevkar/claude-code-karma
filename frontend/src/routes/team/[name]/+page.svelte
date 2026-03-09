@@ -33,7 +33,9 @@
 	let deleteError = $state<string | null>(null);
 	let removeProjectConfirm = $state<string | null>(null);
 	let syncAllActing = $state(false);
+	let syncError = $state('');
 	let isRefreshing = $state(false);
+	let removeProjectError = $state<string | null>(null);
 
 	// Team data — $state so polling can update it directly
 	let team = $state<SyncTeam | null>(null);
@@ -57,12 +59,19 @@
 
 	async function syncAllNow() {
 		syncAllActing = true;
+		syncError = '';
 		try {
-			await fetch(
+			const res = await fetch(
 				`${API_BASE}/sync/teams/${encodeURIComponent(data.teamName)}/sync-now`,
 				{ method: 'POST' }
 			);
-			invalidateAll();
+			if (!res.ok) {
+				syncError = 'Sync failed — try again';
+			} else {
+				invalidateAll();
+			}
+		} catch {
+			syncError = 'Network error';
 		} finally {
 			syncAllActing = false;
 		}
@@ -109,23 +118,37 @@
 	async function acceptFolder(folderId: string) {
 		folderActing = { ...folderActing, [folderId]: 'accepting' };
 		try {
-			await fetch(`${API_BASE}/sync/pending/accept/${encodeURIComponent(folderId)}`, { method: 'POST' });
-			await fetchTeamData();
-		} finally {
-			const { [folderId]: _, ...rest } = folderActing;
-			folderActing = rest;
+			const res = await fetch(`${API_BASE}/sync/pending/accept/${encodeURIComponent(folderId)}`, { method: 'POST' });
+			if (res.ok) {
+				await fetchTeamData();
+			} else {
+				folderActing = { ...folderActing, [folderId]: 'error' };
+				return;
+			}
+		} catch {
+			folderActing = { ...folderActing, [folderId]: 'error' };
+			return;
 		}
+		const { [folderId]: _, ...rest } = folderActing;
+		folderActing = rest;
 	}
 
 	async function rejectFolder(folderId: string) {
 		folderActing = { ...folderActing, [folderId]: 'rejecting' };
 		try {
-			await fetch(`${API_BASE}/sync/pending/reject/${encodeURIComponent(folderId)}`, { method: 'POST' });
-			await fetchTeamData();
-		} finally {
-			const { [folderId]: _, ...rest } = folderActing;
-			folderActing = rest;
+			const res = await fetch(`${API_BASE}/sync/pending/reject/${encodeURIComponent(folderId)}`, { method: 'POST' });
+			if (res.ok) {
+				await fetchTeamData();
+			} else {
+				folderActing = { ...folderActing, [folderId]: 'error' };
+				return;
+			}
+		} catch {
+			folderActing = { ...folderActing, [folderId]: 'error' };
+			return;
 		}
+		const { [folderId]: _, ...rest } = folderActing;
+		folderActing = rest;
 	}
 
 	// Pending device requests
@@ -152,8 +175,6 @@
 				pendingDevices = pendingDevices.filter((d) => d.device_id !== device.device_id);
 				await fetchTeamData();
 			} else {
-				const body = await res.json().catch(() => ({}));
-				console.error('Accept device failed:', body);
 				deviceActing = { ...deviceActing, [device.device_id]: 'error' };
 			}
 		} catch {
@@ -262,6 +283,7 @@
 	}
 
 	async function handleRemoveProject(encodedName: string) {
+		removeProjectError = null;
 		try {
 			const res = await fetch(
 				`${API_BASE}/sync/teams/${encodeURIComponent(data.teamName)}/projects/${encodeURIComponent(encodedName)}`,
@@ -269,10 +291,13 @@
 			);
 			if (res.ok) {
 				removeProjectConfirm = null;
+				removeProjectError = null;
 				invalidateAll();
+			} else {
+				removeProjectError = `Failed to remove project (${res.status})`;
 			}
 		} catch {
-			// best-effort
+			removeProjectError = 'Network error — could not remove project';
 		}
 	}
 
@@ -589,6 +614,9 @@
 					</button>
 				</div>
 			</div>
+			{#if syncError}
+				<p class="text-xs text-[var(--error)] mb-2" aria-live="polite">{syncError}</p>
+			{/if}
 			<div class="space-y-2">
 				{#each projects as project (project.encoded_name)}
 					{@const status = getProjectStatus(project.encoded_name)}

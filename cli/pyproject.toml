@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "claude-karma-cli"
 version = "0.1.0"
 description = "CLI for syncing Claude Code sessions via Syncthing"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 dependencies = [
     "click>=8.0",
     "pydantic>=2.0",
@@ -29,5 +29,5 @@ testpaths = ["tests"]
 addopts = "-v --tb=short"
 
 [tool.ruff]
-target-version = "py39"
+target-version = "py310"
 line-length = 100

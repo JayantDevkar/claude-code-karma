@@ -30,6 +30,9 @@ def mock_db(tmp_path, monkeypatch):
     }))
     monkeypatch.setattr("karma.config.SYNC_CONFIG_PATH", config_path)
 
+    from routers.sync_status import _invalidate_identity_cache
+    _invalidate_identity_cache()
+
     return conn
 
 
@@ -42,6 +45,9 @@ class TestSyncStatus:
         monkeypatch.setattr("routers.sync_status.get_writer_db", lambda: conn)
         monkeypatch.setattr("routers.sync_status._get_sync_conn", lambda: conn)
         monkeypatch.setattr("karma.config.SYNC_CONFIG_PATH", tmp_path / "nonexistent.json")
+
+        from routers.sync_status import _invalidate_identity_cache
+        _invalidate_identity_cache()
 
         resp = client.get("/sync/status")
         assert resp.status_code == 200
@@ -91,6 +97,9 @@ class TestSyncStatus:
         config_path.write_text("not valid json{{{")
         monkeypatch.setattr("karma.config.SYNC_CONFIG_PATH", config_path)
 
+        from routers.sync_status import _invalidate_identity_cache
+        _invalidate_identity_cache()
+
         resp = client.get("/sync/status")
         assert resp.status_code == 200
         data = resp.json()
@@ -104,6 +113,9 @@ class TestSyncStatus:
         monkeypatch.setattr("routers.sync_status.get_writer_db", lambda: conn)
         monkeypatch.setattr("routers.sync_status._get_sync_conn", lambda: conn)
         monkeypatch.setattr("karma.config.SYNC_CONFIG_PATH", tmp_path / "nonexistent.json")
+
+        from routers.sync_status import _invalidate_identity_cache
+        _invalidate_identity_cache()
 
         resp = client.get("/sync/teams")
         assert resp.status_code == 200

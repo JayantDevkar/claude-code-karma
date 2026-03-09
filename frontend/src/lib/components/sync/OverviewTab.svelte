@@ -3,6 +3,7 @@
 	import { Play, Square, Monitor, FolderGit2, ArrowUp, ArrowDown, CheckCircle2, Loader2, Users, RotateCcw, Clock, RefreshCw, ChevronDown, Copy, CheckCircle } from 'lucide-svelte';
 	import type { SyncDetect, SyncStatusResponse, SyncWatchStatus, SyncProjectStatus, SyncEvent } from '$lib/api-types';
 	import { formatRelativeTime, copyToClipboard } from '$lib/utils';
+	import { formatSyncEvent } from '$lib/utils/sync-events';
 	import { API_BASE } from '$lib/config';
 
 	let {
@@ -188,38 +189,6 @@
 			recentEvents = [];
 		} finally {
 			activityLoading = false;
-		}
-	}
-
-	function humanizeEvent(ev: SyncEvent): string {
-		const member = ev.member_name ?? 'Someone';
-		const team = ev.team_name ?? 'team';
-		const project = ev.project_encoded_name ?? 'project';
-		switch (ev.event_type) {
-			case 'member_added':
-				return `${member} joined ${team}`;
-			case 'member_removed':
-				return `${member} left ${team}`;
-			case 'project_added':
-				return `Project ${project} added to ${team}`;
-			case 'project_removed':
-				return `Project ${project} removed from ${team}`;
-			case 'session_packaged':
-				return `${member} packaged a session in ${project}`;
-			case 'session_received':
-				return `Received a session from ${member} in ${project}`;
-			case 'watch_started':
-				return `Session watcher started for ${team}`;
-			case 'watch_stopped':
-				return 'Session watcher stopped';
-			case 'pending_accepted':
-				return 'Pending folders accepted';
-			case 'team_created':
-				return `Team ${team} created`;
-			case 'team_deleted':
-				return `Team ${team} deleted`;
-			default:
-				return ev.detail ?? ev.event_type.replace(/_/g, ' ');
 		}
 	}
 
@@ -492,7 +461,7 @@
 			<div class="px-5 divide-y divide-[var(--border-subtle)]">
 				{#each recentEvents as ev (ev.id)}
 					<div class="flex items-center justify-between gap-3 py-3">
-						<p class="text-xs text-[var(--text-secondary)] truncate flex-1">{humanizeEvent(ev)}</p>
+						<p class="text-xs text-[var(--text-secondary)] truncate flex-1">{formatSyncEvent(ev)}</p>
 						<span class="text-[11px] text-[var(--text-muted)] shrink-0 whitespace-nowrap">{formatRelativeTime(ev.created_at)}</span>
 					</div>
 				{/each}

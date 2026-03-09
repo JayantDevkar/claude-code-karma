@@ -52,6 +52,9 @@ def get_team(conn: sqlite3.Connection, name: str) -> Optional[dict]:
     return dict(row) if row else None
 
 
+VALID_SESSION_LIMITS = frozenset({"all", "recent_100", "recent_10"})
+
+
 def update_team_session_limit(
     conn: sqlite3.Connection,
     team_name: str,
@@ -61,6 +64,8 @@ def update_team_session_limit(
 
     Valid values: 'all', 'recent_100', 'recent_10'.
     """
+    if limit not in VALID_SESSION_LIMITS:
+        raise ValueError(f"Invalid session limit: {limit!r}. Must be one of {sorted(VALID_SESSION_LIMITS)}")
     conn.execute(
         "UPDATE sync_teams SET sync_session_limit = ? WHERE name = ?",
         (limit, team_name),
@@ -227,6 +232,9 @@ def log_event(
     return cursor.lastrowid
 
 
+_ALLOWED_EVENT_FILTERS = frozenset({"team_name", "event_type", "member_name"})
+
+
 def query_events(
     conn: sqlite3.Connection,
     team_name: Optional[str] = None,
@@ -247,7 +255,12 @@ def query_events(
         conditions.append("member_name = :member_name")
         params["member_name"] = member_name
 
-    # Safety: conditions list is built from hardcoded column names only — never from user input
+    # Safety: verify all filter param keys are in the allowlist before SQL interpolation
+    # (belt-and-suspenders — params are built from hardcoded branches above, never from raw user input)
+    unknown = set(params.keys()) - _ALLOWED_EVENT_FILTERS - {"limit", "offset"}
+    if unknown:
+        raise ValueError(f"Unexpected filter columns: {unknown}")
+
     where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
     params["limit"] = limit
     params["offset"] = offset

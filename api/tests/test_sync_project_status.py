@@ -38,6 +38,9 @@ def mock_db(tmp_path, monkeypatch):
     config_path.write_text('{"user_id": "jay", "machine_id": "mac", "syncthing": {}}')
     monkeypatch.setattr("karma.config.SYNC_CONFIG_PATH", config_path)
 
+    from routers.sync_status import _invalidate_identity_cache
+    _invalidate_identity_cache()
+
     return conn
 
 
@@ -102,6 +105,9 @@ class TestProjectStatus:
         monkeypatch.setattr("routers.sync_status.get_writer_db", lambda: conn)
         monkeypatch.setattr("routers.sync_status._get_sync_conn", lambda: conn)
         monkeypatch.setattr("karma.config.SYNC_CONFIG_PATH", tmp_path / "nope.json")
+
+        from routers.sync_status import _invalidate_identity_cache
+        _invalidate_identity_cache()
 
         from main import app
         client = TestClient(app)

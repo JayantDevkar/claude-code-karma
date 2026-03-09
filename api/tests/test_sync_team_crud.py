@@ -41,6 +41,10 @@ def mock_db(tmp_path, monkeypatch):
     config_path.write_text('{"user_id": "jayant", "machine_id": "mac", "syncthing": {"device_id": "TEST-DEV-ID"}}')
     monkeypatch.setattr("karma.config.SYNC_CONFIG_PATH", config_path)
 
+    # Clear identity TTL cache so tests get fresh config
+    from routers.sync_status import _invalidate_identity_cache
+    _invalidate_identity_cache()
+
     return conn
 
 
@@ -54,6 +58,11 @@ def mock_no_config(tmp_path, monkeypatch):
     monkeypatch.setattr("routers.sync_status.get_writer_db", lambda: conn)
     monkeypatch.setattr("routers.sync_status._get_sync_conn", lambda: conn)
     monkeypatch.setattr("karma.config.SYNC_CONFIG_PATH", tmp_path / "nope.json")
+
+    # Clear identity TTL cache so tests get fresh config
+    from routers.sync_status import _invalidate_identity_cache
+    _invalidate_identity_cache()
+
     return conn
 
 

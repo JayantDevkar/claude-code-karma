@@ -1589,3 +1589,51 @@ class AllSessionsResponse(PaginationMeta):
         default_factory=list, description="Status filter options with counts"
     )
     applied_filters: dict = Field(default_factory=dict, description="Echo of applied filter values")
+
+# =============================================================================
+# Sync Request Models (used by routers/sync_status.py)
+# =============================================================================
+
+
+class AddDeviceRequest(BaseModel):
+    device_id: str
+    name: str
+
+
+class InitRequest(BaseModel):
+    user_id: str
+    backend: str = "syncthing"
+
+
+class CreateTeamRequest(BaseModel):
+    name: str
+    backend: str = "syncthing"
+
+
+class AddMemberRequest(BaseModel):
+    name: str
+    device_id: str
+
+
+class AddTeamProjectRequest(BaseModel):
+    name: str
+    path: str
+
+
+class JoinTeamRequest(BaseModel):
+    join_code: str
+    team_name: Optional[str] = None
+
+
+class UpdateTeamSettingsRequest(BaseModel):
+    sync_session_limit: str  # 'all', 'recent_100', 'recent_10'
+
+
+class ResetOptions(BaseModel):
+    """Options for sync reset."""
+    uninstall_syncthing: bool = False  # Remove Syncthing config directory
+
+
+class AcceptPendingDeviceRequest(BaseModel):
+    team_name: str
+    member_name: Optional[str] = None  # Optional — falls back to device hostname
