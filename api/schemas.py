@@ -181,6 +181,13 @@ class SessionSummary(BaseModel):
     git_branches: list[str] = Field(
         default_factory=list, description="Git branches touched during this session"
     )
+    # Token and cost fields
+    total_input_tokens: Optional[int] = Field(None, description="Total input tokens")
+    total_output_tokens: Optional[int] = Field(None, description="Total output tokens")
+    total_cost: Optional[float] = Field(None, description="Total estimated cost in USD")
+    tools_used: Optional[dict[str, int]] = Field(
+        None, description="Tool name → invocation count map"
+    )
     # Chain info for list view badges
     chain_info: Optional[SessionChainInfoSummary] = Field(
         None, description="Chain context if session is part of a resumed chain"

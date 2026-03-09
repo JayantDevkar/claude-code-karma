@@ -1529,7 +1529,8 @@ async def get_project_memory(encoded_name: str, request: Request):
 async def project_remote_sessions(encoded_name: str):
     """Get remote sessions for a project, grouped by remote user.
 
-    Returns full SessionSummary data for each remote session, grouped by user.
+    Returns full SessionSummary data (including cost, duration, models, tools)
+    from SQLite for each remote session, grouped by user.
     """
     import json
     import re
@@ -1539,45 +1540,88 @@ async def project_remote_sessions(encoded_name: str):
     if not ALLOWED_NAME.match(encoded_name) or len(encoded_name) > 512:
         raise HTTPException(400, "Invalid project name")
 
-    from services.remote_sessions import list_remote_sessions_for_project
+    # Query SQLite for rich remote session data (cost, duration, models, tools).
+    try:
+        from db.connection import sqlite_read
+        from db.queries import _parse_json_list
 
-    remote_metas = list_remote_sessions_for_project(encoded_name)
-    if not remote_metas:
+        with sqlite_read() as conn:
+            if conn is None:
+                return {"users": []}
+
+            rows = conn.execute(
+                """SELECT
+                    s.uuid, s.slug, s.message_count, s.start_time, s.end_time,
+                    s.duration_seconds, s.models_used, s.subagent_count,
+                    s.initial_prompt, s.git_branch, s.session_titles,
+                    s.input_tokens, s.output_tokens, s.total_cost,
+                    s.session_source,
+                    s.source, s.remote_user_id, s.remote_machine_id
+                FROM sessions s
+                WHERE s.project_encoded_name = :project
+                    AND s.source = 'remote'
+                    AND s.message_count > 0
+                ORDER BY s.start_time DESC""",
+                {"project": encoded_name},
+            ).fetchall()
+
+            if not rows:
+                return {"users": []}
+
+            # Bulk-fetch tools_used for all remote sessions in one query
+            uuids = [r["uuid"] for r in rows]
+            placeholders = ",".join("?" * len(uuids))
+            tool_rows = conn.execute(
+                f"SELECT session_uuid, tool_name, count FROM session_tools WHERE session_uuid IN ({placeholders})",
+                uuids,
+            ).fetchall()
+            tools_by_session: dict[str, dict[str, int]] = defaultdict(dict)
+            for tr in tool_rows:
+                tools_by_session[tr["session_uuid"]][tr["tool_name"]] = tr["count"]
+
+            # Build SessionSummary objects grouped by user
+            user_sessions: dict[str, list[SessionSummary]] = defaultdict(list)
+            user_machine: dict[str, str | None] = {}
+
+            for row in rows:
+                user_id = row["remote_user_id"] or "unknown"
+                if user_id not in user_machine:
+                    user_machine[user_id] = row["remote_machine_id"]
+
+                uuid = row["uuid"]
+                user_sessions[user_id].append(
+                    SessionSummary(
+                        uuid=uuid,
+                        slug=row["slug"],
+                        message_count=row["message_count"],
+                        start_time=row["start_time"],
+                        end_time=row["end_time"],
+                        duration_seconds=row["duration_seconds"],
+                        models_used=_parse_json_list(row["models_used"]),
+                        subagent_count=row["subagent_count"] or 0,
+                        has_todos=False,
+                        initial_prompt=row["initial_prompt"],
+                        git_branches=[row["git_branch"]] if row["git_branch"] else [],
+                        session_titles=_parse_json_list(row["session_titles"]),
+                        total_input_tokens=row["input_tokens"],
+                        total_output_tokens=row["output_tokens"],
+                        total_cost=row["total_cost"],
+                        tools_used=tools_by_session.get(uuid, {}),
+                        session_source=row["session_source"],
+                        source="remote",
+                        remote_user_id=row["remote_user_id"],
+                        remote_machine_id=row["remote_machine_id"],
+                    )
+                )
+
+    except Exception as e:
+        logger.warning("SQLite remote sessions query failed: %s", e)
         return {"users": []}
-
-    # Group by remote_user_id and build summaries from metadata (lightweight).
-    # _build_remote_metadata already extracts timestamps/slug/message_count
-    # from first/last lines, so we avoid full JSONL parsing here.
-    user_sessions: dict[str, list[SessionSummary]] = defaultdict(list)
-    user_machine: dict[str, str | None] = {}
-
-    for meta in remote_metas:
-        user_id = meta.remote_user_id or "unknown"
-        if user_id not in user_machine:
-            user_machine[user_id] = meta.remote_machine_id
-
-        summary = SessionSummary(
-            uuid=meta.uuid,
-            slug=meta.slug,
-            message_count=meta.message_count,
-            start_time=meta.start_time,
-            end_time=meta.end_time,
-            session_titles=list(meta.session_titles or []),
-            source="remote",
-            remote_user_id=meta.remote_user_id,
-            remote_machine_id=meta.remote_machine_id,
-        )
-        user_sessions[user_id].append(summary)
 
     # Load manifest data for synced_at timestamps and build response
     remote_base = Path.home() / ".claude_karma" / "remote-sessions"
     users = []
     for user_id, sessions in user_sessions.items():
-        sessions.sort(
-            key=lambda s: s.start_time.isoformat() if s.start_time else "",
-            reverse=True,
-        )
-
         synced_at = None
         manifest_path = remote_base / user_id / encoded_name / "manifest.json"
         if manifest_path.exists():
