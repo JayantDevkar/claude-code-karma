@@ -76,6 +76,36 @@ from utils import (
     resolve_git_root,
 )
 
+# TTL cache for remote session filesystem scans (avoids walking disk every request).
+# Uses cachetools.TTLCache (bounded, auto-evicts) + threading.Lock to prevent
+# thundering herd under concurrent FastAPI threadpool requests.
+import threading as _threading
+
+from cachetools import TTLCache as _TTLCache
+
+_remote_sessions_cache = _TTLCache(maxsize=128, ttl=30.0)
+_remote_cache_lock = _threading.Lock()
+
+
+def _get_cached_remote_sessions(encoded_name: str) -> list:
+    """Return remote sessions for a project, cached for 30s to avoid repeated filesystem walks."""
+    cached = _remote_sessions_cache.get(encoded_name)
+    if cached is not None:
+        return cached
+
+    with _remote_cache_lock:
+        # Double-check after acquiring lock (another thread may have populated it)
+        cached = _remote_sessions_cache.get(encoded_name)
+        if cached is not None:
+            return cached
+
+        from services.remote_sessions import list_remote_sessions_for_project
+
+        result = list_remote_sessions_for_project(encoded_name)
+        _remote_sessions_cache[encoded_name] = result
+        return result
+
+
 router = APIRouter()
 
 
@@ -458,153 +488,150 @@ def get_project(
     offset = (page - 1) * per_page
     limit = per_page
 
-    # SQLite fast path
+    # SQLite fast path — isolated try/excepts so enrichment failures
+    # never trigger the expensive JSONL fallback.
+    # One connection is reused for both queries; chain info failure is non-fatal.
+    db_data = None
+    db_chain_info: dict = {}
     try:
         from db.connection import sqlite_read
         from db.queries import query_chain_info_for_project, query_project_sessions
 
         with sqlite_read() as conn:
             if conn is not None:
-                # DB now includes worktree sessions under real project,
-                # so we can paginate directly without post-merge re-sorting.
-                data = query_project_sessions(
+                db_data = query_project_sessions(
                     conn, encoded_name, limit=limit, offset=offset, search=search
                 )
-
-                # Build chain info from DB (uses leaf_uuid + slug with overlap filtering)
-                db_chain_info = query_chain_info_for_project(conn, encoded_name)
-
-                # Build session summaries from SQL rows
-                # (DB now includes worktree sessions under the real project)
-                session_summaries = []
-                for row in data["sessions"]:
-                    chain_info = None
-                    uuid = row["uuid"]
-                    if uuid in db_chain_info:
-                        ci = db_chain_info[uuid]
-                        chain_info = SessionChainInfoSummary(
-                            chain_id=ci["chain_id"],
-                            position=ci["position"],
-                            total=ci["total"],
-                            is_root=ci["is_root"],
-                            is_latest=ci["is_latest"],
-                        )
-                    titles = row.get("session_titles", [])
-                    if not titles:
-                        titles = title_cache.get_titles(encoded_name, uuid) or []
-                    session_summaries.append(
-                        SessionSummary(
-                            uuid=uuid,
-                            slug=row.get("slug"),
-                            message_count=row["message_count"],
-                            start_time=row.get("start_time"),
-                            end_time=row.get("end_time"),
-                            duration_seconds=row.get("duration_seconds"),
-                            models_used=row.get("models_used", []),
-                            subagent_count=row.get("subagent_count", 0),
-                            has_todos=False,
-                            initial_prompt=row.get("initial_prompt"),
-                            git_branches=row.get("git_branches", []),
-                            session_titles=titles,
-                            chain_info=chain_info,
-                            session_source=row.get("session_source"),
-                            source=row.get("source"),
-                            remote_user_id=row.get("remote_user_id"),
-                            remote_machine_id=row.get("remote_machine_id"),
-                        )
-                    )
-
-                total_count = data["total"]
-
-                # Merge unindexed remote sessions from disk
-                # (remote sessions arrive via Syncthing but may not be
-                # indexed yet if the periodic indexer hasn't run)
-                remote_session_count = 0
+                # Chain info — optional enrichment, degrade gracefully
                 try:
-                    from services.remote_sessions import (
-                        list_remote_sessions_for_project,
-                    )
-
-                    remote_metas = list_remote_sessions_for_project(
-                        encoded_name
-                    )
-                    remote_session_count = len(remote_metas)
-
-                    if remote_metas:
-                        indexed_uuids = {s.uuid for s in session_summaries}
-                        unindexed = [
-                            m
-                            for m in remote_metas
-                            if m.uuid not in indexed_uuids
-                        ]
-
-                        for rmeta in unindexed:
-                            titles = rmeta.session_titles or []
-                            duration = None
-                            if rmeta.start_time and rmeta.end_time:
-                                duration = (
-                                    rmeta.end_time - rmeta.start_time
-                                ).total_seconds()
-                            session_summaries.append(
-                                SessionSummary(
-                                    uuid=rmeta.uuid,
-                                    slug=rmeta.slug,
-                                    message_count=rmeta.message_count,
-                                    start_time=rmeta.start_time,
-                                    end_time=rmeta.end_time,
-                                    duration_seconds=duration,
-                                    models_used=[],
-                                    subagent_count=0,
-                                    has_todos=False,
-                                    initial_prompt=rmeta.initial_prompt,
-                                    git_branches=(
-                                        [rmeta.git_branch]
-                                        if rmeta.git_branch
-                                        else []
-                                    ),
-                                    session_titles=titles,
-                                    source=rmeta.source,
-                                    remote_user_id=rmeta.remote_user_id,
-                                    remote_machine_id=rmeta.remote_machine_id,
-                                )
-                            )
-
-                        total_count += len(unindexed)
-
-                        # Trigger background reindex so next request
-                        # won't need this disk check
-                        if unindexed:
-                            import threading
-
-                            from db.indexer import trigger_remote_reindex
-
-                            threading.Thread(
-                                target=trigger_remote_reindex,
-                                daemon=True,
-                            ).start()
+                    db_chain_info = query_chain_info_for_project(conn, encoded_name)
                 except Exception as e:
-                    logger.debug(
-                        "Remote session merge in SQLite fast path failed: %s",
-                        e,
-                    )
-
-                _enrich_chain_titles(session_summaries)
-                return ProjectDetail(
-                    path=project.path,
-                    encoded_name=project.encoded_name,
-                    slug=project.slug,
-                    display_name=project.display_name,
-                    session_count=total_count,
-                    agent_count=project.agent_count,
-                    exists=project.exists,
-                    is_git_repository=project.is_git_repository,
-                    git_root_path=project.git_root_path,
-                    is_nested_project=project.is_nested_project,
-                    sessions=session_summaries,
-                    remote_session_count=remote_session_count,
-                )
+                    logger.debug("Chain info query failed (non-fatal): %s", e)
     except Exception as e:
         logger.warning("SQLite project sessions query failed, falling back: %s", e)
+
+    if db_data is not None:
+
+        # Build session summaries from SQL rows
+        session_summaries = []
+        for row in db_data["sessions"]:
+            chain_info = None
+            uuid = row["uuid"]
+            if uuid in db_chain_info:
+                ci = db_chain_info[uuid]
+                chain_info = SessionChainInfoSummary(
+                    chain_id=ci["chain_id"],
+                    position=ci["position"],
+                    total=ci["total"],
+                    is_root=ci["is_root"],
+                    is_latest=ci["is_latest"],
+                )
+            titles = row.get("session_titles", [])
+            if not titles:
+                titles = title_cache.get_titles(encoded_name, uuid) or []
+            session_summaries.append(
+                SessionSummary(
+                    uuid=uuid,
+                    slug=row.get("slug"),
+                    message_count=row["message_count"],
+                    start_time=row.get("start_time"),
+                    end_time=row.get("end_time"),
+                    duration_seconds=row.get("duration_seconds"),
+                    models_used=row.get("models_used", []),
+                    subagent_count=row.get("subagent_count", 0),
+                    has_todos=False,
+                    initial_prompt=row.get("initial_prompt"),
+                    git_branches=row.get("git_branches", []),
+                    session_titles=titles,
+                    chain_info=chain_info,
+                    session_source=row.get("session_source"),
+                    source=row.get("source"),
+                    remote_user_id=row.get("remote_user_id"),
+                    remote_machine_id=row.get("remote_machine_id"),
+                )
+            )
+
+        total_count = db_data["total"]
+
+        # Merge unindexed remote sessions — optional enrichment
+        remote_session_count = 0
+        try:
+            remote_metas = _get_cached_remote_sessions(encoded_name)
+            remote_session_count = len(remote_metas)
+
+            if remote_metas:
+                indexed_uuids = {s.uuid for s in session_summaries}
+                unindexed = [
+                    m
+                    for m in remote_metas
+                    if m.uuid not in indexed_uuids
+                ]
+
+                for rmeta in unindexed:
+                    titles = rmeta.session_titles or []
+                    duration = None
+                    if rmeta.start_time and rmeta.end_time:
+                        duration = (
+                            rmeta.end_time - rmeta.start_time
+                        ).total_seconds()
+                    session_summaries.append(
+                        SessionSummary(
+                            uuid=rmeta.uuid,
+                            slug=rmeta.slug,
+                            message_count=rmeta.message_count,
+                            start_time=rmeta.start_time,
+                            end_time=rmeta.end_time,
+                            duration_seconds=duration,
+                            models_used=[],
+                            subagent_count=0,
+                            has_todos=False,
+                            initial_prompt=rmeta.initial_prompt,
+                            git_branches=(
+                                [rmeta.git_branch]
+                                if rmeta.git_branch
+                                else []
+                            ),
+                            session_titles=titles,
+                            source=rmeta.source,
+                            remote_user_id=rmeta.remote_user_id,
+                            remote_machine_id=rmeta.remote_machine_id,
+                        )
+                    )
+
+                total_count += len(unindexed)
+
+                # Trigger background reindex so next request
+                # won't need this disk check
+                if unindexed:
+                    import threading
+
+                    from db.indexer import trigger_remote_reindex
+
+                    threading.Thread(
+                        target=trigger_remote_reindex,
+                        daemon=True,
+                    ).start()
+        except Exception as e:
+            logger.debug(
+                "Remote session merge in SQLite fast path failed: %s",
+                e,
+            )
+
+        _enrich_chain_titles(session_summaries)
+        return ProjectDetail(
+            path=project.path,
+            encoded_name=project.encoded_name,
+            slug=project.slug,
+            display_name=project.display_name,
+            session_count=total_count,
+            agent_count=project.agent_count,
+            exists=project.exists,
+            is_git_repository=project.is_git_repository,
+            git_root_path=project.git_root_path,
+            is_nested_project=project.is_nested_project,
+            sessions=session_summaries,
+            remote_session_count=remote_session_count,
+        )
 
     sessions = project.list_sessions()
     # Filter out empty sessions (no messages = no valid start_time)
@@ -621,9 +648,7 @@ def get_project(
     sessions.extend(wt_sessions)
 
     # Merge remote sessions from Syncthing sync
-    from services.remote_sessions import list_remote_sessions_for_project
-
-    remote_metas = list_remote_sessions_for_project(encoded_name)
+    remote_metas = _get_cached_remote_sessions(encoded_name)
     remote_uuid_map: dict = {}
     existing_uuids = {s.uuid for s in sessions}
     for rmeta in remote_metas:
