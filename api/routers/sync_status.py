@@ -2276,21 +2276,63 @@ async def sync_team_session_stats(
 # ─── Member profile ────────────────────────────────────────────────────
 
 
-@router.get("/members/{member_name}")
-async def sync_member_profile(member_name: str) -> Any:
-    """Aggregated member profile across all teams."""
-    if not ALLOWED_MEMBER_NAME.match(member_name) or len(member_name) > 128:
-        raise HTTPException(400, "Invalid member name")
+@router.get("/members")
+async def sync_list_members() -> Any:
+    """List all unique members across all teams."""
+    conn = _get_sync_conn()
+    rows = conn.execute(
+        """SELECT DISTINCT m.name, m.device_id, MIN(m.added_at) as first_added,
+                  GROUP_CONCAT(m.team_name) as team_names
+           FROM sync_members m
+           GROUP BY m.device_id
+           ORDER BY m.name""",
+    ).fetchall()
 
+    # Get device connection info (graceful fallback)
+    connected_device_ids: set[str] = set()
+    try:
+        proxy = get_proxy()
+        devices = await run_sync(proxy.get_devices)
+        connected_device_ids = {
+            dev["device_id"] for dev in devices if dev.get("connected")
+        }
+    except Exception:
+        pass
+
+    members = []
+    for row in rows:
+        teams = row["team_names"].split(",") if row["team_names"] else []
+        members.append({
+            "name": row["name"],
+            "device_id": row["device_id"],
+            "connected": row["device_id"] in connected_device_ids,
+            "team_count": len(teams),
+            "teams": teams,
+            "added_at": row["first_added"],
+        })
+
+    return {"members": members, "total": len(members)}
+
+
+@router.get("/members/{identifier}")
+async def sync_member_profile(identifier: str) -> Any:
+    """Aggregated member profile across all teams. Accepts member name or device_id."""
     conn = _get_sync_conn()
 
-    # Find all teams this member belongs to
+    # Try lookup by name first, then by device_id
     rows = conn.execute(
-        "SELECT team_name, device_id, added_at FROM sync_members WHERE name = ? ORDER BY added_at",
-        (member_name,),
+        "SELECT team_name, name, device_id, added_at FROM sync_members WHERE name = ? ORDER BY added_at",
+        (identifier,),
     ).fetchall()
     if not rows:
-        raise HTTPException(404, f"Member '{member_name}' not found")
+        rows = conn.execute(
+            "SELECT team_name, name, device_id, added_at FROM sync_members WHERE device_id = ? ORDER BY added_at",
+            (identifier,),
+        ).fetchall()
+    if not rows:
+        raise HTTPException(404, f"Member '{identifier}' not found")
+
+    member_name = rows[0]["name"]
 
     member_rows = [dict(r) for r in rows]
     # Use the first device_id found (a member typically has one device)
@@ -2393,17 +2435,14 @@ async def sync_member_profile(member_name: str) -> Any:
     }
 
 
-@router.get("/members/{member_name}/activity")
+@router.get("/members/{identifier}/activity")
 async def sync_member_activity(
-    member_name: str,
+    identifier: str,
     event_type: Optional[str] = None,
     limit: int = 50,
     offset: int = 0,
 ) -> Any:
-    """Activity feed for a single member across all teams."""
-    if not ALLOWED_MEMBER_NAME.match(member_name) or len(member_name) > 128:
-        raise HTTPException(400, "Invalid member name")
-
+    """Activity feed for a single member across all teams. Accepts member name or device_id."""
     limit = max(1, min(limit, 200))
     offset = max(0, min(offset, 10000))
 
@@ -2413,6 +2452,19 @@ async def sync_member_activity(
         event_type = ",".join(valid_parts) if valid_parts else None
 
     conn = _get_sync_conn()
+
+    # Resolve identifier to member_name (try name first, then device_id)
+    member_name = identifier
+    row = conn.execute(
+        "SELECT name FROM sync_members WHERE name = ? LIMIT 1", (identifier,)
+    ).fetchone()
+    if not row:
+        row = conn.execute(
+            "SELECT name FROM sync_members WHERE device_id = ? LIMIT 1", (identifier,)
+        ).fetchone()
+        if row:
+            member_name = row["name"]
+
     events = query_events(
         conn, event_type=event_type, member_name=member_name, limit=limit, offset=offset
     )

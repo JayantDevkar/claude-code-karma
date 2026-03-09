@@ -102,7 +102,7 @@
 				{@const sparkline = buildSparklineData(member.name)}
 				{@const totals = getMemberSessionTotals(member.name)}
 				<a
-					href="/members/{encodeURIComponent(member.name)}"
+					href="/members/{encodeURIComponent(member.device_id)}"
 					class="relative flex flex-col gap-3 p-4 rounded-lg border border-[var(--border)] bg-[var(--bg-base)] hover:border-[var(--accent)]/30 hover:shadow-sm transition-all"
 				>
 					<!-- Top row: avatar + name + connection status -->
