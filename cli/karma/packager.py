@@ -1,6 +1,7 @@
 """Session packager — collects project sessions into a staging directory."""
 
 import json
+import logging
 import shutil
 import subprocess
 from datetime import datetime, timezone
@@ -8,6 +9,82 @@ from pathlib import Path
 from typing import Optional
 
 from karma.manifest import SessionEntry, SyncManifest
+
+logger = logging.getLogger(__name__)
+
+
+def _build_skill_classifications_from_db(
+    session_uuids: list[str],
+) -> dict[str, str]:
+    """Query the metadata DB for skill/command classifications of given sessions.
+
+    The DB already has correctly classified invocations (session_skills and
+    session_commands tables). We extract all plugin colon-format names and
+    their categories so the importing machine can use them as ground truth.
+
+    Returns:
+        Dict mapping invocation name → InvocationCategory string.
+        E.g. {'feature-dev:feature-dev': 'plugin_command',
+              'superpowers:brainstorming': 'plugin_skill'}
+    """
+    if not session_uuids:
+        return {}
+
+    try:
+        from karma.db import get_connection
+
+        conn = get_connection()
+    except Exception:
+        return {}
+
+    classifications: dict[str, str] = {}
+    placeholders = ",".join("?" * len(session_uuids))
+
+    try:
+        # Skills from session_skills table (only plugin colon-format names)
+        rows = conn.execute(
+            f"SELECT DISTINCT skill_name FROM session_skills WHERE session_uuid IN ({placeholders}) AND skill_name LIKE '%:%'",
+            session_uuids,
+        ).fetchall()
+        for row in rows:
+            classifications[row[0]] = "plugin_skill"
+
+        # Commands from session_commands table (only plugin colon-format names)
+        rows = conn.execute(
+            f"SELECT DISTINCT command_name FROM session_commands WHERE session_uuid IN ({placeholders}) AND command_name LIKE '%:%'",
+            session_uuids,
+        ).fetchall()
+        for row in rows:
+            classifications[row[0]] = "plugin_command"
+
+        # Subagent skills
+        rows = conn.execute(
+            f"""SELECT DISTINCT ss.skill_name FROM subagent_skills ss
+                JOIN subagent_invocations si ON ss.invocation_id = si.id
+                WHERE si.session_uuid IN ({placeholders}) AND ss.skill_name LIKE '%:%'""",
+            session_uuids,
+        ).fetchall()
+        for row in rows:
+            if row[0] not in classifications:
+                classifications[row[0]] = "plugin_skill"
+
+        # Subagent commands
+        rows = conn.execute(
+            f"""SELECT DISTINCT sc.command_name FROM subagent_commands sc
+                JOIN subagent_invocations si ON sc.invocation_id = si.id
+                WHERE si.session_uuid IN ({placeholders}) AND sc.command_name LIKE '%:%'""",
+            session_uuids,
+        ).fetchall()
+        for row in rows:
+            if row[0] not in classifications:
+                classifications[row[0]] = "plugin_command"
+
+    except Exception as e:
+        logger.warning("Failed to extract skill classifications from DB: %s", e)
+    finally:
+        conn.close()
+
+    return classifications
 
 
 def _detect_git_branch(project_path: str) -> Optional[str]:
@@ -201,6 +278,13 @@ class SessionPackager:
 
         git_id = detect_git_identity(self.project_path)
 
+        # Build skill classifications from the metadata DB.
+        # The exporting machine has already indexed sessions with correct
+        # classifications — reuse that instead of re-scanning JSONL files.
+        skill_classifications = _build_skill_classifications_from_db(
+            [entry.uuid for entry in sessions]
+        )
+
         # Build manifest
         manifest = SyncManifest(
             user_id=self.user_id,
@@ -213,6 +297,7 @@ class SessionPackager:
             git_identity=git_id,
             team_name=self.team_name,
             proj_suffix=self.proj_suffix,
+            skill_classifications=skill_classifications,
         )
 
         manifest_path = staging_dir / "manifest.json"

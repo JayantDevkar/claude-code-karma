@@ -1523,6 +1523,14 @@ export interface McpSessionSummary {
 	tool_source?: 'main' | 'subagent' | 'both';
 	subagent_agent_ids?: string[];
 	invocation_sources?: string[];
+	/** Session origin: 'desktop' for Claude Desktop sessions, undefined for CLI */
+	session_source?: 'desktop' | null;
+	/** Session source: 'local' for this machine, 'remote' for synced from another machine */
+	source?: 'local' | 'remote';
+	/** User ID of the remote machine that produced this session */
+	remote_user_id?: string;
+	/** Machine ID of the remote machine that produced this session */
+	remote_machine_id?: string;
 }
 
 /**

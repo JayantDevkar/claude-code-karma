@@ -11,7 +11,8 @@
 		RefreshCw,
 		Minimize2,
 		MessageCircle,
-		Monitor
+		Monitor,
+		Globe
 	} from 'lucide-svelte';
 	import { fade } from 'svelte/transition';
 	import PageHeader from '$lib/components/layout/PageHeader.svelte';
@@ -32,7 +33,9 @@
 		cleanAgentIdForDisplay,
 		getEffectiveSubagentType,
 		getSessionDisplayName,
-		sessionHasTitle
+		sessionHasTitle,
+		isRemoteSession,
+		getTeamMemberColor
 	} from '$lib/utils';
 
 	interface Props {
@@ -54,6 +57,17 @@
 		liveStatus,
 		isRefreshing = false
 	}: Props = $props();
+
+	// Remote session handling
+	const isRemote = $derived(isMainSession(entity) && isRemoteSession(entity));
+	const teamMemberColor = $derived(
+		isMainSession(entity) && entity.remote_user_id
+			? getTeamMemberColor(entity.remote_user_id)
+			: null
+	);
+	const remoteUserName = $derived(
+		isMainSession(entity) ? entity.remote_user_id ?? null : null
+	);
 
 	// Debounced refresh indicator - ensures minimum visibility duration
 	const MIN_DISPLAY_MS = 600;
@@ -374,6 +388,22 @@
 									<span class="opacity-70">×{compactionCount}</span>
 								{/if}
 							</span>
+						</div>
+					{/if}
+					<!-- Remote Badge (if session is from a team member) -->
+					{#if isRemote && remoteUserName}
+						<div
+							class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border {teamMemberColor?.badge ?? ''}"
+							title="Remote session from {remoteUserName}"
+						>
+							<Globe
+								size={12}
+								strokeWidth={2}
+								class={teamMemberColor?.text ?? ''}
+							/>
+							<span class="text-xs font-medium {teamMemberColor?.text ?? ''}"
+								>{remoteUserName}</span
+							>
 						</div>
 					{/if}
 					<!-- Desktop Badge (if session is from Claude Desktop) -->

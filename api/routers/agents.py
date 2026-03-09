@@ -485,6 +485,10 @@ async def get_agent_sessions(
                             session_titles=row.get("session_titles", [])
                             or title_cache.get_titles(row["project_encoded_name"], row["uuid"])
                             or [],
+                            session_source=row.get("session_source"),
+                            source=row.get("source"),
+                            remote_user_id=row.get("remote_user_id"),
+                            remote_machine_id=row.get("remote_machine_id"),
                         )
                     )
 

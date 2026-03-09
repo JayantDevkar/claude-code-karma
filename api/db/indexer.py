@@ -279,12 +279,33 @@ def sync_project(
     return stats
 
 
+def _load_manifest_classifications(encoded_dir: Path) -> dict[str, str]:
+    """Load skill_classifications from a remote project's manifest.json.
+
+    Returns a mapping of invocation name → InvocationCategory string
+    (e.g. {'feature-dev:feature-dev': 'plugin_command'}).
+    Returns empty dict if manifest doesn't exist or lacks the field.
+    """
+    manifest_path = encoded_dir / "manifest.json"
+    if not manifest_path.exists():
+        return {}
+    try:
+        with open(manifest_path) as f:
+            manifest = json.load(f)
+        return manifest.get("skill_classifications", {})
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
 def index_remote_sessions(conn: sqlite3.Connection) -> dict:
     """
     Index remote sessions from Syncthing-synced directories into SQLite.
 
     Walks ~/.claude_karma/remote-sessions/{user_id}/{encoded_name}/sessions/
     and upserts session rows with source='remote'. Skips local user's outbox.
+
+    Reads skill_classifications from each project's manifest.json to correctly
+    classify remote skills vs commands (instead of relying on local plugin cache).
 
     Returns:
         Dict with sync statistics: total, indexed, skipped, errors
@@ -332,6 +353,35 @@ def index_remote_sessions(conn: sqlite3.Connection) -> dict:
             if not sessions_dir.exists():
                 continue
 
+            # Load manifest classifications once per (user_id, project)
+            classification_overrides = _load_manifest_classifications(encoded_dir)
+
+            # Force re-index when manifest has classification data and has been updated.
+            # Without this, the mtime-based skip would prevent reclassification of
+            # sessions already indexed (their JSONL files haven't changed).
+            force_reindex = False
+            if classification_overrides:
+                manifest_path = encoded_dir / "manifest.json"
+                if manifest_path.exists():
+                    manifest_mtime = manifest_path.stat().st_mtime
+                    # Check if any session for this remote user+project was indexed
+                    # before the manifest was last modified
+                    oldest_indexed = conn.execute(
+                        "SELECT MIN(indexed_at) FROM sessions WHERE remote_user_id = ? AND project_encoded_name = ? AND source = 'remote'",
+                        (user_id, local_encoded),
+                    ).fetchone()
+                    if oldest_indexed and oldest_indexed[0]:
+                        from datetime import datetime, timezone
+                        try:
+                            indexed_dt = datetime.fromisoformat(oldest_indexed[0])
+                            # indexed_at is UTC (from SQLite datetime('now')),
+                            # manifest_mtime is a POSIX timestamp — convert to UTC too
+                            manifest_dt = datetime.fromtimestamp(manifest_mtime, tz=timezone.utc).replace(tzinfo=None)
+                            if manifest_dt > indexed_dt:
+                                force_reindex = True
+                        except (ValueError, OSError):
+                            pass
+
             for jsonl_path in sessions_dir.glob("*.jsonl"):
                 if jsonl_path.name.startswith("agent-"):
                     continue
@@ -344,7 +394,7 @@ def index_remote_sessions(conn: sqlite3.Connection) -> dict:
                     current_mtime = file_stat.st_mtime
                     current_size = file_stat.st_size
 
-                    if uuid in db_mtimes and abs(db_mtimes[uuid] - current_mtime) < 0.001:
+                    if not force_reindex and uuid in db_mtimes and abs(db_mtimes[uuid] - current_mtime) < 0.001:
                         stats["skipped"] += 1
                         continue
 
@@ -358,6 +408,7 @@ def index_remote_sessions(conn: sqlite3.Connection) -> dict:
                         remote_user_id=user_id,
                         remote_machine_id=user_id,
                         claude_base_dir=encoded_dir,
+                        classification_overrides=classification_overrides,
                     )
                     stats["indexed"] += 1
 
@@ -393,6 +444,7 @@ def _index_session(
     remote_user_id: Optional[str] = None,
     remote_machine_id: Optional[str] = None,
     claude_base_dir: Optional[Path] = None,
+    classification_overrides: Optional[dict[str, str]] = None,
 ) -> None:
     """
     Extract metadata from a session JSONL and upsert into SQLite.
@@ -408,6 +460,9 @@ def _index_session(
         source: Session source type ("local" or "remote")
         remote_user_id: User ID of remote machine (for remote sessions)
         remote_machine_id: Machine ID of remote machine (for remote sessions)
+        classification_overrides: Manifest-provided name→category map for remote sessions.
+            When present, overrides local classify_invocation() results to fix
+            misclassification of remote skills/commands.
     """
     from models import Session
     from utils import get_initial_prompt
@@ -435,6 +490,38 @@ def _index_session(
     skills_used = session.get_skills_used()
     skills_mentioned = session.get_skills_mentioned()
     commands_used = session.get_commands_used()
+
+    # Reclassify skills/commands using manifest overrides (remote sessions only).
+    # The local classify_invocation() may get colon-format names wrong when the
+    # plugin isn't installed locally (defaults to "plugin_skill"). The manifest
+    # carries the correct classification from the exporting machine.
+    if classification_overrides:
+        from command_helpers import is_command_category, is_skill_category
+
+        # Make mutable copies
+        skills_used = dict(skills_used)
+        skills_mentioned = dict(skills_mentioned)
+        commands_used = dict(commands_used)
+
+        # Check skills that should be commands (both invoked and mentioned)
+        for skill_dict in (skills_used, skills_mentioned):
+            for key in list(skill_dict.keys()):
+                name, inv_source = key
+                override = classification_overrides.get(name)
+                if override and is_command_category(override):
+                    # Move from skills → commands
+                    count = skill_dict.pop(key)
+                    commands_used[(name, inv_source)] = commands_used.get((name, inv_source), 0) + count
+
+        # Check commands that should be skills
+        for key in list(commands_used.keys()):
+            name, inv_source = key
+            override = classification_overrides.get(name)
+            if override and is_skill_category(override):
+                # Move from commands → skills
+                count = commands_used.pop(key)
+                skills_used[(name, inv_source)] = skills_used.get((name, inv_source), 0) + count
+
     models_used = list(session.get_models_used())
     git_branches = list(session.get_git_branches())
     session_titles = session.session_titles or []
@@ -649,6 +736,9 @@ def _index_session(
                                     # Normalize short-form plugin names
                                     skill_name = expand_plugin_short_name(skill_name)
                                     kind = classify_invocation(skill_name, source="skill_tool")
+                                    # Override with manifest classification for remote sessions
+                                    if classification_overrides and skill_name in classification_overrides:
+                                        kind = classification_overrides[skill_name]
                                     source = "skill_tool"
                                     if is_skill_category(kind):
                                         key = (skill_name, source)

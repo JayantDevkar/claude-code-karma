@@ -1,7 +1,7 @@
 """Sync manifest model — describes what was synced and when."""
 
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Dict, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -41,4 +41,13 @@ class SyncManifest(BaseModel):
     proj_suffix: Optional[str] = Field(
         default=None,
         description="Agreed Syncthing folder ID suffix (e.g., 'acme-org-acme-app' for git, 'experiments' for non-git)",
+    )
+    skill_classifications: Dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "Invocation name → category mapping from the exporting machine's filesystem. "
+            "E.g. {'feature-dev:feature-dev': 'plugin_command', 'superpowers:brainstorming': 'plugin_skill'}. "
+            "Used by the importing side to classify remote skills/commands correctly "
+            "without relying on the local plugin cache."
+        ),
     )

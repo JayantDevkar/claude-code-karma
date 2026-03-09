@@ -147,6 +147,10 @@ def _build_session_summary(session_data: dict) -> SessionSummary:
         session_titles=session_data.get("session_titles", []),
         tool_source=session_data.get("tool_source"),
         subagent_agent_ids=session_data.get("subagent_agent_ids", []),
+        session_source=session_data.get("session_source"),
+        source=session_data.get("source"),
+        remote_user_id=session_data.get("remote_user_id"),
+        remote_machine_id=session_data.get("remote_machine_id"),
     )
 
 

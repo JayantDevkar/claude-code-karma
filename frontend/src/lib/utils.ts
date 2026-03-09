@@ -1540,7 +1540,11 @@ export function toSessionWithContext(s: McpSessionSummary | SessionSummary): Ses
 		session_titles: s.session_titles,
 		project_encoded_name: encoded,
 		project_path: encoded ?? '',
-		project_name: displayName || getProjectNameFromEncoded(encoded ?? '')
+		project_name: displayName || getProjectNameFromEncoded(encoded ?? ''),
+		session_source: ('session_source' in s ? s.session_source : undefined) ?? undefined,
+		source: ('source' in s ? s.source : undefined) ?? undefined,
+		remote_user_id: ('remote_user_id' in s ? s.remote_user_id : undefined) ?? undefined,
+		remote_machine_id: ('remote_machine_id' in s ? s.remote_machine_id : undefined) ?? undefined
 	};
 }
 
