@@ -285,6 +285,15 @@ def find_project_by_git_suffix(conn: sqlite3.Connection, suffix: str) -> Optiona
     return dict(row) if row else None
 
 
+def count_sessions_for_project(conn: sqlite3.Connection, encoded_name: str) -> int:
+    """Count sessions for a project by encoded name."""
+    row = conn.execute(
+        "SELECT COUNT(*) FROM sessions WHERE project_encoded_name = ?",
+        (encoded_name,),
+    ).fetchone()
+    return row[0] if row else 0
+
+
 def get_known_devices(conn: sqlite3.Connection) -> dict[str, tuple[str, str]]:
     """Return {device_id: (member_name, team_name)} for all Syncthing members."""
     rows = conn.execute(

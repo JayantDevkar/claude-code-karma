@@ -3,7 +3,6 @@
 import logging
 import sys
 import threading
-import time
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -30,7 +29,6 @@ class SessionWatcher(FileSystemEventHandler):
         self._timer: Optional[threading.Timer] = None
         self._observer: Optional[Observer] = None
         self._lock = threading.Lock()
-        self._last_peer_check: float = 0.0
         self._peer_timer: Optional[threading.Timer] = None
 
     @property
@@ -68,15 +66,11 @@ class SessionWatcher(FileSystemEventHandler):
 
     def _maybe_check_peers(self):
         """Check for new team members periodically."""
-        now = time.time()
-        if now - self._last_peer_check < PEER_CHECK_INTERVAL:
-            return 0
-
-        self._last_peer_check = now
         try:
             from karma.main import _accept_pending_folders
             from karma.syncthing import SyncthingClient, read_local_api_key
             from karma.config import SyncConfig
+            from karma.db import get_connection
 
             config = SyncConfig.load()
             if not config:
@@ -86,11 +80,7 @@ class SessionWatcher(FileSystemEventHandler):
             if not st.is_running():
                 return 0
 
-            import sqlite3
-            from api.config import settings
-
-            conn = sqlite3.connect(str(settings.sqlite_db_path))
-            conn.row_factory = sqlite3.Row
+            conn = get_connection()
             try:
                 accepted = _accept_pending_folders(st, config, conn)
                 return accepted or 0

@@ -66,7 +66,7 @@
 					detail = `: ${d.reason}`;
 				} else if (event.event_type === 'settings_changed' && d.sync_session_limit) {
 					const labels: Record<string, string> = {
-						all: 'All sessions',
+						all: 'All',
 						recent_100: 'Recent 100',
 						recent_10: 'Recent 10'
 					};

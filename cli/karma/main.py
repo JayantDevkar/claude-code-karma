@@ -17,7 +17,8 @@ if str(_API_PATH) not in sys.path:
     sys.path.insert(0, str(_API_PATH))
 
 _SAFE_NAME = re.compile(r"^[a-zA-Z0-9_\-]+$")
-SAFE_PATH_PART = re.compile(r"^[a-zA-Z0-9_\-\.]+$")
+
+from services.file_validator import SAFE_PATH_PART  # noqa: E402
 
 
 def _resolve_local_project(conn, team_name: str, project_encoded_name: str):

@@ -1057,7 +1057,7 @@ async def sync_delete_team(team_name: str) -> Any:
     # Clean up Syncthing state before deleting DB records (need member/project data)
     cleanup = {"folders_removed": 0, "devices_removed": 0}
     try:
-        config = _load_identity()
+        config = await run_sync(_load_identity)
         if config:
             proxy = get_proxy()
             cleanup = await _cleanup_syncthing_for_team(proxy, config, conn, team_name)
@@ -1143,15 +1143,8 @@ async def sync_join_team(req: JoinTeamRequest) -> Any:
                 continue
             local = find_project_by_git_identity(conn, git_id)
             if local:
-                session_count = 0
-                try:
-                    row = conn.execute(
-                        "SELECT COUNT(*) FROM sessions WHERE project_encoded_name = ?",
-                        (local["encoded_name"],),
-                    ).fetchone()
-                    session_count = row[0] if row else 0
-                except Exception:
-                    pass
+                from db.sync_queries import count_sessions_for_project
+                session_count = count_sessions_for_project(conn, local["encoded_name"])
                 matching_projects.append({
                     "encoded_name": local["encoded_name"],
                     "path": local.get("project_path", ""),
@@ -1321,7 +1314,7 @@ async def sync_remove_member(team_name: str, member_name: str) -> Any:
     # Clean up Syncthing state before removing DB record
     cleanup = {"folders_removed": 0, "devices_updated": 0}
     try:
-        config = _load_identity()
+        config = await run_sync(_load_identity)
         if config:
             proxy = get_proxy()
             cleanup = await _cleanup_syncthing_for_member(
@@ -1371,14 +1364,8 @@ async def sync_add_team_project(team_name: str, req: AddTeamProjectRequest) -> A
     add_team_project(conn, team_name, encoded, validated_path, git_identity=git_identity)
 
     # Count sessions for activity detail
-    session_count = 0
-    try:
-        row = conn.execute(
-            "SELECT COUNT(*) FROM sessions WHERE project_encoded_name = ?", (encoded,)
-        ).fetchone()
-        session_count = row[0] if row else 0
-    except Exception:
-        pass
+    from db.sync_queries import count_sessions_for_project
+    session_count = count_sessions_for_project(conn, encoded)
 
     config = await run_sync(_load_identity)
     member_name = config.user_id if config else None
@@ -1389,7 +1376,6 @@ async def sync_add_team_project(team_name: str, req: AddTeamProjectRequest) -> A
     syncthing_ok = False
     folders_created = {"outboxes": 0, "inboxes": 0, "errors": []}
     try:
-        config = await run_sync(_load_identity)
         if config is not None:
             proj_suffix = _compute_proj_suffix(git_identity, validated_path, encoded)
             members = list_members(conn, team_name)
@@ -1919,7 +1905,7 @@ async def sync_team_activity(
         event_type = None
 
     conn = _get_sync_conn()
-    if get_team(conn, team_name) is None:
+    if not conn.execute("SELECT 1 FROM sync_teams WHERE name = ?", (team_name,)).fetchone():
         raise HTTPException(404, f"Team '{team_name}' not found")
 
     events = query_events(

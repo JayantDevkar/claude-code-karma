@@ -4072,13 +4072,6 @@ def query_session_tool_breakdown(
     Returns (session_tool_counts, subagent_tool_counts).
     Returns (None, {}) if session not found.
     """
-    # Verify session exists
-    exists = conn.execute(
-        "SELECT 1 FROM sessions WHERE uuid = ?", (uuid,)
-    ).fetchone()
-    if not exists:
-        return None, {}
-
     # Session tools
     session_rows = conn.execute(
         "SELECT tool_name, count FROM session_tools WHERE session_uuid = ?",
@@ -4096,5 +4089,13 @@ def query_session_tool_breakdown(
         (uuid,),
     ).fetchall()
     subagent_counts = {r["tool_name"]: r["count"] for r in subagent_rows}
+
+    # Only check existence when both are empty (distinguish "no tools" from "no session")
+    if not session_counts and not subagent_counts:
+        exists = conn.execute(
+            "SELECT 1 FROM sessions WHERE uuid = ?", (uuid,)
+        ).fetchone()
+        if not exists:
+            return None, {}
 
     return session_counts, subagent_counts

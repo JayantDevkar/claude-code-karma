@@ -373,7 +373,7 @@ def index_remote_sessions(conn: sqlite3.Connection) -> dict:
                     # Check if any session for this remote user+project was indexed
                     # before the manifest was last modified
                     oldest_indexed = conn.execute(
-                        "SELECT MIN(indexed_at) FROM sessions WHERE remote_user_id = ? AND project_encoded_name = ? AND source = 'remote'",
+                        "SELECT MAX(indexed_at) FROM sessions WHERE remote_user_id = ? AND project_encoded_name = ? AND source = 'remote'",
                         (user_id, local_encoded),
                     ).fetchone()
                     if oldest_indexed and oldest_indexed[0]:

@@ -35,11 +35,13 @@ SAFE_PATH_PART = re.compile(r'^[a-zA-Z0-9_\-\.]+$')
 
 # ── Manifest validation ──────────────────────────────────────────────
 
-SAFE_IDENTIFIER = re.compile(r'^[a-zA-Z0-9_\-\.]+$')
-VALID_SKILL_CATEGORIES = frozenset({
-    "builtin_command", "bundled_skill", "plugin_skill",
-    "plugin_command", "custom_skill", "user_command",
-})
+# Same pattern as SAFE_PATH_PART — reuse for identifiers
+SAFE_IDENTIFIER = SAFE_PATH_PART
+from command_helpers.categories import InvocationCategory
+import typing as _typing
+
+# Derive valid categories from the canonical type, excluding "agent" (not a manifest category)
+VALID_SKILL_CATEGORIES: frozenset[str] = frozenset(_typing.get_args(InvocationCategory)) - {"agent"}
 
 
 class ManifestSession(BaseModel):
@@ -157,14 +159,13 @@ def validate_jsonl_file(path: Path) -> tuple[bool, str]:
 
 
 def validate_json_file(path: Path) -> tuple[bool, str]:
-    """Validate JSON file: must be parseable."""
+    """Validate JSON file: must be parseable.
+
+    Size is already checked by validate_received_file() via stat().
+    """
     try:
         with open(path) as f:
-            # Read up to max size
-            content = f.read(MAX_JSON_SIZE + 1)
-            if len(content) > MAX_JSON_SIZE:
-                return False, f"JSON file too large"
-            json.loads(content)
+            json.load(f)
     except json.JSONDecodeError as e:
         return False, f"Invalid JSON: {e}"
     except Exception as e:
@@ -176,10 +177,9 @@ def validate_json_file(path: Path) -> tuple[bool, str]:
 def validate_manifest(path: Path) -> tuple[Optional[SyncManifest], str]:
     """Parse and validate a manifest.json file. Returns (manifest, reason)."""
     try:
-        content = path.read_text()
-        if len(content) > MAX_JSON_SIZE:
+        if path.stat().st_size > MAX_JSON_SIZE:
             return None, "Manifest too large"
-        data = json.loads(content)
+        data = json.loads(path.read_text())
         manifest = SyncManifest.model_validate(data)
         return manifest, "ok"
     except json.JSONDecodeError as e:
