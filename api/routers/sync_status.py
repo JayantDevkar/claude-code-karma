@@ -1512,19 +1512,44 @@ async def sync_team_sync_now(team_name: str) -> Any:
                 resolved_path = local.get("project_path") or ""
                 resolved_dir = projects_dir / resolved_encoded
                 if resolved_dir.is_dir():
+                    old_suffix = encoded
                     # Fix the DB record
                     upsert_team_project(
                         conn, team_name, resolved_encoded, resolved_path,
                         git_identity=local.get("git_identity"),
                     )
                     try:
-                        remove_team_project(conn, team_name, encoded)
+                        remove_team_project(conn, team_name, old_suffix)
                     except Exception:
                         pass
                     encoded = resolved_encoded
                     proj_path = resolved_path
                     claude_dir = resolved_dir
                     logger.info("sync-now: resolved '%s' -> '%s'", proj["project_encoded_name"], encoded)
+
+                    # Fix Syncthing outbox folder: it may still point to the
+                    # old suffix-based dir. Remove it and recreate with the
+                    # correct encoded path via _ensure_outbox_folder.
+                    try:
+                        proxy = get_proxy()
+                        git_id = local.get("git_identity")
+                        proj_suffix = _compute_proj_suffix(git_id, resolved_path, resolved_encoded)
+                        outbox_id = f"karma-out-{config.user_id}-{proj_suffix}"
+                        # Remove the potentially-wrong folder so _ensure_outbox_folder
+                        # recreates it with the correct path
+                        try:
+                            await run_sync(proxy.remove_folder, outbox_id)
+                        except Exception:
+                            pass
+                        members = list_members(conn, team_name)
+                        all_device_ids = [
+                            m["device_id"] for m in members
+                            if m["device_id"] and m["device_id"] != (config.syncthing.device_id if config.syncthing else None)
+                        ]
+                        await _ensure_outbox_folder(proxy, config, resolved_encoded, proj_suffix, all_device_ids)
+                        logger.info("sync-now: recreated outbox folder '%s' with correct path", outbox_id)
+                    except Exception as e:
+                        logger.warning("sync-now: could not fix outbox folder path: %s", e)
                 else:
                     continue
             else:

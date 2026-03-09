@@ -296,6 +296,27 @@ def _accept_pending_folders(st, config, conn):
                                 f"(from handshake folder)"
                             )
                             upsert_member(conn, db_team, candidate_user, device_id=dev_id)
+
+                            # Remove Syncthing folders created with the old
+                            # (hostname-derived) name. _auto_share_folders may
+                            # have created inbox folders like
+                            # "karma-out-jayants-macbook-pro-{suffix}" before
+                            # the handshake arrived with the real username.
+                            # Removing them lets the pending-folder loop below
+                            # recreate them with the correct name from the
+                            # remote's actual folder offers.
+                            old_prefix = f"karma-out-{db_name}-"
+                            for folder in st.get_folders():
+                                if folder["id"].startswith(old_prefix):
+                                    try:
+                                        st.remove_folder(folder["id"])
+                                        existing_folder_ids.discard(folder["id"])
+                                        click.echo(
+                                            f"  Removed stale folder '{folder['id']}' "
+                                            f"(old member name '{db_name}')"
+                                        )
+                                    except Exception:
+                                        pass
                 break
 
     # Build set of known names for folder ID disambiguation
@@ -356,7 +377,27 @@ def _accept_pending_folders(st, config, conn):
                 if not SAFE_PATH_PART.match(suffix):
                     click.echo(f"  Skipped own outbox '{folder_id}' — unsafe suffix: {suffix!r}")
                     continue
-                outbox_path = str(KARMA_BASE / "remote-sessions" / own_user_id / suffix)
+
+                # Resolve suffix to the correct local project BEFORE creating
+                # the Syncthing folder. The suffix is git-identity-based (e.g.
+                # "jayantdevkar-claude-code-karma") but the packager writes to
+                # the Claude-encoded path (e.g. "-Users-bob-...-claude-karma").
+                # Using the suffix as the folder path would cause a mismatch —
+                # Syncthing watches one dir, the packager writes to another.
+                outbox_subdir = suffix  # fallback if resolution fails
+                try:
+                    resolved = _resolve_local_project(conn, team_name, suffix)
+                    if resolved:
+                        r_encoded, r_path, r_git_id = resolved
+                        outbox_subdir = r_encoded
+                        if r_encoded != suffix:
+                            click.echo(
+                                f"  Resolved project '{suffix}' -> '{r_encoded}'"
+                            )
+                except Exception:
+                    pass
+
+                outbox_path = str(KARMA_BASE / "remote-sessions" / own_user_id / outbox_subdir)
                 Path(outbox_path).mkdir(parents=True, exist_ok=True)
                 outbox_devices = [device_id]
                 if own_device_id:
@@ -376,27 +417,12 @@ def _accept_pending_folders(st, config, conn):
                 )
                 accepted += 1
 
-                # Auto-register project if not already tracked
+                # Auto-register project if not already tracked (use resolved
+                # name when available so we don't create a stale suffix record)
                 try:
                     from db.sync_queries import upsert_team_project
 
-                    upsert_team_project(conn, team_name, suffix, path=None)
-                except Exception:
-                    pass
-
-                # Try to resolve to the correct local project
-                try:
-                    resolved = _resolve_local_project(conn, team_name, suffix)
-                    if resolved:
-                        r_encoded, r_path, r_git_id = resolved
-                        if r_encoded != suffix:
-                            correct_outbox = str(
-                                KARMA_BASE / "remote-sessions" / own_user_id / r_encoded
-                            )
-                            Path(correct_outbox).mkdir(parents=True, exist_ok=True)
-                            click.echo(
-                                f"  Resolved project '{suffix}' -> '{r_encoded}'"
-                            )
+                    upsert_team_project(conn, team_name, outbox_subdir, path=None)
                 except Exception:
                     pass
                 continue
