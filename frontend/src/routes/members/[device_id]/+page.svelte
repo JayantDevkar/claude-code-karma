@@ -93,7 +93,12 @@
 					<h2 class="text-lg font-semibold text-[var(--text-primary)] truncate">
 						{displayName}
 					</h2>
-					{#if profile.connected}
+					{#if profile.is_you}
+						<span class="shrink-0 px-1.5 py-0.5 text-[10px] font-medium rounded bg-[var(--accent)]/10 text-[var(--accent)]">
+							You
+						</span>
+					{/if}
+					{#if profile.connected || profile.is_you}
 						<span class="flex items-center gap-1 text-xs text-[var(--success)]">
 							<Wifi size={12} />
 							Online

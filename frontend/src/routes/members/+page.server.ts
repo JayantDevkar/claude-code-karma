@@ -6,6 +6,7 @@ interface MemberListItem {
 	name: string;
 	device_id: string;
 	connected: boolean;
+	is_you: boolean;
 	team_count: number;
 	teams: string[];
 	added_at: string;

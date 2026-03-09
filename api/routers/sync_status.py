@@ -2288,6 +2288,12 @@ async def sync_list_members() -> Any:
            ORDER BY m.name""",
     ).fetchall()
 
+    # Get local device_id for "is_you" tagging
+    own_device_id: str | None = None
+    config = await run_sync(_load_identity)
+    if config and config.syncthing:
+        own_device_id = config.syncthing.device_id
+
     # Get device connection info (graceful fallback)
     connected_device_ids: set[str] = set()
     try:
@@ -2306,6 +2312,7 @@ async def sync_list_members() -> Any:
             "name": row["name"],
             "device_id": row["device_id"],
             "connected": row["device_id"] in connected_device_ids,
+            "is_you": row["device_id"] == own_device_id,
             "team_count": len(teams),
             "teams": teams,
             "added_at": row["first_added"],
@@ -2343,6 +2350,12 @@ async def sync_member_profile(identifier: str) -> Any:
     # Use the first device_id found (a member typically has one device)
     device_id = member_rows[0]["device_id"]
     team_names = [r["team_name"] for r in member_rows]
+
+    # Get local device_id for "is_you" tagging
+    own_device_id: str | None = None
+    config = await run_sync(_load_identity)
+    if config and config.syncthing:
+        own_device_id = config.syncthing.device_id
 
     # Get device connection info from Syncthing (graceful fallback)
     connected = False
@@ -2427,6 +2440,7 @@ async def sync_member_profile(identifier: str) -> Any:
         "user_id": member_name,
         "device_id": device_id,
         "connected": connected,
+        "is_you": device_id == own_device_id,
         "in_bytes_total": in_bytes_total,
         "out_bytes_total": out_bytes_total,
         "teams": teams,

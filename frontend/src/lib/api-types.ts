@@ -1857,6 +1857,7 @@ export interface MemberProfile {
 	user_id: string;
 	device_id: string;
 	connected: boolean;
+	is_you: boolean;
 	in_bytes_total: number;
 	out_bytes_total: number;
 	teams: MemberTeam[];
