@@ -1,5 +1,4 @@
 <script lang="ts">
-	import PageHeader from '$lib/components/layout/PageHeader.svelte';
 	import { Tabs } from 'bits-ui';
 	import TabsTrigger from '$lib/components/ui/TabsTrigger.svelte';
 	import MemberOverviewTab from '$lib/components/team/MemberOverviewTab.svelte';
@@ -9,14 +8,15 @@
 	import { onMount } from 'svelte';
 	import { browser } from '$app/environment';
 	import {
-		User,
 		LayoutDashboard,
 		FolderGit2,
 		Users,
 		Activity,
 		Wifi,
 		WifiOff,
-		AlertTriangle
+		AlertTriangle,
+		Monitor,
+		ArrowDownUp
 	} from 'lucide-svelte';
 	import { getTeamMemberColor, formatBytes } from '$lib/utils';
 
@@ -60,46 +60,40 @@
 	});
 </script>
 
-<PageHeader
-	title={displayName}
-	icon={User}
-	iconColor="--nav-purple"
-	subtitle="Member profile and activity"
-	breadcrumbs={[
-		{ label: 'Dashboard', href: '/' },
-		{ label: 'Members', href: '/members' },
-		{ label: displayName }
-	]}
-/>
+<!-- Breadcrumb -->
+<div class="flex items-center gap-2 text-xs text-[var(--text-secondary)] mb-5">
+	<a href="/" class="hover:text-[var(--text-primary)] transition-colors">Dashboard</a>
+	<span class="text-[var(--text-faint)]">/</span>
+	<a href="/members" class="hover:text-[var(--text-primary)] transition-colors">Members</a>
+	<span class="text-[var(--text-faint)]">/</span>
+	<span class="text-[var(--text-primary)] font-medium">{displayName}</span>
+</div>
 
 {#if profile}
-	<!-- Profile Card -->
-	<div
-		class="mb-6 p-5 rounded-lg border border-[var(--border)]"
-		style="border-left: 4px solid {colors.border}; background: {colors.bg};"
-	>
-		<div class="flex items-center gap-4">
+	<!-- Unified Profile Header -->
+	<div class="mb-8 pb-6 border-b border-[var(--border)]">
+		<div class="flex items-center gap-5">
 			<!-- Avatar -->
 			<div
-				class="w-14 h-14 rounded-full flex items-center justify-center text-xl font-bold shrink-0"
-				style="background: {colors.border}; color: white; box-shadow: 0 0 0 3px {colors.border}33;"
+				class="w-16 h-16 rounded-2xl flex items-center justify-center text-2xl font-bold shrink-0"
+				style="background: {colors.border}; color: white;"
 			>
 				{displayName.charAt(0).toUpperCase()}
 			</div>
 
-			<!-- Info -->
+			<!-- Name + metadata -->
 			<div class="flex-1 min-w-0">
-				<div class="flex items-center gap-2 mb-1">
-					<h2 class="text-lg font-semibold text-[var(--text-primary)] truncate">
+				<div class="flex items-center gap-2.5 mb-1.5">
+					<h1 class="text-2xl font-semibold tracking-tight text-[var(--text-primary)] truncate">
 						{displayName}
-					</h2>
+					</h1>
 					{#if profile.is_you}
-						<span class="shrink-0 px-1.5 py-0.5 text-[10px] font-medium rounded bg-[var(--accent)]/10 text-[var(--accent)]">
+						<span class="shrink-0 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide rounded-full bg-[var(--accent)]/10 text-[var(--accent)]">
 							You
 						</span>
 					{/if}
 					{#if profile.connected || profile.is_you}
-						<span class="flex items-center gap-1 text-xs text-[var(--success)]">
+						<span class="flex items-center gap-1 text-xs font-medium text-[var(--success)]">
 							<Wifi size={12} />
 							Online
 						</span>
@@ -111,11 +105,14 @@
 					{/if}
 				</div>
 
-				<div class="flex items-center gap-4 text-xs text-[var(--text-muted)]">
-					<span title={profile.device_id}>
-						Device: {profile.device_id.slice(0, 8)}...
+				<div class="flex items-center gap-3 text-xs text-[var(--text-muted)]">
+					<span class="flex items-center gap-1.5" title={profile.device_id}>
+						<Monitor size={11} class="opacity-60" />
+						{profile.device_id.slice(0, 8)}...
 					</span>
-					<span>
+					<span class="text-[var(--text-faint)]">&middot;</span>
+					<span class="flex items-center gap-1.5">
+						<ArrowDownUp size={11} class="opacity-60" />
 						{formatBytes(profile.in_bytes_total)} in / {formatBytes(profile.out_bytes_total)} out
 					</span>
 				</div>

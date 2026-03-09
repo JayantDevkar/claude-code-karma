@@ -477,6 +477,7 @@ def get_all_sessions(
     end_ts: Optional[int] = None,
     page: int = 1,
     per_page: int = 50,
+    user: Optional[str] = None,
 ) -> AllSessionsResponse:
     """
     List all sessions across all projects with optional filtering.
@@ -547,6 +548,7 @@ def get_all_sessions(
                     end_ts=end_ts,
                     limit=limit,
                     offset=offset,
+                    user=user,
                 )
         except sqlite3.Error as e:
             logger.warning("SQLite query failed, falling back to JSONL: %s", e)
@@ -566,11 +568,12 @@ def get_all_sessions(
             end_ts=end_ts,
             limit=limit,
             offset=offset,
+            user=user,
         )
 
     # Cache Control Logic
     # Disable caching if any filter is active (search results should be fresh)
-    has_filters = any([search, project, branch, status != SessionStatus.ALL, start_ts, end_ts])
+    has_filters = any([search, project, branch, status != SessionStatus.ALL, start_ts, end_ts, user])
 
     if has_filters:
         # No cache for filtered views
@@ -603,6 +606,7 @@ def _get_all_sessions_sqlite(
     end_ts=None,
     limit=50,
     offset=0,
+    user=None,
 ) -> AllSessionsResponse:
     """
     SQLite-backed implementation of get_all_sessions.
@@ -627,6 +631,7 @@ def _get_all_sessions_sqlite(
             end_dt=end_dt,
             limit=limit,
             offset=offset,
+            user=user,
         )
 
         total = result["total"]
@@ -727,6 +732,7 @@ def _get_all_sessions_jsonl(
     end_ts=None,
     limit=50,
     offset=0,
+    user=None,
 ) -> AllSessionsResponse:
     """
     Original JSONL-based implementation of get_all_sessions.
@@ -760,6 +766,9 @@ def _get_all_sessions_jsonl(
     filter_without_status._search_lower = search_lower
 
     for meta in all_sessions:
+        # User filter: only include sessions from this remote user
+        if user and getattr(meta, "remote_user_id", None) != user:
+            continue
         if filter_without_status.matches_metadata(meta):
             session_status = determine_session_status(meta)
             if session_status in status_counts:

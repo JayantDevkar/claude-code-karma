@@ -129,6 +129,7 @@ def query_all_sessions(
     end_dt: Optional[datetime] = None,
     limit: int = 200,
     offset: int = 0,
+    user: Optional[str] = None,
 ) -> dict:
     """
     Query sessions from SQLite with filtering, sorting, and pagination.
@@ -162,6 +163,10 @@ def query_all_sessions(
     if source and source != "all":
         conditions.append("s.source = :source")
         params["source"] = source
+
+    if user:
+        conditions.append("s.remote_user_id = :user")
+        params["user"] = user
 
     # Search via FTS5
     fts_join = ""
