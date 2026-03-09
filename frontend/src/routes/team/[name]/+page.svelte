@@ -16,9 +16,10 @@
 		Trash2,
 		Loader2,
 		AlertTriangle,
-		CheckCircle2
+		CheckCircle2,
+		RefreshCw
 	} from 'lucide-svelte';
-	import type { SyncDevice, SyncPendingFolder } from '$lib/api-types';
+	import type { SyncDevice, SyncPendingFolder, SyncProjectStatus } from '$lib/api-types';
 
 	let { data } = $props();
 
@@ -27,6 +28,30 @@
 	let deleting = $state(false);
 	let deleteError = $state<string | null>(null);
 	let removeProjectConfirm = $state<string | null>(null);
+	let syncAllActing = $state(false);
+
+	// Per-project sync status
+	let projectStatuses = $state<SyncProjectStatus[]>([]);
+	$effect(() => {
+		projectStatuses = data.projectStatuses ?? [];
+	});
+
+	function getProjectStatus(encodedName: string): SyncProjectStatus | undefined {
+		return projectStatuses.find((p) => p.encoded_name === encodedName);
+	}
+
+	async function syncAllNow() {
+		syncAllActing = true;
+		try {
+			await fetch(
+				`${API_BASE}/sync/teams/${encodeURIComponent(data.teamName)}/sync-now`,
+				{ method: 'POST' }
+			);
+			invalidateAll();
+		} finally {
+			syncAllActing = false;
+		}
+	}
 
 	// Polling state for connection status
 	let devices = $state<SyncDevice[]>([]);
@@ -270,33 +295,73 @@
 				<h2 class="text-sm font-semibold text-[var(--text-primary)] uppercase tracking-wider">
 					Shared Projects ({projects.length})
 				</h2>
-				<button
-					onclick={() => (showAddProject = true)}
-					class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-[var(--radius-md)]
-						border border-[var(--border)] text-[var(--text-secondary)]
-						hover:bg-[var(--bg-muted)] hover:text-[var(--text-primary)] transition-colors"
-				>
-					<Plus size={13} />
-					Add Projects
-				</button>
+				<div class="flex items-center gap-2">
+					{#if projects.length > 0}
+						<button
+							onclick={syncAllNow}
+							disabled={syncAllActing}
+							class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-[var(--radius-md)]
+								bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)] transition-colors
+								disabled:opacity-50 disabled:cursor-not-allowed"
+						>
+							{#if syncAllActing}
+								<Loader2 size={12} class="animate-spin" />
+								Syncing...
+							{:else}
+								<RefreshCw size={12} />
+								Sync Now
+							{/if}
+						</button>
+					{/if}
+					<button
+						onclick={() => (showAddProject = true)}
+						class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-[var(--radius-md)]
+							border border-[var(--border)] text-[var(--text-secondary)]
+							hover:bg-[var(--bg-muted)] hover:text-[var(--text-primary)] transition-colors"
+					>
+						<Plus size={13} />
+						Add Projects
+					</button>
+				</div>
 			</div>
 			<div class="space-y-2">
 				{#each projects as project (project.encoded_name)}
+					{@const status = getProjectStatus(project.encoded_name)}
 					<div
 						class="flex items-center justify-between p-3 rounded-lg border border-[var(--border)] bg-[var(--bg-base)]"
 					>
 						<div class="flex items-center gap-3 min-w-0">
 							<FolderSync size={16} class="text-[var(--text-muted)] shrink-0" />
 							<div class="min-w-0">
-								<p class="text-sm font-medium text-[var(--text-primary)] truncate">
+								<a
+									href="/projects/{project.encoded_name}"
+									class="text-sm font-medium text-[var(--text-primary)] hover:text-[var(--accent)] transition-colors truncate block"
+								>
 									{project.name || project.encoded_name}
-								</p>
+								</a>
 								{#if project.path}
 									<p class="text-[11px] text-[var(--text-muted)] truncate">{project.path}</p>
 								{/if}
+								{#if status}
+									<p class="text-[11px] text-[var(--text-muted)] mt-0.5">
+										{status.packaged_count}/{status.local_count} sessions packaged
+									</p>
+								{/if}
 							</div>
 						</div>
-						<div class="shrink-0">
+						<div class="flex items-center gap-2 shrink-0">
+							{#if status}
+								{#if status.gap === 0}
+									<span class="flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded-full bg-[var(--success)]/10 text-[var(--success)] border border-[var(--success)]/20">
+										<CheckCircle2 size={11} />
+										In Sync
+									</span>
+								{:else}
+									<span class="flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded-full bg-[var(--warning)]/10 text-[var(--warning)] border border-[var(--warning)]/20">
+										{status.gap} behind
+									</span>
+								{/if}
+							{/if}
 							{#if removeProjectConfirm === project.encoded_name}
 								<div class="flex items-center gap-1.5">
 									<button
