@@ -30,6 +30,7 @@ from db.sync_queries import (
     query_events,
     get_known_devices,
     find_project_by_git_identity,
+    find_project_by_git_suffix,
     update_team_session_limit,
 )
 from services.syncthing_proxy import SyncthingNotRunning, SyncthingProxy, run_sync
@@ -642,12 +643,17 @@ async def sync_reset(options: Optional[ResetOptions] = None) -> Any:
     else:
         steps["remote_sessions_deleted"] = False
 
-    # 4. Delete sync config file
+    # 4. Delete sync config file + stale sync.db
     if SYNC_CONFIG_PATH.exists():
         SYNC_CONFIG_PATH.unlink()
         steps["config_deleted"] = True
     else:
         steps["config_deleted"] = False
+
+    stale_sync_db = KARMA_BASE / "sync.db"
+    if stale_sync_db.exists():
+        stale_sync_db.unlink(missing_ok=True)
+        steps["stale_sync_db_deleted"] = True
 
     # 5. Clear all sync tables + orphan remote sessions
     conn = _get_sync_conn()
@@ -714,9 +720,16 @@ async def sync_reset(options: Optional[ResetOptions] = None) -> Any:
                 removed_dirs.append(str(d))
         steps["syncthing_config_removed"] = removed_dirs
 
-    # 8. Reset proxy singleton
+    # 8. Reset proxy singleton and invalidate in-memory caches
     global _proxy
     _proxy = None
+
+    try:
+        from services.remote_sessions import invalidate_caches
+        invalidate_caches()
+        steps["caches_invalidated"] = True
+    except Exception:
+        steps["caches_invalidated"] = False
 
     return {"ok": True, "steps": steps}
 
@@ -1492,7 +1505,30 @@ async def sync_team_sync_now(team_name: str) -> Any:
         claude_dir = projects_dir / encoded
 
         if not claude_dir.is_dir():
-            continue
+            # Try to resolve suffix-based record to the correct local project
+            local = find_project_by_git_suffix(conn, encoded)
+            if local:
+                resolved_encoded = local["encoded_name"]
+                resolved_path = local.get("project_path") or ""
+                resolved_dir = projects_dir / resolved_encoded
+                if resolved_dir.is_dir():
+                    # Fix the DB record
+                    upsert_team_project(
+                        conn, team_name, resolved_encoded, resolved_path,
+                        git_identity=local.get("git_identity"),
+                    )
+                    try:
+                        remove_team_project(conn, team_name, encoded)
+                    except Exception:
+                        pass
+                    encoded = resolved_encoded
+                    proj_path = resolved_path
+                    claude_dir = resolved_dir
+                    logger.info("sync-now: resolved '%s' -> '%s'", proj["project_encoded_name"], encoded)
+                else:
+                    continue
+            else:
+                continue
 
         outbox = KARMA_BASE / "remote-sessions" / config.user_id / encoded
         outbox.mkdir(parents=True, exist_ok=True)

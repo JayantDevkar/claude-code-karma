@@ -34,25 +34,38 @@ def _resolve_local_project(conn, team_name: str, project_encoded_name: str):
 
     Returns ``(resolved_encoded_name, resolved_path, git_identity)`` or ``None``.
     """
-    from db.sync_queries import find_project_by_git_identity, upsert_team_project
+    from db.sync_queries import (
+        find_project_by_git_identity,
+        find_project_by_git_suffix,
+        upsert_team_project,
+    )
 
     git_identity = None
 
+    # ── Step A0: Reverse-lookup git_identity from suffix via DB ───────
+    # Syncthing folder suffixes use git_identity.replace("/", "-"), e.g.
+    # "jayantdevkar-claude-code-karma" from "jayantdevkar/claude-code-karma".
+    # Try matching against the local projects table directly — no manifest needed.
+    local = find_project_by_git_suffix(conn, project_encoded_name)
+    if local:
+        git_identity = local["git_identity"]
+
     # ── Step A: Extract git_identity from any available manifest ──────
-    remote_base = KARMA_BASE / "remote-sessions"
-    if remote_base.is_dir():
-        for user_dir in remote_base.iterdir():
-            if not user_dir.is_dir():
-                continue
-            manifest_path = user_dir / project_encoded_name / "manifest.json"
-            if manifest_path.exists():
-                try:
-                    manifest = json.loads(manifest_path.read_text())
-                    git_identity = manifest.get("git_identity")
-                    if git_identity:
-                        break
-                except (json.JSONDecodeError, OSError):
+    if not git_identity:
+        remote_base = KARMA_BASE / "remote-sessions"
+        if remote_base.is_dir():
+            for user_dir in remote_base.iterdir():
+                if not user_dir.is_dir():
                     continue
+                manifest_path = user_dir / project_encoded_name / "manifest.json"
+                if manifest_path.exists():
+                    try:
+                        manifest = json.loads(manifest_path.read_text())
+                        git_identity = manifest.get("git_identity")
+                        if git_identity:
+                            break
+                    except (json.JSONDecodeError, OSError):
+                        continue
 
     if not git_identity:
         return None

@@ -103,6 +103,40 @@ class TestTeamProjectCRUD:
         assert list_team_projects(conn, "alpha") == []
 
 
+class TestFindProjectByGitSuffix:
+    def test_matches_suffix_to_git_identity(self, conn):
+        from db.sync_queries import find_project_by_git_suffix
+
+        conn.execute(
+            "INSERT INTO projects (encoded_name, project_path, git_identity) VALUES (?, ?, ?)",
+            ("-Users-me-my-app", "/Users/me/my-app", "acme-org/my-app"),
+        )
+        result = find_project_by_git_suffix(conn, "acme-org-my-app")
+        assert result is not None
+        assert result["encoded_name"] == "-Users-me-my-app"
+        assert result["git_identity"] == "acme-org/my-app"
+
+    def test_no_match_returns_none(self, conn):
+        from db.sync_queries import find_project_by_git_suffix
+
+        conn.execute(
+            "INSERT INTO projects (encoded_name, project_path, git_identity) VALUES (?, ?, ?)",
+            ("-Users-me-my-app", "/Users/me/my-app", "acme-org/my-app"),
+        )
+        result = find_project_by_git_suffix(conn, "other-org-other-app")
+        assert result is None
+
+    def test_skips_projects_without_git_identity(self, conn):
+        from db.sync_queries import find_project_by_git_suffix
+
+        conn.execute(
+            "INSERT INTO projects (encoded_name, project_path) VALUES (?, ?)",
+            ("-Users-me-my-app", "/Users/me/my-app"),
+        )
+        result = find_project_by_git_suffix(conn, "-Users-me-my-app")
+        assert result is None
+
+
 class TestSyncEvents:
     def test_log_and_query_events(self, conn):
         from db.sync_queries import create_team, log_event, query_events

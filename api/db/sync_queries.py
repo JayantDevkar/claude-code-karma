@@ -271,6 +271,20 @@ def find_project_by_git_identity(conn: sqlite3.Connection, git_identity: str) ->
     return dict(row) if row else None
 
 
+def find_project_by_git_suffix(conn: sqlite3.Connection, suffix: str) -> Optional[dict]:
+    """Find a local project whose git_identity matches a Syncthing folder suffix.
+
+    Syncthing folder IDs use ``git_identity.replace('/', '-')`` as the suffix.
+    This reverses that by querying ``REPLACE(git_identity, '/', '-') = suffix``.
+    """
+    row = conn.execute(
+        "SELECT encoded_name, project_path, git_identity FROM projects"
+        " WHERE REPLACE(git_identity, '/', '-') = ?",
+        (suffix,),
+    ).fetchone()
+    return dict(row) if row else None
+
+
 def get_known_devices(conn: sqlite3.Connection) -> dict[str, tuple[str, str]]:
     """Return {device_id: (member_name, team_name)} for all Syncthing members."""
     rows = conn.execute(

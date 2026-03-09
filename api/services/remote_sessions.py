@@ -48,6 +48,19 @@ _titles_cache: dict[tuple[str, str], tuple[float, dict[str, str]]] = {}
 _TITLES_TTL = 30.0  # seconds
 
 
+def invalidate_caches() -> None:
+    """Clear all in-memory caches. Called on sync reset."""
+    global _local_user_cache, _local_user_cache_time
+    global _project_mapping_cache, _project_mapping_cache_time
+    global _manifest_worktree_cache, _titles_cache
+    _local_user_cache = None
+    _local_user_cache_time = 0.0
+    _project_mapping_cache = None
+    _project_mapping_cache_time = 0.0
+    _manifest_worktree_cache.clear()
+    _titles_cache.clear()
+
+
 @dataclass
 class RemoteSessionResult:
     """Result of finding a remote session."""
