@@ -10,7 +10,7 @@ import sqlite3
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 23
+SCHEMA_VERSION = 11
 
 SCHEMA_SQL = """
 -- Schema versioning
@@ -335,6 +335,12 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             CREATE INDEX IF NOT EXISTS idx_sync_events_time ON sync_events(created_at DESC);
             CREATE INDEX IF NOT EXISTS idx_sync_events_member ON sync_events(member_name, created_at DESC);
         """)
+        # Patch columns that may be missing if table was created by an older migration
+        existing_cols = {r[1] for r in conn.execute("PRAGMA table_info(sync_teams)").fetchall()}
+        if "join_code" not in existing_cols:
+            conn.execute("ALTER TABLE sync_teams ADD COLUMN join_code TEXT")
+        if "sync_session_limit" not in existing_cols:
+            conn.execute("ALTER TABLE sync_teams ADD COLUMN sync_session_limit TEXT DEFAULT 'all'")
         logger.debug("Schema is up to date (version %d)", current_version)
         return
 
@@ -527,8 +533,10 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             # Nudge mtime to force re-index of all sessions
             conn.execute("UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1")
 
-        if current_version < 17:
-            logger.info("Migrating → v17: adding remote session columns")
+        if current_version < 11:
+            logger.info("Migrating → v11: sync feature (remote sessions, teams, members, projects)")
+
+            # 1. Remote session columns on sessions table
             existing_cols = {r[1] for r in conn.execute("PRAGMA table_info(sessions)").fetchall()}
             if "source" not in existing_cols:
                 conn.execute("ALTER TABLE sessions ADD COLUMN source TEXT DEFAULT 'local'")
@@ -538,27 +546,48 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
                 conn.execute("ALTER TABLE sessions ADD COLUMN remote_machine_id TEXT")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_source ON sessions(source)")
 
-        if current_version < 18:
-            logger.info("Migrating -> v18: adding sync tables")
+            # 2. git_identity on projects
+            existing_proj_cols = {r[1] for r in conn.execute("PRAGMA table_info(projects)").fetchall()}
+            if "git_identity" not in existing_proj_cols:
+                conn.execute("ALTER TABLE projects ADD COLUMN git_identity TEXT")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_projects_git_identity ON projects(git_identity)")
+
+            # 3. agent_display_name on subagent_invocations
+            existing_sa_cols = {r[1] for r in conn.execute("PRAGMA table_info(subagent_invocations)").fetchall()}
+            if "agent_display_name" not in existing_sa_cols:
+                conn.execute("ALTER TABLE subagent_invocations ADD COLUMN agent_display_name TEXT")
+                # Force re-index so display names get populated
+                conn.execute("DELETE FROM subagent_tools")
+                conn.execute("DELETE FROM subagent_skills")
+                conn.execute("DELETE FROM subagent_commands")
+                conn.execute("DELETE FROM subagent_invocations")
+                conn.execute(
+                    "UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1 WHERE subagent_count > 0"
+                )
+
+            # 4. Sync tables (created with final schema)
             conn.executescript("""
                 CREATE TABLE IF NOT EXISTS sync_teams (
                     name TEXT PRIMARY KEY,
                     backend TEXT NOT NULL DEFAULT 'syncthing',
+                    join_code TEXT,
+                    sync_session_limit TEXT DEFAULT 'all',
                     created_at TEXT DEFAULT (datetime('now'))
                 );
                 CREATE TABLE IF NOT EXISTS sync_members (
                     team_name TEXT NOT NULL,
                     name TEXT NOT NULL,
-                    device_id TEXT,
+                    device_id TEXT NOT NULL,
                     added_at TEXT DEFAULT (datetime('now')),
-                    PRIMARY KEY (team_name, name),
+                    PRIMARY KEY (team_name, device_id),
                     FOREIGN KEY (team_name) REFERENCES sync_teams(name) ON DELETE CASCADE
                 );
-                CREATE INDEX IF NOT EXISTS idx_sync_members_device ON sync_members(device_id);
+                CREATE INDEX IF NOT EXISTS idx_sync_members_name ON sync_members(team_name, name);
                 CREATE TABLE IF NOT EXISTS sync_team_projects (
                     team_name TEXT NOT NULL,
                     project_encoded_name TEXT NOT NULL,
                     path TEXT,
+                    git_identity TEXT,
                     added_at TEXT DEFAULT (datetime('now')),
                     PRIMARY KEY (team_name, project_encoded_name),
                     FOREIGN KEY (team_name) REFERENCES sync_teams(name) ON DELETE CASCADE,
@@ -580,72 +609,6 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
                 CREATE INDEX IF NOT EXISTS idx_sync_events_time ON sync_events(created_at DESC);
                 CREATE INDEX IF NOT EXISTS idx_sync_events_member ON sync_events(member_name, created_at DESC);
             """)
-
-        if current_version < 19:
-            logger.info("Migrating -> v19: adding git_identity columns")
-            existing_proj_cols = {r[1] for r in conn.execute("PRAGMA table_info(projects)").fetchall()}
-            if "git_identity" not in existing_proj_cols:
-                conn.execute("ALTER TABLE projects ADD COLUMN git_identity TEXT")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_projects_git_identity ON projects(git_identity)")
-            existing_stp_cols = {r[1] for r in conn.execute("PRAGMA table_info(sync_team_projects)").fetchall()}
-            if "git_identity" not in existing_stp_cols:
-                conn.execute("ALTER TABLE sync_team_projects ADD COLUMN git_identity TEXT")
-
-        if current_version < 20:
-            logger.info("Migrating -> v20: adding agent_display_name to subagent_invocations")
-            existing_cols = {r[1] for r in conn.execute("PRAGMA table_info(subagent_invocations)").fetchall()}
-            if "agent_display_name" not in existing_cols:
-                conn.execute("ALTER TABLE subagent_invocations ADD COLUMN agent_display_name TEXT")
-            # Force re-index of subagent data so display names get populated
-            conn.execute("DELETE FROM subagent_tools")
-            conn.execute("DELETE FROM subagent_skills")
-            conn.execute("DELETE FROM subagent_commands")
-            conn.execute("DELETE FROM subagent_invocations")
-            conn.execute(
-                "UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1 WHERE subagent_count > 0"
-            )
-
-        if current_version < 21:
-            logger.info("Migrating -> v21: adding join_code to sync_teams")
-            existing_cols = {r[1] for r in conn.execute("PRAGMA table_info(sync_teams)").fetchall()}
-            if "join_code" not in existing_cols:
-                conn.execute("ALTER TABLE sync_teams ADD COLUMN join_code TEXT")
-
-        if current_version < 22:
-            logger.info("Migrating -> v22: sync_members PK from (team,name) to (team,device_id)")
-            lost = conn.execute(
-                "SELECT COUNT(*) FROM sync_members WHERE device_id IS NULL OR device_id = ''"
-            ).fetchone()[0]
-            if lost:
-                logger.warning("Migration v22: dropping %d members with no device_id", lost)
-            conn.execute("DROP TABLE IF EXISTS sync_members_new")
-            conn.execute("""
-                CREATE TABLE sync_members_new (
-                    team_name TEXT NOT NULL,
-                    name TEXT NOT NULL,
-                    device_id TEXT NOT NULL,
-                    added_at TEXT,
-                    PRIMARY KEY (team_name, device_id),
-                    FOREIGN KEY (team_name) REFERENCES sync_teams(name) ON DELETE CASCADE
-                )
-            """)
-            conn.execute("""
-                INSERT OR IGNORE INTO sync_members_new (team_name, name, device_id, added_at)
-                SELECT team_name, name, device_id, added_at
-                FROM sync_members
-                WHERE device_id IS NOT NULL AND device_id != ''
-            """)
-            conn.execute("DROP TABLE sync_members")
-            conn.execute("ALTER TABLE sync_members_new RENAME TO sync_members")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_sync_members_name ON sync_members(team_name, name)")
-
-        if current_version < 23:
-            try:
-                conn.execute(
-                    "ALTER TABLE sync_teams ADD COLUMN sync_session_limit TEXT DEFAULT 'all'"
-                )
-            except sqlite3.OperationalError:
-                pass  # Column already exists
 
     # Record version
     conn.execute(

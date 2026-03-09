@@ -671,26 +671,26 @@ async def sync_reset(options: Optional[ResetOptions] = None) -> Any:
     conn.commit()
     steps["tables_cleared"] = tables_cleared
 
-    # 6. Kill any remaining Syncthing processes
+    # 6. Stop brew service FIRST to deregister launchd plist (prevents respawn),
+    #    then kill any remaining Syncthing processes.
     import subprocess
+    try:
+        r = subprocess.run(
+            ["brew", "services", "stop", "syncthing"],
+            capture_output=True, text=True, timeout=15,
+        )
+        steps["brew_service_stopped"] = r.returncode == 0
+    except Exception:
+        steps["brew_service_stopped"] = False
+
     try:
         subprocess.run(["pkill", "syncthing"], capture_output=True, timeout=5)
         steps["process_killed"] = True
     except Exception:
         steps["process_killed"] = False
 
-    # 7. Optionally full uninstall: stop brew service, uninstall binary, remove config dirs
+    # 7. Optionally full uninstall: uninstall binary, remove config dirs
     if options.uninstall_syncthing:
-        # Stop brew service
-        try:
-            r = subprocess.run(
-                ["brew", "services", "stop", "syncthing"],
-                capture_output=True, text=True, timeout=15,
-            )
-            steps["brew_service_stopped"] = r.returncode == 0
-        except Exception:
-            steps["brew_service_stopped"] = False
-
         # Uninstall via brew
         try:
             r = subprocess.run(
