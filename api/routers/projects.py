@@ -1599,7 +1599,7 @@ async def project_remote_sessions(encoded_name: str):
                         duration_seconds=row["duration_seconds"],
                         models_used=_parse_json_list(row["models_used"]),
                         subagent_count=row["subagent_count"] or 0,
-                        has_todos=False,
+                        has_todos=False,  # Remote sessions don't sync todo data
                         initial_prompt=row["initial_prompt"],
                         git_branches=[row["git_branch"]] if row["git_branch"] else [],
                         session_titles=_parse_json_list(row["session_titles"]),

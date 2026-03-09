@@ -204,8 +204,8 @@ def get_project_mapping() -> dict[tuple[str, str], str]:
                 for user_dir in remote_base.iterdir():
                     if not user_dir.is_dir():
                         continue
-                    user_id = user_dir.name
-                    if user_id == local_user_id:
+                    dir_name = user_dir.name
+                    if dir_name == local_user_id:
                         continue
                     for encoded_dir in user_dir.iterdir():
                         if not encoded_dir.is_dir():
@@ -220,8 +220,8 @@ def get_project_mapping() -> dict[tuple[str, str], str]:
                             if remote_git_id and remote_git_id in git_lookup:
                                 remote_encoded = encoded_dir.name
                                 local_encoded = git_lookup[remote_git_id]
-                                if (user_id, remote_encoded) not in mapping:
-                                    mapping[(user_id, remote_encoded)] = local_encoded
+                                if (dir_name, remote_encoded) not in mapping:
+                                    mapping[(dir_name, remote_encoded)] = local_encoded
                         except (json.JSONDecodeError, OSError):
                             continue
     except Exception as e:

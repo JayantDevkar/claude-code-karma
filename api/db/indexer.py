@@ -343,28 +343,22 @@ def index_remote_sessions(conn: sqlite3.Connection) -> dict:
         except Exception:
             pass
 
-    from services.remote_sessions import _resolve_user_id
-
-    # One-time fixup: correct stale remote_user_id values (e.g. hostname → clean user_id).
-    # Runs cheaply — only when dir_name != resolved_uid for any user directory.
-    for user_dir in remote_base.iterdir():
-        if not user_dir.is_dir():
-            continue
-        dn = user_dir.name
-        ru = _resolve_user_id(user_dir)
-        if dn != ru:
-            updated = conn.execute(
-                "UPDATE sessions SET remote_user_id = ? WHERE remote_user_id = ? AND source = 'remote'",
-                (ru, dn),
-            ).rowcount
-            if updated:
-                logger.info("Corrected remote_user_id '%s' → '%s' for %d sessions", dn, ru, updated)
+    from services.remote_sessions import _load_remote_titles, _resolve_user_id
 
     for user_dir in remote_base.iterdir():
         if not user_dir.is_dir():
             continue
         dir_name = user_dir.name
         resolved_uid = _resolve_user_id(user_dir)
+
+        # Fixup stale remote_user_id values (e.g. hostname → clean user_id)
+        if dir_name != resolved_uid:
+            updated = conn.execute(
+                "UPDATE sessions SET remote_user_id = ? WHERE remote_user_id = ? AND source = 'remote'",
+                (resolved_uid, dir_name),
+            ).rowcount
+            if updated:
+                logger.info("Corrected remote_user_id '%s' → '%s' for %d sessions", dir_name, resolved_uid, updated)
 
         # Skip local user's outbox (check both dir name and resolved id)
         if dir_name == local_user or resolved_uid == local_user:
@@ -385,7 +379,6 @@ def index_remote_sessions(conn: sqlite3.Connection) -> dict:
             classification_overrides = _load_manifest_classifications(encoded_dir)
 
             # Load titles once per (dir_name, project) for remote session title display
-            from services.remote_sessions import _load_remote_titles
             titles_map = _load_remote_titles(dir_name, encoded_name)
 
             # Force re-index when manifest/titles have been updated since last index.
