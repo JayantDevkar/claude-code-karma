@@ -233,6 +233,7 @@ class WatcherManager:
                             log_event(
                                 db, "session_packaged",
                                 team_name=tn, project_encoded_name=en,
+                                member_name=user_id,
                             )
                     except Exception:
                         pass  # Best-effort logging

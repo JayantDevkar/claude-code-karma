@@ -351,6 +351,28 @@ def index_remote_sessions(conn: sqlite3.Connection) -> dict:
         dir_name = user_dir.name
         resolved_uid = _resolve_user_id(user_dir)
 
+        # If resolved_uid still looks like a hostname (contains '.'), try to
+        # find the canonical member name from sync_members by matching device_id.
+        # This handles the case where no manifest.json exists yet (member hasn't
+        # packaged sessions, only received them from us).
+        if "." in resolved_uid:
+            try:
+                from services.syncthing_proxy import get_proxy
+                from utils.async_runner import run_sync
+                proxy = get_proxy()
+                devices = run_sync(proxy.get_devices)
+                for dev in devices:
+                    if dev.get("name") == dir_name or dev.get("name") == resolved_uid:
+                        member_row = conn.execute(
+                            "SELECT name FROM sync_members WHERE device_id = ?",
+                            (dev["device_id"],),
+                        ).fetchone()
+                        if member_row:
+                            resolved_uid = member_row[0]
+                            break
+            except Exception:
+                pass  # Syncthing not running — keep resolved_uid as-is
+
         # Fixup stale remote_user_id values (e.g. hostname → clean user_id)
         if dir_name != resolved_uid:
             updated = conn.execute(

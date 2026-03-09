@@ -12,6 +12,7 @@
 		ExternalLink,
 		Download
 	} from 'lucide-svelte';
+	import { browser } from '$app/environment';
 	import { navigating } from '$app/stores';
 	import { listNavigation } from '$lib/actions/listNavigation';
 	import PageHeader from '$lib/components/layout/PageHeader.svelte';
@@ -25,14 +26,38 @@
 	import SkillUsageCard from '$lib/components/skills/SkillUsageCard.svelte';
 	import SkillUsageTable from '$lib/components/skills/SkillUsageTable.svelte';
 	import UsageAnalytics from '$lib/components/charts/UsageAnalytics.svelte';
+	import MemberUsageGrid from '$lib/components/members/MemberUsageGrid.svelte';
 	import { getSkillGroupColorVars, getSkillCategoryColorVars, getSkillChartHex, cleanSkillName } from '$lib/utils';
 	import type { SkillUsage, StatItem } from '$lib/api-types';
+
+	// The API returns extra fields not in the SkillUsage type
+	interface SkillWithRemote extends SkillUsage {
+		remote_user_ids?: string[];
+	}
 
 	// Server data
 	let { data } = $props();
 
 	// View state — default to "By Category" grouped view
-	let activeView = $state<'groups' | 'table' | 'analytics'>('groups');
+	let activeView = $state<'groups' | 'table' | 'analytics' | 'members'>('groups');
+	const validViews = ['groups', 'table', 'analytics', 'members'] as const;
+
+	// URL state persistence for view mode
+	let viewReady = $state(false);
+	$effect(() => {
+		if (!browser || viewReady) return;
+		const params = new URLSearchParams(window.location.search);
+		const view = params.get('view');
+		if (view && (validViews as readonly string[]).includes(view)) activeView = view as typeof activeView;
+		viewReady = true;
+	});
+	$effect(() => {
+		if (!browser || !viewReady) return;
+		const url = new URL(window.location.href);
+		if (activeView === 'groups') url.searchParams.delete('view');
+		else url.searchParams.set('view', activeView);
+		history.replaceState({}, '', url.toString());
+	});
 
 	// Filter state
 	let searchQuery = $state('');
@@ -51,7 +76,8 @@
 	const viewTabs = [
 		{ label: 'By Category', value: 'groups' },
 		{ label: 'All Skills', value: 'table' },
-		{ label: 'Usage Analytics', value: 'analytics' }
+		{ label: 'Usage Analytics', value: 'analytics' },
+		{ label: 'By Member', value: 'members' }
 	];
 
 	// Compute stats for hero section
@@ -401,11 +427,13 @@
 				options={viewTabs}
 				bind:value={activeView}
 			/>
-			<SegmentedControl options={filterOptions} bind:value={selectedFilter} size="sm" />
+			{#if activeView !== 'members'}
+				<SegmentedControl options={filterOptions} bind:value={selectedFilter} size="sm" />
+			{/if}
 		</div>
 
 		<!-- Search and Expand/Collapse Controls -->
-		{#if activeView !== 'analytics'}
+		{#if activeView !== 'analytics' && activeView !== 'members'}
 			<div class="flex items-center gap-3 w-full sm:w-auto">
 				<!-- Search Input -->
 				<div class="relative flex-1 sm:flex-initial">
@@ -465,7 +493,22 @@
 	</div>
 
 	<!-- Content Area -->
-	{#if activeView === 'analytics'}
+	{#if activeView === 'members'}
+		<!-- By Member View -->
+		<MemberUsageGrid
+			endpoint="/skills/usage/trend"
+			domainLabel="Skills"
+			domainIcon={Wrench}
+			items={(data.usage as SkillWithRemote[] ?? []).map((s) => ({
+				name: s.name,
+				count: s.count,
+				remote_user_ids: s.remote_user_ids
+			}))}
+			itemDisplayFn={(name) => cleanSkillName(name, name.includes(':'))}
+			itemLinkFn={(name) => `/skills/${encodeURIComponent(name)}`}
+			excludeItemFn={excludeFn}
+		/>
+	{:else if activeView === 'analytics'}
 		<!-- Usage Analytics View -->
 		<UsageAnalytics
 			endpoint="/skills/usage/trend"

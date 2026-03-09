@@ -10,9 +10,18 @@
 		Loader2
 	} from 'lucide-svelte';
 	import type { SyncTeamProject, SyncProjectStatus, SyncSessionLimit } from '$lib/api-types';
+	import { getProjectNameFromEncoded } from '$lib/utils';
 	import AddProjectDialog from './AddProjectDialog.svelte';
 	import SessionLimitSelector from './SessionLimitSelector.svelte';
 	import ProjectMemberBar from './ProjectMemberBar.svelte';
+
+	function getProjectDisplayName(project: SyncTeamProject): string {
+		if (project.path) {
+			const segments = project.path.replace(/\/+$/, '').split('/');
+			return segments[segments.length - 1] || project.path;
+		}
+		return getProjectNameFromEncoded(project.encoded_name);
+	}
 
 	interface Props {
 		projects: SyncTeamProject[];
@@ -144,10 +153,10 @@
 								href="/projects/{project.encoded_name}"
 								class="text-sm font-medium text-[var(--text-primary)] hover:text-[var(--accent)] transition-colors truncate block"
 							>
-								{project.name || project.encoded_name}
+								{getProjectDisplayName(project)}
 							</a>
 							{#if project.path}
-								<p class="text-[11px] text-[var(--text-muted)] truncate">{project.path}</p>
+								<p class="text-[11px] text-[var(--text-muted)] truncate font-mono">{project.path}</p>
 							{/if}
 							{#if status}
 								<p class="text-[11px] text-[var(--text-muted)] mt-0.5">
@@ -189,7 +198,7 @@
 								onclick={() => (removeProjectConfirm = project.encoded_name)}
 								class="p-1.5 rounded text-[var(--text-muted)] hover:text-[var(--error)] hover:bg-[var(--error)]/10 transition-colors"
 								title="Remove from team"
-								aria-label="Remove project {project.name || project.encoded_name}"
+								aria-label="Remove project {getProjectDisplayName(project)}"
 							>
 								<Trash2 size={14} />
 							</button>

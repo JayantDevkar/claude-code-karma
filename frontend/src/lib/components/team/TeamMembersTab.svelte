@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { API_BASE } from '$lib/config';
-	import { Wifi, WifiOff, Trash2, Loader2 } from 'lucide-svelte';
+	import { Wifi, WifiOff, Trash2, Loader2, ArrowUpDown } from 'lucide-svelte';
 	import type { SyncTeamMember, SyncDevice, TeamSessionStat } from '$lib/api-types';
 	import { getTeamMemberColor, getTeamMemberHexColor, formatBytes } from '$lib/utils';
 	import MemberSparkline from './MemberSparkline.svelte';
@@ -51,6 +51,17 @@
 		return days;
 	}
 
+	function getMemberSessionTotals(memberName: string): { sent: number; received: number } {
+		let sent = 0;
+		let received = 0;
+		for (const stat of sessionStats) {
+			if (stat.member_name !== memberName) continue;
+			sent += stat.packaged;
+			received += stat.received;
+		}
+		return { sent, received };
+	}
+
 	async function handleRemove(memberName: string) {
 		if (removing) return;
 		removing = true;
@@ -89,93 +100,104 @@
 				{@const inBytes = device?.in_bytes_total ?? member.in_bytes_total ?? 0}
 				{@const outBytes = device?.out_bytes_total ?? member.out_bytes_total ?? 0}
 				{@const sparkline = buildSparklineData(member.name)}
+				{@const totals = getMemberSessionTotals(member.name)}
 				<a
 					href="/members/{encodeURIComponent(member.name)}"
-					class="relative flex flex-col gap-2 p-3 rounded-lg border border-[var(--border)] bg-[var(--bg-base)] hover:border-[var(--accent)]/30 hover:shadow-sm transition-all"
-					style="border-left: 3px solid {colors.border};"
+					class="relative flex flex-col gap-3 p-4 rounded-lg border border-[var(--border)] bg-[var(--bg-base)] hover:border-[var(--accent)]/30 hover:shadow-sm transition-all"
 				>
-					<!-- Top row: name + connection status -->
-					<div class="flex items-center justify-between">
-						<div class="flex items-center gap-2 min-w-0">
-							<span class="text-sm font-medium text-[var(--text-primary)] truncate">
-								{member.name}
-							</span>
-							{#if self}
-								<span
-									class="shrink-0 px-1.5 py-0.5 text-[10px] font-medium rounded {colors.badge}"
-								>
-									You
-								</span>
-							{/if}
-						</div>
-						<span
-							class="flex items-center gap-1 text-xs shrink-0 {connected || self
-								? 'text-[var(--success)]'
-								: 'text-[var(--text-muted)]'}"
+					<!-- Top row: avatar + name + connection status -->
+					<div class="flex items-center gap-3">
+						<!-- Avatar -->
+						<div
+							class="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold shrink-0"
+							style="background: {hexColor}; color: white; box-shadow: 0 0 0 2px {hexColor}33;"
 						>
-							{#if connected || self}
-								<Wifi size={12} />
-								Online
+							{member.name.charAt(0).toUpperCase()}
+						</div>
+
+						<div class="flex-1 min-w-0">
+							<div class="flex items-center gap-2">
+								<span class="text-sm font-medium text-[var(--text-primary)] truncate">
+									{member.name}
+								</span>
+								{#if self}
+									<span
+										class="shrink-0 px-1.5 py-0.5 text-[10px] font-medium rounded {colors.badge}"
+									>
+										You
+									</span>
+								{/if}
+							</div>
+							<span
+								class="flex items-center gap-1 text-[11px] mt-0.5 {connected || self
+									? 'text-[var(--success)]'
+									: 'text-[var(--text-muted)]'}"
+							>
+								{#if connected || self}
+									<Wifi size={11} />
+									Online
+								{:else}
+									<WifiOff size={11} />
+									Offline
+								{/if}
+							</span>
+						</div>
+
+						<!-- Remove button (top-right) -->
+						{#if !self}
+							{#if confirmRemove === member.name}
+								<div class="flex items-center gap-1 shrink-0">
+									<button
+										onclick={(e) => { e.preventDefault(); e.stopPropagation(); handleRemove(member.name); }}
+										disabled={removing}
+										class="px-2 py-1 text-xs font-medium rounded bg-[var(--error)] text-white hover:bg-[var(--error)]/80 transition-colors disabled:opacity-50"
+									>
+										{#if removing}
+											<Loader2 size={12} class="animate-spin" />
+										{:else}
+											Remove
+										{/if}
+									</button>
+									<button
+										onclick={(e) => { e.preventDefault(); e.stopPropagation(); confirmRemove = null; }}
+										class="px-2 py-1 text-xs rounded text-[var(--text-muted)] hover:bg-[var(--bg-muted)] transition-colors"
+									>
+										Cancel
+									</button>
+								</div>
 							{:else}
-								<WifiOff size={12} />
-								Offline
+								<button
+									onclick={(e) => { e.preventDefault(); e.stopPropagation(); confirmRemove = member.name; }}
+									class="p-1 rounded text-[var(--text-muted)] hover:text-[var(--error)] hover:bg-[var(--error)]/10 transition-colors shrink-0"
+									title="Remove member"
+									aria-label="Remove member {member.name}"
+								>
+									<Trash2 size={13} />
+								</button>
 							{/if}
-						</span>
+						{/if}
 					</div>
 
-					<!-- Bottom row: data transfer + sparkline + remove -->
-					<div class="flex items-center justify-between gap-2">
-						<div class="flex items-center gap-3 text-[11px] text-[var(--text-muted)]">
+					<!-- Stats row: sessions + transfer + sparkline -->
+					<div class="flex items-center justify-between gap-3 pt-2 border-t border-[var(--border)]/50">
+						<div class="flex items-center gap-4 text-[11px] text-[var(--text-muted)]">
+							{#if totals.sent > 0 || totals.received > 0}
+								<span class="flex items-center gap-1" title="Sessions shared">
+									<ArrowUpDown size={11} />
+									{totals.sent + totals.received} sessions
+								</span>
+							{/if}
 							{#if inBytes > 0 || outBytes > 0}
-								<span title="Data received">
-									&darr; {formatBytes(inBytes)}
-								</span>
-								<span title="Data sent">
-									&uarr; {formatBytes(outBytes)}
-								</span>
-							{:else}
-								<span>No transfer data</span>
+								<span title="Data received">&darr; {formatBytes(inBytes)}</span>
+								<span title="Data sent">&uarr; {formatBytes(outBytes)}</span>
+							{:else if totals.sent === 0 && totals.received === 0}
+								<span>No activity yet</span>
 							{/if}
 						</div>
 
-						<div class="flex items-center gap-2">
-							{#if sparkline.some((v) => v > 0)}
-								<MemberSparkline data={sparkline} color={hexColor} />
-							{/if}
-
-							{#if !self}
-								{#if confirmRemove === member.name}
-									<div class="flex items-center gap-1">
-										<button
-											onclick={(e) => { e.preventDefault(); e.stopPropagation(); handleRemove(member.name); }}
-											disabled={removing}
-											class="px-2 py-1 text-xs font-medium rounded bg-[var(--error)] text-white hover:bg-[var(--error)]/80 transition-colors disabled:opacity-50"
-										>
-											{#if removing}
-												<Loader2 size={12} class="animate-spin" />
-											{:else}
-												Remove
-											{/if}
-										</button>
-										<button
-											onclick={(e) => { e.preventDefault(); e.stopPropagation(); confirmRemove = null; }}
-											class="px-2 py-1 text-xs rounded text-[var(--text-muted)] hover:bg-[var(--bg-muted)] transition-colors"
-										>
-											Cancel
-										</button>
-									</div>
-								{:else}
-									<button
-										onclick={(e) => { e.preventDefault(); e.stopPropagation(); confirmRemove = member.name; }}
-										class="p-1 rounded text-[var(--text-muted)] hover:text-[var(--error)] hover:bg-[var(--error)]/10 transition-colors"
-										title="Remove member"
-										aria-label="Remove member {member.name}"
-									>
-										<Trash2 size={13} />
-									</button>
-								{/if}
-							{/if}
-						</div>
+						{#if sparkline.some((v) => v > 0)}
+							<MemberSparkline data={sparkline} color={hexColor} />
+						{/if}
 					</div>
 				</a>
 			{/each}

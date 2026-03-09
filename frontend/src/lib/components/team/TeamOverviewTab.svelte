@@ -90,9 +90,9 @@
 	// Stats for StatsGrid
 	let stats = $derived<StatItem[]>([
 		{
-			title: 'Members',
+			title: 'Members (Online)',
 			value: `${onlineCount}/${members.length}`,
-			description: 'online',
+			description: '',
 			icon: Users,
 			color: 'green'
 		},
@@ -106,7 +106,7 @@
 		{
 			title: 'Sessions Shared',
 			value: totalSent + totalReceived,
-			description: `${totalSent} sent / ${totalReceived} received`,
+			description: `${totalSent} sent, ${totalReceived} received`,
 			icon: ArrowUpDown,
 			color: 'accent'
 		}
@@ -225,50 +225,59 @@
 		</section>
 	{/if}
 
-	<!-- Danger Zone -->
-	<section class="pt-4 border-t border-[var(--border)]">
-		<h2 class="text-sm font-semibold text-[var(--error)] mb-3 uppercase tracking-wider">
-			Danger Zone
-		</h2>
-		{#if deleteConfirm}
-			<div class="space-y-2">
-				<div class="flex items-center gap-3 p-4 rounded-lg border border-[var(--error)]/20 bg-[var(--error)]/5">
-					<AlertTriangle size={16} class="text-[var(--error)] shrink-0" />
-					<p class="text-sm text-[var(--text-primary)] flex-1">
-						Leave team "{teamName}"? This will stop syncing with all members and clean up Syncthing folders.
-					</p>
-					<div class="flex items-center gap-2 shrink-0">
-						<button
-							onclick={onleave}
-							disabled={deleting}
-							class="px-3 py-1.5 text-xs font-medium rounded bg-[var(--error)] text-white hover:bg-[var(--error)]/80 transition-colors disabled:opacity-50"
-						>
-							{#if deleting}
-								<Loader2 size={12} class="animate-spin" />
-							{:else}
-								Leave
-							{/if}
-						</button>
-						<button
-							onclick={() => { ondeleteconfirm(false); ondeleteerror(null); }}
-							class="px-3 py-1.5 text-xs rounded text-[var(--text-muted)] hover:bg-[var(--bg-muted)] transition-colors"
-						>
-							Cancel
-						</button>
+	<!-- Danger Zone (bottom, collapsible) -->
+	<section class="mt-12">
+		<details class="group" ontoggle={(e: Event) => { if (!(e.currentTarget as HTMLDetailsElement).open) { ondeleteconfirm(false); ondeleteerror(null); } }}>
+			<summary class="flex items-center gap-2 cursor-pointer select-none text-xs text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors py-2">
+				<span class="w-full border-t border-[var(--border)]/40"></span>
+				<span class="shrink-0 flex items-center gap-1.5 uppercase tracking-wider font-medium">
+					<AlertTriangle size={11} />
+					Danger Zone
+				</span>
+				<span class="w-full border-t border-[var(--border)]/40"></span>
+			</summary>
+			<div class="pt-4">
+				{#if deleteConfirm}
+					<div class="space-y-2">
+						<div class="flex items-center gap-3 p-4 rounded-lg border border-[var(--error)]/20 bg-[var(--error)]/5">
+							<AlertTriangle size={16} class="text-[var(--error)] shrink-0" />
+							<p class="text-sm text-[var(--text-primary)] flex-1">
+								Leave team "{teamName}"? This will stop syncing with all members and clean up Syncthing folders.
+							</p>
+							<div class="flex items-center gap-2 shrink-0">
+								<button
+									onclick={onleave}
+									disabled={deleting}
+									class="px-3 py-1.5 text-xs font-medium rounded bg-[var(--error)] text-white hover:bg-[var(--error)]/80 transition-colors disabled:opacity-50"
+								>
+									{#if deleting}
+										<Loader2 size={12} class="animate-spin" />
+									{:else}
+										Leave
+									{/if}
+								</button>
+								<button
+									onclick={() => { ondeleteconfirm(false); ondeleteerror(null); }}
+									class="px-3 py-1.5 text-xs rounded text-[var(--text-muted)] hover:bg-[var(--bg-muted)] transition-colors"
+								>
+									Cancel
+								</button>
+							</div>
+						</div>
+						{#if deleteError}
+							<p class="text-xs text-[var(--error)]" aria-live="polite">{deleteError}</p>
+						{/if}
 					</div>
-				</div>
-				{#if deleteError}
-					<p class="text-xs text-[var(--error)]" aria-live="polite">{deleteError}</p>
+				{:else}
+					<button
+						onclick={() => ondeleteconfirm(true)}
+						class="px-4 py-2 text-sm font-medium rounded-[var(--radius-md)] border border-[var(--border)]
+							text-[var(--text-muted)] hover:text-[var(--error)] hover:border-[var(--error)]/30 hover:bg-[var(--error)]/5 transition-colors"
+					>
+						Leave Team
+					</button>
 				{/if}
 			</div>
-		{:else}
-			<button
-				onclick={() => ondeleteconfirm(true)}
-				class="px-4 py-2 text-sm font-medium rounded-[var(--radius-md)] border border-[var(--error)]/30
-					text-[var(--error)] hover:bg-[var(--error)]/10 transition-colors"
-			>
-				Leave Team
-			</button>
-		{/if}
+		</details>
 	</section>
 </div>

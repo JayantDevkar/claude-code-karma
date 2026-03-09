@@ -64,9 +64,9 @@
 	// Stats for StatsGrid
 	let stats = $derived<StatItem[]>([
 		{
-			title: 'Sessions',
+			title: 'Sessions (Sent & Received)',
 			value: profile.stats.total_sessions,
-			description: 'sent & received',
+			description: '',
 			icon: Activity,
 			color: 'accent'
 		},
@@ -171,6 +171,11 @@
 	<!-- Stats Row -->
 	<section>
 		<StatsGrid {stats} columns={3} />
+		{#if profile.stats.total_sessions === 0}
+			<p class="text-xs text-[var(--text-muted)] mt-3 text-center">
+				Appears after sync
+			</p>
+		{/if}
 	</section>
 
 	<!-- Sessions Over Time Chart -->

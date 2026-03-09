@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import { FolderGit2, FileText, Loader2, ChevronDown, ChevronRight } from 'lucide-svelte';
 	import { API_BASE } from '$lib/config';
-	import { formatRelativeTime } from '$lib/utils';
+	import { formatRelativeTime, formatBytes, getProjectNameFromEncoded } from '$lib/utils';
 	import type { MemberProfile } from '$lib/api-types';
 
 	interface Props {
@@ -25,6 +25,23 @@
 
 	let { profile }: Props = $props();
 
+	// Build a lookup from profile's team projects (which have proper names from the API)
+	let projectNames = $derived.by(() => {
+		const map = new Map<string, string>();
+		for (const team of profile.teams) {
+			for (const p of team.projects) {
+				if (!map.has(p.encoded_name)) {
+					map.set(p.encoded_name, p.name);
+				}
+			}
+		}
+		return map;
+	});
+
+	function getDisplayName(encodedName: string): string {
+		return projectNames.get(encodedName) || getProjectNameFromEncoded(encodedName);
+	}
+
 	let projects = $state<RemoteProject[]>([]);
 	let loading = $state(true);
 	let error = $state<string | null>(null);
@@ -33,15 +50,6 @@
 	let loadingSessions = $state(new Set<string>());
 
 	let totalSessions = $derived(projects.reduce((sum, p) => sum + p.session_count, 0));
-
-	function formatBytes(bytes: number): string {
-		if (bytes === 0) return '0 B';
-		const units = ['B', 'KB', 'MB', 'GB'];
-		const k = 1024;
-		const i = Math.floor(Math.log(bytes) / Math.log(k));
-		const value = bytes / Math.pow(k, i);
-		return `${value.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
-	}
 
 	async function fetchProjects() {
 		loading = true;
@@ -136,7 +144,7 @@
 							<FolderGit2 size={16} class="text-[var(--text-muted)] shrink-0" />
 							<div class="min-w-0">
 								<span class="text-sm font-medium text-[var(--text-primary)] truncate block">
-									{project.encoded_name}
+									{getDisplayName(project.encoded_name)}
 								</span>
 								{#if project.synced_at}
 									<span class="text-[11px] text-[var(--text-muted)]">

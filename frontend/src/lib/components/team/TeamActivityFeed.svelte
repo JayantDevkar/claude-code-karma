@@ -2,7 +2,7 @@
 	import { Loader2 } from 'lucide-svelte';
 	import type { SyncEvent, SyncTeamMember } from '$lib/api-types';
 	import { formatSyncEvent, syncEventColor, isSyncEventWarning, SYNC_EVENT_META } from '$lib/utils/sync-events';
-	import { getTeamMemberHexColor } from '$lib/utils';
+	import { getTeamMemberHexColor, formatRelativeTime } from '$lib/utils';
 	import { API_BASE } from '$lib/config';
 
 	interface Props {
@@ -37,23 +37,6 @@
 		{ value: 'file_rejected', label: 'Rejections' },
 		{ value: 'settings_changed', label: 'Settings' }
 	];
-
-	function formatEventTime(timestamp: string): string {
-		const date = new Date(timestamp.replace(' ', 'T'));
-		const now = new Date();
-		const diffMs = now.getTime() - date.getTime();
-		const diffSecs = Math.floor(diffMs / 1000);
-		const diffMins = Math.floor(diffSecs / 60);
-		const diffHours = Math.floor(diffMins / 60);
-		const diffDays = Math.floor(diffHours / 24);
-
-		if (diffSecs < 60) return 'just now';
-		if (diffMins < 60) return `${diffMins}m ago`;
-		if (diffHours < 24) return `${diffHours}h ago`;
-		if (diffDays < 7) return `${diffDays}d ago`;
-
-		return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-	}
 
 	function buildParams(): URLSearchParams {
 		const params = new URLSearchParams({ limit: '20' });
@@ -97,6 +80,7 @@
 		filterMember = filterMember === member ? '' : member;
 		fetchEvents();
 	}
+
 </script>
 
 <section class="rounded-lg border border-[var(--border)] bg-[var(--bg-subtle)]">
@@ -185,7 +169,7 @@
 							</p>
 							<div class="flex items-center gap-2 mt-1">
 								<span class="text-[11px] text-[var(--text-muted)]">
-									{formatEventTime(event.created_at)}
+									{formatRelativeTime(event.created_at)}
 								</span>
 								{#if event.event_type && SYNC_EVENT_META[event.event_type]}
 									<span

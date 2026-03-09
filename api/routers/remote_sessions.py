@@ -79,11 +79,39 @@ def _load_manifest_safe(user_id: str, project: str) -> Optional[dict]:
         return None
 
 
+def _resolve_user_dir(user_id: str) -> Optional[Path]:
+    """Resolve a user_id to the actual filesystem directory.
+
+    Tries direct match first, then uses the cached _resolve_user_id() from
+    services to find directories where the manifest user_id matches.
+    """
+    _validate_path_segment(user_id, "user_id")
+    direct = REMOTE_SESSIONS_DIR / user_id
+    if direct.is_dir():
+        return direct
+
+    if not REMOTE_SESSIONS_DIR.is_dir():
+        return None
+
+    # Use cached service-layer resolver: scan dirs and check if their
+    # resolved user_id matches the requested one
+    from services.remote_sessions import _resolve_user_id as resolve_uid
+
+    for candidate in REMOTE_SESSIONS_DIR.iterdir():
+        if not candidate.is_dir() or not _is_safe_dirname(candidate.name):
+            continue
+        if resolve_uid(candidate) == user_id:
+            return candidate
+    return None
+
+
 def _load_manifest(user_id: str, project: str) -> Optional[dict]:
     """Load a manifest.json for a remote user's project (URL param sourced)."""
-    _validate_path_segment(user_id, "user_id")
+    user_dir = _resolve_user_dir(user_id)
+    if not user_dir:
+        return None
     _validate_path_segment(project, "project")
-    manifest_path = REMOTE_SESSIONS_DIR / user_id / project / "manifest.json"
+    manifest_path = user_dir / project / "manifest.json"
     if not manifest_path.exists():
         return None
     try:
@@ -98,12 +126,15 @@ def list_remote_users() -> list[RemoteUser]:
     if not REMOTE_SESSIONS_DIR.is_dir():
         return []
 
+    from services.remote_sessions import _resolve_user_id as resolve_uid
+
     local_user = _get_local_user_id()
     users = []
     for user_dir in sorted(REMOTE_SESSIONS_DIR.iterdir()):
         if not user_dir.is_dir() or not _is_safe_dirname(user_dir.name):
             continue
-        if user_dir.name == local_user:
+        resolved_id = resolve_uid(user_dir)
+        if user_dir.name == local_user or resolved_id == local_user:
             continue
         project_count = 0
         total_sessions = 0
@@ -116,7 +147,7 @@ def list_remote_users() -> list[RemoteUser]:
                 total_sessions += manifest.get("session_count", 0)
         users.append(
             RemoteUser(
-                user_id=user_dir.name,
+                user_id=resolved_id,
                 project_count=project_count,
                 total_sessions=total_sessions,
             )
@@ -127,16 +158,15 @@ def list_remote_users() -> list[RemoteUser]:
 @router.get("/users/{user_id}/projects", response_model=list[RemoteProject])
 def list_user_projects(user_id: str) -> list[RemoteProject]:
     """List projects synced by a remote user."""
-    _validate_path_segment(user_id, "user_id")
-    user_dir = REMOTE_SESSIONS_DIR / user_id
-    if not user_dir.is_dir():
+    user_dir = _resolve_user_dir(user_id)
+    if not user_dir:
         raise HTTPException(status_code=404, detail=f"User '{user_id}' not found")
 
     projects = []
     for proj_dir in sorted(user_dir.iterdir()):
         if not proj_dir.is_dir():
             continue
-        manifest = _load_manifest_safe(user_id, proj_dir.name)
+        manifest = _load_manifest_safe(user_dir.name, proj_dir.name)
         projects.append(
             RemoteProject(
                 encoded_name=proj_dir.name,

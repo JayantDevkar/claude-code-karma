@@ -216,59 +216,55 @@
 </script>
 
 <div class="space-y-6">
-	<!-- Chart section -->
-	<div class="rounded-lg border border-[var(--border)] bg-[var(--bg-subtle)] p-4">
-		<!-- Header with period selector -->
-		<div class="flex items-center justify-between mb-4">
-			<h3 class="text-sm font-medium text-[var(--text-primary)]">Sessions Over Time</h3>
-			<div class="flex items-center gap-1">
-				{#each periods as period}
-					<button
-						class="px-2.5 py-1 text-xs font-medium rounded-full {selectedPeriod === period.days
-							? 'bg-[var(--accent)] text-white'
-							: 'text-[var(--text-secondary)] hover:bg-[var(--bg-muted)]'}"
-						onclick={() => selectPeriod(period.days)}
-					>
-						{period.label}
-					</button>
-				{/each}
+	<!-- Chart section (only shown when there's data) -->
+	{#if activeStats.length > 0}
+		<div class="rounded-lg border border-[var(--border)] bg-[var(--bg-subtle)] p-4">
+			<!-- Header with period selector -->
+			<div class="flex items-center justify-between mb-4">
+				<h3 class="text-sm font-medium text-[var(--text-primary)]">Sessions Over Time</h3>
+				<div class="flex items-center gap-1">
+					{#each periods as period}
+						<button
+							class="px-2.5 py-1 text-xs font-medium rounded-full {selectedPeriod === period.days
+								? 'bg-[var(--accent)] text-white'
+								: 'text-[var(--text-secondary)] hover:bg-[var(--bg-muted)]'}"
+							onclick={() => selectPeriod(period.days)}
+						>
+							{period.label}
+						</button>
+					{/each}
+				</div>
 			</div>
-		</div>
 
-		<!-- Chart -->
-		{#if activeStats.length === 0}
-			<div class="h-[220px] flex items-center justify-center">
-				<p class="text-sm text-[var(--text-muted)]">No session data yet — chart will appear once sessions are packaged or received</p>
-			</div>
-		{:else}
+			<!-- Chart -->
 			<div class="h-[220px]">
 				<canvas bind:this={canvas}></canvas>
 			</div>
-		{/if}
 
-		<!-- Member filter chips -->
-		{#if allMembers.length > 0}
-			<div class="border-t border-[var(--border)] mt-4 pt-3 flex flex-wrap gap-2">
-				{#each allMembers as member}
-					{@const hex = getTeamMemberHexColor(member)}
-					{@const active = visibleMembers.has(member)}
-					<button
-						class="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-full border transition-opacity {active
-							? 'opacity-100'
-							: 'opacity-50 border-[var(--border)] text-[var(--text-muted)]'}"
-						style={active ? `border-color: ${hex}; color: ${hex}` : ''}
-						onclick={() => toggleMember(member)}
-					>
-						<span
-							class="w-2 h-2 rounded-full shrink-0"
-							style="background-color: {hex}"
-						></span>
-						{getUserChartLabel(member, userNames)}
-					</button>
-				{/each}
-			</div>
-		{/if}
-	</div>
+			<!-- Member filter chips -->
+			{#if allMembers.length > 0}
+				<div class="border-t border-[var(--border)] mt-4 pt-3 flex flex-wrap gap-2">
+					{#each allMembers as member}
+						{@const hex = getTeamMemberHexColor(member)}
+						{@const active = visibleMembers.has(member)}
+						<button
+							class="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-full border transition-opacity {active
+								? 'opacity-100'
+								: 'opacity-50 border-[var(--border)] text-[var(--text-muted)]'}"
+							style={active ? `border-color: ${hex}; color: ${hex}` : ''}
+							onclick={() => toggleMember(member)}
+						>
+							<span
+								class="w-2 h-2 rounded-full shrink-0"
+								style="background-color: {hex}"
+							></span>
+							{getUserChartLabel(member, userNames)}
+						</button>
+					{/each}
+				</div>
+			{/if}
+		</div>
+	{/if}
 
 	<!-- Activity feed -->
 	<TeamActivityFeed events={activity} {teamName} {members} />

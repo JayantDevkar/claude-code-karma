@@ -83,11 +83,16 @@
 		{className}
 	"
 >
-	<!-- Label at top with optional description in brackets -->
-	<div class="text-xs uppercase tracking-wider font-semibold text-[var(--text-muted)] mb-3">
-		{title}{#if description}<span class="normal-case tracking-normal font-normal">
-				({description})</span
-			>{/if}
+	<!-- Label at top with optional description on second line -->
+	<div class="mb-3">
+		<div class="text-xs uppercase tracking-wider font-semibold text-[var(--text-muted)]">
+			{title}
+		</div>
+		{#if description}
+			<div class="text-xs text-[var(--text-muted)] mt-1 font-normal tracking-normal">
+				{description}
+			</div>
+		{/if}
 	</div>
 
 	<!-- Icon + Value aligned -->

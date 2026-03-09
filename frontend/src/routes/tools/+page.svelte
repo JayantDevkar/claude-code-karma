@@ -10,6 +10,7 @@
 		ExternalLink,
 		Puzzle
 	} from 'lucide-svelte';
+	import { browser } from '$app/environment';
 	import { navigating } from '$app/stores';
 	import { listNavigation } from '$lib/actions/listNavigation';
 	import PageHeader from '$lib/components/layout/PageHeader.svelte';
@@ -26,19 +27,39 @@
 	import McpContextBar from '$lib/components/tools/McpContextBar.svelte';
 	import { getServerColorVars, getToolItemChartHex, parseBuiltinTool, parseMcpTool } from '$lib/utils/mcp';
 	import UsageAnalytics from '$lib/components/charts/UsageAnalytics.svelte';
+	import MemberUsageGrid from '$lib/components/members/MemberUsageGrid.svelte';
 	import type { McpServer, StatItem } from '$lib/api-types';
 
 	let { data } = $props();
 
 	// Client-side filter state
 	let searchQuery = $state('');
-	let viewMode = $state<'servers' | 'tools' | 'analytics'>('servers');
+	let viewMode = $state<'servers' | 'tools' | 'analytics' | 'members'>('servers');
 	let sourceFilter = $state<'all' | 'plugin' | 'standalone' | 'builtin'>('all');
+	const validViews = ['servers', 'tools', 'analytics', 'members'] as const;
+
+	// URL state persistence for view mode
+	let viewReady = $state(false);
+	$effect(() => {
+		if (!browser || viewReady) return;
+		const params = new URLSearchParams(window.location.search);
+		const view = params.get('view');
+		if (view && (validViews as readonly string[]).includes(view)) viewMode = view as typeof viewMode;
+		viewReady = true;
+	});
+	$effect(() => {
+		if (!browser || !viewReady) return;
+		const url = new URL(window.location.href);
+		if (viewMode === 'servers') url.searchParams.delete('view');
+		else url.searchParams.set('view', viewMode);
+		history.replaceState({}, '', url.toString());
+	});
 
 	const viewOptions = [
 		{ label: 'By Server', value: 'servers' },
 		{ label: 'All Tools', value: 'tools' },
-		{ label: 'Usage Analytics', value: 'analytics' }
+		{ label: 'Usage Analytics', value: 'analytics' },
+		{ label: 'By Member', value: 'members' }
 	];
 
 	const sourceOptions = [
@@ -301,10 +322,12 @@
 	>
 		<div class="flex items-center gap-3 flex-wrap">
 			<SegmentedControl options={viewOptions} bind:value={viewMode} />
-			<SegmentedControl options={sourceOptions} bind:value={sourceFilter} size="sm" />
+			{#if viewMode !== 'members'}
+				<SegmentedControl options={sourceOptions} bind:value={sourceFilter} size="sm" />
+			{/if}
 		</div>
 
-		{#if viewMode !== 'analytics'}
+		{#if viewMode !== 'analytics' && viewMode !== 'members'}
 			<div class="flex items-center gap-3 w-full sm:w-auto">
 				<div class="relative flex-1 sm:flex-initial">
 					<Search
@@ -361,26 +384,14 @@
 	</div>
 
 	<!-- Content -->
-	{#if !hasServers}
-		<div
-			class="text-center py-20 bg-[var(--bg-subtle)] rounded-2xl border border-dashed border-[var(--border)]"
-		>
-			<Wrench class="mx-auto text-[var(--text-muted)] mb-3" size={48} />
-			<p class="text-[var(--text-secondary)] font-medium">No tools found</p>
-			<p class="text-sm text-[var(--text-muted)] mt-1">
-				Tool usage will appear here once you start using Claude Code
-			</p>
-		</div>
-	{:else if !hasFiltered}
-		<div
-			class="text-center py-20 bg-[var(--bg-subtle)] rounded-2xl border border-dashed border-[var(--border)]"
-		>
-			<Search class="mx-auto text-[var(--text-muted)] mb-3" size={48} />
-			<p class="text-[var(--text-secondary)] font-medium">No matching servers</p>
-			<p class="text-sm text-[var(--text-muted)] mt-1">
-				Try adjusting your search or source filter
-			</p>
-		</div>
+	{#if viewMode === 'members'}
+		<!-- By Member View -->
+		<MemberUsageGrid
+			endpoint="/tools/usage/trend"
+			domainLabel="Tools"
+			domainIcon={Wrench}
+			excludeItemFn={excludeFn}
+		/>
 	{:else if viewMode === 'analytics'}
 		<!-- Usage Analytics View -->
 		<UsageAnalytics
@@ -409,6 +420,26 @@
 				return name.replaceAll('_', ' ');
 			}}
 		/>
+	{:else if !hasServers}
+		<div
+			class="text-center py-20 bg-[var(--bg-subtle)] rounded-2xl border border-dashed border-[var(--border)]"
+		>
+			<Wrench class="mx-auto text-[var(--text-muted)] mb-3" size={48} />
+			<p class="text-[var(--text-secondary)] font-medium">No tools found</p>
+			<p class="text-sm text-[var(--text-muted)] mt-1">
+				Tool usage will appear here once you start using Claude Code
+			</p>
+		</div>
+	{:else if !hasFiltered}
+		<div
+			class="text-center py-20 bg-[var(--bg-subtle)] rounded-2xl border border-dashed border-[var(--border)]"
+		>
+			<Search class="mx-auto text-[var(--text-muted)] mb-3" size={48} />
+			<p class="text-[var(--text-secondary)] font-medium">No matching servers</p>
+			<p class="text-sm text-[var(--text-muted)] mt-1">
+				Try adjusting your search or source filter
+			</p>
+		</div>
 	{:else if viewMode === 'tools'}
 		<!-- Flat Table View -->
 		<McpToolTable servers={filteredServers} />

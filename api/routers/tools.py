@@ -7,6 +7,7 @@ powered by SQLite session_tools and subagent_tools tables.
 
 import logging
 import sqlite3
+from collections import defaultdict
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -284,11 +285,28 @@ def get_mcp_tool_usage_trend(
                     ]
                 # No limit — frontend handles top-N display
 
+                # Merge trend_by_user: sum counts per date across both sources
+                merged_by_user: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+                for source in (mcp_data, builtin_data):
+                    for user_id, points in source.get("trend_by_user", {}).items():
+                        for pt in points:
+                            merged_by_user[user_id][pt["date"]] += pt["count"]
+                merged_trend_by_user = {
+                    uid: [{"date": d, "count": c} for d, c in sorted(date_counts.items())]
+                    for uid, date_counts in merged_by_user.items()
+                }
+                merged_user_names = {
+                    **mcp_data.get("user_names", {}),
+                    **builtin_data.get("user_names", {}),
+                }
+
                 return UsageTrendResponse(
                     total=mcp_data["total"] + builtin_data["total"],
                     by_item=merged_by_item,
                     trend=[UsageTrendItem(**t) for t in merged_trend],
                     trend_by_item=merged_trend_by_item,
+                    trend_by_user=merged_trend_by_user,
+                    user_names=merged_user_names,
                     first_used=min(firsts) if firsts else None,
                     last_used=max(lasts) if lasts else None,
                 )
