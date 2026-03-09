@@ -77,7 +77,7 @@
 			);
 			if (res.ok) {
 				const data = await res.json();
-				loadedStats = data;
+				loadedStats = data.stats ?? [];
 				// Reset visible members so the effect re-initializes
 				visibleMembers = new Set<string>();
 			}

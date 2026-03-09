@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { SyncTeamProject } from '$lib/api-types';
-	import { getTeamMemberHexColor, getUserChartLabel } from '$lib/utils';
+	import { getTeamMemberHexColor, getUserChartLabel, LOCAL_USER_HEX } from '$lib/utils';
 
 	interface Props {
 		project: SyncTeamProject;
@@ -30,7 +30,7 @@
 			result.push({
 				name: 'You',
 				count: project.local_count,
-				color: '#7c3aed',
+				color: LOCAL_USER_HEX,
 				pct: Math.max(2, (project.local_count / total) * 100)
 			});
 		}

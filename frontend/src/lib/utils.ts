@@ -746,14 +746,14 @@ const TEAM_HEX_COLORS: Record<string, string> = {
 	lime: '#84cc16',
 	indigo: '#6366f1',
 	teal: '#14b8a6',
-	sky: '#38bdf8',
-	violet: '#8b5cf6',
-	emerald: '#34d399',
-	orange: '#fb923c',
-	fuchsia: '#d946ef',
-	slate: '#94a3b8',
-	gold: '#facc15',
-	ruby: '#e11d48'
+	sky: '#0ea5e9',
+	violet: '#7c3aed',
+	emerald: '#10b981',
+	orange: '#f97316',
+	fuchsia: '#c026d3',
+	slate: '#64748b',
+	gold: '#eab308',
+	ruby: '#be123c'
 };
 
 /** Accent purple used for local user in charts */
