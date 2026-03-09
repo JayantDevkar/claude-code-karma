@@ -537,7 +537,10 @@ def _query_item_usage(
             {count_expr}
             COUNT(DISTINCT {alias}.session_uuid) as session_count,
             MAX(s.end_time) as last_used,
-            GROUP_CONCAT(DISTINCT {alias}.invocation_source) as invocation_sources
+            GROUP_CONCAT(DISTINCT {alias}.invocation_source) as invocation_sources,
+            SUM(CASE WHEN s.source = 'remote' THEN {alias}.count ELSE 0 END) as remote_count,
+            SUM(CASE WHEN s.source != 'remote' THEN {alias}.count ELSE 0 END) as local_count,
+            GROUP_CONCAT(DISTINCT CASE WHEN s.source = 'remote' THEN s.remote_user_id END) as remote_user_ids
         FROM {table} {alias}
         JOIN sessions s ON {alias}.session_uuid = s.uuid
         {_where}

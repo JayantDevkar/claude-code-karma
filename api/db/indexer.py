@@ -441,6 +441,18 @@ def index_remote_sessions(conn: sqlite3.Connection) -> dict:
                     )
                     stats["indexed"] += 1
 
+                    # Extract skill definitions from this remote session (best-effort).
+                    # Only runs for newly-indexed sessions to avoid redundant work.
+                    if uuid not in db_mtimes:
+                        _extract_skill_definitions_from_session(
+                            conn,
+                            jsonl_path,
+                            source_user_id=user_id,
+                            source_machine_id=user_id,
+                            session_uuid=uuid,
+                            claude_base_dir=encoded_dir,
+                        )
+
                     # Log session_received only for truly new sessions (not re-index)
                     if uuid not in db_mtimes:
                         try:
@@ -550,10 +562,61 @@ def _index_session(
     skills_mentioned = session.get_skills_mentioned()
     commands_used = session.get_commands_used()
 
+    # Build JSONL-extracted category map by scanning messages for
+    # "Base directory for this skill:" lines (secondary override source).
+    # Priority: manifest override > JSONL-path category > local classify_invocation()
+    jsonl_categories: dict[str, str] = {}
+    try:
+        from models.message import AssistantMessage as _AM, UserMessage as _UM
+        from models.content import ToolUseBlock as _TUB
+
+        _msgs = list(session.iter_messages())
+        for _i, _msg in enumerate(_msgs):
+            if not isinstance(_msg, _AM):
+                continue
+            for _blk in _msg.content_blocks:
+                if not (isinstance(_blk, _TUB) and _blk.name == "Skill" and _blk.input):
+                    continue
+                _sn = _blk.input.get("skill")
+                if not _sn:
+                    continue
+                for _j in range(_i + 1, min(_i + 3, len(_msgs))):
+                    _nm = _msgs[_j]
+                    if not isinstance(_nm, _UM):
+                        continue
+                    _nc = _nm.content or ""
+                    if "Base directory for this skill:" not in _nc:
+                        continue
+                    try:
+                        _marker = "Base directory for this skill:"
+                        _idx = _nc.index(_marker)
+                        _after = _nc[_idx + len(_marker):]
+                        _lines = _after.strip().splitlines()
+                        if _lines:
+                            _bd = _lines[0].strip()
+                            _cat = _category_from_base_directory(_bd)
+                            if _cat:
+                                jsonl_categories[_sn] = _cat
+                    except (ValueError, IndexError):
+                        pass
+                    break
+    except Exception as _e:
+        logger.debug("Error extracting JSONL categories for %s: %s", uuid, _e)
+
     # Reclassify skills/commands using manifest overrides (remote sessions only).
     # The local classify_invocation() may get colon-format names wrong when the
     # plugin isn't installed locally (defaults to "plugin_skill"). The manifest
     # carries the correct classification from the exporting machine.
+    # Apply JSONL-extracted categories first (lower priority than manifest).
+    if jsonl_categories and not classification_overrides:
+        # No manifest — use JSONL-path categories alone
+        classification_overrides = jsonl_categories
+    elif jsonl_categories and classification_overrides:
+        # Merge: manifest takes precedence, JSONL fills gaps
+        merged = dict(jsonl_categories)
+        merged.update(classification_overrides)
+        classification_overrides = merged
+
     if classification_overrides:
         from command_helpers import is_command_category, is_skill_category
 
@@ -829,6 +892,142 @@ def _index_session(
                     )
         except Exception as e:
             logger.warning("Error indexing subagent invocations for %s: %s", uuid, e)
+
+
+def _category_from_base_directory(base_dir: str) -> Optional[str]:
+    """Infer skill category from a 'Base directory for this skill:' path."""
+    if "/skills/" in base_dir:
+        return "custom_skill"
+    if "/commands/" in base_dir:
+        return "user_command"
+    if "/plugins/cache/" in base_dir:
+        return "plugin_skill"
+    return None
+
+
+def _parse_yaml_description(content: str) -> Optional[str]:
+    """Extract description field from YAML frontmatter (between --- markers)."""
+    try:
+        if not content.startswith("---"):
+            return None
+        end = content.index("---", 3)
+        frontmatter = content[3:end].strip()
+        for line in frontmatter.splitlines():
+            if line.startswith("description:"):
+                return line[len("description:"):].strip().strip('"').strip("'")
+    except (ValueError, IndexError):
+        pass
+    return None
+
+
+def _extract_skill_definitions_from_session(
+    conn: sqlite3.Connection,
+    jsonl_path: Path,
+    source_user_id: Optional[str],
+    source_machine_id: Optional[str],
+    session_uuid: str,
+    claude_base_dir: Optional[Path] = None,
+) -> None:
+    """Extract skill definitions (content + metadata) from a session's JSONL messages.
+
+    Scans Skill tool invocations in AssistantMessages, then looks at the next
+    UserMessage for 'Base directory for this skill:' injected by Claude Code.
+    Upserts new definitions into skill_definitions; skips if already present.
+
+    Best-effort: all errors are logged as warnings, never raised.
+    """
+    try:
+        from models import Session
+        from models.message import AssistantMessage, UserMessage
+        from models.content import ToolUseBlock
+
+        session = Session.from_path(jsonl_path, claude_base_dir=claude_base_dir)
+
+        # Collect messages into a list for adjacent-message lookahead
+        messages = list(session.iter_messages())
+
+        for i, msg in enumerate(messages):
+            if not isinstance(msg, AssistantMessage):
+                continue
+
+            for block in msg.content_blocks:
+                if not (isinstance(block, ToolUseBlock) and block.name == "Skill" and block.input):
+                    continue
+
+                skill_name = block.input.get("skill")
+                if not skill_name:
+                    continue
+
+                # Check if definition already exists for this (skill_name, source_user_id)
+                existing = conn.execute(
+                    "SELECT 1 FROM skill_definitions WHERE skill_name = ? AND COALESCE(source_user_id, '__local__') = COALESCE(?, '__local__')",
+                    (skill_name, source_user_id),
+                ).fetchone()
+                if existing:
+                    continue
+
+                # Look ahead for the next UserMessage with the base directory marker
+                base_dir: Optional[str] = None
+                content_text: Optional[str] = None
+                description: Optional[str] = None
+                category: Optional[str] = None
+
+                for j in range(i + 1, min(i + 3, len(messages))):
+                    next_msg = messages[j]
+                    if not isinstance(next_msg, UserMessage):
+                        continue
+                    next_content = next_msg.content or ""
+                    if "Base directory for this skill:" not in next_content:
+                        continue
+
+                    try:
+                        marker = "Base directory for this skill:"
+                        idx = next_content.index(marker)
+                        after = next_content[idx + len(marker):]
+                        lines = after.strip().splitlines()
+                        if lines:
+                            base_dir = lines[0].strip()
+                            # Everything after the first line is the skill content
+                            if len(lines) > 1:
+                                content_text = "\n".join(lines[1:]).strip() or None
+                    except (ValueError, IndexError):
+                        pass
+
+                    if base_dir:
+                        category = _category_from_base_directory(base_dir)
+                        if content_text:
+                            description = _parse_yaml_description(content_text)
+                    break
+
+                if category is None:
+                    # Can't determine category from path — skip storing (not enough info)
+                    continue
+
+                conn.execute(
+                    """
+                    INSERT INTO skill_definitions
+                        (skill_name, source_user_id, source_machine_id, category,
+                         content, base_directory, description, extracted_from_session,
+                         updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                    ON CONFLICT(skill_name, COALESCE(source_user_id, '__local__')) DO NOTHING
+                    """,
+                    (
+                        skill_name,
+                        source_user_id,
+                        source_machine_id,
+                        category,
+                        content_text,
+                        base_dir,
+                        description,
+                        session_uuid,
+                    ),
+                )
+
+    except Exception as e:
+        logger.warning(
+            "Error extracting skill definitions from session %s: %s", session_uuid, e
+        )
 
 
 def _detect_project_path(session, encoded_name: str) -> Optional[str]:

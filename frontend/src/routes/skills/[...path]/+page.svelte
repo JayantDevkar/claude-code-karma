@@ -11,13 +11,17 @@
 		Clock,
 		HardDrive,
 		Puzzle,
-		ExternalLink
+		ExternalLink,
+		Globe,
+		Download
 	} from 'lucide-svelte';
 	import { marked } from 'marked';
 	import DOMPurify from 'isomorphic-dompurify';
 	import { formatDistanceToNow } from 'date-fns';
 	import PageHeader from '$lib/components/layout/PageHeader.svelte';
+	import InheritModal from '$lib/components/shared/InheritModal.svelte';
 	import { API_BASE } from '$lib/config';
+	import type { RemoteDefinition } from '$lib/api-types';
 
 	interface Breadcrumb {
 		label: string;
@@ -31,6 +35,8 @@
 		content: string;
 		size_bytes: number;
 		modified_at: string;
+		remote_definition?: RemoteDefinition | null;
+		is_remote_only?: boolean;
 	}
 
 	let path = $derived($page.params.path ?? '');
@@ -40,6 +46,7 @@
 	let error = $state<string | null>(null);
 	let copied = $state(false);
 	let viewMode = $state<'code' | 'preview'>('preview');
+	let inheritModalOpen = $state(false);
 
 	// Detect plugin skills (path contains ':' like "oh-my-claudecode:autopilot")
 	let isPluginSkill = $derived(path.includes(':'));
@@ -212,6 +219,46 @@
 		</div>
 	{/if}
 
+	<!-- Remote origin banner -->
+	{#if skill?.remote_definition}
+		<div
+			class="flex items-center justify-between gap-4 px-5 py-4 rounded-xl border border-[var(--info)]/30 bg-[var(--info-subtle)]"
+		>
+			<div class="flex items-center gap-3 min-w-0">
+				<Globe size={18} class="text-[var(--info)] shrink-0" />
+				<div class="min-w-0">
+					<p class="text-sm font-medium text-[var(--info)]">
+						This skill is from <span class="font-semibold">{skill.remote_definition.source_user_id}</span>'s machine
+					</p>
+					{#if skill.remote_definition.description}
+						<p class="text-xs text-[var(--text-muted)] mt-0.5 truncate">{skill.remote_definition.description}</p>
+					{/if}
+				</div>
+			</div>
+			<button
+				onclick={() => (inheritModalOpen = true)}
+				class="
+					shrink-0 inline-flex items-center gap-2 px-4 py-2
+					text-sm font-medium
+					text-[var(--bg-base)] bg-[var(--info)] hover:opacity-90
+					rounded-lg transition-all active:scale-95
+				"
+			>
+				<Download size={15} />
+				Inherit Skill
+			</button>
+		</div>
+	{:else if skill?.is_remote_only}
+		<div
+			class="flex items-center gap-3 px-5 py-4 rounded-xl border border-[var(--border)] bg-[var(--bg-subtle)]"
+		>
+			<Globe size={18} class="text-[var(--text-muted)] shrink-0" />
+			<p class="text-sm text-[var(--text-muted)]">
+				Skill definition not available — used in remote sessions but content not yet extracted
+			</p>
+		</div>
+	{/if}
+
 	{#if error}
 		<div
 			class="p-4 bg-[var(--error-subtle)] text-[var(--error)] rounded-lg text-sm border border-[var(--error)]/30"
@@ -251,3 +298,18 @@
 		</div>
 	{/if}
 </div>
+
+<!-- Inherit Modal -->
+{#if skill?.remote_definition}
+	<InheritModal
+		open={inheritModalOpen}
+		itemName={skill.name}
+		itemType="skill"
+		content={skill.remote_definition.content}
+		sourceUserId={skill.remote_definition.source_user_id}
+		onClose={() => (inheritModalOpen = false)}
+		onInherited={(result) => {
+			inheritModalOpen = false;
+		}}
+	/>
+{/if}

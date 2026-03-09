@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Play, Clock, MessageSquare } from 'lucide-svelte';
+	import { Play, Clock, MessageSquare, Globe } from 'lucide-svelte';
 	import { formatDistanceToNow } from 'date-fns';
 	import type { Snippet } from 'svelte';
 	import Badge from '$lib/components/ui/Badge.svelte';
@@ -25,6 +25,8 @@
 		description?: string | null;
 		lastUsed?: string | null;
 		sessionCount?: number | null;
+		isRemoteOnly?: boolean;
+		remoteUserIds?: string[];
 		icon: Snippet;
 		subheader?: Snippet;
 		class?: string;
@@ -42,6 +44,8 @@
 		description = null,
 		lastUsed = null,
 		sessionCount = null,
+		isRemoteOnly = false,
+		remoteUserIds = [],
 		icon,
 		subheader,
 		class: className = ''
@@ -81,6 +85,11 @@
 		</div>
 		<div class="flex items-center gap-2">
 			<TierBadge {tier} />
+			{#if isRemoteOnly}
+				<Badge variant="info" size="sm" rounded="full" icon={Globe}>
+					Remote
+				</Badge>
+			{/if}
 			<Badge variant={badgeVariant} size="sm" rounded="full">
 				{categoryLabel}
 			</Badge>

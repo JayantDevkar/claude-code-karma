@@ -1859,3 +1859,22 @@ export interface RemoteSession {
 	mtime: number;
 	size_bytes: number;
 }
+
+// ============================================
+// Remote / Inherit
+// ============================================
+
+export interface RemoteDefinition {
+	content: string;
+	category: string;
+	source_user_id: string;
+	base_directory: string;
+	description: string | null;
+}
+
+export interface InheritResult {
+	status: string;
+	path: string;
+	skill_name: string;
+	scope: string;
+}

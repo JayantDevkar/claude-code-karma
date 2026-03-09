@@ -11,7 +11,7 @@ import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
@@ -214,6 +214,12 @@ def get_command_usage(
             cmd_name = row["command_name"]
             is_plugin = ":" in cmd_name
             plugin_name = cmd_name.split(":")[0] if is_plugin else None
+            remote_count = row.get("remote_count") or 0
+            local_count = row.get("local_count") or 0
+            raw_remote_ids = row.get("remote_user_ids") or ""
+            remote_user_ids = (
+                [uid for uid in raw_remote_ids.split(",") if uid] if raw_remote_ids else []
+            )
             results.append(
                 {
                     "name": cmd_name,
@@ -224,6 +230,10 @@ def get_command_usage(
                     "description": get_command_description(cmd_name),
                     "is_plugin": is_plugin,
                     "plugin": plugin_name,
+                    "remote_count": remote_count,
+                    "local_count": local_count,
+                    "remote_user_ids": remote_user_ids,
+                    "is_remote_only": local_count == 0 and remote_count > 0,
                 }
             )
         return results
@@ -475,3 +485,59 @@ async def get_command_info(
         plugin=None,
         file_path=str(command_file),
     )
+
+
+@router.post("/commands/{command_name}/inherit")
+async def inherit_command(
+    command_name: str,
+    scope: Annotated[str, Query(..., pattern="^(user|project)$")],
+    project_encoded_name: Annotated[Optional[str], Query()] = None,
+) -> dict:
+    """
+    Inherit a remote command by creating the .md file locally.
+
+    scope: "user"    -> ~/.claude/commands/{name}.md
+    scope: "project" -> {project_path}/.claude/commands/{name}.md
+    """
+    _validate_command_name(command_name)
+
+    from db.connection import sqlite_read
+
+    # 1. Get the command content from skill_definitions
+    with sqlite_read() as conn:
+        if conn is None:
+            raise HTTPException(status_code=503, detail="Database unavailable")
+        row = conn.execute(
+            "SELECT content, category, description FROM skill_definitions"
+            " WHERE skill_name = ? AND source_user_id IS NOT NULL"
+            " ORDER BY updated_at DESC LIMIT 1",
+            (command_name,),
+        ).fetchone()
+
+    if not row or not row["content"]:
+        raise HTTPException(status_code=404, detail="No remote command definition found for this command")
+
+    content = row["content"]
+
+    # 2. Determine target path
+    if scope == "user":
+        target_file = settings.commands_dir / f"{command_name}.md"
+    else:  # project
+        if not project_encoded_name:
+            raise HTTPException(status_code=400, detail="project_encoded_name required for project scope")
+        from models.project import Project
+
+        project_path = Project.decode_path(project_encoded_name)
+        target_file = Path(project_path) / ".claude" / "commands" / f"{command_name}.md"
+
+    # 3. Verify resolved path stays under intended base (defense-in-depth)
+    target_file = target_file.resolve()
+
+    if target_file.exists():
+        raise HTTPException(status_code=409, detail=f"Command file already exists at {target_file}")
+
+    target_file.parent.mkdir(parents=True, exist_ok=True)
+    target_file.write_text(content)
+
+    logger.info("Inherited remote command %r to %s", command_name, target_file)
+    return {"status": "created", "path": str(target_file), "command_name": command_name, "scope": scope}
