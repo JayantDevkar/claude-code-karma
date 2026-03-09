@@ -688,7 +688,15 @@ const TEAM_MEMBER_PALETTE = [
 	'pink',
 	'lime',
 	'indigo',
-	'teal'
+	'teal',
+	'sky',
+	'violet',
+	'emerald',
+	'orange',
+	'fuchsia',
+	'slate',
+	'gold',
+	'ruby'
 ] as const;
 
 type TeamColor = (typeof TEAM_MEMBER_PALETTE)[number];
@@ -737,7 +745,15 @@ const TEAM_HEX_COLORS: Record<string, string> = {
 	pink: '#ec4899',
 	lime: '#84cc16',
 	indigo: '#6366f1',
-	teal: '#14b8a6'
+	teal: '#14b8a6',
+	sky: '#38bdf8',
+	violet: '#8b5cf6',
+	emerald: '#34d399',
+	orange: '#fb923c',
+	fuchsia: '#d946ef',
+	slate: '#94a3b8',
+	gold: '#facc15',
+	ruby: '#e11d48'
 };
 
 /** Accent purple used for local user in charts */
