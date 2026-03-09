@@ -82,7 +82,9 @@ class SessionWatcher(FileSystemEventHandler):
 
             conn = get_connection()
             try:
-                accepted = _accept_pending_folders(st, config, conn)
+                # auto_only=True: only process handshake + own outbox.
+                # Other people's outboxes require explicit user acceptance.
+                accepted = _accept_pending_folders(st, config, conn, auto_only=True)
                 return accepted or 0
             finally:
                 conn.close()

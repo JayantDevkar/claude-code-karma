@@ -416,24 +416,10 @@ async def _auto_accept_pending_peers(proxy, config, conn) -> tuple[int, dict]:
             accepted_ids.add(device_id)
             accepted += 1
 
-    # ── Phase 2: Accept pending folders from known devices ───────────
-    # Runs independently — handles folders orphaned from previous device
-    # acceptance cycles or folders that arrived after device was accepted.
-    try:
-        from karma.syncthing import SyncthingClient, read_local_api_key
-        from karma.main import _accept_pending_folders
-
-        api_key = config.syncthing.api_key or await run_sync(read_local_api_key)
-        st = SyncthingClient(api_key=api_key)
-        if st.is_running():
-            folders_accepted = await run_sync(_accept_pending_folders, st, config, conn)
-            if folders_accepted:
-                accepted += folders_accepted
-                log_event(conn, "pending_accepted", member_name=config.user_id,
-                          detail={"count": folders_accepted, "phase": "auto_accept"})
-                logger.info("Auto-accepted %d pending folders from known devices", folders_accepted)
-    except Exception as e:
-        logger.warning("Phase 2 auto-accept pending folders failed: %s", e)
+    # Phase 2 (auto-accept pending folders) removed — project share folders
+    # now require explicit user acceptance via POST /sync/pending/accept/{folder_id}.
+    # Only handshake folders and own-outbox folders are auto-processed by the
+    # watcher (auto_only=True in _accept_pending_folders).
 
     # Return remaining pending devices (minus the ones we accepted)
     remaining = {did: info for did, info in pending_devices.items() if did not in accepted_ids}
@@ -1201,13 +1187,13 @@ async def sync_team_join_code(team_name: str) -> Any:
 async def sync_pending_devices() -> Any:
     """List Syncthing devices trying to connect that aren't configured.
 
-    Before returning, auto-accepts any pending devices that have karma
-    folder offers matching a team project (seamless join handshake).
+    Auto-accepts pending devices (handshake completion) but does NOT
+    auto-accept pending folders — those require explicit user action.
     """
     conn = _get_sync_conn()
 
-    # Auto-accept pending devices that match karma folder offers (best-effort).
-    # Returns remaining pending devices so we don't need to re-fetch.
+    # Phase 1 only: auto-accept pending devices (handshake completion).
+    # Folder acceptance is now explicit — handled by POST /pending/accept/{folder_id}.
     auto_accepted = 0
     remaining_pending = None
     try:
@@ -1760,6 +1746,94 @@ async def sync_accept_pending() -> Any:
         raise HTTPException(500, "Failed to accept pending folders")
 
 
+@router.post("/pending/accept/{folder_id:path}")
+async def sync_accept_single_folder(folder_id: str) -> Any:
+    """Accept a single pending folder offer.
+
+    Only accepts karma-out-* folders from known team members.
+    This is the explicit per-folder acceptance that replaces auto-accept.
+    """
+    if not folder_id.startswith("karma-"):
+        raise HTTPException(400, "Invalid folder ID: must start with 'karma-'")
+
+    config = await run_sync(_load_identity)
+    if config is None:
+        raise HTTPException(400, "Not initialized")
+
+    try:
+        from karma.syncthing import SyncthingClient, read_local_api_key
+
+        api_key = config.syncthing.api_key or await run_sync(read_local_api_key)
+        st = SyncthingClient(api_key=api_key)
+        if not st.is_running():
+            raise HTTPException(503, "Syncthing is not running")
+
+        from karma.main import _accept_pending_folders
+
+        conn = _get_sync_conn()
+        accepted = await run_sync(
+            _accept_pending_folders, st, config, conn, only_folder_id=folder_id,
+        )
+        if accepted:
+            log_event(conn, "pending_accepted", member_name=config.user_id,
+                      detail={"folder_id": folder_id, "phase": "individual"})
+        return {"ok": True, "accepted": accepted, "folder_id": folder_id}
+    except SyncthingNotRunning:
+        raise HTTPException(503, "Syncthing is not running")
+    except Exception as e:
+        logger.exception("Failed to accept folder %s: %s", folder_id, e)
+        raise HTTPException(500, f"Failed to accept folder: {e}")
+
+
+@router.post("/pending/reject/{folder_id:path}")
+async def sync_reject_single_folder(folder_id: str) -> Any:
+    """Reject (dismiss) a single pending folder offer.
+
+    Removes the pending folder offer from Syncthing so it no longer appears.
+    Only dismisses karma-* folders from known team members.
+    """
+    if not folder_id.startswith("karma-"):
+        raise HTTPException(400, "Invalid folder ID: must start with 'karma-'")
+
+    config = await run_sync(_load_identity)
+    if config is None:
+        raise HTTPException(400, "Not initialized")
+
+    try:
+        from karma.syncthing import SyncthingClient, read_local_api_key
+
+        api_key = config.syncthing.api_key or await run_sync(read_local_api_key)
+        st = SyncthingClient(api_key=api_key)
+        if not st.is_running():
+            raise HTTPException(503, "Syncthing is not running")
+
+        pending = st.get_pending_folders()
+        folder_info = pending.get(folder_id)
+        if not folder_info:
+            raise HTTPException(404, f"Folder '{folder_id}' not found in pending offers")
+
+        dismissed = 0
+        for device_id in folder_info.get("offeredBy", {}):
+            try:
+                st.dismiss_pending_folder(folder_id, device_id)
+                dismissed += 1
+            except Exception:
+                pass
+
+        conn = _get_sync_conn()
+        log_event(conn, "pending_rejected", member_name=config.user_id,
+                  detail={"folder_id": folder_id, "dismissed": dismissed})
+
+        return {"ok": True, "folder_id": folder_id, "dismissed": dismissed}
+    except SyncthingNotRunning:
+        raise HTTPException(503, "Syncthing is not running")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Failed to reject folder %s: %s", folder_id, e)
+        raise HTTPException(500, f"Failed to reject folder: {e}")
+
+
 # ─── Per-project sync status ──────────────────────────────────────────
 
 
@@ -1818,6 +1892,9 @@ async def sync_team_project_status(team_name: str) -> Any:
         received_counts = {}
         for m in members:
             mname = m["name"]
+            # Skip own outbox — only count genuinely received sessions
+            if mname == config.user_id:
+                continue
             inbox = KARMA_BASE / "remote-sessions" / mname / encoded / "sessions"
             if inbox.is_dir():
                 received_counts[mname] = sum(

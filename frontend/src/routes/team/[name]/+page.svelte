@@ -19,7 +19,8 @@
 		Loader2,
 		AlertTriangle,
 		CheckCircle2,
-		RefreshCw
+		RefreshCw,
+		X
 	} from 'lucide-svelte';
 	import type { SyncDevice, SyncPendingFolder, SyncProjectStatus, SyncTeam, SyncEvent } from '$lib/api-types';
 
@@ -91,6 +92,9 @@
 		return offer.folder_id;
 	}
 
+	// Track per-folder action state: folder_id -> 'accepting' | 'rejecting'
+	let folderActing = $state<Record<string, string>>({});
+
 	async function acceptAllFolders() {
 		acceptingFolders = true;
 		try {
@@ -98,6 +102,28 @@
 			invalidateAll();
 		} finally {
 			acceptingFolders = false;
+		}
+	}
+
+	async function acceptFolder(folderId: string) {
+		folderActing = { ...folderActing, [folderId]: 'accepting' };
+		try {
+			await fetch(`${API_BASE}/sync/pending/accept/${encodeURIComponent(folderId)}`, { method: 'POST' });
+			await fetchTeamData();
+		} finally {
+			const { [folderId]: _, ...rest } = folderActing;
+			folderActing = rest;
+		}
+	}
+
+	async function rejectFolder(folderId: string) {
+		folderActing = { ...folderActing, [folderId]: 'rejecting' };
+		try {
+			await fetch(`${API_BASE}/sync/pending/reject/${encodeURIComponent(folderId)}`, { method: 'POST' });
+			await fetchTeamData();
+		} finally {
+			const { [folderId]: _, ...rest } = folderActing;
+			folderActing = rest;
 		}
 	}
 
@@ -290,6 +316,7 @@
 				</div>
 				<div class="space-y-2">
 					{#each pendingFolders as offer (offer.folder_id)}
+						{@const acting = folderActing[offer.folder_id]}
 						<div class="flex items-center gap-3 p-3 rounded-lg border border-[var(--warning)]/20 bg-[var(--warning)]/5">
 							<FolderGit2 size={16} class="text-[var(--warning)] shrink-0" />
 							<div class="flex-1 min-w-0">
@@ -299,6 +326,38 @@
 								<p class="text-xs text-[var(--text-muted)] mt-0.5">
 									from <span class="text-[var(--text-secondary)]">{offer.from_member}</span>
 								</p>
+							</div>
+							<div class="flex items-center gap-1.5 shrink-0">
+								<button
+									onclick={() => acceptFolder(offer.folder_id)}
+									disabled={!!acting}
+									aria-label="Accept project share"
+									class="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-[var(--radius)]
+										bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)] transition-colors
+										disabled:opacity-50 disabled:cursor-not-allowed"
+								>
+									{#if acting === 'accepting'}
+										<Loader2 size={11} class="animate-spin" />
+									{:else}
+										<CheckCircle2 size={11} />
+									{/if}
+									Accept
+								</button>
+								<button
+									onclick={() => rejectFolder(offer.folder_id)}
+									disabled={!!acting}
+									aria-label="Reject project share"
+									class="flex items-center gap-1 px-2 py-1.5 text-xs font-medium rounded-[var(--radius)]
+										border border-[var(--error)]/30 text-[var(--error)] hover:bg-[var(--error)]/10 transition-colors
+										disabled:opacity-50 disabled:cursor-not-allowed"
+								>
+									{#if acting === 'rejecting'}
+										<Loader2 size={11} class="animate-spin" />
+									{:else}
+										<X size={11} />
+									{/if}
+									Reject
+								</button>
 							</div>
 						</div>
 					{/each}
