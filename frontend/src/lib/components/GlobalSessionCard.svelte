@@ -328,10 +328,10 @@
 
 		<!-- FOOTER ZONE: Clean stats row -->
 		<div
-			class="px-4 py-2.5 pl-5 border-t border-[var(--border)] flex items-center justify-between text-xs text-[var(--text-muted)]"
+			class="px-4 py-2.5 pl-5 border-t border-[var(--border)] flex items-center justify-between gap-2 text-xs text-[var(--text-muted)]"
 		>
 			<!-- Stats Group -->
-			<div class="flex items-center gap-3">
+			<div class="flex items-center gap-3 min-w-0">
 				<div class="flex items-center gap-1" title="{displayMessageCount} messages">
 					<MessageSquare size={13} strokeWidth={2} class="text-[var(--nav-blue)]" />
 					<span class="tabular-nums font-medium">{displayMessageCount}</span>
@@ -353,7 +353,7 @@
 			</div>
 
 			<!-- Badges -->
-			<div class="flex items-center gap-1.5 shrink-0">
+			<div class="flex items-center gap-1.5 flex-wrap justify-end">
 				{#if isRemote && remoteUserName}
 					<div
 						class="flex items-center gap-1 px-2 py-0.5 rounded-full border {teamMemberColor?.badge ?? ''}"
