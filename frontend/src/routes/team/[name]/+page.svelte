@@ -130,6 +130,8 @@
 	// Fetch all team data (used by both polling and manual refresh)
 	async function fetchTeamData(signal?: AbortSignal) {
 		const teamNameEnc = encodeURIComponent(data.teamName);
+		// pending-devices triggers auto-accept of karma peers, must resolve before teams fetch
+		await fetch(`${API_BASE}/sync/pending-devices`, { signal }).catch(() => {});
 		const [teamsRes, devicesRes, foldersRes, projectStatusRes, activityRes] = await Promise.all([
 			fetch(`${API_BASE}/sync/teams`, { signal }),
 			fetch(`${API_BASE}/sync/devices`, { signal }),

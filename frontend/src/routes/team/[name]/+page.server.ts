@@ -24,6 +24,10 @@ interface ProjectSummary {
 export const load: PageServerLoad = async ({ fetch, params }) => {
 	const teamName = params.name;
 
+	// Trigger auto-accept of pending karma peers before fetching teams,
+	// so newly joined members appear immediately.
+	await fetch(`${API_BASE}/sync/pending-devices`).catch(() => {});
+
 	// Fetch in parallel: teams list (to find this team), devices, join code, pending folders, sync status, watch status, detect, project status
 	const [teamsData, devices, joinCodeData, pendingFoldersData, syncStatus, watchStatus, detectData, projectStatusData, activityData] = await Promise.all([
 		safeFetch<{ teams: SyncTeam[] }>(fetch, `${API_BASE}/sync/teams`),

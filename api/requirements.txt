@@ -5,3 +5,4 @@ pydantic-settings>=2.0.0
 aiofiles>=24.1.0
 cachetools>=5.0.0
 watchdog>=4.0.0
+requests>=2.31.0
