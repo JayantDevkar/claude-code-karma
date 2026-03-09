@@ -267,6 +267,21 @@
 							</span>
 						</a>
 					{/if}
+					{#if isRemote && remoteUserName}
+						<div
+							class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border {teamMemberColor?.badge ?? ''}"
+							title="Remote session from {remoteUserName}"
+						>
+							<Globe
+								size={12}
+								strokeWidth={2}
+								class={teamMemberColor?.text ?? ''}
+							/>
+							<span class="text-xs font-medium {teamMemberColor?.text ?? ''}"
+								>{remoteUserName}</span
+							>
+						</div>
+					{/if}
 				{/snippet}
 				{#snippet headerRight()}
 					<div class="flex items-center gap-2">

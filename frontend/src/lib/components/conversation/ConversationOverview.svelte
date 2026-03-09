@@ -13,9 +13,7 @@
 		ChevronUp,
 		ExternalLink,
 		Zap,
-		Tag,
-		Monitor,
-		Globe
+		Tag
 	} from 'lucide-svelte';
 	import StatsCard from '$lib/components/StatsCard.svelte';
 	import ExpandablePrompt from '$lib/components/ExpandablePrompt.svelte';
@@ -29,12 +27,7 @@
 		CompactionSummary
 	} from '$lib/api-types';
 	import { isSubagentSession, isMainSession } from '$lib/api-types';
-	import {
-		formatDuration,
-		formatTokens,
-		isRemoteSession,
-		getTeamMemberColor
-	} from '$lib/utils';
+	import { formatDuration, formatTokens } from '$lib/utils';
 	import { API_BASE } from '$lib/config';
 
 	interface Props {
@@ -382,25 +375,6 @@
 						{/each}
 					{:else}
 						<span class="text-sm text-[var(--text-muted)]">-</span>
-					{/if}
-					{#if entity.remote_user_id}
-						{@const teamColor = getTeamMemberColor(entity.remote_user_id)}
-						<div
-							class="flex items-center gap-1 px-2 py-0.5 rounded-full border {teamColor.badge} text-xs"
-							title="Remote session from {entity.remote_user_id}"
-						>
-							<Globe size={12} strokeWidth={2} class={teamColor.text} />
-							<span class="font-medium {teamColor.text}">{entity.remote_user_id}</span>
-						</div>
-					{/if}
-					{#if entity.session_source === 'desktop'}
-						<div
-							class="flex items-center gap-1 px-2 py-0.5 rounded-full border bg-[var(--bg-muted)] text-[var(--text-secondary)] border-[var(--border)] text-xs"
-							title="Claude Desktop session"
-						>
-							<Monitor size={12} strokeWidth={2} />
-							<span class="font-medium">Desktop</span>
-						</div>
 					{/if}
 				</div>
 			</div>
