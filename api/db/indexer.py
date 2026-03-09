@@ -24,6 +24,8 @@ from typing import Optional
 # Ensure api/ is on the import path (needed when called from background thread)
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from command_helpers import category_from_base_directory
+
 logger = logging.getLogger(__name__)
 
 # Module-level state
@@ -374,7 +376,7 @@ def index_remote_sessions(conn: sqlite3.Connection) -> dict:
                     # Check if any session for this remote user+project was indexed
                     # before the manifest was last modified
                     oldest_indexed = conn.execute(
-                        "SELECT MAX(indexed_at) FROM sessions WHERE remote_user_id = ? AND project_encoded_name = ? AND source = 'remote'",
+                        "SELECT MIN(indexed_at) FROM sessions WHERE remote_user_id = ? AND project_encoded_name = ? AND source = 'remote'",
                         (user_id, local_encoded),
                     ).fetchone()
                     if oldest_indexed and oldest_indexed[0]:
@@ -442,16 +444,16 @@ def index_remote_sessions(conn: sqlite3.Connection) -> dict:
                     stats["indexed"] += 1
 
                     # Extract skill definitions from this remote session (best-effort).
-                    # Only runs for newly-indexed sessions to avoid redundant work.
-                    if uuid not in db_mtimes:
-                        _extract_skill_definitions_from_session(
-                            conn,
-                            jsonl_path,
-                            source_user_id=user_id,
-                            source_machine_id=user_id,
-                            session_uuid=uuid,
-                            claude_base_dir=encoded_dir,
-                        )
+                    # Runs for every indexed session; ON CONFLICT DO NOTHING makes it idempotent.
+                    _extract_skill_definitions_from_session(
+                        conn,
+                        jsonl_path,
+                        source_user_id=user_id,
+                        source_machine_id=user_id,
+                        session_uuid=uuid,
+                        claude_base_dir=encoded_dir,
+                        classification_overrides=classification_overrides,
+                    )
 
                     # Log session_received only for truly new sessions (not re-index)
                     if uuid not in db_mtimes:
@@ -580,7 +582,7 @@ def _index_session(
                 _sn = _blk.input.get("skill")
                 if not _sn:
                     continue
-                for _j in range(_i + 1, min(_i + 3, len(_msgs))):
+                for _j in range(_i + 1, min(_i + 8, len(_msgs))):
                     _nm = _msgs[_j]
                     if not isinstance(_nm, _UM):
                         continue
@@ -594,7 +596,7 @@ def _index_session(
                         _lines = _after.strip().splitlines()
                         if _lines:
                             _bd = _lines[0].strip()
-                            _cat = _category_from_base_directory(_bd)
+                            _cat = category_from_base_directory(_bd)
                             if _cat:
                                 jsonl_categories[_sn] = _cat
                     except (ValueError, IndexError):
@@ -894,16 +896,6 @@ def _index_session(
             logger.warning("Error indexing subagent invocations for %s: %s", uuid, e)
 
 
-def _category_from_base_directory(base_dir: str) -> Optional[str]:
-    """Infer skill category from a 'Base directory for this skill:' path."""
-    if "/skills/" in base_dir:
-        return "custom_skill"
-    if "/commands/" in base_dir:
-        return "user_command"
-    if "/plugins/cache/" in base_dir:
-        return "plugin_skill"
-    return None
-
 
 def _parse_yaml_description(content: str) -> Optional[str]:
     """Extract description field from YAML frontmatter (between --- markers)."""
@@ -927,11 +919,17 @@ def _extract_skill_definitions_from_session(
     source_machine_id: Optional[str],
     session_uuid: str,
     claude_base_dir: Optional[Path] = None,
+    classification_overrides: Optional[dict[str, str]] = None,
 ) -> None:
     """Extract skill definitions (content + metadata) from a session's JSONL messages.
 
-    Scans Skill tool invocations in AssistantMessages, then looks at the next
-    UserMessage for 'Base directory for this skill:' injected by Claude Code.
+    Two-pass extraction:
+      Pass 1: Look for 'Base directory for this skill:' marker in the next
+              UserMessage (injected by Claude Code). Derives category from path.
+      Pass 2: If no category from marker, fall back to manifest classification_overrides.
+              Uses the raw UserMessage content as skill body when it looks like markdown.
+
+    Only persists custom_skill and user_command categories; skips plugin_skill/bundled.
     Upserts new definitions into skill_definitions; skips if already present.
 
     Best-effort: all errors are logged as warnings, never raised.
@@ -958,49 +956,67 @@ def _extract_skill_definitions_from_session(
                 if not skill_name:
                     continue
 
-                # Check if definition already exists for this (skill_name, source_user_id)
-                existing = conn.execute(
-                    "SELECT 1 FROM skill_definitions WHERE skill_name = ? AND source_user_id = ?",
+                # Skip if definition already exists WITH content
+                existing_content = conn.execute(
+                    "SELECT content FROM skill_definitions WHERE skill_name = ? AND source_user_id = ?",
                     (skill_name, source_user_id or "__local__"),
                 ).fetchone()
-                if existing:
-                    continue
+                if existing_content and existing_content[0]:
+                    continue  # Already have content, no need to re-extract
 
-                # Look ahead for the next UserMessage with the base directory marker
+                # Pass 1: Look ahead for the "Base directory for this skill:" marker
                 base_dir: Optional[str] = None
                 content_text: Optional[str] = None
                 description: Optional[str] = None
                 category: Optional[str] = None
+                next_user_content: Optional[str] = None
 
-                for j in range(i + 1, min(i + 3, len(messages))):
+                # Lookahead window: ProgressMessages can sit between
+                # the Skill tool_use and the injected UserMessage content,
+                # so scan up to 8 messages ahead.
+                for j in range(i + 1, min(i + 8, len(messages))):
                     next_msg = messages[j]
                     if not isinstance(next_msg, UserMessage):
                         continue
                     next_content = next_msg.content or ""
-                    if "Base directory for this skill:" not in next_content:
-                        continue
 
-                    try:
-                        marker = "Base directory for this skill:"
-                        idx = next_content.index(marker)
-                        after = next_content[idx + len(marker):]
-                        lines = after.strip().splitlines()
-                        if lines:
-                            base_dir = lines[0].strip()
-                            # Everything after the first line is the skill content
-                            if len(lines) > 1:
-                                content_text = "\n".join(lines[1:]).strip() or None
-                    except (ValueError, IndexError):
-                        pass
+                    if "Base directory for this skill:" in next_content:
+                        try:
+                            marker = "Base directory for this skill:"
+                            idx = next_content.index(marker)
+                            after = next_content[idx + len(marker):]
+                            lines = after.strip().splitlines()
+                            if lines:
+                                base_dir = lines[0].strip()
+                                if len(lines) > 1:
+                                    content_text = "\n".join(lines[1:]).strip() or None
+                        except (ValueError, IndexError):
+                            pass
 
-                    if base_dir:
-                        category = _category_from_base_directory(base_dir)
-                        if content_text:
+                        if base_dir:
+                            category = category_from_base_directory(base_dir)
+                            if content_text:
+                                description = _parse_yaml_description(content_text)
+                        break  # Found the marker message
+
+                    # Save the latest non-marker UserMessage for pass 2 fallback
+                    next_user_content = next_content
+
+                # Pass 2: If no category from marker, try manifest classification_overrides
+                if category is None and classification_overrides and skill_name in classification_overrides:
+                    category = classification_overrides[skill_name]
+                    # Content is the full UserMessage text (Claude Code injects the raw
+                    # SKILL.md contents when the "Base directory" marker is absent)
+                    if next_user_content and next_user_content.strip():
+                        # Skip tool result wrapper text (e.g. "Launching skill: pdf")
+                        raw = next_user_content.strip()
+                        # Only use content if it looks like skill markdown (has heading or frontmatter)
+                        if raw.startswith("---") or raw.startswith("#") or len(raw) > 200:
+                            content_text = raw
                             description = _parse_yaml_description(content_text)
-                    break
 
-                if category is None:
-                    # Can't determine category from path — skip storing (not enough info)
+                # Only persist custom_skill and user_command (not plugin_skill or bundled)
+                if category not in ("custom_skill", "user_command"):
                     continue
 
                 conn.execute(
@@ -1010,7 +1026,22 @@ def _extract_skill_definitions_from_session(
                          content, base_directory, description, extracted_from_session,
                          updated_at)
                     VALUES (?, COALESCE(?, '__local__'), ?, ?, ?, ?, ?, ?, datetime('now'))
-                    ON CONFLICT(skill_name, source_user_id) DO NOTHING
+                    ON CONFLICT(skill_name, source_user_id) DO UPDATE SET
+                        content = COALESCE(NULLIF(excluded.content, ''), skill_definitions.content),
+                        base_directory = COALESCE(excluded.base_directory, skill_definitions.base_directory),
+                        description = COALESCE(excluded.description, skill_definitions.description),
+                        extracted_from_session = CASE
+                            WHEN excluded.content IS NOT NULL AND excluded.content != ''
+                                 AND (skill_definitions.content IS NULL OR skill_definitions.content = '')
+                            THEN excluded.extracted_from_session
+                            ELSE skill_definitions.extracted_from_session
+                        END,
+                        updated_at = CASE
+                            WHEN excluded.content IS NOT NULL AND excluded.content != ''
+                                 AND (skill_definitions.content IS NULL OR skill_definitions.content = '')
+                            THEN datetime('now')
+                            ELSE skill_definitions.updated_at
+                        END
                     """,
                     (
                         skill_name,

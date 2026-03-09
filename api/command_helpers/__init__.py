@@ -17,6 +17,7 @@ Submodules:
 
 from .categories import (
     InvocationCategory,
+    category_from_base_directory,
     is_command_category,
     is_skill_category,
 )
@@ -52,6 +53,7 @@ from .plugins import (
 __all__ = [
     # categories
     "InvocationCategory",
+    "category_from_base_directory",
     "is_skill_category",
     "is_command_category",
     # cli_js
