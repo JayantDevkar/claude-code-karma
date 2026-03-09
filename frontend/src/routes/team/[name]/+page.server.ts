@@ -10,7 +10,8 @@ import type {
 	SyncWatchStatus,
 	SyncDetect,
 	SyncProjectStatus,
-	SyncEvent
+	SyncEvent,
+	PendingDevice
 } from '$lib/api-types';
 
 interface ProjectSummary {
@@ -26,7 +27,9 @@ export const load: PageServerLoad = async ({ fetch, params }) => {
 
 	// Trigger auto-accept of pending karma peers before fetching teams,
 	// so newly joined members appear immediately.
-	await fetch(`${API_BASE}/sync/pending-devices`).catch(() => {});
+	const pendingDevicesData = await fetch(`${API_BASE}/sync/pending-devices`)
+		.then((r) => r.ok ? r.json() : { devices: [], auto_accepted: 0 })
+		.catch(() => ({ devices: [] as PendingDevice[], auto_accepted: 0 }));
 
 	// Fetch in parallel: teams list (to find this team), devices, join code, pending folders, sync status, watch status, detect, project status
 	const [teamsData, devices, joinCodeData, pendingFoldersData, syncStatus, watchStatus, detectData, projectStatusData, activityData] = await Promise.all([
@@ -87,6 +90,7 @@ export const load: PageServerLoad = async ({ fetch, params }) => {
 		devices: devices.devices,
 		joinCode: joinCodeData.ok ? joinCodeData.data.join_code : null,
 		pendingFolders,
+		pendingDevices: (pendingDevicesData.devices ?? []) as PendingDevice[],
 		allProjects: allProjects.map((p) => ({
 			encoded_name: p.encoded_name,
 			name: p.display_name || p.slug || p.encoded_name,

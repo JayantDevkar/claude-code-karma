@@ -458,6 +458,12 @@ class SyncthingProxy:
         client = self._require_client()
         return client.get_pending_devices()
 
+    def dismiss_pending_device(self, device_id: str) -> dict:
+        """Dismiss a pending device so it no longer appears in Syncthing."""
+        client = self._require_client()
+        client.dismiss_pending_device(device_id)
+        return {"ok": True, "device_id": device_id}
+
     def get_pending_folders(self) -> dict:
         """Get raw pending folder offers from Syncthing."""
         client = self._require_client()
