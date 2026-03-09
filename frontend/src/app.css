@@ -173,6 +173,22 @@
 	--team-indigo-subtle: rgba(99, 102, 241, 0.1);
 	--team-teal: #14b8a6;
 	--team-teal-subtle: rgba(20, 184, 166, 0.1);
+	--team-sky: #0ea5e9;
+	--team-sky-subtle: rgba(14, 165, 233, 0.15);
+	--team-violet: #7c3aed;
+	--team-violet-subtle: rgba(124, 58, 237, 0.15);
+	--team-emerald: #10b981;
+	--team-emerald-subtle: rgba(16, 185, 129, 0.15);
+	--team-orange: #f97316;
+	--team-orange-subtle: rgba(249, 115, 22, 0.15);
+	--team-fuchsia: #c026d3;
+	--team-fuchsia-subtle: rgba(192, 38, 211, 0.15);
+	--team-slate: #64748b;
+	--team-slate-subtle: rgba(100, 116, 139, 0.15);
+	--team-gold: #eab308;
+	--team-gold-subtle: rgba(234, 179, 8, 0.15);
+	--team-ruby: #be123c;
+	--team-ruby-subtle: rgba(190, 18, 60, 0.15);
 
 	/* Spacing (4px Grid) */
 	--spacing-1: 4px;
@@ -376,6 +392,22 @@ select:focus {
 	--team-indigo-subtle: rgba(129, 140, 248, 0.15);
 	--team-teal: #2dd4bf;
 	--team-teal-subtle: rgba(45, 212, 191, 0.15);
+	--team-sky: #38bdf8;
+	--team-sky-subtle: rgba(56, 189, 248, 0.1);
+	--team-violet: #8b5cf6;
+	--team-violet-subtle: rgba(139, 92, 246, 0.1);
+	--team-emerald: #34d399;
+	--team-emerald-subtle: rgba(52, 211, 153, 0.1);
+	--team-orange: #fb923c;
+	--team-orange-subtle: rgba(251, 146, 60, 0.1);
+	--team-fuchsia: #d946ef;
+	--team-fuchsia-subtle: rgba(217, 70, 239, 0.1);
+	--team-slate: #94a3b8;
+	--team-slate-subtle: rgba(148, 163, 184, 0.1);
+	--team-gold: #facc15;
+	--team-gold-subtle: rgba(250, 204, 21, 0.1);
+	--team-ruby: #e11d48;
+	--team-ruby-subtle: rgba(225, 29, 72, 0.1);
 
 	/* Shadows (deeper for dark mode) */
 	--shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
