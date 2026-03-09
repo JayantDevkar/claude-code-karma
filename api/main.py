@@ -95,6 +95,21 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning(f"SQLite indexing failed to start (non-critical): {e}")
 
+    # Start remote session watcher (monitors incoming Syncthing files)
+    remote_watcher = None
+    if settings.use_sqlite:
+        try:
+            from services.watcher_manager import RemoteSessionWatcher
+
+            remote_dir = settings.karma_base / "remote-sessions"
+            remote_watcher = RemoteSessionWatcher(watch_dir=remote_dir)
+            remote_watcher.start()
+            logger.info("Remote session watcher started: %s", remote_dir)
+        except Exception as e:
+            logger.warning(
+                "Remote session watcher failed to start (non-critical): %s", e
+            )
+
     # Start live session reconciler
     reconciler_task = None
     if settings.reconciler_enabled:
@@ -115,6 +130,10 @@ async def lifespan(app: FastAPI):
     yield
 
     # Shutdown
+    if remote_watcher is not None:
+        remote_watcher.stop()
+        logger.info("Remote session watcher stopped")
+
     if reconciler_task is not None:
         reconciler_task.cancel()
         logger.info("Session reconciler cancelled")

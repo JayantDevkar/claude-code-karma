@@ -2,14 +2,21 @@
 
 Runs the same SessionWatcher + SessionPackager logic as `karma watch`,
 but as a background service managed by the API process.
+
+Also provides RemoteSessionWatcher for monitoring incoming Syncthing files
+in ~/.claude_karma/remote-sessions/ and triggering remote reindex.
 """
 from __future__ import annotations
 
 import logging
 import sys
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
+
+from watchdog.events import FileSystemEventHandler
+from watchdog.observers import Observer
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +24,89 @@ logger = logging.getLogger(__name__)
 _CLI_PATH = Path(__file__).parent.parent.parent / "cli"
 if str(_CLI_PATH) not in sys.path:
     sys.path.insert(0, str(_CLI_PATH))
+
+
+class RemoteSessionWatcher(FileSystemEventHandler):
+    """Watches ~/.claude_karma/remote-sessions/ for incoming Syncthing files.
+
+    When JSONL session files are created or modified (by Syncthing syncing from
+    a teammate's outbox), debounces and then calls trigger_remote_reindex() to
+    import the new sessions into the local SQLite database.
+
+    Uses the same debounce pattern as cli/karma/watcher.py SessionWatcher.
+    """
+
+    def __init__(self, watch_dir: Path, debounce_seconds: float = 5.0):
+        self.watch_dir = Path(watch_dir)
+        self.debounce_seconds = debounce_seconds
+        self._timer: Optional[threading.Timer] = None
+        self._observer: Optional[Observer] = None
+        self._lock = threading.Lock()
+
+    @property
+    def is_running(self) -> bool:
+        return self._observer is not None and self._observer.is_alive()
+
+    def _should_process(self, path: str) -> bool:
+        """Only process session JSONL files (not agent files)."""
+        p = Path(path)
+        return p.suffix == ".jsonl" and not p.name.startswith("agent-")
+
+    def on_created(self, event):
+        if self._should_process(event.src_path):
+            self._schedule_reindex()
+
+    def on_modified(self, event):
+        if self._should_process(event.src_path):
+            self._schedule_reindex()
+
+    def _schedule_reindex(self):
+        """Debounced reindex -- waits for quiet period before running."""
+        with self._lock:
+            if self._timer is not None:
+                self._timer.cancel()
+            self._timer = threading.Timer(
+                self.debounce_seconds, self._do_reindex
+            )
+            self._timer.daemon = True
+            self._timer.start()
+
+    def _do_reindex(self):
+        """Execute trigger_remote_reindex()."""
+        try:
+            from db.indexer import trigger_remote_reindex
+
+            result = trigger_remote_reindex()
+            logger.info("Remote session watcher triggered reindex: %s", result)
+        except Exception as e:
+            logger.warning("Remote session watcher reindex error: %s", e)
+
+    def start(self):
+        """Start watching the remote-sessions directory.
+
+        Creates the watch directory if it doesn't exist yet (it may be
+        created later when Syncthing sync is first configured).
+        """
+        self.watch_dir.mkdir(parents=True, exist_ok=True)
+        self._observer = Observer()
+        self._observer.schedule(self, str(self.watch_dir), recursive=True)
+        self._observer.daemon = True
+        self._observer.start()
+        logger.info(
+            "Remote session watcher started: %s", self.watch_dir
+        )
+
+    def stop(self):
+        """Stop watching."""
+        with self._lock:
+            if self._timer is not None:
+                self._timer.cancel()
+                self._timer = None
+        if self._observer is not None:
+            self._observer.stop()
+            self._observer.join(timeout=5)
+            self._observer = None
+        logger.info("Remote session watcher stopped")
 
 
 class WatcherManager:
@@ -29,6 +119,7 @@ class WatcherManager:
         self._started_at: Optional[str] = None
         self._last_packaged_at: Optional[str] = None
         self._projects_watched: list[str] = []
+        self._remote_watcher: Optional[RemoteSessionWatcher] = None
 
     @property
     def is_running(self) -> bool:
@@ -41,6 +132,10 @@ class WatcherManager:
             "started_at": self._started_at,
             "last_packaged_at": self._last_packaged_at,
             "projects_watched": self._projects_watched,
+            "remote_watcher_running": (
+                self._remote_watcher is not None
+                and self._remote_watcher.is_running
+            ),
         }
 
     def start_all(self, config_data: dict) -> dict[str, Any]:
@@ -161,6 +256,21 @@ class WatcherManager:
         self._started_at = datetime.now(timezone.utc).isoformat()
         self._projects_watched = watched
 
+        # Start remote session watcher (for incoming Syncthing files)
+        if self._remote_watcher is None or not self._remote_watcher.is_running:
+            try:
+                from config import settings
+
+                remote_dir = settings.karma_base / "remote-sessions"
+                self._remote_watcher = RemoteSessionWatcher(
+                    watch_dir=remote_dir
+                )
+                self._remote_watcher.start()
+            except Exception as e:
+                logger.warning(
+                    "Failed to start remote session watcher: %s", e
+                )
+
         logger.info(
             "Watcher started: teams=%s, projects=%d, watchers=%d",
             team_names, len(watched), len(watchers),
@@ -185,12 +295,19 @@ class WatcherManager:
         return self.start_all(filtered_config)
 
     def stop(self) -> dict[str, Any]:
-        """Stop all watchers."""
+        """Stop all watchers (including remote session watcher)."""
         for w in self._watchers:
             try:
                 w.stop()
             except Exception as e:
                 logger.warning("Error stopping watcher: %s", e)
+
+        if self._remote_watcher is not None:
+            try:
+                self._remote_watcher.stop()
+            except Exception as e:
+                logger.warning("Error stopping remote watcher: %s", e)
+            self._remote_watcher = None
 
         self._watchers = []
         self._running = False

@@ -60,6 +60,7 @@ async def _trigger_remote_reindex_bg() -> None:
     except Exception as e:
         logger.debug("Background remote reindex failed: %s", e)
 
+
 # Input validation
 ALLOWED_PROJECT_NAME = re.compile(r"^[a-zA-Z0-9_\-]+$")
 ALLOWED_MEMBER_NAME = re.compile(r"^[a-zA-Z0-9_\-\.]+$")  # hostnames have dots

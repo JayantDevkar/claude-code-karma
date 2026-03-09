@@ -516,6 +516,78 @@ def get_project(
 
                 total_count = data["total"]
 
+                # Merge unindexed remote sessions from disk
+                # (remote sessions arrive via Syncthing but may not be
+                # indexed yet if the periodic indexer hasn't run)
+                remote_session_count = 0
+                try:
+                    from services.remote_sessions import (
+                        list_remote_sessions_for_project,
+                    )
+
+                    remote_metas = list_remote_sessions_for_project(
+                        encoded_name
+                    )
+                    remote_session_count = len(remote_metas)
+
+                    if remote_metas:
+                        indexed_uuids = {s.uuid for s in session_summaries}
+                        unindexed = [
+                            m
+                            for m in remote_metas
+                            if m.uuid not in indexed_uuids
+                        ]
+
+                        for rmeta in unindexed:
+                            titles = rmeta.session_titles or []
+                            duration = None
+                            if rmeta.start_time and rmeta.end_time:
+                                duration = (
+                                    rmeta.end_time - rmeta.start_time
+                                ).total_seconds()
+                            session_summaries.append(
+                                SessionSummary(
+                                    uuid=rmeta.uuid,
+                                    slug=rmeta.slug,
+                                    message_count=rmeta.message_count,
+                                    start_time=rmeta.start_time,
+                                    end_time=rmeta.end_time,
+                                    duration_seconds=duration,
+                                    models_used=[],
+                                    subagent_count=0,
+                                    has_todos=False,
+                                    initial_prompt=rmeta.initial_prompt,
+                                    git_branches=(
+                                        [rmeta.git_branch]
+                                        if rmeta.git_branch
+                                        else []
+                                    ),
+                                    session_titles=titles,
+                                    source=rmeta.source,
+                                    remote_user_id=rmeta.remote_user_id,
+                                    remote_machine_id=rmeta.remote_machine_id,
+                                )
+                            )
+
+                        total_count += len(unindexed)
+
+                        # Trigger background reindex so next request
+                        # won't need this disk check
+                        if unindexed:
+                            import threading
+
+                            from db.indexer import trigger_remote_reindex
+
+                            threading.Thread(
+                                target=trigger_remote_reindex,
+                                daemon=True,
+                            ).start()
+                except Exception as e:
+                    logger.debug(
+                        "Remote session merge in SQLite fast path failed: %s",
+                        e,
+                    )
+
                 _enrich_chain_titles(session_summaries)
                 return ProjectDetail(
                     path=project.path,
@@ -529,6 +601,7 @@ def get_project(
                     git_root_path=project.git_root_path,
                     is_nested_project=project.is_nested_project,
                     sessions=session_summaries,
+                    remote_session_count=remote_session_count,
                 )
     except Exception as e:
         logger.warning("SQLite project sessions query failed, falling back: %s", e)
