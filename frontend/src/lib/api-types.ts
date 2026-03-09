@@ -108,7 +108,7 @@ export interface ToolUsage {
 // Skill Usage
 // ============================================
 
-export type SkillCategory = 'bundled_skill' | 'plugin_skill' | 'custom_skill';
+export type SkillCategory = 'bundled_skill' | 'plugin_skill' | 'custom_skill' | 'inherited_skill';
 
 export interface SkillUsage {
 	name: string;
@@ -1607,6 +1607,7 @@ export interface SkillDetailResponse {
 	remote_user_ids?: string[];
 	is_remote_only?: boolean;
 	remote_definition?: RemoteDefinition | null;
+	inherited_from?: string | null;
 }
 
 // ============================================================================
@@ -1924,5 +1925,6 @@ export interface InheritResult {
 	status: string;
 	path: string;
 	skill_name: string;
+	inherited_name: string;
 	scope: string;
 }

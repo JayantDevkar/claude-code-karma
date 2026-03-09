@@ -9,7 +9,8 @@
 		Sparkles,
 		ChevronsUpDown,
 		ChevronsDownUp,
-		ExternalLink
+		ExternalLink,
+		Download
 	} from 'lucide-svelte';
 	import { tick, onMount } from 'svelte';
 	import { navigating } from '$app/stores';
@@ -46,8 +47,8 @@
 
 	// Filter state — initialized from URL
 	let searchQuery = $state(initParam('search', ''));
-	let selectedFilter = $state<'all' | 'bundled' | 'plugin' | 'custom'>(
-		(initParam('filter', 'all') as 'all' | 'bundled' | 'plugin' | 'custom')
+	let selectedFilter = $state<'all' | 'bundled' | 'plugin' | 'custom' | 'inherited'>(
+		(initParam('filter', 'all') as 'all' | 'bundled' | 'plugin' | 'custom' | 'inherited')
 	);
 
 	// Sync view/filter/layout/search state to URL params via replaceState
@@ -74,7 +75,8 @@
 		{ label: 'All', value: 'all' },
 		{ label: 'Bundled', value: 'bundled' },
 		{ label: 'Plugin', value: 'plugin' },
-		{ label: 'Custom', value: 'custom' }
+		{ label: 'Custom', value: 'custom' },
+		{ label: 'Inherited', value: 'inherited' }
 	];
 
 	// View tab options
@@ -131,6 +133,8 @@
 			skills = skills.filter((s: SkillUsage) => s.category === 'plugin_skill');
 		} else if (selectedFilter === 'custom') {
 			skills = skills.filter((s: SkillUsage) => s.category === 'custom_skill');
+		} else if (selectedFilter === 'inherited') {
+			skills = skills.filter((s: SkillUsage) => s.category === 'inherited_skill');
 		}
 
 		// Filter by search query
@@ -174,6 +178,10 @@
 				groupLabel = skill.plugin;
 				groupIcon = Puzzle;
 				pluginName = skill.plugin;
+			} else if (skill.category === 'inherited_skill') {
+				groupKey = 'inherited_skill';
+				groupLabel = 'Inherited Skills';
+				groupIcon = Download;
 			} else if (skill.category === 'custom_skill') {
 				groupKey = 'custom_skill';
 				groupLabel = 'Custom Skills';
@@ -206,9 +214,9 @@
 
 		// Sort groups: bundled first, then custom, then plugins alphabetically
 		return Array.from(groups.values()).sort((a, b) => {
-			const priority: Record<string, number> = { 'bundled_skill': 0, 'custom_skill': 1 };
-			const aPriority = priority[a.key] ?? 2;
-			const bPriority = priority[b.key] ?? 2;
+			const priority: Record<string, number> = { 'bundled_skill': 0, 'custom_skill': 1, 'inherited_skill': 2 };
+			const aPriority = priority[a.key] ?? 3;
+			const bPriority = priority[b.key] ?? 3;
 			if (aPriority !== bPriority) return aPriority - bPriority;
 			return a.label.localeCompare(b.label);
 		});
@@ -327,31 +335,28 @@
 		filteredSkills.length > 0 ? Math.max(...filteredSkills.map((s: SkillUsage) => s.count)) : 100
 	);
 
-	// Build a plugin lookup from skill data for analytics filtering
-	let skillPluginMap = $derived.by(() => {
-		const map = new Map<string, boolean>();
+	// Build lookup maps from skill data for analytics filtering (O(1) per lookup)
+	let skillCategoryMap = $derived.by(() => {
+		const map = new Map<string, string>();
 		for (const skill of (data.usage || [])) {
-			map.set(skill.name, skill.is_plugin);
+			map.set(skill.name, skill.category ?? (skill.is_plugin ? 'plugin_skill' : 'custom_skill'));
 		}
 		return map;
 	});
 
 	let excludeFn = $derived.by(() => {
 		if (selectedFilter === 'all') return undefined;
-		if (selectedFilter === 'bundled') {
-			return (name: string) => {
-				const skill = (data.usage || []).find((s: SkillUsage) => s.name === name);
-				return skill?.category !== 'bundled_skill';
-			};
-		}
-		if (selectedFilter === 'plugin') {
-			return (name: string) => skillPluginMap.get(name) !== true;
-		}
-		// 'custom'
-		return (name: string) => {
-			const skill = (data.usage || []).find((s: SkillUsage) => s.name === name);
-			return skill?.category !== 'custom_skill';
+		const categoryFilter: Record<string, string> = {
+			bundled: 'bundled_skill',
+			plugin: 'plugin_skill',
+			custom: 'custom_skill',
+			inherited: 'inherited_skill'
 		};
+		const targetCategory = categoryFilter[selectedFilter];
+		if (targetCategory) {
+			return (name: string) => skillCategoryMap.get(name) !== targetCategory;
+		}
+		return undefined;
 	});
 
 	// Check if we have any skills

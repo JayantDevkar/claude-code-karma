@@ -721,6 +721,7 @@ class SkillInfo(BaseModel):
     is_plugin: bool = Field(..., description="True if this is a plugin skill")
     plugin: Optional[str] = Field(None, description="Plugin name if is_plugin")
     file_path: Optional[str] = Field(None, description="Path to the skill file")
+    inherited_from: Optional[str] = Field(None, description="Original plugin skill name this was inherited from")
 
 
 class SkillSessionsResponse(BaseModel):
@@ -783,6 +784,10 @@ class SkillDetailResponse(BaseModel):
     remote_definition: Optional[Dict[str, Any]] = Field(
         None,
         description="Skill definition from skill_definitions table (populated for remote-only skills)",
+    )
+    inherited_from: Optional[str] = Field(
+        None,
+        description="Original plugin skill name this was inherited from (e.g. 'oh-my-claudecode:deepsearch')",
     )
 
 

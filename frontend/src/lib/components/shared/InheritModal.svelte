@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { marked } from 'marked';
 	import DOMPurify from 'isomorphic-dompurify';
+	import { goto } from '$app/navigation';
 	import { Globe, Download, User, FolderOpen, Check } from 'lucide-svelte';
 	import Modal from '$lib/components/ui/Modal.svelte';
 	import { API_BASE } from '$lib/config';
@@ -71,8 +72,13 @@
 			}
 
 			const result: InheritResult = await res.json();
-			successMsg = `Inherited to ${result.path}`;
+			successMsg = `Inherited as "${result.inherited_name}" to ${result.path}`;
 			onInherited?.(result);
+
+			// Navigate to the inherited skill's page (only on fresh create, not re-inherit)
+			if (itemType === 'skill' && result.inherited_name && result.status === 'created') {
+				await goto(`/skills/${encodeURIComponent(result.inherited_name)}`);
+			}
 		} catch (e: any) {
 			errorMsg = e.message ?? 'Network error';
 		} finally {
@@ -93,7 +99,7 @@
 	{open}
 	onOpenChange={handleOpenChange}
 	title="Inherit {itemType}: {itemName}"
-	maxWidth="lg"
+	maxWidth="xl"
 >
 	{#snippet children()}
 		<div class="space-y-5">
@@ -113,7 +119,7 @@
 					</p>
 					<div
 						class="
-							max-h-64 overflow-y-auto rounded-lg border border-[var(--border)]
+							max-h-[60vh] overflow-y-auto rounded-lg border border-[var(--border)]
 							bg-[var(--bg-subtle)] p-4
 							text-sm text-[var(--text-primary)]
 							markdown-preview prose prose-slate

@@ -19,13 +19,14 @@ InvocationCategory = Literal[
     "plugin_skill",
     "plugin_command",
     "custom_skill",
+    "inherited_skill",
     "user_command",
     "agent",
 ]
 
 # Categories that go into session_skills table
 _SKILL_CATEGORIES: frozenset[str] = frozenset(
-    {"bundled_skill", "plugin_skill", "custom_skill"}
+    {"bundled_skill", "plugin_skill", "custom_skill", "inherited_skill"}
 )
 # Categories that go into session_commands table
 _COMMAND_CATEGORIES: frozenset[str] = frozenset({"builtin_command", "user_command", "plugin_command"})
