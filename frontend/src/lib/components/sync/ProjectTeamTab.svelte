@@ -4,7 +4,7 @@
 	import type { RemoteSessionUser, StatItem } from '$lib/api-types';
 	import StatsGrid from '$lib/components/StatsGrid.svelte';
 	import SessionCard from '$lib/components/SessionCard.svelte';
-	import { formatRelativeTime, formatDuration, formatCost, getTeamMemberColor } from '$lib/utils';
+	import { formatRelativeTime, formatDuration, formatCost, getTeamMemberColor, cleanPromptText } from '$lib/utils';
 
 	let {
 		projectEncodedName,
@@ -124,7 +124,7 @@
 			if (user.sessions.length > 0) {
 				const latest = user.sessions[0];
 				lastTitle = latest.session_titles?.[0] ?? null;
-				lastPrompt = latest.initial_prompt ?? null;
+				lastPrompt = latest.initial_prompt ? cleanPromptText(latest.initial_prompt) : null;
 			}
 
 			const topTools = [...tools.entries()]

@@ -9,6 +9,7 @@
 		Clock
 	} from 'lucide-svelte';
 	import type { SessionChain, SessionChainNode } from '$lib/api-types';
+	import { cleanPromptText, truncate } from '$lib/utils';
 
 	interface Props {
 		chain: SessionChain;
@@ -98,25 +99,11 @@
 		return node.slug || node.uuid.slice(0, 8);
 	}
 
-	// Clean prompt text by removing command tags
-	function cleanPromptText(text: string | undefined): string {
-		if (!text) return '';
-		// Remove <command-message>...</command-message>, <command-name>...</command-name>, <command-args>...</command-args>
-		return text
-			.replace(/<command-message>[^<]*<\/command-message>/g, '')
-			.replace(/<command-name>[^<]*<\/command-name>/g, '')
-			.replace(/<command-args>/g, '')
-			.replace(/<\/command-args>/g, '')
-			.replace(/<[^>]+>/g, '') // Remove any other tags
-			.trim();
-	}
-
-	// Truncate text
-	function truncate(text: string | undefined, maxLen: number): string {
+	// Clean and truncate prompt text for chain node display
+	function cleanAndTruncate(text: string | undefined, maxLen: number): string {
 		if (!text) return '';
 		const cleaned = cleanPromptText(text);
-		if (cleaned.length <= maxLen) return cleaned;
-		return cleaned.slice(0, maxLen).trim() + '...';
+		return truncate(cleaned, maxLen);
 	}
 </script>
 
@@ -192,7 +179,7 @@
 							<!-- Initial prompt preview -->
 							{#if node.initial_prompt && !node.is_continuation_marker}
 								<p class="prompt-preview">
-									{truncate(node.initial_prompt, 80)}
+									{cleanAndTruncate(node.initial_prompt, 80)}
 								</p>
 							{:else if node.is_continuation_marker}
 								<p class="text-xs text-[var(--text-muted)] italic mb-2">
