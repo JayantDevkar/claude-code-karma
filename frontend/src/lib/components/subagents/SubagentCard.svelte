@@ -26,7 +26,8 @@
 		cleanAgentIdForDisplay,
 		formatDuration,
 		calculateSubagentDuration,
-		truncate
+		truncate,
+		cleanPromptText
 	} from '$lib/utils';
 
 	interface Props {
@@ -85,9 +86,14 @@
 	let topTools = $derived(allTools.slice(0, 5));
 	let hasMoreTools = $derived(allTools.length > 5);
 
+	// Clean prompt text (strip command tags)
+	let cleanedPrompt = $derived(
+		subagent.initial_prompt ? cleanPromptText(subagent.initial_prompt) : ''
+	);
+
 	// Check if content is expandable
 	let hasExpandableContent = $derived(
-		hasMoreTools || (subagent.initial_prompt && subagent.initial_prompt.length > 200)
+		hasMoreTools || (cleanedPrompt && cleanedPrompt.length > 200)
 	);
 
 	// Get icon based on type (known types get specific icons, others get Bot)
@@ -259,7 +265,7 @@
 				</div>
 
 				<!-- Task description -->
-				{#if subagent.initial_prompt}
+				{#if cleanedPrompt}
 					<p
 						class="
 							mt-1.5 text-sm text-[var(--text-secondary)] transition-all duration-200
@@ -268,8 +274,8 @@
 						"
 					>
 						{isExpanded
-							? subagent.initial_prompt
-							: truncate(subagent.initial_prompt, 200)}
+							? cleanedPrompt
+							: truncate(cleanedPrompt, 200)}
 					</p>
 				{/if}
 			</div>

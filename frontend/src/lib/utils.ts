@@ -214,6 +214,19 @@ export function truncate(text: string, maxLength: number): string {
 }
 
 /**
+ * Clean prompt text by removing command tags (skill invocation metadata)
+ * and any stray HTML tags. Shared by ExpandablePrompt, SessionChainView, SubagentCard, etc.
+ */
+export function cleanPromptText(text: string): string {
+	return text
+		.replace(/<command-message>[^<]*<\/command-message>\s*/g, '')
+		.replace(/<command-name>[^<]*<\/command-name>\s*/g, '')
+		.replace(/<command-args>[\s\S]*?<\/command-args>\s*/g, '')
+		.replace(/<[^>]+>/g, '') // Strip any remaining HTML tags
+		.trim();
+}
+
+/**
  * Format file size in human-readable format (e.g., "1.2 KB", "3.4 MB")
  */
 export function formatFileSize(bytes: number): string {
@@ -389,7 +402,7 @@ export function getSessionDisplayPrompt(
 	initialPrompt?: string,
 	sessionTitles?: string[]
 ): string | null {
-	if (initialPrompt && initialPrompt !== 'No prompt') return initialPrompt;
+	if (initialPrompt && initialPrompt !== 'No prompt') return cleanPromptText(initialPrompt);
 	return sessionTitles?.[0] || null;
 }
 
