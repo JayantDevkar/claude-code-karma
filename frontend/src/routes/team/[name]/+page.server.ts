@@ -84,9 +84,9 @@ export const load: PageServerLoad = async ({ fetch, params }) => {
 		[]
 	);
 
-	// Filter pending folder offers to this team
+	// Filter pending folder offers to this team (sessions and outbox types only)
 	const pendingFolders = (pendingFoldersData.pending ?? []).filter(
-		(f) => f.from_team === teamName
+		(f) => f.from_team === teamName && (f.folder_type === 'sessions' || f.folder_type === 'outbox')
 	);
 
 	return {

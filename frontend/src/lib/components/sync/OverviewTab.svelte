@@ -69,27 +69,41 @@
 	}
 
 	// ── Stats ─────────────────────────────────────────────────────────────────
-	let projectCount = $state(0);
 	let connectedMembers = $state(0);
 	let totalMembers = $state(0);
-	let sessionsSharedCount = $state(0);
-	let sessionsReceivedCount = $state(0);
-	let statsLoaded = $state(false);
-	let statsLoading = $state(true);
+	let membersLoaded = $state(false);
+	let membersLoading = $state(true);
 
-	async function loadStats() {
-		if (!statsLoaded) statsLoading = true;
-		// Derive project count from status
-		if (status?.teams) {
-			let count = 0;
-			for (const team of Object.values(status.teams) as Array<{ project_count?: number }>) {
-				count += team.project_count ?? 0;
-			}
-			projectCount = count;
+	// Derive project count from status, scoped to active team
+	let projectCount = $derived.by(() => {
+		if (!teamName || !status?.teams) return 0;
+		const team = status.teams[teamName] as { project_count?: number } | undefined;
+		return team?.project_count ?? 0;
+	});
+
+	// Derive session counts from projectStatuses (fetched by loadProjectStatus)
+	let sessionsSharedCount = $derived.by(() => {
+		let shared = 0;
+		for (const p of projectStatuses) {
+			shared += (p as { packaged_count?: number }).packaged_count ?? 0;
 		}
+		return shared;
+	});
 
+	let sessionsReceivedCount = $derived.by(() => {
+		let received = 0;
+		for (const p of projectStatuses) {
+			const counts = (p as { received_counts?: Record<string, number> }).received_counts ?? {};
+			for (const count of Object.values(counts)) {
+				received += count ?? 0;
+			}
+		}
+		return received;
+	});
+
+	async function loadMemberStats() {
+		if (!membersLoaded) membersLoading = true;
 		try {
-			// Fetch devices to count connected members
 			const devicesRes = await fetch(`${API_BASE}/sync/devices`).catch(() => null);
 			if (devicesRes?.ok) {
 				const devData = await devicesRes.json();
@@ -98,33 +112,11 @@
 				totalMembers = remoteDevices.length;
 				connectedMembers = remoteDevices.filter((d: { connected?: boolean }) => d.connected).length;
 			}
-
-			// Fetch project status for session counts
-			if (teamName) {
-				const statusRes = await fetch(
-					`${API_BASE}/sync/teams/${encodeURIComponent(teamName)}/project-status`
-				).catch(() => null);
-				if (statusRes?.ok) {
-					const statusData = await statusRes.json();
-					const projects = statusData.projects ?? Object.values(statusData);
-					let shared = 0;
-					let received = 0;
-					for (const p of projects) {
-						shared += (p as { packaged_count?: number }).packaged_count ?? 0;
-						const counts = (p as { received_counts?: Record<string, number> }).received_counts ?? {};
-						for (const count of Object.values(counts)) {
-							received += count ?? 0;
-						}
-					}
-					sessionsSharedCount = shared;
-					sessionsReceivedCount = received;
-				}
-			}
 		} catch {
 			// Non-critical
 		} finally {
-			statsLoading = false;
-			statsLoaded = true;
+			membersLoading = false;
+			membersLoaded = true;
 		}
 	}
 
@@ -178,7 +170,10 @@
 
 	async function loadRecentActivity() {
 		try {
-			const res = await fetch(`${API_BASE}/sync/activity?limit=8`).catch(() => null);
+			const url = new URL(`${API_BASE}/sync/activity`, window.location.origin);
+			url.searchParams.set('limit', '8');
+			if (teamName) url.searchParams.set('team_name', teamName);
+			const res = await fetch(url.toString()).catch(() => null);
 			if (res?.ok) {
 				const data = await res.json();
 				recentEvents = data.events ?? [];
@@ -252,8 +247,8 @@
 	$effect(() => {
 		teamName; // track teamName
 		untrack(() => {
-			statsLoaded = false;
-			statsLoading = true;
+			membersLoaded = false;
+			membersLoading = true;
 			watchLoading = true;
 			projectStatusLoading = true;
 			activityLoading = true;
@@ -266,7 +261,7 @@
 		const _team = teamName; // track teamName so we re-fetch on team switch
 		untrack(() => {
 			loadWatchStatus();
-			loadStats();
+			loadMemberStats();
 			loadProjectStatus();
 			loadRecentActivity();
 		});
@@ -338,7 +333,7 @@
 	{/if}
 
 	<!-- ── 2. Stats Row ──────────────────────────────────────────────────── -->
-	{#if statsLoading}
+	{#if membersLoading && projectStatusLoading}
 		<div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
 			{#each [1, 2, 3, 4] as i (i)}
 				<div class="h-20 rounded-[var(--radius-lg)] bg-[var(--bg-muted)] animate-pulse" aria-hidden="true"></div>
