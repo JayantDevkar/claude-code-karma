@@ -12,7 +12,7 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 13
+SCHEMA_VERSION = 14
 
 SCHEMA_SQL = """
 -- Schema versioning
@@ -719,6 +719,37 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
                             "  Backfilled %d session_packaged events for %s/%s",
                             len(sessions), tn, pen,
                         )
+
+        if current_version < 14:
+            logger.info("Migrating → v14: deduplicate session_received events")
+            # Race condition between reindex_all (using _indexing_lock) and
+            # trigger_remote_reindex (using _reindex_lock) caused duplicate
+            # session_received events.  Keep only the earliest event per
+            # (session_uuid, event_type) pair.
+            dupes = conn.execute(
+                """SELECT COUNT(*) FROM sync_events
+                   WHERE event_type = 'session_received'
+                     AND id NOT IN (
+                         SELECT MIN(id) FROM sync_events
+                         WHERE event_type = 'session_received'
+                           AND session_uuid IS NOT NULL
+                         GROUP BY session_uuid
+                     )
+                     AND session_uuid IS NOT NULL"""
+            ).fetchone()[0]
+            if dupes:
+                conn.execute(
+                    """DELETE FROM sync_events
+                       WHERE event_type = 'session_received'
+                         AND id NOT IN (
+                             SELECT MIN(id) FROM sync_events
+                             WHERE event_type = 'session_received'
+                               AND session_uuid IS NOT NULL
+                             GROUP BY session_uuid
+                         )
+                         AND session_uuid IS NOT NULL"""
+                )
+                logger.info("  Removed %d duplicate session_received events", dupes)
 
     # Record version
     conn.execute(

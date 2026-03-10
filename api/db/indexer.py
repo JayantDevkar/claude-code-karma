@@ -502,31 +502,37 @@ def index_remote_sessions(conn: sqlite3.Connection) -> dict:
                     )
 
                     # Log session_received for truly new sessions (not re-index).
-                    # Resolve team_name from the project so the chart query can filter by team.
+                    # Dedup against sync_events to prevent duplicates from concurrent
+                    # indexer runs (reindex_all + trigger_remote_reindex use separate locks).
                     if uuid not in db_mtimes:
                         try:
                             from db.sync_queries import log_event
-                            team_names = conn.execute(
-                                "SELECT team_name FROM sync_team_projects WHERE project_encoded_name = ?",
-                                (local_encoded,),
-                            ).fetchall()
-                            if team_names:
-                                for (tn,) in team_names:
+                            already_logged = conn.execute(
+                                "SELECT 1 FROM sync_events WHERE event_type = 'session_received' AND session_uuid = ? LIMIT 1",
+                                (uuid,),
+                            ).fetchone()
+                            if not already_logged:
+                                team_names = conn.execute(
+                                    "SELECT team_name FROM sync_team_projects WHERE project_encoded_name = ?",
+                                    (local_encoded,),
+                                ).fetchall()
+                                if team_names:
+                                    for (tn,) in team_names:
+                                        log_event(
+                                            conn, "session_received",
+                                            team_name=tn,
+                                            member_name=resolved_uid,
+                                            project_encoded_name=local_encoded,
+                                            session_uuid=uuid,
+                                        )
+                                else:
+                                    # No team found — log without team_name as fallback
                                     log_event(
                                         conn, "session_received",
-                                        team_name=tn,
                                         member_name=resolved_uid,
                                         project_encoded_name=local_encoded,
                                         session_uuid=uuid,
                                     )
-                            else:
-                                # No team found — log without team_name as fallback
-                                log_event(
-                                    conn, "session_received",
-                                    member_name=resolved_uid,
-                                    project_encoded_name=local_encoded,
-                                    session_uuid=uuid,
-                                )
                         except Exception:
                             pass  # Best-effort logging
                 except Exception as e:
