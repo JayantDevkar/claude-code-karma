@@ -504,7 +504,7 @@ async def _ensure_leader_introducers(proxy, conn) -> int:
             if changed:
                 logger.info("Auto-set introducer=True for leader device %s", leader_device_id[:20])
                 updated += 1
-        except (ValueError, Exception):
+        except Exception:
             # Device not configured locally (we ARE the leader) or Syncthing error
             pass
     return updated
@@ -1342,12 +1342,18 @@ async def sync_pending_devices() -> Any:
     """
     conn = _get_sync_conn()
 
-    # Phase 0: Ensure leader devices have introducer=True (auto-heals existing setups)
+    # Get proxy once — used by both Phase 0 and Phase 1
     try:
         proxy = get_proxy()
-        await _ensure_leader_introducers(proxy, conn)
     except Exception:
-        pass
+        proxy = None
+
+    # Phase 0: Ensure leader devices have introducer=True (auto-heals existing setups)
+    if proxy:
+        try:
+            await _ensure_leader_introducers(proxy, conn)
+        except Exception:
+            pass
 
     # Phase 1 only: auto-accept pending devices (handshake completion).
     # Folder acceptance is now explicit — handled by POST /pending/accept/{folder_id}.
@@ -1355,7 +1361,7 @@ async def sync_pending_devices() -> Any:
     remaining_pending = None
     try:
         config = await run_sync(_load_identity)
-        if config:
+        if config and proxy:
             auto_accepted, remaining_pending = await _auto_accept_pending_peers(proxy, config, conn)
     except Exception as e:
         logger.debug("Auto-accept pending peers failed: %s", e)
