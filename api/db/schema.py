@@ -10,7 +10,7 @@ import sqlite3
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 12
+SCHEMA_VERSION = 13
 
 SCHEMA_SQL = """
 -- Schema versioning
@@ -665,6 +665,55 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
                 CREATE INDEX IF NOT EXISTS idx_skill_definitions_user ON skill_definitions(source_user_id);
                 CREATE INDEX IF NOT EXISTS idx_skill_definitions_category ON skill_definitions(category);
             """)
+
+        if current_version < 13:
+            logger.info("Migrating → v13: fix session_packaged events (per-session with backdating)")
+
+            # 1. Delete old inflated session_packaged events (no session_uuid = one per
+            #    watcher trigger, not per session). Also delete ones that were logged
+            #    retroactively via sync_now with today's timestamp instead of session date.
+            conn.execute(
+                "DELETE FROM sync_events WHERE event_type = 'session_packaged'"
+            )
+
+            # 2. Re-create per-session events from actual session data, backdated to
+            #    session start_time. Only for local sessions that belong to a synced project.
+            import json as _json
+            from pathlib import Path
+            config_path = Path.home() / ".claude_karma" / "sync-config.json"
+            local_user = None
+            if config_path.exists():
+                try:
+                    local_user = _json.loads(config_path.read_text()).get("user_id")
+                except Exception:
+                    pass
+
+            if local_user:
+                # Find all (team, project) pairs
+                team_projects = conn.execute(
+                    "SELECT team_name, project_encoded_name FROM sync_team_projects"
+                ).fetchall()
+                for tp in team_projects:
+                    tn, pen = tp[0], tp[1]
+                    # Get local sessions for this project
+                    sessions = conn.execute(
+                        "SELECT uuid, start_time FROM sessions "
+                        "WHERE project_encoded_name = ? AND source = 'local' "
+                        "AND start_time IS NOT NULL",
+                        (pen,),
+                    ).fetchall()
+                    for s in sessions:
+                        conn.execute(
+                            "INSERT INTO sync_events "
+                            "(event_type, team_name, project_encoded_name, member_name, session_uuid, created_at) "
+                            "VALUES ('session_packaged', ?, ?, ?, ?, ?)",
+                            (tn, pen, local_user, s[0], s[1]),
+                        )
+                    if sessions:
+                        logger.info(
+                            "  Backfilled %d session_packaged events for %s/%s",
+                            len(sessions), tn, pen,
+                        )
 
     # Record version
     conn.execute(

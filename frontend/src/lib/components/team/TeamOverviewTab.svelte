@@ -24,7 +24,7 @@
 		createCommonScaleConfig,
 		getThemeColors
 	} from '$lib/components/charts/chartConfig';
-	import { getTeamMemberHexColor, getUserChartLabel } from '$lib/utils';
+	import { getTeamMemberHexColor } from '$lib/utils';
 
 	// Register Chart.js components
 	Chart.register(BarController, BarElement, LinearScale, CategoryScale, Tooltip, Legend);
@@ -107,15 +107,12 @@
 		}
 	]);
 
-	// Chart data: per member, compute out (contributed) and in (received from others)
+	// Chart data: sessions contributed per member
 	let chartMemberIds = $derived([...memberTotals.keys()]);
 	let chartLabels = $derived(
 		chartMemberIds.map((name) => userNames?.[name] ?? name)
 	);
 	let chartOutData = $derived(chartMemberIds.map((id) => memberTotals.get(id) ?? 0));
-	let chartInData = $derived(
-		chartMemberIds.map((id) => totalSessions - (memberTotals.get(id) ?? 0))
-	);
 
 	onMount(() => {
 		registerChartDefaults();
@@ -129,8 +126,7 @@
 	$effect(() => {
 		if (!canvas || memberTotals.size === 0) return;
 
-		const outColors = chartMemberIds.map((id) => getTeamMemberHexColor(id));
-		const inColors = chartMemberIds.map((id) => getTeamMemberHexColor(id) + '30');
+		const barColors = chartMemberIds.map((id) => getTeamMemberHexColor(id));
 
 		if (!chart) {
 			const colors = getThemeColors();
@@ -142,15 +138,9 @@
 					labels: chartLabels,
 					datasets: [
 						{
-							label: 'Out',
+							label: 'Contributed',
 							data: chartOutData,
-							backgroundColor: outColors,
-							borderRadius: 4
-						},
-						{
-							label: 'In',
-							data: chartInData,
-							backgroundColor: inColors,
+							backgroundColor: barColors,
 							borderRadius: 4
 						}
 					]
@@ -170,15 +160,7 @@
 					},
 					plugins: {
 						...createResponsiveConfig().plugins,
-						legend: {
-							...createResponsiveConfig().plugins.legend,
-							position: 'bottom',
-							labels: {
-								boxWidth: 12,
-								padding: 16,
-								font: { size: 11 }
-							}
-						},
+						legend: { display: false },
 						tooltip: {
 							...createResponsiveConfig().plugins.tooltip,
 							backgroundColor: colors.bgBase,
@@ -194,9 +176,7 @@
 		} else {
 			chart.data.labels = chartLabels;
 			chart.data.datasets[0].data = chartOutData;
-			chart.data.datasets[0].backgroundColor = outColors;
-			chart.data.datasets[1].data = chartInData;
-			chart.data.datasets[1].backgroundColor = inColors;
+			chart.data.datasets[0].backgroundColor = barColors;
 			chart.update();
 		}
 	});
@@ -222,7 +202,7 @@
 	{#if memberTotals.size > 0}
 		<section>
 			<div class="rounded-lg border border-[var(--border)] bg-[var(--bg-subtle)] p-4">
-				<h3 class="text-sm font-medium text-[var(--text-primary)] mb-4">Sessions by Member</h3>
+				<h3 class="text-sm font-medium text-[var(--text-primary)] mb-4">Sessions Contributed</h3>
 				<div class="h-[200px]">
 					<canvas bind:this={canvas}></canvas>
 				</div>

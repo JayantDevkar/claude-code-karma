@@ -1723,6 +1723,24 @@ async def sync_team_sync_now(team_name: str) -> Any:
             )
             manifest = await run_sync(packager.package, outbox)
             packaged_count += manifest.session_count
+            # Log session_packaged for sessions not already logged (dedup)
+            already_logged = {
+                r[0] for r in conn.execute(
+                    "SELECT session_uuid FROM sync_events "
+                    "WHERE event_type = 'session_packaged' AND team_name = ? "
+                    "AND project_encoded_name = ? AND session_uuid IS NOT NULL",
+                    (team_name, encoded),
+                ).fetchall()
+            }
+            for entry in manifest.sessions:
+                if entry.uuid not in already_logged:
+                    log_event(
+                        conn, "session_packaged",
+                        team_name=team_name,
+                        project_encoded_name=encoded,
+                        member_name=config.user_id,
+                        session_uuid=entry.uuid,
+                    )
         except Exception as e:
             logger.warning("sync-now: failed to package %s: %s", encoded, e)
             errors.append(f"{encoded}: {e}")
@@ -2467,7 +2485,7 @@ async def sync_member_profile(identifier: str) -> Any:
 
     # Incoming stats — sessions from OTHER members per day (what this member receives)
     incoming_rows = conn.execute(
-        """SELECT DATE(created_at) AS date, COUNT(*) AS incoming
+        """SELECT DATE(created_at, 'localtime') AS date, COUNT(*) AS incoming
            FROM sync_events
            WHERE team_name IN ({})
              AND member_name != ?
