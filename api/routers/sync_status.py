@@ -273,10 +273,16 @@ async def _ensure_inbox_folders(
     return result
 
 
-def _parse_folder_id(folder_id: str):
+def _parse_folder_id(folder_id: str, conn=None):
     """Parse a karma folder ID into (member_name, suffix).
 
     Expected format: ``karma-out-{member_name}-{suffix}``
+
+    Since both member_name and suffix can contain hyphens, splitting is
+    ambiguous. When a DB connection is provided, all splits are tried and
+    the one matching a known team member is preferred. Without a DB
+    connection, falls back to shortest-name-first (legacy behavior).
+
     Returns None if the folder ID does not match.
     """
     prefix = "karma-out-"
@@ -286,6 +292,18 @@ def _parse_folder_id(folder_id: str):
     parts = rest.split("-")
     if len(parts) < 2:
         return None
+
+    # With DB: try all splits and pick the one matching a known member
+    if conn is not None:
+        known_devices = get_known_devices(conn)
+        known_names = {v for v in known_devices.values()}
+        for i in range(1, len(parts)):
+            candidate_name = "-".join(parts[:i])
+            candidate_suffix = "-".join(parts[i:])
+            if candidate_name in known_names and candidate_suffix:
+                return candidate_name, candidate_suffix
+
+    # Fallback: shortest name first (legacy, no DB)
     for i in range(1, len(parts)):
         candidate_name = "-".join(parts[:i])
         candidate_suffix = "-".join(parts[i:])
@@ -366,10 +384,16 @@ def _parse_folder_id_with_hints(folder_id: str, known_user_ids: set[str]):
     return _parse_folder_id(folder_id)
 
 
-def _parse_handshake_folder(folder_id: str):
+def _parse_handshake_folder(folder_id: str, conn=None):
     """Parse a karma-join handshake folder ID into (username, team_name).
 
     Expected format: ``karma-join-{username}-{team_name}``
+
+    Since both username and team_name can contain hyphens, splitting is
+    ambiguous. When a DB connection is provided, all possible splits are
+    tried and the one matching a known team is preferred. Without a DB
+    connection, falls back to shortest-username-first (legacy behavior).
+
     Returns None if the folder ID does not match.
     """
     prefix = "karma-join-"
@@ -379,7 +403,16 @@ def _parse_handshake_folder(folder_id: str):
     parts = rest.split("-")
     if len(parts) < 2:
         return None
-    # Same ambiguity as _parse_folder_id — try shortest username first
+
+    # With DB: try all splits and pick the one matching a known team
+    if conn is not None:
+        for i in range(1, len(parts)):
+            candidate_name = "-".join(parts[:i])
+            candidate_team = "-".join(parts[i:])
+            if candidate_name and candidate_team and get_team(conn, candidate_team):
+                return candidate_name, candidate_team
+
+    # Fallback: shortest username first (legacy, no DB)
     for i in range(1, len(parts)):
         candidate_name = "-".join(parts[:i])
         candidate_team = "-".join(parts[i:])
@@ -418,7 +451,7 @@ def _find_team_for_folder(conn, folder_ids: list[str]) -> Optional[str]:
     """
     # Fast path: handshake folders contain the team name directly
     for folder_id in folder_ids:
-        parsed = _parse_handshake_folder(folder_id)
+        parsed = _parse_handshake_folder(folder_id, conn=conn)
         if parsed:
             _, team_name = parsed
             # Verify this team exists locally
@@ -430,7 +463,7 @@ def _find_team_for_folder(conn, folder_ids: list[str]) -> Optional[str]:
     team_projects = {t["name"]: list_team_projects(conn, t["name"]) for t in teams}
 
     for folder_id in folder_ids:
-        parsed = _parse_folder_id(folder_id)
+        parsed = _parse_folder_id(folder_id, conn=conn)
         if not parsed:
             continue
         _, suffix = parsed
@@ -525,11 +558,11 @@ async def _auto_accept_pending_peers(proxy, config, conn) -> tuple[int, dict]:
             # Extract username from folder IDs (prefer handshake folders)
             username = None
             for folder_id in karma_folders:
-                hs = _parse_handshake_folder(folder_id)
+                hs = _parse_handshake_folder(folder_id, conn=conn)
                 if hs:
                     username = hs[0]
                     break
-                parsed = _parse_folder_id(folder_id)
+                parsed = _parse_folder_id(folder_id, conn=conn)
                 if parsed:
                     candidate_name, _ = parsed
                     if device_name and device_name == candidate_name:
@@ -1034,7 +1067,7 @@ async def _cleanup_syncthing_for_team(proxy, config, conn, team_name: str) -> di
 
             # Check karma-out-* folders (outbox + inbox)
             if folder_id.startswith("karma-out-"):
-                parsed = _parse_folder_id(folder_id)
+                parsed = _parse_folder_id(folder_id, conn=conn)
                 if parsed and parsed[1] in proj_suffixes and parsed[0] in member_names:
                     try:
                         await run_sync(proxy.remove_folder, folder_id)
@@ -1044,7 +1077,7 @@ async def _cleanup_syncthing_for_team(proxy, config, conn, team_name: str) -> di
 
             # Check karma-join-* folders (handshake)
             elif folder_id.startswith("karma-join-"):
-                parsed = _parse_handshake_folder(folder_id)
+                parsed = _parse_handshake_folder(folder_id, conn=conn)
                 if parsed and parsed[1] == team_name:
                     try:
                         await run_sync(proxy.remove_folder, folder_id)
@@ -1099,7 +1132,7 @@ async def _cleanup_syncthing_for_member(
             folder_id = folder.get("id", "")
             if not folder_id.startswith("karma-out-"):
                 continue
-            parsed = _parse_folder_id(folder_id)
+            parsed = _parse_folder_id(folder_id, conn=conn)
             if not parsed or parsed[1] not in proj_suffixes:
                 continue
 
