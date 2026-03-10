@@ -5,7 +5,9 @@ run_in_executor for async. The CLI calls them directly.
 """
 
 import json
+import shutil
 import sqlite3
+from pathlib import Path
 from typing import Optional
 
 
@@ -420,3 +422,47 @@ def query_session_stats_by_member(
         }
         for r in rows
     ]
+
+
+def cleanup_data_for_member(
+    conn: sqlite3.Connection,
+    team_name: str,
+    member_name: str,
+    karma_base: Path,
+) -> dict:
+    """Delete remote-session files and DB rows for a removed member.
+
+    Scoped to the team's projects so data from other teams is preserved.
+    """
+    projects = list_team_projects(conn, team_name)
+    project_encoded_names = [p["project_encoded_name"] for p in projects]
+
+    # Filesystem: delete per-project dirs under remote-sessions/{member}/
+    dirs_removed = 0
+    remote_base = karma_base / "remote-sessions" / member_name
+    for encoded_name in project_encoded_names:
+        target = remote_base / encoded_name
+        if target.exists():
+            shutil.rmtree(target, ignore_errors=True)
+            dirs_removed += 1
+
+    # Remove member dir if now empty
+    if remote_base.exists():
+        try:
+            remote_base.rmdir()  # only succeeds if empty
+        except OSError:
+            pass
+
+    # DB: delete remote session rows scoped to team projects
+    sessions_deleted = 0
+    if project_encoded_names:
+        placeholders = ",".join("?" * len(project_encoded_names))
+        cursor = conn.execute(
+            f"DELETE FROM sessions WHERE source = 'remote' AND remote_user_id = ?"
+            f" AND project_encoded_name IN ({placeholders})",
+            [member_name, *project_encoded_names],
+        )
+        sessions_deleted = cursor.rowcount
+        conn.commit()
+
+    return {"dirs_removed": dirs_removed, "sessions_deleted": sessions_deleted}

@@ -736,12 +736,17 @@ def team_list():
 @team.command("remove")
 @click.argument("name")
 @click.option("--team", "team_name", required=True, help="Team to remove member from")
-def team_remove(name: str, team_name: str):
-    """Remove a team member."""
-    require_config()
+@click.option("--keep-data", is_flag=True, default=False,
+              help="Keep synced session files and DB rows (only remove from team)")
+def team_remove(name: str, team_name: str, keep_data: bool):
+    """Remove a team member — cleans up Syncthing folders, devices, and session data."""
+    config = require_config()
     conn = _get_db()
 
-    from db.sync_queries import get_team, list_members, remove_member, log_event
+    from db.sync_queries import (
+        get_team, list_members, list_team_projects, remove_member, log_event,
+        cleanup_data_for_member,
+    )
 
     team_data = get_team(conn, team_name)
     if not team_data:
@@ -752,9 +757,78 @@ def team_remove(name: str, team_name: str):
     if member is None:
         raise click.ClickException(f"Member '{name}' not found in team '{team_name}'.")
 
-    log_event(conn, "member_removed", team_name=team_name, member_name=name)
-    remove_member(conn, team_name, member["device_id"])
-    click.echo(f"Removed team member '{name}'.")
+    device_id = member["device_id"]
+
+    # Syncthing cleanup (ported from team_leave pattern)
+    folders_removed = 0
+    devices_removed = 0
+    try:
+        from karma.syncthing import SyncthingClient, read_local_api_key
+
+        api_key = config.syncthing.api_key or read_local_api_key()
+        st = SyncthingClient(api_key=api_key)
+        if st.is_running():
+            projects = list_team_projects(conn, team_name)
+            proj_suffixes = set()
+            for proj in projects:
+                git_id = proj.get("git_identity")
+                suffix = git_id.replace("/", "-") if git_id else proj["project_encoded_name"]
+                proj_suffixes.add(suffix)
+
+            # Remove member's inbox folders and handshake folder
+            for folder in st.get_folders():
+                folder_id = folder.get("id", "")
+                if folder_id.startswith("karma-out-"):
+                    rest = folder_id[len("karma-out-"):]
+                    if rest.startswith(name + "-"):
+                        remainder = rest[len(name) + 1:]
+                        if remainder in proj_suffixes:
+                            st.remove_folder(folder_id)
+                            folders_removed += 1
+                elif folder_id == f"karma-join-{name}-{team_name}":
+                    st.remove_folder(folder_id)
+                    folders_removed += 1
+
+            # Remove device if not in other teams
+            my_device_id = config.syncthing.device_id
+            if device_id and device_id != my_device_id:
+                other = conn.execute(
+                    "SELECT COUNT(*) FROM sync_members WHERE device_id = ? AND team_name != ?",
+                    (device_id, team_name),
+                ).fetchone()[0]
+                if other == 0:
+                    try:
+                        st.remove_device(device_id)
+                        devices_removed += 1
+                    except Exception:
+                        pass
+        else:
+            click.echo("Warning: Syncthing not running — skipping Syncthing cleanup.", err=True)
+    except Exception as e:
+        click.echo(f"Warning: Syncthing cleanup failed: {e}", err=True)
+
+    # Filesystem + DB session cleanup
+    dirs_removed = 0
+    sessions_deleted = 0
+    if not keep_data:
+        try:
+            from karma.config import KARMA_BASE
+
+            result = cleanup_data_for_member(conn, team_name, name, KARMA_BASE)
+            dirs_removed = result["dirs_removed"]
+            sessions_deleted = result["sessions_deleted"]
+        except Exception as e:
+            click.echo(f"Warning: Data cleanup failed: {e}", err=True)
+
+    remove_member(conn, team_name, device_id)
+    log_event(conn, "member_removed", team_name=team_name, member_name=name,
+              detail={"folders_removed": folders_removed, "devices_removed": devices_removed,
+                      "dirs_removed": dirs_removed, "sessions_deleted": sessions_deleted})
+    click.echo(
+        f"Removed '{name}' from team '{team_name}'. "
+        f"Syncthing: {folders_removed} folders, {devices_removed} devices. "
+        f"Data: {dirs_removed} dirs, {sessions_deleted} sessions cleaned."
+    )
 
 
 if __name__ == "__main__":

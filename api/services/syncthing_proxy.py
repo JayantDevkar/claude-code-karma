@@ -466,6 +466,11 @@ class SyncthingProxy:
         removed = client.remove_all_non_self_devices()
         return {"ok": True, "removed": removed}
 
+    def get_configured_folders(self) -> list[dict]:
+        """Return raw folder config (id, path, devices, type) without sync status."""
+        client = self._require_client()
+        return client.get_folders()
+
     def get_pending_devices(self) -> dict:
         """Get devices trying to connect that aren't configured yet."""
         client = self._require_client()

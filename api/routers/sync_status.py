@@ -36,6 +36,7 @@ from db.sync_queries import (
     query_events,
     query_session_stats_by_member,
     update_team_session_limit,
+    cleanup_data_for_member,
 )
 from schemas import (
     AcceptPendingDeviceRequest,
@@ -412,6 +413,180 @@ def _find_team_for_folder(conn, folder_ids: list[str]) -> Optional[str]:
     return None
 
 
+def _extract_username_from_folder_ids(folder_ids: list[str], conn=None) -> Optional[str]:
+    """Extract a karma username from a list of folder IDs.
+
+    Prefers handshake folders (``karma-join-{user}-{team}``) which encode
+    the real karma user_id directly.  Falls back to outbox folder parsing
+    (``karma-out-{user}-{suffix}``).
+
+    When multiple folder IDs yield different names, prefers names without
+    dots — hostnames like ``Ayushs-Mac-mini.local`` contain dots, while
+    karma user_ids and machine_ids never do.
+
+    Returns the username or None if no folder could be parsed.
+    """
+    candidates: list[str] = []
+    for folder_id in folder_ids:
+        hs = _parse_handshake_folder(folder_id, conn=conn)
+        if hs:
+            # Handshake folders are authoritative
+            return hs[0]
+        parsed = _parse_folder_id(folder_id, conn=conn)
+        if parsed:
+            candidate_name, _ = parsed
+            candidates.append(candidate_name)
+    if not candidates:
+        return None
+    # Prefer non-hostname names (no dots)
+    non_hostname = [n for n in candidates if "." not in n]
+    return non_hostname[0] if non_hostname else candidates[0]
+
+
+async def _reconcile_introduced_devices(proxy, config, conn) -> int:
+    """Reconcile Syncthing-configured devices with the karma DB.
+
+    When the leader auto-accepts a new member on one device (e.g. MacBook),
+    Syncthing's introducer mechanism propagates the new device to the
+    leader's other devices (e.g. Mac Mini).  Those devices add the member
+    at the Syncthing level but the karma DB never learns about them.
+
+    This function bridges the gap: for each configured device NOT in the
+    karma DB, it checks configured karma-* folders shared with that device,
+    extracts the username from the folder IDs, finds the team, and creates
+    the member record.
+
+    Returns count of members reconciled.
+    """
+    known_devices = get_known_devices(conn)
+    own_device_id = config.syncthing.device_id if config.syncthing else None
+
+    # Get all configured devices from Syncthing
+    try:
+        configured_devices = await run_sync(proxy.get_devices)
+    except Exception as e:
+        logger.debug("Reconcile: failed to get configured devices: %s", e)
+        return 0
+
+    # Get all configured folders from Syncthing
+    try:
+        configured_folders = await run_sync(proxy.get_configured_folders)
+    except Exception:
+        configured_folders = []
+
+    reconciled = 0
+
+    for device in configured_devices:
+        device_id = device.get("device_id", "")
+        if not device_id:
+            continue
+        # Skip self
+        if device.get("is_self") or (own_device_id and device_id == own_device_id):
+            continue
+        # Skip already known devices
+        if device_id in known_devices:
+            continue
+
+        # Find receiveonly karma-* folders that include this device.
+        # Only receiveonly folders are useful here — they are inboxes for
+        # OTHER members' sessions, and the folder ID encodes the sender's
+        # username (karma-out-{sender}-{suffix}).  Our own sendonly folders
+        # (outbox, handshake) contain ALL team devices as recipients but
+        # the sender is US, which would incorrectly extract our own
+        # username for the unknown device.
+        karma_folder_ids = []
+        for folder in configured_folders:
+            folder_id = folder.get("id", "")
+            if not folder_id.startswith("karma-"):
+                continue
+            if folder.get("type") != "receiveonly":
+                continue
+            folder_device_ids = {d.get("deviceID") for d in folder.get("devices", [])}
+            if device_id in folder_device_ids:
+                karma_folder_ids.append(folder_id)
+
+        if not karma_folder_ids:
+            continue
+
+        # Extract username by validating all possible splits against known
+        # team project suffixes.  We can't use known_names (the member
+        # isn't in the DB yet — that's the whole point of reconciliation).
+        # Instead, anchor on the project suffix which IS known.
+        username = None
+        team_name = None
+
+        # Build a map of project suffixes → team name (once, outside loop
+        # would be better but the device loop is typically tiny).
+        project_suffix_map: dict[str, str] = {}
+        for team in list_teams(conn):
+            for proj in list_team_projects(conn, team["name"]):
+                ps = _compute_proj_suffix(
+                    proj.get("git_identity"), proj.get("path"),
+                    proj["project_encoded_name"],
+                )
+                project_suffix_map[ps] = team["name"]
+
+        # Collect ALL valid (username, team_name) pairs from folder IDs,
+        # then pick the best one.  Multiple folders for the same device
+        # may yield different names — e.g. one from a stale hostname-based
+        # folder and one from the correct machine_id-based folder.
+        candidates: list[tuple[str, str]] = []
+
+        for folder_id in karma_folder_ids:
+            # Try handshake folders first (team name is the anchor)
+            hs = _parse_handshake_folder(folder_id, conn=conn)
+            if hs:
+                # Handshake folders are authoritative — use immediately
+                username, team_name = hs
+                candidates = [(username, team_name)]
+                break
+
+            # For karma-out-* folders, try all splits and validate suffix
+            if not folder_id.startswith("karma-out-"):
+                continue
+            rest = folder_id[len("karma-out-"):]
+            parts = rest.split("-")
+            # Try longest username first — the project suffix is shorter
+            # and more likely to match exactly.
+            for i in range(len(parts) - 1, 0, -1):
+                candidate_name = "-".join(parts[:i])
+                candidate_suffix = "-".join(parts[i:])
+                if candidate_suffix in project_suffix_map:
+                    candidates.append(
+                        (candidate_name, project_suffix_map[candidate_suffix])
+                    )
+                    break
+
+        # Pick the best candidate: prefer names without dots (hostnames
+        # like "Ayushs-Mac-mini.local" contain dots; karma user_ids and
+        # machine_ids never do).
+        if candidates:
+            non_hostname = [
+                (n, t) for n, t in candidates if "." not in n
+            ]
+            username, team_name = (
+                non_hostname[0] if non_hostname else candidates[0]
+            )
+
+        if not team_name or not username:
+            continue
+
+        # Create member record
+        upsert_member(conn, team_name, username, device_id=device_id)
+        log_event(
+            conn, "member_auto_accepted", team_name=team_name,
+            member_name=username,
+            detail={"strategy": "reconciliation", "source": "introduced_device"},
+        )
+        logger.info(
+            "Reconciled introduced device %s as %s in team %s",
+            device_id[:20], username, team_name,
+        )
+        reconciled += 1
+
+    return reconciled
+
+
 async def _ensure_leader_introducers(proxy, conn) -> int:
     """Ensure leader devices are marked as introducers in Syncthing.
 
@@ -484,7 +659,7 @@ async def _auto_accept_pending_peers(proxy, config, conn) -> tuple[int, dict]:
             device_info = pending_devices.get(device_id, {})
             device_name = device_info.get("name", "")
 
-            # Collect karma-* folders offered by this device
+            # Collect karma-* folders offered by this device (pending)
             karma_folders = []
             for folder_id, info in pending_folders.items():
                 if not folder_id.startswith("karma-"):
@@ -492,26 +667,35 @@ async def _auto_accept_pending_peers(proxy, config, conn) -> tuple[int, dict]:
                 if device_id in info.get("offeredBy", {}):
                     karma_folders.append(folder_id)
 
+            # Also check already-configured folders. When the leader's
+            # introducer propagates folders to this device, Syncthing may
+            # auto-configure them (not pending) while the device itself
+            # remains pending.
             if not karma_folders:
-                # No karma folders offered — cannot verify identity.
+                try:
+                    configured_folders = await run_sync(proxy.get_configured_folders)
+                    for folder in configured_folders:
+                        folder_id = folder.get("id", "")
+                        if not folder_id.startswith("karma-"):
+                            continue
+                        folder_device_ids = {
+                            d.get("deviceID") for d in folder.get("devices", [])
+                        }
+                        if device_id in folder_device_ids:
+                            karma_folders.append(folder_id)
+                except Exception:
+                    pass
+
+            if not karma_folders:
+                # No karma folders found — cannot verify identity.
                 # Device stays pending until handshake folder arrives.
                 continue
 
-            # Extract username from folder IDs (prefer handshake folders)
-            username = None
-            for folder_id in karma_folders:
-                hs = _parse_handshake_folder(folder_id, conn=conn)
-                if hs:
-                    username = hs[0]
-                    break
-                parsed = _parse_folder_id(folder_id, conn=conn)
-                if parsed:
-                    candidate_name, _ = parsed
-                    if device_name and device_name == candidate_name:
-                        username = candidate_name
-                        break
-                    if username is None:
-                        username = candidate_name
+            # Extract username from folder IDs (prefer handshake folders).
+            # Never fall back to Syncthing device hostname — it can be
+            # something like "Ayush-Mac-mini.local" which doesn't match
+            # the karma user_id used in folder IDs.
+            username = _extract_username_from_folder_ids(karma_folders, conn=conn)
 
             team_name = _find_team_for_folder(conn, karma_folders)
 
@@ -1305,12 +1489,23 @@ async def sync_pending_devices() -> Any:
         except Exception:
             pass
 
+    # Phase 0.5: Reconcile devices that Syncthing's introducer auto-added
+    # but the karma DB doesn't know about (multi-device leader scenario).
+    config = None
+    try:
+        config = await run_sync(_load_identity)
+        if config and proxy:
+            await _reconcile_introduced_devices(proxy, config, conn)
+    except Exception as e:
+        logger.debug("Reconcile introduced devices failed: %s", e)
+
     # Phase 1 only: auto-accept pending devices (handshake completion).
     # Folder acceptance is now explicit — handled by POST /pending/accept/{folder_id}.
     auto_accepted = 0
     remaining_pending = None
     try:
-        config = await run_sync(_load_identity)
+        if config is None:
+            config = await run_sync(_load_identity)
         if config and proxy:
             auto_accepted, remaining_pending = await _auto_accept_pending_peers(proxy, config, conn)
     except Exception as e:
@@ -1376,7 +1571,43 @@ async def sync_accept_pending_device(device_id: str, req: AcceptPendingDeviceReq
         raise HTTPException(404, "Device is not in the pending list")
 
     device_info = pending[device_id]
-    member_name = req.member_name or device_info.get("name", "unknown")
+
+    # Resolve member name: explicit request > folder ID extraction > hostname.
+    # Never blindly use the Syncthing hostname (e.g. "Ayush-Mac-mini.local")
+    # because it doesn't match the karma user_id used in folder IDs.
+    member_name = req.member_name
+    if not member_name:
+        # Try to extract real karma username from pending/configured folders
+        karma_folder_ids = []
+        try:
+            pending_folders = await run_sync(proxy.get_pending_folders)
+            for folder_id, info in pending_folders.items():
+                if not folder_id.startswith("karma-"):
+                    continue
+                if device_id in info.get("offeredBy", {}):
+                    karma_folder_ids.append(folder_id)
+        except Exception:
+            pass
+        if not karma_folder_ids:
+            try:
+                configured_folders = await run_sync(proxy.get_configured_folders)
+                for folder in configured_folders:
+                    folder_id = folder.get("id", "")
+                    if not folder_id.startswith("karma-"):
+                        continue
+                    folder_device_ids = {
+                        d.get("deviceID") for d in folder.get("devices", [])
+                    }
+                    if device_id in folder_device_ids:
+                        karma_folder_ids.append(folder_id)
+            except Exception:
+                pass
+        if karma_folder_ids:
+            member_name = _extract_username_from_folder_ids(
+                karma_folder_ids, conn=conn,
+            )
+        if not member_name:
+            member_name = device_info.get("name", "unknown")
 
     # 1. Accept device in Syncthing
     try:
@@ -1486,8 +1717,10 @@ async def sync_add_member(team_name: str, req: AddMemberRequest) -> Any:
 
 
 @router.delete("/teams/{team_name}/members/{member_name}")
-async def sync_remove_member(team_name: str, member_name: str) -> Any:
-    """Remove a member — cleans up their Syncthing folders and device."""
+async def sync_remove_member(
+    team_name: str, member_name: str, keep_data: bool = False,
+) -> Any:
+    """Remove a member — cleans up their Syncthing folders, device, and session data."""
     if not ALLOWED_PROJECT_NAME.match(team_name):
         raise HTTPException(400, "Invalid team name")
     if not ALLOWED_MEMBER_NAME.match(member_name):
@@ -1516,10 +1749,29 @@ async def sync_remove_member(team_name: str, member_name: str) -> Any:
     except Exception as e:
         logger.warning("Syncthing cleanup for member %s failed: %s", member_name, e)
 
-    remove_member(conn, team_name, device_id)
-    log_event(conn, "member_removed", team_name=team_name, member_name=member_name, detail=cleanup)
+    # Clean up filesystem and DB session data (scoped to team projects)
+    data_cleanup = {"dirs_removed": 0, "sessions_deleted": 0}
+    if not keep_data:
+        try:
+            from karma.config import KARMA_BASE
 
-    return {"ok": True, "name": member_name, **cleanup}
+            data_cleanup = await run_sync(
+                cleanup_data_for_member, conn, team_name, member_name, KARMA_BASE,
+            )
+        except Exception as e:
+            logger.warning("Data cleanup for member %s failed: %s", member_name, e)
+
+        try:
+            from services.remote_sessions import invalidate_caches
+            invalidate_caches()
+        except Exception as e:
+            logger.debug("Cache invalidation failed: %s", e)
+
+    remove_member(conn, team_name, device_id)
+    log_event(conn, "member_removed", team_name=team_name, member_name=member_name,
+              detail={**cleanup, **data_cleanup})
+
+    return {"ok": True, "name": member_name, **cleanup, **data_cleanup}
 
 
 # ─── Team project management ──────────────────────────────────────────
@@ -1879,19 +2131,33 @@ async def sync_pending() -> Any:
     display meaningful info instead of raw folder IDs.
     """
     conn = _get_sync_conn()
+
+    # Load identity early — needed for reconciliation and own-outbox filtering
+    config = await run_sync(_load_identity)
+
+    # Reconcile introduced devices before checking known_devices, so that
+    # devices propagated by the Syncthing introducer (multi-device leader)
+    # are added to the DB and their pending folders become visible.
+    try:
+        proxy = get_proxy()
+        if config:
+            await _reconcile_introduced_devices(proxy, config, conn)
+    except Exception as e:
+        logger.debug("Reconcile in sync_pending failed: %s", e)
+        try:
+            proxy = get_proxy()
+        except Exception:
+            return {"pending": []}
+
     known = get_known_devices(conn)
 
     if not known:
         return {"pending": []}
 
-    proxy = get_proxy()
     try:
         pending = await run_sync(proxy.get_pending_folders_for_ui, known)
     except SyncthingNotRunning:
         return {"pending": []}
-
-    # Load identity to filter out own outbox folders
-    config = await run_sync(_load_identity)
     own_user_id = config.user_id if config else None
     own_machine_id = config.machine_id if config else None
 
