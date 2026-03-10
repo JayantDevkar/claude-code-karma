@@ -1,7 +1,16 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { API_BASE } from '$lib/config';
-	import { Loader2, Info } from 'lucide-svelte';
+	import {
+		Loader2,
+		ShieldCheck,
+		ShieldAlert,
+		ArrowUpDown,
+		ArrowUp,
+		ArrowDown,
+		Ban,
+		Info
+	} from 'lucide-svelte';
 
 	interface Props {
 		teamName: string;
@@ -9,7 +18,6 @@
 
 	let { teamName }: Props = $props();
 
-	// Setting shape from API
 	interface SettingValue {
 		value: string;
 		source: string;
@@ -26,25 +34,27 @@
 
 	let loading = $state(true);
 	let error = $state<string | null>(null);
-	let saving = $state<string | null>(null); // which field is currently saving
+	let saving = $state<string | null>(null);
 
-	// Setting values
-	let autoAccept = $state<SettingValue>({ value: 'true', source: 'default' });
+	let autoAccept = $state<SettingValue>({ value: 'false', source: 'default' });
 	let syncDirection = $state<SettingValue>({ value: 'both', source: 'default' });
 	let sessionLimit = $state<SettingValue>({ value: 'all', source: 'default' });
 
-	const DIRECTION_OPTIONS: { value: string; label: string }[] = [
-		{ value: 'both', label: 'Both' },
-		{ value: 'send_only', label: 'Send Only' },
-		{ value: 'receive_only', label: 'Receive Only' },
-		{ value: 'none', label: 'None' }
+	const DIRECTION_OPTIONS: { value: string; label: string; icon: typeof ArrowUpDown; desc: string }[] = [
+		{ value: 'both', label: 'Both', icon: ArrowUpDown, desc: 'Full two-way sync — sending and receiving sessions with this team' },
+		{ value: 'send_only', label: 'Send', icon: ArrowUp, desc: 'Outbound only — sharing your sessions but not receiving from others' },
+		{ value: 'receive_only', label: 'Receive', icon: ArrowDown, desc: 'Inbound only — receiving team sessions but not sharing yours' },
+		{ value: 'none', label: 'Paused', icon: Ban, desc: 'Sync paused — no session data flows in either direction' }
 	];
 
-	const LIMIT_OPTIONS: { value: string; label: string }[] = [
-		{ value: 'all', label: 'All' },
-		{ value: 'recent_100', label: 'Recent 100' },
-		{ value: 'recent_10', label: 'Recent 10' }
+	const LIMIT_OPTIONS: { value: string; label: string; desc: string }[] = [
+		{ value: 'all', label: 'All sessions', desc: 'Sync every session for shared projects' },
+		{ value: 'recent_100', label: 'Recent 100', desc: 'Only the most recent 100 sessions per project' },
+		{ value: 'recent_10', label: 'Recent 10', desc: 'Only the most recent 10 sessions per project' }
 	];
+
+	let activeDirOption = $derived(DIRECTION_OPTIONS.find((o) => o.value === syncDirection.value));
+	let activeLimitOption = $derived(LIMIT_OPTIONS.find((o) => o.value === sessionLimit.value));
 
 	function sourceLabel(source: string): string {
 		switch (source) {
@@ -96,7 +106,6 @@
 				}
 			);
 			if (res.ok) {
-				// Update local state on success
 				if (field === 'auto_accept_members') {
 					autoAccept = { value, source: 'team' };
 				} else if (field === 'sync_direction') {
@@ -148,92 +157,159 @@
 		</button>
 	</div>
 {:else}
-	<div class="space-y-6">
-		<!-- Auto-accept members -->
-		<div class="rounded-lg border border-[var(--border)] bg-[var(--bg-subtle)] p-4">
-			<div class="flex items-center justify-between">
-				<div class="flex-1 min-w-0">
-					<div class="flex items-center gap-2">
-						<h3 class="text-sm font-medium text-[var(--text-primary)]">Auto-accept members</h3>
-						<span class="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded bg-[var(--bg-muted)] text-[var(--text-muted)] border border-[var(--border-subtle)]">
-							<Info size={9} />
-							{sourceLabel(autoAccept.source)}
-						</span>
+	<div class="space-y-5">
+
+		<!-- ═══ ACCESS CONTROL ═══ -->
+		<div
+			class="rounded-lg border overflow-hidden transition-colors
+				{autoAccept.value === 'true'
+					? 'border-[var(--warning)]/30'
+					: 'border-[var(--success)]/30'}"
+		>
+			<!-- Colored top accent bar -->
+			<div class="h-[3px] {autoAccept.value === 'true' ? 'bg-[var(--warning)]' : 'bg-[var(--success)]'}"></div>
+
+			<div class="p-5">
+				<div class="flex items-start justify-between gap-4">
+					<div class="flex items-start gap-3.5">
+						<!-- Status icon -->
+						<div
+							class="mt-0.5 p-2 rounded-lg transition-colors
+								{autoAccept.value === 'true'
+									? 'bg-[var(--warning)]/10 text-[var(--warning)]'
+									: 'bg-[var(--success)]/10 text-[var(--success)]'}"
+						>
+							{#if autoAccept.value === 'true'}
+								<ShieldAlert size={18} />
+							{:else}
+								<ShieldCheck size={18} />
+							{/if}
+						</div>
+
+						<div>
+							<div class="flex items-center gap-2.5">
+								<h3 class="text-sm font-semibold text-[var(--text-primary)]">
+									Auto-accept new members
+								</h3>
+								{#if autoAccept.source !== 'default'}
+									<span class="px-1.5 py-0.5 text-[10px] font-medium rounded bg-[var(--bg-muted)] text-[var(--text-muted)] border border-[var(--border-subtle)]">
+										{sourceLabel(autoAccept.source)}
+									</span>
+								{/if}
+							</div>
+
+							<!-- Consequence description — changes with state -->
+							<div class="mt-2 flex items-start gap-2">
+								<span
+									class="mt-[3px] w-1.5 h-1.5 rounded-full shrink-0
+										{autoAccept.value === 'true'
+											? 'bg-[var(--warning)]'
+											: 'bg-[var(--success)]'}"
+								></span>
+								<p class="text-xs leading-relaxed
+									{autoAccept.value === 'true'
+										? 'text-[var(--warning)]'
+										: 'text-[var(--text-muted)]'}">
+									{#if autoAccept.value === 'true'}
+										Open access — any device with your join code is automatically added to this team
+									{:else}
+										Manual approval — new devices appear as join requests for you to review before syncing
+									{/if}
+								</p>
+							</div>
+						</div>
 					</div>
-					<p class="text-xs text-[var(--text-muted)] mt-1">
-						Automatically accept new devices that request to join this team
-					</p>
+
+					<!-- Toggle switch -->
+					<button
+						onclick={handleToggleAutoAccept}
+						disabled={saving === 'auto_accept_members'}
+						class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent
+							transition-colors duration-200 ease-in-out
+							disabled:opacity-50 disabled:cursor-not-allowed
+							{autoAccept.value === 'true'
+								? 'bg-[var(--warning)]'
+								: 'bg-[var(--bg-muted)] border-[var(--border)]'}"
+						role="switch"
+						aria-checked={autoAccept.value === 'true'}
+						aria-label="Auto-accept members"
+					>
+						{#if saving === 'auto_accept_members'}
+							<span class="absolute inset-0 flex items-center justify-center">
+								<Loader2 size={12} class="animate-spin text-white" />
+							</span>
+						{:else}
+							<span
+								class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-sm ring-0
+									transition duration-200 ease-in-out
+									{autoAccept.value === 'true' ? 'translate-x-5' : 'translate-x-0'}"
+							></span>
+						{/if}
+					</button>
 				</div>
-				<button
-					onclick={handleToggleAutoAccept}
-					disabled={saving === 'auto_accept_members'}
-					class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent
-						transition-colors duration-200 ease-in-out
-						disabled:opacity-50 disabled:cursor-not-allowed
-						{autoAccept.value === 'true' ? 'bg-[var(--accent)]' : 'bg-[var(--bg-muted)] border-[var(--border)]'}"
-					role="switch"
-					aria-checked={autoAccept.value === 'true'}
-					aria-label="Auto-accept members"
-				>
-					{#if saving === 'auto_accept_members'}
-						<span class="absolute inset-0 flex items-center justify-center">
-							<Loader2 size={12} class="animate-spin text-white" />
-						</span>
-					{:else}
-						<span
-							class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-sm ring-0
-								transition duration-200 ease-in-out
-								{autoAccept.value === 'true' ? 'translate-x-5' : 'translate-x-0'}"
-						></span>
-					{/if}
-				</button>
 			</div>
 		</div>
 
-		<!-- Sync direction -->
-		<div class="rounded-lg border border-[var(--border)] bg-[var(--bg-subtle)] p-4">
-			<div class="flex items-center gap-2 mb-3">
-				<h3 class="text-sm font-medium text-[var(--text-primary)]">Sync direction</h3>
-				<span class="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded bg-[var(--bg-muted)] text-[var(--text-muted)] border border-[var(--border-subtle)]">
-					<Info size={9} />
-					{sourceLabel(syncDirection.source)}
-				</span>
+		<!-- ═══ DATA FLOW ═══ -->
+		<div class="rounded-lg border border-[var(--border)] bg-[var(--bg-subtle)] p-5">
+			<div class="flex items-center justify-between mb-1">
+				<h3 class="text-sm font-semibold text-[var(--text-primary)]">Sync direction</h3>
+				{#if syncDirection.source !== 'default'}
+					<span class="px-1.5 py-0.5 text-[10px] font-medium rounded bg-[var(--bg-muted)] text-[var(--text-muted)] border border-[var(--border-subtle)]">
+						{sourceLabel(syncDirection.source)}
+					</span>
+				{/if}
 			</div>
-			<p class="text-xs text-[var(--text-muted)] mb-3">
-				Control whether this machine sends, receives, or both for session data
+			<p class="text-xs text-[var(--text-muted)] mb-4">
+				Controls what session data flows between you and this team
 			</p>
-			<div class="inline-flex rounded-md border border-[var(--border)] bg-[var(--bg-muted)] p-0.5">
-				{#each DIRECTION_OPTIONS as opt}
+
+			<!-- Direction grid with icons -->
+			<div class="grid grid-cols-4 gap-1.5 mb-3">
+				{#each DIRECTION_OPTIONS as opt (opt.value)}
+					{@const active = syncDirection.value === opt.value}
+					{@const DirIcon = opt.icon}
 					<button
-						class="rounded px-3 py-1.5 text-xs font-medium transition-colors
-							{syncDirection.value === opt.value
+						class="flex flex-col items-center gap-1.5 py-2.5 px-2 rounded-lg text-xs font-medium transition-all
+							{active
 								? 'bg-[var(--accent)] text-white shadow-sm'
-								: 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}"
+								: 'bg-[var(--bg-muted)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] border border-[var(--border)]/50'}"
 						onclick={() => handleDirectionChange(opt.value)}
 						disabled={saving === 'sync_direction'}
 					>
+						<DirIcon size={15} />
 						{opt.label}
 					</button>
 				{/each}
 			</div>
+
+			<!-- Active description -->
+			{#if activeDirOption}
+				<p class="text-[11px] text-[var(--text-muted)] flex items-start gap-1.5">
+					<Info size={11} class="shrink-0 mt-0.5" />
+					{activeDirOption.desc}
+				</p>
+			{/if}
 		</div>
 
-		<!-- Session limit -->
-		<div class="rounded-lg border border-[var(--border)] bg-[var(--bg-subtle)] p-4">
-			<div class="flex items-center gap-2 mb-3">
-				<h3 class="text-sm font-medium text-[var(--text-primary)]">Session limit</h3>
-				<span class="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded bg-[var(--bg-muted)] text-[var(--text-muted)] border border-[var(--border-subtle)]">
-					<Info size={9} />
-					{sourceLabel(sessionLimit.source)}
-				</span>
+		<!-- ═══ SESSION SCOPE ═══ -->
+		<div class="rounded-lg border border-[var(--border)] bg-[var(--bg-subtle)] p-5">
+			<div class="flex items-center justify-between mb-1">
+				<h3 class="text-sm font-semibold text-[var(--text-primary)]">Sessions per project</h3>
+				{#if sessionLimit.source !== 'default'}
+					<span class="px-1.5 py-0.5 text-[10px] font-medium rounded bg-[var(--bg-muted)] text-[var(--text-muted)] border border-[var(--border-subtle)]">
+						{sourceLabel(sessionLimit.source)}
+					</span>
+				{/if}
 			</div>
-			<p class="text-xs text-[var(--text-muted)] mb-3">
-				How many sessions to sync per project
+			<p class="text-xs text-[var(--text-muted)] mb-4">
+				Limits how many sessions are synced for each shared project
 			</p>
-			<div class="inline-flex rounded-md border border-[var(--border)] bg-[var(--bg-muted)] p-0.5">
-				{#each LIMIT_OPTIONS as opt}
+
+			<div class="inline-flex rounded-lg border border-[var(--border)] bg-[var(--bg-muted)] p-0.5 gap-0.5">
+				{#each LIMIT_OPTIONS as opt (opt.value)}
 					<button
-						class="rounded px-3 py-1.5 text-xs font-medium transition-colors
+						class="rounded-md px-3.5 py-1.5 text-xs font-medium transition-all
 							{sessionLimit.value === opt.value
 								? 'bg-[var(--accent)] text-white shadow-sm'
 								: 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}"
@@ -244,6 +320,14 @@
 					</button>
 				{/each}
 			</div>
+
+			<!-- Active limit description -->
+			{#if activeLimitOption}
+				<p class="mt-2.5 text-[11px] text-[var(--text-muted)] flex items-start gap-1.5">
+					<Info size={11} class="shrink-0 mt-0.5" />
+					{activeLimitOption.desc}
+				</p>
+			{/if}
 		</div>
 	</div>
 {/if}

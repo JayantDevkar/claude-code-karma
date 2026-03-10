@@ -21,12 +21,14 @@
 		AlertTriangle,
 		CheckCircle2,
 		RefreshCw,
-		Radio,
+		UserPlus,
+		Check,
 		X,
 		LayoutDashboard,
 		Activity,
 		Settings
 	} from 'lucide-svelte';
+	import { getTeamMemberHexColor } from '$lib/utils';
 	import type { SyncDevice, SyncPendingFolder, SyncProjectStatus, SyncTeam, SyncEvent, PendingDevice, TeamSessionStat } from '$lib/api-types';
 
 	let { data } = $props();
@@ -347,60 +349,78 @@
 <!-- Pending Device Requests (above tabs) -->
 {#if pendingDevices.length > 0}
 	<section class="mb-6">
-		<div class="flex items-center justify-between mb-3">
-			<div class="flex items-center gap-2">
-				<h2 class="text-sm font-semibold text-[var(--text-primary)] uppercase tracking-wider">
-					Pending Requests
+		<div class="rounded-lg border border-[var(--accent)]/20 overflow-hidden bg-[var(--bg-base)]">
+			<div class="h-[3px] bg-[var(--accent)]"></div>
+
+			<!-- Header -->
+			<div class="flex items-center gap-2.5 px-5 py-3 border-b border-[var(--border)]/50">
+				<UserPlus size={15} class="text-[var(--accent)]" />
+				<h2 class="text-sm font-semibold text-[var(--text-primary)]">
+					Join Requests
 				</h2>
-				<span class="px-1.5 py-0.5 text-[10px] font-medium rounded bg-[var(--warning)]/15 text-[var(--warning)] border border-[var(--warning)]/25">
+				<span class="flex items-center justify-center min-w-[20px] h-5 px-1 text-[10px] font-bold rounded-full bg-[var(--accent)] text-white">
 					{pendingDevices.length}
 				</span>
 			</div>
-		</div>
-		<div class="space-y-2">
-			{#each pendingDevices as device (device.device_id)}
-				{@const acting = deviceActing[device.device_id]}
-				<div class="flex items-center gap-3 p-3 rounded-lg border border-[var(--warning)]/20 bg-[var(--warning)]/5">
-					<Radio size={16} class="text-[var(--warning)] shrink-0" />
-					<div class="flex-1 min-w-0">
-						<p class="text-sm font-medium text-[var(--text-primary)] truncate">
-							{device.name || 'Unknown device'} wants to join
-						</p>
-						<p class="text-xs text-[var(--text-muted)] mt-0.5">
-							Accept to add this device as a team member and start syncing sessions
-						</p>
-					</div>
-					<div class="flex items-center gap-1.5 shrink-0">
-						{#if acting === 'error'}
-							<span class="text-xs text-[var(--error)] mr-1">Failed</span>
-						{/if}
-						<button
-							onclick={() => acceptDevice(device)}
-							disabled={acting === 'accepting'}
-							class="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-[var(--radius)]
-								bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)] transition-colors
-								disabled:opacity-50 disabled:cursor-not-allowed"
+
+			<!-- Requests list -->
+			<div class="divide-y divide-[var(--border)]/50">
+				{#each pendingDevices as device (device.device_id)}
+					{@const acting = deviceActing[device.device_id]}
+					{@const name = device.name || 'Unknown device'}
+					{@const hexColor = getTeamMemberHexColor(name)}
+
+					<div class="flex items-center gap-4 px-5 py-4">
+						<!-- Avatar -->
+						<div
+							class="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold shrink-0"
+							style="background: {hexColor}; color: white;"
 						>
-							{#if acting === 'accepting'}
-								<Loader2 size={11} class="animate-spin" />
-							{:else}
-								<CheckCircle2 size={11} />
+							{name.charAt(0).toUpperCase()}
+						</div>
+
+						<!-- Info -->
+						<div class="flex-1 min-w-0">
+							<p class="text-sm font-medium text-[var(--text-primary)] truncate">
+								{name}
+							</p>
+							<p class="text-[11px] text-[var(--text-muted)] mt-0.5 font-mono">
+								{device.device_id.slice(0, 7)}&hellip;{device.device_id.slice(-4)}
+							</p>
+						</div>
+
+						<!-- Actions -->
+						<div class="flex items-center gap-2 shrink-0">
+							{#if acting === 'error'}
+								<span class="text-[11px] text-[var(--error)] mr-1">Failed</span>
 							{/if}
-							Accept
-						</button>
-						<button
-							onclick={() => dismissDevice(device.device_id)}
-							disabled={acting === 'accepting'}
-							class="flex items-center gap-1 px-2 py-1.5 text-xs font-medium rounded-[var(--radius)]
-								border border-[var(--border)] text-[var(--text-muted)] hover:bg-[var(--bg-muted)] transition-colors
-								disabled:opacity-50 disabled:cursor-not-allowed"
-						>
-							<X size={11} />
-							Dismiss
-						</button>
+							<button
+								onclick={() => acceptDevice(device)}
+								disabled={acting === 'accepting'}
+								class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md
+									bg-[var(--success)] text-white hover:bg-[var(--success)]/85 transition-colors
+									disabled:opacity-50 disabled:cursor-not-allowed"
+							>
+								{#if acting === 'accepting'}
+									<Loader2 size={12} class="animate-spin" />
+								{:else}
+									<Check size={12} />
+								{/if}
+								Approve
+							</button>
+							<button
+								onclick={() => dismissDevice(device.device_id)}
+								disabled={acting === 'accepting'}
+								class="px-2.5 py-1.5 text-xs font-medium rounded-md
+									text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-muted)] transition-colors
+									disabled:opacity-50"
+							>
+								Ignore
+							</button>
+						</div>
 					</div>
-				</div>
-			{/each}
+				{/each}
+			</div>
 		</div>
 	</section>
 {/if}
@@ -408,83 +428,103 @@
 <!-- Pending Project Shares (above tabs) -->
 {#if pendingFolders.length > 0}
 	<section class="mb-6">
-		<div class="flex items-center justify-between mb-3">
-			<div class="flex items-center gap-2">
-				<h2 class="text-sm font-semibold text-[var(--text-primary)] uppercase tracking-wider">
-					Pending Session Shares
-				</h2>
-				<span class="px-1.5 py-0.5 text-[10px] font-medium rounded bg-[var(--warning)]/15 text-[var(--warning)] border border-[var(--warning)]/25">
-					{pendingFolders.length}
-				</span>
-			</div>
-			<button
-				onclick={acceptAllFolders}
-				disabled={acceptingFolders}
-				class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-[var(--radius-md)]
-					bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)] transition-colors
-					disabled:opacity-50 disabled:cursor-not-allowed"
-			>
-				{#if acceptingFolders}
-					<Loader2 size={12} class="animate-spin" />
-					Accepting...
-				{:else}
-					<CheckCircle2 size={12} />
-					Accept All
-				{/if}
-			</button>
-		</div>
-		<div class="space-y-2">
-			{#each pendingFolders as offer (offer.folder_id)}
-				{@const acting = folderActing[offer.folder_id]}
-				{@const isOutbox = offer.folder_type === 'outbox'}
-				<div class="flex items-center gap-3 p-3 rounded-lg border {isOutbox ? 'border-[var(--accent)]/20 bg-[var(--accent)]/5' : 'border-[var(--warning)]/20 bg-[var(--warning)]/5'}">
-					<FolderGit2 size={16} class="{isOutbox ? 'text-[var(--accent)]' : 'text-[var(--warning)]'} shrink-0" />
-					<div class="flex-1 min-w-0">
-						<p class="text-sm font-medium text-[var(--text-primary)] truncate">
-							{offer.description || parseFolderLabel(offer)}
-						</p>
-						<p class="text-xs text-[var(--text-muted)] mt-0.5">
-							{#if isOutbox}
-								Accept to start sending your sessions for this project
-							{:else}
-								Accept to start receiving <span class="text-[var(--text-secondary)]">{offer.from_member}</span>'s sessions for this project
-							{/if}
-						</p>
-					</div>
-					<div class="flex items-center gap-1.5 shrink-0">
-						<button
-							onclick={() => acceptFolder(offer.folder_id)}
-							disabled={!!acting}
-							aria-label="Accept project share"
-							class="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-[var(--radius)]
-								bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)] transition-colors
-								disabled:opacity-50 disabled:cursor-not-allowed"
-						>
-							{#if acting === 'accepting'}
-								<Loader2 size={11} class="animate-spin" />
-							{:else}
-								<CheckCircle2 size={11} />
-							{/if}
-							Accept
-						</button>
-						<button
-							onclick={() => rejectFolder(offer.folder_id)}
-							disabled={!!acting}
-							aria-label="Reject project share"
-							class="flex items-center gap-1 px-2 py-1.5 text-xs font-medium rounded-[var(--radius)]
-								border border-[var(--error)]/30 text-[var(--error)] hover:bg-[var(--error)]/10 transition-colors
-								disabled:opacity-50 disabled:cursor-not-allowed"
-						>
-							{#if acting === 'rejecting'}
-								<Loader2 size={11} class="animate-spin" />
-							{:else}
-								<X size={11} />
-							{/if}
-							Reject
-						</button>
-					</div>
+		<div class="rounded-lg border border-[var(--border)] overflow-hidden bg-[var(--bg-base)]">
+			<div class="h-[3px] bg-[var(--warning)]"></div>
+
+			<!-- Header -->
+			<div class="flex items-center justify-between px-5 py-3 border-b border-[var(--border)]/50">
+				<div class="flex items-center gap-2.5">
+					<FolderSync size={15} class="text-[var(--warning)]" />
+					<h2 class="text-sm font-semibold text-[var(--text-primary)]">
+						Pending Session Shares
+					</h2>
+					<span class="flex items-center justify-center min-w-[20px] h-5 px-1 text-[10px] font-bold rounded-full bg-[var(--warning)] text-white">
+						{pendingFolders.length}
+					</span>
 				</div>
-			{/each}
+				<button
+					onclick={acceptAllFolders}
+					disabled={acceptingFolders}
+					class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md
+						bg-[var(--success)] text-white hover:bg-[var(--success)]/85 transition-colors
+						disabled:opacity-50 disabled:cursor-not-allowed"
+				>
+					{#if acceptingFolders}
+						<Loader2 size={12} class="animate-spin" />
+						Accepting...
+					{:else}
+						<CheckCircle2 size={12} />
+						Accept All
+					{/if}
+				</button>
+			</div>
+
+			<!-- Shares list -->
+			<div class="divide-y divide-[var(--border)]/50">
+				{#each pendingFolders as offer (offer.folder_id)}
+					{@const acting = folderActing[offer.folder_id]}
+					{@const isOutbox = offer.folder_type === 'outbox'}
+
+					<div class="flex items-center gap-4 px-5 py-4">
+						<!-- Folder icon -->
+						<div
+							class="w-9 h-9 rounded-lg flex items-center justify-center shrink-0
+								{isOutbox
+									? 'bg-[var(--accent)]/10 text-[var(--accent)]'
+									: 'bg-[var(--warning)]/10 text-[var(--warning)]'}"
+						>
+							<FolderGit2 size={16} />
+						</div>
+
+						<!-- Info -->
+						<div class="flex-1 min-w-0">
+							<p class="text-sm font-medium text-[var(--text-primary)] truncate">
+								{offer.description || parseFolderLabel(offer)}
+							</p>
+							<p class="text-[11px] text-[var(--text-muted)] mt-0.5">
+								{#if isOutbox}
+									Start sending your sessions for this project
+								{:else}
+									Receive <span class="font-medium text-[var(--text-secondary)]">{offer.from_member}</span>'s sessions
+								{/if}
+							</p>
+						</div>
+
+						<!-- Actions -->
+						<div class="flex items-center gap-2 shrink-0">
+							<button
+								onclick={() => acceptFolder(offer.folder_id)}
+								disabled={!!acting}
+								aria-label="Accept project share"
+								class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md
+									bg-[var(--success)] text-white hover:bg-[var(--success)]/85 transition-colors
+									disabled:opacity-50 disabled:cursor-not-allowed"
+							>
+								{#if acting === 'accepting'}
+									<Loader2 size={12} class="animate-spin" />
+								{:else}
+									<Check size={12} />
+								{/if}
+								Accept
+							</button>
+							<button
+								onclick={() => rejectFolder(offer.folder_id)}
+								disabled={!!acting}
+								aria-label="Reject project share"
+								class="px-2.5 py-1.5 text-xs font-medium rounded-md
+									text-[var(--text-muted)] hover:text-[var(--error)] hover:bg-[var(--error)]/5 transition-colors
+									disabled:opacity-50"
+							>
+								{#if acting === 'rejecting'}
+									<Loader2 size={12} class="animate-spin" />
+								{:else}
+									Reject
+								{/if}
+							</button>
+						</div>
+					</div>
+				{/each}
+			</div>
 		</div>
 	</section>
 {/if}

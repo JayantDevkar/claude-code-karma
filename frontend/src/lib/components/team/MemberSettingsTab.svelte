@@ -1,7 +1,16 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { API_BASE } from '$lib/config';
-	import { Loader2, Info, RotateCcw } from 'lucide-svelte';
+	import {
+		Loader2,
+		Info,
+		RotateCcw,
+		ArrowUpDown,
+		ArrowUp,
+		ArrowDown,
+		Ban,
+		ChevronRight
+	} from 'lucide-svelte';
 	import type { MemberProfile } from '$lib/api-types';
 
 	interface Props {
@@ -33,11 +42,31 @@
 		saving: boolean;
 	}
 
-	const DIRECTION_OPTIONS: { value: string; label: string }[] = [
-		{ value: 'both', label: 'Both' },
-		{ value: 'send_only', label: 'Send Only' },
-		{ value: 'receive_only', label: 'Recv Only' },
-		{ value: 'none', label: 'None' }
+	const DIRECTION_OPTIONS: {
+		value: string;
+		label: string;
+		icon: typeof ArrowUpDown;
+		desc: string;
+	}[] = [
+		{
+			value: 'both',
+			label: 'Both',
+			icon: ArrowUpDown,
+			desc: 'Sending and receiving sessions'
+		},
+		{
+			value: 'send_only',
+			label: 'Send',
+			icon: ArrowUp,
+			desc: 'Sharing sessions, not receiving'
+		},
+		{
+			value: 'receive_only',
+			label: 'Receive',
+			icon: ArrowDown,
+			desc: 'Receiving sessions, not sharing'
+		},
+		{ value: 'none', label: 'Paused', icon: Ban, desc: 'No data flows in either direction' }
 	];
 
 	function sourceLabel(source: string): string {
@@ -45,7 +74,7 @@
 			case 'default':
 				return 'Default';
 			case 'team':
-				return 'Inherits from team';
+				return 'Team setting';
 			case 'device':
 				return 'Device override';
 			case 'member':
@@ -55,12 +84,7 @@
 		}
 	}
 
-	function sourceBadgeClass(source: string): string {
-		if (source === 'member') {
-			return 'bg-[var(--accent)]/10 text-[var(--accent)] border-[var(--accent)]/20';
-		}
-		return 'bg-[var(--bg-muted)] text-[var(--text-muted)] border-[var(--border-subtle)]';
-	}
+	const CASCADE_STEPS: string[] = ['default', 'team', 'member'];
 
 	let teamStates = $state<TeamSettingsState[]>([]);
 
@@ -89,7 +113,6 @@
 		const state = teamStates[idx];
 		if (state.saving || value === state.syncDirection.value) return;
 
-		// Optimistic update
 		const prev = { ...state.syncDirection };
 		teamStates[idx].syncDirection = { value, source: 'member' };
 		teamStates[idx].saving = true;
@@ -104,7 +127,6 @@
 				}
 			);
 			if (!res.ok) {
-				// Revert on failure
 				teamStates[idx].syncDirection = prev;
 				const body = await res.json().catch(() => ({}));
 				teamStates[idx].error = body.detail || `Save failed (${res.status})`;
@@ -133,7 +155,6 @@
 				}
 			);
 			if (res.ok) {
-				// Re-fetch to get the resolved team/default value
 				await fetchTeamSettings(state.teamName, idx);
 			} else {
 				const body = await res.json().catch(() => ({}));
@@ -166,19 +187,24 @@
 		<p class="text-sm text-[var(--text-muted)]">Not a member of any teams.</p>
 	</div>
 {:else}
-	<div class="space-y-4">
-		<p class="text-xs text-[var(--text-muted)]">
-			Override sync direction per team. When no override is set, the team's default applies.
-		</p>
+	<div class="space-y-5">
+		<!-- Explainer banner -->
+		<div class="flex items-start gap-3 p-4 rounded-lg bg-[var(--bg-subtle)] border border-[var(--border)]/50">
+			<Info size={14} class="shrink-0 mt-0.5 text-[var(--text-muted)]" />
+			<p class="text-xs text-[var(--text-muted)] leading-relaxed">
+				Override sync direction for this member per team. When no override is set,
+				the team default applies. Overrides only affect this member's data flow.
+			</p>
+		</div>
 
 		{#each teamStates as state, idx (state.teamName)}
-			<div class="rounded-lg border border-[var(--border)] bg-[var(--bg-subtle)]">
+			<div class="rounded-lg border border-[var(--border)] overflow-hidden">
 				<!-- Team header -->
-				<div class="flex items-center justify-between px-4 py-3 border-b border-[var(--border)]/50">
-					<div class="flex items-center gap-2">
+				<div class="flex items-center justify-between px-5 py-3 bg-[var(--bg-subtle)] border-b border-[var(--border)]/50">
+					<div class="flex items-center gap-2.5">
 						<a
 							href="/team/{encodeURIComponent(state.teamName)}"
-							class="text-sm font-medium text-[var(--text-primary)] hover:text-[var(--accent)] transition-colors"
+							class="text-sm font-semibold text-[var(--text-primary)] hover:text-[var(--accent)] transition-colors"
 						>
 							{state.teamName}
 						</a>
@@ -193,25 +219,26 @@
 						<button
 							onclick={() => handleReset(idx)}
 							disabled={state.saving}
-							class="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded
-								text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-muted)]
-								transition-colors disabled:opacity-50"
-							title="Reset to team default"
+							class="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium rounded-md
+								text-[var(--text-muted)] hover:text-[var(--error)] hover:bg-[var(--error)]/5
+								border border-transparent hover:border-[var(--error)]/20
+								transition-all disabled:opacity-50"
+							title="Remove override, use team default"
 						>
 							{#if state.saving}
 								<Loader2 size={11} class="animate-spin" />
 							{:else}
 								<RotateCcw size={11} />
 							{/if}
-							Reset
+							Remove override
 						</button>
 					{/if}
 				</div>
 
 				<!-- Settings body -->
-				<div class="p-4">
+				<div class="p-5">
 					{#if state.loading}
-						<div class="flex items-center justify-center py-6">
+						<div class="flex items-center justify-center py-8">
 							<Loader2 size={18} class="animate-spin text-[var(--text-muted)]" />
 						</div>
 					{:else if state.error}
@@ -225,36 +252,70 @@
 							</button>
 						</div>
 					{:else}
-						<div>
-							<div class="flex items-center gap-2 mb-3">
-								<span class="text-xs font-medium text-[var(--text-secondary)]">Sync direction</span>
-								<span class="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded border {sourceBadgeClass(state.syncDirection.source)}">
-									<Info size={9} />
-									{sourceLabel(state.syncDirection.source)}
+						<!-- Cascade indicator: default → team → member -->
+						<div class="flex items-center gap-1.5 mb-4">
+							{#each CASCADE_STEPS as step, i}
+								{@const isActive = state.syncDirection.source === step}
+								{@const isPast = CASCADE_STEPS.indexOf(state.syncDirection.source) > i}
+								{#if i > 0}
+									<ChevronRight
+										size={10}
+										class="{isPast || isActive ? 'text-[var(--accent)]' : 'text-[var(--text-faint)]'}"
+									/>
+								{/if}
+								<span
+									class="text-[11px] transition-colors
+										{isActive
+											? 'font-semibold text-[var(--accent)]'
+											: isPast
+												? 'text-[var(--text-muted)]'
+												: 'text-[var(--text-faint)]'}"
+								>
+									{step}
+									{#if isActive}
+										<span class="ml-0.5 inline-block w-1.5 h-1.5 rounded-full bg-[var(--accent)] align-middle"></span>
+									{/if}
 								</span>
-							</div>
-
-							<div class="inline-flex rounded-md border border-[var(--border)] bg-[var(--bg-muted)] p-0.5">
-								{#each DIRECTION_OPTIONS as opt}
-									<button
-										class="rounded px-3 py-1.5 text-xs font-medium transition-colors
-											{state.syncDirection.value === opt.value
-												? 'bg-[var(--accent)] text-white shadow-sm'
-												: 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}"
-										onclick={() => handleDirectionChange(idx, opt.value)}
-										disabled={state.saving}
-									>
-										{opt.label}
-									</button>
-								{/each}
-							</div>
-
-							{#if state.syncDirection.source !== 'member'}
-								<p class="mt-2 text-[11px] text-[var(--text-muted)]">
-									Click a direction to create a member-level override for this team.
-								</p>
-							{/if}
+							{/each}
 						</div>
+
+						<!-- Direction grid -->
+						<div class="grid grid-cols-4 gap-1.5 mb-3">
+							{#each DIRECTION_OPTIONS as opt (opt.value)}
+								{@const active = state.syncDirection.value === opt.value}
+								{@const DirIcon = opt.icon}
+								<button
+									class="flex flex-col items-center gap-1.5 py-2.5 px-2 rounded-lg text-xs font-medium transition-all
+										{active
+											? 'bg-[var(--accent)] text-white shadow-sm'
+											: 'bg-[var(--bg-muted)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] border border-[var(--border)]/50'}"
+									onclick={() => handleDirectionChange(idx, opt.value)}
+									disabled={state.saving}
+								>
+									<DirIcon size={15} />
+									{opt.label}
+								</button>
+							{/each}
+						</div>
+
+						<!-- Active description -->
+						{#each DIRECTION_OPTIONS.filter((o) => o.value === state.syncDirection.value) as activeDir}
+							<p class="text-[11px] text-[var(--text-muted)] flex items-start gap-1.5">
+								<Info size={11} class="shrink-0 mt-0.5" />
+								{activeDir.desc}
+								{#if state.syncDirection.source !== 'member'}
+									<span class="italic text-[var(--text-faint)]">
+										(inherited from {sourceLabel(state.syncDirection.source).toLowerCase()})
+									</span>
+								{/if}
+							</p>
+						{/each}
+
+						{#if state.syncDirection.source !== 'member'}
+							<p class="mt-3 text-[11px] text-[var(--text-faint)] italic">
+								Select a direction to create a member-level override
+							</p>
+						{/if}
 					{/if}
 				</div>
 			</div>

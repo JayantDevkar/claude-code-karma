@@ -306,6 +306,13 @@ def query_events(
     if unknown:
         raise ValueError(f"Unexpected filter columns: {unknown}")
 
+    # Validate condition column names (not just param keys) to close injection vector
+    # for future developers who might add conditions with unsanitized column names.
+    for cond in conditions:
+        col = cond.split()[0]
+        if col not in _ALLOWED_EVENT_FILTERS:
+            raise ValueError(f"Disallowed column in condition: {col!r}")
+
     where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
     params["limit"] = limit
     params["offset"] = offset
@@ -427,7 +434,7 @@ def query_session_stats_by_member(
 # ── Settings ──────────────────────────────────────────────────────────
 
 _SETTING_DEFAULTS = {
-    "auto_accept_members": "true",
+    "auto_accept_members": "false",
     "sync_direction": "both",
 }
 
