@@ -7,6 +7,7 @@
 	import TeamMembersTab from '$lib/components/team/TeamMembersTab.svelte';
 	import TeamProjectsTab from '$lib/components/team/TeamProjectsTab.svelte';
 	import TeamActivityTab from '$lib/components/team/TeamActivityTab.svelte';
+	import TeamSettings from '$lib/components/TeamSettings.svelte';
 	import { API_BASE } from '$lib/config';
 	import { POLLING_INTERVALS } from '$lib/config';
 	import { invalidateAll } from '$app/navigation';
@@ -23,7 +24,8 @@
 		Radio,
 		X,
 		LayoutDashboard,
-		Activity
+		Activity,
+		Settings
 	} from 'lucide-svelte';
 	import type { SyncDevice, SyncPendingFolder, SyncProjectStatus, SyncTeam, SyncEvent, PendingDevice, TeamSessionStat } from '$lib/api-types';
 
@@ -36,7 +38,7 @@
 	let isRefreshing = $state(false);
 
 	// Tab state
-	const validTabs = ['overview', 'members', 'projects', 'activity'];
+	const validTabs = ['overview', 'members', 'projects', 'activity', 'settings'];
 	let activeTab = $state('overview');
 	let tabsReady = $state(false);
 
@@ -494,6 +496,7 @@
 			<TabsTrigger value="members" icon={Users}>Members ({members.length})</TabsTrigger>
 			<TabsTrigger value="projects" icon={FolderSync}>Projects ({projects.length})</TabsTrigger>
 			<TabsTrigger value="activity" icon={Activity}>Activity</TabsTrigger>
+			<TabsTrigger value="settings" icon={Settings}>Settings</TabsTrigger>
 		</Tabs.List>
 
 		<Tabs.Content value="overview" class="mt-4">
@@ -543,6 +546,10 @@
 				{sessionStats}
 				{members}
 			/>
+		</Tabs.Content>
+
+		<Tabs.Content value="settings" class="mt-4">
+			<TeamSettings teamName={data.teamName} />
 		</Tabs.Content>
 	</Tabs.Root>
 {:else}

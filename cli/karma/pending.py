@@ -18,6 +18,7 @@ if str(_API_PATH) not in sys.path:
 
 from services.file_validator import SAFE_PATH_PART  # noqa: E402
 from services.folder_id import parse_karma_folder_id  # noqa: E402
+from services.sync_policy import should_receive_from  # noqa: E402
 
 
 def _handle_join_folder(st, folder_id: str, device_id: str, member_name: str) -> None:
@@ -348,6 +349,14 @@ def accept_pending_folders(st, config, conn, *, auto_only=False, only_folder_id=
             # explicit user acceptance (per-folder Accept in the UI).
             # Exception: only_folder_id overrides auto_only (explicit action).
             if auto_only and not only_folder_id:
+                continue
+
+            # Policy gate: check if we should receive from this member
+            if not should_receive_from(conn, team_name, device_id):
+                click.echo(
+                    f"  Skipped '{folder_id}' — receive disabled for "
+                    f"{member_name} in {team_name}"
+                )
                 continue
 
             accepted += _handle_peer_outbox(

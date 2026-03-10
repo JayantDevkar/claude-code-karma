@@ -12,7 +12,7 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 14
+SCHEMA_VERSION = 15
 
 SCHEMA_SQL = """
 -- Schema versioning
@@ -275,6 +275,17 @@ CREATE INDEX IF NOT EXISTS idx_sync_events_team ON sync_events(team_name, create
 CREATE INDEX IF NOT EXISTS idx_sync_events_time ON sync_events(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_sync_events_member ON sync_events(member_name, created_at DESC);
 
+-- Sync settings (team-level and member-level policy overrides)
+CREATE TABLE IF NOT EXISTS sync_settings (
+    scope TEXT NOT NULL,
+    setting_key TEXT NOT NULL,
+    value TEXT NOT NULL,
+    updated_at TEXT DEFAULT (datetime('now')),
+    PRIMARY KEY (scope, setting_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_sync_settings_scope ON sync_settings(scope);
+
 -- Skill definitions (content + metadata extracted from JSONL or manifest)
 CREATE TABLE IF NOT EXISTS skill_definitions (
     skill_name TEXT NOT NULL,
@@ -361,6 +372,17 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             conn.execute("ALTER TABLE sync_teams ADD COLUMN join_code TEXT")
         if "sync_session_limit" not in existing_cols:
             conn.execute("ALTER TABLE sync_teams ADD COLUMN sync_session_limit TEXT DEFAULT 'all'")
+        # Ensure sync_settings table exists (may be missing on older installs)
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS sync_settings (
+                scope TEXT NOT NULL,
+                setting_key TEXT NOT NULL,
+                value TEXT NOT NULL,
+                updated_at TEXT DEFAULT (datetime('now')),
+                PRIMARY KEY (scope, setting_key)
+            );
+            CREATE INDEX IF NOT EXISTS idx_sync_settings_scope ON sync_settings(scope);
+        """)
         # Ensure skill_definitions table exists (may be missing on older installs)
         conn.executescript("""
             CREATE TABLE IF NOT EXISTS skill_definitions (
@@ -750,6 +772,19 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
                          AND session_uuid IS NOT NULL"""
                 )
                 logger.info("  Removed %d duplicate session_received events", dupes)
+
+        if current_version < 15:
+            logger.info("Migrating → v15: adding sync_settings table")
+            conn.executescript("""
+                CREATE TABLE IF NOT EXISTS sync_settings (
+                    scope TEXT NOT NULL,
+                    setting_key TEXT NOT NULL,
+                    value TEXT NOT NULL,
+                    updated_at TEXT DEFAULT (datetime('now')),
+                    PRIMARY KEY (scope, setting_key)
+                );
+                CREATE INDEX IF NOT EXISTS idx_sync_settings_scope ON sync_settings(scope);
+            """)
 
     # Record version
     conn.execute(

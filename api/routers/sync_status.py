@@ -37,6 +37,12 @@ from db.sync_queries import (
     query_session_stats_by_member,
     update_team_session_limit,
     cleanup_data_for_member,
+    get_effective_setting,
+    set_setting,
+    delete_setting,
+    list_settings,
+    VALID_SYNC_DIRECTIONS,
+    VALID_SETTING_KEYS,
 )
 from schemas import (
     AcceptPendingDeviceRequest,
@@ -56,6 +62,7 @@ from services.folder_id import (
     parse_karma_handshake_id,
 )
 from services.syncthing_proxy import SyncthingNotRunning, SyncthingProxy, run_sync
+from services.sync_policy import should_auto_accept_device
 from services.watcher_manager import WatcherManager
 
 # Add CLI to path once for SyncConfig / syncthing imports
@@ -701,6 +708,14 @@ async def _auto_accept_pending_peers(proxy, config, conn) -> tuple[int, dict]:
             team_name = _find_team_for_folder(conn, karma_folders)
 
             if not team_name or not username:
+                continue
+
+            # Policy gate: check if auto-accept is enabled for this team
+            if not should_auto_accept_device(conn, team_name):
+                logger.debug(
+                    "Auto-accept disabled for team %s — skipping device %s",
+                    team_name, device_id[:20],
+                )
                 continue
 
             # Auto-accept device in Syncthing.
@@ -2846,30 +2861,74 @@ async def sync_member_activity(
 _VALID_SESSION_LIMITS = frozenset({"all", "recent_100", "recent_10"})
 
 
-@router.patch("/teams/{team_name}/settings")
-async def sync_update_team_settings(team_name: str, req: UpdateTeamSettingsRequest) -> Any:
-    """Update team sync settings (session limit)."""
+@router.get("/teams/{team_name}/settings")
+async def sync_get_team_settings(team_name: str) -> Any:
+    """Get team sync settings with resolved effective values."""
     if not ALLOWED_PROJECT_NAME.match(team_name):
         raise HTTPException(400, "Invalid team name")
-
-    if req.sync_session_limit not in _VALID_SESSION_LIMITS:
-        raise HTTPException(400, f"Invalid session limit. Must be one of: {', '.join(sorted(_VALID_SESSION_LIMITS))}")
 
     conn = _get_sync_conn()
     team = get_team(conn, team_name)
     if team is None:
         raise HTTPException(404, f"Team '{team_name}' not found")
 
-    old_limit = team.get("sync_session_limit", "all")
-    update_team_session_limit(conn, team_name, req.sync_session_limit)
+    settings = {}
+    for key in VALID_SETTING_KEYS:
+        value, source = get_effective_setting(conn, key, team_name=team_name)
+        settings[key] = {"value": value, "source": source}
+
+    # Include sync_session_limit from the sync_teams table
+    settings["sync_session_limit"] = {
+        "value": team.get("sync_session_limit", "all"),
+        "source": "team",
+    }
+
+    return {"team_name": team_name, "settings": settings}
+
+
+@router.patch("/teams/{team_name}/settings")
+async def sync_update_team_settings(team_name: str, req: UpdateTeamSettingsRequest) -> Any:
+    """Update team sync settings."""
+    if not ALLOWED_PROJECT_NAME.match(team_name):
+        raise HTTPException(400, "Invalid team name")
+
+    conn = _get_sync_conn()
+    team = get_team(conn, team_name)
+    if team is None:
+        raise HTTPException(404, f"Team '{team_name}' not found")
 
     config = await run_sync(_load_identity)
     member_name = config.user_id if config else None
-    log_event(conn, "settings_changed", team_name=team_name, member_name=member_name,
-              detail={"sync_session_limit": req.sync_session_limit, "previous": old_limit})
+    changes = {}
 
-    return {
-        "ok": True,
-        "team_name": team_name,
-        "sync_session_limit": req.sync_session_limit,
-    }
+    # Handle sync_session_limit (stays in sync_teams table for backward compat)
+    if req.sync_session_limit is not None:
+        if req.sync_session_limit not in _VALID_SESSION_LIMITS:
+            raise HTTPException(400, f"Invalid session limit. Must be one of: {', '.join(sorted(_VALID_SESSION_LIMITS))}")
+        old_limit = team.get("sync_session_limit", "all")
+        update_team_session_limit(conn, team_name, req.sync_session_limit)
+        changes["sync_session_limit"] = {"old": old_limit, "new": req.sync_session_limit}
+
+    # Handle auto_accept_members
+    if req.auto_accept_members is not None:
+        if req.auto_accept_members not in ("true", "false"):
+            raise HTTPException(400, "auto_accept_members must be 'true' or 'false'")
+        scope = f"team:{team_name}"
+        old = set_setting(conn, scope, "auto_accept_members", req.auto_accept_members)
+        changes["auto_accept_members"] = {"old": old or "true", "new": req.auto_accept_members}
+
+    # Handle sync_direction
+    if req.sync_direction is not None:
+        if req.sync_direction not in VALID_SYNC_DIRECTIONS:
+            raise HTTPException(400, f"Invalid sync_direction. Must be one of: {', '.join(sorted(VALID_SYNC_DIRECTIONS))}")
+        scope = f"team:{team_name}"
+        old = set_setting(conn, scope, "sync_direction", req.sync_direction)
+        changes["sync_direction"] = {"old": old or "both", "new": req.sync_direction}
+
+    if not changes:
+        raise HTTPException(400, "No settings provided to update")
+
+    log_event(conn, "settings_changed", team_name=team_name, member_name=member_name,
+              detail=changes)
+
+    return {"ok": True, "team_name": team_name, "changes": changes}

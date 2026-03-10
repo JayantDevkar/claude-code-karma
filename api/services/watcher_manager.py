@@ -212,6 +212,17 @@ class WatcherManager:
                 pt=proj_teams,
             ):
                 def package():
+                    # Policy gate: skip packaging if send is disabled for ALL teams
+                    try:
+                        from db.connection import get_writer_db
+                        from services.sync_policy import should_send_to
+                        db = get_writer_db()
+                        if not any(should_send_to(db, tn) for tn in pt):
+                            logger.debug("Send disabled for all teams of %s — skipping package", en)
+                            return
+                    except Exception as exc:
+                        logger.warning("Policy check failed for %s, proceeding: %s", en, exc)
+
                     wt_dirs = find_worktree_dirs(en, projects_dir)
                     packager = SessionPackager(
                         project_dir=cd,
