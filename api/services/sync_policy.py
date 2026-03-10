@@ -29,7 +29,7 @@ def _can_direction(direction: str, action: str) -> bool:
         return action == "send"
     if direction == "receive_only":
         return action == "receive"
-    return True  # unknown → permissive default
+    return False  # unknown → deny by default
 
 
 def should_auto_accept_device(conn: sqlite3.Connection, team_name: str) -> bool:
