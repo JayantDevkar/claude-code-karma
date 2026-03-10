@@ -1638,7 +1638,9 @@ class JoinTeamRequest(BaseModel):
 
 
 class UpdateTeamSettingsRequest(BaseModel):
-    sync_session_limit: str  # 'all', 'recent_100', 'recent_10'
+    sync_session_limit: Optional[str] = None  # 'all', 'recent_100', 'recent_10'
+    auto_accept_members: Optional[str] = None  # 'true', 'false'
+    sync_direction: Optional[str] = None  # 'both', 'send_only', 'receive_only', 'none'
 
 
 class ResetOptions(BaseModel):

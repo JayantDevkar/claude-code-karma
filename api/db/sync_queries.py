@@ -424,6 +424,134 @@ def query_session_stats_by_member(
     ]
 
 
+# ── Settings ──────────────────────────────────────────────────────────
+
+_SETTING_DEFAULTS = {
+    "auto_accept_members": "true",
+    "sync_direction": "both",
+}
+
+VALID_SYNC_DIRECTIONS = frozenset({"both", "send_only", "receive_only", "none"})
+
+VALID_SETTING_KEYS = frozenset(_SETTING_DEFAULTS.keys())
+
+
+def get_setting(
+    conn: sqlite3.Connection,
+    scope: str,
+    key: str,
+) -> Optional[str]:
+    """Raw single-scope lookup. Returns None if not set."""
+    row = conn.execute(
+        "SELECT value FROM sync_settings WHERE scope = ? AND setting_key = ?",
+        (scope, key),
+    ).fetchone()
+    return row[0] if row else None
+
+
+def set_setting(
+    conn: sqlite3.Connection,
+    scope: str,
+    key: str,
+    value: str,
+) -> Optional[str]:
+    """Set a setting value. Returns the old value (or None if new)."""
+    old = get_setting(conn, scope, key)
+    conn.execute(
+        """INSERT INTO sync_settings (scope, setting_key, value, updated_at)
+           VALUES (?, ?, ?, datetime('now'))
+           ON CONFLICT(scope, setting_key)
+           DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at""",
+        (scope, key, value),
+    )
+    conn.commit()
+    return old
+
+
+def delete_setting(
+    conn: sqlite3.Connection,
+    scope: str,
+    key: str,
+) -> None:
+    """Remove a setting override (falls back to default)."""
+    conn.execute(
+        "DELETE FROM sync_settings WHERE scope = ? AND setting_key = ?",
+        (scope, key),
+    )
+    conn.commit()
+
+
+def list_settings(
+    conn: sqlite3.Connection,
+    scope_prefix: str,
+) -> list[dict]:
+    """List all settings matching a scope prefix.
+
+    E.g. ``list_settings(conn, "team:acme")`` returns team-level and
+    member-level settings for team "acme".
+    """
+    escaped = scope_prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    rows = conn.execute(
+        "SELECT scope, setting_key, value, updated_at FROM sync_settings"
+        " WHERE scope LIKE ? || '%' ESCAPE '\\'",
+        (escaped,),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_effective_setting(
+    conn: sqlite3.Connection,
+    key: str,
+    *,
+    team_name: Optional[str] = None,
+    device_id: Optional[str] = None,
+) -> tuple[str, str]:
+    """Resolve setting with 3-scope cascade. Returns (value, source).
+
+    Resolution order (most specific wins):
+        member:{team}:{device} > team:{team} > device:{device} > default
+    """
+    # 1. Most specific: per-member-per-team
+    if team_name and device_id:
+        val = get_setting(conn, f"member:{team_name}:{device_id}", key)
+        if val is not None:
+            return val, "member"
+    # 2. Team default
+    if team_name:
+        val = get_setting(conn, f"team:{team_name}", key)
+        if val is not None:
+            return val, "team"
+    # 3. Global device default (cross-team)
+    if device_id:
+        val = get_setting(conn, f"device:{device_id}", key)
+        if val is not None:
+            return val, "device"
+    # 4. Hardcoded default
+    if key not in _SETTING_DEFAULTS:
+        raise ValueError(f"Unknown setting key: {key!r}. Valid keys: {sorted(_SETTING_DEFAULTS)}")
+    return _SETTING_DEFAULTS[key], "default"
+
+
+def get_effective_sync_direction(
+    conn: sqlite3.Connection,
+    *,
+    team_name: Optional[str] = None,
+    device_id: Optional[str] = None,
+) -> str:
+    """Convenience: resolve sync_direction."""
+    value, _ = get_effective_setting(conn, "sync_direction", team_name=team_name, device_id=device_id)
+    return value
+
+
+def get_effective_auto_accept(
+    conn: sqlite3.Connection,
+    team_name: str,
+) -> bool:
+    """Convenience: resolve auto_accept_members for a team."""
+    value, _ = get_effective_setting(conn, "auto_accept_members", team_name=team_name)
+    return value == "true"
+
+
 def cleanup_data_for_member(
     conn: sqlite3.Connection,
     team_name: str,
