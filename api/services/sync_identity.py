@@ -40,6 +40,20 @@ _VALID_EVENT_TYPES = frozenset({
 })
 
 
+def validate_event_type_filter(event_type: Optional[str]) -> Optional[str]:
+    """Validate and filter comma-separated event types against known types."""
+    if not event_type:
+        return None
+    parts = [t.strip() for t in event_type.split(",") if t.strip()]
+    valid_parts = [t for t in parts if t in _VALID_EVENT_TYPES]
+    return ",".join(valid_parts) if valid_parts else None
+
+
+def cap_pagination(limit: int, offset: int, max_limit: int = 200, max_offset: int = 10000) -> tuple[int, int]:
+    """Cap limit and offset to safe bounds."""
+    return max(1, min(limit, max_limit)), max(0, min(offset, max_offset))
+
+
 def validate_project_name(name: str) -> str:
     if not ALLOWED_PROJECT_NAME.match(name) or len(name) > 512:
         raise HTTPException(400, "Invalid project name")

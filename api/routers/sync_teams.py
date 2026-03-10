@@ -13,6 +13,7 @@ from db.sync_queries import (
     update_team_session_limit,
     get_effective_setting, set_setting,
     VALID_SYNC_DIRECTIONS, VALID_SETTING_KEYS,
+    VALID_SESSION_LIMITS,
 )
 from schemas import CreateTeamRequest, JoinTeamRequest, UpdateTeamSettingsRequest
 import services.sync_identity as _sid
@@ -26,8 +27,6 @@ from services.syncthing_proxy import run_sync
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/sync", tags=["sync"])
-
-_VALID_SESSION_LIMITS = frozenset({"all", "recent_100", "recent_10"})
 
 
 @router.get("/teams")
@@ -329,8 +328,8 @@ async def sync_update_team_settings(team_name: str, req: UpdateTeamSettingsReque
 
     # Handle sync_session_limit (stays in sync_teams table for backward compat)
     if req.sync_session_limit is not None:
-        if req.sync_session_limit not in _VALID_SESSION_LIMITS:
-            raise HTTPException(400, f"Invalid session limit. Must be one of: {', '.join(sorted(_VALID_SESSION_LIMITS))}")
+        if req.sync_session_limit not in VALID_SESSION_LIMITS:
+            raise HTTPException(400, f"Invalid session limit. Must be one of: {', '.join(sorted(VALID_SESSION_LIMITS))}")
         old_limit = team.get("sync_session_limit", "all")
         update_team_session_limit(conn, team_name, req.sync_session_limit)
         changes["sync_session_limit"] = {"old": old_limit, "new": req.sync_session_limit}
