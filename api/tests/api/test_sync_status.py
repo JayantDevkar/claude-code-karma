@@ -21,8 +21,7 @@ def mock_db(tmp_path, monkeypatch):
     conn.execute("PRAGMA foreign_keys=ON")
     ensure_schema(conn)
 
-    monkeypatch.setattr("routers.sync_status.get_writer_db", lambda: conn)
-    monkeypatch.setattr("routers.sync_status._get_sync_conn", lambda: conn)
+    monkeypatch.setattr("services.sync_identity._get_sync_conn", lambda: conn)
 
     config_path = tmp_path / "sync-config.json"
     config_path.write_text(json.dumps({
@@ -30,7 +29,7 @@ def mock_db(tmp_path, monkeypatch):
     }))
     monkeypatch.setattr("karma.config.SYNC_CONFIG_PATH", config_path)
 
-    from routers.sync_status import _invalidate_identity_cache
+    from services.sync_identity import _invalidate_identity_cache
     _invalidate_identity_cache()
 
     return conn
@@ -42,11 +41,10 @@ class TestSyncStatus:
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys=ON")
         ensure_schema(conn)
-        monkeypatch.setattr("routers.sync_status.get_writer_db", lambda: conn)
-        monkeypatch.setattr("routers.sync_status._get_sync_conn", lambda: conn)
+        monkeypatch.setattr("services.sync_identity._get_sync_conn", lambda: conn)
         monkeypatch.setattr("karma.config.SYNC_CONFIG_PATH", tmp_path / "nonexistent.json")
 
-        from routers.sync_status import _invalidate_identity_cache
+        from services.sync_identity import _invalidate_identity_cache
         _invalidate_identity_cache()
 
         resp = client.get("/sync/status")
@@ -90,14 +88,13 @@ class TestSyncStatus:
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys=ON")
         ensure_schema(conn)
-        monkeypatch.setattr("routers.sync_status.get_writer_db", lambda: conn)
-        monkeypatch.setattr("routers.sync_status._get_sync_conn", lambda: conn)
+        monkeypatch.setattr("services.sync_identity._get_sync_conn", lambda: conn)
 
         config_path = tmp_path / "sync-config.json"
         config_path.write_text("not valid json{{{")
         monkeypatch.setattr("karma.config.SYNC_CONFIG_PATH", config_path)
 
-        from routers.sync_status import _invalidate_identity_cache
+        from services.sync_identity import _invalidate_identity_cache
         _invalidate_identity_cache()
 
         resp = client.get("/sync/status")
@@ -110,11 +107,10 @@ class TestSyncStatus:
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys=ON")
         ensure_schema(conn)
-        monkeypatch.setattr("routers.sync_status.get_writer_db", lambda: conn)
-        monkeypatch.setattr("routers.sync_status._get_sync_conn", lambda: conn)
+        monkeypatch.setattr("services.sync_identity._get_sync_conn", lambda: conn)
         monkeypatch.setattr("karma.config.SYNC_CONFIG_PATH", tmp_path / "nonexistent.json")
 
-        from routers.sync_status import _invalidate_identity_cache
+        from services.sync_identity import _invalidate_identity_cache
         _invalidate_identity_cache()
 
         resp = client.get("/sync/teams")
@@ -127,7 +123,7 @@ class TestSyncDetect:
     def test_detect_not_running(self, monkeypatch):
         mock_proxy = MagicMock()
         mock_proxy.detect.return_value = {"installed": False, "running": False}
-        monkeypatch.setattr("routers.sync_status.get_proxy", lambda: mock_proxy)
+        monkeypatch.setattr("services.sync_identity.get_proxy", lambda: mock_proxy)
         resp = client.get("/sync/detect")
         assert resp.status_code == 200
         data = resp.json()
@@ -142,7 +138,7 @@ class TestSyncDetect:
             "version": "v1.27.0",
             "device_id": "AAAA-BBBB-CCCC",
         }
-        monkeypatch.setattr("routers.sync_status.get_proxy", lambda: mock_proxy)
+        monkeypatch.setattr("services.sync_identity.get_proxy", lambda: mock_proxy)
         resp = client.get("/sync/detect")
         assert resp.status_code == 200
         data = resp.json()
@@ -156,7 +152,7 @@ class TestSyncDetect:
 
         mock_proxy = MagicMock()
         mock_proxy.detect.side_effect = SyncthingNotRunning("not running")
-        monkeypatch.setattr("routers.sync_status.get_proxy", lambda: mock_proxy)
+        monkeypatch.setattr("services.sync_identity.get_proxy", lambda: mock_proxy)
         resp = client.get("/sync/detect")
         assert resp.status_code == 503
         assert resp.json()["detail"] == "Syncthing is not running"
@@ -169,7 +165,7 @@ class TestSyncDevices:
             {"device_id": "AAAA-BBBB", "name": "laptop", "connected": True},
             {"device_id": "CCCC-DDDD", "name": "server", "connected": False},
         ]
-        monkeypatch.setattr("routers.sync_status.get_proxy", lambda: mock_proxy)
+        monkeypatch.setattr("services.sync_identity.get_proxy", lambda: mock_proxy)
         resp = client.get("/sync/devices")
         assert resp.status_code == 200
         data = resp.json()
@@ -182,7 +178,7 @@ class TestSyncDevices:
 
         mock_proxy = MagicMock()
         mock_proxy.get_devices.side_effect = SyncthingNotRunning("not running")
-        monkeypatch.setattr("routers.sync_status.get_proxy", lambda: mock_proxy)
+        monkeypatch.setattr("services.sync_identity.get_proxy", lambda: mock_proxy)
         resp = client.get("/sync/devices")
         assert resp.status_code == 503
 
@@ -193,7 +189,7 @@ class TestSyncDevices:
             "device_id": "AAAA-BBBB",
             "name": "laptop",
         }
-        monkeypatch.setattr("routers.sync_status.get_proxy", lambda: mock_proxy)
+        monkeypatch.setattr("services.sync_identity.get_proxy", lambda: mock_proxy)
         resp = client.post("/sync/devices", json={"device_id": "AAAA-BBBB", "name": "laptop"})
         assert resp.status_code == 200
         data = resp.json()
@@ -202,7 +198,7 @@ class TestSyncDevices:
 
     def test_add_device_invalid_id(self, monkeypatch):
         mock_proxy = MagicMock()
-        monkeypatch.setattr("routers.sync_status.get_proxy", lambda: mock_proxy)
+        monkeypatch.setattr("services.sync_identity.get_proxy", lambda: mock_proxy)
         resp = client.post(
             "/sync/devices",
             json={"device_id": "invalid device id!", "name": "laptop"},
@@ -214,7 +210,7 @@ class TestSyncDevices:
 
         mock_proxy = MagicMock()
         mock_proxy.add_device.side_effect = SyncthingNotRunning("not running")
-        monkeypatch.setattr("routers.sync_status.get_proxy", lambda: mock_proxy)
+        monkeypatch.setattr("services.sync_identity.get_proxy", lambda: mock_proxy)
         resp = client.post(
             "/sync/devices", json={"device_id": "AAAA-BBBB", "name": "laptop"}
         )
@@ -223,7 +219,7 @@ class TestSyncDevices:
     def test_remove_device(self, monkeypatch):
         mock_proxy = MagicMock()
         mock_proxy.remove_device.return_value = {"ok": True, "device_id": "AAAA-BBBB"}
-        monkeypatch.setattr("routers.sync_status.get_proxy", lambda: mock_proxy)
+        monkeypatch.setattr("services.sync_identity.get_proxy", lambda: mock_proxy)
         resp = client.delete("/sync/devices/AAAA-BBBB")
         assert resp.status_code == 200
         data = resp.json()
@@ -231,7 +227,7 @@ class TestSyncDevices:
 
     def test_remove_device_invalid_id(self, monkeypatch):
         mock_proxy = MagicMock()
-        monkeypatch.setattr("routers.sync_status.get_proxy", lambda: mock_proxy)
+        monkeypatch.setattr("services.sync_identity.get_proxy", lambda: mock_proxy)
         resp = client.delete("/sync/devices/invalid device!")
         assert resp.status_code == 400
 
@@ -240,7 +236,7 @@ class TestSyncDevices:
 
         mock_proxy = MagicMock()
         mock_proxy.remove_device.side_effect = SyncthingNotRunning("not running")
-        monkeypatch.setattr("routers.sync_status.get_proxy", lambda: mock_proxy)
+        monkeypatch.setattr("services.sync_identity.get_proxy", lambda: mock_proxy)
         resp = client.delete("/sync/devices/AAAA-BBBB")
         assert resp.status_code == 503
 
@@ -252,7 +248,7 @@ class TestSyncProjects:
             {"id": "folder1", "label": "Project A", "path": "/home/user/projectA"},
             {"id": "folder2", "label": "Project B", "path": "/home/user/projectB"},
         ]
-        monkeypatch.setattr("routers.sync_status.get_proxy", lambda: mock_proxy)
+        monkeypatch.setattr("services.sync_identity.get_proxy", lambda: mock_proxy)
         resp = client.get("/sync/projects")
         assert resp.status_code == 200
         data = resp.json()
@@ -265,14 +261,14 @@ class TestSyncProjects:
 
         mock_proxy = MagicMock()
         mock_proxy.get_folder_status.side_effect = SyncthingNotRunning("not running")
-        monkeypatch.setattr("routers.sync_status.get_proxy", lambda: mock_proxy)
+        monkeypatch.setattr("services.sync_identity.get_proxy", lambda: mock_proxy)
         resp = client.get("/sync/projects")
         assert resp.status_code == 503
 
     def test_list_projects_empty(self, monkeypatch):
         mock_proxy = MagicMock()
         mock_proxy.get_folder_status.return_value = []
-        monkeypatch.setattr("routers.sync_status.get_proxy", lambda: mock_proxy)
+        monkeypatch.setattr("services.sync_identity.get_proxy", lambda: mock_proxy)
         resp = client.get("/sync/projects")
         assert resp.status_code == 200
         data = resp.json()
@@ -288,7 +284,7 @@ class TestSyncActivity:
 
         mock_proxy = MagicMock()
         mock_proxy.get_bandwidth.return_value = {"upload_rate": 100, "download_rate": 200, "upload_total": 1000, "download_total": 2000}
-        monkeypatch.setattr("routers.sync_status.get_proxy", lambda: mock_proxy)
+        monkeypatch.setattr("services.sync_identity.get_proxy", lambda: mock_proxy)
 
         resp = client.get("/sync/activity")
         assert resp.status_code == 200
@@ -303,7 +299,7 @@ class TestSyncActivity:
 
         mock_proxy = MagicMock()
         mock_proxy.get_bandwidth.return_value = {"upload_rate": 0, "download_rate": 0, "upload_total": 0, "download_total": 0}
-        monkeypatch.setattr("routers.sync_status.get_proxy", lambda: mock_proxy)
+        monkeypatch.setattr("services.sync_identity.get_proxy", lambda: mock_proxy)
 
         resp = client.get("/sync/activity?limit=10")
         assert resp.status_code == 200
@@ -313,7 +309,7 @@ class TestSyncActivity:
     def test_get_events_empty(self, mock_db, monkeypatch):
         mock_proxy = MagicMock()
         mock_proxy.get_bandwidth.return_value = {"upload_rate": 0, "download_rate": 0, "upload_total": 0, "download_total": 0}
-        monkeypatch.setattr("routers.sync_status.get_proxy", lambda: mock_proxy)
+        monkeypatch.setattr("services.sync_identity.get_proxy", lambda: mock_proxy)
 
         resp = client.get("/sync/activity")
         assert resp.status_code == 200
@@ -330,7 +326,7 @@ class TestSyncInit:
             "version": "v1.27.0",
             "device_id": "AAAA-BBBB-CCCC",
         }
-        monkeypatch.setattr("routers.sync_status.get_proxy", lambda: mock_proxy)
+        monkeypatch.setattr("services.sync_identity.get_proxy", lambda: mock_proxy)
 
         monkeypatch.setattr(
             "karma.syncthing.read_local_api_key",
@@ -362,7 +358,7 @@ class TestSyncInit:
             "installed": True,
             "running": False,
         }
-        monkeypatch.setattr("routers.sync_status.get_proxy", lambda: mock_proxy)
+        monkeypatch.setattr("services.sync_identity.get_proxy", lambda: mock_proxy)
 
         resp = client.post("/sync/init", json={"user_id": "alice", "backend": "syncthing"})
         assert resp.status_code == 503

@@ -15,7 +15,7 @@ from db.schema import ensure_schema
 
 @pytest.fixture(autouse=True)
 def _reset_singletons():
-    import routers.sync_status as mod
+    import services.sync_identity as mod
     mod._proxy = None
     mod._watcher = None
     yield
@@ -38,24 +38,27 @@ def mock_db(tmp_path, monkeypatch):
     )
     conn.commit()
 
-    monkeypatch.setattr("routers.sync_status.get_writer_db", lambda: conn)
-    monkeypatch.setattr("routers.sync_status._get_sync_conn", lambda: conn)
+    monkeypatch.setattr("services.sync_identity._get_sync_conn", lambda: conn)
 
     config_path = tmp_path / "sync-config.json"
     config_path.write_text('{"user_id": "jayant", "machine_id": "mac", "syncthing": {}}')
     monkeypatch.setattr("karma.config.SYNC_CONFIG_PATH", config_path)
 
+    # Mock Path.home() so validate_project_path accepts test paths
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+
     return conn
 
 
 class TestAddProjectToTeam:
-    def test_add_project_success(self, mock_db):
+    def test_add_project_success(self, mock_db, tmp_path):
         from main import app
         client = TestClient(app)
 
+        proj_path = str(tmp_path / "Documents" / "GitHub" / "claude-karma")
         resp = client.post("/sync/teams/my-team/projects", json={
             "name": "claude-karma",
-            "path": "/Users/jayant/Documents/GitHub/claude-karma",
+            "path": proj_path,
         })
 
         assert resp.status_code == 200
@@ -67,11 +70,11 @@ class TestAddProjectToTeam:
         rows = mock_db.execute("SELECT * FROM sync_team_projects WHERE team_name = ?", ("my-team",)).fetchall()
         assert len(rows) == 1
 
-    def test_add_project_team_not_found(self, mock_db):
+    def test_add_project_team_not_found(self, mock_db, tmp_path):
         from main import app
         client = TestClient(app)
         resp = client.post("/sync/teams/nope/projects", json={
-            "name": "x", "path": "/tmp/x",
+            "name": "x", "path": str(tmp_path / "x"),
         })
         assert resp.status_code == 404
 
@@ -80,20 +83,20 @@ class TestAddProjectToTeam:
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys=ON")
         ensure_schema(conn)
-        monkeypatch.setattr("routers.sync_status.get_writer_db", lambda: conn)
-        monkeypatch.setattr("routers.sync_status._get_sync_conn", lambda: conn)
+        monkeypatch.setattr("services.sync_identity._get_sync_conn", lambda: conn)
         monkeypatch.setattr("karma.config.SYNC_CONFIG_PATH", tmp_path / "nope.json")
+        monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
 
         from main import app
         client = TestClient(app)
         # Team doesn't exist → 404
         resp = client.post("/sync/teams/my-team/projects", json={
-            "name": "x", "path": "/tmp/x",
+            "name": "x", "path": str(tmp_path / "x"),
         })
         assert resp.status_code == 404
 
 
-    def test_add_project_creates_outbox_and_inboxes(self, mock_db, monkeypatch):
+    def test_add_project_creates_outbox_and_inboxes(self, mock_db, tmp_path, monkeypatch):
         """Adding a project to a team with existing members creates outbox + inbox folders."""
         from unittest.mock import MagicMock, patch
 
@@ -115,15 +118,15 @@ class TestAddProjectToTeam:
         mock_proxy.update_folder_devices = MagicMock(side_effect=ValueError("not found"))
         mock_proxy.add_folder = MagicMock(return_value={"ok": True})
 
-        monkeypatch.setattr("routers.sync_status._load_identity", lambda: mock_config)
-        monkeypatch.setattr("routers.sync_status.get_proxy", lambda: mock_proxy)
+        monkeypatch.setattr("services.sync_identity._load_identity", lambda: mock_config)
+        monkeypatch.setattr("services.sync_identity.get_proxy", lambda: mock_proxy)
 
         from main import app
         client = TestClient(app)
 
         resp = client.post("/sync/teams/my-team/projects", json={
             "name": "test-proj",
-            "path": "/tmp/test-proj",
+            "path": str(tmp_path / "test-proj"),
         })
 
         assert resp.status_code == 200

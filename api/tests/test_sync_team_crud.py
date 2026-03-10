@@ -17,7 +17,7 @@ from db.schema import ensure_schema
 @pytest.fixture(autouse=True)
 def _reset_singletons():
     """Reset router singletons between tests."""
-    import routers.sync_status as mod
+    import services.sync_identity as mod
     mod._proxy = None
     mod._watcher = None
     yield
@@ -33,8 +33,7 @@ def mock_db(tmp_path, monkeypatch):
     conn.execute("PRAGMA foreign_keys=ON")
     ensure_schema(conn)
 
-    monkeypatch.setattr("routers.sync_status.get_writer_db", lambda: conn)
-    monkeypatch.setattr("routers.sync_status._get_sync_conn", lambda: conn)
+    monkeypatch.setattr("services.sync_identity._get_sync_conn", lambda: conn)
 
     # Provide identity config
     config_path = tmp_path / "sync-config.json"
@@ -42,7 +41,7 @@ def mock_db(tmp_path, monkeypatch):
     monkeypatch.setattr("karma.config.SYNC_CONFIG_PATH", config_path)
 
     # Clear identity TTL cache so tests get fresh config
-    from routers.sync_status import _invalidate_identity_cache
+    from services.sync_identity import _invalidate_identity_cache
     _invalidate_identity_cache()
 
     return conn
@@ -55,12 +54,11 @@ def mock_no_config(tmp_path, monkeypatch):
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys=ON")
     ensure_schema(conn)
-    monkeypatch.setattr("routers.sync_status.get_writer_db", lambda: conn)
-    monkeypatch.setattr("routers.sync_status._get_sync_conn", lambda: conn)
+    monkeypatch.setattr("services.sync_identity._get_sync_conn", lambda: conn)
     monkeypatch.setattr("karma.config.SYNC_CONFIG_PATH", tmp_path / "nope.json")
 
     # Clear identity TTL cache so tests get fresh config
-    from routers.sync_status import _invalidate_identity_cache
+    from services.sync_identity import _invalidate_identity_cache
     _invalidate_identity_cache()
 
     return conn

@@ -16,7 +16,7 @@ from db.schema import ensure_schema
 
 @pytest.fixture(autouse=True)
 def _reset_singletons():
-    import routers.sync_status as mod
+    import services.sync_identity as mod
     mod._proxy = None
     mod._watcher = None
     yield
@@ -35,8 +35,7 @@ def mock_db(tmp_path, monkeypatch):
     conn.execute("INSERT INTO sync_teams (name, backend) VALUES (?, ?)", ("my-team", "syncthing"))
     conn.commit()
 
-    monkeypatch.setattr("routers.sync_status.get_writer_db", lambda: conn)
-    monkeypatch.setattr("routers.sync_status._get_sync_conn", lambda: conn)
+    monkeypatch.setattr("services.sync_identity._get_sync_conn", lambda: conn)
 
     config_path = tmp_path / "sync-config.json"
     config_path.write_text('{"user_id": "jayant", "machine_id": "mac", "syncthing": {"api_key": "test-key", "device_id": "MY-DEVICE-ID"}}')
@@ -50,7 +49,7 @@ class TestAddMember:
         from main import app
         client = TestClient(app)
 
-        with patch("routers.sync_status.get_proxy") as mock_get_proxy:
+        with patch("services.sync_identity.get_proxy") as mock_get_proxy:
             mock_proxy = MagicMock()
             mock_proxy.add_device.return_value = {"ok": True}
             mock_get_proxy.return_value = mock_proxy
@@ -90,8 +89,7 @@ class TestAddMember:
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys=ON")
         ensure_schema(conn)
-        monkeypatch.setattr("routers.sync_status.get_writer_db", lambda: conn)
-        monkeypatch.setattr("routers.sync_status._get_sync_conn", lambda: conn)
+        monkeypatch.setattr("services.sync_identity._get_sync_conn", lambda: conn)
         monkeypatch.setattr("karma.config.SYNC_CONFIG_PATH", tmp_path / "nope.json")
 
         from main import app
@@ -114,7 +112,7 @@ class TestRemoveMember:
         from main import app
         client = TestClient(app)
 
-        with patch("routers.sync_status.get_proxy") as mock_get_proxy:
+        with patch("services.sync_identity.get_proxy") as mock_get_proxy:
             mock_proxy = MagicMock()
             mock_get_proxy.return_value = mock_proxy
             resp = client.delete("/sync/teams/my-team/members/alice")

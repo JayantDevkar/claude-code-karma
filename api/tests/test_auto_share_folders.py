@@ -1,4 +1,4 @@
-"""Tests for _auto_share_folders() API function."""
+"""Tests for auto_share_folders() API function."""
 
 import asyncio
 import sqlite3
@@ -72,11 +72,11 @@ class TestAutoShareFolders:
         db.commit()
         add_team_project(db, "team1", "-Users-alice-project-a", "/Users/alice/project-a")
 
-        from routers.sync_status import _auto_share_folders
+        from services.sync_folders import auto_share_folders
 
-        with patch("routers.sync_status.run_sync", side_effect=_fake_run_sync):
+        with patch("services.sync_folders.run_sync", side_effect=_fake_run_sync):
             result = asyncio.get_event_loop().run_until_complete(
-                _auto_share_folders(proxy, config, db, "team1", "BOB-DEVICE-ID")
+                auto_share_folders(proxy, config, db, "team1", "BOB-DEVICE-ID")
             )
 
         assert result["outboxes"] == 1
@@ -88,11 +88,11 @@ class TestAutoShareFolders:
         create_team(db, "team1")
         add_member(db, "team1", "bob", device_id="BOB-DEVICE-ID")
 
-        from routers.sync_status import _auto_share_folders
+        from services.sync_folders import auto_share_folders
 
-        with patch("routers.sync_status.run_sync", side_effect=_fake_run_sync):
+        with patch("services.sync_folders.run_sync", side_effect=_fake_run_sync):
             result = asyncio.get_event_loop().run_until_complete(
-                _auto_share_folders(proxy, config, db, "team1", "BOB-DEVICE-ID")
+                auto_share_folders(proxy, config, db, "team1", "BOB-DEVICE-ID")
             )
 
         assert result["outboxes"] == 0
@@ -110,11 +110,11 @@ class TestAutoShareFolders:
         add_team_project(db, "team1", "-Users-alice-project-a", "/Users/alice/project-a")
 
         # update_folder_devices succeeds (folder exists)
-        from routers.sync_status import _auto_share_folders
+        from services.sync_folders import auto_share_folders
 
-        with patch("routers.sync_status.run_sync", side_effect=_fake_run_sync):
+        with patch("services.sync_folders.run_sync", side_effect=_fake_run_sync):
             result = asyncio.get_event_loop().run_until_complete(
-                _auto_share_folders(proxy, config, db, "team1", "BOB-DEVICE-ID")
+                auto_share_folders(proxy, config, db, "team1", "BOB-DEVICE-ID")
             )
 
         # update_folder_devices should be called for outbox
@@ -135,11 +135,11 @@ class TestAutoShareFolders:
         # update raises ValueError (folder not found), add_folder succeeds
         proxy.update_folder_devices.side_effect = ValueError("not found")
 
-        from routers.sync_status import _auto_share_folders
+        from services.sync_folders import auto_share_folders
 
-        with patch("routers.sync_status.run_sync", side_effect=_fake_run_sync):
+        with patch("services.sync_folders.run_sync", side_effect=_fake_run_sync):
             result = asyncio.get_event_loop().run_until_complete(
-                _auto_share_folders(proxy, config, db, "team1", "BOB-DEVICE-ID")
+                auto_share_folders(proxy, config, db, "team1", "BOB-DEVICE-ID")
             )
 
         proxy.add_folder.assert_called()
@@ -159,11 +159,11 @@ class TestAutoShareFolders:
         proxy.update_folder_devices.side_effect = ValueError("not found")
         proxy.add_folder.side_effect = RuntimeError("Syncthing error")
 
-        from routers.sync_status import _auto_share_folders
+        from services.sync_folders import auto_share_folders
 
-        with patch("routers.sync_status.run_sync", side_effect=_fake_run_sync):
+        with patch("services.sync_folders.run_sync", side_effect=_fake_run_sync):
             result = asyncio.get_event_loop().run_until_complete(
-                _auto_share_folders(proxy, config, db, "team1", "BOB-DEVICE-ID")
+                auto_share_folders(proxy, config, db, "team1", "BOB-DEVICE-ID")
             )
 
         assert result["outboxes"] == 0
@@ -181,11 +181,11 @@ class TestAutoShareFolders:
         add_team_project(db, "team1", "-Users-alice-project-a", "/Users/alice/project-a",
                          git_identity="jayantdevkar/claude-karma")
 
-        from routers.sync_status import _auto_share_folders
+        from services.sync_folders import auto_share_folders
 
-        with patch("routers.sync_status.run_sync", side_effect=_fake_run_sync):
+        with patch("services.sync_folders.run_sync", side_effect=_fake_run_sync):
             result = asyncio.get_event_loop().run_until_complete(
-                _auto_share_folders(proxy, config, db, "team1", "BOB-DEVICE-ID")
+                auto_share_folders(proxy, config, db, "team1", "BOB-DEVICE-ID")
             )
 
         # Check that the folder ID contains git identity suffix
@@ -208,11 +208,11 @@ class TestAutoShareFolders:
             db.commit()
             add_team_project(db, "team1", name, path)
 
-        from routers.sync_status import _auto_share_folders
+        from services.sync_folders import auto_share_folders
 
-        with patch("routers.sync_status.run_sync", side_effect=_fake_run_sync):
+        with patch("services.sync_folders.run_sync", side_effect=_fake_run_sync):
             result = asyncio.get_event_loop().run_until_complete(
-                _auto_share_folders(proxy, config, db, "team1", "BOB-DEVICE-ID")
+                auto_share_folders(proxy, config, db, "team1", "BOB-DEVICE-ID")
             )
 
         assert result["outboxes"] == 2

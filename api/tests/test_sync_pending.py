@@ -14,7 +14,7 @@ class TestGetPendingFoldersForUI:
     def test_returns_pending_from_known_members(self):
         mock_client = MagicMock()
         mock_client.get_pending_folders.return_value = {
-            "karma-out-alice-myapp": {
+            "karma-out--alice--myapp": {
                 "offeredBy": {"ALICE-DEVICE-ID": {"time": "2026-03-06T00:00:00Z"}}
             }
         }
@@ -27,7 +27,7 @@ class TestGetPendingFoldersForUI:
         )
 
         assert len(result) == 1
-        assert result[0]["folder_id"] == "karma-out-alice-myapp"
+        assert result[0]["folder_id"] == "karma-out--alice--myapp"
         assert result[0]["from_member"] == "alice"
         assert result[0]["from_team"] == "my-team"
         assert result[0]["from_device"] == "ALICE-DEVICE-ID"
