@@ -12,6 +12,7 @@ from typing import Optional
 import click
 
 from karma.config import KARMA_BASE
+from karma.folder_ids import build_outbox_id
 from karma.sync import detect_git_identity
 
 # Add API to path for sync_queries
@@ -232,7 +233,7 @@ def auto_share_folders(st, config, conn, team_name: str, new_device_id: str) -> 
 
         # 1. My outbox: send my sessions to teammates
         outbox_path = str(KARMA_BASE / "remote-sessions" / config.user_id / encoded)
-        outbox_id = f"karma-out-{config.user_id}-{proj_short}"
+        outbox_id = build_outbox_id(config.user_id, proj_short)
         all_device_ids = [new_device_id]
         if config.syncthing.device_id:
             all_device_ids.append(config.syncthing.device_id)
@@ -250,7 +251,7 @@ def auto_share_folders(st, config, conn, team_name: str, new_device_id: str) -> 
         for m in members:
             if m["device_id"] == new_device_id:
                 inbox_path = str(KARMA_BASE / "remote-sessions" / m["name"] / encoded)
-                inbox_id = f"karma-out-{m['name']}-{proj_short}"
+                inbox_id = build_outbox_id(m['name'], proj_short)
                 inbox_devices = [new_device_id]
                 if config.syncthing.device_id:
                     inbox_devices.append(config.syncthing.device_id)

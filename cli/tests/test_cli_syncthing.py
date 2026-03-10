@@ -222,7 +222,7 @@ class TestAcceptCommand:
 
         # Now set up the pending folder for the accept call
         mock_st.get_pending_folders.return_value = {
-            "karma-out-bob-myapp": {
+            "karma-out--bob--myapp": {
                 "offeredBy": {
                     "BOB-DEVICE-ID-FULL": {"time": "2026-03-05T03:45:06Z"}
                 }
@@ -302,16 +302,16 @@ class TestAcceptCommand:
         ])
 
         mock_st.get_pending_folders.return_value = {
-            "karma-out-bob-myapp": {
+            "karma-out--bob--myapp": {
                 "offeredBy": {"BOB-DEVICE-ID": {"time": "2026-03-05T00:00:00Z"}}
             }
         }
-        mock_st.find_folder_by_path.return_value = {"id": "karma-out-bob-old", "path": "/tmp/inbox"}
+        mock_st.find_folder_by_path.return_value = {"id": "karma-out--bob--old", "path": "/tmp/inbox"}
 
         result = runner.invoke(cli, ["accept"])
         assert result.exit_code == 0
         assert "Replacing" in result.output
-        mock_st.remove_folder.assert_called_once_with("karma-out-bob-old")
+        mock_st.remove_folder.assert_called_once_with("karma-out--bob--old")
 
 
 class TestWorktreeDiscoveryIntegration:
