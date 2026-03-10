@@ -70,21 +70,16 @@
 
 	// Aggregate session stats by member
 	let memberTotals = $derived.by(() => {
-		const totals = new Map<string, { sent: number; received: number }>();
+		const totals = new Map<string, number>();
 		for (const stat of sessionStats) {
-			const existing = totals.get(stat.member_name) ?? { sent: 0, received: 0 };
-			existing.sent += stat.packaged;
-			existing.received += stat.received;
-			totals.set(stat.member_name, existing);
+			const existing = totals.get(stat.member_name) ?? 0;
+			totals.set(stat.member_name, existing + stat.packaged + stat.received);
 		}
 		return totals;
 	});
 
-	let totalSent = $derived(
-		[...memberTotals.values()].reduce((sum, t) => sum + t.sent, 0)
-	);
-	let totalReceived = $derived(
-		[...memberTotals.values()].reduce((sum, t) => sum + t.received, 0)
+	let totalSessions = $derived(
+		[...memberTotals.values()].reduce((sum, t) => sum + t, 0)
 	);
 
 	// Stats for StatsGrid
@@ -105,8 +100,8 @@
 		},
 		{
 			title: 'Sessions Shared',
-			value: totalSent + totalReceived,
-			description: `${totalSent} sent, ${totalReceived} received`,
+			value: totalSessions,
+			description: `across ${members.length} member${members.length !== 1 ? 's' : ''}`,
 			icon: ArrowUpDown,
 			color: 'accent'
 		}
@@ -117,12 +112,7 @@
 		[...memberTotals.keys()].map((name) => getUserChartLabel(name, userNames))
 	);
 	let chartMemberIds = $derived([...memberTotals.keys()]);
-	let chartSentData = $derived(
-		[...memberTotals.values()].map((t) => t.sent)
-	);
-	let chartReceivedData = $derived(
-		[...memberTotals.values()].map((t) => t.received)
-	);
+	let chartSessionData = $derived([...memberTotals.values()]);
 
 	onMount(() => {
 		registerChartDefaults();
@@ -136,11 +126,7 @@
 	$effect(() => {
 		if (!canvas || memberTotals.size === 0) return;
 
-		const sentColors = chartMemberIds.map((id) => getTeamMemberHexColor(id));
-		const receivedColors = chartMemberIds.map((id) => {
-			const hex = getTeamMemberHexColor(id);
-			return hex + '66';
-		});
+		const barColors = chartMemberIds.map((id) => getTeamMemberHexColor(id));
 
 		if (!chart) {
 			const colors = getThemeColors();
@@ -152,15 +138,9 @@
 					labels: chartLabels,
 					datasets: [
 						{
-							label: 'Sent',
-							data: chartSentData,
-							backgroundColor: sentColors,
-							borderRadius: 4
-						},
-						{
-							label: 'Received',
-							data: chartReceivedData,
-							backgroundColor: receivedColors,
+							label: 'Sessions',
+							data: chartSessionData,
+							backgroundColor: barColors,
 							borderRadius: 4
 						}
 					]
@@ -172,7 +152,7 @@
 						...createResponsiveConfig().plugins,
 						legend: {
 							...createResponsiveConfig().plugins.legend,
-							position: 'bottom'
+							display: false
 						},
 						tooltip: {
 							...createResponsiveConfig().plugins.tooltip,
@@ -188,10 +168,8 @@
 			});
 		} else {
 			chart.data.labels = chartLabels;
-			chart.data.datasets[0].data = chartSentData;
-			chart.data.datasets[0].backgroundColor = sentColors;
-			chart.data.datasets[1].data = chartReceivedData;
-			chart.data.datasets[1].backgroundColor = receivedColors;
+			chart.data.datasets[0].data = chartSessionData;
+			chart.data.datasets[0].backgroundColor = barColors;
 			chart.update();
 		}
 	});
