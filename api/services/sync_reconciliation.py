@@ -16,6 +16,7 @@ from db.sync_queries import (
     list_team_projects,
     log_event,
     upsert_member,
+    was_member_removed,
 )
 from services.folder_id import (
     is_karma_folder,
@@ -103,37 +104,40 @@ async def reconcile_introduced_devices(proxy, config, conn) -> int:
         if not karma_folder_ids:
             continue
 
-        username = None
-        team_name = None
+        # Collect ALL (username, team_name) pairs from this device's folders.
+        # A device may be in multiple teams — don't stop at the first match.
+        memberships: list[tuple[str, str]] = []
+        seen_teams: set[str] = set()
 
         for folder_id in karma_folder_ids:
             hs = parse_handshake_id(folder_id)
             if hs:
-                username, team_name = hs
-                break
+                uname, tname = hs
+                if tname not in seen_teams:
+                    memberships.append((uname, tname))
+                    seen_teams.add(tname)
+                continue
             parsed = parse_outbox_id(folder_id)
             if parsed:
                 candidate_name, candidate_suffix = parsed
                 if candidate_suffix in project_suffix_map:
-                    username = candidate_name
-                    team_name = project_suffix_map[candidate_suffix]
-                    break
+                    tname = project_suffix_map[candidate_suffix]
+                    if tname not in seen_teams:
+                        memberships.append((candidate_name, tname))
+                        seen_teams.add(tname)
 
-        if not team_name or not username:
-            continue
-
-        # Create member record
-        upsert_member(conn, team_name, username, device_id=device_id)
-        log_event(
-            conn, "member_auto_accepted", team_name=team_name,
-            member_name=username,
-            detail={"strategy": "reconciliation", "source": "introduced_device"},
-        )
-        logger.info(
-            "Reconciled introduced device %s as %s in team %s",
-            device_id[:20], username, team_name,
-        )
-        reconciled += 1
+        for username, team_name in memberships:
+            upsert_member(conn, team_name, username, device_id=device_id)
+            log_event(
+                conn, "member_auto_accepted", team_name=team_name,
+                member_name=username,
+                detail={"strategy": "reconciliation", "source": "introduced_device"},
+            )
+            logger.info(
+                "Reconciled introduced device %s as %s in team %s",
+                device_id[:20], username, team_name,
+            )
+            reconciled += 1
 
     return reconciled
 
@@ -226,6 +230,22 @@ async def reconcile_pending_handshakes(proxy, config, conn) -> int:
             # Only process from already-configured (paired) devices.
             # Pending (unpaired) devices are handled by auto_accept_pending_peers.
             if device_id not in configured_ids:
+                continue
+
+            # Check if this device was intentionally removed from this team.
+            # Stale handshake folders can be re-offered after removal —
+            # don't undo an explicit user action.
+            if was_member_removed(conn, team_name, device_id):
+                logger.debug(
+                    "Handshake reconciliation: skipping %s for team %s "
+                    "(previously removed)", device_id[:20], team_name,
+                )
+                try:
+                    await run_sync(
+                        proxy.dismiss_pending_folder_offer, folder_id, device_id,
+                    )
+                except Exception:
+                    pass
                 continue
 
             # Check if device is already a member of THIS team

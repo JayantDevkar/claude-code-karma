@@ -111,9 +111,44 @@ def upsert_member(
 
 
 def remove_member(conn: sqlite3.Connection, team_name: str, device_id: str) -> None:
-    """Remove a member by device_id (the PK)."""
+    """Remove a member by device_id (the PK) and record the removal.
+
+    The removal record prevents reconcile_pending_handshakes from
+    re-adding the member when a stale handshake folder is re-offered.
+    """
+    conn.execute(
+        """INSERT OR REPLACE INTO sync_removed_members (team_name, device_id, removed_at)
+           VALUES (?, ?, datetime('now'))""",
+        (team_name, device_id),
+    )
     conn.execute(
         "DELETE FROM sync_members WHERE team_name = ? AND device_id = ?",
+        (team_name, device_id),
+    )
+    conn.commit()
+
+
+def was_member_removed(conn: sqlite3.Connection, team_name: str, device_id: str) -> bool:
+    """Check if a device was intentionally removed from a team.
+
+    Used by reconcile_pending_handshakes to avoid re-adding members
+    whose stale handshake folders are re-offered after removal.
+    """
+    row = conn.execute(
+        "SELECT 1 FROM sync_removed_members WHERE team_name = ? AND device_id = ?",
+        (team_name, device_id),
+    ).fetchone()
+    return row is not None
+
+
+def clear_member_removal(conn: sqlite3.Connection, team_name: str, device_id: str) -> None:
+    """Clear a removal record when a member is intentionally re-added.
+
+    Called when a member joins via join code or is manually added via UI —
+    these are explicit user actions that should override a previous removal.
+    """
+    conn.execute(
+        "DELETE FROM sync_removed_members WHERE team_name = ? AND device_id = ?",
         (team_name, device_id),
     )
     conn.commit()
@@ -127,11 +162,26 @@ def list_members(conn: sqlite3.Connection, team_name: str) -> list[dict]:
     return [dict(r) for r in rows]
 
 
-def get_member_by_device_id(conn: sqlite3.Connection, device_id: str) -> Optional[dict]:
-    row = conn.execute(
-        "SELECT team_name, name, device_id, added_at FROM sync_members WHERE device_id = ?",
-        (device_id,),
-    ).fetchone()
+def get_member_by_device_id(
+    conn: sqlite3.Connection, device_id: str, team_name: Optional[str] = None,
+) -> Optional[dict]:
+    """Look up a member by device_id, optionally scoped to a specific team.
+
+    Without team_name, returns the first row found (non-deterministic for
+    multi-team devices). With team_name, returns the exact row for that team.
+    Always prefer passing team_name when the team context is known.
+    """
+    if team_name:
+        row = conn.execute(
+            "SELECT team_name, name, device_id, added_at FROM sync_members "
+            "WHERE device_id = ? AND team_name = ?",
+            (device_id, team_name),
+        ).fetchone()
+    else:
+        row = conn.execute(
+            "SELECT team_name, name, device_id, added_at FROM sync_members WHERE device_id = ?",
+            (device_id,),
+        ).fetchone()
     return dict(row) if row else None
 
 
@@ -359,12 +409,20 @@ def count_sessions_for_project(conn: sqlite3.Connection, encoded_name: str) -> i
     return row[0] if row else 0
 
 
-def get_known_devices(conn: sqlite3.Connection) -> dict[str, tuple[str, str]]:
-    """Return {device_id: (member_name, team_name)} for all Syncthing members."""
+def get_known_devices(conn: sqlite3.Connection) -> dict[str, list[tuple[str, str]]]:
+    """Return {device_id: [(member_name, team_name), ...]} for all Syncthing members.
+
+    A device in multiple teams will have multiple entries in the list.
+    """
+    from collections import defaultdict
+
     rows = conn.execute(
-        "SELECT device_id, name, team_name FROM sync_members"
+        "SELECT device_id, name, team_name FROM sync_members ORDER BY added_at"
     ).fetchall()
-    return {row["device_id"]: (row["name"], row["team_name"]) for row in rows}
+    result: dict[str, list[tuple[str, str]]] = defaultdict(list)
+    for row in rows:
+        result[row["device_id"]].append((row["name"], row["team_name"]))
+    return dict(result)
 
 
 def query_session_stats_by_member(

@@ -167,5 +167,58 @@ class TestSyncEvents:
         add_member(conn, "alpha", "alice", device_id="DEV-ALICE")
         add_member(conn, "alpha", "bob", device_id="DEV-BOB")
         known = get_known_devices(conn)
-        assert known["DEV-ALICE"] == ("alice", "alpha")
-        assert known["DEV-BOB"] == ("bob", "alpha")
+        assert known["DEV-ALICE"] == [("alice", "alpha")]
+        assert known["DEV-BOB"] == [("bob", "alpha")]
+
+    def test_get_known_devices_multi_team(self, conn):
+        """A device in multiple teams returns all team associations."""
+        from db.sync_queries import create_team, add_member, get_known_devices
+
+        create_team(conn, "alpha", "syncthing")
+        create_team(conn, "beta", "syncthing")
+        add_member(conn, "alpha", "bob", device_id="DEV-BOB")
+        add_member(conn, "beta", "bob", device_id="DEV-BOB")
+        known = get_known_devices(conn)
+        assert len(known["DEV-BOB"]) == 2
+        teams = {t for _, t in known["DEV-BOB"]}
+        assert teams == {"alpha", "beta"}
+
+    def test_get_member_by_device_id_with_team(self, conn):
+        """get_member_by_device_id with team_name returns the correct row."""
+        from db.sync_queries import create_team, add_member, get_member_by_device_id
+
+        create_team(conn, "alpha", "syncthing")
+        create_team(conn, "beta", "syncthing")
+        add_member(conn, "alpha", "bob", device_id="DEV-BOB")
+        add_member(conn, "beta", "bob", device_id="DEV-BOB")
+
+        member_alpha = get_member_by_device_id(conn, "DEV-BOB", team_name="alpha")
+        assert member_alpha is not None
+        assert member_alpha["team_name"] == "alpha"
+
+        member_beta = get_member_by_device_id(conn, "DEV-BOB", team_name="beta")
+        assert member_beta is not None
+        assert member_beta["team_name"] == "beta"
+
+        # Without team_name, returns any row (non-deterministic but non-None)
+        member_any = get_member_by_device_id(conn, "DEV-BOB")
+        assert member_any is not None
+
+    def test_removal_tracking(self, conn):
+        """remove_member records removal; was_member_removed checks it; clear_member_removal clears it."""
+        from db.sync_queries import (
+            create_team, add_member, remove_member,
+            was_member_removed, clear_member_removal,
+        )
+
+        create_team(conn, "alpha", "syncthing")
+        add_member(conn, "alpha", "bob", device_id="DEV-BOB")
+
+        assert not was_member_removed(conn, "alpha", "DEV-BOB")
+
+        remove_member(conn, "alpha", "DEV-BOB")
+        assert was_member_removed(conn, "alpha", "DEV-BOB")
+
+        # Clear the removal (simulating re-addition via join code)
+        clear_member_removal(conn, "alpha", "DEV-BOB")
+        assert not was_member_removed(conn, "alpha", "DEV-BOB")

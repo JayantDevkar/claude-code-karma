@@ -445,15 +445,18 @@ class SyncthingProxy:
         return client.get_pending_folders()
 
     def get_pending_folders_for_ui(
-        self, known_devices: dict[str, tuple[str, str]]
+        self, known_devices: dict[str, list[tuple[str, str]]]
     ) -> list[dict]:
         """Get pending folder offers filtered for known team members.
 
         Args:
-            known_devices: {device_id: (member_name, team_name)}
+            known_devices: {device_id: [(member_name, team_name), ...]}
+                A device in multiple teams has multiple entries.
 
         Returns:
             List of pending offers from known members with karma- prefix only.
+            ``from_team`` is set to the first team; callers should use folder
+            ID parsing to determine the correct team for multi-team devices.
         """
         client = self._require_client()
         pending = client.get_pending_folders()
@@ -468,7 +471,11 @@ class SyncthingProxy:
             for device_id, offer in info.get("offeredBy", {}).items():
                 if device_id not in known_devices:
                     continue
-                member_name, team_name = known_devices[device_id]
+                entries = known_devices[device_id]
+                member_name = entries[0][0]
+                # Default to first team; enrichment layer corrects this
+                # via folder ID → project suffix matching.
+                team_name = entries[0][1]
                 result.append({
                     "folder_id": folder_id,
                     "from_device": device_id,

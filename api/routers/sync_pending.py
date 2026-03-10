@@ -4,7 +4,7 @@ from typing import Any, Optional
 from fastapi import APIRouter, HTTPException
 
 from db.sync_queries import (
-    get_known_devices, list_team_projects,
+    get_known_devices, list_teams, list_team_projects,
     log_event,
 )
 from services.folder_id import (
@@ -104,10 +104,12 @@ async def sync_pending() -> Any:
             filtered.append(item)
     pending = own_outbox_pending + filtered
 
-    # Pre-fetch team projects for label enrichment (avoids N+1)
-    team_names = {item["from_team"] for item in pending if item.get("from_team")}
+    # Pre-fetch ALL teams' projects for label enrichment.
+    # Using all teams (not just from_team) handles multi-team devices
+    # where from_team may be any of the device's teams.
     team_projects_map: dict[str, list] = {}
-    for tn in team_names:
+    for team in list_teams(conn):
+        tn = team["name"]
         try:
             team_projects_map[tn] = list_team_projects(conn, tn)
         except Exception as e:
@@ -124,16 +126,22 @@ async def sync_pending() -> Any:
             parsed = parse_outbox_id(folder_id)
             if parsed:
                 owner, suffix = parsed
-                # Try to find a matching project for a friendly label
-                projects = team_projects_map.get(item.get("from_team", ""), [])
+                # Try to find a matching project across ALL teams.
+                # This handles multi-team devices where from_team may
+                # not be the team that owns this particular project.
                 project_label = None
-                for proj in projects:
-                    proj_suffix = _compute_proj_suffix(
-                        proj.get("git_identity"), proj.get("path"), proj["project_encoded_name"]
-                    )
-                    if proj_suffix == suffix:
-                        git_id = proj.get("git_identity")
-                        project_label = git_id.split("/")[-1] if git_id else proj["project_encoded_name"]
+                for tn, projects in team_projects_map.items():
+                    for proj in projects:
+                        proj_suffix = _compute_proj_suffix(
+                            proj.get("git_identity"), proj.get("path"), proj["project_encoded_name"]
+                        )
+                        if proj_suffix == suffix:
+                            git_id = proj.get("git_identity")
+                            project_label = git_id.split("/")[-1] if git_id else proj["project_encoded_name"]
+                            # Correct from_team to the actual team that owns this project
+                            item["from_team"] = tn
+                            break
+                    if project_label:
                         break
                 # Fallback: try to extract a readable project name from the suffix.
                 # Suffix is typically "{github-org}-{repo-name}" e.g. "jayantdevkar-claude-code-karma".

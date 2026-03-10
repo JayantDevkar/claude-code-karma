@@ -268,13 +268,14 @@ def accept_pending_folders(st, config, conn, *, auto_only=False, only_folder_id=
         for dev_id in folder_info.get("offeredBy", {}):
             if dev_id in known_devices:
                 real_usernames[dev_id] = candidate_user
-                db_name, db_team = known_devices[dev_id]
-                if db_name != candidate_user:
-                    click.echo(
-                        f"  Updating member name: {db_name} → {candidate_user} "
-                        f"(from handshake folder)"
-                    )
-                    upsert_member(conn, db_team, candidate_user, device_id=dev_id)
+                # Update name in ALL teams this device belongs to
+                for db_name, db_team in known_devices[dev_id]:
+                    if db_name != candidate_user:
+                        click.echo(
+                            f"  Updating member name: {db_name} → {candidate_user} "
+                            f"(from handshake folder, team {db_team})"
+                        )
+                        upsert_member(conn, db_team, candidate_user, device_id=dev_id)
 
     # Refresh known_devices after potential member name updates
     known_devices = get_known_devices(conn)
@@ -307,7 +308,36 @@ def accept_pending_folders(st, config, conn, *, auto_only=False, only_folder_id=
                 click.echo(f"  Skipped folder '{folder_id}' from unknown device {short_id}")
                 continue
 
-            member_name, team_name = known_devices[device_id]
+            # Device may be in multiple teams — pick the best match for this folder.
+            entries = known_devices[device_id]
+            member_name = entries[0][0]
+            team_name = entries[0][1]
+            # For handshake folders, the team is in the folder ID
+            hs = parse_handshake_id(folder_id)
+            if hs:
+                _, hs_team = hs
+                for name, team in entries:
+                    if team == hs_team:
+                        member_name, team_name = name, team
+                        break
+            else:
+                # For outbox folders, try matching suffix against teams
+                out = parse_outbox_id(folder_id)
+                if out:
+                    _, suffix = out
+                    from db.sync_queries import list_team_projects
+                    for name, team in entries:
+                        for proj in list_team_projects(conn, team):
+                            git_id = proj.get("git_identity")
+                            if git_id:
+                                proj_suffix = git_id.replace("/", "-")
+                            elif proj["path"]:
+                                proj_suffix = Path(proj["path"]).name
+                            else:
+                                proj_suffix = proj["project_encoded_name"]
+                            if proj_suffix == suffix:
+                                member_name, team_name = name, team
+                                break
 
             # ── Handle karma-join-* handshake folders ─────────────────
             if is_handshake_folder(folder_id):

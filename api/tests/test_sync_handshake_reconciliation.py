@@ -18,7 +18,10 @@ from db.sync_queries import (
     create_team,
     get_team,
     list_members,
+    remove_member,
     upsert_member,
+    was_member_removed,
+    clear_member_removal,
 )
 from services.sync_reconciliation import reconcile_pending_handshakes
 
@@ -247,3 +250,64 @@ class TestReconcilePendingHandshakes:
         members = list_members(conn, "team-x")
         bob_entries = [m for m in members if m["name"] == "bob"]
         assert len(bob_entries) == 1
+
+    def test_stale_handshake_after_removal_blocked(self, proxy, config, conn):
+        """Removed member's stale handshake does NOT re-add them (Scenario 6)."""
+        # Setup: alice and bob are in team2
+        create_team(conn, "team1", "syncthing")
+        create_team(conn, "team2", "syncthing")
+        upsert_member(conn, "team1", "alice", device_id="ALICE-DEVICE-ID")
+        upsert_member(conn, "team1", "bob", device_id="BOB-DEVICE-ID")
+        upsert_member(conn, "team2", "alice", device_id="ALICE-DEVICE-ID")
+        upsert_member(conn, "team2", "bob", device_id="BOB-DEVICE-ID")
+
+        # Alice removes bob from team2
+        remove_member(conn, "team2", "BOB-DEVICE-ID")
+        assert was_member_removed(conn, "team2", "BOB-DEVICE-ID")
+
+        # Bob's stale handshake re-appears
+        proxy.get_pending_folders.return_value = {
+            "karma-join--bob--team2": {
+                "offeredBy": {"BOB-DEVICE-ID": {"time": "2026-03-10T00:00:00Z"}}
+            }
+        }
+        proxy.get_devices.return_value = [
+            {"device_id": "ALICE-DEVICE-ID", "is_self": True},
+            {"device_id": "BOB-DEVICE-ID", "is_self": False},
+        ]
+
+        result = _run(reconcile_pending_handshakes(proxy, config, conn))
+
+        # Should NOT re-add bob
+        assert result == 0
+        members = list_members(conn, "team2")
+        assert not any(m["device_id"] == "BOB-DEVICE-ID" for m in members)
+        # Handshake should still be dismissed (consume the stale signal)
+        proxy.dismiss_pending_folder_offer.assert_called_once()
+
+    def test_removed_then_rejoined_via_clear(self, proxy, config, conn):
+        """After clear_member_removal, handshake reconciliation works again."""
+        create_team(conn, "team1", "syncthing")
+        upsert_member(conn, "team1", "alice", device_id="ALICE-DEVICE-ID")
+        upsert_member(conn, "team1", "bob", device_id="BOB-DEVICE-ID")
+
+        # Remove then clear (simulating re-join via join code)
+        remove_member(conn, "team1", "BOB-DEVICE-ID")
+        clear_member_removal(conn, "team1", "BOB-DEVICE-ID")
+
+        proxy.get_pending_folders.return_value = {
+            "karma-join--bob--team1": {
+                "offeredBy": {"BOB-DEVICE-ID": {"time": "2026-03-10T00:00:00Z"}}
+            }
+        }
+        proxy.get_devices.return_value = [
+            {"device_id": "ALICE-DEVICE-ID", "is_self": True},
+            {"device_id": "BOB-DEVICE-ID", "is_self": False},
+        ]
+
+        result = _run(reconcile_pending_handshakes(proxy, config, conn))
+
+        # Should re-add bob (removal was explicitly cleared)
+        assert result == 1
+        members = list_members(conn, "team1")
+        assert any(m["name"] == "bob" for m in members)
