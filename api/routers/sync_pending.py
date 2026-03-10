@@ -4,7 +4,7 @@ from typing import Any, Optional
 from fastapi import APIRouter, HTTPException
 
 from db.sync_queries import (
-    get_known_devices, list_teams, list_team_projects,
+    get_known_devices, list_team_projects,
     log_event,
 )
 from services.folder_id import (
@@ -104,12 +104,21 @@ async def sync_pending() -> Any:
             filtered.append(item)
     pending = own_outbox_pending + filtered
 
-    # Pre-fetch ALL teams' projects for label enrichment.
-    # Using all teams (not just from_team) handles multi-team devices
-    # where from_team may be any of the device's teams.
+    # Pre-fetch projects only for teams referenced by pending items' devices.
+    # A multi-team device may have from_team set to any of its teams, so we
+    # load projects for ALL teams the device belongs to (via known devices map).
+    relevant_teams: set[str] = set()
+    for item in pending:
+        device_id = item.get("from_device")
+        if device_id and device_id in known:
+            for _, team in known[device_id]:
+                relevant_teams.add(team)
+        from_team = item.get("from_team")
+        if from_team:
+            relevant_teams.add(from_team)
+
     team_projects_map: dict[str, list] = {}
-    for team in list_teams(conn):
-        tn = team["name"]
+    for tn in relevant_teams:
         try:
             team_projects_map[tn] = list_team_projects(conn, tn)
         except Exception as e:

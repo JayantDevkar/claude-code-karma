@@ -244,7 +244,7 @@ def accept_pending_folders(st, config, conn, *, auto_only=False, only_folder_id=
     itself, and a ``sync_team_projects`` record is auto-created so that
     subsequent operations (watcher, status) can find the project.
     """
-    from db.sync_queries import get_known_devices, list_teams, upsert_member
+    from db.sync_queries import get_known_devices, list_team_projects, list_teams, upsert_member
 
     pending = st.get_pending_folders()
     if not pending:
@@ -325,7 +325,7 @@ def accept_pending_folders(st, config, conn, *, auto_only=False, only_folder_id=
                 out = parse_outbox_id(folder_id)
                 if out:
                     _, suffix = out
-                    from db.sync_queries import list_team_projects
+                    matched = False
                     for name, team in entries:
                         for proj in list_team_projects(conn, team):
                             git_id = proj.get("git_identity")
@@ -337,7 +337,10 @@ def accept_pending_folders(st, config, conn, *, auto_only=False, only_folder_id=
                                 proj_suffix = proj["project_encoded_name"]
                             if proj_suffix == suffix:
                                 member_name, team_name = name, team
+                                matched = True
                                 break
+                        if matched:
+                            break
 
             # ── Handle karma-join-* handshake folders ─────────────────
             if is_handshake_folder(folder_id):
