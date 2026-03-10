@@ -33,11 +33,10 @@
 
 	// Aggregate session stats by date
 	let dateTotals = $derived.by(() => {
-		const totals = new Map<string, { sent: number; received: number }>();
+		const totals = new Map<string, { sessions: number }>();
 		for (const stat of profile.session_stats) {
-			const existing = totals.get(stat.date) ?? { sent: 0, received: 0 };
-			existing.sent += stat.packaged;
-			existing.received += stat.received;
+			const existing = totals.get(stat.date) ?? { sessions: 0 };
+			existing.sessions += stat.packaged + stat.received;
 			totals.set(stat.date, existing);
 		}
 		// Sort by date ascending
@@ -62,8 +61,7 @@
 
 	// Chart data derived from dateTotals
 	let chartLabels = $derived([...dateTotals.keys()]);
-	let chartSentData = $derived([...dateTotals.values()].map((t) => t.sent));
-	let chartReceivedData = $derived([...dateTotals.values()].map((t) => t.received));
+	let chartSessionData = $derived([...dateTotals.values()].map((t) => t.sessions));
 
 	let memberColor = $derived(getTeamMemberHexColor(profile.user_id));
 
@@ -79,9 +77,6 @@
 	$effect(() => {
 		if (!canvas || dateTotals.size === 0) return;
 
-		const sentColor = memberColor;
-		const receivedColor = memberColor + '66';
-
 		if (!chart) {
 			const colors = getThemeColors();
 			const scaleConfig = createCommonScaleConfig();
@@ -92,15 +87,9 @@
 					labels: chartLabels,
 					datasets: [
 						{
-							label: 'Sent',
-							data: chartSentData,
-							backgroundColor: sentColor,
-							borderRadius: 4
-						},
-						{
-							label: 'Received',
-							data: chartReceivedData,
-							backgroundColor: receivedColor,
+							label: 'Sessions',
+							data: chartSessionData,
+							backgroundColor: memberColor,
 							borderRadius: 4
 						}
 					]
@@ -112,7 +101,7 @@
 						...createResponsiveConfig().plugins,
 						legend: {
 							...createResponsiveConfig().plugins.legend,
-							position: 'bottom'
+							display: false
 						},
 						tooltip: {
 							...createResponsiveConfig().plugins.tooltip,
@@ -128,10 +117,8 @@
 			});
 		} else {
 			chart.data.labels = chartLabels;
-			chart.data.datasets[0].data = chartSentData;
-			chart.data.datasets[0].backgroundColor = sentColor;
-			chart.data.datasets[1].data = chartReceivedData;
-			chart.data.datasets[1].backgroundColor = receivedColor;
+			chart.data.datasets[0].data = chartSessionData;
+			chart.data.datasets[0].backgroundColor = memberColor;
 			chart.update();
 		}
 	});

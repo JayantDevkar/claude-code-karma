@@ -329,7 +329,12 @@ def query_session_stats_by_member(
     days: int = 30,
     member_name: Optional[str] = None,
 ) -> list[dict]:
-    """Aggregate session_packaged and session_received events per member per day.
+    """Aggregate session activity events per member per day.
+
+    Both ``session_packaged`` and ``session_received`` represent sessions
+    contributed by the member (packaged locally or received from them
+    remotely).  They are combined into a single ``packaged`` count so
+    callers don't need to understand the logging asymmetry.
 
     When *member_name* is provided the query is scoped to that single member,
     avoiding the cost of aggregating every team member's stats.
@@ -340,8 +345,7 @@ def query_session_stats_by_member(
             SELECT
                 DATE(created_at) AS date,
                 member_name,
-                SUM(CASE WHEN event_type = 'session_packaged' THEN 1 ELSE 0 END) AS packaged,
-                SUM(CASE WHEN event_type = 'session_received' THEN 1 ELSE 0 END) AS received
+                COUNT(*) AS packaged
             FROM sync_events
             WHERE team_name = ?
               AND member_name = ?
@@ -358,8 +362,7 @@ def query_session_stats_by_member(
             SELECT
                 DATE(created_at) AS date,
                 member_name,
-                SUM(CASE WHEN event_type = 'session_packaged' THEN 1 ELSE 0 END) AS packaged,
-                SUM(CASE WHEN event_type = 'session_received' THEN 1 ELSE 0 END) AS received
+                COUNT(*) AS packaged
             FROM sync_events
             WHERE team_name = ?
               AND event_type IN ('session_packaged', 'session_received')
@@ -371,6 +374,6 @@ def query_session_stats_by_member(
             (team_name, f"-{days} days"),
         ).fetchall()
     return [
-        {"date": r[0], "member_name": r[1], "packaged": r[2], "received": r[3]}
+        {"date": r[0], "member_name": r[1], "packaged": r[2], "received": 0}
         for r in rows
     ]

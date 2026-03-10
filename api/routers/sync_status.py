@@ -2381,11 +2381,20 @@ async def sync_member_profile(identifier: str) -> Any:
 
     # Batch: fetch all per-project session counts for this member in one query
     # instead of N separate COUNT(*) queries (N = total projects across teams).
+    #
+    # Event semantics (all logged on the LOCAL machine):
+    #   session_packaged  member_name=local_user  → local user sent sessions
+    #   session_received  member_name=sender_id   → we received sessions FROM sender
+    #
+    # So for a given member_name:
+    #   session_packaged → sessions they packaged/sent   (only present if they're the local user)
+    #   session_received → sessions we received FROM them (i.e. they sent TO us)
+    # Both represent "sent by this member" from different perspectives.
     team_placeholders = ",".join("?" for _ in team_names)
     session_count_rows = conn.execute(
         f"""SELECT team_name, project_encoded_name,
-                   SUM(CASE WHEN event_type = 'session_packaged' THEN 1 ELSE 0 END) AS sent,
-                   SUM(CASE WHEN event_type = 'session_received' THEN 1 ELSE 0 END) AS received
+                   SUM(CASE WHEN event_type = 'session_packaged' THEN 1 ELSE 0 END) AS packaged,
+                   SUM(CASE WHEN event_type = 'session_received' THEN 1 ELSE 0 END) AS received_from
             FROM sync_events
             WHERE member_name = ?
               AND team_name IN ({team_placeholders})
@@ -2395,12 +2404,16 @@ async def sync_member_profile(identifier: str) -> Any:
     ).fetchall()
 
     # Build lookup: (team_name, project_encoded_name) → {sent, received, total}
+    # Both event types represent sessions this member sent (packaged locally
+    # or received from them remotely). They are mutually exclusive: local user
+    # has session_packaged events, remote members have session_received events.
     session_counts: dict[tuple[str, str], dict] = {}
     for r in session_count_rows:
+        sent = r["packaged"] + r["received_from"]
         session_counts[(r["team_name"], r["project_encoded_name"])] = {
-            "sent": r["sent"],
-            "received": r["received"],
-            "total": r["sent"] + r["received"],
+            "sent": sent,
+            "received": 0,  # We don't track when others receive our sessions
+            "total": sent,
         }
 
     # Build per-team info and aggregate stats
