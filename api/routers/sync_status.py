@@ -28,13 +28,14 @@ from db.sync_queries import (
     remove_team_project,
     list_team_projects,
     upsert_team_project,
-    log_event,
-    query_events,
-    get_known_devices,
     find_project_by_git_identity,
     find_project_by_git_suffix,
-    update_team_session_limit,
+    get_known_devices,
+    log_event,
+    log_session_packaged_events,
+    query_events,
     query_session_stats_by_member,
+    update_team_session_limit,
 )
 from schemas import (
     AcceptPendingDeviceRequest,
@@ -1723,24 +1724,10 @@ async def sync_team_sync_now(team_name: str) -> Any:
             )
             manifest = await run_sync(packager.package, outbox)
             packaged_count += manifest.session_count
-            # Log session_packaged for sessions not already logged (dedup)
-            already_logged = {
-                r[0] for r in conn.execute(
-                    "SELECT session_uuid FROM sync_events "
-                    "WHERE event_type = 'session_packaged' AND team_name = ? "
-                    "AND project_encoded_name = ? AND session_uuid IS NOT NULL",
-                    (team_name, encoded),
-                ).fetchall()
-            }
-            for entry in manifest.sessions:
-                if entry.uuid not in already_logged:
-                    log_event(
-                        conn, "session_packaged",
-                        team_name=team_name,
-                        project_encoded_name=encoded,
-                        member_name=config.user_id,
-                        session_uuid=entry.uuid,
-                    )
+            # Log session_packaged per unique session (dedup)
+            log_session_packaged_events(
+                conn, team_name, encoded, config.user_id, manifest.sessions
+            )
         except Exception as e:
             logger.warning("sync-now: failed to package %s: %s", encoded, e)
             errors.append(f"{encoded}: {e}")
@@ -2491,7 +2478,7 @@ async def sync_member_profile(identifier: str) -> Any:
              AND member_name != ?
              AND member_name IS NOT NULL
              AND event_type IN ('session_packaged', 'session_received')
-             AND created_at >= datetime('now', '-30 days')
+             AND created_at >= datetime('now', 'localtime', '-30 days')
            GROUP BY date
            ORDER BY date""".format(",".join("?" for _ in team_names)),
         (*team_names, member_name),

@@ -232,6 +232,41 @@ def log_event(
     return cursor.lastrowid
 
 
+def log_session_packaged_events(
+    conn: sqlite3.Connection,
+    team_name: str,
+    project_encoded_name: str,
+    member_name: str,
+    sessions: list,
+    *,
+    commit: bool = True,
+) -> int:
+    """Log session_packaged events with dedup. Returns count of new events logged.
+
+    ``sessions`` should be an iterable of objects with a ``.uuid`` attribute.
+    """
+    already = {
+        r[0] for r in conn.execute(
+            "SELECT session_uuid FROM sync_events "
+            "WHERE event_type = 'session_packaged' AND team_name = ? "
+            "AND project_encoded_name = ? AND session_uuid IS NOT NULL",
+            (team_name, project_encoded_name),
+        ).fetchall()
+    }
+    logged = 0
+    for entry in sessions:
+        if entry.uuid not in already:
+            conn.execute(
+                """INSERT INTO sync_events (event_type, team_name, member_name, project_encoded_name, session_uuid, detail)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                ("session_packaged", team_name, member_name, project_encoded_name, entry.uuid, None),
+            )
+            logged += 1
+    if commit and logged:
+        conn.commit()
+    return logged
+
+
 _ALLOWED_EVENT_FILTERS = frozenset({"team_name", "event_type", "member_name"})
 
 
@@ -352,7 +387,7 @@ def query_session_stats_by_member(
             WHERE team_name = ?
               AND member_name = ?
               AND event_type IN ('session_packaged', 'session_received')
-              AND created_at >= datetime('now', ?)
+              AND created_at >= datetime('now', 'localtime', ?)
             GROUP BY date, member_name
             ORDER BY date
             """,
@@ -369,7 +404,7 @@ def query_session_stats_by_member(
             WHERE team_name = ?
               AND event_type IN ('session_packaged', 'session_received')
               AND member_name IS NOT NULL
-              AND created_at >= datetime('now', ?)
+              AND created_at >= datetime('now', 'localtime', ?)
             GROUP BY date, member_name
             ORDER BY date
             """,

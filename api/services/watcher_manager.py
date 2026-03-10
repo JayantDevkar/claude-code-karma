@@ -227,27 +227,14 @@ class WatcherManager:
                     # Log session_packaged per session (dedup against already-logged)
                     try:
                         from db.connection import get_writer_db
-                        from db.sync_queries import log_event
+                        from db.sync_queries import log_session_packaged_events
                         db = get_writer_db()
                         for tn in pt:
-                            already = {
-                                r[0] for r in db.execute(
-                                    "SELECT session_uuid FROM sync_events "
-                                    "WHERE event_type = 'session_packaged' AND team_name = ? "
-                                    "AND project_encoded_name = ? AND session_uuid IS NOT NULL",
-                                    (tn, en),
-                                ).fetchall()
-                            }
-                            for entry in manifest.sessions:
-                                if entry.uuid not in already:
-                                    log_event(
-                                        db, "session_packaged",
-                                        team_name=tn, project_encoded_name=en,
-                                        member_name=user_id,
-                                        session_uuid=entry.uuid,
-                                    )
+                            log_session_packaged_events(
+                                db, tn, en, user_id, manifest.sessions
+                            )
                     except Exception:
-                        pass  # Best-effort logging
+                        logger.debug("Failed to log session_packaged events", exc_info=True)
                 return package
 
             watcher = SessionWatcher(

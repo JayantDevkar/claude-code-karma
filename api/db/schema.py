@@ -5,8 +5,10 @@ All tables use CREATE TABLE IF NOT EXISTS for idempotent schema creation.
 A schema_version table tracks applied migrations for future upgrades.
 """
 
+import json
 import logging
 import sqlite3
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -669,24 +671,27 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
         if current_version < 13:
             logger.info("Migrating → v13: fix session_packaged events (per-session with backdating)")
 
-            # 1. Delete old inflated session_packaged events (no session_uuid = one per
-            #    watcher trigger, not per session). Also delete ones that were logged
-            #    retroactively via sync_now with today's timestamp instead of session date.
-            conn.execute(
-                "DELETE FROM sync_events WHERE event_type = 'session_packaged'"
-            )
-
-            # 2. Re-create per-session events from actual session data, backdated to
-            #    session start_time. Only for local sessions that belong to a synced project.
-            import json as _json
-            from pathlib import Path
+            # 1. Read local user before deleting, so we only delete if we can backfill.
             config_path = Path.home() / ".claude_karma" / "sync-config.json"
             local_user = None
             if config_path.exists():
                 try:
-                    local_user = _json.loads(config_path.read_text()).get("user_id")
+                    local_user = json.loads(config_path.read_text()).get("user_id")
                 except Exception:
                     pass
+
+            if not local_user:
+                logger.warning(
+                    "v13 migration: sync-config.json missing or has no user_id; "
+                    "skipping session_packaged backfill (existing events preserved)"
+                )
+            else:
+                # 2. Delete old inflated session_packaged events and re-create
+                #    per-session events from actual session data, backdated to
+                #    session start_time.
+                conn.execute(
+                    "DELETE FROM sync_events WHERE event_type = 'session_packaged'"
+                )
 
             if local_user:
                 # Find all (team, project) pairs

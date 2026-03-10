@@ -778,7 +778,9 @@ export function getUserChartLabel(
 	userNames?: Record<string, string>
 ): string {
 	if (userId === '_local') return 'You';
-	return userNames?.[userId] ?? userId;
+	const name = userNames?.[userId];
+	if (name) return name;
+	return userId.length > 16 ? userId.slice(0, 14) + '\u2026' : userId;
 }
 
 /**
