@@ -16,9 +16,10 @@
 		WifiOff,
 		AlertTriangle,
 		Monitor,
-		ArrowDownUp
+		ArrowDownUp,
+		Clock
 	} from 'lucide-svelte';
-	import { getTeamMemberColor, formatBytes } from '$lib/utils';
+	import { getTeamMemberColor, getTeamMemberHexColor, formatBytes, formatRelativeTime, formatDate } from '$lib/utils';
 
 	let { data } = $props();
 
@@ -29,7 +30,20 @@
 
 	let displayName = $derived(data.profile?.user_id ?? data.deviceId);
 	let colors = $derived(getTeamMemberColor(displayName));
+	let hexColor = $derived(getTeamMemberHexColor(displayName));
 	let profile = $derived(data.profile);
+
+	// Inline stats
+	let lastActiveRelative = $derived(
+		profile?.stats.last_active
+			? formatRelativeTime(profile.stats.last_active.replace(' ', 'T'))
+			: null
+	);
+	let lastActiveFormatted = $derived(
+		profile?.stats.last_active
+			? formatDate(profile.stats.last_active.replace(' ', 'T'))
+			: null
+	);
 
 	onMount(() => {
 		// Tab URL persistence
@@ -56,12 +70,12 @@
 		const url = new URL(window.location.href);
 		if (activeTab === 'overview') url.searchParams.delete('tab');
 		else url.searchParams.set('tab', activeTab);
-		history.replaceState({}, '', url.toString());
+		window.history.replaceState(window.history.state, '', url.toString());
 	});
 </script>
 
 <!-- Breadcrumb -->
-<div class="flex items-center gap-2 text-xs text-[var(--text-secondary)] mb-5">
+<div class="flex items-center gap-2 text-xs text-[var(--text-secondary)] mb-4">
 	<a href="/" class="hover:text-[var(--text-primary)] transition-colors">Dashboard</a>
 	<span class="text-[var(--text-faint)]">/</span>
 	<a href="/members" class="hover:text-[var(--text-primary)] transition-colors">Members</a>
@@ -70,13 +84,13 @@
 </div>
 
 {#if profile}
-	<!-- Unified Profile Header -->
-	<div class="mb-8 pb-6 border-b border-[var(--border)]">
-		<div class="flex items-center gap-5">
-			<!-- Avatar -->
+	<!-- Profile Header (matches PageHeader pattern) -->
+	<div class="mb-6 pb-6 border-b border-[var(--border)]">
+		<div class="flex items-start gap-4">
+			<!-- Avatar icon box (matches PageHeader icon style) -->
 			<div
-				class="w-16 h-16 rounded-2xl flex items-center justify-center text-2xl font-bold shrink-0"
-				style="background: {colors.border}; color: white;"
+				class="inline-flex items-center justify-center w-12 h-12 border rounded-[var(--radius-md)] shrink-0 text-lg font-bold"
+				style="background-color: {hexColor}15; border-color: {hexColor}40; color: {hexColor};"
 			>
 				{displayName.charAt(0).toUpperCase()}
 			</div>
@@ -88,7 +102,10 @@
 						{displayName}
 					</h1>
 					{#if profile.is_you}
-						<span class="shrink-0 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide rounded-full bg-[var(--accent)]/10 text-[var(--accent)]">
+						<span
+							class="shrink-0 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide rounded-full"
+							style="background: {hexColor}15; color: {hexColor};"
+						>
 							You
 						</span>
 					{/if}
@@ -105,23 +122,59 @@
 					{/if}
 				</div>
 
-				<div class="flex items-center gap-3 text-xs text-[var(--text-muted)]">
+				<!-- Metadata row (matches PageHeader metadata style) -->
+				<div class="flex items-center gap-3 text-xs text-[var(--text-muted)] mb-3">
 					<span class="flex items-center gap-1.5" title={profile.device_id}>
-						<Monitor size={11} class="opacity-60" />
+						<Monitor size={12} strokeWidth={2} />
 						{profile.device_id.slice(0, 8)}...
 					</span>
 					<span class="text-[var(--text-faint)]">&middot;</span>
 					<span class="flex items-center gap-1.5">
-						<ArrowDownUp size={11} class="opacity-60" />
+						<ArrowDownUp size={12} strokeWidth={2} />
 						{formatBytes(profile.in_bytes_total)} in / {formatBytes(profile.out_bytes_total)} out
 					</span>
+				</div>
+
+				<!-- Inline stat chips -->
+				<div class="flex items-center gap-2 flex-wrap">
+					<span
+						class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium border"
+						style="background: {hexColor}0a; border-color: {hexColor}20; color: var(--text-primary);"
+					>
+						<Activity size={12} style="color: {hexColor};" />
+						<strong>{profile.stats.total_sessions}</strong> sessions
+					</span>
+					<span
+						class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium border"
+						style="background: {hexColor}0a; border-color: {hexColor}20; color: var(--text-primary);"
+					>
+						<FolderGit2 size={12} style="color: {hexColor};" />
+						<strong>{profile.stats.total_projects}</strong> project{profile.stats.total_projects !== 1 ? 's' : ''}
+					</span>
+					<span
+						class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium border"
+						style="background: {hexColor}0a; border-color: {hexColor}20; color: var(--text-primary);"
+					>
+						<Users size={12} style="color: {hexColor};" />
+						<strong>{profile.teams.length}</strong> team{profile.teams.length !== 1 ? 's' : ''}
+					</span>
+					{#if lastActiveRelative}
+						<span
+							class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium border"
+							style="background: {hexColor}0a; border-color: {hexColor}20; color: var(--text-primary);"
+							title={lastActiveFormatted}
+						>
+							<Clock size={12} style="color: {hexColor};" />
+							Active <strong>{lastActiveRelative}</strong>
+						</span>
+					{/if}
 				</div>
 			</div>
 		</div>
 	</div>
 
 	<!-- Tabs -->
-	<Tabs.Root bind:value={activeTab} class="space-y-6">
+	<Tabs.Root bind:value={activeTab} class="space-y-5">
 		<Tabs.List class="flex gap-1 p-1 bg-[var(--bg-subtle)] border border-[var(--border)] rounded-lg w-fit mx-auto">
 			<TabsTrigger value="overview" icon={LayoutDashboard}>Overview</TabsTrigger>
 			<TabsTrigger value="sessions" icon={FolderGit2}>Sessions</TabsTrigger>
@@ -129,19 +182,19 @@
 			<TabsTrigger value="activity" icon={Activity}>Activity</TabsTrigger>
 		</Tabs.List>
 
-		<Tabs.Content value="overview" class="mt-4">
+		<Tabs.Content value="overview">
 			<MemberOverviewTab {profile} />
 		</Tabs.Content>
 
-		<Tabs.Content value="sessions" class="mt-4">
+		<Tabs.Content value="sessions">
 			<MemberSessionsTab {profile} />
 		</Tabs.Content>
 
-		<Tabs.Content value="teams" class="mt-4">
+		<Tabs.Content value="teams">
 			<MemberTeamsTab {profile} />
 		</Tabs.Content>
 
-		<Tabs.Content value="activity" class="mt-4">
+		<Tabs.Content value="activity">
 			<MemberActivityTab {profile} />
 		</Tabs.Content>
 	</Tabs.Root>

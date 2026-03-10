@@ -28,3 +28,5 @@ export { default as PlanDetailSkeleton } from './PlanDetailSkeleton.svelte';
 export { default as SessionsPageSkeleton } from './SessionsPageSkeleton.svelte';
 export { default as HooksPageSkeleton } from './HooksPageSkeleton.svelte';
 export { default as ArchivedPageSkeleton } from './ArchivedPageSkeleton.svelte';
+export { default as MembersPageSkeleton } from './MembersPageSkeleton.svelte';
+export { default as MemberDetailSkeleton } from './MemberDetailSkeleton.svelte';

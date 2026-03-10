@@ -266,7 +266,7 @@
 		const url = new URL(window.location.href);
 		if (activeTab === 'overview') url.searchParams.delete('tab');
 		else url.searchParams.set('tab', activeTab);
-		history.replaceState({}, '', url.toString());
+		window.history.replaceState(window.history.state, '', url.toString());
 	});
 
 	async function handleLeaveTeam() {

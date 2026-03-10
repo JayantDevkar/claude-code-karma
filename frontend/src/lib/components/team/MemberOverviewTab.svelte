@@ -9,16 +9,15 @@
 		Tooltip,
 		Legend
 	} from 'chart.js';
-	import { Activity, FolderGit2, Clock } from 'lucide-svelte';
-	import type { MemberProfile, StatItem } from '$lib/api-types';
-	import StatsGrid from '$lib/components/StatsGrid.svelte';
+	import { FolderGit2 } from 'lucide-svelte';
+	import type { MemberProfile } from '$lib/api-types';
 	import {
 		registerChartDefaults,
 		createResponsiveConfig,
 		createCommonScaleConfig,
 		getThemeColors
 	} from '$lib/components/charts/chartConfig';
-	import { getTeamMemberHexColor, formatRelativeTime, formatDate } from '$lib/utils';
+	import { getTeamMemberHexColor } from '$lib/utils';
 
 	// Register Chart.js components
 	Chart.register(BarController, BarElement, LinearScale, CategoryScale, Tooltip, Legend);
@@ -60,35 +59,6 @@
 		}
 		return [...projectMap.values()].sort((a, b) => b.session_count - a.session_count);
 	});
-
-	// Stats for StatsGrid
-	let stats = $derived<StatItem[]>([
-		{
-			title: 'Sessions (Sent & Received)',
-			value: profile.stats.total_sessions,
-			description: '',
-			icon: Activity,
-			color: 'accent'
-		},
-		{
-			title: 'Projects',
-			value: profile.stats.total_projects,
-			description: `across ${profile.teams.length} team${profile.teams.length !== 1 ? 's' : ''}`,
-			icon: FolderGit2,
-			color: 'green'
-		},
-		{
-			title: 'Last Active',
-			value: profile.stats.last_active
-				? formatRelativeTime(profile.stats.last_active.replace(' ', 'T'))
-				: 'Never',
-			description: profile.stats.last_active
-				? formatDate(profile.stats.last_active.replace(' ', 'T'))
-				: '',
-			icon: Clock,
-			color: 'orange'
-		}
-	]);
 
 	// Chart data derived from dateTotals
 	let chartLabels = $derived([...dateTotals.keys()]);
@@ -167,17 +137,7 @@
 	});
 </script>
 
-<div class="space-y-8">
-	<!-- Stats Row -->
-	<section>
-		<StatsGrid {stats} columns={3} />
-		{#if profile.stats.total_sessions === 0}
-			<p class="text-xs text-[var(--text-muted)] mt-3 text-center">
-				Appears after sync
-			</p>
-		{/if}
-	</section>
-
+<div class="space-y-6">
 	<!-- Sessions Over Time Chart -->
 	{#if dateTotals.size > 0}
 		<section>

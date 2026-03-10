@@ -23,7 +23,9 @@
 		PlanDetailSkeleton,
 		SessionsPageSkeleton,
 		SkillsPageSkeleton,
-		HooksPageSkeleton
+		HooksPageSkeleton,
+		MembersPageSkeleton,
+		MemberDetailSkeleton
 	} from '$lib/components/skeleton';
 
 	let { children } = $props();
@@ -72,6 +74,12 @@
 		}
 		if (path === '/hooks') return 'hooks';
 		if (path.startsWith('/sync')) return 'settings';
+		// Members routes
+		if (path === '/members') return 'members';
+		if (path.startsWith('/members/')) return 'member-detail';
+		// Team routes
+		if (path === '/team') return 'members';
+		if (path.startsWith('/team/')) return 'member-detail';
 
 		return null;
 	});
@@ -153,6 +161,10 @@
 						<SessionsPageSkeleton />
 					{:else if navigationSkeletonType === 'hooks'}
 						<HooksPageSkeleton />
+					{:else if navigationSkeletonType === 'members'}
+						<MembersPageSkeleton />
+					{:else if navigationSkeletonType === 'member-detail'}
+						<MemberDetailSkeleton />
 					{/if}
 				</div>
 			{:else}
