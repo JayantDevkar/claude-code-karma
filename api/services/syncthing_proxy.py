@@ -232,30 +232,31 @@ class SyncthingProxy:
     def update_folder_devices(self, folder_id: str, device_ids: list[str]) -> dict:
         """Add device(s) to an existing Syncthing folder. Skips duplicates."""
         client = self._require_client()
-        config = client._get_config()
-        folder = None
-        for f in config.get("folders", []):
-            if f.get("id") == folder_id:
-                folder = f
-                break
-        if folder is None:
-            raise ValueError(f"Folder '{folder_id}' not found in Syncthing config")
+        with client._config_lock:
+            config = client._get_config()
+            folder = None
+            for f in config.get("folders", []):
+                if f.get("id") == folder_id:
+                    folder = f
+                    break
+            if folder is None:
+                raise ValueError(f"Folder '{folder_id}' not found in Syncthing config")
 
-        existing_ids = {d.get("deviceID") for d in folder.get("devices", [])}
-        added = []
-        for did in device_ids:
-            if did not in existing_ids:
-                folder.setdefault("devices", []).append({"deviceID": did})
-                added.append(did)
+            existing_ids = {d.get("deviceID") for d in folder.get("devices", [])}
+            added = []
+            for did in device_ids:
+                if did not in existing_ids:
+                    folder.setdefault("devices", []).append({"deviceID": did})
+                    added.append(did)
 
-        if added:
-            resp = requests.put(
-                f"{client.api_url}/rest/config/folders/{folder_id}",
-                headers=client.headers,
-                json=folder,
-                timeout=10,
-            )
-            resp.raise_for_status()
+            if added:
+                resp = requests.put(
+                    f"{client.api_url}/rest/config/folders/{folder_id}",
+                    headers=client.headers,
+                    json=folder,
+                    timeout=10,
+                )
+                resp.raise_for_status()
 
         return {"ok": True, "folder_id": folder_id, "added": added}
 
@@ -293,34 +294,33 @@ class SyncthingProxy:
             {"ok": True, "folder_id": folder_id, "device_id": device_id, "removed": bool}
         """
         client = self._require_client()
-        config = client._get_config()
+        with client._config_lock:
+            config = client._get_config()
 
-        folder = None
-        for f in config.get("folders", []):
-            if f.get("id") == folder_id:
-                folder = f
-                break
+            folder = None
+            for f in config.get("folders", []):
+                if f.get("id") == folder_id:
+                    folder = f
+                    break
 
-        if folder is None:
-            # Folder doesn't exist — nothing to remove from
-            logger.debug("Folder '%s' not found; nothing to remove", folder_id)
-            return {"ok": True, "folder_id": folder_id, "device_id": device_id, "removed": False}
+            if folder is None:
+                logger.debug("Folder '%s' not found; nothing to remove", folder_id)
+                return {"ok": True, "folder_id": folder_id, "device_id": device_id, "removed": False}
 
-        original_devices = folder.get("devices", [])
-        filtered_devices = [d for d in original_devices if d.get("deviceID") != device_id]
+            original_devices = folder.get("devices", [])
+            filtered_devices = [d for d in original_devices if d.get("deviceID") != device_id]
 
-        if len(filtered_devices) == len(original_devices):
-            # Device wasn't in the folder
-            return {"ok": True, "folder_id": folder_id, "device_id": device_id, "removed": False}
+            if len(filtered_devices) == len(original_devices):
+                return {"ok": True, "folder_id": folder_id, "device_id": device_id, "removed": False}
 
-        folder["devices"] = filtered_devices
-        resp = requests.put(
-            f"{client.api_url}/rest/config/folders/{folder_id}",
-            headers=client.headers,
-            json=folder,
-            timeout=10,
-        )
-        resp.raise_for_status()
+            folder["devices"] = filtered_devices
+            resp = requests.put(
+                f"{client.api_url}/rest/config/folders/{folder_id}",
+                headers=client.headers,
+                json=folder,
+                timeout=10,
+            )
+            resp.raise_for_status()
         return {"ok": True, "folder_id": folder_id, "device_id": device_id, "removed": True}
 
     def get_folder_device_count(self, folder_id: str) -> int:
@@ -538,3 +538,59 @@ class SyncthingProxy:
             "upload_rate": total.get("rateSendBps", 0),
             "download_rate": total.get("rateRecvBps", 0),
         }
+
+    def accept_pending_folders(
+        self, config: Any, conn: Any, *, only_folder_id: str | None = None
+    ) -> int:
+        """Accept pending folder offers from known team members.
+
+        Delegates to karma.pending.accept_pending_folders using the proxy's
+        managed client, ensuring all config mutations go through the same
+        locked SyncthingClient instance.
+
+        Args:
+            config: The loaded sync identity config.
+            conn: SQLite connection for sync DB.
+            only_folder_id: If set, only accept this specific folder.
+
+        Returns:
+            Number of folders accepted.
+        """
+        from karma.pending import accept_pending_folders
+
+        client = self._require_client()
+        return accept_pending_folders(
+            client, config, conn, only_folder_id=only_folder_id,
+        )
+
+    def reject_pending_folder(self, folder_id: str) -> dict:
+        """Reject (dismiss) all pending offers for a folder.
+
+        Dismisses the folder offer from every device that offered it.
+
+        Args:
+            folder_id: The Syncthing folder ID to dismiss.
+
+        Returns:
+            {"ok": True, "folder_id": folder_id, "dismissed": int}
+
+        Raises:
+            ValueError: If the folder is not in the pending list.
+        """
+        client = self._require_client()
+        pending = client.get_pending_folders()
+        folder_info = pending.get(folder_id)
+        if not folder_info:
+            raise ValueError(f"Folder '{folder_id}' not found in pending offers")
+
+        dismissed = 0
+        for device_id in folder_info.get("offeredBy", {}):
+            try:
+                client.dismiss_pending_folder(folder_id, device_id)
+                dismissed += 1
+            except Exception as e:
+                logger.debug(
+                    "Failed to dismiss pending folder %s for device %s: %s",
+                    folder_id, device_id, e,
+                )
+        return {"ok": True, "folder_id": folder_id, "dismissed": dismissed}

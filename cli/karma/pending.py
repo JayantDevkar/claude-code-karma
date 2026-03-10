@@ -17,7 +17,15 @@ if str(_API_PATH) not in sys.path:
     sys.path.insert(0, str(_API_PATH))
 
 from services.file_validator import SAFE_PATH_PART  # noqa: E402
-from services.folder_id import parse_karma_folder_id  # noqa: E402
+from services.folder_id import (  # noqa: E402
+    build_outbox_id,
+    is_handshake_folder,
+    is_karma_folder,
+    is_outbox_folder,
+    parse_handshake_id,
+    parse_outbox_id,
+    OUTBOX_PREFIX,
+)
 from services.sync_policy import should_receive_from  # noqa: E402
 
 
@@ -118,7 +126,6 @@ def _handle_peer_outbox(
     own_device_id: Optional[str],
     member_name: str,
     team_name: str,
-    known_names: set,
     existing_folder_ids: set,
 ) -> int:
     """Accept someone else's outbox as a receiveonly inbox folder.
@@ -127,8 +134,7 @@ def _handle_peer_outbox(
     """
     from karma.project_resolution import resolve_local_project
 
-    # Use smart disambiguation to extract sender and suffix
-    parsed = parse_karma_folder_id(folder_id, known_names=known_names)
+    parsed = parse_outbox_id(folder_id)
     if not parsed:
         click.echo(
             f"  Skipped folder '{folder_id}' from {member_name} "
@@ -251,40 +257,24 @@ def accept_pending_folders(st, config, conn, *, auto_only=False, only_folder_id=
     own_user_id = config.user_id
 
     # ── Pre-scan: extract real usernames from karma-join-* folders ────
-    # Handshake folders encode the karma user_id, so we use them to build
-    # the known_names set for folder ID disambiguation below.
-    all_team_names = {t["name"] for t in list_teams(conn)}
+    # Handshake folders encode the karma user_id unambiguously via the
+    # double-dash delimiter, so we use them to correct DB member names.
     real_usernames: dict[str, str] = {}  # device_id → real karma user_id
     for folder_id, folder_info in pending.items():
-        if not folder_id.startswith("karma-join-"):
+        parsed_hs = parse_handshake_id(folder_id)
+        if not parsed_hs:
             continue
-        rest = folder_id[len("karma-join-"):]
-        for i in range(len(rest.split("-")) - 1, 0, -1):
-            parts = rest.split("-")
-            candidate_team = "-".join(parts[i:])
-            candidate_user = "-".join(parts[:i])
-            if candidate_team in all_team_names:
-                for dev_id in folder_info.get("offeredBy", {}):
-                    if dev_id in known_devices:
-                        real_usernames[dev_id] = candidate_user
-                        # Safety net: correct DB member name if it ever
-                        # drifted (e.g. from a prior version's hostname
-                        # derivation). No folder cleanup needed — device
-                        # acceptance now requires folder matching which
-                        # always provides the correct username upfront.
-                        db_name, db_team = known_devices[dev_id]
-                        if db_name != candidate_user:
-                            click.echo(
-                                f"  Updating member name: {db_name} → {candidate_user} "
-                                f"(from handshake folder)"
-                            )
-                            upsert_member(conn, db_team, candidate_user, device_id=dev_id)
-                break
-
-    # Build set of known names for folder ID disambiguation
-    known_names = {own_user_id}
-    known_names.update(real_usernames.values())
-    known_names.update(name for name, _ in known_devices.values())
+        candidate_user, _team = parsed_hs
+        for dev_id in folder_info.get("offeredBy", {}):
+            if dev_id in known_devices:
+                real_usernames[dev_id] = candidate_user
+                db_name, db_team = known_devices[dev_id]
+                if db_name != candidate_user:
+                    click.echo(
+                        f"  Updating member name: {db_name} → {candidate_user} "
+                        f"(from handshake folder)"
+                    )
+                    upsert_member(conn, db_team, candidate_user, device_id=dev_id)
 
     # Refresh known_devices after potential member name updates
     known_devices = get_known_devices(conn)
@@ -294,7 +284,7 @@ def accept_pending_folders(st, config, conn, *, auto_only=False, only_folder_id=
         if only_folder_id and folder_id != only_folder_id:
             continue
 
-        if not folder_id.startswith("karma-"):
+        if not is_karma_folder(folder_id):
             click.echo(f"  Skipped non-karma folder offer '{folder_id}' (security policy)")
             continue
 
@@ -320,20 +310,20 @@ def accept_pending_folders(st, config, conn, *, auto_only=False, only_folder_id=
             member_name, team_name = known_devices[device_id]
 
             # ── Handle karma-join-* handshake folders ─────────────────
-            if folder_id.startswith("karma-join-"):
+            if is_handshake_folder(folder_id):
                 _handle_join_folder(st, folder_id, device_id, member_name)
                 continue
 
             # ── Handle karma-out-* folders ────────────────────────────
-            if not folder_id.startswith("karma-out-"):
+            if not is_outbox_folder(folder_id):
                 continue
 
             # Check if this is OUR outbox being offered back (create sendonly).
             # The leader may have used our user_id OR machine_id when creating
             # the folder, so check both.
-            own_prefixes = [f"karma-out-{own_user_id}-"]
+            own_prefixes = [OUTBOX_PREFIX + own_user_id + "--"]
             if config.machine_id and config.machine_id != own_user_id:
-                own_prefixes.append(f"karma-out-{config.machine_id}-")
+                own_prefixes.append(OUTBOX_PREFIX + config.machine_id + "--")
             own_prefix = next(
                 (p for p in own_prefixes if folder_id.startswith(p)), None
             )
@@ -361,7 +351,7 @@ def accept_pending_folders(st, config, conn, *, auto_only=False, only_folder_id=
 
             accepted += _handle_peer_outbox(
                 st, config, conn, folder_id, device_id, own_device_id,
-                member_name, team_name, known_names, existing_folder_ids,
+                member_name, team_name, existing_folder_ids,
             )
 
     return accepted
