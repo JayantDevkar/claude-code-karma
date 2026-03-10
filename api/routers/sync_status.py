@@ -444,6 +444,38 @@ def _find_team_for_folder(conn, folder_ids: list[str]) -> Optional[str]:
     return None
 
 
+async def _ensure_leader_introducers(proxy, conn) -> int:
+    """Ensure leader devices are marked as introducers in Syncthing.
+
+    Parses each team's join code to find the leader device_id, then
+    updates the Syncthing config if the introducer flag is missing.
+    This auto-heals existing setups after the introducer feature is deployed.
+
+    Returns count of devices updated.
+    """
+    updated = 0
+    for team in list_teams(conn):
+        join_code = team.get("join_code")
+        if not join_code:
+            continue
+        parts = join_code.split(":", 2)
+        if len(parts) == 3:
+            _, _, leader_device_id = parts
+        elif len(parts) == 2:
+            _, leader_device_id = parts
+        else:
+            continue
+        try:
+            changed = await run_sync(proxy.set_device_introducer, leader_device_id, True)
+            if changed:
+                logger.info("Auto-set introducer=True for leader device %s", leader_device_id[:20])
+                updated += 1
+        except (ValueError, Exception):
+            # Device not configured locally (we ARE the leader) or Syncthing error
+            pass
+    return updated
+
+
 async def _auto_accept_pending_peers(proxy, config, conn) -> tuple[int, dict]:
     """Auto-accept pending devices that offer karma-* folders.
 
@@ -1191,7 +1223,7 @@ async def sync_join_team(req: JoinTeamRequest) -> Any:
     paired = False
     try:
         proxy = get_proxy()
-        await run_sync(proxy.add_device, device_id, leader_name)
+        await run_sync(proxy.add_device, device_id, leader_name, introducer=True)
         paired = True
     except Exception as e:
         logger.warning("Failed to pair device %s in Syncthing: %s", device_id, e)
@@ -1276,6 +1308,13 @@ async def sync_pending_devices() -> Any:
     """
     conn = _get_sync_conn()
 
+    # Phase 0: Ensure leader devices have introducer=True (auto-heals existing setups)
+    try:
+        proxy = get_proxy()
+        await _ensure_leader_introducers(proxy, conn)
+    except Exception:
+        pass
+
     # Phase 1 only: auto-accept pending devices (handshake completion).
     # Folder acceptance is now explicit — handled by POST /pending/accept/{folder_id}.
     auto_accepted = 0
@@ -1283,7 +1322,6 @@ async def sync_pending_devices() -> Any:
     try:
         config = await run_sync(_load_identity)
         if config:
-            proxy = get_proxy()
             auto_accepted, remaining_pending = await _auto_accept_pending_peers(proxy, config, conn)
     except Exception as e:
         logger.debug("Auto-accept pending peers failed: %s", e)
@@ -1982,10 +2020,10 @@ async def sync_accept_pending() -> Any:
         if not st.is_running():
             raise HTTPException(503, "Syncthing is not running")
 
-        from karma.main import _accept_pending_folders
+        from karma.pending import accept_pending_folders
 
         conn = _get_sync_conn()
-        accepted = await run_sync(_accept_pending_folders, st, config, conn)
+        accepted = await run_sync(accept_pending_folders, st, config, conn)
         if accepted:
             log_event(conn, "pending_accepted", member_name=config.user_id,
                       detail={"count": accepted, "phase": "manual"})
@@ -2023,11 +2061,11 @@ async def sync_accept_single_folder(folder_id: str) -> Any:
         if not st.is_running():
             raise HTTPException(503, "Syncthing is not running")
 
-        from karma.main import _accept_pending_folders
+        from karma.pending import accept_pending_folders
 
         conn = _get_sync_conn()
         accepted = await run_sync(
-            _accept_pending_folders, st, config, conn, only_folder_id=folder_id,
+            accept_pending_folders, st, config, conn, only_folder_id=folder_id,
         )
         if accepted:
             log_event(conn, "pending_accepted", member_name=config.user_id,

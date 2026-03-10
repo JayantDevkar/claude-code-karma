@@ -85,18 +85,45 @@ class SyncthingClient:
         resp.raise_for_status()
         return resp.json()["connections"]
 
-    def add_device(self, device_id: str, name: str) -> None:
-        """Pair with a remote device."""
+    def add_device(self, device_id: str, name: str, introducer: bool = False) -> None:
+        """Pair with a remote device.
+
+        Args:
+            device_id: The Syncthing device ID to pair with.
+            name: Human-readable name for the device.
+            introducer: If True, mark the device as an introducer. Syncthing
+                will automatically share all folders and devices from this
+                device to all its peers, enabling automatic mesh discovery.
+                Only the team leader device should be marked as introducer.
+        """
         config = self._get_config()
         existing_ids = {d["deviceID"] for d in config.get("devices", [])}
         if device_id in existing_ids:
             raise ValueError(f"Device {device_id} already configured")
-        config["devices"].append({
+        device_config = {
             "deviceID": device_id,
             "name": name,
             "autoAcceptFolders": False,
-        })
+        }
+        if introducer:
+            device_config["introducer"] = True
+        config["devices"].append(device_config)
         self._set_config(config)
+
+    def set_device_introducer(self, device_id: str, introducer: bool = True) -> bool:
+        """Update an existing device's introducer flag.
+
+        Returns True if the config was changed, False if already correct.
+        """
+        config = self._get_config()
+        for device in config.get("devices", []):
+            if device["deviceID"] == device_id:
+                if device.get("introducer", False) == introducer:
+                    return False
+                device["introducer"] = introducer
+                self._set_config(config)
+                return True
+        raise ValueError(f"Device {device_id} not found in Syncthing config")
 
     def add_folder(
         self,

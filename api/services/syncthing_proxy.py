@@ -192,11 +192,24 @@ class SyncthingProxy:
             )
         return result
 
-    def add_device(self, device_id: str, name: str) -> dict:
-        """Pair with a remote device."""
+    def add_device(self, device_id: str, name: str, introducer: bool = False) -> dict:
+        """Pair with a remote device.
+
+        Args:
+            device_id: The Syncthing device ID to pair with.
+            name: Human-readable name for the device.
+            introducer: If True, mark the device as an introducer so Syncthing
+                propagates all shared folders/devices to peers automatically.
+                Only the team leader device should be marked as introducer.
+        """
         client = self._require_client()
-        client.add_device(device_id, name)
+        client.add_device(device_id, name, introducer=introducer)
         return {"ok": True, "device_id": device_id, "name": name}
+
+    def set_device_introducer(self, device_id: str, introducer: bool = True) -> bool:
+        """Update an existing device's introducer flag. Returns True if changed."""
+        client = self._require_client()
+        return client.set_device_introducer(device_id, introducer)
 
     def remove_device(self, device_id: str) -> dict:
         """Remove a paired device."""

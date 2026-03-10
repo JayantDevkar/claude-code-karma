@@ -66,6 +66,45 @@ def resolve_local_project(conn, team_name: str, project_encoded_name: str):
                     except (json.JSONDecodeError, OSError):
                         continue
 
+    # ── Step A1: Infer git_identity by scanning local projects ──────
+    # When the joiner's DB is empty (brand-new member) and no manifests
+    # exist yet, we can still resolve the project by scanning local
+    # ~/.claude/projects/ dirs and matching their git remotes against
+    # the suffix. The suffix IS git_identity.replace("/", "-"), so if
+    # a local project's git remote normalizes to the same suffix, we
+    # have our match — and we now know the git_identity too.
+    if not git_identity:
+        projects_dir = Path.home() / ".claude" / "projects"
+        if projects_dir.is_dir():
+            for candidate_dir in projects_dir.iterdir():
+                if not candidate_dir.is_dir():
+                    continue
+                dirname = candidate_dir.name
+                if not dirname.startswith("-"):
+                    continue
+                # Reconstruct the project path from the encoded name
+                candidate_path = "/" + dirname[1:].replace("-", "/")
+                if not Path(candidate_path).is_dir():
+                    continue
+                candidate_git_id = detect_git_identity(candidate_path)
+                if candidate_git_id and candidate_git_id.replace("/", "-") == project_encoded_name:
+                    git_identity = candidate_git_id
+                    # We found the match — skip ahead to Step B/C which will
+                    # handle the DB upsert and return the resolved project.
+                    resolved_encoded = dirname
+                    resolved_path = candidate_path
+                    upsert_team_project(
+                        conn, team_name, resolved_encoded, resolved_path,
+                        git_identity=git_identity,
+                    )
+                    if resolved_encoded != project_encoded_name:
+                        from db.sync_queries import remove_team_project
+                        try:
+                            remove_team_project(conn, team_name, project_encoded_name)
+                        except Exception:
+                            pass
+                    return resolved_encoded, resolved_path, git_identity
+
     if not git_identity:
         return None
 

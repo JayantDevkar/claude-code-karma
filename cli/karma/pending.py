@@ -57,11 +57,15 @@ def _handle_own_outbox(
     # Claude-encoded path. Using the suffix as the folder path would cause a
     # mismatch — Syncthing watches one dir, the packager writes to another.
     outbox_subdir = suffix  # fallback if resolution fails
+    resolved_path = None
+    resolved_git_id = None
     try:
         resolved = resolve_local_project(conn, team_name, suffix)
         if resolved:
             r_encoded, r_path, r_git_id = resolved
             outbox_subdir = r_encoded
+            resolved_path = r_path
+            resolved_git_id = r_git_id
             if r_encoded != suffix:
                 click.echo(f"  Resolved project '{suffix}' -> '{r_encoded}'")
     except Exception:
@@ -85,12 +89,18 @@ def _handle_own_outbox(
     existing_folder_ids.add(folder_id)
     click.echo(f"  Created outbox '{folder_id}' -> {outbox_path} (send-only)")
 
-    # Auto-register project if not already tracked (use resolved name when
-    # available so we don't create a stale suffix record)
+    # Auto-register project if not already tracked. resolve_local_project
+    # already upserts when it succeeds, but we still need a record for the
+    # fallback case. Pass git_identity when available so future resolution
+    # lookups (find_project_by_git_suffix) can match this record.
     try:
         from db.sync_queries import upsert_team_project
 
-        upsert_team_project(conn, team_name, outbox_subdir, path=None)
+        upsert_team_project(
+            conn, team_name, outbox_subdir,
+            path=resolved_path,
+            git_identity=resolved_git_id,
+        )
     except Exception:
         pass
 

@@ -66,7 +66,7 @@ class SessionWatcher(FileSystemEventHandler):
     def _maybe_check_peers(self):
         """Check for new team members periodically."""
         try:
-            from karma.main import _accept_pending_folders
+            from karma.pending import accept_pending_folders
             from karma.syncthing import SyncthingClient, read_local_api_key
             from karma.config import SyncConfig
             from karma.db import get_connection
@@ -83,7 +83,7 @@ class SessionWatcher(FileSystemEventHandler):
             try:
                 # auto_only=True: only process handshake + own outbox.
                 # Other people's outboxes require explicit user acceptance.
-                accepted = _accept_pending_folders(st, config, conn, auto_only=True)
+                accepted = accept_pending_folders(st, config, conn, auto_only=True)
                 return accepted or 0
             finally:
                 conn.close()
