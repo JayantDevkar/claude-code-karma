@@ -17,6 +17,7 @@ from services.folder_id import build_outbox_id
 import services.sync_identity as _sid
 from services.sync_identity import (
     get_watcher, validate_project_name, _trigger_remote_reindex_bg,
+    validate_event_type_filter, cap_pagination,
     ALLOWED_PROJECT_NAME, ALLOWED_MEMBER_NAME,
     _VALID_EVENT_TYPES, _compute_proj_suffix,
 )
@@ -266,19 +267,13 @@ async def sync_activity(
     offset: int = 0,
 ) -> Any:
     """Get recent sync activity events and bandwidth stats."""
-    # Cap limit and offset to prevent abuse
-    limit = max(1, min(limit, 200))
-    offset = max(0, min(offset, 10000))
+    limit, offset = cap_pagination(limit, offset)
 
     # Validate team_name if provided
     if team_name and not ALLOWED_PROJECT_NAME.match(team_name):
         team_name = None
 
-    # Support comma-separated event types — validate each part
-    if event_type:
-        parts = [t.strip() for t in event_type.split(",") if t.strip()]
-        valid_parts = [t for t in parts if t in _VALID_EVENT_TYPES]
-        event_type = ",".join(valid_parts) if valid_parts else None
+    event_type = validate_event_type_filter(event_type)
 
     conn = _sid._get_sync_conn()
     events = query_events(
@@ -315,14 +310,8 @@ async def sync_team_activity(
     if not ALLOWED_PROJECT_NAME.match(team_name):
         raise HTTPException(400, "Invalid team name")
 
-    limit = max(1, min(limit, 200))
-    offset = max(0, min(offset, 10000))
-
-    # Support comma-separated event types — validate each part
-    if event_type:
-        parts = [t.strip() for t in event_type.split(",") if t.strip()]
-        valid_parts = [t for t in parts if t in _VALID_EVENT_TYPES]
-        event_type = ",".join(valid_parts) if valid_parts else None
+    limit, offset = cap_pagination(limit, offset)
+    event_type = validate_event_type_filter(event_type)
 
     # Validate member_name
     if member_name and not ALLOWED_MEMBER_NAME.match(member_name):

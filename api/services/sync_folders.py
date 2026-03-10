@@ -267,7 +267,7 @@ async def cleanup_syncthing_for_team(proxy, config, conn, team_name: str) -> dic
         member_names.add(config.user_id)
 
     try:
-        folders = await run_sync(proxy.get_folder_status)
+        folders = await run_sync(proxy.get_configured_folders)
         for folder in folders:
             folder_id = folder.get("id", "")
             if is_outbox_folder(folder_id):
@@ -322,7 +322,7 @@ async def cleanup_syncthing_for_member(
         proj_suffixes.add(suffix)
 
     try:
-        folders = await run_sync(proxy.get_folder_status)
+        folders = await run_sync(proxy.get_configured_folders)
         for folder in folders:
             folder_id = folder.get("id", "")
             if not is_outbox_folder(folder_id):

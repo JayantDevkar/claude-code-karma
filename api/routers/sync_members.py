@@ -17,6 +17,7 @@ from schemas import AddMemberRequest, UpdateMemberSettingsRequest
 import services.sync_identity as _sid
 from services.sync_identity import (
     validate_device_id, _trigger_remote_reindex_bg,
+    validate_event_type_filter, cap_pagination,
     ALLOWED_PROJECT_NAME, ALLOWED_MEMBER_NAME, ALLOWED_DEVICE_ID,
     _VALID_EVENT_TYPES,
 )
@@ -372,13 +373,8 @@ async def sync_member_activity(
     offset: int = 0,
 ) -> Any:
     """Activity feed for a single member across all teams. Accepts member name or device_id."""
-    limit = max(1, min(limit, 200))
-    offset = max(0, min(offset, 10000))
-
-    if event_type:
-        parts = [t.strip() for t in event_type.split(",") if t.strip()]
-        valid_parts = [t for t in parts if t in _VALID_EVENT_TYPES]
-        event_type = ",".join(valid_parts) if valid_parts else None
+    limit, offset = cap_pagination(limit, offset)
+    event_type = validate_event_type_filter(event_type)
 
     conn = _sid._get_sync_conn()
     rows = _resolve_member(conn, identifier)

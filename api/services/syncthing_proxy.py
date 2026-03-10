@@ -10,6 +10,8 @@ from typing import Any, Optional
 
 import requests
 
+from services.folder_id import is_karma_folder
+
 # Add CLI to path for SyncthingClient import
 CLI_PATH = Path(__file__).parent.parent.parent / "cli"
 if str(CLI_PATH) not in sys.path:
@@ -39,6 +41,7 @@ class SyncthingProxy:
 
     def __init__(self) -> None:
         self._client: Optional[Any] = None
+        self._self_id: Optional[str] = None
         self._try_connect()
 
     def _try_connect(self) -> None:
@@ -89,6 +92,7 @@ class SyncthingProxy:
                 timeout=5,
             )
             resp.raise_for_status()
+            self._self_id = resp.json().get("myID")
             self._client = client
         except (requests.ConnectionError, requests.Timeout):
             logger.debug("Syncthing is not running")
@@ -126,11 +130,13 @@ class SyncthingProxy:
             )
             resp.raise_for_status()
             data = resp.json()
+            # Update cached self_id from fresh status response
+            self._self_id = data.get("myID")
             return {
                 "installed": True,
                 "running": True,
                 "version": data.get("version"),
-                "device_id": data.get("myID"),
+                "device_id": self._self_id,
             }
         except Exception as e:
             # API call failed (CSRF, bad API key, etc.) — clear client so
@@ -139,6 +145,7 @@ class SyncthingProxy:
             # stays cached forever and detect() never recovers.
             logger.warning("Failed to get Syncthing system status: %s", e)
             self._client = None
+            self._self_id = None
             return {"installed": True, "running": False, "version": None, "device_id": None}
 
     def get_devices(self) -> list[dict]:
@@ -157,18 +164,7 @@ class SyncthingProxy:
         connections = conn_data.get("connections", {})
         total = conn_data.get("total", {})
 
-        # Detect self device ID
-        self_id = None
-        try:
-            status_resp = requests.get(
-                f"{client.api_url}/rest/system/status",
-                headers=client.headers,
-                timeout=10,
-            )
-            if status_resp.ok:
-                self_id = status_resp.json().get("myID")
-        except Exception:
-            pass
+        self_id = self._self_id
 
         result = []
         for device in config.get("devices", []):
@@ -323,45 +319,6 @@ class SyncthingProxy:
             resp.raise_for_status()
         return {"ok": True, "folder_id": folder_id, "device_id": device_id, "removed": True}
 
-    def get_folder_device_count(self, folder_id: str) -> int:
-        """Return the number of non-self devices sharing a folder.
-
-        Useful for deciding whether to fully remove a folder (0 remaining
-        devices) or just remove specific devices from it.
-
-        Args:
-            folder_id: The Syncthing folder ID to inspect.
-
-        Returns:
-            Number of devices in the folder excluding the local device.
-            Returns 0 if the folder is not found.
-        """
-        client = self._require_client()
-        config = client._get_config()
-
-        # Find self device ID
-        self_id = None
-        try:
-            status_resp = requests.get(
-                f"{client.api_url}/rest/system/status",
-                headers=client.headers,
-                timeout=10,
-            )
-            if status_resp.ok:
-                self_id = status_resp.json().get("myID")
-        except Exception:
-            pass
-
-        for f in config.get("folders", []):
-            if f.get("id") == folder_id:
-                devices = f.get("devices", [])
-                if self_id:
-                    return sum(1 for d in devices if d.get("deviceID") != self_id)
-                return len(devices)
-
-        # Folder not found
-        return 0
-
     def get_folder_status(self) -> list[dict]:
         """Return all configured folders with their sync status."""
         client = self._require_client()
@@ -504,7 +461,7 @@ class SyncthingProxy:
         result = []
 
         for folder_id, info in pending.items():
-            if not folder_id.startswith("karma-"):
+            if not is_karma_folder(folder_id):
                 continue
             if folder_id in existing_ids:
                 continue
