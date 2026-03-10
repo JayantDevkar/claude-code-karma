@@ -63,7 +63,7 @@ export const load: PageServerLoad = async ({ fetch, params }) => {
 			`${API_BASE}/sync/teams/${encodeURIComponent(teamName)}/activity?limit=20`,
 			{ events: [] }
 		),
-		fetchWithFallback<{ stats: any[] }>(
+		fetchWithFallback<{ stats: Record<string, unknown>[] }>(
 			fetch,
 			`${API_BASE}/sync/teams/${encodeURIComponent(teamName)}/session-stats?days=30`,
 			{ stats: [] }

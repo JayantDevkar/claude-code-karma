@@ -29,6 +29,6 @@ export const load: PageServerLoad = async ({ fetch }) => {
 		syncStatus,
 		teams: teamsData.teams ?? [],
 		pendingDevices: pendingData.devices ?? [],
-		autoAccepted: (pendingData as any).auto_accepted ?? 0
+		autoAccepted: (pendingData as Record<string, unknown>).auto_accepted as number ?? 0
 	};
 };

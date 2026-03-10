@@ -174,7 +174,15 @@ def find_session_with_project(uuid: str) -> Optional[SessionLookupResult]:
     if not resolved:
         return None
 
-    session = Session.from_path(resolved.jsonl_path)
+    # For remote sessions, set claude_base_dir to the project-level dir
+    # so that todos_dir, tasks_dir, debug_log, etc. resolve correctly.
+    # Path layout: .../remote-sessions/{user}/{encoded}/sessions/{uuid}.jsonl
+    # claude_base_dir should be: .../remote-sessions/{user}/{encoded}/
+    claude_base = None
+    if resolved.remote_user_id:
+        claude_base = resolved.jsonl_path.parent.parent
+
+    session = Session.from_path(resolved.jsonl_path, claude_base_dir=claude_base)
     return SessionLookupResult(
         session=session,
         project_encoded_name=resolved.project_encoded_name,

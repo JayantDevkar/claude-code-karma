@@ -33,7 +33,7 @@ export function createUrlViewState<T extends string>(
 		const url = new URL(window.location.href);
 		if (current === defaultView) url.searchParams.delete('view');
 		else url.searchParams.set('view', current);
-		history.replaceState({}, '', url.toString());
+		window.history.replaceState({}, '', url.toString());
 	}
 
 	return { ready, initFromUrl, syncToUrl };
