@@ -192,12 +192,13 @@
 			const pd = await pendingDevicesRes.json();
 			pendingDevices = pd.devices ?? [];
 		}
-		const [teamsRes, devicesRes, foldersRes, projectStatusRes, activityRes] = await Promise.all([
+		const [teamsRes, devicesRes, foldersRes, projectStatusRes, activityRes, sessionStatsRes] = await Promise.all([
 			fetch(`${API_BASE}/sync/teams`, { signal }),
 			fetch(`${API_BASE}/sync/devices`, { signal }),
 			fetch(`${API_BASE}/sync/pending`, { signal }),
 			fetch(`${API_BASE}/sync/teams/${teamNameEnc}/project-status`, { signal }),
-			fetch(`${API_BASE}/sync/teams/${teamNameEnc}/activity?limit=20`, { signal })
+			fetch(`${API_BASE}/sync/teams/${teamNameEnc}/activity?limit=20`, { signal }),
+			fetch(`${API_BASE}/sync/teams/${teamNameEnc}/session-stats?days=30`, { signal })
 		]);
 
 		if (teamsRes.ok) {
@@ -223,6 +224,10 @@
 		if (activityRes.ok) {
 			const ad = await activityRes.json();
 			activity = ad.events ?? [];
+		}
+		if (sessionStatsRes.ok) {
+			const ss = await sessionStatsRes.json();
+			sessionStats = ss.stats ?? [];
 		}
 	}
 
