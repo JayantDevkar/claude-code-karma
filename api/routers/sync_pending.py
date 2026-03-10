@@ -16,7 +16,10 @@ from services.sync_identity import (
     _trigger_remote_reindex_bg, _compute_proj_suffix,
 )
 from services.sync_folders import friendly_project_label
-from services.sync_reconciliation import reconcile_introduced_devices
+from services.sync_reconciliation import (
+    reconcile_introduced_devices,
+    reconcile_pending_handshakes,
+)
 from services.syncthing_proxy import SyncthingNotRunning, run_sync
 
 logger = logging.getLogger(__name__)
@@ -50,6 +53,15 @@ async def sync_pending() -> Any:
             await reconcile_introduced_devices(proxy, config, conn)
     except Exception as e:
         logger.debug("Reconcile in sync_pending failed: %s", e)
+
+    # Process pending handshake folders from already-paired devices
+    # (new team membership signals). Must run before get_pending_folders_for_ui
+    # so processed handshakes are dismissed and don't appear in the list.
+    try:
+        if config:
+            await reconcile_pending_handshakes(proxy, config, conn)
+    except Exception as e:
+        logger.debug("Reconcile pending handshakes failed: %s", e)
 
     known = get_known_devices(conn)
 

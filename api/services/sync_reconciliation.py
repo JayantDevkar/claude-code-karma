@@ -8,7 +8,9 @@ import logging
 from typing import Optional
 
 from db.sync_queries import (
+    create_team,
     get_known_devices,
+    get_team,
     list_members,
     list_teams,
     list_team_projects,
@@ -164,6 +166,132 @@ async def ensure_leader_introducers(proxy, conn) -> int:
         except Exception:
             pass
     return updated
+
+
+async def reconcile_pending_handshakes(proxy, config, conn) -> int:
+    """Process pending handshake folders from already-paired devices.
+
+    Closes the gap where an already-paired device offers a karma-join--{user}--{team}
+    folder for a NEW team. Neither reconcile_introduced_devices (skips known devices)
+    nor auto_accept_pending_peers (skips configured devices) handles this case.
+
+    For each pending handshake folder from a configured (paired) device:
+    1. Parse (username, team_name) from the folder ID
+    2. Skip if device is already a member of that team (idempotent)
+    3. Create team locally if it doesn't exist (like join code flow)
+    4. Add device as team member
+    5. Auto-share project folders back
+    6. Dismiss the handshake folder (signal consumed)
+
+    Handshake folders are team membership signals, not session data, so they
+    are always processed regardless of auto_accept_members policy. The policy
+    gates unknown device acceptance, not team signals from trusted devices.
+
+    Returns count of new team memberships created.
+    """
+    own_device_id = config.syncthing.device_id if config.syncthing else None
+
+    try:
+        pending_folders = await run_sync(proxy.get_pending_folders)
+    except Exception:
+        return 0
+
+    if not pending_folders:
+        return 0
+
+    # Build set of configured (already-paired) device IDs
+    try:
+        configured_devices = await run_sync(proxy.get_devices)
+    except Exception:
+        return 0
+    configured_ids = {
+        d["device_id"] for d in configured_devices
+        if not d.get("is_self")
+    }
+
+    reconciled = 0
+
+    for folder_id, info in pending_folders.items():
+        parsed = parse_handshake_id(folder_id)
+        if not parsed:
+            continue
+
+        username, team_name = parsed
+
+        for device_id in info.get("offeredBy", {}):
+            # Skip self
+            if own_device_id and device_id == own_device_id:
+                continue
+
+            # Only process from already-configured (paired) devices.
+            # Pending (unpaired) devices are handled by auto_accept_pending_peers.
+            if device_id not in configured_ids:
+                continue
+
+            # Check if device is already a member of THIS team
+            members = list_members(conn, team_name)
+            already_member = any(
+                m["device_id"] == device_id for m in members
+            )
+
+            if already_member:
+                # Already in the team — just dismiss the handshake signal
+                try:
+                    await run_sync(
+                        proxy.dismiss_pending_folder_offer, folder_id, device_id,
+                    )
+                except Exception:
+                    pass
+                continue
+
+            # Ensure team exists locally (device may be signaling a team
+            # we haven't joined yet — create it like the join code flow)
+            team = get_team(conn, team_name)
+            if team is None:
+                create_team(conn, team_name, backend="syncthing")
+                log_event(
+                    conn, "team_created", team_name=team_name,
+                    detail={"source": "handshake_reconciliation"},
+                )
+                # Add self as member so we appear in the team's member list
+                upsert_member(
+                    conn, team_name, config.user_id, device_id=own_device_id,
+                )
+
+            # Add the offering device as a team member
+            upsert_member(conn, team_name, username, device_id=device_id)
+            log_event(
+                conn, "member_auto_accepted", team_name=team_name,
+                member_name=username,
+                detail={"strategy": "handshake_reconciliation"},
+            )
+            logger.info(
+                "Handshake reconciliation: added %s (%s) to team %s",
+                username, device_id[:20], team_name,
+            )
+
+            # Auto-share project folders back to the new member
+            try:
+                await auto_share_folders(
+                    proxy, config, conn, team_name, device_id,
+                )
+            except Exception as e:
+                logger.warning(
+                    "Handshake reconciliation: failed to share folders "
+                    "with %s: %s", username, e,
+                )
+
+            # Dismiss the handshake folder (signal consumed)
+            try:
+                await run_sync(
+                    proxy.dismiss_pending_folder_offer, folder_id, device_id,
+                )
+            except Exception:
+                pass
+
+            reconciled += 1
+
+    return reconciled
 
 
 async def auto_accept_pending_peers(proxy, config, conn) -> tuple[int, dict]:
