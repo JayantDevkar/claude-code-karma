@@ -478,6 +478,17 @@ class SyncthingProxy:
                 })
         return result
 
+    def dismiss_pending_folder_offer(self, folder_id: str, device_id: str) -> None:
+        """Dismiss a pending folder offer from a specific device.
+
+        Unlike reject_pending_folder() which re-fetches pending folders and
+        dismisses from all devices, this directly dismisses a single
+        (folder_id, device_id) pair. Used by reconciliation to consume
+        handshake signals without extra HTTP calls.
+        """
+        client = self._require_client()
+        client.dismiss_pending_folder(folder_id, device_id)
+
     def get_bandwidth(self) -> dict:
         """Return current bandwidth totals from connections endpoint."""
         client = self._require_client()

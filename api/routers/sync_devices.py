@@ -20,6 +20,7 @@ from services.sync_folders import (
 )
 from services.sync_reconciliation import (
     reconcile_introduced_devices,
+    reconcile_pending_handshakes,
     ensure_leader_introducers,
     auto_accept_pending_peers,
 )
@@ -97,6 +98,16 @@ async def sync_pending_devices() -> Any:
             reconciled = await reconcile_introduced_devices(proxy, config, conn)
     except Exception as e:
         logger.debug("Reconcile introduced devices failed: %s", e)
+
+    # Phase 0.6: Process pending handshake folders from already-paired devices.
+    # Closes the gap where an already-known device offers a karma-join folder
+    # for a NEW team — neither reconcile_introduced_devices (skips known devices)
+    # nor auto_accept_pending_peers (skips configured devices) handles this.
+    try:
+        if config and proxy:
+            reconciled += await reconcile_pending_handshakes(proxy, config, conn)
+    except Exception as e:
+        logger.debug("Reconcile pending handshakes failed: %s", e)
 
     # Phase 1 only: auto-accept pending devices (handshake completion).
     # Folder acceptance is now explicit — handled by POST /pending/accept/{folder_id}.
