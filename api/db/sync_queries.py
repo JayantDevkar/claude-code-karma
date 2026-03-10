@@ -7,6 +7,7 @@ run_in_executor for async. The CLI calls them directly.
 import json
 import shutil
 import sqlite3
+from collections import defaultdict
 from pathlib import Path
 from typing import Optional
 
@@ -414,8 +415,6 @@ def get_known_devices(conn: sqlite3.Connection) -> dict[str, list[tuple[str, str
 
     A device in multiple teams will have multiple entries in the list.
     """
-    from collections import defaultdict
-
     rows = conn.execute(
         "SELECT device_id, name, team_name FROM sync_members ORDER BY added_at"
     ).fetchall()

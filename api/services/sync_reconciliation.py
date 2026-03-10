@@ -127,6 +127,12 @@ async def reconcile_introduced_devices(proxy, config, conn) -> int:
                         seen_teams.add(tname)
 
         for username, team_name in memberships:
+            if was_member_removed(conn, team_name, device_id):
+                logger.debug(
+                    "Reconcile introduced: skipping %s for team %s (previously removed)",
+                    device_id[:20], team_name,
+                )
+                continue
             upsert_member(conn, team_name, username, device_id=device_id)
             log_event(
                 conn, "member_auto_accepted", team_name=team_name,
