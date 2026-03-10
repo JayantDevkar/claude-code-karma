@@ -68,8 +68,8 @@ def _handle_own_outbox(
             resolved_git_id = r_git_id
             if r_encoded != suffix:
                 click.echo(f"  Resolved project '{suffix}' -> '{r_encoded}'")
-    except Exception:
-        pass
+    except Exception as e:
+        click.echo(f"  Warning: project resolution failed for '{suffix}': {e}")
 
     own_user_id = config.user_id
     outbox_path = str(KARMA_BASE / "remote-sessions" / own_user_id / outbox_subdir)
@@ -101,8 +101,8 @@ def _handle_own_outbox(
             path=resolved_path,
             git_identity=resolved_git_id,
         )
-    except Exception:
-        pass
+    except Exception as e:
+        click.echo(f"  Warning: failed to register project '{outbox_subdir}': {e}")
 
     return 1
 

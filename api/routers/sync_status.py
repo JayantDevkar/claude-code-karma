@@ -296,7 +296,7 @@ def _parse_folder_id(folder_id: str, conn=None):
     # With DB: try all splits and pick the one matching a known member
     if conn is not None:
         known_devices = get_known_devices(conn)
-        known_names = {v for v in known_devices.values()}
+        known_names = {name for name, _team in known_devices.values()}
         for i in range(1, len(parts)):
             candidate_name = "-".join(parts[:i])
             candidate_suffix = "-".join(parts[i:])
@@ -406,10 +406,11 @@ def _parse_handshake_folder(folder_id: str, conn=None):
 
     # With DB: try all splits and pick the one matching a known team
     if conn is not None:
+        team_names = {t["name"] for t in list_teams(conn)}
         for i in range(1, len(parts)):
             candidate_name = "-".join(parts[:i])
             candidate_team = "-".join(parts[i:])
-            if candidate_name and candidate_team and get_team(conn, candidate_team):
+            if candidate_name and candidate_team and candidate_team in team_names:
                 return candidate_name, candidate_team
 
     # Fallback: shortest username first (legacy, no DB)
