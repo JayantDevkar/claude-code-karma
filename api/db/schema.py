@@ -12,7 +12,7 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 15
+SCHEMA_VERSION = 16
 
 SCHEMA_SQL = """
 -- Schema versioning
@@ -286,6 +286,15 @@ CREATE TABLE IF NOT EXISTS sync_settings (
 
 CREATE INDEX IF NOT EXISTS idx_sync_settings_scope ON sync_settings(scope);
 
+-- Intentional member removals (prevents stale handshakes from re-adding)
+CREATE TABLE IF NOT EXISTS sync_removed_members (
+    team_name TEXT NOT NULL,
+    device_id TEXT NOT NULL,
+    removed_at TEXT DEFAULT (datetime('now')),
+    PRIMARY KEY (team_name, device_id),
+    FOREIGN KEY (team_name) REFERENCES sync_teams(name) ON DELETE CASCADE
+);
+
 -- Skill definitions (content + metadata extracted from JSONL or manifest)
 CREATE TABLE IF NOT EXISTS skill_definitions (
     skill_name TEXT NOT NULL,
@@ -382,6 +391,16 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
                 PRIMARY KEY (scope, setting_key)
             );
             CREATE INDEX IF NOT EXISTS idx_sync_settings_scope ON sync_settings(scope);
+        """)
+        # Ensure sync_removed_members table exists (may be missing on older installs)
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS sync_removed_members (
+                team_name TEXT NOT NULL,
+                device_id TEXT NOT NULL,
+                removed_at TEXT DEFAULT (datetime('now')),
+                PRIMARY KEY (team_name, device_id),
+                FOREIGN KEY (team_name) REFERENCES sync_teams(name) ON DELETE CASCADE
+            );
         """)
         # Ensure skill_definitions table exists (may be missing on older installs)
         conn.executescript("""
@@ -784,6 +803,18 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
                     PRIMARY KEY (scope, setting_key)
                 );
                 CREATE INDEX IF NOT EXISTS idx_sync_settings_scope ON sync_settings(scope);
+            """)
+
+        if current_version < 16:
+            logger.info("Migrating → v16: adding sync_removed_members table")
+            conn.executescript("""
+                CREATE TABLE IF NOT EXISTS sync_removed_members (
+                    team_name TEXT NOT NULL,
+                    device_id TEXT NOT NULL,
+                    removed_at TEXT DEFAULT (datetime('now')),
+                    PRIMARY KEY (team_name, device_id),
+                    FOREIGN KEY (team_name) REFERENCES sync_teams(name) ON DELETE CASCADE
+                );
             """)
 
     # Record version

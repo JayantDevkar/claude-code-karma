@@ -23,7 +23,7 @@ class TestGetPendingFoldersForUI:
         proxy._client = mock_client
 
         result = proxy.get_pending_folders_for_ui(
-            known_devices={"ALICE-DEVICE-ID": ("alice", "my-team")}
+            known_devices={"ALICE-DEVICE-ID": [("alice", "my-team")]}
         )
 
         assert len(result) == 1
@@ -59,7 +59,7 @@ class TestGetPendingFoldersForUI:
         proxy._client = mock_client
 
         result = proxy.get_pending_folders_for_ui(
-            known_devices={"ALICE-ID": ("alice", "team")}
+            known_devices={"ALICE-ID": [("alice", "team")]}
         )
         assert len(result) == 0
 
@@ -84,8 +84,8 @@ class TestGetPendingFoldersForUI:
 
         result = proxy.get_pending_folders_for_ui(
             known_devices={
-                "ALICE-ID": ("alice", "team-a"),
-                "BOB-ID": ("bob", "team-a"),
+                "ALICE-ID": [("alice", "team-a")],
+                "BOB-ID": [("bob", "team-a")],
             }
         )
         assert len(result) == 3
@@ -98,6 +98,6 @@ class TestGetPendingFoldersForUI:
         proxy._client = mock_client
 
         result = proxy.get_pending_folders_for_ui(
-            known_devices={"ALICE-ID": ("alice", "team")}
+            known_devices={"ALICE-ID": [("alice", "team")]}
         )
         assert len(result) == 0

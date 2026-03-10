@@ -9,7 +9,7 @@ from db.sync_queries import (
     get_team, add_member, remove_member, upsert_member,
     get_member_by_device_id, list_members, list_team_projects,
     log_event, query_events, query_session_stats_by_member,
-    cleanup_data_for_member,
+    cleanup_data_for_member, clear_member_removal,
     get_effective_setting, get_setting, set_setting, delete_setting,
     VALID_SYNC_DIRECTIONS, VALID_SETTING_KEYS,
 )
@@ -42,6 +42,8 @@ async def sync_add_member(team_name: str, req: AddMemberRequest) -> Any:
     if get_team(conn, team_name) is None:
         raise HTTPException(404, f"Team '{team_name}' not found")
 
+    # Clear any previous removal record — this is an explicit re-addition
+    clear_member_removal(conn, team_name, req.device_id)
     add_member(conn, team_name, req.name, device_id=req.device_id)
     log_event(conn, "member_added", team_name=team_name, member_name=req.name)
 
@@ -398,9 +400,9 @@ async def sync_get_member_settings(team_name: str, device_id: str) -> Any:
     if team is None:
         raise HTTPException(404, f"Team '{team_name}' not found")
 
-    # Direct lookup by device_id, then verify team membership
-    member = get_member_by_device_id(conn, device_id)
-    if member is None or member["team_name"] != team_name:
+    # Direct lookup by device_id scoped to this team
+    member = get_member_by_device_id(conn, device_id, team_name=team_name)
+    if member is None:
         raise HTTPException(404, f"Member with device '{device_id}' not found in team '{team_name}'")
 
     settings = {}
@@ -430,8 +432,8 @@ async def sync_update_member_settings(
     if team is None:
         raise HTTPException(404, f"Team '{team_name}' not found")
 
-    member = get_member_by_device_id(conn, device_id)
-    if member is None or member["team_name"] != team_name:
+    member = get_member_by_device_id(conn, device_id, team_name=team_name)
+    if member is None:
         raise HTTPException(404, f"Member with device '{device_id}' not found in team '{team_name}'")
 
     config = await run_sync(_sid._load_identity)

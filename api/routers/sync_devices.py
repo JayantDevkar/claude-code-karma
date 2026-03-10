@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException
 
 from db.sync_queries import (
     get_team, get_known_devices, list_members,
-    upsert_member, log_event,
+    upsert_member, log_event, clear_member_removal,
 )
 from schemas import AcceptPendingDeviceRequest, AddDeviceRequest
 from services.folder_id import is_karma_folder
@@ -227,7 +227,8 @@ async def sync_accept_pending_device(device_id: str, req: AcceptPendingDeviceReq
     except Exception as e:
         raise HTTPException(500, f"Failed to pair device: {e}")
 
-    # 2. Add as team member
+    # 2. Add as team member (clear any previous removal — explicit user action)
+    clear_member_removal(conn, team_name, device_id)
     upsert_member(conn, team_name, member_name, device_id=device_id)
     log_event(conn, "pending_accepted", team_name=team_name, member_name=member_name)
     logger.info("Manually accepted pending device %s (%s) into team %s", member_name, device_id[:20], team_name)

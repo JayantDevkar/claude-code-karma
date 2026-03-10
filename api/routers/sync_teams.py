@@ -8,7 +8,7 @@ from fastapi import APIRouter, HTTPException
 from db.sync_queries import (
     create_team, delete_team, list_teams, get_team,
     list_members, list_team_projects,
-    upsert_member, log_event,
+    upsert_member, log_event, clear_member_removal,
     find_project_by_git_identity, count_sessions_for_project,
     update_team_session_limit,
     get_effective_setting, set_setting,
@@ -202,6 +202,10 @@ async def sync_join_team(req: JoinTeamRequest) -> Any:
         upsert_member(conn, team_name, config.user_id, device_id=own_device_id)
         team_created = True
 
+    # Clear any previous removal records — joining via code is an explicit action
+    clear_member_removal(conn, team_name, device_id)
+    if own_device_id:
+        clear_member_removal(conn, team_name, own_device_id)
     # Add or update leader as member (idempotent, updates device_id on rejoin)
     upsert_member(conn, team_name, leader_name, device_id=device_id)
     log_event(conn, "member_added", team_name=team_name, member_name=leader_name)
