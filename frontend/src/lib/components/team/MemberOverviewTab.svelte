@@ -2,12 +2,13 @@
 	import { onMount, onDestroy } from 'svelte';
 	import {
 		Chart,
-		BarController,
-		BarElement,
+		LineController,
+		LineElement,
+		PointElement,
+		Filler,
 		LinearScale,
 		CategoryScale,
-		Tooltip,
-		Legend
+		Tooltip
 	} from 'chart.js';
 	import { FolderGit2 } from 'lucide-svelte';
 	import type { MemberProfile } from '$lib/api-types';
@@ -20,7 +21,7 @@
 	import { getTeamMemberHexColor } from '$lib/utils';
 
 	// Register Chart.js components
-	Chart.register(BarController, BarElement, LinearScale, CategoryScale, Tooltip, Legend);
+	Chart.register(LineController, LineElement, PointElement, Filler, LinearScale, CategoryScale, Tooltip);
 
 	interface Props {
 		profile: MemberProfile;
@@ -31,29 +32,12 @@
 	let canvas: HTMLCanvasElement;
 	let chart: Chart | null = null;
 
-	// Build incoming lookup: date → count
-	let incomingByDate = $derived.by(() => {
-		const map = new Map<string, number>();
-		for (const stat of profile.incoming_stats ?? []) {
-			map.set(stat.date, (map.get(stat.date) ?? 0) + stat.incoming);
-		}
-		return map;
-	});
-
-	// Aggregate session stats by date: out (this member) + in (from others)
+	// Aggregate session stats by date: sessions contributed by this member
 	let dateTotals = $derived.by(() => {
-		// Collect all dates from both sources
-		const allDates = new Set<string>();
-		for (const stat of profile.session_stats) allDates.add(stat.date);
-		for (const stat of profile.incoming_stats ?? []) allDates.add(stat.date);
-
-		const totals = new Map<string, { out: number; in: number }>();
-		for (const date of allDates) {
-			totals.set(date, { out: 0, in: incomingByDate.get(date) ?? 0 });
-		}
+		const totals = new Map<string, number>();
 		for (const stat of profile.session_stats) {
-			const existing = totals.get(stat.date)!;
-			existing.out += stat.packaged + stat.received;
+			const existing = totals.get(stat.date) ?? 0;
+			totals.set(stat.date, existing + stat.packaged + stat.received);
 		}
 		// Sort by date ascending
 		return new Map([...totals.entries()].sort(([a], [b]) => a.localeCompare(b)));
@@ -77,8 +61,7 @@
 
 	// Chart data derived from dateTotals
 	let chartLabels = $derived([...dateTotals.keys()]);
-	let chartOutData = $derived([...dateTotals.values()].map((t) => t.out));
-	let chartInData = $derived([...dateTotals.values()].map((t) => t.in));
+	let chartData = $derived([...dateTotals.values()]);
 
 	let memberColor = $derived(getTeamMemberHexColor(profile.user_id));
 
@@ -99,21 +82,21 @@
 			const scaleConfig = createCommonScaleConfig();
 
 			chart = new Chart(canvas, {
-				type: 'bar',
+				type: 'line',
 				data: {
 					labels: chartLabels,
 					datasets: [
 						{
-							label: 'Out',
-							data: chartOutData,
-							backgroundColor: memberColor,
-							borderRadius: 4
-						},
-						{
-							label: 'In',
-							data: chartInData,
-							backgroundColor: memberColor + '30',
-							borderRadius: 4
+							label: 'Contributed',
+							data: chartData,
+							borderColor: memberColor,
+							backgroundColor: memberColor + '20',
+							fill: true,
+							tension: 0.3,
+							pointRadius: 3,
+							pointHoverRadius: 5,
+							pointBackgroundColor: memberColor,
+							borderWidth: 2
 						}
 					]
 				},
@@ -122,15 +105,7 @@
 					scales: scaleConfig,
 					plugins: {
 						...createResponsiveConfig().plugins,
-						legend: {
-							...createResponsiveConfig().plugins.legend,
-							position: 'bottom',
-							labels: {
-								boxWidth: 12,
-								padding: 16,
-								font: { size: 11 }
-							}
-						},
+						legend: { display: false },
 						tooltip: {
 							...createResponsiveConfig().plugins.tooltip,
 							backgroundColor: colors.bgBase,
@@ -145,10 +120,10 @@
 			});
 		} else {
 			chart.data.labels = chartLabels;
-			chart.data.datasets[0].data = chartOutData;
-			chart.data.datasets[0].backgroundColor = memberColor;
-			chart.data.datasets[1].data = chartInData;
-			chart.data.datasets[1].backgroundColor = memberColor + '30';
+			chart.data.datasets[0].data = chartData;
+			(chart.data.datasets[0] as any).borderColor = memberColor;
+			(chart.data.datasets[0] as any).backgroundColor = memberColor + '20';
+			(chart.data.datasets[0] as any).pointBackgroundColor = memberColor;
 			chart.update();
 		}
 	});
@@ -159,7 +134,7 @@
 	{#if dateTotals.size > 0}
 		<section>
 			<div class="rounded-lg border border-[var(--border)] bg-[var(--bg-subtle)] p-4">
-				<h3 class="text-sm font-medium text-[var(--text-primary)] mb-4">Sessions Over Time</h3>
+				<h3 class="text-sm font-medium text-[var(--text-primary)] mb-4">Sessions Contributed</h3>
 				<div class="h-[200px]">
 					<canvas bind:this={canvas}></canvas>
 				</div>

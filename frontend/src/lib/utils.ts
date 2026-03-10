@@ -778,7 +778,7 @@ export function getUserChartLabel(
 	userNames?: Record<string, string>
 ): string {
 	if (userId === '_local') return 'You';
-	return userNames?.[userId] ?? userId.slice(0, 8);
+	return userNames?.[userId] ?? userId;
 }
 
 /**

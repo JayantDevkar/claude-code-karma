@@ -220,21 +220,32 @@ class WatcherManager:
                         extra_dirs=wt_dirs,
                     )
                     ob.mkdir(parents=True, exist_ok=True)
-                    packager.package(staging_dir=ob)
+                    manifest = packager.package(staging_dir=ob)
                     self._last_packaged_at = (
                         datetime.now(timezone.utc).isoformat()
                     )
-                    # Log session_packaged event for ALL teams sharing this project
+                    # Log session_packaged per session (dedup against already-logged)
                     try:
                         from db.connection import get_writer_db
                         from db.sync_queries import log_event
                         db = get_writer_db()
                         for tn in pt:
-                            log_event(
-                                db, "session_packaged",
-                                team_name=tn, project_encoded_name=en,
-                                member_name=user_id,
-                            )
+                            already = {
+                                r[0] for r in db.execute(
+                                    "SELECT session_uuid FROM sync_events "
+                                    "WHERE event_type = 'session_packaged' AND team_name = ? "
+                                    "AND project_encoded_name = ? AND session_uuid IS NOT NULL",
+                                    (tn, en),
+                                ).fetchall()
+                            }
+                            for entry in manifest.sessions:
+                                if entry.uuid not in already:
+                                    log_event(
+                                        db, "session_packaged",
+                                        team_name=tn, project_encoded_name=en,
+                                        member_name=user_id,
+                                        session_uuid=entry.uuid,
+                                    )
                     except Exception:
                         pass  # Best-effort logging
                 return package

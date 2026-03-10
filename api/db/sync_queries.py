@@ -345,7 +345,7 @@ def query_session_stats_by_member(
         rows = conn.execute(
             """
             SELECT
-                DATE(created_at) AS date,
+                DATE(created_at, 'localtime') AS date,
                 member_name,
                 COUNT(*) AS out_count
             FROM sync_events
@@ -362,7 +362,7 @@ def query_session_stats_by_member(
         rows = conn.execute(
             """
             SELECT
-                DATE(created_at) AS date,
+                DATE(created_at, 'localtime') AS date,
                 member_name,
                 COUNT(*) AS out_count
             FROM sync_events
