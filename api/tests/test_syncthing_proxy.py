@@ -140,7 +140,7 @@ class TestAddRemoveDevice:
 
         result = proxy.add_device("AAAA-1111", "alice")
 
-        mock_client.add_device.assert_called_once_with("AAAA-1111", "alice")
+        mock_client.add_device.assert_called_once_with("AAAA-1111", "alice", introducer=False)
         assert result["ok"] is True
 
     def test_remove_device_not_running_raises(self):
