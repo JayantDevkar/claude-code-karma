@@ -1,6 +1,6 @@
 <script lang="ts">
 	import PageHeader from '$lib/components/layout/PageHeader.svelte';
-	import { Users, Wifi, WifiOff, AlertTriangle } from 'lucide-svelte';
+	import { Contact, Wifi, WifiOff, AlertTriangle, Users } from 'lucide-svelte';
 	import { getTeamMemberColor, getTeamMemberHexColor } from '$lib/utils';
 
 	let { data } = $props();
@@ -10,8 +10,8 @@
 
 <PageHeader
 	title="Members"
-	icon={Users}
-	iconColor="--nav-purple"
+	icon={Contact}
+	iconColor="--nav-rose"
 	subtitle="{data.total} member{data.total !== 1 ? 's' : ''} across all teams"
 	breadcrumbs={[
 		{ label: 'Dashboard', href: '/' },

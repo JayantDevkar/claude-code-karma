@@ -117,6 +117,8 @@
 	--nav-indigo-subtle: rgba(99, 102, 241, 0.1);
 	--nav-amber: #d97706;
 	--nav-amber-subtle: rgba(217, 119, 6, 0.08);
+	--nav-rose: #f43f84;
+	--nav-rose-subtle: rgba(244, 63, 132, 0.08);
 
 	/* Live Session Status Background Tints (subtle card backgrounds) */
 	--status-starting-bg: rgba(139, 92, 246, 0.05);
@@ -365,6 +367,8 @@ select:focus {
 	--nav-indigo-subtle: rgba(129, 140, 248, 0.18);
 	--nav-amber: #fbbf24;
 	--nav-amber-subtle: rgba(251, 191, 36, 0.15);
+	--nav-rose: #fb7199;
+	--nav-rose-subtle: rgba(251, 113, 153, 0.15);
 
 	/* Live Session Status Background Tints (dark mode - slightly higher opacity) */
 	--status-starting-bg: rgba(167, 139, 250, 0.08);
@@ -500,6 +504,8 @@ select:focus {
 		--nav-indigo-subtle: rgba(129, 140, 248, 0.18);
 		--nav-amber: #fbbf24;
 		--nav-amber-subtle: rgba(251, 191, 36, 0.15);
+		--nav-rose: #fb7199;
+		--nav-rose-subtle: rgba(251, 113, 153, 0.15);
 		/* Live Session Status Background Tints (dark mode) */
 		--status-starting-bg: rgba(167, 139, 250, 0.08);
 		--status-active-bg: rgba(52, 211, 153, 0.08);
