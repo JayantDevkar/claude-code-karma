@@ -1492,16 +1492,17 @@ async def sync_pending_devices() -> Any:
     # Phase 0.5: Reconcile devices that Syncthing's introducer auto-added
     # but the karma DB doesn't know about (multi-device leader scenario).
     config = None
+    reconciled = 0
     try:
         config = await run_sync(_load_identity)
         if config and proxy:
-            await _reconcile_introduced_devices(proxy, config, conn)
+            reconciled = await _reconcile_introduced_devices(proxy, config, conn)
     except Exception as e:
         logger.debug("Reconcile introduced devices failed: %s", e)
 
     # Phase 1 only: auto-accept pending devices (handshake completion).
     # Folder acceptance is now explicit — handled by POST /pending/accept/{folder_id}.
-    auto_accepted = 0
+    auto_accepted = reconciled
     remaining_pending = None
     try:
         if config is None:
