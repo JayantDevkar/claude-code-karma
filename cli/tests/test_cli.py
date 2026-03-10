@@ -90,7 +90,7 @@ class TestTeamCommands:
         runner.invoke(cli, ["team", "add", "bob", "BOB-DEVICE-ID", "--team", "alpha"])
         result = runner.invoke(cli, ["team", "remove", "bob", "--team", "alpha"])
         assert result.exit_code == 0
-        assert "Removed team member 'bob'" in result.output
+        assert "Removed 'bob' from team 'alpha'" in result.output
 
         # Verify removed from DB
         row = mock_db.execute(

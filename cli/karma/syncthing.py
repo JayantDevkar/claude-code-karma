@@ -162,6 +162,21 @@ class SyncthingClient:
         config["folders"] = [f for f in config["folders"] if f["id"] != folder_id]
         self._set_config(config)
 
+    def remove_device_from_folder(self, folder_id: str, device_id: str) -> bool:
+        """Remove a device from a folder's sharing list. Returns True if removed."""
+        config = self._get_config()
+        for folder in config.get("folders", []):
+            if folder.get("id") != folder_id:
+                continue
+            original = folder.get("devices", [])
+            filtered = [d for d in original if d.get("deviceID") != device_id]
+            if len(filtered) == len(original):
+                return False
+            folder["devices"] = filtered
+            self._set_config(config)
+            return True
+        return False
+
     def get_pending_devices(self) -> dict:
         """Get devices trying to connect that aren't configured.
 

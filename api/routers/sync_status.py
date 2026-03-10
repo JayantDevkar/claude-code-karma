@@ -476,6 +476,16 @@ async def _reconcile_introduced_devices(proxy, config, conn) -> int:
 
     reconciled = 0
 
+    # Build a map of project suffixes → team name (used for folder ID parsing)
+    project_suffix_map: dict[str, str] = {}
+    for team in list_teams(conn):
+        for proj in list_team_projects(conn, team["name"]):
+            ps = _compute_proj_suffix(
+                proj.get("git_identity"), proj.get("path"),
+                proj["project_encoded_name"],
+            )
+            project_suffix_map[ps] = team["name"]
+
     for device in configured_devices:
         device_id = device.get("device_id", "")
         if not device_id:
@@ -514,17 +524,6 @@ async def _reconcile_introduced_devices(proxy, config, conn) -> int:
         # Instead, anchor on the project suffix which IS known.
         username = None
         team_name = None
-
-        # Build a map of project suffixes → team name (once, outside loop
-        # would be better but the device loop is typically tiny).
-        project_suffix_map: dict[str, str] = {}
-        for team in list_teams(conn):
-            for proj in list_team_projects(conn, team["name"]):
-                ps = _compute_proj_suffix(
-                    proj.get("git_identity"), proj.get("path"),
-                    proj["project_encoded_name"],
-                )
-                project_suffix_map[ps] = team["name"]
 
         # Collect ALL valid (username, team_name) pairs from folder IDs,
         # then pick the best one.  Multiple folders for the same device
@@ -655,6 +654,12 @@ async def _auto_accept_pending_peers(proxy, config, conn) -> tuple[int, dict]:
             logger.debug("Failed to fetch pending folders: %s", e)
             pending_folders = {}
 
+        # Fetch configured folders once (used as fallback when pending is empty)
+        try:
+            configured_folders = await run_sync(proxy.get_configured_folders)
+        except Exception:
+            configured_folders = []
+
         for device_id in list(pending_devices.keys()):
             device_info = pending_devices.get(device_id, {})
             device_name = device_info.get("name", "")
@@ -672,19 +677,15 @@ async def _auto_accept_pending_peers(proxy, config, conn) -> tuple[int, dict]:
             # auto-configure them (not pending) while the device itself
             # remains pending.
             if not karma_folders:
-                try:
-                    configured_folders = await run_sync(proxy.get_configured_folders)
-                    for folder in configured_folders:
-                        folder_id = folder.get("id", "")
-                        if not folder_id.startswith("karma-"):
-                            continue
-                        folder_device_ids = {
-                            d.get("deviceID") for d in folder.get("devices", [])
-                        }
-                        if device_id in folder_device_ids:
-                            karma_folders.append(folder_id)
-                except Exception:
-                    pass
+                for folder in configured_folders:
+                    folder_id = folder.get("id", "")
+                    if not folder_id.startswith("karma-"):
+                        continue
+                    folder_device_ids = {
+                        d.get("deviceID") for d in folder.get("devices", [])
+                    }
+                    if device_id in folder_device_ids:
+                        karma_folders.append(folder_id)
 
             if not karma_folders:
                 # No karma folders found — cannot verify identity.
@@ -1502,15 +1503,17 @@ async def sync_pending_devices() -> Any:
 
     # Phase 1 only: auto-accept pending devices (handshake completion).
     # Folder acceptance is now explicit — handled by POST /pending/accept/{folder_id}.
-    auto_accepted = reconciled
+    peer_accepted = 0
     remaining_pending = None
     try:
         if config is None:
             config = await run_sync(_load_identity)
         if config and proxy:
-            auto_accepted, remaining_pending = await _auto_accept_pending_peers(proxy, config, conn)
+            peer_accepted, remaining_pending = await _auto_accept_pending_peers(proxy, config, conn)
     except Exception as e:
         logger.debug("Auto-accept pending peers failed: %s", e)
+
+    auto_accepted = reconciled + peer_accepted
 
     # Use remaining from auto-accept if available, otherwise fetch fresh
     if remaining_pending is None:
@@ -2136,19 +2139,19 @@ async def sync_pending() -> Any:
     # Load identity early — needed for reconciliation and own-outbox filtering
     config = await run_sync(_load_identity)
 
+    try:
+        proxy = get_proxy()
+    except Exception:
+        return {"pending": []}
+
     # Reconcile introduced devices before checking known_devices, so that
     # devices propagated by the Syncthing introducer (multi-device leader)
     # are added to the DB and their pending folders become visible.
     try:
-        proxy = get_proxy()
         if config:
             await _reconcile_introduced_devices(proxy, config, conn)
     except Exception as e:
         logger.debug("Reconcile in sync_pending failed: %s", e)
-        try:
-            proxy = get_proxy()
-        except Exception:
-            return {"pending": []}
 
     known = get_known_devices(conn)
 
