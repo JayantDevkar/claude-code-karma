@@ -170,6 +170,15 @@
 				>
 					Analytics
 				</a>
+
+				<a
+					href="/about"
+					class="text-sm font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+					class:text-[var(--text-primary)]={$page.url.pathname.startsWith('/about')}
+					aria-current={$page.url.pathname.startsWith('/about') ? 'page' : undefined}
+				>
+					About
+				</a>
 			</nav>
 
 			<div class="flex items-center justify-end gap-3">
@@ -239,6 +248,16 @@
 						aria-current={$page.url.pathname.startsWith('/analytics') ? 'page' : undefined}
 					>
 						Analytics
+					</a>
+					<a
+						href="/about"
+						onclick={closeMobileMenu}
+						class="text-base font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-subtle)] py-3 px-4 rounded-lg transition-colors"
+						class:text-[var(--text-primary)]={$page.url.pathname.startsWith('/about')}
+						class:bg-[var(--bg-subtle)]={$page.url.pathname.startsWith('/about')}
+						aria-current={$page.url.pathname.startsWith('/about') ? 'page' : undefined}
+					>
+						About
 					</a>
 				</div>
 			</nav>

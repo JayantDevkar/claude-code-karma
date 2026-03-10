@@ -1,100 +1,82 @@
 # Hooks Guide
 
-How Claude Code hooks work and how Claude Code Karma uses them for live tracking, title generation, and plan approval.
+How Claude Code hooks work and how to enable real-time session tracking.
 
----
+## What are Claude Code hooks?
 
-## What Are Claude Code Hooks?
+Hooks are scripts that Claude Code automatically executes when events happen during a session. They run in the Claude Code process and can either observe events or actively block them.
 
-Hooks are scripts that Claude Code executes automatically when specific events occur during a session. They run synchronously in the Claude Code process and can either observe events passively or actively block them (returning `"deny"` to reject an action).
+You register hooks in Claude Code's `settings.json`. They can be written in any language. Claude Code Karma's hooks are Python scripts.
 
-Hooks are registered in Claude Code's `settings.json` and can be written in any language. Claude Code Karma's hooks are written in Python.
+## The 10 hook types
 
----
+Claude Code defines 10 hook event types. Here are the main ones:
 
-## The 10 Hook Types
+| Hook | Fires When | Can Block? |
+|------|-----------|------------|
+| **SessionStart** | Session begins | No |
+| **SessionEnd** | Session ends | No |
+| **UserPromptSubmit** | User submits a message | Yes |
+| **PostToolUse** | Tool call completes | No |
+| **PreToolUse** | Before tool executes | Yes |
+| **Stop** | Main agent stops | No |
+| **SubagentStart** | Task agent spawns | No |
+| **SubagentStop** | Task agent stops | No |
+| **PreCompact** | Before context compaction | No |
+| **PermissionRequest** | Permission dialog appears | Yes |
 
-Claude Code defines 10 hook event types. The captain-hook library provides Pydantic models for all of them.
+Blocking hooks can return a response that prevents the action. Non-blocking hooks can only observe.
 
-| Hook | Fires When | Can Block? | Common Use |
-|------|-----------|------------|------------|
-| **PreToolUse** | Before a tool is executed | Yes | Validate or deny tool calls |
-| **PostToolUse** | After a tool completes | No | Log tool results, track file changes |
-| **UserPromptSubmit** | User submits a message | Yes | Filter prompts, add context |
-| **SessionStart** | Session begins | No | Initialize tracking state |
-| **SessionEnd** | Session ends | No | Generate titles, finalize state |
-| **Stop** | Main agent stops | No | Record completion status |
-| **SubagentStop** | A subagent (Task) stops | No | Track subagent outcomes |
-| **PreCompact** | Before context compaction | No | Capture pre-compaction state |
-| **PermissionRequest** | Permission dialog appears | Yes | Auto-approve or gate actions |
-| **Notification** | System notification | No | Forward or log notifications |
+## Production Hooks in Claude Code Karma
 
-**Blocking hooks** (PreToolUse, UserPromptSubmit, PermissionRequest) can return a response that prevents the action from proceeding. Non-blocking hooks can only observe.
-
----
-
-## Claude Code Karma's Production Hooks
-
-Claude Code Karma ships three hook scripts in the `hooks/` directory.
+Claude Code Karma ships two production hooks:
 
 ### 1. live_session_tracker.py
 
-**Purpose:** Tracks session state in real time across 8 hook events.
+**Purpose:** Track session state in real time.
 
 **Events handled:** SessionStart, SessionEnd, Stop, SubagentStart, SubagentStop, PostToolUse, UserPromptSubmit, Notification
 
+**What it does:**
+- Tracks the session state machine (STARTING → LIVE → WAITING → STOPPED → ENDED)
+- Writes state to `~/.claude_karma/live-sessions/{slug}.json`
+- API reads this to show live session status in the dashboard
+
 **State machine:**
-
-```
-STARTING ──> LIVE ──> WAITING ──> STOPPED ──> ENDED
-                 \                     |
-                  \──> STALE          /
-                   (no heartbeat)    /
-                    \──────────────/
-```
-
 - **STARTING** — Session has begun, no user message yet
 - **LIVE** — Actively processing (tool calls, responses)
 - **WAITING** — Waiting for user input
 - **STOPPED** — Main agent has stopped
-- **STALE** — No heartbeat received within timeout
-- **ENDED** — Session has formally ended
-
-State is written to `~/.claude_karma/live-sessions/{slug}.json`. The API reads these files to serve the `/live-sessions` endpoint.
+- **STALE** — No heartbeat for 30+ minutes
+- **ENDED** — Session formally ended
 
 ### 2. session_title_generator.py
 
-**Purpose:** Automatically generates a descriptive title when a session ends.
+**Purpose:** Generate descriptive titles for sessions.
 
 **Event handled:** SessionEnd
 
-**Title generation strategy:**
-1. Check for git commits made during the session
-2. If commits found, derive the title from commit messages
-3. If no commits, call Claude Haiku to generate a title from the session summary
+**How it works:**
+1. Checks for git commits made during the session
+2. If commits exist, derives the title from commit messages
+3. If no commits, calls Claude Haiku to generate a title from the session summary
 
-Titles are stored in session metadata and displayed in the session browser.
+Titles appear in the session browser and dashboard so you can quickly find sessions.
 
-### 3. plan_approval.py
+### 3. plan_approval.py (Reference Only)
 
-**Purpose:** Gates plan execution by intercepting ExitPlanMode permission requests.
+This script is kept as a reference implementation but is **not production-ready**. It requires API endpoints for plan approval that haven't been implemented yet. Do not register this hook — it will block all ExitPlanMode calls. We'll document it when the approval feature is built.
 
-**Event handled:** PermissionRequest (specifically `ExitPlanMode`)
+## Captain-Hook Library
 
-When Claude Code enters plan mode and produces a plan, it fires a PermissionRequest before proceeding. This hook intercepts that request and can approve or deny execution based on configured rules or user preferences.
+The `captain-hook/` directory contains a standalone Python library with type-safe Pydantic models for all 10 hook types.
 
----
-
-## captain-hook Library
-
-The `captain-hook/` directory contains a standalone Python library providing type-safe Pydantic models for all 10 hook types.
-
-### Usage
+**Use it to parse hook events:**
 
 ```python
-from captain_hook import parse_hook_event, PreToolUseHook, SessionStartHook
+from captain_hook import parse_hook_event, PreToolUseHook
 
-# Parse any hook event from JSON
+# Parse any hook event
 hook = parse_hook_event(json_data)
 
 # Type-narrowed access
@@ -103,31 +85,22 @@ if isinstance(hook, PreToolUseHook):
     tool_input = hook.tool_input
 ```
 
-### Model Structure
-
-Each hook model inherits from a base and includes:
-- `session_id` — UUID of the active session
-- `project_path` — Encoded project path
-- Hook-specific fields (tool name, message content, etc.)
-
-The library validates all fields at parse time and raises clear errors for malformed hook data.
-
----
+See the captain-hook README for the full API reference.
 
 ## Installing Hooks
 
-### 1. Copy or Symlink Scripts
+### Step 1: Symlink the Hook Scripts
 
 ```bash
-# Symlink (recommended — stays in sync with repo)
 ln -s /path/to/claude-karma/hooks/live_session_tracker.py ~/.claude/hooks/
 ln -s /path/to/claude-karma/hooks/session_title_generator.py ~/.claude/hooks/
-ln -s /path/to/claude-karma/hooks/plan_approval.py ~/.claude/hooks/
 ```
 
-### 2. Register in settings.json
+(Symlinks are recommended — they stay in sync with the repo.)
 
-Add hook registrations to your Claude Code settings file (`~/.claude/settings.json`):
+### Step 2: Register in settings.json
+
+Add hook registrations to `~/.claude/settings.json`. The hooks need to be registered for specific events:
 
 ```json
 {
@@ -155,17 +128,6 @@ Add hook registrations to your Claude Code settings file (`~/.claude/settings.js
       }
     ],
     "PostToolUse": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 ~/.claude/hooks/live_session_tracker.py",
-            "timeout": 5000
-          }
-        ]
-      }
-    ],
-    "Notification": [
       {
         "hooks": [
           {
@@ -209,6 +171,17 @@ Add hook registrations to your Claude Code settings file (`~/.claude/settings.js
         ]
       }
     ],
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/live_session_tracker.py",
+            "timeout": 5000
+          }
+        ]
+      }
+    ],
     "SessionEnd": [
       {
         "hooks": [
@@ -228,31 +201,18 @@ Add hook registrations to your Claude Code settings file (`~/.claude/settings.js
           }
         ]
       }
-    ],
-    "PermissionRequest": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 ~/.claude/hooks/plan_approval.py",
-            "timeout": 10000
-          }
-        ]
-      }
     ]
   }
 }
 ```
 
-The `timeout` value is in milliseconds. If a hook exceeds its timeout, Claude Code kills the process and continues without it.
-
----
+The `timeout` value is in milliseconds. If a hook exceeds its timeout, Claude Code kills it and continues.
 
 ## Writing Custom Hooks
 
 Hooks receive event data as JSON on stdin and can optionally write a JSON response to stdout.
 
-**Basic structure (Python):**
+**Basic structure:**
 
 ```python
 import sys
@@ -272,10 +232,11 @@ if __name__ == "__main__":
     main()
 ```
 
-**With captain-hook:**
+**Using captain-hook for type safety:**
 
 ```python
 import sys
+import json
 from captain_hook import parse_hook_event, PreToolUseHook
 
 def main():
@@ -289,4 +250,8 @@ if __name__ == "__main__":
     main()
 ```
 
-See the captain-hook README in the `captain-hook/` directory for the full API reference.
+## Verification
+
+After installation, verify hooks are working by checking the **Hooks** page in the dashboard. You should see hook execution logs and recent events.
+
+Also check the live sessions page — if hooks are working, you should see real-time session state for active sessions.
