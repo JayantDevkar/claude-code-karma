@@ -1,5 +1,6 @@
 """Tests for session packager."""
 
+import json
 from pathlib import Path
 
 import pytest
@@ -537,3 +538,226 @@ class TestPackagerTitles:
         assert "session-uuid-001" in post_titles
         assert post_titles["session-uuid-001"]["title"] == "My Title"
         assert post_titles["session-uuid-001"]["source"] == "haiku"
+
+
+class TestLiveSessionExclusion:
+    """Live (in-progress) sessions should not be packaged for sync."""
+
+    def test_live_session_excluded_from_discovery(self, mock_claude_project, monkeypatch):
+        """A session whose UUID appears as LIVE should be excluded."""
+        from karma import packager
+
+        # Simulate session-uuid-001 being live
+        monkeypatch.setattr(
+            packager, "_get_live_session_uuids", lambda: {"session-uuid-001"}
+        )
+
+        p = SessionPackager(
+            project_dir=mock_claude_project,
+            user_id="alice",
+            machine_id="test-mac",
+        )
+        sessions = p.discover_sessions()
+        uuids = {s.uuid for s in sessions}
+        assert "session-uuid-001" not in uuids
+        assert "session-uuid-002" in uuids
+        assert len(sessions) == 1
+
+    def test_ended_session_not_excluded(self, mock_claude_project, monkeypatch):
+        """ENDED sessions should pass through (empty live set)."""
+        from karma import packager
+
+        monkeypatch.setattr(packager, "_get_live_session_uuids", lambda: set())
+
+        p = SessionPackager(
+            project_dir=mock_claude_project,
+            user_id="alice",
+            machine_id="test-mac",
+        )
+        sessions = p.discover_sessions()
+        assert len(sessions) == 2
+
+    def test_exclude_live_false_skips_filter(self, mock_claude_project, monkeypatch):
+        """exclude_live=False should bypass the filter entirely."""
+        from karma import packager
+
+        monkeypatch.setattr(
+            packager,
+            "_get_live_session_uuids",
+            lambda: {"session-uuid-001", "session-uuid-002"},
+        )
+
+        p = SessionPackager(
+            project_dir=mock_claude_project,
+            user_id="alice",
+            machine_id="test-mac",
+        )
+        sessions = p.discover_sessions(exclude_live=False)
+        assert len(sessions) == 2
+
+    def test_live_session_not_packaged(self, mock_claude_project, tmp_path, monkeypatch):
+        """Live session JSONL should not be copied to staging dir."""
+        from karma import packager
+
+        monkeypatch.setattr(
+            packager, "_get_live_session_uuids", lambda: {"session-uuid-001"}
+        )
+
+        staging = tmp_path / "staging"
+        p = SessionPackager(
+            project_dir=mock_claude_project,
+            user_id="alice",
+            machine_id="test-mac",
+        )
+        manifest = p.package(staging_dir=staging)
+
+        assert manifest.session_count == 1
+        assert not (staging / "sessions" / "session-uuid-001.jsonl").exists()
+        assert (staging / "sessions" / "session-uuid-002.jsonl").exists()
+
+    def test_no_live_sessions_dir_packages_all(self, mock_claude_project, tmp_path, monkeypatch):
+        """When hooks aren't configured (no live-sessions dir), all sessions are packaged."""
+        from karma import packager
+
+        # _get_live_session_uuids returns empty set when dir doesn't exist
+        monkeypatch.setattr(packager, "_get_live_session_uuids", lambda: set())
+
+        staging = tmp_path / "staging"
+        p = SessionPackager(
+            project_dir=mock_claude_project,
+            user_id="alice",
+            machine_id="test-mac",
+        )
+        manifest = p.package(staging_dir=staging)
+        assert manifest.session_count == 2
+
+
+class TestGetLiveSessionUuids:
+    """Unit tests for the _get_live_session_uuids helper."""
+
+    def test_returns_empty_when_dir_missing(self, monkeypatch):
+        from karma.packager import _get_live_session_uuids
+        from karma import config
+
+        # Point KARMA_BASE at a non-existent directory
+        monkeypatch.setattr(config, "KARMA_BASE", Path("/tmp/nonexistent-karma-test"))
+        # Re-import to pick up monkeypatched KARMA_BASE
+        import importlib
+        from karma import packager
+        importlib.reload(packager)
+        from karma.packager import _get_live_session_uuids as reloaded
+
+        result = reloaded()
+        assert result == set()
+
+        # Restore
+        importlib.reload(config)
+        importlib.reload(packager)
+
+    def test_collects_live_uuids(self, tmp_path, monkeypatch):
+        from karma import packager, config
+        import importlib
+
+        live_dir = tmp_path / "live-sessions"
+        live_dir.mkdir(parents=True)
+
+        # LIVE session
+        (live_dir / "happy-slug.json").write_text(json.dumps({
+            "session_id": "uuid-live-1",
+            "session_ids": ["uuid-live-1", "uuid-old-resumed"],
+            "state": "LIVE",
+        }))
+        # ENDED session (should NOT be collected)
+        (live_dir / "done-slug.json").write_text(json.dumps({
+            "session_id": "uuid-ended",
+            "session_ids": ["uuid-ended"],
+            "state": "ENDED",
+        }))
+        # WAITING session
+        (live_dir / "waiting-slug.json").write_text(json.dumps({
+            "session_id": "uuid-waiting",
+            "session_ids": ["uuid-waiting"],
+            "state": "WAITING",
+        }))
+
+        monkeypatch.setattr(config, "KARMA_BASE", tmp_path)
+        importlib.reload(packager)
+        from karma.packager import _get_live_session_uuids as reloaded
+
+        result = reloaded()
+        assert "uuid-live-1" in result
+        assert "uuid-old-resumed" in result
+        assert "uuid-waiting" in result
+        assert "uuid-ended" not in result
+
+        importlib.reload(config)
+        importlib.reload(packager)
+
+    def test_stale_live_session_not_excluded(self, tmp_path, monkeypatch):
+        """Sessions idle > 30 min are considered crashed — should be packaged."""
+        from datetime import datetime, timezone, timedelta
+        from karma import packager, config
+        import importlib
+
+        live_dir = tmp_path / "live-sessions"
+        live_dir.mkdir(parents=True)
+
+        now = datetime.now(timezone.utc)
+
+        # Recent LIVE session (5 min ago) — should be excluded
+        (live_dir / "recent.json").write_text(json.dumps({
+            "session_id": "uuid-recent",
+            "session_ids": ["uuid-recent"],
+            "state": "LIVE",
+            "updated_at": (now - timedelta(minutes=5)).isoformat(),
+        }))
+        # Stale LIVE session (2 hours ago) — crashed, should NOT be excluded
+        (live_dir / "crashed.json").write_text(json.dumps({
+            "session_id": "uuid-crashed",
+            "session_ids": ["uuid-crashed"],
+            "state": "LIVE",
+            "updated_at": (now - timedelta(hours=2)).isoformat(),
+        }))
+        # Stale WAITING session (45 min ago) — also crashed
+        (live_dir / "stuck.json").write_text(json.dumps({
+            "session_id": "uuid-stuck",
+            "session_ids": ["uuid-stuck"],
+            "state": "WAITING",
+            "updated_at": (now - timedelta(minutes=45)).isoformat(),
+        }))
+
+        monkeypatch.setattr(config, "KARMA_BASE", tmp_path)
+        importlib.reload(packager)
+        from karma.packager import _get_live_session_uuids as reloaded
+
+        result = reloaded()
+        assert "uuid-recent" in result       # recent → still excluded
+        assert "uuid-crashed" not in result   # 2h stale → packaged
+        assert "uuid-stuck" not in result     # 45m stale → packaged
+
+        importlib.reload(config)
+        importlib.reload(packager)
+
+    def test_skips_corrupt_json(self, tmp_path, monkeypatch):
+        from karma import packager, config
+        import importlib
+
+        live_dir = tmp_path / "live-sessions"
+        live_dir.mkdir(parents=True)
+
+        (live_dir / "corrupt.json").write_text("not valid json {{{{")
+        (live_dir / "good.json").write_text(json.dumps({
+            "session_id": "uuid-good",
+            "session_ids": ["uuid-good"],
+            "state": "LIVE",
+        }))
+
+        monkeypatch.setattr(config, "KARMA_BASE", tmp_path)
+        importlib.reload(packager)
+        from karma.packager import _get_live_session_uuids as reloaded
+
+        result = reloaded()
+        assert "uuid-good" in result
+
+        importlib.reload(config)
+        importlib.reload(packager)

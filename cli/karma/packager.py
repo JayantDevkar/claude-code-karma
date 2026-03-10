@@ -8,11 +8,70 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
+from karma.config import KARMA_BASE
 from karma.manifest import SessionEntry, SyncManifest
 
 logger = logging.getLogger(__name__)
 
 MIN_FREE_BYTES = 10 * 1024 * 1024 * 1024  # 10 GiB
+
+
+STALE_LIVE_SESSION_SECONDS = 30 * 60  # 30 minutes
+
+
+def _get_live_session_uuids() -> set[str]:
+    """Return UUIDs of sessions that are currently live (not yet ended).
+
+    Reads ``~/.claude_karma/live-sessions/*.json`` written by Claude Code hooks.
+    If hooks aren't configured (directory missing/empty), returns an empty set
+    so all sessions pass through — backward compatible.
+
+    Sessions idle for more than 30 minutes are considered stale (likely crashed
+    without a SessionEnd hook) and are NOT excluded — their JSONL is stable
+    enough to package.
+    """
+    live_dir = KARMA_BASE / "live-sessions"
+    if not live_dir.is_dir():
+        return set()
+
+    now = datetime.now(timezone.utc)
+    live_uuids: set[str] = set()
+    for json_file in live_dir.glob("*.json"):
+        try:
+            data = json.loads(json_file.read_text(encoding="utf-8"))
+            state = data.get("state", "")
+            if state == "ENDED":
+                continue
+
+            # Skip sessions idle longer than the staleness threshold —
+            # likely crashed without SessionEnd, safe to package.
+            updated_at_str = data.get("updated_at")
+            if updated_at_str:
+                updated_at = datetime.fromisoformat(
+                    updated_at_str.replace("Z", "+00:00")
+                )
+                if updated_at.tzinfo is None:
+                    updated_at = updated_at.replace(tzinfo=timezone.utc)
+                idle_seconds = (now - updated_at).total_seconds()
+                if idle_seconds > STALE_LIVE_SESSION_SECONDS:
+                    logger.debug(
+                        "Live session %s idle %.0fs > %ds, treating as stale",
+                        data.get("session_id", "?"),
+                        idle_seconds,
+                        STALE_LIVE_SESSION_SECONDS,
+                    )
+                    continue
+
+            # Current active session UUID
+            sid = data.get("session_id")
+            if sid:
+                live_uuids.add(sid)
+            # All historical UUIDs for this slug (resumed sessions)
+            for sid in data.get("session_ids", []):
+                live_uuids.add(sid)
+        except (json.JSONDecodeError, OSError):
+            continue
+    return live_uuids
 
 
 def get_session_limit(team_session_limit: str, dest_path: Path) -> int | None:
@@ -207,8 +266,17 @@ class SessionPackager:
             )
         return entries
 
-    def discover_sessions(self) -> list[SessionEntry]:
-        """Find all session JSONL files in the project and worktree directories."""
+    def discover_sessions(self, exclude_live: bool = True) -> list[SessionEntry]:
+        """Find all session JSONL files in the project and worktree directories.
+
+        Args:
+            exclude_live: If True (default), skip sessions that are currently
+                live according to ``~/.claude_karma/live-sessions/``. When hooks
+                aren't configured the live-sessions dir won't exist, so no
+                sessions are excluded — backward compatible.
+        """
+        live_uuids = _get_live_session_uuids() if exclude_live else set()
+
         # Detect git branch for the main project directory
         main_branch = _detect_git_branch(self.project_path)
         entries = self._discover_from_dir(self.project_dir, git_branch=main_branch)
@@ -233,6 +301,13 @@ class SessionPackager:
             entries.extend(
                 self._discover_from_dir(extra_dir, worktree_name=wt_name, git_branch=wt_branch)
             )
+
+        if live_uuids:
+            before = len(entries)
+            entries = [e for e in entries if e.uuid not in live_uuids]
+            skipped = before - len(entries)
+            if skipped:
+                logger.info("Excluded %d live session(s) from packaging", skipped)
 
         return entries
 
