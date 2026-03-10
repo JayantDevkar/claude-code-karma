@@ -186,9 +186,6 @@
 	<!-- Join Code -->
 	{#if joinCode}
 		<section>
-			<h2 class="text-sm font-semibold text-[var(--text-primary)] mb-3 uppercase tracking-wider">
-				Join Code
-			</h2>
 			<JoinCodeCard code={joinCode} />
 		</section>
 	{/if}
