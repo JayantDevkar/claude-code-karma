@@ -56,9 +56,9 @@ class TestCanDirection:
 
 
 class TestShouldAutoAcceptDevice:
-    def test_returns_true_by_default(self, conn):
-        """Default auto_accept_members is 'true'."""
-        assert should_auto_accept_device(conn, "any-team") is True
+    def test_returns_false_by_default(self, conn):
+        """Default auto_accept_members is 'false' (deny by default)."""
+        assert should_auto_accept_device(conn, "any-team") is False
 
     def test_returns_false_when_team_setting_is_false(self, conn):
         """Team-level override disables auto-accept."""

@@ -106,7 +106,7 @@ class TestGetEffectiveSetting:
 
     def test_auto_accept_default(self, conn):
         value, source = get_effective_setting(conn, "auto_accept_members")
-        assert value == "true"
+        assert value == "false"
         assert source == "default"
 
     def test_team_overrides_default(self, conn):
@@ -169,8 +169,8 @@ class TestGetEffectiveSyncDirection:
 
 
 class TestGetEffectiveAutoAccept:
-    def test_returns_true_by_default(self, conn):
-        assert get_effective_auto_accept(conn, "any-team") is True
+    def test_returns_false_by_default(self, conn):
+        assert get_effective_auto_accept(conn, "any-team") is False
 
     def test_returns_false_when_set(self, conn):
         set_setting(conn, "team:acme", "auto_accept_members", "false")
