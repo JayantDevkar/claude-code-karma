@@ -169,6 +169,7 @@ class WatcherManager:
         all_teams = config_data.get("teams", {})
         user_id = config_data.get("user_id", "unknown")
         machine_id = config_data.get("machine_id", "unknown")
+        device_id = config_data.get("device_id")
         projects_dir = Path.home() / ".claude" / "projects"
 
         # Collect unique projects across all teams, tracking which teams each belongs to
@@ -216,6 +217,7 @@ class WatcherManager:
                         project_dir=cd,
                         user_id=user_id,
                         machine_id=machine_id,
+                        device_id=device_id,
                         project_path=pp,
                         extra_dirs=wt_dirs,
                     )

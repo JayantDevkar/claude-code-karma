@@ -403,6 +403,7 @@ def watch(team_name: str):
                     project_dir=cd,
                     user_id=config.user_id,
                     machine_id=config.machine_id,
+                    device_id=config.syncthing.device_id if config.syncthing else None,
                     project_path=pp,
                     extra_dirs=current_wt_dirs,
                 )

@@ -1718,6 +1718,7 @@ async def sync_team_sync_now(team_name: str) -> Any:
                 project_dir=claude_dir,
                 user_id=config.user_id,
                 machine_id=config.machine_id,
+                device_id=config.syncthing.device_id if config.syncthing else None,
                 project_path=proj_path,
                 extra_dirs=wt_dirs,
                 team_name=team_name,
@@ -1806,6 +1807,7 @@ async def sync_watch_start(team_name: Optional[str] = None) -> Any:
     config_data = {
         "user_id": config.user_id,
         "machine_id": config.machine_id,
+        "device_id": config.syncthing.device_id if config.syncthing else None,
         "teams": teams_config,
     }
 
@@ -2147,20 +2149,28 @@ async def sync_team_project_status(team_name: str) -> Any:
             )
 
         received_counts = {}
-        for m in members:
-            mname = m["name"]
-            # Skip own outbox — only count genuinely received sessions
-            if mname == config.user_id:
-                continue
-            inbox = KARMA_BASE / "remote-sessions" / mname / encoded / "sessions"
-            if inbox.is_dir():
-                received_counts[mname] = sum(
-                    1
-                    for f in inbox.glob("*.jsonl")
-                    if not f.name.startswith("agent-")
-                )
-            else:
-                received_counts[mname] = 0
+        remote_base = KARMA_BASE / "remote-sessions"
+        if remote_base.is_dir():
+            for user_dir in remote_base.iterdir():
+                if not user_dir.is_dir():
+                    continue
+                dir_name = user_dir.name
+                # Skip own outbox (check both dir name and resolved user_id)
+                if dir_name == config.user_id:
+                    continue
+                from services.remote_sessions import _resolve_user_id
+                resolved = _resolve_user_id(user_dir, conn=conn)
+                if resolved == config.user_id:
+                    continue
+                inbox = user_dir / encoded / "sessions"
+                if inbox.is_dir():
+                    count = sum(
+                        1
+                        for f in inbox.glob("*.jsonl")
+                        if not f.name.startswith("agent-")
+                    )
+                    if count > 0:
+                        received_counts[resolved] = count
 
         result.append({
             "name": encoded,

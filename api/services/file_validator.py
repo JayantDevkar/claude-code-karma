@@ -57,6 +57,7 @@ class SyncManifest(BaseModel):
     version: int = 1
     user_id: str
     machine_id: str
+    device_id: Optional[str] = None
     project_path: str = ""
     project_encoded: str = ""
     synced_at: str = ""

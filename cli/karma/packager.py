@@ -221,6 +221,7 @@ class SessionPackager:
         project_dir: Path,
         user_id: str,
         machine_id: str,
+        device_id: Optional[str] = None,
         project_path: str = "",
         extra_dirs: Optional[list[Path]] = None,
         team_name: Optional[str] = None,
@@ -229,6 +230,7 @@ class SessionPackager:
         self.project_dir = Path(project_dir)
         self.user_id = user_id
         self.machine_id = machine_id
+        self.device_id = device_id
         self.project_path = project_path or str(self.project_dir)
 
         self.extra_dirs = [Path(d) for d in (extra_dirs or [])]
@@ -418,6 +420,7 @@ class SessionPackager:
         manifest = SyncManifest(
             user_id=self.user_id,
             machine_id=self.machine_id,
+            device_id=self.device_id,
             project_path=self.project_path,
             project_encoded=self.project_dir.name,
             session_count=len(sessions),

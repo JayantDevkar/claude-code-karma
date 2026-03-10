@@ -114,6 +114,129 @@ class TestProjectStatus:
         resp = client.get("/sync/teams/t1/project-status")
         assert resp.status_code == 400
 
+    def test_received_counts_from_unlisted_dirs(self, mock_db, tmp_path, monkeypatch):
+        """Received counts should scan filesystem, not just DB members."""
+        encoded = "-Users-jay-karma"
+
+        # DB: team with NO members, but one project
+        mock_db.execute("INSERT INTO sync_teams (name, backend) VALUES (?, ?)", ("t1", "syncthing"))
+        mock_db.execute("INSERT INTO projects (encoded_name) VALUES (?)", (encoded,))
+        mock_db.execute("INSERT INTO sync_team_projects (team_name, project_encoded_name, path) VALUES (?, ?, ?)",
+                        ("t1", encoded, "/Users/jay/karma"))
+        mock_db.commit()
+
+        # Local sessions
+        projects_dir = tmp_path / ".claude" / "projects"
+        (projects_dir / encoded).mkdir(parents=True)
+        (projects_dir / encoded / "s1.jsonl").write_text('{"type":"user"}\n')
+
+        # Outbox (local user)
+        outbox = tmp_path / "remote-sessions" / "jay" / encoded / "sessions"
+        outbox.mkdir(parents=True)
+        (outbox / "s1.jsonl").write_text("data")
+
+        # Remote dir with hostname (NOT in sync_members)
+        hostname_inbox = tmp_path / "remote-sessions" / "Bobs-Mac.local" / encoded / "sessions"
+        hostname_inbox.mkdir(parents=True)
+        (hostname_inbox / "b1.jsonl").write_text("data")
+        (hostname_inbox / "b2.jsonl").write_text("data")
+        (hostname_inbox / "b3.jsonl").write_text("data")
+
+        from main import app
+        client = TestClient(app)
+
+        with patch("pathlib.Path.home", return_value=tmp_path), \
+             patch("karma.config.KARMA_BASE", tmp_path):
+            resp = client.get("/sync/teams/t1/project-status")
+
+        assert resp.status_code == 200
+        p = resp.json()["projects"][0]
+        # Should find 3 sessions from Bobs-Mac.local even though it's not a DB member
+        assert p["received_counts"]["Bobs-Mac.local"] == 3
+
+    def test_received_counts_resolves_manifest_user_id(self, mock_db, tmp_path, monkeypatch):
+        """Received counts should use manifest user_id as fallback when no device_id."""
+        import json
+        encoded = "-Users-jay-karma"
+
+        mock_db.execute("INSERT INTO sync_teams (name, backend) VALUES (?, ?)", ("t1", "syncthing"))
+        mock_db.execute("INSERT INTO projects (encoded_name) VALUES (?)", (encoded,))
+        mock_db.execute("INSERT INTO sync_team_projects (team_name, project_encoded_name, path) VALUES (?, ?, ?)",
+                        ("t1", encoded, "/Users/jay/karma"))
+        mock_db.commit()
+
+        (tmp_path / ".claude" / "projects" / encoded).mkdir(parents=True)
+
+        # Remote dir named by hostname, with manifest containing user_id but NO device_id
+        remote_dir = tmp_path / "remote-sessions" / "Alices-MacBook.local" / encoded
+        sessions_dir = remote_dir / "sessions"
+        sessions_dir.mkdir(parents=True)
+        (sessions_dir / "a1.jsonl").write_text("data")
+        (remote_dir / "manifest.json").write_text(json.dumps({
+            "version": 1,
+            "user_id": "alice",
+            "machine_id": "Alices-MacBook.local",
+            "session_count": 1,
+            "sessions": [],
+        }))
+
+        from main import app
+        client = TestClient(app)
+
+        with patch("pathlib.Path.home", return_value=tmp_path), \
+             patch("karma.config.KARMA_BASE", tmp_path):
+            resp = client.get("/sync/teams/t1/project-status")
+
+        assert resp.status_code == 200
+        p = resp.json()["projects"][0]
+        # Key should be "alice" (from manifest user_id fallback), not "Alices-MacBook.local"
+        assert "alice" in p["received_counts"]
+        assert p["received_counts"]["alice"] == 1
+
+    def test_received_counts_resolves_via_device_id(self, mock_db, tmp_path, monkeypatch):
+        """Primary path: manifest.device_id → sync_members DB → member name."""
+        import json
+        encoded = "-Users-jay-karma"
+
+        # DB: team with alice as member (device_id known)
+        mock_db.execute("INSERT INTO sync_teams (name, backend) VALUES (?, ?)", ("t1", "syncthing"))
+        mock_db.execute("INSERT INTO sync_members (team_name, name, device_id) VALUES (?, ?, ?)",
+                        ("t1", "alice", "ALICE-DEVICE-ABC"))
+        mock_db.execute("INSERT INTO projects (encoded_name) VALUES (?)", (encoded,))
+        mock_db.execute("INSERT INTO sync_team_projects (team_name, project_encoded_name, path) VALUES (?, ?, ?)",
+                        ("t1", encoded, "/Users/jay/karma"))
+        mock_db.commit()
+
+        (tmp_path / ".claude" / "projects" / encoded).mkdir(parents=True)
+
+        # Remote dir named by hostname, manifest has device_id matching DB
+        remote_dir = tmp_path / "remote-sessions" / "Alices-MacBook-Pro.local" / encoded
+        sessions_dir = remote_dir / "sessions"
+        sessions_dir.mkdir(parents=True)
+        (sessions_dir / "a1.jsonl").write_text("data")
+        (sessions_dir / "a2.jsonl").write_text("data")
+        (remote_dir / "manifest.json").write_text(json.dumps({
+            "version": 1,
+            "user_id": "alice-old-name",
+            "machine_id": "Alices-MacBook-Pro.local",
+            "device_id": "ALICE-DEVICE-ABC",
+            "session_count": 2,
+            "sessions": [],
+        }))
+
+        from main import app
+        client = TestClient(app)
+
+        with patch("pathlib.Path.home", return_value=tmp_path), \
+             patch("karma.config.KARMA_BASE", tmp_path):
+            resp = client.get("/sync/teams/t1/project-status")
+
+        assert resp.status_code == 200
+        p = resp.json()["projects"][0]
+        # Key should be "alice" (from DB via device_id), NOT "alice-old-name" or hostname
+        assert "alice" in p["received_counts"]
+        assert p["received_counts"]["alice"] == 2
+
     def test_empty_projects(self, mock_db):
         mock_db.execute("INSERT INTO sync_teams (name, backend) VALUES (?, ?)", ("t1", "syncthing"))
         mock_db.commit()

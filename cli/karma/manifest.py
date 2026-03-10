@@ -25,6 +25,7 @@ class SyncManifest(BaseModel):
     version: int = Field(default=1)
     user_id: str
     machine_id: str
+    device_id: Optional[str] = Field(default=None, description="Syncthing device ID of the source machine")
     project_path: str = Field(..., description="Original project path on source machine")
     project_encoded: str = Field(..., description="Claude-encoded project directory name")
     synced_at: str = Field(

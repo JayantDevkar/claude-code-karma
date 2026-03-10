@@ -237,7 +237,7 @@ def _get_remote_sessions_dir() -> Path:
     return settings.karma_base / "remote-sessions"
 
 
-def _resolve_user_id(user_dir: Path) -> str:
+def _resolve_user_id(user_dir: Path, conn=None) -> str:
     """
     Resolve a clean user_id for a remote-sessions user directory.
 
@@ -245,8 +245,17 @@ def _resolve_user_id(user_dir: Path) -> str:
     when Syncthing creates the folder. The manifest.json inside each project
     subdirectory contains the canonical user_id set by the sender.
 
+    Resolution order (most reliable first):
+      1. manifest.device_id → sync_members DB lookup → member name
+      2. manifest.user_id
+      3. directory name (last resort)
+
     Reads the first manifest.json found under the user_dir, caches the result.
     Falls back to directory name if no manifest is available.
+
+    Args:
+        user_dir: Path to a user directory under remote-sessions/.
+        conn: Optional SQLite connection for device_id → member lookup.
     """
     dir_name = user_dir.name
     now = time.monotonic()
@@ -257,7 +266,7 @@ def _resolve_user_id(user_dir: Path) -> str:
         if (now - cache_time) < _RESOLVED_USER_TTL:
             return cached_id
 
-    # Scan project subdirs for a manifest with user_id
+    # Scan project subdirs for a manifest
     resolved = dir_name
     try:
         for project_dir in user_dir.iterdir():
@@ -267,10 +276,24 @@ def _resolve_user_id(user_dir: Path) -> str:
             if manifest_path.exists():
                 with open(manifest_path) as f:
                     manifest = json.load(f)
+
+                # Best: device_id → DB member name lookup
+                device_id = manifest.get("device_id")
+                if device_id and conn is not None:
+                    try:
+                        from db.sync_queries import get_member_by_device_id
+                        member = get_member_by_device_id(conn, device_id)
+                        if member:
+                            resolved = member["name"]
+                            break
+                    except Exception:
+                        pass
+
+                # Fallback: manifest user_id
                 manifest_uid = manifest.get("user_id")
                 if manifest_uid:
                     resolved = manifest_uid
-                    break
+                break
     except (json.JSONDecodeError, OSError) as e:
         logger.debug("Failed to resolve user_id from manifest in %s: %s", dir_name, e)
 
