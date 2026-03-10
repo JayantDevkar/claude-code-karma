@@ -333,11 +333,13 @@ def query_session_stats_by_member(
 
     Both ``session_packaged`` and ``session_received`` represent sessions
     contributed by the member (packaged locally or received from them
-    remotely).  They are combined into a single ``packaged`` count so
-    callers don't need to understand the logging asymmetry.
+    remotely).  They are combined into a single ``out`` count.
 
     When *member_name* is provided the query is scoped to that single member,
     avoiding the cost of aggregating every team member's stats.
+
+    Returns dicts with keys: date, member_name, out, packaged (alias for out),
+    received (always 0, kept for backward compat).
     """
     if member_name:
         rows = conn.execute(
@@ -345,7 +347,7 @@ def query_session_stats_by_member(
             SELECT
                 DATE(created_at) AS date,
                 member_name,
-                COUNT(*) AS packaged
+                COUNT(*) AS out_count
             FROM sync_events
             WHERE team_name = ?
               AND member_name = ?
@@ -362,7 +364,7 @@ def query_session_stats_by_member(
             SELECT
                 DATE(created_at) AS date,
                 member_name,
-                COUNT(*) AS packaged
+                COUNT(*) AS out_count
             FROM sync_events
             WHERE team_name = ?
               AND event_type IN ('session_packaged', 'session_received')
@@ -374,6 +376,12 @@ def query_session_stats_by_member(
             (team_name, f"-{days} days"),
         ).fetchall()
     return [
-        {"date": r[0], "member_name": r[1], "packaged": r[2], "received": 0}
+        {
+            "date": r[0],
+            "member_name": r[1],
+            "out": r[2],
+            "packaged": r[2],  # backward compat alias
+            "received": 0,     # backward compat
+        }
         for r in rows
     ]

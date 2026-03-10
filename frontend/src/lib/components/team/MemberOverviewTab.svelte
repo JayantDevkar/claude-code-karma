@@ -31,13 +31,29 @@
 	let canvas: HTMLCanvasElement;
 	let chart: Chart | null = null;
 
-	// Aggregate session stats by date
+	// Build incoming lookup: date → count
+	let incomingByDate = $derived.by(() => {
+		const map = new Map<string, number>();
+		for (const stat of profile.incoming_stats ?? []) {
+			map.set(stat.date, (map.get(stat.date) ?? 0) + stat.incoming);
+		}
+		return map;
+	});
+
+	// Aggregate session stats by date: out (this member) + in (from others)
 	let dateTotals = $derived.by(() => {
-		const totals = new Map<string, { sessions: number }>();
+		// Collect all dates from both sources
+		const allDates = new Set<string>();
+		for (const stat of profile.session_stats) allDates.add(stat.date);
+		for (const stat of profile.incoming_stats ?? []) allDates.add(stat.date);
+
+		const totals = new Map<string, { out: number; in: number }>();
+		for (const date of allDates) {
+			totals.set(date, { out: 0, in: incomingByDate.get(date) ?? 0 });
+		}
 		for (const stat of profile.session_stats) {
-			const existing = totals.get(stat.date) ?? { sessions: 0 };
-			existing.sessions += stat.packaged + stat.received;
-			totals.set(stat.date, existing);
+			const existing = totals.get(stat.date)!;
+			existing.out += stat.packaged + stat.received;
 		}
 		// Sort by date ascending
 		return new Map([...totals.entries()].sort(([a], [b]) => a.localeCompare(b)));
@@ -61,7 +77,8 @@
 
 	// Chart data derived from dateTotals
 	let chartLabels = $derived([...dateTotals.keys()]);
-	let chartSessionData = $derived([...dateTotals.values()].map((t) => t.sessions));
+	let chartOutData = $derived([...dateTotals.values()].map((t) => t.out));
+	let chartInData = $derived([...dateTotals.values()].map((t) => t.in));
 
 	let memberColor = $derived(getTeamMemberHexColor(profile.user_id));
 
@@ -87,9 +104,15 @@
 					labels: chartLabels,
 					datasets: [
 						{
-							label: 'Sessions',
-							data: chartSessionData,
+							label: 'Out',
+							data: chartOutData,
 							backgroundColor: memberColor,
+							borderRadius: 4
+						},
+						{
+							label: 'In',
+							data: chartInData,
+							backgroundColor: memberColor + '30',
 							borderRadius: 4
 						}
 					]
@@ -101,7 +124,12 @@
 						...createResponsiveConfig().plugins,
 						legend: {
 							...createResponsiveConfig().plugins.legend,
-							display: false
+							position: 'bottom',
+							labels: {
+								boxWidth: 12,
+								padding: 16,
+								font: { size: 11 }
+							}
 						},
 						tooltip: {
 							...createResponsiveConfig().plugins.tooltip,
@@ -117,8 +145,10 @@
 			});
 		} else {
 			chart.data.labels = chartLabels;
-			chart.data.datasets[0].data = chartSessionData;
+			chart.data.datasets[0].data = chartOutData;
 			chart.data.datasets[0].backgroundColor = memberColor;
+			chart.data.datasets[1].data = chartInData;
+			chart.data.datasets[1].backgroundColor = memberColor + '30';
 			chart.update();
 		}
 	});

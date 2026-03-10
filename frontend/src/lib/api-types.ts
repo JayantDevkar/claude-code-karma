@@ -1829,8 +1829,14 @@ export interface SyncEvent {
 export interface TeamSessionStat {
 	date: string;
 	member_name: string;
+	out: number;
 	packaged: number;
 	received: number;
+}
+
+export interface IncomingStat {
+	date: string;
+	incoming: number;
 }
 
 export interface MemberTeamProject {
@@ -1865,6 +1871,7 @@ export interface MemberProfile {
 	teams: MemberTeam[];
 	stats: MemberStats;
 	session_stats: TeamSessionStat[];
+	incoming_stats: IncomingStat[];
 	activity: SyncEvent[];
 }
 
