@@ -48,6 +48,12 @@ from schemas import (
     ResetOptions,
     UpdateTeamSettingsRequest,
 )
+from services.folder_id import (
+    known_names_from_db,
+    known_teams_from_db,
+    parse_karma_folder_id,
+    parse_karma_handshake_id,
+)
 from services.syncthing_proxy import SyncthingNotRunning, SyncthingProxy, run_sync
 from services.watcher_manager import WatcherManager
 
@@ -276,40 +282,12 @@ async def _ensure_inbox_folders(
 def _parse_folder_id(folder_id: str, conn=None):
     """Parse a karma folder ID into (member_name, suffix).
 
-    Expected format: ``karma-out-{member_name}-{suffix}``
-
-    Since both member_name and suffix can contain hyphens, splitting is
-    ambiguous. When a DB connection is provided, all splits are tried and
-    the one matching a known team member is preferred. Without a DB
-    connection, falls back to shortest-name-first (legacy behavior).
-
-    Returns None if the folder ID does not match.
+    .. deprecated:: Use :func:`parse_karma_folder_id` from
+       ``services.folder_id`` directly. This wrapper exists only to
+       minimise churn at call sites that pass ``conn``.
     """
-    prefix = "karma-out-"
-    if not folder_id.startswith(prefix):
-        return None
-    rest = folder_id[len(prefix):]
-    parts = rest.split("-")
-    if len(parts) < 2:
-        return None
-
-    # With DB: try all splits and pick the one matching a known member
-    if conn is not None:
-        known_devices = get_known_devices(conn)
-        known_names = {name for name, _team in known_devices.values()}
-        for i in range(1, len(parts)):
-            candidate_name = "-".join(parts[:i])
-            candidate_suffix = "-".join(parts[i:])
-            if candidate_name in known_names and candidate_suffix:
-                return candidate_name, candidate_suffix
-
-    # Fallback: shortest name first (legacy, no DB)
-    for i in range(1, len(parts)):
-        candidate_name = "-".join(parts[:i])
-        candidate_suffix = "-".join(parts[i:])
-        if candidate_name and candidate_suffix:
-            return candidate_name, candidate_suffix
-    return None
+    known_names = known_names_from_db(conn) if conn is not None else None
+    return parse_karma_folder_id(folder_id, known_names=known_names)
 
 
 def _friendly_project_label(conn, folder_id: str, parsed_suffix: str) -> str:
@@ -362,64 +340,20 @@ def _friendly_project_label(conn, folder_id: str, parsed_suffix: str) -> str:
 def _parse_folder_id_with_hints(folder_id: str, known_user_ids: set[str]):
     """Parse a karma folder ID using known user IDs for accurate splitting.
 
-    The ambiguity in ``karma-out-{user}-{suffix}`` is that both user and
-    suffix can contain hyphens. By checking against known user IDs, we can
-    split correctly.
-
-    Falls back to _parse_folder_id() if no known user matches.
+    .. deprecated:: Use :func:`parse_karma_folder_id` from
+       ``services.folder_id`` directly.
     """
-    prefix = "karma-out-"
-    if not folder_id.startswith(prefix):
-        return None
-    rest = folder_id[len(prefix):]
-
-    # Try known user IDs (longest first to match most specific)
-    for uid in sorted(known_user_ids, key=len, reverse=True):
-        if rest.startswith(uid + "-"):
-            suffix = rest[len(uid) + 1:]
-            if suffix:
-                return uid, suffix
-
-    # Fallback to greedy parse
-    return _parse_folder_id(folder_id)
+    return parse_karma_folder_id(folder_id, known_names=known_user_ids)
 
 
 def _parse_handshake_folder(folder_id: str, conn=None):
     """Parse a karma-join handshake folder ID into (username, team_name).
 
-    Expected format: ``karma-join-{username}-{team_name}``
-
-    Since both username and team_name can contain hyphens, splitting is
-    ambiguous. When a DB connection is provided, all possible splits are
-    tried and the one matching a known team is preferred. Without a DB
-    connection, falls back to shortest-username-first (legacy behavior).
-
-    Returns None if the folder ID does not match.
+    .. deprecated:: Use :func:`parse_karma_handshake_id` from
+       ``services.folder_id`` directly.
     """
-    prefix = "karma-join-"
-    if not folder_id.startswith(prefix):
-        return None
-    rest = folder_id[len(prefix):]
-    parts = rest.split("-")
-    if len(parts) < 2:
-        return None
-
-    # With DB: try all splits and pick the one matching a known team
-    if conn is not None:
-        team_names = {t["name"] for t in list_teams(conn)}
-        for i in range(1, len(parts)):
-            candidate_name = "-".join(parts[:i])
-            candidate_team = "-".join(parts[i:])
-            if candidate_name and candidate_team and candidate_team in team_names:
-                return candidate_name, candidate_team
-
-    # Fallback: shortest username first (legacy, no DB)
-    for i in range(1, len(parts)):
-        candidate_name = "-".join(parts[:i])
-        candidate_team = "-".join(parts[i:])
-        if candidate_name and candidate_team:
-            return candidate_name, candidate_team
-    return None
+    known_teams = known_teams_from_db(conn) if conn is not None else None
+    return parse_karma_handshake_id(folder_id, known_teams=known_teams)
 
 
 async def _ensure_handshake_folder(proxy, config, team_name: str, device_ids: list[str]) -> None:
@@ -481,9 +415,16 @@ def _find_team_for_folder(conn, folder_ids: list[str]) -> Optional[str]:
 async def _ensure_leader_introducers(proxy, conn) -> int:
     """Ensure leader devices are marked as introducers in Syncthing.
 
-    Parses each team's join code to find the leader device_id, then
-    updates the Syncthing config if the introducer flag is missing.
-    This auto-heals existing setups after the introducer feature is deployed.
+    The sync topology is star-shaped: ONLY the leader device (encoded in
+    each team's join code) acts as an introducer.  Every member marks the
+    leader as introducer so Syncthing propagates all devices and shared
+    folders from the leader to all members automatically.  Non-leader
+    members are never marked as introducers — see the comment in
+    ``_auto_accept_pending_peers`` for the rationale.
+
+    This function auto-heals existing setups after the introducer feature
+    is deployed by parsing each team's join code to find the leader
+    device_id and setting the introducer flag if it is missing.
 
     Returns count of devices updated.
     """
@@ -577,7 +518,16 @@ async def _auto_accept_pending_peers(proxy, config, conn) -> tuple[int, dict]:
             if not team_name or not username:
                 continue
 
-            # Auto-accept device in Syncthing
+            # Auto-accept device in Syncthing.
+            # NOTE: We intentionally do NOT set introducer=True here.
+            # The sync topology is star-shaped: only the leader (from the
+            # join code) is marked as an introducer on each member's
+            # Syncthing.  Every member trusts the leader as introducer, so
+            # the leader propagates all devices/folders to all members
+            # automatically.  Marking non-leader devices as introducers
+            # would let any member inject arbitrary devices into the team,
+            # which is a security concern with no topological benefit —
+            # the leader already provides full device/folder discovery.
             try:
                 await run_sync(proxy.add_device, device_id, username)
             except Exception as e:

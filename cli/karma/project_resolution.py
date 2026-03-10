@@ -7,6 +7,7 @@ directories, and auto-sharing Syncthing folders when a new member joins.
 import json
 import sys
 from pathlib import Path
+from typing import Optional
 
 import click
 
@@ -17,6 +18,49 @@ from karma.sync import detect_git_identity
 _API_PATH = Path(__file__).parent.parent.parent / "api"
 if str(_API_PATH) not in sys.path:
     sys.path.insert(0, str(_API_PATH))
+
+
+def _extract_real_path_from_sessions(project_dir: Path) -> Optional[str]:
+    """Extract the real project path from JSONL session files in a Claude project dir.
+
+    Claude encodes project paths lossily (hyphens in path components become
+    indistinguishable from path separators), so we cannot reliably reverse the
+    encoding.  Instead, we read the ``cwd`` field from session JSONL files,
+    which contains the actual filesystem path.
+
+    Args:
+        project_dir: A ``~/.claude/projects/{encoded_name}/`` directory.
+
+    Returns:
+        The real project path string, or ``None`` if no valid cwd is found.
+    """
+    if not project_dir.is_dir():
+        return None
+
+    session_files = sorted(
+        [p for p in project_dir.glob("*.jsonl") if not p.name.startswith("agent-")]
+    )
+    if not session_files:
+        return None
+
+    # Try up to 5 session files (some may be empty or lack cwd)
+    for session_file in session_files[:5]:
+        try:
+            with open(session_file, "r", encoding="utf-8") as f:
+                for i, line in enumerate(f):
+                    if i > 50:
+                        break
+                    try:
+                        data = json.loads(line.strip())
+                        cwd = data.get("cwd")
+                        if cwd and Path(cwd).is_absolute():
+                            return cwd
+                    except json.JSONDecodeError:
+                        continue
+        except (OSError, PermissionError, UnicodeDecodeError):
+            continue
+
+    return None
 
 
 def resolve_local_project(conn, team_name: str, project_encoded_name: str):
@@ -73,6 +117,10 @@ def resolve_local_project(conn, team_name: str, project_encoded_name: str):
     # the suffix. The suffix IS git_identity.replace("/", "-"), so if
     # a local project's git remote normalizes to the same suffix, we
     # have our match — and we now know the git_identity too.
+    #
+    # We extract the real project path from session JSONL files (the
+    # ``cwd`` field) rather than trying to reverse Claude's lossy path
+    # encoding, which mangles hyphens in path components.
     if not git_identity:
         projects_dir = Path.home() / ".claude" / "projects"
         if projects_dir.is_dir():
@@ -82,9 +130,9 @@ def resolve_local_project(conn, team_name: str, project_encoded_name: str):
                 dirname = candidate_dir.name
                 if not dirname.startswith("-"):
                     continue
-                # Reconstruct the project path from the encoded name
-                candidate_path = "/" + dirname[1:].replace("-", "/")
-                if not Path(candidate_path).is_dir():
+                # Extract real path from session cwd instead of lossy decode
+                candidate_path = _extract_real_path_from_sessions(candidate_dir)
+                if not candidate_path or not Path(candidate_path).is_dir():
                     continue
                 candidate_git_id = detect_git_identity(candidate_path)
                 if candidate_git_id and candidate_git_id.replace("/", "-") == project_encoded_name:
@@ -126,6 +174,8 @@ def resolve_local_project(conn, team_name: str, project_encoded_name: str):
         return resolved_encoded, resolved_path, git_identity
 
     # ── Step C: Scan ~/.claude/projects/ dirs for matching git remote ─
+    # Uses session JSONL cwd extraction instead of lossy path decoding,
+    # so projects with hyphens in their path components can be resolved.
     projects_dir = Path.home() / ".claude" / "projects"
     if not projects_dir.is_dir():
         return None
@@ -136,9 +186,9 @@ def resolve_local_project(conn, team_name: str, project_encoded_name: str):
         dirname = candidate_dir.name
         if not dirname.startswith("-"):
             continue
-        # Reconstruct the project path from the encoded name
-        candidate_path = "/" + dirname[1:].replace("-", "/")
-        if not Path(candidate_path).is_dir():
+        # Extract real path from session cwd instead of lossy decode
+        candidate_path = _extract_real_path_from_sessions(candidate_dir)
+        if not candidate_path or not Path(candidate_path).is_dir():
             continue
         candidate_git_id = detect_git_identity(candidate_path)
         if candidate_git_id and candidate_git_id == git_identity:

@@ -11,7 +11,7 @@ Example: `karma-out-alice-bob-my-app` could be:
 - member=`alice`, suffix=`bob-my-app`
 - member=`alice-bob`, suffix=`my-app`
 
-The current parser picks the shortest prefix (first hyphen split). The CLI has a smarter `_extract_username_from_karma_folder()` that cross-references known member names from the DB, which resolves most real-world cases.
+The consolidated parser in `api/services/folder_id.py` (`parse_karma_folder_id`) accepts an optional `known_names` set for DB-backed disambiguation, falling back to shortest-prefix-first when no hints are available.
 
 ## Impact
 

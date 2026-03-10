@@ -17,6 +17,7 @@ if str(_API_PATH) not in sys.path:
     sys.path.insert(0, str(_API_PATH))
 
 from services.file_validator import SAFE_PATH_PART  # noqa: E402
+from services.folder_id import parse_karma_folder_id  # noqa: E402
 
 
 def _handle_join_folder(st, folder_id: str, device_id: str, member_name: str) -> None:
@@ -126,9 +127,7 @@ def _handle_peer_outbox(
     from karma.project_resolution import resolve_local_project
 
     # Use smart disambiguation to extract sender and suffix
-    parsed = _extract_username_from_karma_folder(folder_id, "karma-out-", known_names)
-    if not parsed:
-        parsed = _parse_folder_id(folder_id)
+    parsed = parse_karma_folder_id(folder_id, known_names=known_names)
     if not parsed:
         click.echo(
             f"  Skipped folder '{folder_id}' from {member_name} "
@@ -359,49 +358,3 @@ def accept_pending_folders(st, config, conn, *, auto_only=False, only_folder_id=
     return accepted
 
 
-# ── Folder ID parsing helpers (used within this module) ────────────────
-
-def _parse_folder_id(folder_id: str) -> Optional[tuple[str, str]]:
-    """Parse a karma folder ID into (member_name, suffix).
-
-    Expected format: ``karma-out-{member_name}-{suffix}``
-    where *suffix* may itself contain hyphens.
-
-    Returns ``None`` if the folder ID does not match the expected pattern.
-    """
-    prefix = "karma-out-"
-    if not folder_id.startswith(prefix):
-        return None
-    rest = folder_id[len(prefix):]
-    parts = rest.split("-")
-    if len(parts) < 2:
-        return None
-    for i in range(1, len(parts)):
-        candidate_name = "-".join(parts[:i])
-        candidate_suffix = "-".join(parts[i:])
-        if candidate_name and candidate_suffix:
-            return candidate_name, candidate_suffix
-    return None
-
-
-def _extract_username_from_karma_folder(
-    folder_id: str, prefix: str, known_names: set,
-) -> Optional[tuple[str, str]]:
-    """Extract (username, remainder) from a karma folder ID.
-
-    Uses ``known_names`` (own user_id + real usernames discovered from
-    handshake folders) to correctly disambiguate multi-dash usernames.
-    Falls back to shortest-split when no known name matches.
-    """
-    rest = folder_id[len(prefix):]
-    # Try known names longest-first for greedy match
-    for name in sorted(known_names, key=len, reverse=True):
-        if rest.startswith(name + "-"):
-            remainder = rest[len(name) + 1:]
-            if remainder:
-                return name, remainder
-    # Fallback: shortest split
-    parts = rest.split("-", 1)
-    if len(parts) == 2 and parts[0] and parts[1]:
-        return parts[0], parts[1]
-    return None
