@@ -1849,6 +1849,8 @@ export interface MemberTeam {
 
 export interface MemberStats {
 	total_sessions: number;
+	sessions_sent: number;
+	sessions_received: number;
 	total_projects: number;
 	last_active: string | null;
 }

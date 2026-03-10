@@ -51,6 +51,10 @@
 	// Data state
 	let sessions = $state<SessionWithContext[]>([]);
 	let loading = $state(true);
+	let loadingMore = $state(false);
+	let hasMore = $state(false);
+	let currentPage = $state(1);
+	const PAGE_SIZE = 200;
 	let error = $state<string | null>(null);
 
 	// View mode
@@ -95,14 +99,17 @@
 	// Fetch sessions from /sessions/all with user filter
 	// Local machine sessions have source=local and no remote_user_id,
 	// so we query differently for the local device vs remote members.
-	async function fetchSessions() {
-		loading = true;
-		error = null;
+	async function fetchSessions(page: number = 1) {
+		const isFirstPage = page === 1;
+		if (isFirstPage) {
+			loading = true;
+			error = null;
+		} else {
+			loadingMore = true;
+		}
 		try {
-			const params = new URLSearchParams({ per_page: '200' });
+			const params = new URLSearchParams({ per_page: String(PAGE_SIZE), page: String(page) });
 			if (profile.is_you) {
-				// Local sessions have source=local and no remote_user_id.
-				// Fetch all local, then filter to shared projects client-side.
 				params.set('source', 'local');
 			} else {
 				params.set('source', 'remote');
@@ -125,12 +132,24 @@
 					fetched = fetched.filter((s) => sharedProjects.has(s.project_encoded_name ?? ''));
 				}
 			}
-			sessions = fetched;
+
+			if (isFirstPage) {
+				sessions = fetched;
+			} else {
+				sessions = [...sessions, ...fetched];
+			}
+			currentPage = page;
+			hasMore = data.sessions.length >= PAGE_SIZE;
 		} catch {
 			error = 'Network error loading sessions';
 		} finally {
 			loading = false;
+			loadingMore = false;
 		}
+	}
+
+	function loadMore() {
+		fetchSessions(currentPage + 1);
 	}
 
 	onMount(() => {
@@ -484,6 +503,28 @@
 							</div>
 						</div>
 					{/each}
+				</div>
+			{/if}
+
+			<!-- Load More -->
+			{#if hasMore}
+				<div class="flex justify-center pt-4">
+					<button
+						onclick={loadMore}
+						disabled={loadingMore}
+						class="px-6 py-2 text-sm font-medium rounded-lg border border-[var(--border)]
+							text-[var(--text-secondary)] hover:text-[var(--text-primary)]
+							hover:bg-[var(--bg-muted)] transition-colors disabled:opacity-50"
+					>
+						{#if loadingMore}
+							<span class="inline-flex items-center gap-2">
+								<Loader2 size={14} class="animate-spin" />
+								Loading...
+							</span>
+						{:else}
+							Load more sessions
+						{/if}
+					</button>
 				</div>
 			{/if}
 		{:else if hasActiveFilters || searchTokens.length > 0 || selectedProjectFilters.size > 0}

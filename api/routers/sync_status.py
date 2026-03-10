@@ -2374,15 +2374,40 @@ async def sync_member_profile(identifier: str) -> Any:
     except Exception:
         pass  # Syncthing not running — use defaults
 
-    # Build per-team info and aggregate stats
-    teams = []
-    total_sessions = 0
-    project_set = set()
-
     # Build a device-connected lookup from already-fetched devices
     connected_device_ids: set[str] = {
         dev["device_id"] for dev in devices if dev.get("connected")
     }
+
+    # Batch: fetch all per-project session counts for this member in one query
+    # instead of N separate COUNT(*) queries (N = total projects across teams).
+    team_placeholders = ",".join("?" for _ in team_names)
+    session_count_rows = conn.execute(
+        f"""SELECT team_name, project_encoded_name,
+                   SUM(CASE WHEN event_type = 'session_packaged' THEN 1 ELSE 0 END) AS sent,
+                   SUM(CASE WHEN event_type = 'session_received' THEN 1 ELSE 0 END) AS received
+            FROM sync_events
+            WHERE member_name = ?
+              AND team_name IN ({team_placeholders})
+              AND event_type IN ('session_packaged', 'session_received')
+            GROUP BY team_name, project_encoded_name""",
+        (member_name, *team_names),
+    ).fetchall()
+
+    # Build lookup: (team_name, project_encoded_name) → {sent, received, total}
+    session_counts: dict[tuple[str, str], dict] = {}
+    for r in session_count_rows:
+        session_counts[(r["team_name"], r["project_encoded_name"])] = {
+            "sent": r["sent"],
+            "received": r["received"],
+            "total": r["sent"] + r["received"],
+        }
+
+    # Build per-team info and aggregate stats
+    teams = []
+    total_sent = 0
+    total_received = 0
+    project_set: set[str] = set()
 
     for team_name in team_names:
         members = list_members(conn, team_name)
@@ -2392,23 +2417,17 @@ async def sync_member_profile(identifier: str) -> Any:
             1 for m in members if m["device_id"] in connected_device_ids
         )
 
-        # Per-project session counts for this member (via sync_events)
         team_projects = []
         for p in projects:
             encoded = p["project_encoded_name"]
             project_set.add(encoded)
-            count_row = conn.execute(
-                """SELECT COUNT(*) FROM sync_events
-                   WHERE team_name = ? AND member_name = ? AND project_encoded_name = ?
-                     AND event_type IN ('session_packaged', 'session_received')""",
-                (team_name, member_name, encoded),
-            ).fetchone()
-            session_count = count_row[0] if count_row else 0
-            total_sessions += session_count
+            counts = session_counts.get((team_name, encoded), {"sent": 0, "received": 0, "total": 0})
+            total_sent += counts["sent"]
+            total_received += counts["received"]
             team_projects.append({
                 "encoded_name": encoded,
                 "name": p.get("path", "").split("/")[-1] if p.get("path") else encoded,
-                "session_count": session_count,
+                "session_count": counts["total"],
             })
 
         teams.append({
@@ -2426,12 +2445,12 @@ async def sync_member_profile(identifier: str) -> Any:
     ).fetchone()
     last_active = last_row[0] if last_row else None
 
-    # Session stats across all teams
+    # Session stats — scoped to this member only (avoids fetching all members' data)
     all_session_stats = []
     for team_name in team_names:
-        all_session_stats.extend(query_session_stats_by_member(conn, team_name, 30))
-    # Filter to only this member's stats
-    session_stats = [s for s in all_session_stats if s["member_name"] == member_name]
+        all_session_stats.extend(
+            query_session_stats_by_member(conn, team_name, 30, member_name=member_name)
+        )
 
     # Recent activity events
     activity_rows = query_events(conn, member_name=member_name, limit=50)
@@ -2445,11 +2464,13 @@ async def sync_member_profile(identifier: str) -> Any:
         "out_bytes_total": out_bytes_total,
         "teams": teams,
         "stats": {
-            "total_sessions": total_sessions,
+            "total_sessions": total_sent + total_received,
+            "sessions_sent": total_sent,
+            "sessions_received": total_received,
             "total_projects": len(project_set),
             "last_active": last_active,
         },
-        "session_stats": session_stats,
+        "session_stats": all_session_stats,
         "activity": activity_rows,
     }
 

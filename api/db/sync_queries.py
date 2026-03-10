@@ -327,25 +327,49 @@ def query_session_stats_by_member(
     conn: sqlite3.Connection,
     team_name: str,
     days: int = 30,
+    member_name: Optional[str] = None,
 ) -> list[dict]:
-    """Aggregate session_packaged and session_received events per member per day."""
-    rows = conn.execute(
-        """
-        SELECT
-            DATE(created_at) AS date,
-            member_name,
-            SUM(CASE WHEN event_type = 'session_packaged' THEN 1 ELSE 0 END) AS packaged,
-            SUM(CASE WHEN event_type = 'session_received' THEN 1 ELSE 0 END) AS received
-        FROM sync_events
-        WHERE team_name = ?
-          AND event_type IN ('session_packaged', 'session_received')
-          AND member_name IS NOT NULL
-          AND created_at >= datetime('now', ?)
-        GROUP BY date, member_name
-        ORDER BY date
-        """,
-        (team_name, f"-{days} days"),
-    ).fetchall()
+    """Aggregate session_packaged and session_received events per member per day.
+
+    When *member_name* is provided the query is scoped to that single member,
+    avoiding the cost of aggregating every team member's stats.
+    """
+    if member_name:
+        rows = conn.execute(
+            """
+            SELECT
+                DATE(created_at) AS date,
+                member_name,
+                SUM(CASE WHEN event_type = 'session_packaged' THEN 1 ELSE 0 END) AS packaged,
+                SUM(CASE WHEN event_type = 'session_received' THEN 1 ELSE 0 END) AS received
+            FROM sync_events
+            WHERE team_name = ?
+              AND member_name = ?
+              AND event_type IN ('session_packaged', 'session_received')
+              AND created_at >= datetime('now', ?)
+            GROUP BY date, member_name
+            ORDER BY date
+            """,
+            (team_name, member_name, f"-{days} days"),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            """
+            SELECT
+                DATE(created_at) AS date,
+                member_name,
+                SUM(CASE WHEN event_type = 'session_packaged' THEN 1 ELSE 0 END) AS packaged,
+                SUM(CASE WHEN event_type = 'session_received' THEN 1 ELSE 0 END) AS received
+            FROM sync_events
+            WHERE team_name = ?
+              AND event_type IN ('session_packaged', 'session_received')
+              AND member_name IS NOT NULL
+              AND created_at >= datetime('now', ?)
+            GROUP BY date, member_name
+            ORDER BY date
+            """,
+            (team_name, f"-{days} days"),
+        ).fetchall()
     return [
         {"date": r[0], "member_name": r[1], "packaged": r[2], "received": r[3]}
         for r in rows

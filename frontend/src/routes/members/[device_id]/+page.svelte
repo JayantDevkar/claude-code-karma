@@ -140,9 +140,12 @@
 					<span
 						class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium border"
 						style="background: {hexColor}0a; border-color: {hexColor}20; color: var(--text-primary);"
+						title="{profile.stats.sessions_sent} sent, {profile.stats.sessions_received} received"
 					>
 						<Activity size={12} style="color: {hexColor};" />
-						<strong>{profile.stats.total_sessions}</strong> sessions
+						<strong>{profile.stats.sessions_sent}</strong> sent
+						<span class="text-[var(--text-faint)]">/</span>
+						<strong>{profile.stats.sessions_received}</strong> received
 					</span>
 					<span
 						class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium border"
