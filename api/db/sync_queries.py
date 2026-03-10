@@ -382,7 +382,7 @@ def query_session_stats_by_member(
             SELECT
                 DATE(created_at, 'localtime') AS date,
                 member_name,
-                COUNT(*) AS out_count
+                COUNT(DISTINCT session_uuid) AS out_count
             FROM sync_events
             WHERE team_name = ?
               AND member_name = ?
@@ -399,7 +399,7 @@ def query_session_stats_by_member(
             SELECT
                 DATE(created_at, 'localtime') AS date,
                 member_name,
-                COUNT(*) AS out_count
+                COUNT(DISTINCT session_uuid) AS out_count
             FROM sync_events
             WHERE team_name = ?
               AND event_type IN ('session_packaged', 'session_received')

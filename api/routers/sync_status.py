@@ -2408,8 +2408,8 @@ async def sync_member_profile(identifier: str) -> Any:
     team_placeholders = ",".join("?" for _ in team_names)
     session_count_rows = conn.execute(
         f"""SELECT team_name, project_encoded_name,
-                   SUM(CASE WHEN event_type = 'session_packaged' THEN 1 ELSE 0 END) AS packaged,
-                   SUM(CASE WHEN event_type = 'session_received' THEN 1 ELSE 0 END) AS received_from
+                   COUNT(DISTINCT CASE WHEN event_type = 'session_packaged' THEN session_uuid END) AS packaged,
+                   COUNT(DISTINCT CASE WHEN event_type = 'session_received' THEN session_uuid END) AS received_from
             FROM sync_events
             WHERE member_name = ?
               AND team_name IN ({team_placeholders})
@@ -2482,7 +2482,7 @@ async def sync_member_profile(identifier: str) -> Any:
 
     # Incoming stats — sessions from OTHER members per day (what this member receives)
     incoming_rows = conn.execute(
-        """SELECT DATE(created_at, 'localtime') AS date, COUNT(*) AS incoming
+        """SELECT DATE(created_at, 'localtime') AS date, COUNT(DISTINCT session_uuid) AS incoming
            FROM sync_events
            WHERE team_name IN ({})
              AND member_name != ?
