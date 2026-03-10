@@ -1643,6 +1643,10 @@ class UpdateTeamSettingsRequest(BaseModel):
     sync_direction: Optional[str] = None  # 'both', 'send_only', 'receive_only', 'none'
 
 
+class UpdateMemberSettingsRequest(BaseModel):
+    sync_direction: Optional[str] = None  # 'both', 'send_only', 'receive_only', 'none', or null to clear
+
+
 class ResetOptions(BaseModel):
     """Options for sync reset."""
     uninstall_syncthing: bool = False  # Remove Syncthing config directory

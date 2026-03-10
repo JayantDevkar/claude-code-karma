@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { API_BASE } from '$lib/config';
-	import { Wifi, WifiOff, Trash2, Loader2, ArrowUpDown } from 'lucide-svelte';
+	import { Wifi, WifiOff, Trash2, Loader2, ArrowUpDown, Settings } from 'lucide-svelte';
 	import type { SyncTeamMember, SyncDevice, TeamSessionStat } from '$lib/api-types';
 	import { getTeamMemberColor, getTeamMemberHexColor, formatBytes } from '$lib/utils';
 	import MemberSparkline from './MemberSparkline.svelte';
@@ -143,7 +143,19 @@
 							</span>
 						</div>
 
-						<!-- Remove button (top-right) -->
+						<!-- Settings + Remove buttons (top-right) -->
+						{#if !self}
+							<a
+								href="/members/{encodeURIComponent(member.device_id)}?tab=settings"
+								onclick={(e) => e.stopPropagation()}
+								class="p-1 rounded text-[var(--text-muted)] hover:text-[var(--accent)] hover:bg-[var(--accent)]/10 transition-colors shrink-0"
+								title="Member settings"
+								aria-label="Settings for {member.name}"
+							>
+								<Settings size={13} />
+							</a>
+						{/if}
+
 						{#if !self}
 							{#if confirmRemove === member.name}
 								<div class="flex items-center gap-1 shrink-0">

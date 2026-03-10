@@ -5,6 +5,7 @@
 	import MemberSessionsTab from '$lib/components/team/MemberSessionsTab.svelte';
 	import MemberTeamsTab from '$lib/components/team/MemberTeamsTab.svelte';
 	import MemberActivityTab from '$lib/components/team/MemberActivityTab.svelte';
+	import MemberSettingsTab from '$lib/components/team/MemberSettingsTab.svelte';
 	import { onMount } from 'svelte';
 	import { browser } from '$app/environment';
 	import {
@@ -12,6 +13,7 @@
 		FolderGit2,
 		Users,
 		Activity,
+		Settings,
 		Wifi,
 		WifiOff,
 		AlertTriangle,
@@ -24,7 +26,7 @@
 	let { data } = $props();
 
 	// Tab state
-	const validTabs = ['overview', 'sessions', 'teams', 'activity'];
+	const validTabs = ['overview', 'sessions', 'teams', 'activity', 'settings'];
 	let activeTab = $state('overview');
 	let tabsReady = $state(false);
 
@@ -180,6 +182,7 @@
 			<TabsTrigger value="sessions" icon={FolderGit2}>Sessions</TabsTrigger>
 			<TabsTrigger value="teams" icon={Users}>Teams ({profile.teams.length})</TabsTrigger>
 			<TabsTrigger value="activity" icon={Activity}>Activity</TabsTrigger>
+			<TabsTrigger value="settings" icon={Settings}>Settings</TabsTrigger>
 		</Tabs.List>
 
 		<Tabs.Content value="overview">
@@ -196,6 +199,10 @@
 
 		<Tabs.Content value="activity">
 			<MemberActivityTab {profile} />
+		</Tabs.Content>
+
+		<Tabs.Content value="settings">
+			<MemberSettingsTab {profile} />
 		</Tabs.Content>
 	</Tabs.Root>
 {:else}

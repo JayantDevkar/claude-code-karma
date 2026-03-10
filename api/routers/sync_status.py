@@ -23,6 +23,7 @@ from db.sync_queries import (
     add_member,
     upsert_member,
     remove_member,
+    get_member_by_device_id,
     list_members,
     add_team_project,
     remove_team_project,
@@ -38,6 +39,7 @@ from db.sync_queries import (
     update_team_session_limit,
     cleanup_data_for_member,
     get_effective_setting,
+    get_setting,
     set_setting,
     delete_setting,
     list_settings,
@@ -53,13 +55,18 @@ from schemas import (
     InitRequest,
     JoinTeamRequest,
     ResetOptions,
+    UpdateMemberSettingsRequest,
     UpdateTeamSettingsRequest,
 )
 from services.folder_id import (
-    known_names_from_db,
-    known_teams_from_db,
-    parse_karma_folder_id,
-    parse_karma_handshake_id,
+    build_handshake_id,
+    build_outbox_id,
+    is_handshake_folder,
+    is_karma_folder,
+    is_outbox_folder,
+    parse_handshake_id,
+    parse_outbox_id,
+    OUTBOX_PREFIX,
 )
 from services.syncthing_proxy import SyncthingNotRunning, SyncthingProxy, run_sync
 from services.sync_policy import should_auto_accept_device
@@ -223,7 +230,7 @@ async def _ensure_outbox_folder(proxy, config, encoded: str, proj_suffix: str, d
     """
     from karma.config import KARMA_BASE
 
-    outbox_id = f"karma-out-{config.user_id}-{proj_suffix}"
+    outbox_id = build_outbox_id(config.user_id, proj_suffix)
     outbox_path = str(KARMA_BASE / "remote-sessions" / config.user_id / encoded)
     Path(outbox_path).mkdir(parents=True, exist_ok=True)
 
@@ -268,7 +275,7 @@ async def _ensure_inbox_folders(
             continue
 
         inbox_path = str(KARMA_BASE / "remote-sessions" / m["name"] / encoded)
-        inbox_id = f"karma-out-{m['name']}-{proj_suffix}"
+        inbox_id = build_outbox_id(m['name'], proj_suffix)
         inbox_devices = [m["device_id"]]
         if config.syncthing.device_id:
             inbox_devices.append(config.syncthing.device_id)
@@ -287,16 +294,6 @@ async def _ensure_inbox_folders(
     return result
 
 
-def _parse_folder_id(folder_id: str, conn=None):
-    """Parse a karma folder ID into (member_name, suffix).
-
-    .. deprecated:: Use :func:`parse_karma_folder_id` from
-       ``services.folder_id`` directly. This wrapper exists only to
-       minimise churn at call sites that pass ``conn``.
-    """
-    known_names = known_names_from_db(conn) if conn is not None else None
-    return parse_karma_folder_id(folder_id, known_names=known_names)
-
 
 def _friendly_project_label(conn, folder_id: str, parsed_suffix: str) -> str:
     """Extract a human-readable project label from a folder ID.
@@ -314,7 +311,7 @@ def _friendly_project_label(conn, folder_id: str, parsed_suffix: str) -> str:
              git_identity "jayantdevkar/claude-code-karma"
              → label "claude-code-karma"
     """
-    rest = folder_id[len("karma-out-"):] if folder_id.startswith("karma-out-") else parsed_suffix
+    rest = folder_id[len(OUTBOX_PREFIX):] if is_outbox_folder(folder_id) else parsed_suffix
 
     # Strategy 1: Find a git_identity whose normalized form appears in the folder ID
     try:
@@ -345,24 +342,6 @@ def _friendly_project_label(conn, folder_id: str, parsed_suffix: str) -> str:
     return parsed_suffix
 
 
-def _parse_folder_id_with_hints(folder_id: str, known_user_ids: set[str]):
-    """Parse a karma folder ID using known user IDs for accurate splitting.
-
-    .. deprecated:: Use :func:`parse_karma_folder_id` from
-       ``services.folder_id`` directly.
-    """
-    return parse_karma_folder_id(folder_id, known_names=known_user_ids)
-
-
-def _parse_handshake_folder(folder_id: str, conn=None):
-    """Parse a karma-join handshake folder ID into (username, team_name).
-
-    .. deprecated:: Use :func:`parse_karma_handshake_id` from
-       ``services.folder_id`` directly.
-    """
-    known_teams = known_teams_from_db(conn) if conn is not None else None
-    return parse_karma_handshake_id(folder_id, known_teams=known_teams)
-
 
 async def _ensure_handshake_folder(proxy, config, team_name: str, device_ids: list[str]) -> None:
     """Create a lightweight handshake folder to signal team membership.
@@ -373,7 +352,7 @@ async def _ensure_handshake_folder(proxy, config, team_name: str, device_ids: li
     """
     from karma.config import KARMA_BASE
 
-    folder_id = f"karma-join-{config.user_id}-{team_name}"
+    folder_id = build_handshake_id(config.user_id, team_name)
     folder_path = str(KARMA_BASE / "handshakes" / team_name)
     Path(folder_path).mkdir(parents=True, exist_ok=True)
 
@@ -394,7 +373,7 @@ def _find_team_for_folder(conn, folder_ids: list[str]) -> Optional[str]:
     """
     # Fast path: handshake folders contain the team name directly
     for folder_id in folder_ids:
-        parsed = _parse_handshake_folder(folder_id, conn=conn)
+        parsed = parse_handshake_id(folder_id)
         if parsed:
             _, team_name = parsed
             # Verify this team exists locally
@@ -406,7 +385,7 @@ def _find_team_for_folder(conn, folder_ids: list[str]) -> Optional[str]:
     team_projects = {t["name"]: list_team_projects(conn, t["name"]) for t in teams}
 
     for folder_id in folder_ids:
-        parsed = _parse_folder_id(folder_id, conn=conn)
+        parsed = parse_outbox_id(folder_id)
         if not parsed:
             continue
         _, suffix = parsed
@@ -435,19 +414,17 @@ def _extract_username_from_folder_ids(folder_ids: list[str], conn=None) -> Optio
     """
     candidates: list[str] = []
     for folder_id in folder_ids:
-        hs = _parse_handshake_folder(folder_id, conn=conn)
+        hs = parse_handshake_id(folder_id)
         if hs:
             # Handshake folders are authoritative
             return hs[0]
-        parsed = _parse_folder_id(folder_id, conn=conn)
+        parsed = parse_outbox_id(folder_id)
         if parsed:
             candidate_name, _ = parsed
             candidates.append(candidate_name)
     if not candidates:
         return None
-    # Prefer non-hostname names (no dots)
-    non_hostname = [n for n in candidates if "." not in n]
-    return non_hostname[0] if non_hostname else candidates[0]
+    return candidates[0]
 
 
 async def _reconcile_introduced_devices(proxy, config, conn) -> int:
@@ -514,7 +491,7 @@ async def _reconcile_introduced_devices(proxy, config, conn) -> int:
         karma_folder_ids = []
         for folder in configured_folders:
             folder_id = folder.get("id", "")
-            if not folder_id.startswith("karma-"):
+            if not is_karma_folder(folder_id):
                 continue
             if folder.get("type") != "receiveonly":
                 continue
@@ -525,54 +502,21 @@ async def _reconcile_introduced_devices(proxy, config, conn) -> int:
         if not karma_folder_ids:
             continue
 
-        # Extract username by validating all possible splits against known
-        # team project suffixes.  We can't use known_names (the member
-        # isn't in the DB yet — that's the whole point of reconciliation).
-        # Instead, anchor on the project suffix which IS known.
         username = None
         team_name = None
 
-        # Collect ALL valid (username, team_name) pairs from folder IDs,
-        # then pick the best one.  Multiple folders for the same device
-        # may yield different names — e.g. one from a stale hostname-based
-        # folder and one from the correct machine_id-based folder.
-        candidates: list[tuple[str, str]] = []
-
         for folder_id in karma_folder_ids:
-            # Try handshake folders first (team name is the anchor)
-            hs = _parse_handshake_folder(folder_id, conn=conn)
+            hs = parse_handshake_id(folder_id)
             if hs:
-                # Handshake folders are authoritative — use immediately
                 username, team_name = hs
-                candidates = [(username, team_name)]
                 break
-
-            # For karma-out-* folders, try all splits and validate suffix
-            if not folder_id.startswith("karma-out-"):
-                continue
-            rest = folder_id[len("karma-out-"):]
-            parts = rest.split("-")
-            # Try longest username first — the project suffix is shorter
-            # and more likely to match exactly.
-            for i in range(len(parts) - 1, 0, -1):
-                candidate_name = "-".join(parts[:i])
-                candidate_suffix = "-".join(parts[i:])
+            parsed = parse_outbox_id(folder_id)
+            if parsed:
+                candidate_name, candidate_suffix = parsed
                 if candidate_suffix in project_suffix_map:
-                    candidates.append(
-                        (candidate_name, project_suffix_map[candidate_suffix])
-                    )
+                    username = candidate_name
+                    team_name = project_suffix_map[candidate_suffix]
                     break
-
-        # Pick the best candidate: prefer names without dots (hostnames
-        # like "Ayushs-Mac-mini.local" contain dots; karma user_ids and
-        # machine_ids never do).
-        if candidates:
-            non_hostname = [
-                (n, t) for n, t in candidates if "." not in n
-            ]
-            username, team_name = (
-                non_hostname[0] if non_hostname else candidates[0]
-            )
 
         if not team_name or not username:
             continue
@@ -674,7 +618,7 @@ async def _auto_accept_pending_peers(proxy, config, conn) -> tuple[int, dict]:
             # Collect karma-* folders offered by this device (pending)
             karma_folders = []
             for folder_id, info in pending_folders.items():
-                if not folder_id.startswith("karma-"):
+                if not is_karma_folder(folder_id):
                     continue
                 if device_id in info.get("offeredBy", {}):
                     karma_folders.append(folder_id)
@@ -686,7 +630,7 @@ async def _auto_accept_pending_peers(proxy, config, conn) -> tuple[int, dict]:
             if not karma_folders:
                 for folder in configured_folders:
                     folder_id = folder.get("id", "")
-                    if not folder_id.startswith("karma-"):
+                    if not is_karma_folder(folder_id):
                         continue
                     folder_device_ids = {
                         d.get("deviceID") for d in folder.get("devices", [])
@@ -1217,8 +1161,8 @@ async def _cleanup_syncthing_for_team(proxy, config, conn, team_name: str) -> di
             folder_id = folder.get("id", "")
 
             # Check karma-out-* folders (outbox + inbox)
-            if folder_id.startswith("karma-out-"):
-                parsed = _parse_folder_id(folder_id, conn=conn)
+            if is_outbox_folder(folder_id):
+                parsed = parse_outbox_id(folder_id)
                 if parsed and parsed[1] in proj_suffixes and parsed[0] in member_names:
                     try:
                         await run_sync(proxy.remove_folder, folder_id)
@@ -1227,8 +1171,8 @@ async def _cleanup_syncthing_for_team(proxy, config, conn, team_name: str) -> di
                         logger.warning("Failed to remove folder %s: %s", folder_id, e)
 
             # Check karma-join-* folders (handshake)
-            elif folder_id.startswith("karma-join-"):
-                parsed = _parse_handshake_folder(folder_id, conn=conn)
+            elif is_handshake_folder(folder_id):
+                parsed = parse_handshake_id(folder_id)
                 if parsed and parsed[1] == team_name:
                     try:
                         await run_sync(proxy.remove_folder, folder_id)
@@ -1281,9 +1225,9 @@ async def _cleanup_syncthing_for_member(
         folders = await run_sync(proxy.get_folder_status)
         for folder in folders:
             folder_id = folder.get("id", "")
-            if not folder_id.startswith("karma-out-"):
+            if not is_outbox_folder(folder_id):
                 continue
-            parsed = _parse_folder_id(folder_id, conn=conn)
+            parsed = parse_outbox_id(folder_id)
             if not parsed or parsed[1] not in proj_suffixes:
                 continue
 
@@ -1310,7 +1254,7 @@ async def _cleanup_syncthing_for_member(
         logger.warning("Failed to scan Syncthing folders for member cleanup: %s", e)
 
     # Remove handshake folder if exists
-    handshake_id = f"karma-join-{member_name}-{team_name}"
+    handshake_id = build_handshake_id(member_name, team_name)
     try:
         await run_sync(proxy.remove_folder, handshake_id)
     except Exception as e:
@@ -1601,7 +1545,7 @@ async def sync_accept_pending_device(device_id: str, req: AcceptPendingDeviceReq
         try:
             pending_folders = await run_sync(proxy.get_pending_folders)
             for folder_id, info in pending_folders.items():
-                if not folder_id.startswith("karma-"):
+                if not is_karma_folder(folder_id):
                     continue
                 if device_id in info.get("offeredBy", {}):
                     karma_folder_ids.append(folder_id)
@@ -1612,7 +1556,7 @@ async def sync_accept_pending_device(device_id: str, req: AcceptPendingDeviceReq
                 configured_folders = await run_sync(proxy.get_configured_folders)
                 for folder in configured_folders:
                     folder_id = folder.get("id", "")
-                    if not folder_id.startswith("karma-"):
+                    if not is_karma_folder(folder_id):
                         continue
                     folder_device_ids = {
                         d.get("deviceID") for d in folder.get("devices", [])
@@ -1898,7 +1842,7 @@ async def sync_remove_team_project(team_name: str, project_name: str) -> Any:
         if config is not None:
             proxy = get_proxy()
             # Remove outbox folder
-            outbox_id = f"karma-out-{config.user_id}-{proj_suffix}"
+            outbox_id = build_outbox_id(config.user_id, proj_suffix)
             try:
                 await run_sync(proxy.remove_folder, outbox_id)
                 folders_removed += 1
@@ -1909,7 +1853,7 @@ async def sync_remove_team_project(team_name: str, project_name: str) -> Any:
             for m in members:
                 if m["device_id"] == config.syncthing.device_id:
                     continue
-                inbox_id = f"karma-out-{m['name']}-{proj_suffix}"
+                inbox_id = build_outbox_id(m['name'], proj_suffix)
                 try:
                     await run_sync(proxy.remove_folder, inbox_id)
                     folders_removed += 1
@@ -1987,7 +1931,7 @@ async def sync_team_sync_now(team_name: str) -> Any:
                         proxy = get_proxy()
                         git_id = local.get("git_identity")
                         proj_suffix = _compute_proj_suffix(git_id, resolved_path, resolved_encoded)
-                        outbox_id = f"karma-out-{config.user_id}-{proj_suffix}"
+                        outbox_id = build_outbox_id(config.user_id, proj_suffix)
                         # Remove the potentially-wrong folder so _ensure_outbox_folder
                         # recreates it with the correct path
                         try:
@@ -2188,25 +2132,10 @@ async def sync_pending() -> Any:
     if own_machine_id:
         own_names.add(own_machine_id)
 
-    # Collect all known user_ids for smarter folder ID parsing
-    all_user_ids = set()
-    if own_user_id:
-        all_user_ids.add(own_user_id)
-    if own_machine_id:
-        all_user_ids.add(own_machine_id)
-    for device_id, (member_name, _team) in known.items():
-        all_user_ids.add(member_name)
-    # Also add member names from DB
-    for tn in {item.get("from_team") for item in pending if item.get("from_team")}:
-        for m in list_members(conn, tn):
-            all_user_ids.add(m["name"])
-
     def _is_own_outbox(folder_id: str) -> bool:
         """Check if folder is our own outbox (leader may have used user_id OR machine_id)."""
-        for name in own_names:
-            if folder_id.startswith(f"karma-out-{name}-"):
-                return True
-        return False
+        parsed = parse_outbox_id(folder_id)
+        return parsed is not None and parsed[0] in own_names
 
     # Separate own outbox folders from other people's outboxes.
     # Own outbox = leader created a receiveonly folder for us, we accept as sendonly.
@@ -2216,7 +2145,7 @@ async def sync_pending() -> Any:
     for item in pending:
         folder_id = item["folder_id"]
         # Skip handshake folders — handled automatically
-        if folder_id.startswith("karma-join-"):
+        if is_handshake_folder(folder_id):
             continue
         if _is_own_outbox(folder_id):
             own_outbox_pending.append(item)
@@ -2238,10 +2167,10 @@ async def sync_pending() -> Any:
         folder_id = item["folder_id"]
         member = item.get("from_member", "unknown")
 
-        if folder_id.startswith("karma-out-"):
+        if is_outbox_folder(folder_id):
             is_own = _is_own_outbox(folder_id)
             item["folder_type"] = "outbox" if is_own else "sessions"
-            parsed = _parse_folder_id_with_hints(folder_id, all_user_ids)
+            parsed = parse_outbox_id(folder_id)
             if parsed:
                 owner, suffix = parsed
                 # Try to find a matching project for a friendly label
@@ -2288,17 +2217,9 @@ async def sync_accept_pending() -> Any:
         raise HTTPException(400, "Not initialized")
 
     try:
-        from karma.syncthing import SyncthingClient, read_local_api_key
-
-        api_key = config.syncthing.api_key or await run_sync(read_local_api_key)
-        st = SyncthingClient(api_key=api_key)
-        if not st.is_running():
-            raise HTTPException(503, "Syncthing is not running")
-
-        from karma.pending import accept_pending_folders
-
+        proxy = get_proxy()
         conn = _get_sync_conn()
-        accepted = await run_sync(accept_pending_folders, st, config, conn)
+        accepted = await run_sync(proxy.accept_pending_folders, config, conn)
         if accepted:
             log_event(conn, "pending_accepted", member_name=config.user_id,
                       detail={"count": accepted, "phase": "manual"})
@@ -2321,7 +2242,7 @@ async def sync_accept_single_folder(folder_id: str) -> Any:
     Only accepts karma-out-* folders from known team members.
     This is the explicit per-folder acceptance that replaces auto-accept.
     """
-    if not folder_id.startswith("karma-"):
+    if not is_karma_folder(folder_id):
         raise HTTPException(400, "Invalid folder ID: must start with 'karma-'")
 
     config = await run_sync(_load_identity)
@@ -2329,18 +2250,10 @@ async def sync_accept_single_folder(folder_id: str) -> Any:
         raise HTTPException(400, "Not initialized")
 
     try:
-        from karma.syncthing import SyncthingClient, read_local_api_key
-
-        api_key = config.syncthing.api_key or await run_sync(read_local_api_key)
-        st = SyncthingClient(api_key=api_key)
-        if not st.is_running():
-            raise HTTPException(503, "Syncthing is not running")
-
-        from karma.pending import accept_pending_folders
-
+        proxy = get_proxy()
         conn = _get_sync_conn()
         accepted = await run_sync(
-            accept_pending_folders, st, config, conn, only_folder_id=folder_id,
+            proxy.accept_pending_folders, config, conn, only_folder_id=folder_id,
         )
         if accepted:
             log_event(conn, "pending_accepted", member_name=config.user_id,
@@ -2364,7 +2277,7 @@ async def sync_reject_single_folder(folder_id: str) -> Any:
     Removes the pending folder offer from Syncthing so it no longer appears.
     Only dismisses karma-* folders from known team members.
     """
-    if not folder_id.startswith("karma-"):
+    if not is_karma_folder(folder_id):
         raise HTTPException(400, "Invalid folder ID: must start with 'karma-'")
 
     config = await run_sync(_load_identity)
@@ -2372,35 +2285,18 @@ async def sync_reject_single_folder(folder_id: str) -> Any:
         raise HTTPException(400, "Not initialized")
 
     try:
-        from karma.syncthing import SyncthingClient, read_local_api_key
-
-        api_key = config.syncthing.api_key or await run_sync(read_local_api_key)
-        st = SyncthingClient(api_key=api_key)
-        if not st.is_running():
-            raise HTTPException(503, "Syncthing is not running")
-
-        pending = st.get_pending_folders()
-        folder_info = pending.get(folder_id)
-        if not folder_info:
-            raise HTTPException(404, f"Folder '{folder_id}' not found in pending offers")
-
-        dismissed = 0
-        for device_id in folder_info.get("offeredBy", {}):
-            try:
-                st.dismiss_pending_folder(folder_id, device_id)
-                dismissed += 1
-            except Exception as e:
-                logger.debug("Failed to dismiss pending folder %s for device %s: %s", folder_id, device_id, e)
+        proxy = get_proxy()
+        result = await run_sync(proxy.reject_pending_folder, folder_id)
 
         conn = _get_sync_conn()
         log_event(conn, "pending_rejected", member_name=config.user_id,
-                  detail={"folder_id": folder_id, "dismissed": dismissed})
+                  detail={"folder_id": folder_id, "dismissed": result["dismissed"]})
 
-        return {"ok": True, "folder_id": folder_id, "dismissed": dismissed}
+        return result
     except SyncthingNotRunning:
         raise HTTPException(503, "Syncthing is not running")
-    except HTTPException:
-        raise
+    except ValueError as e:
+        raise HTTPException(404, str(e))
     except Exception as e:
         logger.exception("Failed to reject folder %s: %s", folder_id, e)
         raise HTTPException(500, f"Failed to reject folder: {e}")
@@ -2932,3 +2828,85 @@ async def sync_update_team_settings(team_name: str, req: UpdateTeamSettingsReque
               detail=changes)
 
     return {"ok": True, "team_name": team_name, "changes": changes}
+
+
+@router.get("/teams/{team_name}/members/{device_id}/settings")
+async def sync_get_member_settings(team_name: str, device_id: str) -> Any:
+    """Get member sync settings with resolved effective values."""
+    if not ALLOWED_PROJECT_NAME.match(team_name):
+        raise HTTPException(400, "Invalid team name")
+    device_id = validate_device_id(device_id)
+
+    conn = _get_sync_conn()
+    team = get_team(conn, team_name)
+    if team is None:
+        raise HTTPException(404, f"Team '{team_name}' not found")
+
+    # Direct lookup by device_id, then verify team membership
+    member = get_member_by_device_id(conn, device_id)
+    if member is None or member["team_name"] != team_name:
+        raise HTTPException(404, f"Member with device '{device_id}' not found in team '{team_name}'")
+
+    settings = {}
+    for key in VALID_SETTING_KEYS:
+        value, source = get_effective_setting(conn, key, team_name=team_name, device_id=device_id)
+        settings[key] = {"value": value, "source": source}
+
+    return {
+        "team_name": team_name,
+        "device_id": device_id,
+        "member_name": member["name"],
+        "settings": settings,
+    }
+
+
+@router.patch("/teams/{team_name}/members/{device_id}/settings")
+async def sync_update_member_settings(
+    team_name: str, device_id: str, req: UpdateMemberSettingsRequest
+) -> Any:
+    """Update member sync settings (per-team overrides)."""
+    if not ALLOWED_PROJECT_NAME.match(team_name):
+        raise HTTPException(400, "Invalid team name")
+    device_id = validate_device_id(device_id)
+
+    conn = _get_sync_conn()
+    team = get_team(conn, team_name)
+    if team is None:
+        raise HTTPException(404, f"Team '{team_name}' not found")
+
+    member = get_member_by_device_id(conn, device_id)
+    if member is None or member["team_name"] != team_name:
+        raise HTTPException(404, f"Member with device '{device_id}' not found in team '{team_name}'")
+
+    config = await run_sync(_load_identity)
+    actor_name = config.user_id if config else None
+    scope = f"member:{team_name}:{device_id}"
+    changes = {}
+
+    if req.sync_direction is not None:
+        if req.sync_direction not in VALID_SYNC_DIRECTIONS:
+            raise HTTPException(
+                400,
+                f"Invalid sync_direction. Must be one of: {', '.join(sorted(VALID_SYNC_DIRECTIONS))}",
+            )
+        old = set_setting(conn, scope, "sync_direction", req.sync_direction)
+        changes["sync_direction"] = {"old": old or "both", "new": req.sync_direction}
+    elif "sync_direction" in (req.model_fields_set or set()):
+        # Explicitly sent null — clear the override
+        old_val = get_setting(conn, scope, "sync_direction")
+        delete_setting(conn, scope, "sync_direction")
+        value, source = get_effective_setting(conn, "sync_direction", team_name=team_name, device_id=device_id)
+        changes["sync_direction"] = {"old": old_val, "new": value, "source": source, "cleared": True}
+
+    if not changes:
+        raise HTTPException(400, "No settings provided to update")
+
+    log_event(
+        conn,
+        "settings_changed",
+        team_name=team_name,
+        member_name=actor_name,
+        detail={"target_member": member["name"], "target_device": device_id, **changes},
+    )
+
+    return {"ok": True, "team_name": team_name, "device_id": device_id, "changes": changes}
