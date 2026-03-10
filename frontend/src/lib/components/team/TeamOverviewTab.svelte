@@ -68,7 +68,7 @@
 	let onlineCount = $derived(members.filter((m) => m.connected).length);
 	let totalUnsyncedSessions = $derived(projectStatuses.reduce((sum, p) => sum + (p.gap ?? 0), 0));
 
-	// Aggregate session stats by member
+	// Aggregate session stats by member: out = what they contributed
 	let memberTotals = $derived.by(() => {
 		const totals = new Map<string, number>();
 		for (const stat of sessionStats) {
@@ -107,12 +107,15 @@
 		}
 	]);
 
-	// Chart data derived from memberTotals
-	let chartLabels = $derived(
-		[...memberTotals.keys()].map((name) => getUserChartLabel(name, userNames))
-	);
+	// Chart data: per member, compute out (contributed) and in (received from others)
 	let chartMemberIds = $derived([...memberTotals.keys()]);
-	let chartSessionData = $derived([...memberTotals.values()]);
+	let chartLabels = $derived(
+		chartMemberIds.map((name) => userNames?.[name] ?? name)
+	);
+	let chartOutData = $derived(chartMemberIds.map((id) => memberTotals.get(id) ?? 0));
+	let chartInData = $derived(
+		chartMemberIds.map((id) => totalSessions - (memberTotals.get(id) ?? 0))
+	);
 
 	onMount(() => {
 		registerChartDefaults();
@@ -126,7 +129,8 @@
 	$effect(() => {
 		if (!canvas || memberTotals.size === 0) return;
 
-		const barColors = chartMemberIds.map((id) => getTeamMemberHexColor(id));
+		const outColors = chartMemberIds.map((id) => getTeamMemberHexColor(id));
+		const inColors = chartMemberIds.map((id) => getTeamMemberHexColor(id) + '30');
 
 		if (!chart) {
 			const colors = getThemeColors();
@@ -138,21 +142,42 @@
 					labels: chartLabels,
 					datasets: [
 						{
-							label: 'Sessions',
-							data: chartSessionData,
-							backgroundColor: barColors,
+							label: 'Out',
+							data: chartOutData,
+							backgroundColor: outColors,
+							borderRadius: 4
+						},
+						{
+							label: 'In',
+							data: chartInData,
+							backgroundColor: inColors,
 							borderRadius: 4
 						}
 					]
 				},
 				options: {
 					...createResponsiveConfig(),
-					scales: scaleConfig,
+					scales: {
+						...scaleConfig,
+						x: {
+							...scaleConfig.x,
+							ticks: {
+								...scaleConfig.x.ticks,
+								maxRotation: 45,
+								minRotation: 0
+							}
+						}
+					},
 					plugins: {
 						...createResponsiveConfig().plugins,
 						legend: {
 							...createResponsiveConfig().plugins.legend,
-							display: false
+							position: 'bottom',
+							labels: {
+								boxWidth: 12,
+								padding: 16,
+								font: { size: 11 }
+							}
 						},
 						tooltip: {
 							...createResponsiveConfig().plugins.tooltip,
@@ -168,8 +193,10 @@
 			});
 		} else {
 			chart.data.labels = chartLabels;
-			chart.data.datasets[0].data = chartSessionData;
-			chart.data.datasets[0].backgroundColor = barColors;
+			chart.data.datasets[0].data = chartOutData;
+			chart.data.datasets[0].backgroundColor = outColors;
+			chart.data.datasets[1].data = chartInData;
+			chart.data.datasets[1].backgroundColor = inColors;
 			chart.update();
 		}
 	});

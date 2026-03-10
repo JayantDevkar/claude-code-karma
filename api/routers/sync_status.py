@@ -2458,12 +2458,27 @@ async def sync_member_profile(identifier: str) -> Any:
     ).fetchone()
     last_active = last_row[0] if last_row else None
 
-    # Session stats — scoped to this member only (avoids fetching all members' data)
+    # Session stats — this member's outgoing (what they contributed)
     all_session_stats = []
     for team_name in team_names:
         all_session_stats.extend(
             query_session_stats_by_member(conn, team_name, 30, member_name=member_name)
         )
+
+    # Incoming stats — sessions from OTHER members per day (what this member receives)
+    incoming_rows = conn.execute(
+        """SELECT DATE(created_at) AS date, COUNT(*) AS incoming
+           FROM sync_events
+           WHERE team_name IN ({})
+             AND member_name != ?
+             AND member_name IS NOT NULL
+             AND event_type IN ('session_packaged', 'session_received')
+             AND created_at >= datetime('now', '-30 days')
+           GROUP BY date
+           ORDER BY date""".format(",".join("?" for _ in team_names)),
+        (*team_names, member_name),
+    ).fetchall()
+    incoming_stats = [{"date": r[0], "incoming": r[1]} for r in incoming_rows]
 
     # Recent activity events
     activity_rows = query_events(conn, member_name=member_name, limit=50)
@@ -2484,6 +2499,7 @@ async def sync_member_profile(identifier: str) -> Any:
             "last_active": last_active,
         },
         "session_stats": all_session_stats,
+        "incoming_stats": incoming_stats,
         "activity": activity_rows,
     }
 
