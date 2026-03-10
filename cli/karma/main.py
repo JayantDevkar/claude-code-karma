@@ -759,11 +759,13 @@ def team_remove(name: str, team_name: str, keep_data: bool):
 
     device_id = member["device_id"]
 
-    # Syncthing cleanup (ported from team_leave pattern)
+    # Syncthing cleanup: remove member's folders, un-share our outbox, remove device
     folders_removed = 0
     devices_removed = 0
+    devices_unshared = 0
     try:
         from karma.syncthing import SyncthingClient, read_local_api_key
+        from pathlib import Path as _Path
 
         api_key = config.syncthing.api_key or read_local_api_key()
         st = SyncthingClient(api_key=api_key)
@@ -772,19 +774,39 @@ def team_remove(name: str, team_name: str, keep_data: bool):
             proj_suffixes = set()
             for proj in projects:
                 git_id = proj.get("git_identity")
-                suffix = git_id.replace("/", "-") if git_id else proj["project_encoded_name"]
+                path = proj.get("path")
+                encoded = proj["project_encoded_name"]
+                if git_id:
+                    suffix = git_id.replace("/", "-")
+                elif path:
+                    suffix = _Path(path).name
+                else:
+                    suffix = encoded
                 proj_suffixes.add(suffix)
 
-            # Remove member's inbox folders and handshake folder
+            my_user_id = config.user_id
+            my_outbox_prefix = f"karma-out-{my_user_id}-" if my_user_id else None
+
             for folder in st.get_folders():
                 folder_id = folder.get("id", "")
-                if folder_id.startswith("karma-out-"):
+
+                # Our outbox — un-share from kicked member's device
+                if my_outbox_prefix and folder_id.startswith(my_outbox_prefix):
+                    outbox_suffix = folder_id[len(my_outbox_prefix):]
+                    if outbox_suffix in proj_suffixes:
+                        if st.remove_device_from_folder(folder_id, device_id):
+                            devices_unshared += 1
+
+                # Member's inbox on our disk — remove entirely
+                elif folder_id.startswith("karma-out-"):
                     rest = folder_id[len("karma-out-"):]
                     if rest.startswith(name + "-"):
                         remainder = rest[len(name) + 1:]
                         if remainder in proj_suffixes:
                             st.remove_folder(folder_id)
                             folders_removed += 1
+
+                # Handshake folder
                 elif folder_id == f"karma-join-{name}-{team_name}":
                     st.remove_folder(folder_id)
                     folders_removed += 1
@@ -823,10 +845,12 @@ def team_remove(name: str, team_name: str, keep_data: bool):
     remove_member(conn, team_name, device_id)
     log_event(conn, "member_removed", team_name=team_name, member_name=name,
               detail={"folders_removed": folders_removed, "devices_removed": devices_removed,
+                      "devices_unshared": devices_unshared,
                       "dirs_removed": dirs_removed, "sessions_deleted": sessions_deleted})
     click.echo(
         f"Removed '{name}' from team '{team_name}'. "
-        f"Syncthing: {folders_removed} folders, {devices_removed} devices. "
+        f"Syncthing: {folders_removed} folders, {devices_removed} devices, "
+        f"{devices_unshared} outboxes unshared. "
         f"Data: {dirs_removed} dirs, {sessions_deleted} sessions cleaned."
     )
 
