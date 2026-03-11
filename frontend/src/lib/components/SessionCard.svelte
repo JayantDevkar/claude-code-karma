@@ -224,13 +224,15 @@
 			{#if isRemote || session.session_source === 'desktop'}
 				<div class="flex items-center gap-2 mt-1 text-[10px] text-[var(--text-muted)]">
 					{#if isRemote && remoteUserName}
-						<div
-							class="flex items-center gap-0.5"
+						<a
+							href="/members/{encodeURIComponent(remoteUserName)}"
+							class="flex items-center gap-0.5 hover:underline"
 							title="Remote session from {remoteUserName}"
+							onclick={(e) => e.stopPropagation()}
 						>
 							<Globe size={10} strokeWidth={2} class={teamMemberColor?.text ?? ''} />
 							<span>{remoteUserName}</span>
-						</div>
+						</a>
 					{/if}
 					{#if session.session_source === 'desktop'}
 						<div class="flex items-center gap-0.5" title="Claude Desktop session">
@@ -347,13 +349,15 @@
 			<!-- Badges -->
 			<div class="flex items-center gap-1.5 shrink-0">
 				{#if isRemote && remoteUserName}
-					<div
-						class="flex items-center gap-1 px-2 py-0.5 rounded-full border {teamMemberColor?.badge ?? ''}"
+					<a
+						href="/members/{encodeURIComponent(remoteUserName)}"
+						class="flex items-center gap-1 px-2 py-0.5 rounded-full border {teamMemberColor?.badge ?? ''} hover:opacity-80 transition-opacity"
 						title="Remote session from {remoteUserName}"
+						onclick={(e) => e.stopPropagation()}
 					>
 						<Globe size={10} strokeWidth={2} class={teamMemberColor?.text ?? ''} />
 						<span class="font-medium text-[11px]">{remoteUserName}</span>
-					</div>
+					</a>
 				{/if}
 				{#if session.session_source === 'desktop'}
 					<div

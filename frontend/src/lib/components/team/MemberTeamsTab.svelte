@@ -55,16 +55,16 @@
 						{/if}
 					</div>
 
-					<!-- Project contribution pills -->
+					<!-- Project contribution pills — sorted by session_count descending -->
 					{#if team.projects.length > 0}
 						<div class="border-t border-[var(--border)] mt-3 pt-3 flex flex-wrap gap-1.5">
-							{#each team.projects as project (project.encoded_name)}
+							{#each [...team.projects].sort((a, b) => b.session_count - a.session_count) as project (project.encoded_name)}
 								<span
 									class="inline-flex items-center gap-1.5 px-2 py-1 text-[11px] rounded-full
 										bg-[var(--bg-muted)] text-[var(--text-secondary)]"
 								>
 									{project.name}
-									<span class="text-[var(--text-muted)]">{project.session_count}</span>
+									<span class="text-[var(--text-muted)] font-medium tabular-nums">{project.session_count}</span>
 								</span>
 							{/each}
 						</div>
