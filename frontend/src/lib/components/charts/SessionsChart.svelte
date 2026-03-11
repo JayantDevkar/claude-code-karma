@@ -16,7 +16,8 @@
 		createResponsiveConfig,
 		createCommonScaleConfig,
 		chartColorPalette,
-		getThemeColors
+		getThemeColors,
+		onThemeChange
 	} from './chartConfig';
 	import { getUserChartColor, getUserChartLabel } from '$lib/utils';
 
@@ -133,7 +134,11 @@
 	// Compute derived values for template
 	let chartData = $derived(buildChartData(sessionsByDate));
 
-	onMount(() => {
+	function createSessionChart() {
+		chart?.destroy();
+		chart = null;
+		if (!canvas) return;
+
 		registerChartDefaults();
 		const { labels, data } = chartData;
 		const colors = getThemeColors();
@@ -143,7 +148,6 @@
 			const sorted = userIds.filter((id) => id !== '_local').sort();
 			if (userIds.includes('_local')) sorted.unshift('_local');
 
-			// Build filled date range with same padding as buildChartData
 			const dateKeys = Object.keys(sessionsByDate)
 				.filter((k) => sessionsByDate[k] != null)
 				.sort();
@@ -204,7 +208,6 @@
 				}
 			});
 		} else {
-			// Original single-line behavior
 			chart = new Chart(canvas, {
 				type: 'line',
 				data: {
@@ -242,9 +245,17 @@
 				}
 			});
 		}
+	}
+
+	let cleanupTheme: (() => void) | null = null;
+
+	onMount(() => {
+		createSessionChart();
+		cleanupTheme = onThemeChange(() => createSessionChart());
 	});
 
 	onDestroy(() => {
+		cleanupTheme?.();
 		chart?.destroy();
 	});
 

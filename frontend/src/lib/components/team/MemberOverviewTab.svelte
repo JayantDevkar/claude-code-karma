@@ -16,7 +16,8 @@
 		registerChartDefaults,
 		createResponsiveConfig,
 		createCommonScaleConfig,
-		getThemeColors
+		getThemeColors,
+		onThemeChange
 	} from '$lib/components/charts/chartConfig';
 	import { formatRelativeTime } from '$lib/utils';
 	import { formatSyncEvent } from '$lib/utils/sync-events';
@@ -77,6 +78,9 @@
 	// Recent activity — first 5 events
 	let recentActivity = $derived(profile.activity.slice(0, 5));
 
+	let themeVersion = $state(0);
+	let cleanupTheme: (() => void) | null = null;
+
 	onMount(() => {
 		registerChartDefaults();
 		// Resolve CSS custom properties from parent scope
@@ -86,13 +90,24 @@
 		const ic = styles.getPropertyValue('--info').trim();
 		if (mc) memberColor = mc;
 		if (ic) receivedColor = ic;
+		cleanupTheme = onThemeChange(() => {
+			chart?.destroy();
+			chart = null;
+			registerChartDefaults();
+			// Re-resolve theme-dependent color
+			const ic = getComputedStyle(document.documentElement).getPropertyValue('--info').trim();
+			if (ic) receivedColor = ic;
+			themeVersion++;
+		});
 	});
 
 	onDestroy(() => {
+		cleanupTheme?.();
 		chart?.destroy();
 	});
 
 	$effect(() => {
+		void themeVersion; // re-run on theme change
 		if (!canvas || !hasChartData) return;
 
 		const colors = getThemeColors();

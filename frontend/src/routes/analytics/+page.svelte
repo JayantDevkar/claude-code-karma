@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import { browser } from '$app/environment';
 	import { Activity, Zap, Database, Cpu, FolderOpen, Clock, BarChart3 } from 'lucide-svelte';
 	import { goto } from '$app/navigation';
@@ -7,7 +7,7 @@
 	import SkeletonBox from '$lib/components/skeleton/SkeletonBox.svelte';
 	import SkeletonText from '$lib/components/skeleton/SkeletonText.svelte';
 	import SkeletonStatsCard from '$lib/components/skeleton/SkeletonStatsCard.svelte';
-	import { getChartColorPalette } from '$lib/components/charts/chartConfig';
+	import { getChartColorPalette, onThemeChange } from '$lib/components/charts/chartConfig';
 	import TimeFilterDropdown from '$lib/components/TimeFilterDropdown.svelte';
 	import PageHeader from '$lib/components/layout/PageHeader.svelte';
 	import StatsGrid from '$lib/components/StatsGrid.svelte';
@@ -324,8 +324,18 @@
 		}
 	});
 
-	onMount(async () => {
-		const Chart = (await import('chart.js/auto')).default;
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	let ChartCtor: any = null;
+	let cleanupTheme: (() => void) | null = null;
+
+	async function createAnalyticsChart() {
+		if (!ChartCtor) {
+			ChartCtor = (await import('chart.js/auto')).default;
+		}
+		chartInstance?.destroy();
+		chartInstance = null;
+		if (!chartCanvas) return;
+
 		const colors = getChartColorPalette();
 		const style = getComputedStyle(document.documentElement);
 		const textMuted = style.getPropertyValue('--text-muted').trim() || '#94a3b8';
@@ -335,7 +345,6 @@
 		const labels = sortedDates.map((date) => formatDateLabel(date));
 
 		if (hasMultiUser) {
-			// Build sorted user list: _local first, then remotes alphabetically
 			const userIds = Object.keys(analytics.sessions_by_date_by_user!);
 			const sorted = userIds.filter(id => id !== '_local').sort();
 			if (userIds.includes('_local')) sorted.unshift('_local');
@@ -350,7 +359,7 @@
 				maxBarThickness: 14
 			}));
 
-			chartInstance = new Chart(chartCanvas, {
+			chartInstance = new ChartCtor(chartCanvas, {
 				type: 'bar',
 				data: { labels, datasets },
 				options: {
@@ -399,9 +408,8 @@
 				}
 			});
 		} else {
-			// Original single-dataset behavior
 			const sessionCounts = sortedDates.map((date) => analytics.sessions_by_date[date]);
-			chartInstance = new Chart(chartCanvas, {
+			chartInstance = new ChartCtor(chartCanvas, {
 				type: 'bar',
 				data: {
 					labels,
@@ -444,6 +452,16 @@
 				}
 			});
 		}
+	}
+
+	onMount(async () => {
+		await createAnalyticsChart();
+		cleanupTheme = onThemeChange(() => createAnalyticsChart());
+	});
+
+	onDestroy(() => {
+		cleanupTheme?.();
+		chartInstance?.destroy();
 	});
 </script>
 

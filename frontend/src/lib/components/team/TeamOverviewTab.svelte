@@ -22,7 +22,8 @@
 		registerChartDefaults,
 		createResponsiveConfig,
 		createCommonScaleConfig,
-		getThemeColors
+		getThemeColors,
+		onThemeChange
 	} from '$lib/components/charts/chartConfig';
 	import { getTeamMemberHexColor } from '$lib/utils';
 
@@ -114,16 +115,27 @@
 	);
 	let chartOutData = $derived(chartMemberIds.map((id) => memberTotals.get(id) ?? 0));
 
+	let themeVersion = $state(0);
+	let cleanupTheme: (() => void) | null = null;
+
 	onMount(() => {
 		registerChartDefaults();
+		cleanupTheme = onThemeChange(() => {
+			chart?.destroy();
+			chart = null;
+			registerChartDefaults();
+			themeVersion++;
+		});
 	});
 
 	onDestroy(() => {
+		cleanupTheme?.();
 		chart?.destroy();
 	});
 
 	// Create or update chart when canvas is available and data changes
 	$effect(() => {
+		void themeVersion; // re-run on theme change
 		if (!canvas || memberTotals.size === 0) return;
 
 		const barColors = chartMemberIds.map((id) => getTeamMemberHexColor(id));

@@ -15,7 +15,8 @@
 		registerChartDefaults,
 		createResponsiveConfig,
 		createCommonScaleConfig,
-		getThemeColors
+		getThemeColors,
+		onThemeChange
 	} from '$lib/components/charts/chartConfig';
 	import { getTeamMemberHexColor, getUserChartLabel } from '$lib/utils';
 	import { API_BASE } from '$lib/config';
@@ -169,16 +170,27 @@
 		visibleMembers = next;
 	}
 
+	let themeVersion = $state(0);
+	let cleanupTheme: (() => void) | null = null;
+
 	onMount(() => {
 		registerChartDefaults();
+		cleanupTheme = onThemeChange(() => {
+			chart?.destroy();
+			chart = null;
+			registerChartDefaults();
+			themeVersion++;
+		});
 	});
 
 	onDestroy(() => {
+		cleanupTheme?.();
 		chart?.destroy();
 	});
 
 	// Create or update chart when canvas becomes available and data changes
 	$effect(() => {
+		void themeVersion; // re-run on theme change
 		if (!canvas) return;
 		if (!chart) {
 			const colors = getThemeColors();
