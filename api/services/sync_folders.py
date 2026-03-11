@@ -89,6 +89,7 @@ async def ensure_outbox_folder(proxy, config, encoded: str, proj_suffix: str, de
 async def ensure_inbox_folders(
     proxy, config, members: list[dict], encoded: str, proj_suffix: str,
     *, only_device_id: Optional[str] = None,
+    member_subscriptions: Optional[dict[str, dict]] = None,
 ) -> dict:
     """Create receiveonly inbox folders for team members' outboxes.
 
@@ -108,6 +109,14 @@ async def ensure_inbox_folders(
         # Filter to single device if requested
         if only_device_id and m["device_id"] != only_device_id:
             continue
+
+        # Check subscription opt-out from metadata
+        if member_subscriptions:
+            device_subs = member_subscriptions.get(m["device_id"], {})
+            if device_subs.get(encoded) is False or device_subs.get(proj_suffix) is False:
+                member_tag = m.get("member_tag") or m["name"]
+                logger.info("Skipping inbox for %s — unsubscribed from %s", member_tag, encoded)
+                continue
 
         member_tag = m.get("member_tag") or m["name"]  # fallback for legacy members
         inbox_path = str(KARMA_BASE / "remote-sessions" / member_tag / encoded)
@@ -252,6 +261,21 @@ async def auto_share_folders(proxy, config, conn, team_name, new_device_id) -> d
 
     result = {"outboxes": 0, "inboxes": 0, "errors": []}
 
+    # Read member subscriptions from metadata folder
+    member_subscriptions: dict[str, dict] = {}
+    try:
+        from karma.config import KARMA_BASE
+        from services.sync_metadata import read_all_member_states
+        meta_dir = KARMA_BASE / "metadata-folders" / team_name
+        if meta_dir.exists():
+            for state in read_all_member_states(meta_dir):
+                device = state.get("device_id", "")
+                subs = state.get("subscriptions", {})
+                if device:
+                    member_subscriptions[device] = subs
+    except Exception as e:
+        logger.debug("Failed to read member subscriptions: %s", e)
+
     # Add new device to metadata folder
     try:
         all_device_ids = [new_device_id]
@@ -284,6 +308,7 @@ async def auto_share_folders(proxy, config, conn, team_name, new_device_id) -> d
         inbox_result = await ensure_inbox_folders(
             proxy, config, members, encoded, proj_suffix,
             only_device_id=new_device_id,
+            member_subscriptions=member_subscriptions,
         )
         result["inboxes"] += inbox_result["inboxes"]
         result["errors"].extend(inbox_result["errors"])

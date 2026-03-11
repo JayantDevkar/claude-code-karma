@@ -648,6 +648,43 @@ def get_effective_auto_accept(
     return value == "true"
 
 
+# ── Rejected Folders ──────────────────────────────────────────────────
+
+
+def reject_folder(
+    conn: sqlite3.Connection, folder_id: str, *, team_name: Optional[str] = None,
+) -> None:
+    """Persistently reject a folder offer (won't be re-offered)."""
+    conn.execute(
+        "INSERT OR REPLACE INTO sync_rejected_folders (folder_id, team_name) VALUES (?, ?)",
+        (folder_id, team_name),
+    )
+    conn.commit()
+
+
+def unreject_folder(conn: sqlite3.Connection, folder_id: str) -> None:
+    """Remove a folder rejection (allows re-offering)."""
+    conn.execute("DELETE FROM sync_rejected_folders WHERE folder_id = ?", (folder_id,))
+    conn.commit()
+
+
+def is_folder_rejected(conn: sqlite3.Connection, folder_id: str) -> bool:
+    """Check if a folder has been persistently rejected."""
+    row = conn.execute(
+        "SELECT 1 FROM sync_rejected_folders WHERE folder_id = ?", (folder_id,),
+    ).fetchone()
+    return row is not None
+
+
+def list_rejected_folders(conn: sqlite3.Connection, team_name: str) -> list[dict]:
+    """List all rejected folders for a team."""
+    rows = conn.execute(
+        "SELECT folder_id, team_name, rejected_at FROM sync_rejected_folders WHERE team_name = ?",
+        (team_name,),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
 def cleanup_data_for_member(
     conn: sqlite3.Connection,
     team_name: str,

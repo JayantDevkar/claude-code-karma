@@ -75,9 +75,16 @@ def _get_live_session_uuids() -> set[str]:
     return live_uuids
 
 
-def get_session_limit(team_session_limit: str, dest_path: Path) -> int | None:
+def get_session_limit(
+    team_session_limit: str,
+    dest_path: Path,
+    *,
+    team_name: Optional[str] = None,
+    member_tag: Optional[str] = None,
+) -> int | None:
     """Return max sessions to package, or None for unlimited.
 
+    Checks for per-device override in metadata file before using team setting.
     If disk has < 10 GiB free, force recent 100 regardless of setting.
     """
     try:
@@ -87,8 +94,21 @@ def get_session_limit(team_session_limit: str, dest_path: Path) -> int | None:
     if free < MIN_FREE_BYTES:
         return 100  # safety cap
 
+    # Check per-device override from metadata file
+    effective_limit = team_session_limit
+    if team_name and member_tag:
+        try:
+            meta_file = KARMA_BASE / "metadata-folders" / team_name / "members" / f"{member_tag}.json"
+            if meta_file.exists():
+                state = json.loads(meta_file.read_text(encoding="utf-8"))
+                device_limit = state.get("session_limit")
+                if device_limit and device_limit in ("all", "recent_100", "recent_10"):
+                    effective_limit = device_limit
+        except (json.JSONDecodeError, OSError):
+            pass
+
     limits = {"all": None, "recent_100": 100, "recent_10": 10}
-    return limits.get(team_session_limit, None)
+    return limits.get(effective_limit, None)
 
 
 # Regex to extract plan slugs from JSONL bytes: matches plans/{slug}.md
@@ -429,8 +449,11 @@ class SessionPackager:
         """Copy session files into staging directory and create manifest."""
         sessions = self.discover_sessions()
 
-        # Apply session limit (disk space aware)
-        limit = get_session_limit(session_limit, staging_dir)
+        # Apply session limit (disk space aware, with per-device metadata override)
+        limit = get_session_limit(
+            session_limit, staging_dir,
+            team_name=self.team_name, member_tag=self.member_tag,
+        )
         if limit is not None and len(sessions) > limit:
             # Sort by mtime descending (most recent first), take top N
             sessions.sort(key=lambda s: s.mtime, reverse=True)

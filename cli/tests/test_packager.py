@@ -761,3 +761,76 @@ class TestGetLiveSessionUuids:
 
         importlib.reload(config)
         importlib.reload(packager)
+
+
+class TestPerDeviceSessionLimit:
+    """Tests for per-device session limit override via metadata file."""
+
+    def test_metadata_overrides_team_limit(self, tmp_path, monkeypatch):
+        """Per-device session_limit in metadata should override team setting."""
+        from karma import config, packager
+        import importlib
+
+        # Create metadata file with per-device override
+        meta_dir = tmp_path / "metadata-folders" / "acme" / "members"
+        meta_dir.mkdir(parents=True)
+        (meta_dir / "jay.jay-mac.json").write_text(json.dumps({
+            "member_tag": "jay.jay-mac",
+            "session_limit": "recent_10",
+        }))
+
+        monkeypatch.setattr(config, "KARMA_BASE", tmp_path)
+        importlib.reload(packager)
+        from karma.packager import get_session_limit as reloaded
+
+        # Team says "all" but device metadata says "recent_10"
+        result = reloaded("all", tmp_path, team_name="acme", member_tag="jay.jay-mac")
+        assert result == 10
+
+        importlib.reload(config)
+        importlib.reload(packager)
+
+    def test_falls_back_to_team_limit(self, tmp_path, monkeypatch):
+        """Without metadata file, should use team setting."""
+        from karma import config, packager
+        import importlib
+
+        monkeypatch.setattr(config, "KARMA_BASE", tmp_path)
+        importlib.reload(packager)
+        from karma.packager import get_session_limit as reloaded
+
+        result = reloaded("recent_100", tmp_path, team_name="acme", member_tag="jay.jay-mac")
+        assert result == 100
+
+        importlib.reload(config)
+        importlib.reload(packager)
+
+    def test_metadata_all_uses_team_limit(self, tmp_path, monkeypatch):
+        """If metadata says 'all', use team setting (no override)."""
+        from karma import config, packager
+        import importlib
+
+        meta_dir = tmp_path / "metadata-folders" / "acme" / "members"
+        meta_dir.mkdir(parents=True)
+        (meta_dir / "jay.jay-mac.json").write_text(json.dumps({
+            "member_tag": "jay.jay-mac",
+            "session_limit": "all",
+        }))
+
+        monkeypatch.setattr(config, "KARMA_BASE", tmp_path)
+        importlib.reload(packager)
+        from karma.packager import get_session_limit as reloaded
+
+        # Metadata says "all", team says "recent_100" — metadata "all" is still valid
+        result = reloaded("recent_100", tmp_path, team_name="acme", member_tag="jay.jay-mac")
+        assert result is None  # "all" → None (unlimited)
+
+        importlib.reload(config)
+        importlib.reload(packager)
+
+    def test_no_team_name_skips_metadata(self, tmp_path):
+        """Without team_name param, should not check metadata."""
+        from karma.packager import get_session_limit
+
+        result = get_session_limit("recent_10", tmp_path)
+        assert result == 10

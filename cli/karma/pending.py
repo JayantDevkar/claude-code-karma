@@ -244,7 +244,7 @@ def accept_pending_folders(st, config, conn, *, auto_only=False, only_folder_id=
     itself, and a ``sync_team_projects`` record is auto-created so that
     subsequent operations (watcher, status) can find the project.
     """
-    from db.sync_queries import get_known_devices, list_team_projects, list_teams, upsert_member
+    from db.sync_queries import get_known_devices, is_folder_rejected, list_team_projects, list_teams, upsert_member
 
     pending = st.get_pending_folders()
     if not pending:
@@ -292,6 +292,11 @@ def accept_pending_folders(st, config, conn, *, auto_only=False, only_folder_id=
 
         if not is_karma_folder(folder_id):
             click.echo(f"  Skipped non-karma folder offer '{folder_id}' (security policy)")
+            continue
+
+        # Skip persistently rejected folders
+        if is_folder_rejected(conn, folder_id):
+            click.echo(f"  Skipped rejected folder '{folder_id}'")
             continue
 
         if folder_id in existing_folder_ids:

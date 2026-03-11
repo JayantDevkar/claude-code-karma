@@ -4,8 +4,8 @@ from typing import Any, Optional
 from fastapi import APIRouter, HTTPException
 
 from db.sync_queries import (
-    get_known_devices, list_team_projects,
-    log_event,
+    get_known_devices, is_folder_rejected, list_team_projects,
+    log_event, reject_folder, unreject_folder,
 )
 from services.folder_id import (
     is_handshake_folder, is_karma_folder, is_outbox_folder,
@@ -106,6 +106,9 @@ async def sync_pending() -> Any:
         else:
             filtered.append(item)
     pending = own_outbox_pending + filtered
+
+    # Filter out persistently rejected folders
+    pending = [item for item in pending if not is_folder_rejected(conn, item["folder_id"])]
 
     # Pre-fetch projects only for teams referenced by pending items' devices.
     # A multi-team device may have from_team set to any of its teams, so we
@@ -228,6 +231,20 @@ async def sync_accept_single_folder(folder_id: str) -> Any:
     try:
         proxy = _sid.get_proxy()
         conn = _sid._get_sync_conn()
+
+        # Remove any prior rejection so re-acceptance works
+        unreject_folder(conn, folder_id)
+
+        # Update metadata subscriptions to restore opt-in
+        try:
+            from services.sync_folders import find_team_for_folder
+            from services.sync_metadata_writer import update_own_metadata
+            team = find_team_for_folder(conn, [folder_id])
+            if team:
+                update_own_metadata(config, conn, team)
+        except Exception as e:
+            logger.debug("Failed to update metadata after accept: %s", e)
+
         accepted = await run_sync(
             proxy.accept_pending_folders, config, conn, only_folder_id=folder_id,
         )
@@ -265,6 +282,20 @@ async def sync_reject_single_folder(folder_id: str) -> Any:
         result = await run_sync(proxy.reject_pending_folder, folder_id)
 
         conn = _sid._get_sync_conn()
+
+        # Persist rejection so the folder is never re-offered
+        from services.sync_folders import find_team_for_folder
+        team = find_team_for_folder(conn, [folder_id])
+        reject_folder(conn, folder_id, team_name=team)
+
+        # Update metadata subscriptions to signal opt-out to other members
+        if team:
+            try:
+                from services.sync_metadata_writer import update_own_metadata
+                update_own_metadata(config, conn, team)
+            except Exception as e:
+                logger.debug("Failed to update metadata after rejection: %s", e)
+
         log_event(conn, "pending_rejected", member_name=config.user_id,
                   detail={"folder_id": folder_id, "dismissed": result["dismissed"]})
 

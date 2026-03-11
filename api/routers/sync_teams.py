@@ -290,6 +290,45 @@ async def sync_join_team(req: JoinTeamRequest) -> Any:
     }
 
 
+@router.post("/teams/{team_name}/invite")
+async def sync_generate_invite(team_name: str) -> Any:
+    """Generate an invite code for this team using the current device as entry point.
+
+    Any team member can generate an invite — the joiner connects to the inviter
+    first, then the Syncthing mesh propagates all other devices.
+    """
+    if not ALLOWED_PROJECT_NAME.match(team_name):
+        raise HTTPException(400, "Invalid team name")
+
+    conn = _sid._get_sync_conn()
+    team = get_team(conn, team_name)
+    if team is None:
+        raise HTTPException(404, f"Team '{team_name}' not found")
+
+    config = await run_sync(_sid._load_identity)
+    if config is None:
+        raise HTTPException(400, "Not initialized")
+
+    if not config.syncthing or not config.syncthing.device_id:
+        raise HTTPException(400, "Syncthing not configured")
+
+    # Verify caller is a member of this team
+    members = list_members(conn, team_name)
+    is_member = any(
+        m["device_id"] == config.syncthing.device_id for m in members
+    )
+    if not is_member:
+        raise HTTPException(403, "You are not a member of this team")
+
+    invite_code = f"{team_name}:{config.member_tag}:{config.syncthing.device_id}"
+
+    return {
+        "invite_code": invite_code,
+        "team_name": team_name,
+        "inviter": config.member_tag,
+    }
+
+
 @router.get("/teams/{team_name}/join-code")
 async def sync_team_join_code(team_name: str) -> Any:
     """Get the join code for a team.
