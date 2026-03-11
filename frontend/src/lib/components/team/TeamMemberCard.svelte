@@ -60,12 +60,15 @@
 		</div>
 		<div>
 			<div class="flex items-center gap-2">
-				<span class="text-sm font-medium text-[var(--text-primary)]">
+				<a
+					href="/members/{encodeURIComponent(member.device_id || member.name)}"
+					class="text-sm font-medium text-[var(--text-primary)] hover:text-[var(--accent)] transition-colors"
+				>
 					{member.name}
 					{#if isSelf}
 						<span class="text-xs text-[var(--text-muted)]">(you)</span>
 					{/if}
-				</span>
+				</a>
 				<span
 					class="flex items-center gap-1 text-xs {isConnected || isSelf
 						? 'text-[var(--success)]'

@@ -1,9 +1,22 @@
 <script lang="ts">
 	import PageHeader from '$lib/components/layout/PageHeader.svelte';
-	import { Contact, Wifi, WifiOff, AlertTriangle, Users } from 'lucide-svelte';
+	import { Contact, Wifi, WifiOff, AlertTriangle, Users, Search, X } from 'lucide-svelte';
 	import { getTeamMemberColor, getTeamMemberHexColor } from '$lib/utils';
 
 	let { data } = $props();
+
+	let search = $state('');
+
+	let filteredMembers = $derived(() => {
+		if (!search.trim()) return data.members;
+		const q = search.toLowerCase().trim();
+		return data.members.filter(
+			(m) =>
+				m.name.toLowerCase().includes(q) ||
+				m.device_id.toLowerCase().includes(q) ||
+				m.teams.some((t) => t.toLowerCase().includes(q))
+		);
+	});
 
 	let onlineCount = $derived(data.members.filter((m) => m.connected).length);
 </script>
@@ -37,20 +50,50 @@
 		</a>
 	</div>
 {:else}
-	<!-- Summary Bar -->
-	<div class="flex items-center gap-4 mb-6 text-sm text-[var(--text-secondary)]">
-		<span class="flex items-center gap-1.5">
-			<Wifi size={14} class="text-[var(--success)]" />
-			{onlineCount} online
-		</span>
-		<span class="text-[var(--text-muted)]">
-			{data.total - onlineCount} offline
-		</span>
+	<!-- Summary Bar + Search -->
+	<div class="flex items-center justify-between gap-4 mb-6">
+		<div class="flex items-center gap-4 text-sm text-[var(--text-secondary)]">
+			<span class="flex items-center gap-1.5">
+				<Wifi size={14} class="text-[var(--success)]" />
+				{onlineCount} online
+			</span>
+			<span class="text-[var(--text-muted)]">
+				{data.total - onlineCount} offline
+			</span>
+		</div>
+
+		<div class="relative">
+			<Search
+				size={14}
+				class="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)] pointer-events-none"
+			/>
+			<input
+				type="text"
+				placeholder="Search members..."
+				bind:value={search}
+				class="pl-8 pr-8 py-1.5 text-sm rounded-lg border border-[var(--border)] bg-[var(--bg-base)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[var(--accent)] w-52 transition-colors"
+			/>
+			{#if search}
+				<button
+					onclick={() => (search = '')}
+					class="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+				>
+					<X size={14} />
+				</button>
+			{/if}
+		</div>
 	</div>
+
+	{#if search && filteredMembers().length === 0}
+		<div class="text-center py-12 text-[var(--text-muted)]">
+			<Search size={32} class="mx-auto mb-2 opacity-40" />
+			<p class="text-sm">No members matching "{search}"</p>
+		</div>
+	{:else}
 
 	<!-- Members Grid -->
 	<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-		{#each data.members as member (member.device_id)}
+		{#each filteredMembers() as member (member.device_id)}
 			{@const colors = getTeamMemberColor(member.name)}
 			{@const hexColor = getTeamMemberHexColor(member.name)}
 			<a
@@ -91,4 +134,6 @@
 			</a>
 		{/each}
 	</div>
+
+	{/if}
 {/if}

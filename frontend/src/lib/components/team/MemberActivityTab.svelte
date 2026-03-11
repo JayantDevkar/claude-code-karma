@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { Loader2 } from 'lucide-svelte';
+	import { isToday, isYesterday, isThisWeek, isThisMonth } from 'date-fns';
 	import type { SyncEvent, MemberProfile } from '$lib/api-types';
 	import {
 		formatSyncEvent,
@@ -15,10 +16,19 @@
 
 	let { profile }: Props = $props();
 
-	let events = $state<SyncEvent[]>(profile.activity);
+	let fetchedEvents = $state<SyncEvent[] | null>(null);
 	let loading = $state(false);
-	let offset = $state(profile.activity.length);
-	let hasMore = $state(profile.activity.length >= 50);
+	let offset = $state(0);
+	let hasMore = $state(false);
+	let events = $derived.by(() => fetchedEvents ?? profile.activity);
+
+	// Initialize offset/hasMore from profile
+	$effect(() => {
+		if (!fetchedEvents) {
+			offset = profile.activity.length;
+			hasMore = profile.activity.length >= 50;
+		}
+	});
 	let filterType = $state<string>('');
 
 	// Filter pill definitions
@@ -49,6 +59,38 @@
 		return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 	}
 
+	// Group events by date period
+	type DateGroup = { label: string; events: SyncEvent[] };
+
+	let groupedEvents = $derived.by(() => {
+		const today: SyncEvent[] = [];
+		const yesterday: SyncEvent[] = [];
+		const thisWeek: SyncEvent[] = [];
+		const thisMonth: SyncEvent[] = [];
+		const older: SyncEvent[] = [];
+
+		for (const event of events) {
+			if (!event.created_at) {
+				older.push(event);
+				continue;
+			}
+			const date = new Date(event.created_at.replace(' ', 'T'));
+			if (isToday(date)) today.push(event);
+			else if (isYesterday(date)) yesterday.push(event);
+			else if (isThisWeek(date, { weekStartsOn: 1 })) thisWeek.push(event);
+			else if (isThisMonth(date)) thisMonth.push(event);
+			else older.push(event);
+		}
+
+		const groups: DateGroup[] = [];
+		if (today.length > 0) groups.push({ label: 'Today', events: today });
+		if (yesterday.length > 0) groups.push({ label: 'Yesterday', events: yesterday });
+		if (thisWeek.length > 0) groups.push({ label: 'This Week', events: thisWeek });
+		if (thisMonth.length > 0) groups.push({ label: 'This Month', events: thisMonth });
+		if (older.length > 0) groups.push({ label: 'Older', events: older });
+		return groups;
+	});
+
 	async function fetchEvents(append: boolean = false) {
 		loading = true;
 		try {
@@ -63,10 +105,10 @@
 				const data = await res.json();
 				const newEvents: SyncEvent[] = data.events || [];
 				if (append) {
-					events = [...events, ...newEvents];
+					fetchedEvents = [...(fetchedEvents ?? profile.activity), ...newEvents];
 					offset += newEvents.length;
 				} else {
-					events = newEvents;
+					fetchedEvents = newEvents;
 					offset = newEvents.length;
 				}
 				hasMore = newEvents.length >= 50;
@@ -106,65 +148,75 @@
 		{/each}
 	</div>
 
-	<!-- Event list -->
+	<!-- Event list grouped by date -->
 	<div class="border-t border-[var(--border)]">
 		{#if events.length === 0}
 			<p class="py-8 text-center text-sm text-[var(--text-muted)]">No activity yet</p>
 		{:else}
-			<div class="divide-y divide-[var(--border)]/50">
-				{#each events as event (event.id)}
-					<div
-						class="flex items-start gap-3 px-4 py-3 {isSyncEventWarning(event.event_type)
-							? 'bg-[var(--warning)]/5'
-							: 'hover:bg-[var(--bg-muted)]/50'} transition-colors"
-					>
-						<!-- Status dot -->
-						<span class="mt-1.5 shrink-0 {syncEventColor(event.event_type)}">
-							{#if isSyncEventWarning(event.event_type)}
-								<svg
-									class="h-3 w-3"
-									fill="none"
-									viewBox="0 0 24 24"
-									stroke="currentColor"
-									stroke-width="2.5"
-								>
-									<path
-										d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4.5c-.77-.833-2.694-.833-3.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z"
-									/>
-								</svg>
-							{:else}
-								<span class="block w-2 h-2 rounded-full bg-current"></span>
-							{/if}
+			<div class="divide-y divide-[var(--border-subtle)]">
+				{#each groupedEvents as group (group.label)}
+					<!-- Date group header -->
+					<div class="px-4 py-2 bg-[var(--bg-muted)]/40">
+						<span class="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-faint)]">
+							{group.label}
+							<span class="font-normal ml-1">({group.events.length})</span>
 						</span>
+					</div>
 
-						<!-- Content -->
-						<div class="flex-1 min-w-0">
-							<p class="text-sm text-[var(--text-primary)]">
-								{formatSyncEvent(event)}
-							</p>
-							<div class="flex items-center gap-2 mt-1">
-								<span class="text-[11px] text-[var(--text-muted)]">
-									{formatEventTime(event.created_at)}
-								</span>
-								{#if event.event_type && SYNC_EVENT_META[event.event_type]}
-									<span
-										class="inline-flex px-1.5 py-0.5 text-[10px] font-medium rounded-full
-											bg-[var(--bg-muted)] text-[var(--text-muted)]"
+					{#each group.events as event (event.id)}
+						<div
+							class="flex items-start gap-3 px-4 py-3 {isSyncEventWarning(event.event_type)
+								? 'bg-[var(--warning)]/5'
+								: 'hover:bg-[var(--bg-muted)]/50'} transition-colors"
+						>
+							<!-- Status dot -->
+							<span class="mt-1.5 shrink-0 {syncEventColor(event.event_type)}">
+								{#if isSyncEventWarning(event.event_type)}
+									<svg
+										class="h-3 w-3"
+										fill="none"
+										viewBox="0 0 24 24"
+										stroke="currentColor"
+										stroke-width="2.5"
 									>
-										{event.event_type.replace(/_/g, ' ')}
-									</span>
+										<path
+											d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4.5c-.77-.833-2.694-.833-3.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z"
+										/>
+									</svg>
+								{:else}
+									<span class="block w-2 h-2 rounded-full bg-current"></span>
 								{/if}
-								{#if event.team_name}
-									<span
-										class="inline-flex px-1.5 py-0.5 text-[10px] font-medium rounded-full
-											border border-[var(--border)] text-[var(--text-muted)]"
-									>
-										{event.team_name}
+							</span>
+
+							<!-- Content -->
+							<div class="flex-1 min-w-0">
+								<p class="text-sm text-[var(--text-primary)]">
+									{formatSyncEvent(event)}
+								</p>
+								<div class="flex items-center gap-2 mt-1">
+									<span class="text-[11px] text-[var(--text-muted)]">
+										{formatEventTime(event.created_at)}
 									</span>
-								{/if}
+									{#if event.event_type && SYNC_EVENT_META[event.event_type]}
+										<span
+											class="inline-flex px-1.5 py-0.5 text-[10px] font-medium rounded-full
+												bg-[var(--bg-muted)] text-[var(--text-muted)]"
+										>
+											{event.event_type.replace(/_/g, ' ')}
+										</span>
+									{/if}
+									{#if event.team_name}
+										<span
+											class="inline-flex px-1.5 py-0.5 text-[10px] font-medium rounded-full
+												border border-[var(--border)] text-[var(--text-muted)]"
+										>
+											{event.team_name}
+										</span>
+									{/if}
+								</div>
 							</div>
 						</div>
-					</div>
+					{/each}
 				{/each}
 			</div>
 

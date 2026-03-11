@@ -222,9 +222,13 @@
 										{member.user.user_id.charAt(0).toUpperCase()}
 									</div>
 									<div>
-										<p class="text-sm font-medium text-[var(--text-primary)]">
+										<a
+											href="/members/{encodeURIComponent(member.user.user_id)}"
+											class="text-sm font-medium text-[var(--text-primary)] hover:text-[var(--accent)] transition-colors"
+											onclick={(e) => e.stopPropagation()}
+										>
 											{member.user.user_id}
-										</p>
+										</a>
 										<p class="text-[11px] text-[var(--text-muted)]">
 											{member.sessionCount} session{member.sessionCount !== 1 ? 's' : ''}
 											&middot; {formatDuration(member.duration)}
