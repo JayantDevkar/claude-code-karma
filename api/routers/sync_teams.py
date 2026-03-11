@@ -30,11 +30,41 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/sync", tags=["sync"])
 
 
+def _get_device_status_map() -> dict[str, dict]:
+    """Fetch Syncthing device connection status, keyed by device_id.
+
+    Returns {device_id: {"connected": bool, "in_bytes_total": int, "out_bytes_total": int}}.
+    Falls back to empty dict if Syncthing is unreachable.
+    """
+    try:
+        proxy = _sid.get_proxy()
+        devices = proxy.get_devices()
+        return {d["device_id"]: d for d in devices}
+    except Exception:
+        return {}
+
+
+def _enrich_member(member: dict, device_status: dict[str, dict]) -> dict:
+    """Build a member response dict with live connection data from Syncthing."""
+    device_id = member.get("device_id") or ""
+    device = device_status.get(device_id, {})
+    return {
+        "name": member["name"],
+        "device_id": device_id,
+        "connected": device.get("connected", False),
+        "in_bytes_total": device.get("in_bytes_total", 0),
+        "out_bytes_total": device.get("out_bytes_total", 0),
+    }
+
+
 @router.get("/teams")
 async def sync_teams_list():
     """List all teams with their backend, members, and projects."""
     conn = _sid._get_sync_conn()
     teams_data = list_teams(conn)
+
+    # Fetch live device connection status from Syncthing (best-effort)
+    device_status = _get_device_status_map()
 
     teams = []
     for t in teams_data:
@@ -52,13 +82,7 @@ async def sync_teams_list():
                 for p in projects_data
             ],
             "members": [
-                {
-                    "name": m["name"],
-                    "device_id": m["device_id"] or "",
-                    "connected": False,
-                    "in_bytes_total": 0,
-                    "out_bytes_total": 0,
-                }
+                _enrich_member(m, device_status)
                 for m in members_data
             ],
         })
@@ -121,6 +145,7 @@ async def sync_get_team(team_name: str) -> Any:
 
     members_data = list_members(conn, team_name)
     projects_data = list_team_projects(conn, team_name)
+    device_status = _get_device_status_map()
 
     return {
         "name": team["name"],
@@ -135,13 +160,7 @@ async def sync_get_team(team_name: str) -> Any:
             for p in projects_data
         ],
         "members": [
-            {
-                "name": m["name"],
-                "device_id": m["device_id"] or "",
-                "connected": False,
-                "in_bytes_total": 0,
-                "out_bytes_total": 0,
-            }
+            _enrich_member(m, device_status)
             for m in members_data
         ],
     }

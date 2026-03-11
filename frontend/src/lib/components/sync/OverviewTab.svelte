@@ -70,9 +70,15 @@
 
 	// ── Stats ─────────────────────────────────────────────────────────────────
 	let connectedMembers = $state(0);
-	let totalMembers = $state(0);
 	let membersLoaded = $state(false);
 	let membersLoading = $state(true);
+
+	// Total members from DB (includes self) — more accurate than device count
+	let totalMembers = $derived.by(() => {
+		if (!teamName || !status?.teams) return 0;
+		const team = status.teams[teamName] as { member_count?: number } | undefined;
+		return team?.member_count ?? 0;
+	});
 
 	// Derive project count from status, scoped to active team
 	let projectCount = $derived.by(() => {
@@ -109,8 +115,8 @@
 				const devData = await devicesRes.json();
 				const devices = devData.devices ?? [];
 				const remoteDevices = devices.filter((d: { is_self?: boolean }) => !d.is_self);
-				totalMembers = remoteDevices.length;
-				connectedMembers = remoteDevices.filter((d: { connected?: boolean }) => d.connected).length;
+				// +1 for self (always online)
+				connectedMembers = remoteDevices.filter((d: { connected?: boolean }) => d.connected).length + 1;
 			}
 		} catch {
 			// Non-critical
