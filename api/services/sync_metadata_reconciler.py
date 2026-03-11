@@ -1,7 +1,6 @@
 """Reconcile local DB state with team metadata folder contents."""
 
 import logging
-from pathlib import Path
 
 from db.sync_queries import (
     list_members, list_teams, upsert_member, log_event,
@@ -46,6 +45,8 @@ def reconcile_metadata_folder(config, conn, team_name: str) -> dict:
     removal_signals = read_removal_signals(meta_dir)
     removed_tags = {r["member_tag"] for r in removal_signals}
 
+    from services.folder_id import parse_member_tag
+
     for state in member_states:
         mtag = state.get("member_tag", "")
         device_id = state.get("device_id", "")
@@ -64,7 +65,6 @@ def reconcile_metadata_folder(config, conn, team_name: str) -> dict:
 
         if mtag not in existing_tags and device_id not in existing_devices:
             # New member discovered via metadata
-            from services.folder_id import parse_member_tag
             _, machine_tag = parse_member_tag(mtag)
             upsert_member(
                 conn, team_name, user_id, device_id=device_id,
@@ -80,7 +80,6 @@ def reconcile_metadata_folder(config, conn, team_name: str) -> dict:
             stats["members_added"] += 1
         elif device_id in existing_devices:
             # Existing member — update identity columns if missing
-            from services.folder_id import parse_member_tag
             _, machine_tag = parse_member_tag(mtag)
             upsert_member(
                 conn, team_name, user_id, device_id=device_id,
@@ -119,6 +118,7 @@ def _auto_leave_team(config, conn, team_name: str) -> None:
     """
     from db.sync_queries import delete_team
 
+    syncthing_cleaned = False
     try:
         import asyncio
         from services.sync_folders import cleanup_syncthing_for_team
@@ -131,9 +131,11 @@ def _auto_leave_team(config, conn, team_name: str) -> None:
             loop = None
 
         if loop and loop.is_running():
-            # We're inside an async context — create a task
-            # This shouldn't normally happen from the watcher thread
-            logger.warning("auto_leave_team called from async context for %s", team_name)
+            # Inside an async context — use run_coroutine_threadsafe
+            future = asyncio.run_coroutine_threadsafe(
+                cleanup_syncthing_for_team(proxy, config, conn, team_name), loop
+            )
+            future.result(timeout=30)
         else:
             # Sync context (watcher thread) — create a new event loop
             loop = asyncio.new_event_loop()
@@ -143,13 +145,14 @@ def _auto_leave_team(config, conn, team_name: str) -> None:
                 )
             finally:
                 loop.close()
+        syncthing_cleaned = True
     except Exception as e:
         logger.warning("Failed to clean up Syncthing for auto-leave team %s: %s", team_name, e)
 
     try:
         log_event(conn, "team_left", team_name=team_name,
-                  detail={"reason": "removed_via_metadata"})
+                  detail={"reason": "removed_via_metadata", "syncthing_cleaned": syncthing_cleaned})
         delete_team(conn, team_name)
-        logger.info("Auto-left team %s (removed via metadata)", team_name)
+        logger.info("Auto-left team %s (removed via metadata, syncthing_cleaned=%s)", team_name, syncthing_cleaned)
     except Exception as e:
         logger.warning("Failed to delete team %s during auto-leave: %s", team_name, e)

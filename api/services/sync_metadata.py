@@ -8,6 +8,9 @@ Each team has a ``karma-meta--{team}`` Syncthing folder (sendreceive) containing
 
 import json
 import logging
+import os
+import re
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -15,6 +18,29 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 METADATA_PREFIX = "karma-meta--"
+
+# Only allow safe characters in member_tag filenames (no path traversal)
+_SAFE_FILENAME = re.compile(r"^[a-zA-Z0-9_\-\.]+$")
+
+
+def _safe_member_path(base_dir: Path, member_tag: str) -> Path:
+    """Build a safe path for member_tag, rejecting traversal attempts."""
+    if not _SAFE_FILENAME.match(member_tag) or ".." in member_tag:
+        raise ValueError(f"Unsafe member_tag for filename: {member_tag!r}")
+    return base_dir / f"{member_tag}.json"
+
+
+def _atomic_write_json(path: Path, data: dict) -> None:
+    """Write JSON atomically using tmp+rename (atomic on POSIX)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_path = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(data, f, indent=2)
+        Path(tmp_path).rename(path)
+    except BaseException:
+        Path(tmp_path).unlink(missing_ok=True)
+        raise
 
 
 def build_metadata_folder_id(team_name: str) -> str:
@@ -52,7 +78,6 @@ def write_member_state(
 ) -> Path:
     """Write this device's state file to the metadata folder."""
     members_dir = meta_dir / "members"
-    members_dir.mkdir(parents=True, exist_ok=True)
 
     state = {
         "member_tag": member_tag,
@@ -65,8 +90,8 @@ def write_member_state(
         "updated_at": _now_iso(),
     }
 
-    path = members_dir / f"{member_tag}.json"
-    path.write_text(json.dumps(state, indent=2))
+    path = _safe_member_path(members_dir, member_tag)
+    _atomic_write_json(path, state)
     return path
 
 
@@ -79,7 +104,6 @@ def write_removal_signal(
 ) -> Path:
     """Write a removal signal for a member."""
     removals_dir = meta_dir / "removals"
-    removals_dir.mkdir(parents=True, exist_ok=True)
 
     signal = {
         "member_tag": removed_member_tag,
@@ -88,8 +112,8 @@ def write_removal_signal(
         "removed_at": _now_iso(),
     }
 
-    path = removals_dir / f"{removed_member_tag}.json"
-    path.write_text(json.dumps(signal, indent=2))
+    path = _safe_member_path(removals_dir, removed_member_tag)
+    _atomic_write_json(path, signal)
     return path
 
 
@@ -102,7 +126,7 @@ def write_team_info(meta_dir: Path, *, team_name: str, created_by: str) -> Path:
     }
 
     path = meta_dir / "team.json"
-    path.write_text(json.dumps(info, indent=2))
+    _atomic_write_json(path, info)
     return path
 
 
@@ -149,13 +173,42 @@ def read_team_info(meta_dir: Path) -> Optional[dict]:
 
 def is_removed(meta_dir: Path, member_tag: str) -> bool:
     """Check if a member_tag has a removal signal."""
-    path = meta_dir / "removals" / f"{member_tag}.json"
+    try:
+        path = _safe_member_path(meta_dir / "removals", member_tag)
+    except ValueError:
+        logger.warning("Unsafe member_tag in is_removed check: %s", member_tag)
+        return False
     return path.exists()
 
 
-def validate_removal_authority(meta_dir: Path, remover_member_tag: str) -> bool:
-    """Check if the remover is the team creator (creator-only removal)."""
+def validate_removal_authority(
+    meta_dir: Path, remover_member_tag: str, *, conn=None, team_name: str = "",
+) -> bool:
+    """Check if the remover is the team creator (creator-only removal).
+
+    Falls back to local DB when team.json hasn't synced yet (common P2P race).
+    """
     info = read_team_info(meta_dir)
-    if info is None:
-        return False
-    return info.get("created_by") == remover_member_tag
+    if info is not None:
+        return info.get("created_by") == remover_member_tag
+
+    # team.json not yet synced — fall back to DB join_code (creator's info)
+    if conn is not None and team_name:
+        try:
+            row = conn.execute(
+                "SELECT join_code FROM sync_teams WHERE name = ?", (team_name,)
+            ).fetchone()
+            if row:
+                join_code = row[0] if isinstance(row, tuple) else row["join_code"]
+                if join_code:
+                    # join_code format: team:user_id:device_id
+                    parts = join_code.split(":", 2)
+                    if len(parts) >= 2:
+                        creator_user = parts[1] if len(parts) == 3 else parts[0]
+                        # remover_member_tag is "user.machine" — check user part
+                        remover_user = remover_member_tag.split(".", 1)[0]
+                        return remover_user == creator_user
+        except Exception as e:
+            logger.debug("DB fallback for removal authority failed: %s", e)
+
+    return False

@@ -111,7 +111,7 @@ async def sync_remove_member(
         meta_dir = _kb / "metadata-folders" / team_name
         if meta_dir.exists():
             config = await run_sync(_sid._load_identity)
-            if config and not validate_removal_authority(meta_dir, config.member_tag):
+            if config and not validate_removal_authority(meta_dir, config.member_tag, conn=conn, team_name=team_name):
                 raise HTTPException(
                     403,
                     "Only the team creator can remove members. "

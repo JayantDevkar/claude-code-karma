@@ -187,3 +187,78 @@ def test_read_team_info_missing(tmp_path):
     meta_dir = tmp_path / "karma-meta--acme"
     meta_dir.mkdir()
     assert read_team_info(meta_dir) is None
+
+
+def test_read_member_states_skips_corrupt_json(tmp_path):
+    """Corrupt JSON files should be skipped, valid ones returned."""
+    from services.sync_metadata import write_member_state, read_all_member_states
+
+    meta_dir = tmp_path / "karma-meta--acme"
+    meta_dir.mkdir()
+
+    # Write one valid member
+    write_member_state(meta_dir, member_tag="jayant.mac-mini", user_id="jayant",
+                       machine_id="Mini", device_id="DID1")
+
+    # Write a corrupt JSON file
+    members_dir = meta_dir / "members"
+    (members_dir / "corrupt.json").write_text("{invalid json truncated")
+
+    states = read_all_member_states(meta_dir)
+    assert len(states) == 1
+    assert states[0]["member_tag"] == "jayant.mac-mini"
+
+
+def test_read_removal_signals_skips_corrupt_json(tmp_path):
+    """Corrupt removal signal files should be skipped."""
+    from services.sync_metadata import write_removal_signal, read_removal_signals
+
+    meta_dir = tmp_path / "karma-meta--acme"
+    meta_dir.mkdir()
+
+    write_removal_signal(meta_dir, removed_member_tag="ayush.ayush-mac",
+                         removed_device_id="DID", removed_by="jayant.mac-mini")
+
+    # Write a corrupt removal signal
+    removals_dir = meta_dir / "removals"
+    (removals_dir / "corrupt.json").write_text("not json at all")
+
+    signals = read_removal_signals(meta_dir)
+    assert len(signals) == 1
+    assert signals[0]["member_tag"] == "ayush.ayush-mac"
+
+
+def test_write_member_state_rejects_path_traversal(tmp_path):
+    """member_tag with path traversal characters should be rejected."""
+    from services.sync_metadata import write_member_state
+
+    meta_dir = tmp_path / "karma-meta--acme"
+    meta_dir.mkdir()
+
+    with pytest.raises(ValueError, match="Unsafe member_tag"):
+        write_member_state(meta_dir, member_tag="../../etc/passwd", user_id="evil",
+                           device_id="DID")
+
+
+def test_validate_removal_authority_db_fallback(tmp_path):
+    """When team.json is missing, fall back to DB join_code for authority check."""
+    import sqlite3
+    from db.schema import ensure_schema
+    from db.sync_queries import create_team
+    from services.sync_metadata import validate_removal_authority
+
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    ensure_schema(conn)
+    create_team(conn, "acme", backend="syncthing", join_code="acme:jayant:DEVICE123")
+
+    meta_dir = tmp_path / "karma-meta--acme"
+    meta_dir.mkdir()
+    # No team.json exists
+
+    # Creator should be authorized via DB fallback
+    assert validate_removal_authority(meta_dir, "jayant.mac-mini", conn=conn, team_name="acme") is True
+    # Non-creator should be denied
+    assert validate_removal_authority(meta_dir, "ayush.ayush-mac", conn=conn, team_name="acme") is False
+    # Without conn, should deny (no fallback)
+    assert validate_removal_authority(meta_dir, "jayant.mac-mini") is False

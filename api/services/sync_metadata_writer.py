@@ -56,8 +56,7 @@ def update_own_metadata(config, conn, team_name: str) -> None:
         logger.debug("Failed to check rejected folders: %s", e)
 
     sync_direction, _ = get_effective_setting(conn, "sync_direction", team_name=team_name)
-    session_limit_val, _ = get_effective_setting(conn, "sync_direction", team_name=team_name)
-    # session_limit comes from sync_teams table, not settings
+    # session_limit comes from sync_teams table, not from settings
     team_row = conn.execute(
         "SELECT sync_session_limit FROM sync_teams WHERE name = ?", (team_name,)
     ).fetchone()
