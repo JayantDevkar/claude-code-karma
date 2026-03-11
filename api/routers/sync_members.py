@@ -101,6 +101,33 @@ async def sync_remove_member(
         raise HTTPException(404, f"Member '{member_name}' not found")
 
     device_id = member["device_id"]
+    member_tag = member.get("member_tag") or member_name
+
+    # Write removal signal to metadata folder (creator-only enforcement)
+    try:
+        from karma.config import KARMA_BASE as _kb
+        from services.sync_metadata import write_removal_signal, validate_removal_authority
+
+        meta_dir = _kb / "metadata-folders" / team_name
+        if meta_dir.exists():
+            config = await run_sync(_sid._load_identity)
+            if config and not validate_removal_authority(meta_dir, config.member_tag):
+                raise HTTPException(
+                    403,
+                    "Only the team creator can remove members. "
+                    "You can control your own sync direction instead.",
+                )
+            if config:
+                write_removal_signal(
+                    meta_dir,
+                    removed_member_tag=member_tag,
+                    removed_device_id=device_id,
+                    removed_by=config.member_tag,
+                )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning("Failed to write removal signal: %s", e)
 
     # Clean up Syncthing state before removing DB record
     cleanup = {"folders_removed": 0, "devices_updated": 0}
@@ -468,5 +495,13 @@ async def sync_update_member_settings(
         member_name=actor_name,
         detail={"target_member": member["name"], "target_device": device_id, **changes},
     )
+
+    # Update own metadata state (settings changed)
+    try:
+        from services.sync_metadata_writer import update_own_metadata
+        if config is not None:
+            update_own_metadata(config, conn, team_name)
+    except Exception as e:
+        logger.debug("Failed to update own metadata after member settings change: %s", e)
 
     return {"ok": True, "team_name": team_name, "device_id": device_id, "changes": changes}

@@ -270,6 +270,13 @@ async def sync_join_team(req: JoinTeamRequest) -> Any:
     except Exception as e:
         logger.warning("Failed to find matching projects: %s", e)
 
+    # Update own metadata state after joining
+    try:
+        from services.sync_metadata_writer import update_own_metadata
+        update_own_metadata(config, conn, team_name)
+    except Exception as e:
+        logger.debug("Failed to update own metadata after join: %s", e)
+
     log_event(conn, "member_joined", team_name=team_name,
               member_name=config.user_id, detail={"via": "join_code", "leader": leader_name})
 
@@ -382,5 +389,12 @@ async def sync_update_team_settings(team_name: str, req: UpdateTeamSettingsReque
 
     log_event(conn, "settings_changed", team_name=team_name, member_name=member_name,
               detail=changes)
+
+    # Update own metadata state (settings changed)
+    try:
+        from services.sync_metadata_writer import update_own_metadata
+        update_own_metadata(config, conn, team_name)
+    except Exception as e:
+        logger.debug("Failed to update own metadata after settings change: %s", e)
 
     return {"ok": True, "team_name": team_name, "changes": changes}

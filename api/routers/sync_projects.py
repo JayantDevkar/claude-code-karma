@@ -135,6 +135,14 @@ async def sync_add_team_project(team_name: str, req: AddTeamProjectRequest) -> A
     except Exception as e:
         logger.warning("Failed to create Syncthing folder for project %s: %s", encoded, e)
 
+    # Update own metadata state (subscriptions changed)
+    try:
+        from services.sync_metadata_writer import update_own_metadata
+        if config is not None:
+            update_own_metadata(config, conn, team_name)
+    except Exception as e:
+        logger.debug("Failed to update own metadata: %s", e)
+
     # Reindex remote sessions so any already-synced files appear immediately
     await _trigger_remote_reindex_bg()
 
@@ -208,6 +216,15 @@ async def sync_remove_team_project(team_name: str, project_name: str) -> Any:
 
     remove_team_project(conn, team_name, project_name)
     log_event(conn, "project_removed", team_name=team_name, project_encoded_name=project_name)
+
+    # Update own metadata state (subscriptions changed)
+    try:
+        from services.sync_metadata_writer import update_own_metadata
+        config = await run_sync(_sid._load_identity)
+        if config is not None:
+            update_own_metadata(config, conn, team_name)
+    except Exception as e:
+        logger.debug("Failed to update own metadata: %s", e)
 
     return {"ok": True, "name": project_name, "folders_removed": folders_removed}
 
