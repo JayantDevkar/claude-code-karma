@@ -100,19 +100,25 @@ async def sync_pending_devices() -> Any:
     except Exception:
         proxy = None
 
+    # Load identity config early (needed for self-skip and reconciliation)
+    config = None
+    try:
+        config = await run_sync(_sid._load_identity)
+    except Exception:
+        pass
+
     # Phase 0: Ensure leader devices have introducer=True (auto-heals existing setups)
     if proxy:
         try:
-            await ensure_leader_introducers(proxy, conn)
+            own_did = config.syncthing.device_id if config and config.syncthing else None
+            await ensure_leader_introducers(proxy, conn, own_device_id=own_did)
         except Exception:
             pass
 
     # Phase 0.5: Reconcile devices that Syncthing's introducer auto-added
     # but the karma DB doesn't know about (multi-device leader scenario).
-    config = None
     reconciled = 0
     try:
-        config = await run_sync(_sid._load_identity)
         if config and proxy:
             reconciled = await reconcile_introduced_devices(proxy, config, conn)
     except Exception as e:
@@ -243,6 +249,19 @@ async def sync_accept_pending_device(device_id: str, req: AcceptPendingDeviceReq
             # remote session files arrive (within ~5 minutes).
             raw = device_info.get("name", "unknown")
             member_name = _sanitize_device_name(raw)
+
+    # Check for name collision — different device claiming the same identity
+    existing_members = list_members(conn, team_name)
+    collisions = [
+        m for m in existing_members
+        if m["name"] == member_name and m["device_id"] != device_id
+    ]
+    if collisions:
+        raise HTTPException(
+            409,
+            f"Member name '{member_name}' is already used by another device "
+            f"in team '{team_name}'. The new device must use a different user_id.",
+        )
 
     # 1. Accept device in Syncthing
     try:

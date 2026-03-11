@@ -193,6 +193,19 @@ async def sync_remove_team_project(team_name: str, project_name: str) -> Any:
     except Exception as e:
         logger.warning("Syncthing cleanup for project %s failed: %s", project_name, e)
 
+    # Clean up remote session data (filesystem + DB)
+    try:
+        from db.sync_queries import cleanup_data_for_project
+        stats = cleanup_data_for_project(conn, team_name, project_name)
+        if stats["sessions_deleted"] or stats["dirs_deleted"]:
+            logger.info(
+                "Cleaned up %d sessions and %d dirs for %s/%s",
+                stats["sessions_deleted"], stats["dirs_deleted"],
+                team_name, project_name,
+            )
+    except Exception as e:
+        logger.warning("Failed to clean up project data: %s", e)
+
     remove_team_project(conn, team_name, project_name)
     log_event(conn, "project_removed", team_name=team_name, project_encoded_name=project_name)
 

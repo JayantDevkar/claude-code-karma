@@ -30,6 +30,11 @@ def create_team(
 
 
 def delete_team(conn: sqlite3.Connection, name: str) -> None:
+    # Clean up orphaned settings (sync_settings has no FK to sync_teams)
+    conn.execute(
+        "DELETE FROM sync_settings WHERE scope = ? OR scope LIKE ?",
+        (f"team:{name}", f"member:{name}:%"),
+    )
     conn.execute("DELETE FROM sync_teams WHERE name = ?", (name,))
     conn.commit()
 
@@ -675,3 +680,46 @@ def cleanup_data_for_member(
         conn.commit()
 
     return {"dirs_removed": dirs_removed, "sessions_deleted": sessions_deleted}
+
+
+def cleanup_data_for_project(
+    conn: sqlite3.Connection,
+    team_name: str,
+    project_encoded_name: str,
+    *,
+    base_path: Path | None = None,
+) -> dict:
+    """Remove remote session data for a specific project across all team members.
+
+    Cleans up:
+    - Filesystem: remote-sessions/{member}/{encoded}/ directories
+    - DB: sessions with source='remote' for this project
+    """
+    if base_path is None:
+        from karma.config import KARMA_BASE
+        base_path = KARMA_BASE
+
+    stats = {"sessions_deleted": 0, "dirs_deleted": 0}
+
+    members = list_members(conn, team_name)
+
+    # Filesystem cleanup
+    for m in members:
+        member_dir = base_path / "remote-sessions" / m["name"] / project_encoded_name
+        if member_dir.exists():
+            shutil.rmtree(member_dir)
+            stats["dirs_deleted"] += 1
+            # Remove parent if empty
+            parent = member_dir.parent
+            if parent.exists() and not any(parent.iterdir()):
+                parent.rmdir()
+
+    # DB cleanup: remove remote sessions for this project
+    cursor = conn.execute(
+        "DELETE FROM sessions WHERE source = 'remote' AND project_encoded_name = ?",
+        (project_encoded_name,),
+    )
+    stats["sessions_deleted"] = cursor.rowcount
+    conn.commit()
+
+    return stats

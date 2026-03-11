@@ -154,6 +154,14 @@ async def reconcile_introduced_devices(proxy, config, conn) -> int:
                 member_name=username,
                 detail={"strategy": "reconciliation", "source": "introduced_device"},
             )
+            # Auto-share project folders back to the introduced device
+            try:
+                await auto_share_folders(proxy, config, conn, team_name, device_id)
+            except Exception as e:
+                logger.warning(
+                    "Reconcile introduced: failed to share folders with %s: %s",
+                    device_id[:20], e,
+                )
             logger.info(
                 "Reconciled introduced device %s as %s in team %s",
                 device_id[:20], username, team_name,
@@ -163,11 +171,12 @@ async def reconcile_introduced_devices(proxy, config, conn) -> int:
     return reconciled
 
 
-async def ensure_leader_introducers(proxy, conn) -> int:
+async def ensure_leader_introducers(proxy, conn, *, own_device_id: str | None = None) -> int:
     """Ensure leader devices are marked as introducers in Syncthing.
 
     Parses each team's join code to find the leader device_id and sets the
-    introducer flag if it is missing.
+    introducer flag if it is missing. Skips own device_id to avoid wasteful
+    API calls.
 
     Returns count of devices updated.
     """
@@ -182,6 +191,9 @@ async def ensure_leader_introducers(proxy, conn) -> int:
         elif len(parts) == 2:
             _, leader_device_id = parts
         else:
+            continue
+        # Skip self — can't set introducer on own device
+        if own_device_id and leader_device_id == own_device_id:
             continue
         try:
             changed = await run_sync(proxy.set_device_introducer, leader_device_id, True)
@@ -412,8 +424,12 @@ async def auto_accept_pending_peers(proxy, config, conn) -> tuple[int, dict]:
             try:
                 await run_sync(proxy.add_device, device_id, username)
             except Exception as e:
-                logger.warning("Auto-accept: failed to add device %s: %s", device_id[:20], e)
-                continue
+                logger.warning(
+                    "Auto-accept: add_device failed for %s (may already exist via introducer): %s",
+                    device_id[:20], e,
+                )
+                # Don't skip — device may already be configured via introducer.
+                # Proceed with upsert_member and auto_share_folders.
 
             # Add as team member in DB
             upsert_member(conn, team_name, username, device_id=device_id)
