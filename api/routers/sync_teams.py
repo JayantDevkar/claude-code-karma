@@ -22,7 +22,7 @@ from services.sync_identity import (
     validate_user_id, validate_device_id,
     ALLOWED_PROJECT_NAME, _compute_proj_suffix,
 )
-from services.sync_folders import ensure_handshake_folder, cleanup_syncthing_for_team
+from services.sync_folders import ensure_handshake_folder, ensure_metadata_folder, cleanup_syncthing_for_team
 from services.syncthing_proxy import run_sync
 
 logger = logging.getLogger(__name__)
@@ -96,6 +96,14 @@ async def sync_create_team(req: CreateTeamRequest) -> Any:
                       member_tag=config.member_tag)
 
     log_event(conn, "team_created", team_name=req.name)
+
+    # Create metadata folder (sendreceive, shared with future members)
+    if own_device_id:
+        try:
+            proxy = _sid.get_proxy()
+            await ensure_metadata_folder(proxy, config, req.name, [own_device_id], is_creator=True)
+        except Exception as e:
+            logger.warning("Failed to create metadata folder for team %s: %s", req.name, e)
 
     return {"ok": True, "name": req.name, "backend": req.backend, "join_code": join_code}
 
@@ -233,6 +241,13 @@ async def sync_join_team(req: JoinTeamRequest) -> Any:
             await ensure_handshake_folder(proxy, config, team_name, [device_id])
         except Exception as e:
             logger.warning("Failed to create handshake folder: %s", e)
+
+    # Create/join metadata folder
+    if paired:
+        try:
+            await ensure_metadata_folder(proxy, config, team_name, [device_id])
+        except Exception as e:
+            logger.warning("Failed to create metadata folder: %s", e)
 
     # Find local projects matching team's shared projects (suggestions, NOT auto-shared)
     matching_projects = []
