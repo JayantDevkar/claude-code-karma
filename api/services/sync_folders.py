@@ -36,8 +36,8 @@ async def ensure_outbox_folder(proxy, config, encoded: str, proj_suffix: str, de
     """
     from karma.config import KARMA_BASE
 
-    outbox_id = build_outbox_id(config.user_id, proj_suffix)
-    outbox_path = str(KARMA_BASE / "remote-sessions" / config.user_id / encoded)
+    outbox_id = build_outbox_id(config.member_tag, proj_suffix)
+    outbox_path = str(KARMA_BASE / "remote-sessions" / config.member_tag / encoded)
     Path(outbox_path).mkdir(parents=True, exist_ok=True)
 
     try:
@@ -72,8 +72,9 @@ async def ensure_inbox_folders(
         if only_device_id and m["device_id"] != only_device_id:
             continue
 
-        inbox_path = str(KARMA_BASE / "remote-sessions" / m["name"] / encoded)
-        inbox_id = build_outbox_id(m['name'], proj_suffix)
+        member_tag = m.get("member_tag") or m["name"]  # fallback for legacy members
+        inbox_path = str(KARMA_BASE / "remote-sessions" / member_tag / encoded)
+        inbox_id = build_outbox_id(member_tag, proj_suffix)
         inbox_devices = [m["device_id"]]
         if config.syncthing.device_id:
             inbox_devices.append(config.syncthing.device_id)
@@ -87,7 +88,7 @@ async def ensure_inbox_folders(
                 await run_sync(proxy.add_folder, inbox_id, inbox_path, inbox_devices, "receiveonly")
             result["inboxes"] += 1
         except Exception as e:
-            result["errors"].append(f"inbox {m['name']}/{proj_suffix}: {e}")
+            result["errors"].append(f"inbox {member_tag}/{proj_suffix}: {e}")
 
     return result
 
@@ -96,7 +97,7 @@ async def ensure_handshake_folder(proxy, config, team_name: str, device_ids: lis
     """Create a lightweight handshake folder to signal team membership."""
     from karma.config import KARMA_BASE
 
-    folder_id = build_handshake_id(config.user_id, team_name)
+    folder_id = build_handshake_id(config.member_tag, team_name)
     folder_path = str(KARMA_BASE / "handshakes" / team_name)
     Path(folder_path).mkdir(parents=True, exist_ok=True)
 
@@ -262,9 +263,9 @@ async def cleanup_syncthing_for_team(proxy, config, conn, team_name: str) -> dic
         )
         proj_suffixes.add(suffix)
 
-    member_names = {m["name"] for m in members}
-    if config and config.user_id:
-        member_names.add(config.user_id)
+    member_tags = {m.get("member_tag") or m["name"] for m in members}
+    if config and hasattr(config, 'member_tag'):
+        member_tags.add(config.member_tag)
 
     try:
         folders = await run_sync(proxy.get_configured_folders)
@@ -272,7 +273,7 @@ async def cleanup_syncthing_for_team(proxy, config, conn, team_name: str) -> dic
             folder_id = folder.get("id", "")
             if is_outbox_folder(folder_id):
                 parsed = parse_outbox_id(folder_id)
-                if parsed and parsed[1] in proj_suffixes and parsed[0] in member_names:
+                if parsed and parsed[1] in proj_suffixes and parsed[0] in member_tags:
                     try:
                         await run_sync(proxy.remove_folder, folder_id)
                         result["folders_removed"] += 1
@@ -331,7 +332,7 @@ async def cleanup_syncthing_for_member(
             if not parsed or parsed[1] not in proj_suffixes:
                 continue
             username, suffix = parsed
-            if config and username == config.user_id:
+            if config and (username == config.member_tag or username == config.user_id):
                 try:
                     res = await run_sync(
                         proxy.remove_device_from_folder, folder_id, member_device_id,

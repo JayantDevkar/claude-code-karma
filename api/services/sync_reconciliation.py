@@ -21,6 +21,7 @@ from db.sync_queries import (
 from services.folder_id import (
     is_karma_folder,
     parse_handshake_id,
+    parse_member_tag,
     parse_outbox_id,
 )
 from services.sync_folders import (
@@ -148,7 +149,10 @@ async def reconcile_introduced_devices(proxy, config, conn) -> int:
                     device_id[:20], team_name,
                 )
                 continue
-            upsert_member(conn, team_name, username, device_id=device_id)
+            # Parse member_tag to extract user_id and machine_tag
+            user_id, machine_tag_part = parse_member_tag(username)
+            upsert_member(conn, team_name, user_id, device_id=device_id,
+                          machine_tag=machine_tag_part, member_tag=username if machine_tag_part else None)
             log_event(
                 conn, "member_auto_accepted", team_name=team_name,
                 member_name=username,
@@ -309,10 +313,15 @@ async def reconcile_pending_handshakes(proxy, config, conn) -> int:
                 # Add self as member so we appear in the team's member list
                 upsert_member(
                     conn, team_name, config.user_id, device_id=own_device_id,
+                    machine_id=config.machine_id, machine_tag=config.machine_tag,
+                    member_tag=config.member_tag,
                 )
 
             # Add the offering device as a team member
-            upsert_member(conn, team_name, username, device_id=device_id)
+            # Parse member_tag from the username extracted from handshake folder
+            user_id, machine_tag_part = parse_member_tag(username)
+            upsert_member(conn, team_name, user_id, device_id=device_id,
+                          machine_tag=machine_tag_part, member_tag=username if machine_tag_part else None)
             log_event(
                 conn, "member_auto_accepted", team_name=team_name,
                 member_name=username,
@@ -432,7 +441,9 @@ async def auto_accept_pending_peers(proxy, config, conn) -> tuple[int, dict]:
                 # Proceed with upsert_member and auto_share_folders.
 
             # Add as team member in DB
-            upsert_member(conn, team_name, username, device_id=device_id)
+            user_id, machine_tag_part = parse_member_tag(username)
+            upsert_member(conn, team_name, user_id, device_id=device_id,
+                          machine_tag=machine_tag_part, member_tag=username if machine_tag_part else None)
             log_event(conn, "member_auto_accepted", team_name=team_name, member_name=username)
             logger.info("Auto-accepted peer %s (%s) into team %s", username, device_id[:20], team_name)
 
