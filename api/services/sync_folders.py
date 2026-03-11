@@ -24,9 +24,46 @@ from services.folder_id import (
     OUTBOX_PREFIX,
 )
 from services.sync_identity import _compute_proj_suffix
+from services.sync_metadata import build_metadata_folder_id, is_metadata_folder, write_team_info, write_member_state
 from services.syncthing_proxy import run_sync
 
 logger = logging.getLogger(__name__)
+
+
+async def ensure_metadata_folder(
+    proxy, config, team_name: str, device_ids: list[str],
+    *, is_creator: bool = False,
+) -> None:
+    """Create or update the team metadata folder (sendreceive, shared by all members).
+
+    Also writes the local member's state file and team.json (if creator).
+    """
+    from karma.config import KARMA_BASE
+
+    folder_id = build_metadata_folder_id(team_name)
+    meta_path = KARMA_BASE / "metadata-folders" / team_name
+    meta_path.mkdir(parents=True, exist_ok=True)
+
+    try:
+        await run_sync(proxy.update_folder_devices, folder_id, device_ids)
+    except ValueError:
+        all_ids = list(device_ids)
+        if config.syncthing.device_id and config.syncthing.device_id not in all_ids:
+            all_ids.append(config.syncthing.device_id)
+        await run_sync(proxy.add_folder, folder_id, str(meta_path), all_ids, "sendreceive")
+
+    # Write team.json if we're the creator
+    if is_creator:
+        write_team_info(meta_path, team_name=team_name, created_by=config.member_tag)
+
+    # Write own member state
+    write_member_state(
+        meta_path,
+        member_tag=config.member_tag,
+        user_id=config.user_id,
+        machine_id=config.machine_id,
+        device_id=config.syncthing.device_id or "",
+    )
 
 
 async def ensure_outbox_folder(proxy, config, encoded: str, proj_suffix: str, device_ids: list[str]) -> None:
@@ -215,6 +252,17 @@ async def auto_share_folders(proxy, config, conn, team_name, new_device_id) -> d
 
     result = {"outboxes": 0, "inboxes": 0, "errors": []}
 
+    # Add new device to metadata folder
+    try:
+        all_device_ids = [new_device_id]
+        for m in members:
+            if m["device_id"] and m["device_id"] not in all_device_ids:
+                all_device_ids.append(m["device_id"])
+        meta_folder_id = build_metadata_folder_id(team_name)
+        await run_sync(proxy.update_folder_devices, meta_folder_id, all_device_ids)
+    except Exception as e:
+        logger.debug("Failed to update metadata folder devices: %s", e)
+
     for proj in projects:
         encoded = proj["project_encoded_name"]
         proj_suffix = _compute_proj_suffix(proj.get("git_identity"), proj.get("path"), encoded)
@@ -287,6 +335,15 @@ async def cleanup_syncthing_for_team(proxy, config, conn, team_name: str) -> dic
                         result["folders_removed"] += 1
                     except Exception as e:
                         logger.warning("Failed to remove handshake folder %s: %s", folder_id, e)
+            elif is_metadata_folder(folder_id):
+                from services.sync_metadata import parse_metadata_folder_id
+                parsed_team = parse_metadata_folder_id(folder_id)
+                if parsed_team == team_name:
+                    try:
+                        await run_sync(proxy.remove_folder, folder_id)
+                        result["folders_removed"] += 1
+                    except Exception as e:
+                        logger.warning("Failed to remove metadata folder %s: %s", folder_id, e)
     except Exception as e:
         logger.warning("Failed to scan Syncthing folders for cleanup: %s", e)
 
