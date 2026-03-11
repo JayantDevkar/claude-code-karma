@@ -363,7 +363,6 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
                 FOREIGN KEY (team_name) REFERENCES sync_teams(name) ON DELETE CASCADE
             );
             CREATE INDEX IF NOT EXISTS idx_sync_members_name ON sync_members(team_name, name);
-            CREATE INDEX IF NOT EXISTS idx_sync_members_tag ON sync_members(member_tag);
             CREATE TABLE IF NOT EXISTS sync_team_projects (
                 team_name TEXT NOT NULL,
                 project_encoded_name TEXT NOT NULL,
@@ -396,6 +395,16 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             conn.execute("ALTER TABLE sync_teams ADD COLUMN join_code TEXT")
         if "sync_session_limit" not in existing_cols:
             conn.execute("ALTER TABLE sync_teams ADD COLUMN sync_session_limit TEXT DEFAULT 'all'")
+        # Patch sync_members columns that may be missing if table was created by an older migration
+        member_cols = {r[1] for r in conn.execute("PRAGMA table_info(sync_members)").fetchall()}
+        if member_cols:  # table exists
+            if "machine_id" not in member_cols:
+                conn.execute("ALTER TABLE sync_members ADD COLUMN machine_id TEXT")
+            if "machine_tag" not in member_cols:
+                conn.execute("ALTER TABLE sync_members ADD COLUMN machine_tag TEXT")
+            if "member_tag" not in member_cols:
+                conn.execute("ALTER TABLE sync_members ADD COLUMN member_tag TEXT")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_sync_members_tag ON sync_members(member_tag)")
         # Ensure sync_settings table exists (may be missing on older installs)
         conn.executescript("""
             CREATE TABLE IF NOT EXISTS sync_settings (
@@ -425,8 +434,6 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
                 rejected_at TEXT DEFAULT (datetime('now'))
             );
         """)
-        # Note: sync_members identity columns (machine_id, machine_tag, member_tag)
-        # are handled by the v17 migration below. Fresh installs get them from CREATE TABLE.
         # Ensure skill_definitions table exists (may be missing on older installs)
         conn.executescript("""
             CREATE TABLE IF NOT EXISTS skill_definitions (
