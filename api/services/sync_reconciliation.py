@@ -379,7 +379,7 @@ async def auto_accept_pending_peers(proxy, config, conn) -> tuple[int, dict]:
             if not karma_folders:
                 continue
 
-            username = extract_username_from_folder_ids(karma_folders, conn=conn)
+            username = extract_username_from_folder_ids(karma_folders)
             team_name = find_team_for_folder(conn, karma_folders)
 
             if not team_name or not username:

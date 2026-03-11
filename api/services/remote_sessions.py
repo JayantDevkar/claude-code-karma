@@ -246,12 +246,12 @@ def _resolve_user_id(user_dir: Path, conn=None) -> str:
     subdirectory contains the canonical user_id set by the sender.
 
     Resolution order (most reliable first):
-      1. manifest.device_id → sync_members DB lookup → member name (if clean)
-      2. manifest.user_id (preferred over hostname-style DB names)
+      1. manifest.user_id (canonical identity set by the sender)
+      2. manifest.device_id → sync_members DB lookup (only if it matches manifest)
       3. directory name (last resort)
 
-    If the DB member name looks like a hostname (contains '.') but the
-    manifest has a clean user_id, the DB record is healed automatically.
+    If the DB member name doesn't match manifest.user_id, the DB record
+    is healed automatically (sync_members, sync_events, sessions).
 
     Reads the first manifest.json found under the user_dir, caches the result.
     Falls back to directory name if no manifest is available.
@@ -280,27 +280,21 @@ def _resolve_user_id(user_dir: Path, conn=None) -> str:
                 with open(manifest_path) as f:
                     manifest = json.load(f)
 
-                # Best: manifest user_id (canonical identity set by the sender)
+                # The manifest user_id is the canonical identity set by the
+                # sender — it always takes precedence over whatever is in
+                # the DB (which may be a hostname fallback or sanitised
+                # hostname from the manual-accept flow).
                 manifest_uid = manifest.get("user_id")
                 device_id = manifest.get("device_id")
 
-                # DB member name lookup via device_id — use it only if it's
-                # a clean name (not a hostname fallback like "Foo.local").
-                # If the DB name looks like a hostname but manifest has a clean
-                # user_id, prefer the manifest and heal the DB record.
                 if device_id and conn is not None:
                     try:
                         from db.sync_queries import get_member_by_device_id
                         member = get_member_by_device_id(conn, device_id)
                         if member:
                             db_name = member["name"]
-                            if "." not in db_name:
-                                # DB has a clean name — trust it
-                                resolved = db_name
-                                break
-                            elif manifest_uid and "." not in manifest_uid and db_name != manifest_uid:
-                                # DB has a hostname, manifest has clean name — heal
-                                # all tables that reference the stale hostname
+                            if manifest_uid and db_name != manifest_uid:
+                                # DB name doesn't match manifest — heal
                                 conn.execute(
                                     "UPDATE sync_members SET name = ? WHERE device_id = ?",
                                     (manifest_uid, device_id),
@@ -321,6 +315,10 @@ def _resolve_user_id(user_dir: Path, conn=None) -> str:
                                     healed_events, healed_sessions,
                                 )
                                 resolved = manifest_uid
+                                break
+                            else:
+                                # DB matches manifest (or no manifest uid) — trust DB
+                                resolved = db_name
                                 break
                     except Exception:
                         pass

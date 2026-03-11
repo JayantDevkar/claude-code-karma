@@ -28,6 +28,25 @@ from services.syncthing_proxy import SyncthingNotRunning, run_sync
 
 logger = logging.getLogger(__name__)
 
+# Domain suffixes commonly seen on Syncthing device names (macOS/Linux).
+_HOSTNAME_SUFFIXES = (".local", ".lan", ".home", ".internal", ".localdomain")
+
+
+def _sanitize_device_name(raw: str) -> str:
+    """Strip domain suffixes from a Syncthing device name.
+
+    Turns ``"Jayants-MacBook-Pro.local"`` into ``"jayants-macbook-pro"``
+    so the stored name is reasonable while awaiting manifest-based healing.
+    """
+    name = raw.strip()
+    lower = name.lower()
+    for suffix in _HOSTNAME_SUFFIXES:
+        if lower.endswith(suffix):
+            name = name[: -len(suffix)]
+            break
+    return name.lower()
+
+
 router = APIRouter(prefix="/sync", tags=["sync"])
 
 
@@ -157,7 +176,7 @@ async def sync_accept_pending_device(device_id: str, req: AcceptPendingDeviceReq
     unpaired device.  The user sees the pending request in the UI and
     clicks Accept, which:
       1. Pairs the device in Syncthing
-      2. Adds the device as a team member (using member_name or hostname)
+      2. Adds the device as a team member (using member_name or sanitized device name)
       3. Creates a handshake folder so the new member can discover us
       4. Shares existing project folders with the new member
     """
@@ -184,9 +203,9 @@ async def sync_accept_pending_device(device_id: str, req: AcceptPendingDeviceReq
 
     device_info = pending[device_id]
 
-    # Resolve member name: explicit request > folder ID extraction > hostname.
-    # Never blindly use the Syncthing hostname (e.g. "Ayush-Mac-mini.local")
-    # because it doesn't match the karma user_id used in folder IDs.
+    # Resolve member name: explicit request > folder ID extraction > sanitized hostname.
+    # Never store a raw Syncthing hostname (e.g. "Ayush-Mac-mini.local") because
+    # it doesn't match the karma user_id used in folder IDs and session manifests.
     member_name = req.member_name
     if not member_name:
         # Try to extract real karma username from pending/configured folders
@@ -215,11 +234,15 @@ async def sync_accept_pending_device(device_id: str, req: AcceptPendingDeviceReq
             except Exception:
                 pass
         if karma_folder_ids:
-            member_name = extract_username_from_folder_ids(
-                karma_folder_ids, conn=conn,
-            )
+            member_name = extract_username_from_folder_ids(karma_folder_ids)
         if not member_name:
-            member_name = device_info.get("name", "unknown")
+            # Last resort: Syncthing device name (often a hostname like
+            # "Jayants-MacBook-Pro.local").  Strip common domain suffixes
+            # so at least a reasonable display name is stored.  The indexer's
+            # healing path will correct this to the manifest user_id once
+            # remote session files arrive (within ~5 minutes).
+            raw = device_info.get("name", "unknown")
+            member_name = _sanitize_device_name(raw)
 
     # 1. Accept device in Syncthing
     try:

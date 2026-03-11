@@ -182,7 +182,7 @@ def find_team_for_folder(conn, folder_ids: list[str]) -> Optional[str]:
     return None
 
 
-def extract_username_from_folder_ids(folder_ids: list[str], conn=None) -> Optional[str]:
+def extract_username_from_folder_ids(folder_ids: list[str]) -> Optional[str]:
     """Extract a karma username from a list of folder IDs.
 
     Prefers handshake folders which encode the real karma user_id directly.
