@@ -554,12 +554,15 @@ def get_project(
         total_count = db_data["total"]
 
         # Merge unindexed remote sessions — optional enrichment
+        # IMPORTANT: Only add remote sessions on the first page (offset==0).
+        # Each page only knows its own UUIDs, so unindexed remote sessions
+        # would be duplicated across every page response otherwise.
         remote_session_count = 0
         try:
             remote_metas = _get_cached_remote_sessions(encoded_name)
             remote_session_count = len(remote_metas)
 
-            if remote_metas:
+            if remote_metas and offset == 0:
                 indexed_uuids = {s.uuid for s in session_summaries}
                 unindexed = [
                     m

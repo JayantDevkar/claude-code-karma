@@ -241,6 +241,13 @@
 						}
 					}
 				}
+				// Deduplicate by UUID — remote sessions may appear across pages
+				const seen = new Set<string>();
+				loaded = loaded.filter((s) => {
+					if (seen.has(s.uuid)) return false;
+					seen.add(s.uuid);
+					return true;
+				});
 				allSessions = loaded;
 				allSessionsLoaded = true;
 			}
