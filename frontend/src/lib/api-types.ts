@@ -1662,3 +1662,66 @@ export interface HookScriptDetail {
 	line_count: number | null;
 	error: string | null;
 }
+
+// ============================================
+// Workflow types
+// ============================================
+
+export interface WorkflowStep {
+	id: string;
+	label?: string | null;
+	prompt_template: string;
+	model: string;
+	tools: string[];
+	max_turns: number;
+}
+
+export interface WorkflowEdge {
+	id: string;
+	source: string;
+	target: string;
+	condition?: string | null;
+}
+
+export interface WorkflowInput {
+	name: string;
+	type: string;
+	required: boolean;
+	default: string | null;
+	description: string | null;
+}
+
+export interface Workflow {
+	id: string;
+	name: string;
+	description: string | null;
+	project_path: string | null;
+	graph: { nodes: any[]; edges: WorkflowEdge[] };
+	steps: WorkflowStep[];
+	inputs: WorkflowInput[];
+	created_at: string | null;
+	updated_at: string | null;
+}
+
+export interface WorkflowRunStep {
+	id: string;
+	step_id: string;
+	status: 'pending' | 'running' | 'completed' | 'failed' | 'skipped';
+	session_id: string | null;
+	prompt: string | null;
+	output: string | null;
+	started_at: string | null;
+	completed_at: string | null;
+	error: string | null;
+}
+
+export interface WorkflowRun {
+	id: string;
+	workflow_id: string;
+	status: 'pending' | 'running' | 'completed' | 'failed';
+	input_values: Record<string, any> | null;
+	started_at: string | null;
+	completed_at: string | null;
+	error: string | null;
+	steps: WorkflowRunStep[];
+}
