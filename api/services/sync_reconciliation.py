@@ -28,6 +28,7 @@ from services.sync_folders import (
     auto_share_folders,
     extract_username_from_folder_ids,
     find_team_for_folder,
+    resolve_member_tag_from_metadata,
 )
 from services.sync_identity import _compute_proj_suffix
 from services.sync_policy import should_auto_accept_device
@@ -149,6 +150,13 @@ async def reconcile_introduced_devices(proxy, config, conn) -> int:
                     device_id[:20], team_name,
                 )
                 continue
+
+            # Prefer member_tag from metadata folder (authoritative) over
+            # Syncthing device name or folder-ID-derived name (v1-style).
+            resolved = resolve_member_tag_from_metadata(team_name, device_id)
+            if resolved:
+                username = resolved
+
             # Parse member_tag to extract user_id and machine_tag
             user_id, machine_tag_part = parse_member_tag(username)
             upsert_member(conn, team_name, user_id, device_id=device_id,
@@ -420,6 +428,12 @@ async def auto_accept_pending_peers(proxy, config, conn) -> tuple[int, dict]:
 
             if not team_name or not username:
                 continue
+
+            # Prefer member_tag from metadata folder (authoritative) over
+            # folder-ID-derived name which may be a v1-style Syncthing name.
+            resolved = resolve_member_tag_from_metadata(team_name, device_id)
+            if resolved:
+                username = resolved
 
             # Policy gate: check if auto-accept is enabled for this team
             if not should_auto_accept_device(conn, team_name):

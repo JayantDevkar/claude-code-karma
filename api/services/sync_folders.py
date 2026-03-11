@@ -95,10 +95,23 @@ async def ensure_inbox_folders(
 
     For each member (or a single member if only_device_id is set),
     creates a local receiveonly folder that receives their sessions.
+
+    Inbox folders include ALL team members in the device list (not just
+    sender+self). This ensures the Syncthing introducer mechanism can
+    propagate folder access to all team devices, even if they haven't
+    independently run reconciliation yet.
     """
     from karma.config import KARMA_BASE
 
     result = {"inboxes": 0, "errors": []}
+
+    # Build the full team device list once (used for all inbox folders)
+    all_team_devices = []
+    for m in members:
+        if m["device_id"] and m["device_id"] not in all_team_devices:
+            all_team_devices.append(m["device_id"])
+    if config.syncthing.device_id and config.syncthing.device_id not in all_team_devices:
+        all_team_devices.append(config.syncthing.device_id)
 
     for m in members:
         if not m["device_id"]:
@@ -121,17 +134,14 @@ async def ensure_inbox_folders(
         member_tag = m.get("member_tag") or m["name"]  # fallback for legacy members
         inbox_path = str(KARMA_BASE / "remote-sessions" / member_tag / encoded)
         inbox_id = build_outbox_id(member_tag, proj_suffix)
-        inbox_devices = [m["device_id"]]
-        if config.syncthing.device_id:
-            inbox_devices.append(config.syncthing.device_id)
         try:
             Path(inbox_path).mkdir(parents=True, exist_ok=True)
             # Try update first (folder may already exist from another team sharing the same project)
             try:
-                await run_sync(proxy.update_folder_devices, inbox_id, inbox_devices)
+                await run_sync(proxy.update_folder_devices, inbox_id, all_team_devices)
             except ValueError:
                 # Folder doesn't exist yet — create it
-                await run_sync(proxy.add_folder, inbox_id, inbox_path, inbox_devices, "receiveonly")
+                await run_sync(proxy.add_folder, inbox_id, inbox_path, all_team_devices, "receiveonly")
             result["inboxes"] += 1
         except Exception as e:
             result["errors"].append(f"inbox {member_tag}/{proj_suffix}: {e}")
@@ -247,6 +257,32 @@ def extract_username_from_folder_ids(folder_ids: list[str]) -> Optional[str]:
     if not candidates:
         return None
     return candidates[0]
+
+
+def resolve_member_tag_from_metadata(team_name: str, device_id: str) -> Optional[str]:
+    """Look up the correct member_tag for a device_id from the metadata folder.
+
+    The metadata folder is the authoritative source of member identity.
+    Each member writes their own state file containing device_id and member_tag.
+    This avoids relying on Syncthing device names or v1-style folder ID parsing.
+    """
+    try:
+        from karma.config import KARMA_BASE
+        from services.sync_metadata import read_all_member_states
+
+        meta_dir = KARMA_BASE / "metadata-folders" / team_name
+        if not meta_dir.exists():
+            return None
+
+        for state in read_all_member_states(meta_dir):
+            if state.get("device_id") == device_id:
+                mtag = state.get("member_tag")
+                if mtag:
+                    return mtag
+    except Exception as e:
+        logger.debug("Failed to resolve member_tag from metadata for %s: %s", device_id[:20], e)
+
+    return None
 
 
 async def auto_share_folders(proxy, config, conn, team_name, new_device_id) -> dict:

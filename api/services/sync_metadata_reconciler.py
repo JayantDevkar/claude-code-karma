@@ -18,16 +18,20 @@ def reconcile_metadata_folder(config, conn, team_name: str) -> dict:
     1. Read all member state files -> add missing members to DB
     2. Read removal signals -> if WE are removed, flag for auto-leave
     3. Update identity columns for existing members
+    4. Auto-share project folders with newly discovered members
 
-    Returns dict with counts: members_added, members_updated, self_removed.
+    Returns dict with counts: members_added, members_updated, self_removed,
+    and new_device_ids (for callers that need to trigger folder sharing).
     """
     from karma.config import KARMA_BASE
 
     meta_dir = KARMA_BASE / "metadata-folders" / team_name
     if not meta_dir.exists():
-        return {"members_added": 0, "members_updated": 0, "self_removed": False}
+        return {"members_added": 0, "members_updated": 0, "self_removed": False,
+                "new_device_ids": []}
 
-    stats = {"members_added": 0, "members_updated": 0, "self_removed": False}
+    stats = {"members_added": 0, "members_updated": 0, "self_removed": False,
+             "new_device_ids": []}
 
     # Check if WE are removed
     if is_removed(meta_dir, config.member_tag):
@@ -78,6 +82,7 @@ def reconcile_metadata_folder(config, conn, team_name: str) -> dict:
                 detail={"source": "metadata_folder", "member_tag": mtag},
             )
             stats["members_added"] += 1
+            stats["new_device_ids"].append(device_id)
         elif device_id in existing_devices:
             # Existing member — update identity columns if missing
             _, machine_tag = parse_member_tag(mtag)
@@ -89,7 +94,58 @@ def reconcile_metadata_folder(config, conn, team_name: str) -> dict:
             )
             stats["members_updated"] += 1
 
+    # Auto-share project folders with newly discovered members
+    if stats["new_device_ids"]:
+        _auto_share_with_new_members(config, conn, team_name, stats["new_device_ids"])
+
     return stats
+
+
+def _auto_share_with_new_members(config, conn, team_name: str, device_ids: list[str]) -> None:
+    """Trigger auto_share_folders for newly discovered members.
+
+    Called from the synchronous reconcile_metadata_folder, so we need to
+    handle the async auto_share_folders via asyncio.
+    """
+    import asyncio
+    from services.sync_folders import auto_share_folders
+    from services.sync_identity import get_proxy
+
+    try:
+        proxy = get_proxy()
+    except Exception as e:
+        logger.warning("Metadata reconciler: cannot get proxy for auto-share: %s", e)
+        return
+
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+
+    for device_id in device_ids:
+        try:
+            if loop and loop.is_running():
+                future = asyncio.run_coroutine_threadsafe(
+                    auto_share_folders(proxy, config, conn, team_name, device_id), loop
+                )
+                result = future.result(timeout=30)
+            else:
+                new_loop = asyncio.new_event_loop()
+                try:
+                    result = new_loop.run_until_complete(
+                        auto_share_folders(proxy, config, conn, team_name, device_id)
+                    )
+                finally:
+                    new_loop.close()
+            logger.info(
+                "Metadata reconciler: shared folders with %s — outboxes=%d, inboxes=%d",
+                device_id[:20], result.get("outboxes", 0), result.get("inboxes", 0),
+            )
+        except Exception as e:
+            logger.warning(
+                "Metadata reconciler: failed to share folders with %s: %s",
+                device_id[:20], e,
+            )
 
 
 def reconcile_all_teams_metadata(config, conn, *, auto_leave: bool = False) -> dict:
