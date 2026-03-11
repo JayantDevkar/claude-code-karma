@@ -72,6 +72,17 @@ async def sync_pending() -> Any:
         pending = await run_sync(proxy.get_pending_folders_for_ui, known)
     except SyncthingNotRunning:
         return {"pending": []}
+
+    # Filter out folders that are already configured in Syncthing.
+    # When a folder is shared with remote devices, those devices may
+    # "offer" it back as pending — skip these since they're already set up.
+    try:
+        configured_folders = await run_sync(proxy.get_configured_folders)
+        configured_ids = {f.get("id") for f in configured_folders}
+        pending = [item for item in pending if item["folder_id"] not in configured_ids]
+    except Exception as e:
+        logger.debug("Failed to filter configured folders from pending: %s", e)
+
     own_user_id = config.user_id if config else None
     own_machine_id = config.machine_id if config else None
     own_member_tag = config.member_tag if config else None

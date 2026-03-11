@@ -461,7 +461,7 @@
 
 			<!-- Shares list -->
 			<div class="divide-y divide-[var(--border)]/50">
-				{#each pendingFolders as offer (offer.folder_id)}
+				{#each pendingFolders as offer (offer.folder_id + ':' + offer.from_device)}
 					{@const acting = folderActing[offer.folder_id]}
 					{@const isOutbox = offer.folder_type === 'outbox'}
 
