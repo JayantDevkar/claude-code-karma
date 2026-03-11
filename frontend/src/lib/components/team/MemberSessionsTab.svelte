@@ -97,9 +97,9 @@
 		return () => window.removeEventListener('resize', checkMobile);
 	});
 
-	// Fetch sessions from /sessions/all with user filter
-	// Local machine sessions have source=local and no remote_user_id,
-	// so we query differently for the local device vs remote members.
+	// Fetch sessions that belong to this member.
+	// For local user: local sessions in shared projects.
+	// For remote members: remote sessions received FROM them.
 	async function fetchSessions(page: number = 1) {
 		const isFirstPage = page === 1;
 		if (isFirstPage) {
@@ -124,7 +124,7 @@
 			const data: AllSessionsResponse = await res.json();
 			let fetched = data.sessions;
 
-			// For local user, only show sessions from projects shared with teams
+			// For local user, scope to projects shared with teams
 			if (profile.is_you) {
 				const sharedProjects = new Set(
 					profile.teams.flatMap((t) => t.projects.map((p) => p.encoded_name))
@@ -314,7 +314,9 @@
 		<EmptyState
 			icon={Layers}
 			title="No synced sessions"
-			description="No sessions from this member have been synced yet."
+			description={profile.is_you
+				? 'No sessions have been shared with your teams yet.'
+				: `No sessions from ${profile.user_id} have been synced yet.`}
 		/>
 	{:else}
 		<!-- Header: count + view mode toggle -->

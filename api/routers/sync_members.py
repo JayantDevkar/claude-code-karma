@@ -357,6 +357,53 @@ async def sync_member_profile(identifier: str) -> Any:
             query_session_stats_by_member(conn, team_name, 30, member_name=member_name)
         )
 
+    # Compute received counts — sessions this member receives
+    is_you = device_id == own_device_id
+    local_user = config.user_id if config else None
+    received_by_date: dict[str, int] = {}
+
+    if local_user and team_names:
+        if is_you:
+            # What you received from others: session_received events by other members
+            recv_rows = conn.execute(
+                """SELECT DATE(created_at, 'localtime') AS date, COUNT(DISTINCT session_uuid) AS cnt
+                   FROM sync_events
+                   WHERE team_name IN ({})
+                     AND member_name != ?
+                     AND member_name IS NOT NULL
+                     AND event_type = 'session_received'
+                     AND created_at >= datetime('now', 'localtime', '-30 days')
+                   GROUP BY date
+                   ORDER BY date""".format(",".join("?" for _ in team_names)),
+                (*team_names, member_name),
+            ).fetchall()
+        else:
+            # What this remote member receives from you: session_packaged by local user
+            recv_rows = conn.execute(
+                """SELECT DATE(created_at, 'localtime') AS date, COUNT(DISTINCT session_uuid) AS cnt
+                   FROM sync_events
+                   WHERE team_name IN ({})
+                     AND member_name = ?
+                     AND event_type = 'session_packaged'
+                     AND created_at >= datetime('now', 'localtime', '-30 days')
+                   GROUP BY date
+                   ORDER BY date""".format(",".join("?" for _ in team_names)),
+                (*team_names, local_user),
+            ).fetchall()
+        received_by_date = {r[0]: r[1] for r in recv_rows}
+
+    # Merge received counts into session_stats
+    for stat in all_session_stats:
+        stat["received"] = received_by_date.pop(stat["date"], 0)
+    # Add dates that only have received data (no sent)
+    for date, count in sorted(received_by_date.items()):
+        all_session_stats.append({
+            "date": date, "member_name": member_name,
+            "out": 0, "packaged": 0, "received": count,
+        })
+
+    total_received = sum(stat["received"] for stat in all_session_stats)
+
     # Incoming stats — sessions from OTHER members per day (what this member receives)
     incoming_rows = conn.execute(
         """SELECT DATE(created_at, 'localtime') AS date, COUNT(DISTINCT session_uuid) AS incoming
@@ -379,7 +426,7 @@ async def sync_member_profile(identifier: str) -> Any:
         "user_id": member_name,
         "device_id": device_id,
         "connected": connected,
-        "is_you": device_id == own_device_id,
+        "is_you": is_you,
         "in_bytes_total": in_bytes_total,
         "out_bytes_total": out_bytes_total,
         "teams": teams,
