@@ -159,7 +159,10 @@ async def sync_reset(options: Optional[ResetOptions] = None) -> Any:
     # 5. Clear all sync tables + orphan remote sessions
     conn = _sid._get_sync_conn()
     tables_cleared = []
-    for table in ["sync_events", "sync_team_projects", "sync_members", "sync_teams"]:
+    for table in [
+        "sync_settings", "sync_removed_members",  # policy/removal state
+        "sync_events", "sync_team_projects", "sync_members", "sync_teams",
+    ]:
         try:
             conn.execute(f"DELETE FROM {table}")  # noqa: S608 — table names are hardcoded
             tables_cleared.append(table)
