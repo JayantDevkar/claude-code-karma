@@ -493,6 +493,7 @@ def get_project(
     # One connection is reused for both queries; chain info failure is non-fatal.
     db_data = None
     db_chain_info: dict = {}
+    all_indexed_uuids: set[str] = set()
     try:
         from db.connection import sqlite_read
         from db.queries import query_chain_info_for_project, query_project_sessions
@@ -507,6 +508,17 @@ def get_project(
                     db_chain_info = query_chain_info_for_project(conn, encoded_name)
                 except Exception as e:
                     logger.debug("Chain info query failed (non-fatal): %s", e)
+                # Fetch ALL indexed UUIDs for accurate remote-session dedup
+                try:
+                    all_indexed_uuids = {
+                        row[0]
+                        for row in conn.execute(
+                            "SELECT uuid FROM sessions WHERE project_encoded_name = ?",
+                            (encoded_name,),
+                        ).fetchall()
+                    }
+                except Exception as e:
+                    logger.debug("All-UUIDs query failed (non-fatal): %s", e)
     except Exception as e:
         logger.warning("SQLite project sessions query failed, falling back: %s", e)
 
@@ -554,20 +566,21 @@ def get_project(
         total_count = db_data["total"]
 
         # Merge unindexed remote sessions — optional enrichment
-        # IMPORTANT: Only add remote sessions on the first page (offset==0).
-        # Each page only knows its own UUIDs, so unindexed remote sessions
-        # would be duplicated across every page response otherwise.
+        # IMPORTANT: Only add remote sessions on the first page (offset==0)
+        # to avoid duplicating them across every paginated response.
+        # Check against ALL indexed UUIDs for this project (not just the
+        # current page), since a remote session's UUID may exist on a
+        # different page of DB results.
         remote_session_count = 0
         try:
             remote_metas = _get_cached_remote_sessions(encoded_name)
             remote_session_count = len(remote_metas)
 
             if remote_metas and offset == 0:
-                indexed_uuids = {s.uuid for s in session_summaries}
                 unindexed = [
                     m
                     for m in remote_metas
-                    if m.uuid not in indexed_uuids
+                    if m.uuid not in all_indexed_uuids
                 ]
 
                 for rmeta in unindexed:
