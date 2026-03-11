@@ -91,7 +91,7 @@
 		</p>
 	{:else}
 		<div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-			{#each members as member (member.name)}
+			{#each members as member (member.device_id || member.name)}
 				{@const colors = getTeamMemberColor(member.name)}
 				{@const hexColor = getTeamMemberHexColor(member.name)}
 				{@const device = getDeviceInfo(member)}

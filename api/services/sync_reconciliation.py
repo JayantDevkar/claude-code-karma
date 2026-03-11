@@ -89,6 +89,12 @@ async def reconcile_introduced_devices(proxy, config, conn) -> int:
         if device_id in known_devices:
             continue
 
+        # Syncthing device name — set when the device was first added
+        # (via add_device(device_id, username)).  This is the most reliable
+        # source of identity for introduced devices because folder IDs
+        # identify the folder OWNER, not every device that shares it.
+        syncthing_device_name = device.get("name", "")
+
         # Find receiveonly karma-* folders that include this device.
         karma_folder_ids = []
         for folder in configured_folders:
@@ -112,6 +118,10 @@ async def reconcile_introduced_devices(proxy, config, conn) -> int:
         for folder_id in karma_folder_ids:
             hs = parse_handshake_id(folder_id)
             if hs:
+                # Handshake folders (karma-join--{user}--{team}) are created
+                # BY the device owner, so uname genuinely identifies this
+                # device — unlike outbox folders where the name identifies
+                # the folder owner, not every device sharing it.
                 uname, tname = hs
                 if tname not in seen_teams:
                     memberships.append((uname, tname))
@@ -123,7 +133,12 @@ async def reconcile_introduced_devices(proxy, config, conn) -> int:
                 if candidate_suffix in project_suffix_map:
                     tname = project_suffix_map[candidate_suffix]
                     if tname not in seen_teams:
-                        memberships.append((candidate_name, tname))
+                        # For receiveonly (inbox) folders, candidate_name is
+                        # the folder OWNER whose sessions we receive — NOT the
+                        # introduced device.  Use the Syncthing device name
+                        # which was set when the device was originally added.
+                        name = syncthing_device_name or candidate_name
+                        memberships.append((name, tname))
                         seen_teams.add(tname)
 
         for username, team_name in memberships:

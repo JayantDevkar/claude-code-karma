@@ -85,8 +85,17 @@ def add_member(
     name: str,
     device_id: str,
 ) -> dict:
+    # Remove any existing entry with the same name but different device_id
+    # (handles the case where a member reinstalled Syncthing and got a new identity)
     conn.execute(
-        "INSERT INTO sync_members (team_name, name, device_id) VALUES (?, ?, ?)",
+        "DELETE FROM sync_members WHERE team_name = ? AND name = ? AND device_id != ?",
+        (team_name, name, device_id),
+    )
+    conn.execute(
+        """INSERT INTO sync_members (team_name, name, device_id)
+           VALUES (?, ?, ?)
+           ON CONFLICT(team_name, device_id)
+           DO UPDATE SET name = excluded.name""",
         (team_name, name, device_id),
     )
     conn.commit()
@@ -99,7 +108,15 @@ def upsert_member(
     name: str,
     device_id: str,
 ) -> dict:
-    """Insert a member or update their name if the device already exists."""
+    """Insert a member or update their name if the device already exists.
+
+    Also removes stale rows where the same name maps to a different device_id
+    (e.g. member reinstalled Syncthing and got a new identity).
+    """
+    conn.execute(
+        "DELETE FROM sync_members WHERE team_name = ? AND name = ? AND device_id != ?",
+        (team_name, name, device_id),
+    )
     conn.execute(
         """INSERT INTO sync_members (team_name, name, device_id)
            VALUES (?, ?, ?)
