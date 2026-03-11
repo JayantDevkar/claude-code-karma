@@ -74,6 +74,21 @@ def parse_handshake_id(folder_id: str) -> Optional[tuple[str, str]]:
     return parts[0], parts[1]
 
 
+def parse_member_tag(member_tag: str) -> tuple[str, Optional[str]]:
+    """Parse member_tag into (user_id, machine_tag).
+
+    Format: ``{user_id}.{machine_tag}`` or bare ``{user_id}`` (legacy).
+    Splits on the FIRST dot only.
+
+    Returns:
+        (user_id, machine_tag) -- machine_tag is None if no dot present.
+    """
+    if "." in member_tag:
+        user_id, machine_tag_part = member_tag.split(".", 1)
+        return user_id, machine_tag_part
+    return member_tag, None
+
+
 def is_karma_folder(folder_id: str) -> bool:
     """Check if a folder ID belongs to karma (any ``karma-`` prefix)."""
     return folder_id.startswith(KARMA_PREFIX)
