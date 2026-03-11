@@ -93,8 +93,12 @@ def reconcile_metadata_folder(config, conn, team_name: str) -> dict:
     return stats
 
 
-def reconcile_all_teams_metadata(config, conn) -> dict:
-    """Run metadata reconciliation for all teams."""
+def reconcile_all_teams_metadata(config, conn, *, auto_leave: bool = False) -> dict:
+    """Run metadata reconciliation for all teams.
+
+    When auto_leave=True, teams where we've been removed are automatically
+    cleaned up (Syncthing folders removed, team deleted from local DB).
+    """
     total = {"teams": 0, "members_added": 0, "self_removed_teams": []}
     for team in list_teams(conn):
         result = reconcile_metadata_folder(config, conn, team["name"])
@@ -102,4 +106,50 @@ def reconcile_all_teams_metadata(config, conn) -> dict:
         total["members_added"] += result["members_added"]
         if result["self_removed"]:
             total["self_removed_teams"].append(team["name"])
+            if auto_leave:
+                _auto_leave_team(config, conn, team["name"])
     return total
+
+
+def _auto_leave_team(config, conn, team_name: str) -> None:
+    """Auto-leave a team after detecting removal via metadata folder.
+
+    Cleans up Syncthing folders/devices and deletes the team from local DB.
+    Called from sync context (watcher thread), so uses asyncio for async calls.
+    """
+    from db.sync_queries import delete_team
+
+    try:
+        import asyncio
+        from services.sync_folders import cleanup_syncthing_for_team
+        from services.sync_identity import get_proxy
+
+        proxy = get_proxy()
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+
+        if loop and loop.is_running():
+            # We're inside an async context — create a task
+            # This shouldn't normally happen from the watcher thread
+            logger.warning("auto_leave_team called from async context for %s", team_name)
+        else:
+            # Sync context (watcher thread) — create a new event loop
+            loop = asyncio.new_event_loop()
+            try:
+                loop.run_until_complete(
+                    cleanup_syncthing_for_team(proxy, config, conn, team_name)
+                )
+            finally:
+                loop.close()
+    except Exception as e:
+        logger.warning("Failed to clean up Syncthing for auto-leave team %s: %s", team_name, e)
+
+    try:
+        log_event(conn, "team_left", team_name=team_name,
+                  detail={"reason": "removed_via_metadata"})
+        delete_team(conn, team_name)
+        logger.info("Auto-left team %s (removed via metadata)", team_name)
+    except Exception as e:
+        logger.warning("Failed to delete team %s during auto-leave: %s", team_name, e)

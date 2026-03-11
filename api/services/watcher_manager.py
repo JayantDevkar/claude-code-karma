@@ -115,6 +115,78 @@ class RemoteSessionWatcher(FileSystemEventHandler):
         logger.info("Remote session watcher stopped")
 
 
+class MetadataReconciliationTimer:
+    """Periodic timer that runs metadata folder reconciliation every N seconds.
+
+    Discovers new members, updates identity columns, and triggers auto-leave
+    when removal signals are detected.
+    """
+
+    def __init__(self, config_data: dict, interval: float = 60.0):
+        self._config_data = config_data
+        self._interval = interval
+        self._timer: Optional[threading.Timer] = None
+        self._running = False
+
+    def start(self):
+        self._running = True
+        self._schedule()
+        logger.info("Metadata reconciliation timer started (interval=%ds)", self._interval)
+
+    def _schedule(self):
+        if not self._running:
+            return
+        self._timer = threading.Timer(self._interval, self._run)
+        self._timer.daemon = True
+        self._timer.start()
+
+    def _run(self):
+        try:
+            self._reconcile()
+        except Exception as e:
+            logger.warning("Metadata reconciliation failed: %s", e)
+        finally:
+            self._schedule()
+
+    def _reconcile(self):
+        from db.connection import get_writer_db
+        from services.sync_metadata_reconciler import reconcile_all_teams_metadata
+
+        # Build a minimal config object from config_data
+        config = _ConfigProxy(self._config_data)
+        conn = get_writer_db()
+
+        result = reconcile_all_teams_metadata(config, conn, auto_leave=True)
+        if result["members_added"] or result["self_removed_teams"]:
+            logger.info(
+                "Metadata reconciliation: added=%d, auto-left=%s",
+                result["members_added"], result["self_removed_teams"],
+            )
+
+    def stop(self):
+        self._running = False
+        if self._timer is not None:
+            self._timer.cancel()
+            self._timer = None
+        logger.info("Metadata reconciliation timer stopped")
+
+
+class _ConfigProxy:
+    """Minimal config proxy for reconciliation (avoids async _load_identity)."""
+
+    def __init__(self, config_data: dict):
+        self.user_id = config_data.get("user_id", "")
+        self.machine_id = config_data.get("machine_id", "")
+        self.member_tag = config_data.get("member_tag", "")
+        self.machine_tag = self.member_tag.split(".", 1)[1] if "." in self.member_tag else ""
+        self.syncthing = _SyncthingProxy(config_data.get("device_id"))
+
+
+class _SyncthingProxy:
+    def __init__(self, device_id: Optional[str]):
+        self.device_id = device_id
+
+
 class WatcherManager:
     """Manages SessionWatcher instances across one or more teams."""
 
@@ -126,6 +198,7 @@ class WatcherManager:
         self._last_packaged_at: Optional[str] = None
         self._projects_watched: list[str] = []
         self._remote_watcher: Optional[RemoteSessionWatcher] = None
+        self._metadata_timer: Optional[MetadataReconciliationTimer] = None
 
     @property
     def is_running(self) -> bool:
@@ -276,6 +349,14 @@ class WatcherManager:
         self._started_at = datetime.now(timezone.utc).isoformat()
         self._projects_watched = watched
 
+        # Start metadata reconciliation timer (~60s periodic)
+        if self._metadata_timer is None:
+            try:
+                self._metadata_timer = MetadataReconciliationTimer(config_data)
+                self._metadata_timer.start()
+            except Exception as e:
+                logger.warning("Failed to start metadata reconciliation timer: %s", e)
+
         # Start remote session watcher (for incoming Syncthing files)
         if self._remote_watcher is None or not self._remote_watcher.is_running:
             try:
@@ -321,6 +402,13 @@ class WatcherManager:
                 w.stop()
             except Exception as e:
                 logger.warning("Error stopping watcher: %s", e)
+
+        if self._metadata_timer is not None:
+            try:
+                self._metadata_timer.stop()
+            except Exception as e:
+                logger.warning("Error stopping metadata timer: %s", e)
+            self._metadata_timer = None
 
         if self._remote_watcher is not None:
             try:
