@@ -170,6 +170,7 @@ class WatcherManager:
         user_id = config_data.get("user_id", "unknown")
         machine_id = config_data.get("machine_id", "unknown")
         device_id = config_data.get("device_id")
+        member_tag = config_data.get("member_tag")
         projects_dir = Path.home() / ".claude" / "projects"
 
         # Collect unique projects across all teams, tracking which teams each belongs to
@@ -205,7 +206,7 @@ class WatcherManager:
                 logger.warning("Skipping %s: dir not found %s", proj_name, claude_dir)
                 continue
 
-            outbox = KARMA_BASE / "remote-sessions" / user_id / encoded
+            outbox = KARMA_BASE / "remote-sessions" / (member_tag or user_id) / encoded
 
             def make_package_fn(
                 cd=claude_dir, ob=outbox, en=encoded, pp=proj.get("path", ""),
@@ -231,6 +232,7 @@ class WatcherManager:
                         device_id=device_id,
                         project_path=pp,
                         extra_dirs=wt_dirs,
+                        member_tag=member_tag,
                     )
                     ob.mkdir(parents=True, exist_ok=True)
                     manifest = packager.package(staging_dir=ob)

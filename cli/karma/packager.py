@@ -327,10 +327,12 @@ class SessionPackager:
         extra_dirs: Optional[list[Path]] = None,
         team_name: Optional[str] = None,
         proj_suffix: Optional[str] = None,
+        member_tag: Optional[str] = None,
     ):
         self.project_dir = Path(project_dir)
         self.user_id = user_id
         self.machine_id = machine_id
+        self.member_tag = member_tag
         self.device_id = device_id
         self.project_path = project_path or str(self.project_dir)
 
@@ -562,6 +564,7 @@ class SessionPackager:
         manifest = SyncManifest(
             user_id=self.user_id,
             machine_id=self.machine_id,
+            member_tag=self.member_tag,
             device_id=self.device_id,
             project_path=self.project_path,
             project_encoded=self.project_dir.name,

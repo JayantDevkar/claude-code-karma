@@ -2,11 +2,15 @@
 Remote sessions service for Syncthing-synced session data.
 
 Directory structure (written by CLI packager, synced by Syncthing):
-  ~/.claude_karma/remote-sessions/{user_id}/{encoded_name}/
+  ~/.claude_karma/remote-sessions/{member_tag}/{encoded_name}/
     sessions/{uuid}.jsonl
     sessions/{uuid}/subagents/...
     todos/{uuid}-*.json
     manifest.json
+
+The top-level directory under remote-sessions/ may be a bare ``user_id``
+(legacy) or a ``member_tag`` in ``{user_id}.{machine_tag}`` format.
+Both formats are supported; ``parse_member_tag()`` extracts the user_id.
 
 The inbox path on the receiving machine uses the LOCAL encoded name,
 so no path mapping is needed — the encoded_name in the directory IS
@@ -25,6 +29,7 @@ from typing import Iterator, Optional
 
 from config import settings
 from models import Session
+from services.folder_id import parse_member_tag
 from services.session_filter import SessionMetadata
 
 logger = logging.getLogger(__name__)
@@ -101,6 +106,22 @@ def _get_local_user_id() -> Optional[str]:
     _local_user_cache = config.get("user_id") if config else None
     _local_user_cache_time = now
     return _local_user_cache
+
+
+def _is_local_user(dir_name: str, local_user_id: Optional[str]) -> bool:
+    """Check if a directory name belongs to the local user.
+
+    Handles both bare user_id directories (e.g. ``jayant``) and
+    member_tag directories (e.g. ``jayant.mac-mini``) by extracting
+    the user_id portion via :func:`parse_member_tag`.
+    """
+    if not local_user_id:
+        return False
+    if dir_name == local_user_id:
+        return True
+    # member_tag format: user_id.machine_tag
+    parsed_uid, _ = parse_member_tag(dir_name)
+    return parsed_uid == local_user_id
 
 
 def get_project_mapping() -> dict[tuple[str, str], str]:
@@ -205,7 +226,7 @@ def get_project_mapping() -> dict[tuple[str, str], str]:
                     if not user_dir.is_dir():
                         continue
                     dir_name = user_dir.name
-                    if dir_name == local_user_id:
+                    if _is_local_user(dir_name, local_user_id):
                         continue
                     for encoded_dir in user_dir.iterdir():
                         if not encoded_dir.is_dir():
@@ -328,6 +349,23 @@ def _resolve_user_id(user_dir: Path, conn=None) -> str:
                 break
     except (json.JSONDecodeError, OSError) as e:
         logger.debug("Failed to resolve user_id from manifest in %s: %s", dir_name, e)
+
+    # If still unresolved (equals dir_name) and dir_name looks like a
+    # member_tag (contains a dot), extract the user_id portion.
+    # Guard: only treat as member_tag if the machine_tag part is a valid
+    # sanitized tag ([a-z0-9-]+). Hostname suffixes like ".local" contain
+    # no uppercase or special chars but ARE valid — so also check that the
+    # user_id part looks like a karma username (no dots, no uppercase).
+    if resolved == dir_name and "." in dir_name:
+        parsed_uid, machine_part = parse_member_tag(dir_name)
+        # Valid member_tag: user_id has no dots AND machine_tag matches [a-z0-9-]+
+        # Hostnames like "Bobs-Mac.local" fail because the user_id part has uppercase
+        # or the machine_tag is a known hostname suffix.
+        _HOSTNAME_SUFFIXES = ("local", "lan", "home", "internal", "localdomain")
+        if (parsed_uid and machine_part
+                and machine_part not in _HOSTNAME_SUFFIXES
+                and re.match(r"^[a-z0-9][a-z0-9-]*$", machine_part)):
+            resolved = parsed_uid
 
     _resolved_user_cache[dir_name] = (now, resolved)
     return resolved
@@ -464,8 +502,8 @@ def find_remote_session(uuid: str) -> Optional[RemoteSessionResult]:
         dir_name = user_dir.name
         user_id = _resolve_user_id(user_dir)
 
-        # Skip local user's outbox (check both dir name and resolved id)
-        if dir_name == local_user or user_id == local_user:
+        # Skip local user's outbox (check dir name, resolved id, and member_tag)
+        if _is_local_user(dir_name, local_user) or user_id == local_user:
             continue
 
         for encoded_dir in user_dir.iterdir():
@@ -530,8 +568,8 @@ def list_remote_sessions_for_project(local_encoded: str) -> list[SessionMetadata
         dir_name = user_dir.name
         user_id = _resolve_user_id(user_dir)
 
-        # Skip local user's outbox (check both dir name and resolved id)
-        if dir_name == local_user or user_id == local_user:
+        # Skip local user's outbox (check dir name, resolved id, and member_tag)
+        if _is_local_user(dir_name, local_user) or user_id == local_user:
             continue
 
         sessions_dir = user_dir / local_encoded / "sessions"
@@ -586,8 +624,8 @@ def iter_all_remote_session_metadata() -> Iterator[SessionMetadata]:
         dir_name = user_dir.name
         user_id = _resolve_user_id(user_dir)
 
-        # Skip local user's outbox (check both dir name and resolved id)
-        if dir_name == local_user or user_id == local_user:
+        # Skip local user's outbox (check dir name, resolved id, and member_tag)
+        if _is_local_user(dir_name, local_user) or user_id == local_user:
             continue
 
         for encoded_dir in user_dir.iterdir():

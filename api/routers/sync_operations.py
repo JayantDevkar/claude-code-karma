@@ -105,7 +105,7 @@ async def sync_team_sync_now(team_name: str) -> Any:
                         proxy = _sid.get_proxy()
                         git_id = local.get("git_identity")
                         proj_suffix = _compute_proj_suffix(git_id, resolved_path, resolved_encoded)
-                        outbox_id = build_outbox_id(config.user_id, proj_suffix)
+                        outbox_id = build_outbox_id(config.member_tag, proj_suffix)
                         # Remove the potentially-wrong folder so ensure_outbox_folder
                         # recreates it with the correct path
                         try:
@@ -126,7 +126,7 @@ async def sync_team_sync_now(team_name: str) -> Any:
             else:
                 continue
 
-        outbox = KARMA_BASE / "remote-sessions" / config.user_id / encoded
+        outbox = KARMA_BASE / "remote-sessions" / config.member_tag / encoded
         outbox.mkdir(parents=True, exist_ok=True)
 
         try:
@@ -139,6 +139,7 @@ async def sync_team_sync_now(team_name: str) -> Any:
                 project_path=proj_path,
                 extra_dirs=wt_dirs,
                 team_name=team_name,
+                member_tag=config.member_tag,
             )
             manifest = await run_sync(packager.package, outbox)
             packaged_count += manifest.session_count
@@ -224,6 +225,7 @@ async def sync_watch_start(team_name: Optional[str] = None) -> Any:
     config_data = {
         "user_id": config.user_id,
         "machine_id": config.machine_id,
+        "member_tag": config.member_tag,
         "device_id": config.syncthing.device_id if config.syncthing else None,
         "teams": teams_config,
     }
