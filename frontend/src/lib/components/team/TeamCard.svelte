@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { Users, FolderSync, ChevronRight } from 'lucide-svelte';
 	import type { SyncTeam } from '$lib/api-types';
+	import { getTeamMemberHexColor } from '$lib/utils';
 
 	let { team }: { team: SyncTeam } = $props();
 
@@ -9,7 +10,6 @@
 	let memberCount = $derived(members.length || team.member_count || 0);
 	let projectCount = $derived(projects.length || team.project_count || 0);
 	let onlineCount = $derived(members.filter((m) => m.connected).length);
-	let totalGap = $derived(projects.reduce((sum, p) => sum + (p.gap ?? 0), 0));
 
 	function initials(name: string): string {
 		return name
@@ -19,20 +19,6 @@
 			.join('');
 	}
 
-	const palette = [
-		'var(--accent)',
-		'var(--nav-purple)',
-		'var(--nav-indigo)',
-		'var(--success)',
-		'var(--info)',
-		'var(--warning)',
-		'var(--nav-pink, #ec4899)'
-	];
-	function colorFor(name: string): string {
-		let hash = 0;
-		for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
-		return palette[Math.abs(hash) % palette.length];
-	}
 </script>
 
 <a
@@ -77,7 +63,7 @@
 			<div
 				class="w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold text-white
 					border-2 border-[var(--bg-subtle)] transition-colors relative"
-				style="background-color: {colorFor(member.name)};"
+				style="background-color: {getTeamMemberHexColor(member.name)};"
 				title="{member.name}{member.connected ? ' (online)' : ''}"
 			>
 				{initials(member.name)}
@@ -95,21 +81,6 @@
 			</div>
 		{/if}
 	</div>
-
-	<!-- Sync status pill -->
-	{#if projectCount > 0}
-		{#if totalGap === 0}
-			<span class="shrink-0 flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium rounded-full
-				bg-[var(--success)]/10 text-[var(--success)] border border-[var(--success)]/20 whitespace-nowrap">
-				In Sync
-			</span>
-		{:else}
-			<span class="shrink-0 flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium rounded-full
-				bg-[var(--warning)]/10 text-[var(--warning)] border border-[var(--warning)]/20 whitespace-nowrap">
-				{totalGap} behind
-			</span>
-		{/if}
-	{/if}
 
 	<!-- Chevron -->
 	<ChevronRight
