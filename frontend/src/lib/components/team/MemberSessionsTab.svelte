@@ -54,6 +54,7 @@
 	let loadingMore = $state(false);
 	let hasMore = $state(false);
 	let currentPage = $state(1);
+	let apiTotal = $state<number | null>(null);
 	const PAGE_SIZE = 200;
 	let error = $state<string | null>(null);
 
@@ -139,6 +140,7 @@
 				sessions = [...sessions, ...fetched];
 			}
 			currentPage = page;
+			apiTotal = data.total ?? null;
 			hasMore = data.sessions.length >= PAGE_SIZE;
 		} catch {
 			error = 'Network error loading sessions';
@@ -320,12 +322,18 @@
 			<div class="flex items-center gap-2 text-sm text-[var(--text-muted)]">
 				<Layers size={16} class="text-[var(--nav-purple)]" />
 				<span class="font-medium text-[var(--text-primary)]">{totalCount}</span>
-				<span>{totalCount === 1 ? 'session' : 'sessions'}</span>
+				{#if apiTotal !== null && apiTotal > totalCount}
+					<span>of <span class="font-medium text-[var(--text-primary)]">{apiTotal}</span> {apiTotal === 1 ? 'session' : 'sessions'}</span>
+				{:else}
+					<span>{totalCount === 1 ? 'session' : 'sessions'}</span>
+				{/if}
 			</div>
 			<div class="flex items-center gap-3">
 				<span class="text-xs text-[var(--text-muted)] font-mono tabular-nums">
 					{#if hasActiveFilters || selectedProjectFilters.size > 0 || searchTokens.length > 0}
 						{filteredSessionsCount} filtered sessions
+					{:else if apiTotal !== null && apiTotal > totalCount}
+						{totalCount} of {apiTotal} loaded
 					{:else}
 						{totalCount} sessions
 					{/if}
