@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Optional
 
 from config import settings
+from services.folder_id import parse_member_tag
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +43,19 @@ def _get_local_user_id() -> Optional[str]:
         return data.get("user_id")
     except (json.JSONDecodeError, OSError):
         return None
+
+
+def _is_local_user(dir_name: str, local_user_id: Optional[str]) -> bool:
+    """Check if a remote-sessions directory belongs to the local user.
+
+    Handles both bare user_id ("jayant") and member_tag ("jayant.mac-mini").
+    """
+    if not local_user_id:
+        return False
+    if dir_name == local_user_id:
+        return True
+    parsed_uid, _ = parse_member_tag(dir_name)
+    return parsed_uid == local_user_id
 
 
 def _load_plans_index(user_id: str, encoded_name: str) -> dict:
@@ -115,9 +129,12 @@ def discover_remote_plans() -> list[RemotePlan]:
             continue
         dir_name = user_dir.name
 
-        # Skip our own outbox
-        if local_user and dir_name == local_user:
+        # Skip our own outbox (handles both bare user_id and member_tag)
+        if _is_local_user(dir_name, local_user):
             continue
+
+        # Resolve to clean user_id (strip machine_tag if present)
+        remote_user_id = parse_member_tag(dir_name)[0]
 
         for encoded_dir in user_dir.iterdir():
             if not encoded_dir.is_dir():
@@ -153,7 +170,7 @@ def discover_remote_plans() -> list[RemotePlan]:
                             linked_sessions.append({
                                 "uuid": session_uuid,
                                 "operation": operation,
-                                "remote_user_id": dir_name,
+                                "remote_user_id": remote_user_id,
                             })
 
                     plans.append(RemotePlan(
@@ -165,7 +182,7 @@ def discover_remote_plans() -> list[RemotePlan]:
                         size_bytes=stat.st_size,
                         created=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc),
                         modified=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc),
-                        remote_user_id=dir_name,
+                        remote_user_id=remote_user_id,
                         project_encoded_name=encoded_name,
                         linked_sessions=linked_sessions,
                     ))
@@ -178,16 +195,43 @@ def discover_remote_plans() -> list[RemotePlan]:
     return plans
 
 
+def _find_user_dir(remote_dir: Path, user_id: str) -> Optional[Path]:
+    """Find the remote-sessions directory for a user_id.
+
+    Handles both bare user_id dirs (``jayant``) and member_tag dirs
+    (``jayant.mac-mini``) by matching the user_id portion.
+    """
+    # Direct match first (fast path)
+    direct = remote_dir / user_id
+    if direct.is_dir():
+        return direct
+    # Search for member_tag dirs where user_id matches
+    if not remote_dir.is_dir():
+        return None
+    for candidate in remote_dir.iterdir():
+        if not candidate.is_dir():
+            continue
+        parsed_uid, _ = parse_member_tag(candidate.name)
+        if parsed_uid == user_id:
+            return candidate
+    return None
+
+
 def get_remote_plan(slug: str, user_id: str) -> Optional[RemotePlan]:
     """
     Get a specific remote plan by slug and user_id.
 
     Searches all encoded directories for the user to find the plan.
+    Handles both bare user_id and member_tag directory names.
     """
     remote_dir = _get_remote_sessions_dir()
-    user_dir = remote_dir / user_id
-    if not user_dir.is_dir():
+    user_dir = _find_user_dir(remote_dir, user_id)
+    if user_dir is None:
         return None
+
+    # Use actual dir name for filesystem ops, clean user_id for display
+    dir_name = user_dir.name
+    clean_user_id = parse_member_tag(dir_name)[0]
 
     for encoded_dir in user_dir.iterdir():
         if not encoded_dir.is_dir():
@@ -206,7 +250,7 @@ def get_remote_plan(slug: str, user_id: str) -> Optional[RemotePlan]:
                         title = stripped[2:].strip()
                         break
 
-                plans_index = _load_plans_index(user_id, encoded_name)
+                plans_index = _load_plans_index(dir_name, encoded_name)
                 linked_sessions = []
                 if slug in plans_index:
                     sessions_map = plans_index[slug].get("sessions", {})
@@ -214,7 +258,7 @@ def get_remote_plan(slug: str, user_id: str) -> Optional[RemotePlan]:
                         linked_sessions.append({
                             "uuid": session_uuid,
                             "operation": operation,
-                            "remote_user_id": user_id,
+                            "remote_user_id": clean_user_id,
                         })
 
                 return RemotePlan(
@@ -226,7 +270,7 @@ def get_remote_plan(slug: str, user_id: str) -> Optional[RemotePlan]:
                     size_bytes=stat.st_size,
                     created=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc),
                     modified=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc),
-                    remote_user_id=user_id,
+                    remote_user_id=clean_user_id,
                     project_encoded_name=encoded_name,
                     linked_sessions=linked_sessions,
                 )

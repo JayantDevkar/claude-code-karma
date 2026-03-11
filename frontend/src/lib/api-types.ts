@@ -948,6 +948,10 @@ export interface PlanSummary {
  */
 export interface PlanDetail extends PlanSummary {
 	content: string; // Full markdown content
+	// Remote plan fields (present when fetched with ?remote_user)
+	remote_user_id?: string;
+	project_encoded_name?: string;
+	linked_sessions?: Array<{ uuid: string; operation: string; remote_user_id?: string }>;
 }
 
 /**

@@ -19,6 +19,18 @@
 		data.remoteUser ? getTeamMemberColor(data.remoteUser) : null
 	);
 
+	// Icon color for PageHeader — use team member color for remote plans
+	const iconColorRaw = $derived(
+		isRemote && teamMemberColor
+			? { color: teamMemberColor.border, subtle: teamMemberColor.bg }
+			: undefined
+	);
+
+	// Project encoded name for remote plan linked session links
+	const remoteProjectEncoded = $derived(
+		data.plan.project_encoded_name ?? null
+	);
+
 	// Format timestamp for display
 	function formatTime(dateStr: string): string {
 		try {
@@ -64,6 +76,7 @@
 	<PageHeader
 		title={data.plan.title || data.slug}
 		icon={FileText}
+		iconColorRaw={iconColorRaw}
 		breadcrumbs={breadcrumbs()}
 		subtitle="Updated {formatTime(
 			data.plan.modified
@@ -72,13 +85,14 @@
 		{#snippet headerRight()}
 			<div class="flex items-center gap-3">
 				{#if isRemote && data.remoteUser}
-					<div
-						class="flex items-center gap-1 px-2 py-0.5 rounded-full border {teamMemberColor?.badge ?? ''}"
+					<a
+						href="/members/{encodeURIComponent(data.remoteUser)}"
+						class="flex items-center gap-1 px-2 py-0.5 rounded-full border {teamMemberColor?.badge ?? ''} hover:opacity-80 transition-opacity"
 						title="Remote plan from {data.remoteUser}"
 					>
 						<Globe size={10} strokeWidth={2} class={teamMemberColor?.text ?? ''} />
 						<span class="font-medium text-[11px]">{data.remoteUser}</span>
-					</div>
+					</a>
 				{/if}
 				{#if data.sessionContext}
 					<a
@@ -182,25 +196,44 @@
 			</div>
 			<div class="flex flex-wrap gap-2">
 				{#each data.linkedSessions as linked}
-					<div
-						class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg
-							   bg-[var(--bg-subtle)] text-[var(--text-secondary)]"
-					>
-						{#if linked.operation === 'read'}
-							<Eye size={12} />
-						{:else}
-							<Edit3 size={12} />
-						{/if}
-						<span class="font-mono text-xs">{linked.uuid.slice(0, 8)}</span>
-						<span class="text-[var(--text-muted)] text-xs">({linked.operation})</span>
-					</div>
+					{@const linkHref = remoteProjectEncoded
+						? `/projects/${remoteProjectEncoded}/${linked.uuid.slice(0, 8)}?remote=1`
+						: null}
+					{#if linkHref}
+						<a
+							href={linkHref}
+							class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg
+								   bg-[var(--bg-subtle)] text-[var(--text-secondary)] hover:bg-[var(--bg-muted)] transition-colors"
+						>
+							{#if linked.operation === 'read'}
+								<Eye size={12} />
+							{:else}
+								<Edit3 size={12} />
+							{/if}
+							<span class="font-mono text-xs">{linked.uuid.slice(0, 8)}</span>
+							<span class="text-[var(--text-muted)] text-xs">({linked.operation})</span>
+						</a>
+					{:else}
+						<div
+							class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg
+								   bg-[var(--bg-subtle)] text-[var(--text-secondary)]"
+						>
+							{#if linked.operation === 'read'}
+								<Eye size={12} />
+							{:else}
+								<Edit3 size={12} />
+							{/if}
+							<span class="font-mono text-xs">{linked.uuid.slice(0, 8)}</span>
+							<span class="text-[var(--text-muted)] text-xs">({linked.operation})</span>
+						</div>
+					{/if}
 				{/each}
 			</div>
 		</Card>
 	{/if}
 
 	<!-- Plan Content -->
-	<Card variant="default" padding="none">
+	<Card variant="default" padding="none" style={isRemote && teamMemberColor ? `background-color: ${teamMemberColor.bg}` : ''}>
 		<div class="p-6 md:p-8">
 			<PlanViewer plan={data.plan} embedded={true} stripFirstH1={true} />
 		</div>

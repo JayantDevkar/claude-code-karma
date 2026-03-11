@@ -53,6 +53,6 @@ export async function load({ params, fetch, url }) {
 		relatedSessions,
 		remoteUser: remoteUser || null,
 		// For remote plans, linked_sessions come embedded in the plan response
-		linkedSessions: (planResult.data as any)?.linked_sessions ?? []
+		linkedSessions: planResult.data.linked_sessions ?? []
 	};
 }

@@ -440,6 +440,7 @@ def get_plan(
                     "size_bytes": rp.size_bytes,
                     "content": rp.content,
                     "remote_user_id": rp.remote_user_id,
+                    "project_encoded_name": rp.project_encoded_name,
                     "linked_sessions": rp.linked_sessions,
                 }
         except Exception as e:
