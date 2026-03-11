@@ -349,7 +349,7 @@ def index_remote_sessions(conn: sqlite3.Connection) -> dict:
         if not user_dir.is_dir():
             continue
         dir_name = user_dir.name
-        resolved_uid = _resolve_user_id(user_dir)
+        resolved_uid = _resolve_user_id(user_dir, conn=conn)
 
         # If resolved_uid still looks like a hostname (contains '.'), try to
         # find the canonical member name from sync_members by matching device_id.

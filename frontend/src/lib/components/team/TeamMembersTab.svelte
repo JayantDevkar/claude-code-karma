@@ -145,15 +145,14 @@
 
 						<!-- Settings + Remove buttons (top-right) -->
 						{#if !self}
-							<a
-								href="/members/{encodeURIComponent(member.device_id)}?tab=settings"
-								onclick={(e) => e.stopPropagation()}
+							<button
+								onclick={(e) => { e.preventDefault(); e.stopPropagation(); window.location.href = `/members/${encodeURIComponent(member.device_id)}?tab=settings`; }}
 								class="p-1 rounded text-[var(--text-muted)] hover:text-[var(--accent)] hover:bg-[var(--accent)]/10 transition-colors shrink-0"
 								title="Member settings"
 								aria-label="Settings for {member.name}"
 							>
 								<Settings size={13} />
-							</a>
+							</button>
 						{/if}
 
 						{#if !self}

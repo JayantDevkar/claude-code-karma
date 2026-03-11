@@ -20,9 +20,12 @@
 		pendingDevices = data.pendingDevices ?? [];
 	});
 
-	function handleTeamCreated(teamName: string) {
-		invalidateAll();
-		if (teamName) goto(`/team/${encodeURIComponent(teamName)}`);
+	async function handleTeamCreated(teamName: string) {
+		if (teamName) {
+			await goto(`/team/${encodeURIComponent(teamName)}`);
+		} else {
+			await invalidateAll();
+		}
 	}
 
 	function handleTeamJoined(result: JoinTeamResponse) {
