@@ -112,22 +112,32 @@ def upsert_member(
     team_name: str,
     name: str,
     device_id: str,
+    *,
+    machine_id: Optional[str] = None,
+    machine_tag: Optional[str] = None,
+    member_tag: Optional[str] = None,
 ) -> dict:
     """Insert a member or update their name if the device already exists.
 
     Also removes stale rows where the same name maps to a different device_id
     (e.g. member reinstalled Syncthing and got a new identity).
+
+    New identity columns (machine_id, machine_tag, member_tag) use COALESCE
+    to preserve existing values when new ones aren't provided.
     """
     conn.execute(
         "DELETE FROM sync_members WHERE team_name = ? AND name = ? AND device_id != ?",
         (team_name, name, device_id),
     )
     conn.execute(
-        """INSERT INTO sync_members (team_name, name, device_id)
-           VALUES (?, ?, ?)
+        """INSERT INTO sync_members (team_name, name, device_id, machine_id, machine_tag, member_tag)
+           VALUES (?, ?, ?, ?, ?, ?)
            ON CONFLICT(team_name, device_id)
-           DO UPDATE SET name = excluded.name""",
-        (team_name, name, device_id),
+           DO UPDATE SET name = excluded.name,
+             machine_id = COALESCE(excluded.machine_id, machine_id),
+             machine_tag = COALESCE(excluded.machine_tag, machine_tag),
+             member_tag = COALESCE(excluded.member_tag, member_tag)""",
+        (team_name, name, device_id, machine_id, machine_tag, member_tag),
     )
     conn.commit()
     return {"team_name": team_name, "name": name, "device_id": device_id}
@@ -179,7 +189,7 @@ def clear_member_removal(conn: sqlite3.Connection, team_name: str, device_id: st
 
 def list_members(conn: sqlite3.Connection, team_name: str) -> list[dict]:
     rows = conn.execute(
-        "SELECT team_name, name, device_id, added_at FROM sync_members WHERE team_name = ? ORDER BY added_at",
+        "SELECT team_name, name, device_id, machine_id, machine_tag, member_tag, added_at FROM sync_members WHERE team_name = ? ORDER BY added_at",
         (team_name,),
     ).fetchall()
     return [dict(r) for r in rows]
@@ -196,13 +206,13 @@ def get_member_by_device_id(
     """
     if team_name:
         row = conn.execute(
-            "SELECT team_name, name, device_id, added_at FROM sync_members "
+            "SELECT team_name, name, device_id, machine_id, machine_tag, member_tag, added_at FROM sync_members "
             "WHERE device_id = ? AND team_name = ?",
             (device_id, team_name),
         ).fetchone()
     else:
         row = conn.execute(
-            "SELECT team_name, name, device_id, added_at FROM sync_members WHERE device_id = ?",
+            "SELECT team_name, name, device_id, machine_id, machine_tag, member_tag, added_at FROM sync_members WHERE device_id = ?",
             (device_id,),
         ).fetchone()
     return dict(row) if row else None

@@ -23,6 +23,7 @@ from services.folder_id import (  # noqa: E402
     is_karma_folder,
     is_outbox_folder,
     parse_handshake_id,
+    parse_member_tag,
     parse_outbox_id,
     OUTBOX_PREFIX,
 )
@@ -81,8 +82,7 @@ def _handle_own_outbox(
     except Exception as e:
         click.echo(f"  Warning: project resolution failed for '{suffix}': {e}")
 
-    own_user_id = config.user_id
-    outbox_path = str(KARMA_BASE / "remote-sessions" / own_user_id / outbox_subdir)
+    outbox_path = str(KARMA_BASE / "remote-sessions" / config.member_tag / outbox_subdir)
     Path(outbox_path).mkdir(parents=True, exist_ok=True)
     outbox_devices = [device_id]
     if own_device_id:
@@ -264,7 +264,8 @@ def accept_pending_folders(st, config, conn, *, auto_only=False, only_folder_id=
         parsed_hs = parse_handshake_id(folder_id)
         if not parsed_hs:
             continue
-        candidate_user, _team = parsed_hs
+        candidate_member_tag, _team = parsed_hs
+        candidate_user, candidate_machine_tag = parse_member_tag(candidate_member_tag)
         for dev_id in folder_info.get("offeredBy", {}):
             if dev_id in known_devices:
                 real_usernames[dev_id] = candidate_user
@@ -275,7 +276,11 @@ def accept_pending_folders(st, config, conn, *, auto_only=False, only_folder_id=
                             f"  Updating member name: {db_name} → {candidate_user} "
                             f"(from handshake folder, team {db_team})"
                         )
-                        upsert_member(conn, db_team, candidate_user, device_id=dev_id)
+                        upsert_member(
+                            conn, db_team, candidate_user, device_id=dev_id,
+                            machine_tag=candidate_machine_tag,
+                            member_tag=candidate_member_tag,
+                        )
 
     # Refresh known_devices after potential member name updates
     known_devices = get_known_devices(conn)
@@ -357,6 +362,9 @@ def accept_pending_folders(st, config, conn, *, auto_only=False, only_folder_id=
             own_prefixes = [OUTBOX_PREFIX + own_user_id + "--"]
             if config.machine_id and config.machine_id != own_user_id:
                 own_prefixes.append(OUTBOX_PREFIX + config.machine_id + "--")
+            # Also check member_tag format (user_id.machine_tag)
+            if hasattr(config, 'member_tag') and config.member_tag != own_user_id:
+                own_prefixes.append(OUTBOX_PREFIX + config.member_tag + "--")
             own_prefix = next(
                 (p for p in own_prefixes if folder_id.startswith(p)), None
             )

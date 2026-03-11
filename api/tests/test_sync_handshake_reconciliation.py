@@ -45,6 +45,8 @@ def config():
     cfg = MagicMock()
     cfg.user_id = "alice"
     cfg.machine_id = "alice-mac"
+    cfg.machine_tag = "alice-mac"
+    cfg.member_tag = "alice.alice-mac"
     cfg.syncthing.device_id = "ALICE-DEVICE-ID"
     return cfg
 
