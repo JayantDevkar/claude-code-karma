@@ -2,7 +2,7 @@
 	import { browser } from '$app/environment';
 	import { replaceState } from '$app/navigation';
 	import { onMount, onDestroy } from 'svelte';
-	import { FileText, Search, FolderOpen, GitBranch, ChevronDown, X } from 'lucide-svelte';
+	import { FileText, Search, FolderOpen, GitBranch, ChevronDown, X, Globe } from 'lucide-svelte';
 	import { listNavigation } from '$lib/actions/listNavigation';
 	import PageHeader from '$lib/components/layout/PageHeader.svelte';
 	import { PlanCard } from '$lib/components/plan';
@@ -53,6 +53,8 @@
 	let selectedProject = $state<string | null>(data.project || null);
 	// svelte-ignore state_referenced_locally
 	let selectedBranch = $state<string | null>(data.branch || null);
+	// svelte-ignore state_referenced_locally
+	let selectedSource = $state<string | null>(data.source || null);
 	let showProjectDropdown = $state(false);
 	let showBranchDropdown = $state(false);
 
@@ -90,6 +92,7 @@
 		if (searchParam) params.set('search', searchParam);
 		if (selectedProject) params.set('project', selectedProject);
 		if (selectedBranch) params.set('branch', selectedBranch);
+		if (selectedSource) params.set('source', selectedSource);
 		params.set('page', currentPage.toString());
 		params.set('per_page', perPage.toString());
 		return params;
@@ -103,6 +106,7 @@
 		if (searchParam) params.set('search', searchParam);
 		if (selectedProject) params.set('project', selectedProject);
 		if (selectedBranch) params.set('branch', selectedBranch);
+		if (selectedSource) params.set('source', selectedSource);
 		if (currentPage > 1) params.set('page', currentPage.toString());
 		if (perPage !== 24) params.set('per_page', perPage.toString());
 
@@ -146,6 +150,7 @@
 		const _tokens = searchTokens;
 		const _project = selectedProject;
 		const _branch = selectedBranch;
+		const _source = selectedSource;
 		const _page = currentPage;
 		const _perPage = perPage;
 
@@ -168,6 +173,7 @@
 			searchTokens = search ? paramToTokens(search) : [];
 			selectedProject = url.searchParams.get('project') || null;
 			selectedBranch = url.searchParams.get('branch') || null;
+			selectedSource = url.searchParams.get('source') || null;
 			currentPage = parseInt(url.searchParams.get('page') || '1', 10);
 			perPage = parseInt(url.searchParams.get('per_page') || '24', 10);
 		};
@@ -247,7 +253,7 @@
 	// Check if we have any plans
 	let hasResults = $derived(plansResponse.total > 0);
 	let hasActiveFilters = $derived(
-		searchTokens.length > 0 || selectedProject !== null || selectedBranch !== null
+		searchTokens.length > 0 || selectedProject !== null || selectedBranch !== null || selectedSource !== null
 	);
 
 	// Helper to get project name from path
@@ -265,6 +271,7 @@
 		searchTokens = [];
 		selectedProject = null;
 		selectedBranch = null;
+		selectedSource = null;
 		currentPage = 1;
 	}
 </script>
@@ -443,6 +450,31 @@
 			</div>
 		{/if}
 
+		<!-- Source Filter (Local / Remote / All) -->
+		<div class="flex items-center">
+			<button
+				onclick={() => {
+					if (selectedSource === null) selectedSource = 'remote';
+					else if (selectedSource === 'remote') selectedSource = 'local';
+					else selectedSource = null;
+					currentPage = 1;
+				}}
+				class="inline-flex items-center gap-2 px-3 h-9 text-xs font-medium rounded-[6px] hover:border-[var(--border-hover)] transition-all whitespace-nowrap {selectedSource
+					? 'bg-[var(--subagent-plan-subtle)] border border-[var(--subagent-plan)] text-[var(--subagent-plan)]'
+					: 'bg-[var(--bg-base)] border border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-subtle)]'}"
+				title="Filter by source: {selectedSource || 'all'}"
+			>
+				<Globe
+					size={12}
+					strokeWidth={2}
+					class={selectedSource
+						? 'text-[var(--subagent-plan)]'
+						: 'text-[var(--text-faint)]'}
+				/>
+				<span>{selectedSource === 'remote' ? 'Remote' : selectedSource === 'local' ? 'Local' : 'All'}</span>
+			</button>
+		</div>
+
 		<!-- Clear Filters Button (shown when filters are active) -->
 		{#if hasActiveFilters}
 			<button
@@ -535,7 +567,7 @@
 
 						<!-- Plan Cards Grid -->
 						<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-							{#each group.plans as plan (plan.slug)}
+							{#each group.plans as plan (`${plan.slug}-${plan.remote_user_id ?? 'local'}`)}
 								<PlanCard {plan} />
 							{/each}
 						</div>

@@ -6,6 +6,7 @@ export async function load({ fetch, url }) {
 	const search = url.searchParams.get('search') || '';
 	const project = url.searchParams.get('project') || '';
 	const branch = url.searchParams.get('branch') || '';
+	const source = url.searchParams.get('source') || '';
 	const page = parseInt(url.searchParams.get('page') || '1', 10);
 	const perPage = parseInt(url.searchParams.get('per_page') || '24', 10);
 
@@ -14,6 +15,7 @@ export async function load({ fetch, url }) {
 	if (search) params.set('search', search);
 	if (project) params.set('project', project);
 	if (branch) params.set('branch', branch);
+	if (source) params.set('source', source);
 	params.set('page', page.toString());
 	params.set('per_page', perPage.toString());
 
@@ -28,5 +30,5 @@ export async function load({ fetch, url }) {
 		fetchWithFallback<Project[]>(fetch, `${API_BASE}/projects`, [])
 	]);
 
-	return { plansResponse, projects, search, project, branch, page, perPage };
+	return { plansResponse, projects, search, project, branch, source, page, perPage };
 }

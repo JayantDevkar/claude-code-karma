@@ -2,6 +2,7 @@
 
 import json
 import logging
+import re
 import shutil
 import subprocess
 from datetime import datetime, timezone
@@ -88,6 +89,106 @@ def get_session_limit(team_session_limit: str, dest_path: Path) -> int | None:
 
     limits = {"all": None, "recent_100": 100, "recent_10": 10}
     return limits.get(team_session_limit, None)
+
+
+# Regex to extract plan slugs from JSONL bytes: matches plans/{slug}.md
+_PLAN_SLUG_RE = re.compile(rb'plans/([\w][\w.-]*?)\.md')
+
+
+def _discover_plan_references(
+    session_jsonl_paths: list[tuple[str, Path]],
+) -> dict[str, dict]:
+    """Scan session JONLs for plan file references.
+
+    Returns:
+        {slug: {"sessions": {uuid: operation, ...}}} where operation is
+        "created" (Write), "edited" (Edit/StrReplace), or "read" (Read).
+    """
+    # Operation priority: created > edited > read
+    op_priority = {"created": 3, "edited": 2, "read": 1}
+    plans: dict[str, dict[str, str]] = {}  # slug -> {uuid -> operation}
+
+    for uuid, jsonl_path in session_jsonl_paths:
+        if not jsonl_path.is_file():
+            continue
+        try:
+            raw = jsonl_path.read_bytes()
+        except (PermissionError, OSError):
+            continue
+
+        # Fast check: any plan reference at all?
+        if b"plans/" not in raw or b".md" not in raw:
+            continue
+
+        # Extract all plan slugs referenced in this JSONL
+        slugs_found = set(_PLAN_SLUG_RE.findall(raw))
+        if not slugs_found:
+            continue
+
+        # Determine operation type per slug by scanning for tool use patterns
+        for slug_bytes in slugs_found:
+            slug = slug_bytes.decode("utf-8", errors="replace")
+            needle = f"plans/{slug}.md".encode()
+
+            # Determine best operation: scan for Write/Edit/StrReplace/Read near the slug
+            operation = "read"  # default
+            for line in raw.split(b"\n"):
+                if needle not in line:
+                    continue
+                if b'"Write"' in line or b'"name": "Write"' in line:
+                    operation = "created"
+                    break  # highest priority, stop
+                elif b'"Edit"' in line or b'"StrReplace"' in line:
+                    if op_priority.get(operation, 0) < op_priority["edited"]:
+                        operation = "edited"
+
+            if slug not in plans:
+                plans[slug] = {}
+            # Keep highest-priority operation per session
+            existing = plans[slug].get(uuid, "")
+            if op_priority.get(operation, 0) > op_priority.get(existing, 0):
+                plans[slug][uuid] = operation
+
+    return plans
+
+
+def _build_titles_from_db(session_uuids: list[str]) -> dict[str, dict]:
+    """Query the metadata DB for session titles of given sessions.
+
+    Returns dict suitable for write_titles_bulk():
+        {uuid: {"title": str, "source": str}} for sessions that have titles.
+    """
+    if not session_uuids:
+        return {}
+
+    try:
+        from karma.db import get_connection
+
+        conn = get_connection()
+    except Exception:
+        return {}
+
+    titles: dict[str, dict] = {}
+    placeholders = ",".join("?" * len(session_uuids))
+
+    try:
+        rows = conn.execute(
+            f"SELECT uuid, session_titles FROM sessions WHERE uuid IN ({placeholders}) AND session_titles IS NOT NULL",
+            session_uuids,
+        ).fetchall()
+        for row in rows:
+            try:
+                parsed = json.loads(row[1]) if isinstance(row[1], str) else row[1]
+                if isinstance(parsed, list) and parsed:
+                    titles[row[0]] = {"title": parsed[0], "source": "db"}
+            except (json.JSONDecodeError, TypeError, IndexError):
+                continue
+    except Exception as e:
+        logger.debug("Failed to query session titles from DB: %s", e)
+    finally:
+        conn.close()
+
+    return titles
 
 
 def _build_skill_classifications_from_db(
@@ -404,6 +505,47 @@ class SessionPackager:
                     except (PermissionError, OSError) as e:
                         logger.warning("Failed to copy %s: %s", debug_file, e)
 
+        # Discover and copy referenced plans (best-effort)
+        try:
+            session_jsonls = [
+                (entry.uuid, self._source_dir_for_session(entry) / f"{entry.uuid}.jsonl")
+                for entry in sessions
+            ]
+            plan_refs = _discover_plan_references(session_jsonls)
+
+            if plan_refs:
+                plans_base = self._claude_base / "plans"
+                plans_staging = staging_dir / "plans"
+                copied_slugs = []
+
+                for slug in plan_refs:
+                    src_plan = plans_base / f"{slug}.md"
+                    if src_plan.is_file():
+                        plans_staging.mkdir(exist_ok=True)
+                        dst_plan = plans_staging / f"{slug}.md"
+                        if not dst_plan.exists() or src_plan.stat().st_mtime > dst_plan.stat().st_mtime:
+                            shutil.copy2(src_plan, dst_plan)
+                        copied_slugs.append(slug)
+
+                # Write plans-index.json sidecar
+                if copied_slugs:
+                    plans_index = {
+                        "version": 1,
+                        "updated_at": datetime.now(timezone.utc).isoformat(),
+                        "plans": {
+                            slug: {"sessions": plan_refs[slug]}
+                            for slug in copied_slugs
+                        },
+                    }
+                    index_path = staging_dir / "plans-index.json"
+                    index_path.write_text(
+                        json.dumps(plans_index, indent=2, ensure_ascii=False) + "\n",
+                        encoding="utf-8",
+                    )
+                    logger.debug("Packaged %d plans for sync", len(copied_slugs))
+        except Exception as e:
+            logger.debug("Plan packaging failed (best-effort): %s", e)
+
         # Detect git identity for cross-machine project matching
         from karma.sync import detect_git_identity
 
@@ -435,13 +577,14 @@ class SessionPackager:
         manifest_path = staging_dir / "manifest.json"
         manifest_path.write_text(json.dumps(manifest.model_dump(), indent=2) + "\n")
 
-        # Ensure titles.json sidecar exists (best-effort)
+        # Backfill titles.json from DB (merges with any existing hook-written titles)
         try:
+            from karma.titles_io import write_titles_bulk
+
             titles_path = staging_dir / "titles.json"
-            if not titles_path.exists():
-                from karma.titles_io import write_titles_bulk
-                write_titles_bulk(titles_path, {})
+            db_titles = _build_titles_from_db([entry.uuid for entry in sessions])
+            write_titles_bulk(titles_path, db_titles)
         except Exception as e:
-            logger.debug("titles.json sidecar creation failed (best-effort): %s", e)
+            logger.debug("titles.json backfill failed (best-effort): %s", e)
 
         return manifest

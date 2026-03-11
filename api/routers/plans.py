@@ -263,6 +263,7 @@ def list_plans_with_context(
     search: str = Query("", description="Search query for slug, title, preview, project path"),
     project: str = Query("", description="Filter by project encoded name"),
     branch: str = Query("", description="Filter by git branch"),
+    source: str = Query("", description="Filter by source: 'local', 'remote', or '' for all"),
 ) -> PlanListResponse:
     """
     List all plans with their associated session and project context.
@@ -305,19 +306,46 @@ def list_plans_with_context(
 
     # Build full list with context
     all_plans: list[PlanWithContext] = []
-    for plan in plans:
-        all_plans.append(
-            PlanWithContext(
-                slug=plan.slug,
-                title=plan.extract_title(),
-                preview=plan.content[:500] if plan.content else "",
-                word_count=plan.word_count,
-                created=plan.created,
-                modified=plan.modified,
-                size_bytes=plan.size_bytes,
-                session_context=slug_index.get(plan.slug),
+
+    if source != "remote":
+        for plan in plans:
+            all_plans.append(
+                PlanWithContext(
+                    slug=plan.slug,
+                    title=plan.extract_title(),
+                    preview=plan.content[:500] if plan.content else "",
+                    word_count=plan.word_count,
+                    created=plan.created,
+                    modified=plan.modified,
+                    size_bytes=plan.size_bytes,
+                    session_context=slug_index.get(plan.slug),
+                )
             )
-        )
+
+    # Merge remote plans (from all synced users)
+    if source != "local":
+        try:
+            from services.remote_plans import discover_remote_plans
+
+            for rp in discover_remote_plans():
+                all_plans.append(
+                    PlanWithContext(
+                        slug=rp.slug,
+                        title=rp.title,
+                        preview=rp.preview,
+                        word_count=rp.word_count,
+                        created=rp.created,
+                        modified=rp.modified,
+                        size_bytes=rp.size_bytes,
+                        remote_user_id=rp.remote_user_id,
+                        linked_sessions=rp.linked_sessions,
+                    )
+                )
+        except Exception as e:
+            logger.debug("Remote plan discovery failed: %s", e)
+
+    # Sort merged list by modified time (newest first)
+    all_plans.sort(key=lambda p: p.modified, reverse=True)
 
     # Apply search filter (supports comma-separated tokens with AND logic)
     if search:
@@ -379,23 +407,51 @@ def list_plans_with_context(
     )
 
 
-@router.get("/{slug}", response_model=PlanDetail)
+@router.get("/{slug}")
 @cacheable(max_age=300, stale_while_revalidate=600, private=True)
-def get_plan(slug: str, request: Request) -> PlanDetail:
+def get_plan(
+    slug: str,
+    request: Request,
+    remote_user: str = Query("", description="Remote user ID (for remote plans)"),
+):
     """
     Get a specific plan by slug.
 
-    Args:
-        slug: Plan identifier (filename without .md)
-
-    Returns:
-        Full plan content and metadata
+    If remote_user is provided, looks up the plan from that user's synced outbox.
+    Otherwise looks up from local ~/.claude/plans/.
 
     Raises:
         404: Plan not found
     """
-    plan = load_plan(slug)
+    # Remote plan lookup
+    if remote_user:
+        try:
+            from services.remote_plans import get_remote_plan
 
+            rp = get_remote_plan(slug, remote_user)
+            if rp:
+                return {
+                    "slug": rp.slug,
+                    "title": rp.title,
+                    "preview": rp.preview,
+                    "word_count": rp.word_count,
+                    "created": rp.created.isoformat(),
+                    "modified": rp.modified.isoformat(),
+                    "size_bytes": rp.size_bytes,
+                    "content": rp.content,
+                    "remote_user_id": rp.remote_user_id,
+                    "linked_sessions": rp.linked_sessions,
+                }
+        except Exception as e:
+            logger.debug("Remote plan lookup failed for %s/%s: %s", remote_user, slug, e)
+
+        raise HTTPException(
+            status_code=404,
+            detail=f"Remote plan '{slug}' not found for user '{remote_user}'",
+        )
+
+    # Local plan lookup
+    plan = load_plan(slug)
     if not plan:
         raise HTTPException(
             status_code=404,

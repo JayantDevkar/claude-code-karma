@@ -967,6 +967,8 @@ export interface PlanSessionContext {
  */
 export interface PlanWithContext extends PlanSummary {
 	session_context: PlanSessionContext | null;
+	remote_user_id?: string | null;
+	linked_sessions?: Array<{ uuid: string; operation: string; remote_user_id?: string }> | null;
 }
 
 /**

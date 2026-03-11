@@ -933,6 +933,12 @@ class PlanWithContext(PlanSummary):
     session_context: Optional[PlanSessionContext] = Field(
         None, description="Session context if plan can be linked to a session"
     )
+    remote_user_id: Optional[str] = Field(
+        None, description="Remote user ID if this plan was synced from another user"
+    )
+    linked_sessions: Optional[list[dict]] = Field(
+        None, description="Sessions linked to this plan via plans-index.json (remote plans)"
+    )
 
 
 class PlanListResponse(PaginationMeta):
