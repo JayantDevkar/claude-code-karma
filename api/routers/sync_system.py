@@ -136,7 +136,7 @@ async def sync_reset(options: Optional[ResetOptions] = None) -> Any:
     except Exception:
         steps["syncthing_cleanup"] = "skipped (not running)"
 
-    # 3. Delete remote session files
+    # 3. Delete remote session files + handshake + metadata dirs
     remote_dir = KARMA_BASE / "remote-sessions"
     if remote_dir.exists():
         shutil.rmtree(remote_dir, ignore_errors=True)
@@ -144,22 +144,37 @@ async def sync_reset(options: Optional[ResetOptions] = None) -> Any:
     else:
         steps["remote_sessions_deleted"] = False
 
-    # 4. Delete sync config file + stale sync.db
+    handshakes_dir = KARMA_BASE / "handshakes"
+    if handshakes_dir.exists():
+        shutil.rmtree(handshakes_dir, ignore_errors=True)
+        steps["handshakes_deleted"] = True
+
+    metadata_dir = KARMA_BASE / "metadata-folders"
+    if metadata_dir.exists():
+        shutil.rmtree(metadata_dir, ignore_errors=True)
+        steps["metadata_folders_deleted"] = True
+
+    # 4. Delete sync config file + stale DB files from v1
     if SYNC_CONFIG_PATH.exists():
         SYNC_CONFIG_PATH.unlink()
         steps["config_deleted"] = True
     else:
         steps["config_deleted"] = False
 
-    stale_sync_db = KARMA_BASE / "sync.db"
-    if stale_sync_db.exists():
-        stale_sync_db.unlink(missing_ok=True)
-        steps["stale_sync_db_deleted"] = True
+    stale_dbs_removed = []
+    for stale_name in ["sync.db", "index.db", "karma.db", "sessions.db", "workflow.db"]:
+        stale_path = KARMA_BASE / stale_name
+        if stale_path.exists():
+            stale_path.unlink(missing_ok=True)
+            stale_dbs_removed.append(stale_name)
+    if stale_dbs_removed:
+        steps["stale_dbs_deleted"] = stale_dbs_removed
 
     # 5. Clear all sync tables + orphan remote sessions
     conn = _sid._get_sync_conn()
     tables_cleared = []
     for table in [
+        "sync_rejected_folders",  # persistent folder rejections (v2)
         "sync_settings", "sync_removed_members",  # policy/removal state
         "sync_events", "sync_team_projects", "sync_members", "sync_teams",
     ]:

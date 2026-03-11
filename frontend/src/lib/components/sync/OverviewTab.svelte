@@ -568,8 +568,9 @@
 								<li>Remove all karma shared folders from Syncthing</li>
 								<li>Remove all paired team devices</li>
 								<li>Stop the Syncthing daemon</li>
-								<li>Delete all remote session files</li>
-								<li>Clear sync config, teams, members & events</li>
+								<li>Delete all remote sessions, handshakes & metadata</li>
+								<li>Clear sync config, teams, members, events & rejections</li>
+								<li>Remove stale database files</li>
 							</ul>
 							<label class="flex items-center gap-2 text-xs text-[var(--text-secondary)] cursor-pointer">
 								<input type="checkbox" bind:checked={uninstallSyncthing} class="rounded" />
