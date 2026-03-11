@@ -363,7 +363,7 @@ def accept_pending_folders(st, config, conn, *, auto_only=False, only_folder_id=
             if config.machine_id and config.machine_id != own_user_id:
                 own_prefixes.append(OUTBOX_PREFIX + config.machine_id + "--")
             # Also check member_tag format (user_id.machine_tag)
-            if hasattr(config, 'member_tag') and config.member_tag != own_user_id:
+            if config.member_tag and config.member_tag != own_user_id:
                 own_prefixes.append(OUTBOX_PREFIX + config.member_tag + "--")
             own_prefix = next(
                 (p for p in own_prefixes if folder_id.startswith(p)), None

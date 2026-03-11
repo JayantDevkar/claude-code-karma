@@ -21,6 +21,7 @@ The local user's directory is the outbox (sendonly) and should be skipped.
 
 import json
 import logging
+import re
 import time
 from dataclasses import dataclass
 from datetime import datetime
@@ -267,12 +268,10 @@ def _resolve_user_id(user_dir: Path, conn=None) -> str:
     subdirectory contains the canonical user_id set by the sender.
 
     Resolution order (most reliable first):
-      1. manifest.user_id (canonical identity set by the sender)
-      2. manifest.device_id → sync_members DB lookup (only if it matches manifest)
+      1. manifest.device_id → sync_members DB lookup (DB is authoritative —
+         handshake healing keeps it current, while manifest may be stale)
+      2. manifest.user_id (canonical sender identity, fallback when no DB match)
       3. directory name (last resort)
-
-    If the DB member name doesn't match manifest.user_id, the DB record
-    is healed automatically (sync_members, sync_events, sessions).
 
     Reads the first manifest.json found under the user_dir, caches the result.
     Falls back to directory name if no manifest is available.
@@ -301,13 +300,12 @@ def _resolve_user_id(user_dir: Path, conn=None) -> str:
                 with open(manifest_path) as f:
                     manifest = json.load(f)
 
-                # The manifest user_id is the canonical identity set by the
-                # sender — it always takes precedence over whatever is in
-                # the DB (which may be a hostname fallback or sanitised
-                # hostname from the manual-accept flow).
                 manifest_uid = manifest.get("user_id")
                 device_id = manifest.get("device_id")
 
+                # Priority 1: DB lookup via device_id — DB is authoritative
+                # because handshake healing keeps member names current,
+                # while manifest user_id may be stale (written at package time).
                 if device_id and conn is not None:
                     try:
                         from db.sync_queries import get_member_by_device_id
@@ -315,35 +313,17 @@ def _resolve_user_id(user_dir: Path, conn=None) -> str:
                         if member:
                             db_name = member["name"]
                             if manifest_uid and db_name != manifest_uid:
-                                # DB name doesn't match manifest — heal
-                                conn.execute(
-                                    "UPDATE sync_members SET name = ? WHERE device_id = ?",
-                                    (manifest_uid, device_id),
-                                )
-                                healed_events = conn.execute(
-                                    "UPDATE sync_events SET member_name = ? WHERE member_name = ?",
-                                    (manifest_uid, db_name),
-                                ).rowcount
-                                healed_sessions = conn.execute(
-                                    "UPDATE sessions SET remote_user_id = ? WHERE remote_user_id = ? AND source = 'remote'",
-                                    (manifest_uid, db_name),
-                                ).rowcount
-                                conn.commit()
-                                logger.info(
-                                    "Healed member name '%s' → '%s' for device %s "
-                                    "(events=%d, sessions=%d)",
+                                logger.debug(
+                                    "DB name '%s' differs from manifest '%s' for device %s "
+                                    "— trusting DB (handshake-healed)",
                                     db_name, manifest_uid, device_id[:20],
-                                    healed_events, healed_sessions,
                                 )
-                                resolved = manifest_uid
-                                break
-                            else:
-                                # DB matches manifest (or no manifest uid) — trust DB
-                                resolved = db_name
-                                break
+                            resolved = db_name
+                            break
                     except Exception:
                         pass
 
+                # Priority 2: manifest user_id (no DB match)
                 if manifest_uid:
                     resolved = manifest_uid
                 break

@@ -7,6 +7,8 @@ from unittest.mock import patch
 import pytest
 
 from services.remote_sessions import (
+    _is_local_user,
+    _resolve_user_id,
     find_remote_session,
     get_project_mapping,
     iter_all_remote_session_metadata,
@@ -144,6 +146,7 @@ def _clear_cache():
     mod._project_mapping_cache_time = 0.0
     mod._manifest_worktree_cache = {}
     mod._titles_cache = {}
+    mod._resolved_user_cache = {}
     yield
     mod._local_user_cache = None
     mod._local_user_cache_time = 0.0
@@ -151,6 +154,7 @@ def _clear_cache():
     mod._project_mapping_cache_time = 0.0
     mod._manifest_worktree_cache = {}
     mod._titles_cache = {}
+    mod._resolved_user_cache = {}
 
 
 # ============================================================================
@@ -611,7 +615,7 @@ class TestSchemaMigration:
 
         from db.schema import SCHEMA_VERSION, ensure_schema
 
-        assert SCHEMA_VERSION == 13
+        assert SCHEMA_VERSION >= 13  # v13 added remote columns; now at v17+
 
         conn = sqlite3.connect(":memory:")
         conn.row_factory = sqlite3.Row
@@ -719,3 +723,220 @@ class TestRemoteSessionTitles:
         assert by_uuid["sess-002"].session_titles is None
         # Bob's session has no titles.json at all
         assert by_uuid["sess-003"].session_titles is None
+
+
+# ============================================================================
+# Tests: member_tag directory support
+# ============================================================================
+
+
+@pytest.fixture
+def karma_base_member_tag(tmp_path: Path) -> Path:
+    """Create karma base with member_tag directory names.
+
+    Uses ``{user_id}.{machine_tag}`` format for remote user directories,
+    mixing with bare user_id directories for backward compatibility.
+    """
+    karma = tmp_path / ".claude_karma_mt"
+    karma.mkdir()
+
+    local_encoded = "-Users-jayant-acme"
+
+    # Alice with member_tag directory (alice.macbook-pro)
+    alice_sessions = (
+        karma / "remote-sessions" / "alice.macbook-pro" / local_encoded / "sessions"
+    )
+    alice_sessions.mkdir(parents=True)
+    (alice_sessions / "sess-mt-001.jsonl").write_text(
+        _make_session_jsonl("mt-001", "member tag session")
+    )
+
+    # Bob with bare user_id directory (legacy)
+    bob_sessions = karma / "remote-sessions" / "bob" / local_encoded / "sessions"
+    bob_sessions.mkdir(parents=True)
+    (bob_sessions / "sess-mt-002.jsonl").write_text(
+        _make_session_jsonl("mt-002", "bare user session")
+    )
+
+    # Local user with member_tag directory (jayant.mac-mini)
+    jayant_sessions = (
+        karma / "remote-sessions" / "jayant.mac-mini" / local_encoded / "sessions"
+    )
+    jayant_sessions.mkdir(parents=True)
+    (jayant_sessions / "sess-mt-local.jsonl").write_text(
+        _make_session_jsonl("mt-local", "local outbox")
+    )
+
+    # Local user with bare directory too (jayant)
+    jayant_bare = karma / "remote-sessions" / "jayant" / local_encoded / "sessions"
+    jayant_bare.mkdir(parents=True)
+    (jayant_bare / "sess-mt-local2.jsonl").write_text(
+        _make_session_jsonl("mt-local2", "local outbox bare")
+    )
+
+    # sync-config.json
+    sync_config = {
+        "user_id": "jayant",
+        "machine_id": "Jayants-Mac-mini.local",
+        "teams": {
+            "my-team": {
+                "backend": "syncthing",
+                "projects": {
+                    "acme": {
+                        "path": "/Users/jayant/acme",
+                        "encoded_name": local_encoded,
+                    }
+                },
+                "syncthing_members": {
+                    "alice.macbook-pro": {"syncthing_device_id": "ALICE-DEVICE-ID"},
+                    "bob": {"syncthing_device_id": "BOB-DEVICE-ID"},
+                },
+            }
+        },
+    }
+    (karma / "sync-config.json").write_text(json.dumps(sync_config))
+
+    return karma
+
+
+class TestIsLocalUser:
+    def test_bare_match(self):
+        assert _is_local_user("jayant", "jayant") is True
+
+    def test_bare_no_match(self):
+        assert _is_local_user("alice", "jayant") is False
+
+    def test_member_tag_match(self):
+        assert _is_local_user("jayant.mac-mini", "jayant") is True
+
+    def test_member_tag_no_match(self):
+        assert _is_local_user("alice.macbook-pro", "jayant") is False
+
+    def test_none_local_user(self):
+        assert _is_local_user("jayant", None) is False
+
+    def test_empty_local_user(self):
+        assert _is_local_user("jayant", "") is False
+
+    def test_dot_in_machine_tag_only(self):
+        # user_id "alice" with machine_tag "mbp.local"
+        assert _is_local_user("alice.mbp.local", "alice") is True
+
+    def test_different_user_with_dot(self):
+        assert _is_local_user("bob.desktop", "jayant") is False
+
+
+class TestResolveUserIdMemberTag:
+    def test_bare_dirname_no_manifest(self, tmp_path):
+        """Bare dir name without manifest returns the dir name."""
+        user_dir = tmp_path / "alice"
+        user_dir.mkdir()
+        assert _resolve_user_id(user_dir) == "alice"
+
+    def test_member_tag_dirname_no_manifest(self, tmp_path):
+        """member_tag dir name without manifest extracts user_id."""
+        user_dir = tmp_path / "alice.macbook-pro"
+        user_dir.mkdir()
+        assert _resolve_user_id(user_dir) == "alice"
+
+    def test_manifest_takes_precedence_over_member_tag(self, tmp_path):
+        """Manifest user_id wins over member_tag parsing."""
+        user_dir = tmp_path / "hostname.local"
+        user_dir.mkdir()
+        project_dir = user_dir / "-Users-alice-proj"
+        project_dir.mkdir()
+        manifest = {"user_id": "alice", "device_id": "DEVICE-123"}
+        (project_dir / "manifest.json").write_text(json.dumps(manifest))
+        assert _resolve_user_id(user_dir) == "alice"
+
+    def test_hostname_with_multi_dots_not_treated_as_member_tag(self, tmp_path):
+        """alice.mbp.local is a hostname (machine_part has dots), not a member_tag.
+        _sanitize_machine_tag would produce 'mbp-local', not 'mbp.local'."""
+        user_dir = tmp_path / "alice.mbp.local"
+        user_dir.mkdir()
+        # Dots in machine_part → not a valid sanitized machine_tag → treat as raw dirname
+        assert _resolve_user_id(user_dir) == "alice.mbp.local"
+
+
+class TestFindRemoteSessionMemberTag:
+    def test_finds_session_in_member_tag_dir(self, karma_base_member_tag):
+        with patch("services.remote_sessions.settings") as mock_settings:
+            mock_settings.karma_base = karma_base_member_tag
+            result = find_remote_session("sess-mt-001")
+
+        assert result is not None
+        assert result.user_id == "alice"
+        assert result.machine_id == "alice.macbook-pro"
+
+    def test_finds_session_in_bare_dir(self, karma_base_member_tag):
+        with patch("services.remote_sessions.settings") as mock_settings:
+            mock_settings.karma_base = karma_base_member_tag
+            result = find_remote_session("sess-mt-002")
+
+        assert result is not None
+        assert result.user_id == "bob"
+        assert result.machine_id == "bob"
+
+    def test_skips_local_member_tag_outbox(self, karma_base_member_tag):
+        """Local user's member_tag dir (jayant.mac-mini) should be skipped."""
+        with patch("services.remote_sessions.settings") as mock_settings:
+            mock_settings.karma_base = karma_base_member_tag
+            result = find_remote_session("sess-mt-local")
+
+        assert result is None
+
+    def test_skips_local_bare_outbox(self, karma_base_member_tag):
+        """Local user's bare dir (jayant) should also be skipped."""
+        with patch("services.remote_sessions.settings") as mock_settings:
+            mock_settings.karma_base = karma_base_member_tag
+            result = find_remote_session("sess-mt-local2")
+
+        assert result is None
+
+
+class TestListRemoteSessionsMemberTag:
+    def test_lists_both_formats(self, karma_base_member_tag):
+        with patch("services.remote_sessions.settings") as mock_settings:
+            mock_settings.karma_base = karma_base_member_tag
+            results = list_remote_sessions_for_project("-Users-jayant-acme")
+
+        # Should find alice.macbook-pro's session + bob's session (NOT local user's)
+        assert len(results) == 2
+        uuids = {r.uuid for r in results}
+        assert uuids == {"sess-mt-001", "sess-mt-002"}
+
+    def test_excludes_local_member_tag_and_bare(self, karma_base_member_tag):
+        with patch("services.remote_sessions.settings") as mock_settings:
+            mock_settings.karma_base = karma_base_member_tag
+            results = list_remote_sessions_for_project("-Users-jayant-acme")
+
+        uuids = {r.uuid for r in results}
+        assert "sess-mt-local" not in uuids
+        assert "sess-mt-local2" not in uuids
+
+    def test_user_id_resolved_from_member_tag(self, karma_base_member_tag):
+        with patch("services.remote_sessions.settings") as mock_settings:
+            mock_settings.karma_base = karma_base_member_tag
+            results = list_remote_sessions_for_project("-Users-jayant-acme")
+
+        by_uuid = {r.uuid: r for r in results}
+        # alice.macbook-pro dir -> user_id resolved to "alice"
+        assert by_uuid["sess-mt-001"].remote_user_id == "alice"
+        # machine_id is the raw dir name
+        assert by_uuid["sess-mt-001"].remote_machine_id == "alice.macbook-pro"
+        # bob (bare) -> user_id stays "bob"
+        assert by_uuid["sess-mt-002"].remote_user_id == "bob"
+
+
+class TestIterAllMemberTag:
+    def test_yields_both_formats_skips_local(self, karma_base_member_tag):
+        with patch("services.remote_sessions.settings") as mock_settings:
+            mock_settings.karma_base = karma_base_member_tag
+            results = list(iter_all_remote_session_metadata())
+
+        assert len(results) == 2
+        uuids = {r.uuid for r in results}
+        assert uuids == {"sess-mt-001", "sess-mt-002"}
+        # No local user sessions
+        assert "sess-mt-local" not in uuids
+        assert "sess-mt-local2" not in uuids
