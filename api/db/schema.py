@@ -12,7 +12,7 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 16
+SCHEMA_VERSION = 17
 
 SCHEMA_SQL = """
 -- Schema versioning
@@ -238,12 +238,16 @@ CREATE TABLE IF NOT EXISTS sync_members (
     team_name TEXT NOT NULL,
     name TEXT NOT NULL,
     device_id TEXT NOT NULL,
+    machine_id TEXT,
+    machine_tag TEXT,
+    member_tag TEXT,
     added_at TEXT DEFAULT (datetime('now')),
     PRIMARY KEY (team_name, device_id),
     FOREIGN KEY (team_name) REFERENCES sync_teams(name) ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS idx_sync_members_name ON sync_members(team_name, name);
+CREATE INDEX IF NOT EXISTS idx_sync_members_tag ON sync_members(member_tag);
 
 -- Projects shared with a team
 CREATE TABLE IF NOT EXISTS sync_team_projects (
@@ -295,6 +299,13 @@ CREATE TABLE IF NOT EXISTS sync_removed_members (
     FOREIGN KEY (team_name) REFERENCES sync_teams(name) ON DELETE CASCADE
 );
 
+-- Rejected folder offers (persistent rejection to prevent reappearance)
+CREATE TABLE IF NOT EXISTS sync_rejected_folders (
+    folder_id TEXT PRIMARY KEY,
+    team_name TEXT,
+    rejected_at TEXT DEFAULT (datetime('now'))
+);
+
 -- Skill definitions (content + metadata extracted from JSONL or manifest)
 CREATE TABLE IF NOT EXISTS skill_definitions (
     skill_name TEXT NOT NULL,
@@ -344,11 +355,15 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
                 team_name TEXT NOT NULL,
                 name TEXT NOT NULL,
                 device_id TEXT NOT NULL,
+                machine_id TEXT,
+                machine_tag TEXT,
+                member_tag TEXT,
                 added_at TEXT DEFAULT (datetime('now')),
                 PRIMARY KEY (team_name, device_id),
                 FOREIGN KEY (team_name) REFERENCES sync_teams(name) ON DELETE CASCADE
             );
             CREATE INDEX IF NOT EXISTS idx_sync_members_name ON sync_members(team_name, name);
+            CREATE INDEX IF NOT EXISTS idx_sync_members_tag ON sync_members(member_tag);
             CREATE TABLE IF NOT EXISTS sync_team_projects (
                 team_name TEXT NOT NULL,
                 project_encoded_name TEXT NOT NULL,
@@ -402,6 +417,23 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
                 FOREIGN KEY (team_name) REFERENCES sync_teams(name) ON DELETE CASCADE
             );
         """)
+        # Ensure sync_rejected_folders table exists (may be missing on older installs)
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS sync_rejected_folders (
+                folder_id TEXT PRIMARY KEY,
+                team_name TEXT,
+                rejected_at TEXT DEFAULT (datetime('now'))
+            );
+        """)
+        # Patch sync_members columns that may be missing from older migrations
+        existing_member_cols = {r[1] for r in conn.execute("PRAGMA table_info(sync_members)").fetchall()}
+        if "machine_id" not in existing_member_cols:
+            conn.execute("ALTER TABLE sync_members ADD COLUMN machine_id TEXT")
+        if "machine_tag" not in existing_member_cols:
+            conn.execute("ALTER TABLE sync_members ADD COLUMN machine_tag TEXT")
+        if "member_tag" not in existing_member_cols:
+            conn.execute("ALTER TABLE sync_members ADD COLUMN member_tag TEXT")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_sync_members_tag ON sync_members(member_tag)")
         # Ensure skill_definitions table exists (may be missing on older installs)
         conn.executescript("""
             CREATE TABLE IF NOT EXISTS skill_definitions (
@@ -814,6 +846,24 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
                     removed_at TEXT DEFAULT (datetime('now')),
                     PRIMARY KEY (team_name, device_id),
                     FOREIGN KEY (team_name) REFERENCES sync_teams(name) ON DELETE CASCADE
+                );
+            """)
+
+        if current_version < 17:
+            logger.info("Migrating → v17: adding device identity columns to sync_members")
+            existing_cols = {r[1] for r in conn.execute("PRAGMA table_info(sync_members)").fetchall()}
+            if "machine_id" not in existing_cols:
+                conn.execute("ALTER TABLE sync_members ADD COLUMN machine_id TEXT")
+            if "machine_tag" not in existing_cols:
+                conn.execute("ALTER TABLE sync_members ADD COLUMN machine_tag TEXT")
+            if "member_tag" not in existing_cols:
+                conn.execute("ALTER TABLE sync_members ADD COLUMN member_tag TEXT")
+            conn.executescript("""
+                CREATE INDEX IF NOT EXISTS idx_sync_members_tag ON sync_members(member_tag);
+                CREATE TABLE IF NOT EXISTS sync_rejected_folders (
+                    folder_id TEXT PRIMARY KEY,
+                    team_name TEXT,
+                    rejected_at TEXT DEFAULT (datetime('now'))
                 );
             """)
 
