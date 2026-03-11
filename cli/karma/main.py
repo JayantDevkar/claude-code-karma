@@ -167,8 +167,8 @@ def project_add(name: str, path: str, team_name: str):
             api_key = config.syncthing.api_key or read_local_api_key()
             st = SyncthingClient(api_key=api_key)
             if st.is_running():
-                outbox_path = str(KARMA_BASE / "remote-sessions" / config.user_id / encoded)
-                outbox_id = build_outbox_id(config.user_id, proj_suffix)
+                outbox_path = str(KARMA_BASE / "remote-sessions" / config.member_tag / encoded)
+                outbox_id = build_outbox_id(config.member_tag, proj_suffix)
                 device_ids = []
                 if config.syncthing.device_id:
                     device_ids.append(config.syncthing.device_id)
@@ -181,8 +181,9 @@ def project_add(name: str, path: str, team_name: str):
 
                 for m in members:
                     if m["device_id"]:
-                        inbox_path = str(KARMA_BASE / "remote-sessions" / m["name"] / encoded)
-                        inbox_id = build_outbox_id(m['name'], proj_suffix)
+                        member_tag = m.get("member_tag") or m["name"]
+                        inbox_path = str(KARMA_BASE / "remote-sessions" / member_tag / encoded)
+                        inbox_id = build_outbox_id(member_tag, proj_suffix)
                         inbox_devices = [m["device_id"]]
                         if config.syncthing.device_id:
                             inbox_devices.append(config.syncthing.device_id)
