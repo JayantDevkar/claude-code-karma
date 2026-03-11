@@ -8,7 +8,7 @@ from db.sync_queries import (
     upsert_member, log_event, clear_member_removal,
 )
 from schemas import AcceptPendingDeviceRequest, AddDeviceRequest
-from services.folder_id import is_karma_folder
+from services.folder_id import is_karma_folder, parse_member_tag
 import services.sync_identity as _sid
 from services.sync_identity import (
     validate_device_id, _trigger_remote_reindex_bg,
@@ -271,7 +271,11 @@ async def sync_accept_pending_device(device_id: str, req: AcceptPendingDeviceReq
 
     # 2. Add as team member (clear any previous removal — explicit user action)
     clear_member_removal(conn, team_name, device_id)
-    upsert_member(conn, team_name, member_name, device_id=device_id)
+    # Parse member_tag if the resolved name contains one (e.g. "jayant.mac-mini")
+    accepted_user_id, accepted_machine_tag = parse_member_tag(member_name)
+    upsert_member(conn, team_name, accepted_user_id, device_id=device_id,
+                  machine_tag=accepted_machine_tag,
+                  member_tag=member_name if accepted_machine_tag else None)
     log_event(conn, "pending_accepted", team_name=team_name, member_name=member_name)
     logger.info("Manually accepted pending device %s (%s) into team %s", member_name, device_id[:20], team_name)
 

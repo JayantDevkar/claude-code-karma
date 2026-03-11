@@ -9,7 +9,7 @@ from db.sync_queries import (
 )
 from services.folder_id import (
     is_handshake_folder, is_karma_folder, is_outbox_folder,
-    parse_handshake_id, parse_outbox_id,
+    parse_handshake_id, parse_member_tag, parse_outbox_id,
 )
 import services.sync_identity as _sid
 from services.sync_identity import (
@@ -74,14 +74,17 @@ async def sync_pending() -> Any:
         return {"pending": []}
     own_user_id = config.user_id if config else None
     own_machine_id = config.machine_id if config else None
+    own_member_tag = config.member_tag if config else None
 
-    # Build set of names that identify THIS machine (user_id, machine_id, etc.)
+    # Build set of names that identify THIS machine (user_id, machine_id, member_tag, etc.)
     # The remote leader may have used any of these when creating our outbox folder.
     own_names = set()
     if own_user_id:
         own_names.add(own_user_id)
     if own_machine_id:
         own_names.add(own_machine_id)
+    if own_member_tag:
+        own_names.add(own_member_tag)
 
     def _is_own_outbox(folder_id: str) -> bool:
         """Check if folder is our own outbox (leader may have used user_id OR machine_id)."""
@@ -162,13 +165,18 @@ async def sync_pending() -> Any:
                 if is_own:
                     item["description"] = f"Send your sessions for {label}"
                 else:
-                    item["description"] = f"Receive sessions from {member} for {label}"
+                    # Show "user (machine)" if member_tag present
+                    user_id, machine_tag = parse_member_tag(member)
+                    display_name = f"{user_id} ({machine_tag})" if machine_tag else member
+                    item["description"] = f"Receive sessions from {display_name} for {label}"
             else:
                 item["label"] = folder_id
                 if is_own:
                     item["description"] = "Send your sessions"
                 else:
-                    item["description"] = f"Receive sessions from {member}"
+                    user_id, machine_tag = parse_member_tag(member)
+                    display_name = f"{user_id} ({machine_tag})" if machine_tag else member
+                    item["description"] = f"Receive sessions from {display_name}"
         else:
             item["label"] = folder_id
             item["folder_type"] = "unknown"

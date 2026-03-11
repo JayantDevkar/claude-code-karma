@@ -15,6 +15,7 @@ from db.sync_queries import (
     VALID_SYNC_DIRECTIONS, VALID_SETTING_KEYS,
     VALID_SESSION_LIMITS,
 )
+from services.folder_id import parse_member_tag
 from schemas import CreateTeamRequest, JoinTeamRequest, UpdateTeamSettingsRequest
 import services.sync_identity as _sid
 from services.sync_identity import (
@@ -90,7 +91,9 @@ async def sync_create_team(req: CreateTeamRequest) -> Any:
     # Add creator as a member so they appear in the member list and their
     # device_id is included when sharing folders (mirrors join flow)
     if own_device_id:
-        upsert_member(conn, req.name, config.user_id, device_id=own_device_id)
+        upsert_member(conn, req.name, config.user_id, device_id=own_device_id,
+                      machine_id=config.machine_id, machine_tag=config.machine_tag,
+                      member_tag=config.member_tag)
 
     log_event(conn, "team_created", team_name=req.name)
 
@@ -199,7 +202,9 @@ async def sync_join_team(req: JoinTeamRequest) -> Any:
         create_team(conn, team_name, backend="syncthing", join_code=req.join_code.strip())
         log_event(conn, "team_created", team_name=team_name)
         # Add self as a member so the joiner appears in the team's member list
-        upsert_member(conn, team_name, config.user_id, device_id=own_device_id)
+        upsert_member(conn, team_name, config.user_id, device_id=own_device_id,
+                      machine_id=config.machine_id, machine_tag=config.machine_tag,
+                      member_tag=config.member_tag)
         team_created = True
 
     # Clear any previous removal records — joining via code is an explicit action
@@ -207,7 +212,10 @@ async def sync_join_team(req: JoinTeamRequest) -> Any:
     if own_device_id:
         clear_member_removal(conn, team_name, own_device_id)
     # Add or update leader as member (idempotent, updates device_id on rejoin)
-    upsert_member(conn, team_name, leader_name, device_id=device_id)
+    leader_user_id, leader_machine_tag = parse_member_tag(leader_name)
+    upsert_member(conn, team_name, leader_user_id, device_id=device_id,
+                  machine_tag=leader_machine_tag,
+                  member_tag=leader_name if leader_machine_tag else None)
     log_event(conn, "member_added", team_name=team_name, member_name=leader_name)
 
     # Pair device in Syncthing (best-effort)

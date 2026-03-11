@@ -173,7 +173,7 @@ async def sync_remove_team_project(team_name: str, project_name: str) -> Any:
         if config is not None:
             proxy = _sid.get_proxy()
             # Remove outbox folder
-            outbox_id = build_outbox_id(config.user_id, proj_suffix)
+            outbox_id = build_outbox_id(config.member_tag, proj_suffix)
             try:
                 await run_sync(proxy.remove_folder, outbox_id)
                 folders_removed += 1
@@ -184,7 +184,7 @@ async def sync_remove_team_project(team_name: str, project_name: str) -> Any:
             for m in members:
                 if m["device_id"] == config.syncthing.device_id:
                     continue
-                inbox_id = build_outbox_id(m['name'], proj_suffix)
+                inbox_id = build_outbox_id(m.get("member_tag") or m["name"], proj_suffix)
                 try:
                     await run_sync(proxy.remove_folder, inbox_id)
                     folders_removed += 1
@@ -255,7 +255,7 @@ async def sync_team_project_status(team_name: str) -> Any:
                 if not f.name.startswith("agent-") and f.stat().st_size > 0
             )
 
-        outbox = KARMA_BASE / "remote-sessions" / config.user_id / encoded / "sessions"
+        outbox = KARMA_BASE / "remote-sessions" / config.member_tag / encoded / "sessions"
         packaged_count = 0
         if outbox.is_dir():
             packaged_count = sum(
@@ -271,8 +271,8 @@ async def sync_team_project_status(team_name: str) -> Any:
                 if not user_dir.is_dir():
                     continue
                 dir_name = user_dir.name
-                # Skip own outbox (check both dir name and resolved user_id)
-                if dir_name == config.user_id:
+                # Skip own outbox (check dir name, user_id, and member_tag)
+                if dir_name == config.user_id or dir_name == config.member_tag:
                     continue
                 from services.remote_sessions import _resolve_user_id
                 resolved = _resolve_user_id(user_dir, conn=conn)

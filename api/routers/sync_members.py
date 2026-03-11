@@ -144,7 +144,7 @@ async def sync_list_members() -> Any:
     """List all unique members across all teams."""
     conn = _sid._get_sync_conn()
     rows = conn.execute(
-        """SELECT m.name, m.device_id, MIN(m.added_at) as first_added,
+        """SELECT m.name, m.device_id, m.member_tag, MIN(m.added_at) as first_added,
                   GROUP_CONCAT(m.team_name) as team_names
            FROM sync_members m
            GROUP BY m.device_id
@@ -171,9 +171,11 @@ async def sync_list_members() -> Any:
     members = []
     for row in rows:
         teams = row["team_names"].split(",") if row["team_names"] else []
+        member_tag = row["member_tag"] if "member_tag" in row.keys() else None
         members.append({
             "name": row["name"],
             "device_id": row["device_id"],
+            "member_tag": member_tag,
             "connected": row["device_id"] in connected_device_ids,
             "is_you": row["device_id"] == own_device_id,
             "team_count": len(teams),
@@ -189,12 +191,12 @@ def _resolve_member(conn, identifier: str):
     if not (ALLOWED_MEMBER_NAME.match(identifier) or ALLOWED_DEVICE_ID.match(identifier)) or len(identifier) > 128:
         raise HTTPException(400, "Invalid member identifier")
     rows = conn.execute(
-        "SELECT team_name, name, device_id, added_at FROM sync_members WHERE name = ? ORDER BY added_at",
+        "SELECT team_name, name, device_id, member_tag, machine_tag, added_at FROM sync_members WHERE name = ? ORDER BY added_at",
         (identifier,),
     ).fetchall()
     if not rows:
         rows = conn.execute(
-            "SELECT team_name, name, device_id, added_at FROM sync_members WHERE device_id = ? ORDER BY added_at",
+            "SELECT team_name, name, device_id, member_tag, machine_tag, added_at FROM sync_members WHERE device_id = ? ORDER BY added_at",
             (identifier,),
         ).fetchall()
     if not rows:

@@ -64,7 +64,7 @@ class TestProjectStatus:
         (main_dir / "s1.jsonl").write_text('{"type":"user"}\n')
         (main_dir / "s2.jsonl").write_text('{"type":"user"}\n')
 
-        outbox = tmp_path / "remote-sessions" / "jay" / encoded / "sessions"
+        outbox = tmp_path / "remote-sessions" / "jay.mac" / encoded / "sessions"
         outbox.mkdir(parents=True)
         (outbox / "s1.jsonl").write_text("data")
 
@@ -129,7 +129,7 @@ class TestProjectStatus:
         (projects_dir / encoded / "s1.jsonl").write_text('{"type":"user"}\n')
 
         # Outbox (local user)
-        outbox = tmp_path / "remote-sessions" / "jay" / encoded / "sessions"
+        outbox = tmp_path / "remote-sessions" / "jay.mac" / encoded / "sessions"
         outbox.mkdir(parents=True)
         (outbox / "s1.jsonl").write_text("data")
 
