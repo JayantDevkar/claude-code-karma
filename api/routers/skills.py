@@ -843,6 +843,35 @@ async def _resolve_skill_info(skill_name: str, config: Settings) -> SkillInfo:
 
     skill_file = None
 
+    def _find_skill_in_version_dir(version_dir: Path, target_skill: str) -> Path | None:
+        """Search for a skill file in a plugin version directory.
+
+        Checks default locations (commands/, skills/) and custom paths
+        from .claude-plugin/plugin.json manifest.
+        """
+        from models.plugin import read_plugin_manifest, _resolve_manifest_dirs
+
+        # Check default locations first
+        commands_file = version_dir / "commands" / f"{target_skill}.md"
+        if commands_file.is_file():
+            return commands_file
+        skills_file = version_dir / "skills" / target_skill / "SKILL.md"
+        if skills_file.is_file():
+            return skills_file
+
+        # Check manifest custom paths
+        manifest = read_plugin_manifest(version_dir)
+        for skills_dir in _resolve_manifest_dirs(version_dir, manifest, "skills", []):
+            candidate = skills_dir / target_skill / "SKILL.md"
+            if candidate.is_file():
+                return candidate
+        for commands_dir in _resolve_manifest_dirs(version_dir, manifest, "commands", []):
+            candidate = commands_dir / f"{target_skill}.md"
+            if candidate.is_file():
+                return candidate
+
+        return None
+
     if is_plugin:
         actual_skill_name = skill_name.split(":", 1)[1] if ":" in skill_name else skill_name
 
@@ -858,19 +887,11 @@ async def _resolve_skill_info(skill_name: str, config: Settings) -> SkillInfo:
                 for plugin_dir in short_name_dir.iterdir():
                     if not plugin_dir.is_dir() or plugin_dir.name != plugin_short_name:
                         continue
-                    # Found plugin directory, check all version subdirs
                     for version_dir in plugin_dir.iterdir():
                         if not version_dir.is_dir():
                             continue
-                        # Check commands/{skill}.md
-                        commands_file = version_dir / "commands" / f"{actual_skill_name}.md"
-                        if commands_file.is_file():
-                            skill_file = commands_file
-                            break
-                        # Check skills/{skill}/SKILL.md
-                        skills_file = version_dir / "skills" / actual_skill_name / "SKILL.md"
-                        if skills_file.is_file():
-                            skill_file = skills_file
+                        skill_file = _find_skill_in_version_dir(version_dir, actual_skill_name)
+                        if skill_file:
                             break
                     if skill_file:
                         break
@@ -892,7 +913,6 @@ async def _resolve_skill_info(skill_name: str, config: Settings) -> SkillInfo:
             skill_file = global_skills_file
         else:
             # Search plugins cache for skill without prefix
-            # Structure: cache/{short_name}/{plugin_name}/{version}/commands/{skill}.md
             plugins_cache_dir = config.claude_base / "plugins" / "cache"
 
             if plugins_cache_dir.exists():
@@ -902,22 +922,11 @@ async def _resolve_skill_info(skill_name: str, config: Settings) -> SkillInfo:
                     for plugin_dir in short_name_dir.iterdir():
                         if not plugin_dir.is_dir():
                             continue
-                        # Check all version subdirs
                         for version_dir in plugin_dir.iterdir():
                             if not version_dir.is_dir():
                                 continue
-                            # Check commands/{skill}.md
-                            commands_file = version_dir / "commands" / f"{skill_name}.md"
-                            if commands_file.is_file():
-                                skill_file = commands_file
-                                # Update plugin info since we found it in plugins
-                                is_plugin = True
-                                plugin_full_name = plugin_dir.name
-                                break
-                            # Check skills/{skill}/SKILL.md
-                            skills_file = version_dir / "skills" / skill_name / "SKILL.md"
-                            if skills_file.is_file():
-                                skill_file = skills_file
+                            skill_file = _find_skill_in_version_dir(version_dir, skill_name)
+                            if skill_file:
                                 is_plugin = True
                                 plugin_full_name = plugin_dir.name
                                 break
