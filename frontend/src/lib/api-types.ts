@@ -472,7 +472,7 @@ export interface AnalyticsFilterOption {
 // Stats Display
 // ============================================
 
-export type StatColor = 'blue' | 'green' | 'orange' | 'purple' | 'teal' | 'gray' | 'accent';
+export type StatColor = 'blue' | 'green' | 'orange' | 'purple' | 'teal' | 'gray' | 'accent' | 'rose';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export interface StatItem {

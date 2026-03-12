@@ -25,6 +25,7 @@
 	href="/team/{encodeURIComponent(team.name)}"
 	class="group flex items-center gap-5 px-5 py-4 border border-[var(--border)] rounded-[var(--radius-md)] bg-[var(--bg-subtle)]
 		hover:shadow-md transition-all"
+	data-list-item
 	style="transition-duration: var(--duration-fast);"
 	aria-label="Team {team.name}, {memberCount} {memberCount === 1 ? 'member' : 'members'}, {projectCount} {projectCount === 1 ? 'project' : 'projects'}"
 >

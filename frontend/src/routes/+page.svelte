@@ -17,7 +17,7 @@
 		Terminal,
 		Users,
 		RefreshCw,
-		Contact
+		BookOpen
 	} from 'lucide-svelte';
 </script>
 
@@ -39,8 +39,8 @@
 		<NavigationCard title="Commands" href="/commands" icon={Terminal} color="red" />
 		<NavigationCard title="Teams" href="/team" icon={Users} color="indigo" />
 		<NavigationCard title="Sync" href="/sync" icon={RefreshCw} color="green" />
-		<NavigationCard title="Members" href="/members" icon={Contact} color="rose" />
 		<NavigationCard title="Hooks" href="/hooks" icon={Webhook} color="amber" />
+		<NavigationCard title="About" href="/about" icon={BookOpen} color="teal" />
 		<NavigationCard title="Archived" href="/archived" icon={History} color="gray" />
 		<NavigationCard title="Settings" href="/settings" icon={Settings} color="indigo" />
 	</div>

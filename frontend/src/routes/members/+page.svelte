@@ -1,9 +1,17 @@
 <script lang="ts">
 	import PageHeader from '$lib/components/layout/PageHeader.svelte';
+	import StatsGrid from '$lib/components/StatsGrid.svelte';
+	import SkeletonBox from '$lib/components/skeleton/SkeletonBox.svelte';
+	import SkeletonText from '$lib/components/skeleton/SkeletonText.svelte';
 	import { Contact, Wifi, WifiOff, AlertTriangle, Users, Search, X } from 'lucide-svelte';
+	import type { StatItem } from '$lib/api-types';
+	import { navigating } from '$app/stores';
+	import { listNavigation } from '$lib/actions/listNavigation';
 	import { getTeamMemberColor, getTeamMemberHexColor } from '$lib/utils';
 
 	let { data } = $props();
+
+	let isPageLoading = $derived(!!$navigating && $navigating.to?.route.id === '/members');
 
 	let search = $state('');
 
@@ -19,8 +27,49 @@
 	});
 
 	let onlineCount = $derived(data.members.filter((m) => m.connected).length);
+	let uniqueTeams = $derived(new Set(data.members.flatMap((m) => m.teams)).size);
+
+	let stats = $derived<StatItem[]>([
+		{ title: 'Members', value: data.total, icon: Contact, color: 'rose' },
+		{ title: 'Online', value: onlineCount, icon: Wifi, color: 'green' },
+		{ title: 'Offline', value: data.total - onlineCount, icon: WifiOff, color: 'gray' },
+		{ title: 'Teams', value: uniqueTeams, icon: Users, color: 'purple' }
+	]);
 </script>
 
+{#if isPageLoading}
+	<div class="space-y-6" role="status" aria-busy="true" aria-label="Loading...">
+		<!-- Header skeleton -->
+		<div>
+			<div class="flex items-center gap-2 mb-2">
+				<SkeletonText width="70px" size="xs" />
+				<span class="text-[var(--text-muted)]">/</span>
+				<SkeletonText width="60px" size="xs" />
+			</div>
+			<div class="flex items-center gap-4">
+				<SkeletonBox width="48px" height="48px" rounded="lg" />
+				<div>
+					<SkeletonText width="100px" size="xl" class="mb-2" />
+					<SkeletonText width="220px" size="sm" />
+				</div>
+			</div>
+		</div>
+		<!-- Summary + search skeleton -->
+		<div class="flex items-center justify-between gap-4">
+			<div class="flex items-center gap-4">
+				<SkeletonText width="80px" size="sm" />
+				<SkeletonText width="70px" size="sm" />
+			</div>
+			<SkeletonBox width="208px" height="36px" rounded="lg" />
+		</div>
+		<!-- Members grid skeleton -->
+		<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+			{#each Array(6) as _}
+				<SkeletonBox height="72px" rounded="lg" />
+			{/each}
+		</div>
+	</div>
+{:else}
 <PageHeader
 	title="Members"
 	icon={Contact}
@@ -50,38 +99,40 @@
 		</a>
 	</div>
 {:else}
-	<!-- Summary Bar + Search -->
-	<div class="flex items-center justify-between gap-4 mb-6">
-		<div class="flex items-center gap-4 text-sm text-[var(--text-secondary)]">
-			<span class="flex items-center gap-1.5">
-				<Wifi size={14} class="text-[var(--success)]" />
-				{onlineCount} online
-			</span>
-			<span class="text-[var(--text-muted)]">
-				{data.total - onlineCount} offline
-			</span>
-		</div>
+<div class="space-y-6">
+	<!-- Stats overview -->
+	<StatsGrid {stats} columns={4} />
 
-		<div class="relative">
-			<Search
-				size={14}
-				class="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)] pointer-events-none"
-			/>
-			<input
-				type="text"
-				placeholder="Search members..."
-				bind:value={search}
-				class="pl-8 pr-8 py-1.5 text-sm rounded-lg border border-[var(--border)] bg-[var(--bg-base)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[var(--accent)] w-52 transition-colors"
-			/>
-			{#if search}
-				<button
-					onclick={() => (search = '')}
-					class="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
-				>
-					<X size={14} />
-				</button>
-			{/if}
+	<!-- Quick links -->
+	<div class="flex items-center gap-4 text-xs text-[var(--text-muted)]">
+		<a href="/team" class="hover:text-[var(--accent)] transition-colors">
+			View all teams &rarr;
+		</a>
+		<a href="/sync" class="hover:text-[var(--accent)] transition-colors">
+			Sync status &rarr;
+		</a>
+	</div>
+
+	<!-- Search -->
+	<div class="relative group">
+		<div class="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-faint)] group-focus-within:text-[var(--text-secondary)] transition-colors">
+			<Search size={14} strokeWidth={2} />
 		</div>
+		<input
+			type="text"
+			placeholder="Search members..."
+			bind:value={search}
+			class="w-full pl-8 pr-8 h-9 text-sm font-medium bg-[var(--bg-base)] border border-[var(--border)] rounded-[6px] focus:outline-none focus:border-[var(--border-hover)] focus:ring-1 focus:ring-[var(--border-subtle)] transition-all placeholder:text-[var(--text-faint)] placeholder:font-normal text-[var(--text-primary)]"
+			data-search-input
+		/>
+		{#if search}
+			<button
+				onclick={() => (search = '')}
+				class="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+			>
+				<X size={14} />
+			</button>
+		{/if}
 	</div>
 
 	{#if search && filteredMembers().length === 0}
@@ -92,13 +143,14 @@
 	{:else}
 
 	<!-- Members Grid -->
-	<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+	<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" use:listNavigation>
 		{#each filteredMembers() as member (member.device_id)}
 			{@const colors = getTeamMemberColor(member.name)}
 			{@const hexColor = getTeamMemberHexColor(member.name)}
 			<a
 				href="/members/{encodeURIComponent(member.device_id)}"
 				class="flex items-center gap-4 p-4 rounded-lg border border-[var(--border)] bg-[var(--bg-base)] hover:border-[var(--accent)]/30 hover:shadow-sm transition-all"
+			data-list-item
 			>
 				<!-- Avatar -->
 				<div
@@ -136,4 +188,6 @@
 	</div>
 
 	{/if}
+</div>
+{/if}
 {/if}
