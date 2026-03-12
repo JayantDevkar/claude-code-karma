@@ -28,11 +28,11 @@ from models import (
     load_installed_plugins,
 )
 from models.plugin import (
-    _resolve_manifest_dirs,
     get_plugin_description,
     read_command_contents,
     read_plugin_manifest,
     scan_plugin_capabilities,
+    _resolve_manifest_dirs,
 )
 from schemas import (
     DailyUsage,
@@ -47,7 +47,6 @@ from schemas import (
     SkillContent,
     SkillItem,
 )
-from utils import utc_to_local_date
 
 logger = logging.getLogger(__name__)
 
@@ -1236,9 +1235,7 @@ def list_plugin_skills(plugin_name: str, request: Request) -> list[SkillItem]:
     # Scan skills directories for SKILL.md files
     for skills_dir in _resolve_manifest_dirs(install_path, manifest, "skills", ["skills"]):
         try:
-            for skill_md in sorted(
-                skills_dir.rglob("SKILL.md"), key=lambda p: p.parent.name.lower()
-            ):
+            for skill_md in sorted(skills_dir.rglob("SKILL.md"), key=lambda p: p.parent.name.lower()):
                 name = skill_md.parent.name
                 if name in seen_names:
                     continue
@@ -1284,9 +1281,7 @@ def list_plugin_skills(plugin_name: str, request: Request) -> list[SkillItem]:
                     logger.warning(f"Failed to process skill entry {entry}: {e}")
         except OSError as e:
             logger.error(f"Failed to list commands directory {commands_dir}: {e}")
-            raise HTTPException(
-                status_code=500, detail="Failed to list plugin skills directory"
-            ) from e
+            raise HTTPException(status_code=500, detail="Failed to list plugin skills directory") from e
 
     # Sort alphabetically by name
     return sorted(items, key=lambda x: x.name.lower())
@@ -1364,9 +1359,7 @@ def get_plugin_skill_content(
 
     # Search commands directories for .md file
     if target_file is None:
-        for commands_dir in _resolve_manifest_dirs(
-            install_path, manifest, "commands", ["commands"]
-        ):
+        for commands_dir in _resolve_manifest_dirs(install_path, manifest, "commands", ["commands"]):
             candidate = (commands_dir / clean_path).resolve()
             try:
                 candidate.relative_to(commands_dir.resolve())
@@ -1399,45 +1392,6 @@ def get_plugin_skill_content(
     except OSError as e:
         logger.error(f"Failed to read skill file {target_file}: {e}")
         raise HTTPException(status_code=500, detail="Failed to read skill file") from e
-
-
-@router.get("/installed-skills")
-@cacheable(max_age=120, stale_while_revalidate=300, private=True)
-def list_installed_skills(request: Request) -> list[dict]:
-    """
-    List all skills across all installed plugins.
-
-    Returns a flat list of skill entries with prefixed names (e.g. "superpowers:brainstorming"),
-    suitable for merging with usage data to show 0-use plugin skills on the skills page.
-
-    Cache: 2 minutes
-    """
-    installed = load_installed_plugins()
-
-    if not installed:
-        return []
-
-    seen: set[str] = set()
-    result: list[dict] = []
-
-    for plugin_name in installed.plugins:
-        full_name = installed.get_plugin_full_name(plugin_name) or plugin_name
-        short_name = _get_plugin_short_name(full_name)
-        capabilities = scan_plugin_capabilities(plugin_name)
-        for skill_name in capabilities.get("skills", []):
-            prefixed = f"{short_name}:{skill_name}"
-            if prefixed in seen:
-                continue
-            seen.add(prefixed)
-            result.append(
-                {
-                    "name": prefixed,
-                    "plugin": full_name,
-                    "category": "plugin_skill",
-                }
-            )
-
-    return result
 
 
 @router.get("/{plugin_name:path}", response_model=PluginDetail)
