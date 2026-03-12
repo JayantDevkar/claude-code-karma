@@ -15,6 +15,7 @@
 	import { browser } from '$app/environment';
 	import {
 		Users,
+		Contact,
 		FolderSync,
 		FolderGit2,
 		Loader2,
@@ -317,7 +318,7 @@
 <PageHeader
 	title={data.teamName}
 	icon={Users}
-	iconColor="--nav-purple"
+	iconColor="--nav-indigo"
 	subtitle="Team members, shared projects, and sync status"
 	breadcrumbs={[
 		{ label: 'Dashboard', href: '/' },
@@ -349,7 +350,7 @@
 <!-- Pending Device Requests (above tabs) -->
 {#if pendingDevices.length > 0}
 	<section class="mb-6">
-		<div class="rounded-lg border border-[var(--accent)]/20 overflow-hidden bg-[var(--bg-base)]">
+		<div class="rounded-lg border border-[var(--border)] overflow-hidden bg-[var(--bg-base)]">
 			<div class="h-[3px] bg-[var(--accent)]"></div>
 
 			<!-- Header -->
@@ -531,9 +532,9 @@
 
 {#if team}
 	<Tabs.Root bind:value={activeTab} class="space-y-6">
-		<Tabs.List class="flex gap-1 p-1 bg-[var(--bg-subtle)] border border-[var(--border)] rounded-lg w-fit mx-auto">
+		<Tabs.List class="flex gap-1 p-1 bg-[var(--bg-subtle)] border border-[var(--border)] rounded-lg w-fit mx-auto max-w-full overflow-x-auto">
 			<TabsTrigger value="overview" icon={LayoutDashboard}>Overview</TabsTrigger>
-			<TabsTrigger value="members" icon={Users}>Members ({members.length})</TabsTrigger>
+			<TabsTrigger value="members" icon={Contact}>Members ({members.length})</TabsTrigger>
 			<TabsTrigger value="projects" icon={FolderSync}>Projects ({projects.length})</TabsTrigger>
 			<TabsTrigger value="activity" icon={Activity}>Activity</TabsTrigger>
 			<TabsTrigger value="settings" icon={Settings}>Settings</TabsTrigger>

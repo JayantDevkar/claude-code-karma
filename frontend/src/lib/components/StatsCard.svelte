@@ -55,6 +55,10 @@
 		accent: {
 			bg: 'bg-[var(--accent-subtle)] border-[var(--accent)]/20',
 			text: 'text-[var(--accent)]'
+		},
+		rose: {
+			bg: 'bg-[var(--nav-rose-subtle)] border-[var(--nav-rose)]/20',
+			text: 'text-[var(--nav-rose)]'
 		}
 	};
 

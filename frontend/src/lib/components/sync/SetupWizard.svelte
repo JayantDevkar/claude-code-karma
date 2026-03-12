@@ -5,6 +5,7 @@
 		Copy,
 		Loader2,
 		ArrowRight,
+		ArrowLeft,
 		Check,
 		Shield,
 		Wifi,
@@ -172,7 +173,7 @@
 </script>
 
 <!-- Wizard shell -->
-<div class="p-6 space-y-6">
+<div class="space-y-6">
 	<!-- Progress bar -->
 	<div>
 		<div class="flex items-start">
@@ -366,6 +367,7 @@
 					</div>
 				</div>
 
+				<div class="flex items-center gap-3">
 				<button
 					onclick={() => (step = 1)}
 					class="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-[var(--radius-md)] bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)] transition-colors"
@@ -375,6 +377,7 @@
 				</button>
 			</div>
 		</div>
+	</div>
 
 	<!-- ============================================ -->
 	<!-- STEP 1: Install Syncthing                   -->
@@ -512,6 +515,16 @@
 				</div>
 			</div>
 
+			<!-- Back to previous step -->
+			<button
+				onclick={() => (step = 0)}
+				class="flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-[var(--radius-md)]
+					text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-muted)] transition-colors"
+			>
+				<ArrowLeft size={14} />
+				Back
+			</button>
+
 			<!-- macOS permission note -->
 			{#if detectedOS === 'macos'}
 				<div class="rounded-[var(--radius-lg)] border border-[var(--accent)]/20 bg-[var(--accent)]/5 p-4 space-y-2">
@@ -631,6 +644,15 @@
 					</div>
 				{/if}
 
+				<div class="flex items-center gap-3">
+				<button
+					onclick={() => (step = 1)}
+					class="flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-[var(--radius-md)]
+						text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-muted)] transition-colors"
+				>
+					<ArrowLeft size={14} />
+					Back
+				</button>
 				<button
 					onclick={initialize}
 					disabled={initializing || !machineName.trim()}
@@ -644,6 +666,7 @@
 						<ArrowRight size={14} />
 					{/if}
 				</button>
+				</div>
 			</div>
 		</div>
 	{/if}

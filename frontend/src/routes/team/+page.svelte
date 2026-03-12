@@ -1,11 +1,13 @@
 <script lang="ts">
 	import PageHeader from '$lib/components/layout/PageHeader.svelte';
+	import StatsGrid from '$lib/components/StatsGrid.svelte';
 	import TeamCard from '$lib/components/team/TeamCard.svelte';
 	import CreateTeamDialog from '$lib/components/team/CreateTeamDialog.svelte';
 	import JoinTeamDialog from '$lib/components/team/JoinTeamDialog.svelte';
-	import { Users, Plus, UserPlus, ArrowRight, Radio } from 'lucide-svelte';
+	import { Users, Plus, UserPlus, ArrowRight, Radio, FolderSync, Wifi, Contact } from 'lucide-svelte';
 	import { goto, invalidateAll } from '$app/navigation';
-	import type { JoinTeamResponse, PendingDevice } from '$lib/api-types';
+	import { listNavigation } from '$lib/actions/listNavigation';
+	import type { JoinTeamResponse, PendingDevice, StatItem } from '$lib/api-types';
 
 	let { data } = $props();
 
@@ -15,6 +17,18 @@
 	let configured = $derived(data.syncStatus?.configured ?? false);
 	let teams = $derived(data.teams ?? []);
 	let pendingDevices = $state<PendingDevice[]>([]);
+
+	// Aggregate stats across all teams
+	let totalMembers = $derived(teams.reduce((sum, t) => sum + (t.members?.length ?? t.member_count ?? 0), 0));
+	let onlineMembers = $derived(teams.reduce((sum, t) => sum + (t.members?.filter(m => m.connected).length ?? 0), 0));
+	let totalProjects = $derived(teams.reduce((sum, t) => sum + (t.projects?.length ?? t.project_count ?? 0), 0));
+
+	let stats = $derived<StatItem[]>([
+		{ title: 'Teams', value: teams.length, icon: Users, color: 'purple' },
+		{ title: 'Members', value: totalMembers, icon: Contact, color: 'rose' },
+		{ title: 'Online', value: onlineMembers, icon: Wifi, color: 'green' },
+		{ title: 'Projects Synced', value: totalProjects, icon: FolderSync, color: 'blue' }
+	]);
 
 	$effect(() => {
 		pendingDevices = data.pendingDevices ?? [];
@@ -152,8 +166,21 @@
 			</div>
 		{/if}
 
+		<!-- Stats overview -->
+		<StatsGrid {stats} columns={4} />
+
+		<!-- Quick links -->
+		<div class="flex items-center gap-4 text-xs text-[var(--text-muted)]">
+			<a href="/members" class="hover:text-[var(--accent)] transition-colors">
+				View all members &rarr;
+			</a>
+			<a href="/sync" class="hover:text-[var(--accent)] transition-colors">
+				Sync status &rarr;
+			</a>
+		</div>
+
 		<!-- State 3: Has teams -->
-		<div class="space-y-2">
+		<div class="space-y-2" use:listNavigation>
 			{#each teams as team (team.name)}
 				<TeamCard {team} />
 			{/each}

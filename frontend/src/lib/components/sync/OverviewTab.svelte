@@ -274,7 +274,7 @@
 	});
 </script>
 
-<div class="p-6 space-y-5">
+<div class="space-y-5">
 
 	<!-- ── 1. Sync Engine Banner ─────────────────────────────────────────── -->
 	{#if watchLoading}
