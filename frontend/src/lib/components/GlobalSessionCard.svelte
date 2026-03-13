@@ -226,15 +226,19 @@
 			{#if isRemote || session.session_source === 'desktop' || showSubagentBadge}
 				<div class="flex items-center gap-2 mt-1 text-[10px] text-[var(--text-muted)]">
 					{#if isRemote && remoteUserName}
-						<a
-							href="/members/{encodeURIComponent(remoteUserName)}"
-							class="flex items-center gap-0.5 hover:underline"
+						<button
+							type="button"
+							class="flex items-center gap-0.5 hover:underline cursor-pointer"
 							title="Remote session from {remoteUserName}"
-							onclick={(e) => e.stopPropagation()}
+							onclick={(e) => {
+								e.preventDefault();
+								e.stopPropagation();
+								goto(`/members/${encodeURIComponent(remoteUserName)}`);
+							}}
 						>
 							<Globe size={10} strokeWidth={2} class={teamMemberColor?.text ?? ''} />
 							<span>{remoteUserName}</span>
-						</a>
+						</button>
 					{/if}
 					{#if session.session_source === 'desktop'}
 						<div class="flex items-center gap-0.5" title="Claude Desktop session">
@@ -357,15 +361,19 @@
 			<!-- Badges -->
 			<div class="flex items-center gap-1.5 flex-wrap justify-end">
 				{#if isRemote && remoteUserName}
-					<a
-						href="/members/{encodeURIComponent(remoteUserName)}"
-						class="flex items-center gap-1 px-2 py-0.5 rounded-full border {teamMemberColor?.badge ?? ''} hover:opacity-80 transition-opacity"
+					<button
+						type="button"
+						class="flex items-center gap-1 px-2 py-0.5 rounded-full border {teamMemberColor?.badge ?? ''} hover:opacity-80 transition-opacity cursor-pointer"
 						title="Remote session from {remoteUserName}"
-						onclick={(e) => e.stopPropagation()}
+						onclick={(e) => {
+							e.preventDefault();
+							e.stopPropagation();
+							goto(`/members/${encodeURIComponent(remoteUserName)}`);
+						}}
 					>
 						<Globe size={10} strokeWidth={2} class={teamMemberColor?.text ?? ''} />
 						<span class="font-medium text-[11px]">{remoteUserName}</span>
-					</a>
+					</button>
 				{/if}
 				{#if showSubagentBadge}
 					{#if subagentHref}

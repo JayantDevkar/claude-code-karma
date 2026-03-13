@@ -7,7 +7,8 @@
 		currentLimit = 'all' as SyncSessionLimit
 	}: { teamName: string; currentLimit: SyncSessionLimit } = $props();
 
-	let selected = $state<SyncSessionLimit>(currentLimit);
+	let selected = $state<SyncSessionLimit>('all');
+	$effect(() => { selected = currentLimit; });
 	let saving = $state(false);
 
 	const OPTIONS: { value: SyncSessionLimit; label: string }[] = [

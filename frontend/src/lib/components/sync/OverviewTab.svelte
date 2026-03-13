@@ -23,8 +23,16 @@
 	} = $props();
 
 	// ── Sync Engine watch status ──────────────────────────────────────────────
-	let watchStatus = $state<SyncWatchStatus | null>(initialWatchStatus ?? null);
-	let watchLoading = $state(initialWatchStatus === null);
+	let watchStatus = $state<SyncWatchStatus | null>(null);
+	let watchLoading = $state(true);
+
+	// Seed from parent's cached data when available
+	$effect(() => {
+		if (initialWatchStatus !== null) {
+			watchStatus = initialWatchStatus;
+			watchLoading = false;
+		}
+	});
 	let watchActing = $state(false);
 
 	async function loadWatchStatus() {
@@ -50,6 +58,8 @@
 			const res = await fetch(url.toString(), { method: 'POST' }).catch(() => null);
 			if (res?.ok) {
 				watchStatus = await res.json();
+				// Auto-sync all existing unsynced sessions when watcher starts
+				await syncAllNow();
 			}
 		} finally {
 			watchActing = false;

@@ -11,7 +11,8 @@ import type {
 	SyncDetect,
 	SyncProjectStatus,
 	SyncEvent,
-	PendingDevice
+	PendingDevice,
+	TeamSessionStat
 } from '$lib/api-types';
 
 interface ProjectSummary {
@@ -63,7 +64,7 @@ export const load: PageServerLoad = async ({ fetch, params }) => {
 			`${API_BASE}/sync/teams/${encodeURIComponent(teamName)}/activity?limit=20`,
 			{ events: [] }
 		),
-		fetchWithFallback<{ stats: Record<string, unknown>[] }>(
+		fetchWithFallback<{ stats: TeamSessionStat[] }>(
 			fetch,
 			`${API_BASE}/sync/teams/${encodeURIComponent(teamName)}/session-stats?days=30`,
 			{ stats: [] }

@@ -60,7 +60,7 @@
 		ondeleteerror
 	}: Props = $props();
 
-	let canvas: HTMLCanvasElement;
+	let canvas = $state<HTMLCanvasElement>(undefined!);
 	let chart: Chart | null = null;
 
 	// Derived state

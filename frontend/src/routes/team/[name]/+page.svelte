@@ -46,8 +46,7 @@
 	let tabsReady = $state(false);
 
 	// Team data — $state so polling can update it directly
-	// Initialize from data directly (not via $effect) so SSR renders correctly
-	let team = $state<SyncTeam | null>(data.team ?? null);
+	let team = $state<SyncTeam | null>(null);
 	$effect(() => {
 		team = data.team ?? null;
 	});
@@ -55,17 +54,17 @@
 	let projects = $derived(team?.projects ?? []);
 
 	// Per-project sync status
-	let projectStatuses = $state<SyncProjectStatus[]>(data.projectStatuses ?? []);
+	let projectStatuses = $state<SyncProjectStatus[]>([]);
 	$effect(() => {
 		projectStatuses = data.projectStatuses ?? [];
 	});
 
 	// Activity feed
-	let activity = $state<SyncEvent[]>(data.activity ?? []);
+	let activity = $state<SyncEvent[]>([]);
 	$effect(() => { activity = data.activity ?? []; });
 
 	// Session stats
-	let sessionStats = $state<TeamSessionStat[]>(data.sessionStats ?? []);
+	let sessionStats = $state<TeamSessionStat[]>([]);
 	$effect(() => { sessionStats = data.sessionStats ?? []; });
 
 	// Polling state for connection status
