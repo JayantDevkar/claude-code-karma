@@ -46,7 +46,7 @@ async def test_auto_accept_continues_after_add_device_failure(conn, mock_config)
 
     with patch("services.sync_reconciliation.should_auto_accept_device", return_value=True):
         with patch(
-            "services.sync_reconciliation.auto_share_folders",
+            "services.sync_folders.auto_share_folders",
             new_callable=AsyncMock,
         ) as mock_share:
             from services.sync_reconciliation import auto_accept_pending_peers

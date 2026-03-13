@@ -1,7 +1,7 @@
 """Sync device reconciliation helpers.
 
-Handles auto-acceptance of pending peers, reconciliation of introducer-propagated
-devices, and leader introducer flag management.
+Handles explicit mesh pairing via metadata folders, pending handshake
+reconciliation, and auto-acceptance of pending peers.
 """
 
 import logging
@@ -9,11 +9,9 @@ from typing import Optional
 
 from db.sync_queries import (
     create_team,
-    get_known_devices,
     get_team,
     list_members,
     list_teams,
-    list_team_projects,
     log_event,
     upsert_member,
     was_member_removed,
@@ -22,199 +20,180 @@ from services.folder_id import (
     is_karma_folder,
     parse_handshake_id,
     parse_member_tag,
-    parse_outbox_id,
 )
 from services.sync_folders import (
-    auto_share_folders,
     extract_username_from_folder_ids,
     find_team_for_folder,
     resolve_member_tag_from_metadata,
 )
-from services.sync_identity import _compute_proj_suffix
 from services.sync_policy import should_auto_accept_device
 from services.syncthing_proxy import run_sync
 
 logger = logging.getLogger(__name__)
 
 
-async def reconcile_introduced_devices(proxy, config, conn) -> int:
-    """Reconcile Syncthing-configured devices with the karma DB.
+async def disable_all_introducers(proxy) -> int:
+    """Disable introducer flag on all configured devices (v3 migration).
 
-    When the leader auto-accepts a new member on one device, Syncthing's
-    introducer mechanism propagates the new device to the leader's other
-    devices. Those devices add the member at the Syncthing level but the
-    karma DB never learns about them.
+    v3 replaces Syncthing's introducer mechanism with explicit mesh pairing
+    via metadata folders. This function is called once during migration to
+    disable all existing introducer flags.
 
-    This function bridges the gap: for each configured device NOT in the
-    karma DB, it checks configured karma-* folders shared with that device,
-    extracts the username from the folder IDs, finds the team, and creates
-    the member record.
-
-    Returns count of members reconciled.
+    Returns count of devices updated.
     """
-    known_devices = get_known_devices(conn)
-    own_device_id = config.syncthing.device_id if config.syncthing else None
-
-    # Get all configured devices from Syncthing
     try:
         configured_devices = await run_sync(proxy.get_devices)
     except Exception as e:
-        logger.debug("Reconcile: failed to get configured devices: %s", e)
+        logger.debug("disable_all_introducers: failed to get devices: %s", e)
         return 0
 
-    # Get all configured folders from Syncthing
-    try:
-        configured_folders = await run_sync(proxy.get_configured_folders)
-    except Exception:
-        configured_folders = []
-
-    reconciled = 0
-
-    # Build a map of project suffixes → team name
-    project_suffix_map: dict[str, str] = {}
-    for team in list_teams(conn):
-        for proj in list_team_projects(conn, team["name"]):
-            ps = _compute_proj_suffix(
-                proj.get("git_identity"), proj.get("path"),
-                proj["project_encoded_name"],
-            )
-            project_suffix_map[ps] = team["name"]
-
+    disabled = 0
     for device in configured_devices:
+        if device.get("is_self"):
+            continue
         device_id = device.get("device_id", "")
         if not device_id:
             continue
-        # Skip self
-        if device.get("is_self") or (own_device_id and device_id == own_device_id):
+        # Check if introducer flag is set
+        if not device.get("introducer", False):
             continue
-        # Skip already known devices
-        if device_id in known_devices:
+        try:
+            changed = await run_sync(proxy.set_device_introducer, device_id, False)
+            if changed:
+                logger.info("Disabled introducer flag on device %s", device_id[:20])
+                disabled += 1
+        except Exception as e:
+            logger.warning("Failed to disable introducer on %s: %s", device_id[:20], e)
+
+    return disabled
+
+
+async def mesh_pair_from_metadata(proxy, config, conn) -> int:
+    """Discover and pair with team peers via metadata folders (v3 explicit mesh).
+
+    Replaces the v2 introducer-based device discovery. For each team:
+    1. Read the metadata folder for member states
+    2. Read removal signals
+    3. For each member not yet configured in Syncthing:
+       - Skip if removed, skip if self
+       - Pair with their device (no introducer flag)
+       - Upsert in DB
+    4. Recompute device lists for the team's project folders
+
+    Returns count of new devices paired.
+    """
+    from services.sync_folders import compute_and_apply_device_lists
+
+    own_device_id = config.syncthing.device_id if config.syncthing else None
+    if not own_device_id:
+        return 0
+
+    try:
+        from karma.config import KARMA_BASE
+        from services.sync_metadata import read_all_member_states, read_removal_signals
+    except ImportError:
+        logger.debug("mesh_pair: karma.config not available")
+        return 0
+
+    # Get currently configured device IDs (to skip already-paired)
+    try:
+        configured_devices = await run_sync(proxy.get_devices)
+    except Exception as e:
+        logger.debug("mesh_pair: failed to get configured devices: %s", e)
+        return 0
+
+    configured_ids = {
+        d["device_id"] for d in configured_devices
+        if d.get("device_id")
+    }
+
+    paired = 0
+    teams_to_recompute = set()
+
+    for team in list_teams(conn):
+        team_name = team["name"]
+        meta_dir = KARMA_BASE / "metadata-folders" / team_name
+        if not meta_dir.exists():
             continue
 
-        # Syncthing device name — set when the device was first added
-        # (via add_device(device_id, username)).  This is the most reliable
-        # source of identity for introduced devices because folder IDs
-        # identify the folder OWNER, not every device that shares it.
-        syncthing_device_name = device.get("name", "")
+        member_states = read_all_member_states(meta_dir)
+        removal_signals = read_removal_signals(meta_dir)
+        removed_tags = {r.get("member_tag") for r in removal_signals if r.get("member_tag")}
 
-        # Find receiveonly karma-* folders that include this device.
-        karma_folder_ids = []
-        for folder in configured_folders:
-            folder_id = folder.get("id", "")
-            if not is_karma_folder(folder_id):
+        for state in member_states:
+            member_tag = state.get("member_tag", "")
+            device_id = state.get("device_id", "")
+
+            if not member_tag or not device_id:
                 continue
-            if folder.get("type") != "receiveonly":
+
+            # Skip self
+            if member_tag == config.member_tag:
                 continue
-            folder_device_ids = {d.get("deviceID") for d in folder.get("devices", [])}
-            if device_id in folder_device_ids:
-                karma_folder_ids.append(folder_id)
-
-        if not karma_folder_ids:
-            continue
-
-        # Collect ALL (username, team_name) pairs from this device's folders.
-        # A device may be in multiple teams — don't stop at the first match.
-        memberships: list[tuple[str, str]] = []
-        seen_teams: set[str] = set()
-
-        for folder_id in karma_folder_ids:
-            hs = parse_handshake_id(folder_id)
-            if hs:
-                # Handshake folders (karma-join--{user}--{team}) are created
-                # BY the device owner, so uname genuinely identifies this
-                # device — unlike outbox folders where the name identifies
-                # the folder owner, not every device sharing it.
-                uname, tname = hs
-                if tname not in seen_teams:
-                    memberships.append((uname, tname))
-                    seen_teams.add(tname)
+            if device_id == own_device_id:
                 continue
-            parsed = parse_outbox_id(folder_id)
-            if parsed:
-                candidate_name, candidate_suffix = parsed
-                if candidate_suffix in project_suffix_map:
-                    tname = project_suffix_map[candidate_suffix]
-                    if tname not in seen_teams:
-                        # For receiveonly (inbox) folders, candidate_name is
-                        # the folder OWNER whose sessions we receive — NOT the
-                        # introduced device.  Use the Syncthing device name
-                        # which was set when the device was originally added.
-                        name = syncthing_device_name or candidate_name
-                        memberships.append((name, tname))
-                        seen_teams.add(tname)
 
-        for username, team_name in memberships:
+            # Skip removed members
+            if member_tag in removed_tags:
+                continue
+
+            # Skip if already configured
+            if device_id in configured_ids:
+                # Still upsert in DB to ensure consistency
+                user_id, machine_tag_part = parse_member_tag(member_tag)
+                upsert_member(
+                    conn, team_name, user_id, device_id=device_id,
+                    machine_tag=machine_tag_part,
+                    member_tag=member_tag if machine_tag_part else None,
+                )
+                continue
+
+            # Skip if previously removed from this team
             if was_member_removed(conn, team_name, device_id):
                 logger.debug(
-                    "Reconcile introduced: skipping %s for team %s (previously removed)",
+                    "mesh_pair: skipping %s for team %s (previously removed)",
                     device_id[:20], team_name,
                 )
                 continue
 
-            # Prefer member_tag from metadata folder (authoritative) over
-            # Syncthing device name or folder-ID-derived name (v1-style).
-            resolved = resolve_member_tag_from_metadata(team_name, device_id)
-            if resolved:
-                username = resolved
-
-            # Parse member_tag to extract user_id and machine_tag
-            user_id, machine_tag_part = parse_member_tag(username)
-            upsert_member(conn, team_name, user_id, device_id=device_id,
-                          machine_tag=machine_tag_part, member_tag=username if machine_tag_part else None)
-            log_event(
-                conn, "member_auto_accepted", team_name=team_name,
-                member_name=username,
-                detail={"strategy": "reconciliation", "source": "introduced_device"},
-            )
-            # Auto-share project folders back to the introduced device
+            # Pair with new device (NO introducer — explicit mesh)
             try:
-                await auto_share_folders(proxy, config, conn, team_name, device_id)
+                await run_sync(proxy.add_device, device_id, member_tag)
+                configured_ids.add(device_id)  # Update local cache
             except Exception as e:
                 logger.warning(
-                    "Reconcile introduced: failed to share folders with %s: %s",
-                    device_id[:20], e,
+                    "mesh_pair: failed to add device %s: %s", device_id[:20], e,
                 )
-            logger.info(
-                "Reconciled introduced device %s as %s in team %s",
-                device_id[:20], username, team_name,
+                continue
+
+            # Upsert member in DB
+            user_id, machine_tag_part = parse_member_tag(member_tag)
+            upsert_member(
+                conn, team_name, user_id, device_id=device_id,
+                machine_tag=machine_tag_part,
+                member_tag=member_tag if machine_tag_part else None,
             )
-            reconciled += 1
+            log_event(
+                conn, "member_auto_accepted", team_name=team_name,
+                member_name=member_tag,
+                detail={"strategy": "mesh_pair_from_metadata"},
+            )
+            logger.info(
+                "Mesh paired with %s (%s) in team %s",
+                member_tag, device_id[:20], team_name,
+            )
 
-    return reconciled
+            paired += 1
+            teams_to_recompute.add(team_name)
 
-
-async def ensure_leader_introducers(proxy, conn, *, own_device_id: str | None = None) -> int:
-    """Ensure leader devices are marked as introducers in Syncthing.
-
-    Parses each team's join code to find the leader device_id and sets the
-    introducer flag if it is missing. Skips own device_id to avoid wasteful
-    API calls.
-
-    Returns count of devices updated.
-    """
-    updated = 0
-    for team in list_teams(conn):
-        join_code = team.get("join_code")
-        if not join_code:
-            continue
-        parts = join_code.split(":", 2)
-        if len(parts) == 3:
-            _, _, leader_device_id = parts
-        elif len(parts) == 2:
-            _, leader_device_id = parts
-        else:
-            continue
-        # Skip self — can't set introducer on own device
-        if own_device_id and leader_device_id == own_device_id:
-            continue
+    # Recompute device lists for affected teams
+    for team_name in teams_to_recompute:
         try:
-            changed = await run_sync(proxy.set_device_introducer, leader_device_id, True)
-            if changed:
-                logger.info("Auto-set introducer=True for leader device %s", leader_device_id[:20])
-                updated += 1
-        except Exception:
-            pass
-    return updated
+            await compute_and_apply_device_lists(proxy, config, conn, team_name)
+        except Exception as e:
+            logger.warning("mesh_pair: recompute failed for team %s: %s", team_name, e)
+
+    return paired
 
 
 async def reconcile_pending_handshakes(proxy, config, conn) -> int:
@@ -342,6 +321,7 @@ async def reconcile_pending_handshakes(proxy, config, conn) -> int:
 
             # Auto-share project folders back to the new member
             try:
+                from services.sync_folders import auto_share_folders
                 await auto_share_folders(
                     proxy, config, conn, team_name, device_id,
                 )
@@ -467,6 +447,7 @@ async def auto_accept_pending_peers(proxy, config, conn) -> tuple[int, dict]:
 
             # Auto-share folders back
             try:
+                from services.sync_folders import auto_share_folders
                 await auto_share_folders(proxy, config, conn, team_name, device_id)
             except Exception as e:
                 logger.warning("Auto-accept: failed to share folders back to %s: %s", username, e)

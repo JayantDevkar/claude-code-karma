@@ -19,9 +19,9 @@ from services.sync_folders import (
     extract_username_from_folder_ids,
 )
 from services.sync_reconciliation import (
-    reconcile_introduced_devices,
+    disable_all_introducers,
+    mesh_pair_from_metadata,
     reconcile_pending_handshakes,
-    ensure_leader_introducers,
     auto_accept_pending_peers,
 )
 from services.syncthing_proxy import SyncthingNotRunning, run_sync
@@ -107,22 +107,20 @@ async def sync_pending_devices() -> Any:
     except Exception:
         pass
 
-    # Phase 0: Ensure leader devices have introducer=True (auto-heals existing setups)
+    # Phase 0: Disable all introducer flags (v3 migration — explicit mesh replaces introducers)
     if proxy:
         try:
-            own_did = config.syncthing.device_id if config and config.syncthing else None
-            await ensure_leader_introducers(proxy, conn, own_device_id=own_did)
+            await disable_all_introducers(proxy)
         except Exception:
             pass
 
-    # Phase 0.5: Reconcile devices that Syncthing's introducer auto-added
-    # but the karma DB doesn't know about (multi-device leader scenario).
+    # Phase 0.5: Discover and pair with peers via metadata folders (v3 explicit mesh)
     reconciled = 0
     try:
         if config and proxy:
-            reconciled = await reconcile_introduced_devices(proxy, config, conn)
+            reconciled = await mesh_pair_from_metadata(proxy, config, conn)
     except Exception as e:
-        logger.debug("Reconcile introduced devices failed: %s", e)
+        logger.debug("Mesh pair from metadata failed: %s", e)
 
     # Phase 0.6: Process pending handshake folders from already-paired devices.
     # Closes the gap where an already-known device offers a karma-join folder

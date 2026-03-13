@@ -249,7 +249,7 @@ async def sync_join_team(req: JoinTeamRequest) -> Any:
     paired = False
     try:
         proxy = _sid.get_proxy()
-        await run_sync(proxy.add_device, device_id, leader_name, introducer=True)
+        await run_sync(proxy.add_device, device_id, leader_name, introducer=False)
         paired = True
     except Exception as e:
         logger.warning("Failed to pair device %s in Syncthing: %s", device_id, e)

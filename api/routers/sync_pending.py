@@ -17,7 +17,7 @@ from services.sync_identity import (
 )
 from services.sync_folders import friendly_project_label
 from services.sync_reconciliation import (
-    reconcile_introduced_devices,
+    mesh_pair_from_metadata,
     reconcile_pending_handshakes,
 )
 from services.syncthing_proxy import SyncthingNotRunning, run_sync
@@ -45,14 +45,14 @@ async def sync_pending() -> Any:
     except Exception:
         return {"pending": []}
 
-    # Reconcile introduced devices before checking known_devices, so that
-    # devices propagated by the Syncthing introducer (multi-device leader)
-    # are added to the DB and their pending folders become visible.
+    # Discover and pair with peers via metadata folders (v3 explicit mesh).
+    # Must run before get_pending_folders_for_ui so newly paired devices'
+    # pending folders become visible.
     try:
         if config:
-            await reconcile_introduced_devices(proxy, config, conn)
+            await mesh_pair_from_metadata(proxy, config, conn)
     except Exception as e:
-        logger.debug("Reconcile in sync_pending failed: %s", e)
+        logger.debug("Mesh pair from metadata in sync_pending failed: %s", e)
 
     # Process pending handshake folders from already-paired devices
     # (new team membership signals). Must run before get_pending_folders_for_ui
