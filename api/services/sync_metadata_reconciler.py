@@ -154,6 +154,13 @@ def reconcile_all_teams_metadata(config, conn, *, auto_leave: bool = False) -> d
     When auto_leave=True, teams where we've been removed are automatically
     cleaned up (Syncthing folders removed, team deleted from local DB).
     """
+    # EC-2: Detect device ID changes before reconciliation
+    try:
+        from services.sync_reconciliation import detect_device_id_change
+        detect_device_id_change(conn, config)
+    except Exception as e:
+        logger.debug("EC-2 device ID change check failed: %s", e)
+
     total = {"teams": 0, "members_added": 0, "self_removed_teams": []}
     for team in list_teams(conn):
         result = reconcile_metadata_folder(config, conn, team["name"])

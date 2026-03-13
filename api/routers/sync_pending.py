@@ -118,8 +118,11 @@ async def sync_pending() -> Any:
             filtered.append(item)
     pending = own_outbox_pending + filtered
 
-    # Filter out persistently rejected folders
-    pending = [item for item in pending if not is_folder_rejected(conn, item["folder_id"])]
+    # Filter out persistently rejected folders (BP-14: team-scoped)
+    pending = [
+        item for item in pending
+        if not is_folder_rejected(conn, item["folder_id"], team_name=item.get("from_team"))
+    ]
 
     # Pre-fetch projects only for teams referenced by pending items' devices.
     # A multi-team device may have from_team set to any of its teams, so we

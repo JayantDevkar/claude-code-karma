@@ -15,6 +15,7 @@ from db.sync_queries import (
     list_members,
     list_team_projects,
     set_pending_leave,
+    upsert_team_project,
 )
 from services.folder_id import (
     build_handshake_id,
@@ -231,9 +232,15 @@ async def compute_and_apply_device_lists(proxy, config, conn, team_name=None) ->
         projects = list_team_projects(conn, team_name)
         suffixes_to_check = set()
         for proj in projects:
-            suffix = proj.get("folder_suffix") or _compute_proj_suffix(
-                proj.get("git_identity"), proj.get("path"), proj["project_encoded_name"]
-            )
+            suffix = proj.get("folder_suffix")
+            if not suffix:
+                # BP-13: Compute and persist immutable folder_suffix
+                suffix = _compute_proj_suffix(
+                    proj.get("git_identity"), proj.get("path"), proj["project_encoded_name"]
+                )
+                upsert_team_project(
+                    conn, team_name, proj["project_encoded_name"], folder_suffix=suffix,
+                )
             suffixes_to_check.add(suffix)
     else:
         # All suffixes from all teams
@@ -241,9 +248,15 @@ async def compute_and_apply_device_lists(proxy, config, conn, team_name=None) ->
         suffixes_to_check = set()
         for team in list_teams(conn):
             for proj in list_team_projects(conn, team["name"]):
-                suffix = proj.get("folder_suffix") or _compute_proj_suffix(
-                    proj.get("git_identity"), proj.get("path"), proj["project_encoded_name"]
-                )
+                suffix = proj.get("folder_suffix")
+                if not suffix:
+                    # BP-13: Compute and persist immutable folder_suffix
+                    suffix = _compute_proj_suffix(
+                        proj.get("git_identity"), proj.get("path"), proj["project_encoded_name"]
+                    )
+                    upsert_team_project(
+                        conn, team["name"], proj["project_encoded_name"], folder_suffix=suffix,
+                    )
                 suffixes_to_check.add(suffix)
 
     # Process each outbox/inbox folder
@@ -419,12 +432,18 @@ def resolve_member_tag_from_metadata(team_name: str, device_id: str) -> Optional
     return None
 
 
-async def auto_share_folders(proxy, config, conn, team_name, new_device_id) -> dict:
+async def auto_share_folders(
+    proxy, config, conn, team_name, new_device_id, *, metadata_only: bool = False,
+) -> dict:
     """Auto-create Syncthing shared folders for all projects in a team.
 
-    For each project:
-    1. Outbox (sendonly): my sessions → teammates
-    2. Inbox (receiveonly): new member's sessions → my machine
+    BP-12 two-phase sharing:
+    - Phase 1 (metadata_only=True): Share only the metadata folder with the
+      new device. Called immediately on accept so metadata can sync first.
+    - Phase 2 (metadata_only=False): Also share project folders (outbox/inbox).
+      Normally handled by the 60s reconciliation timer via
+      compute_and_apply_device_lists, but can be called directly for
+      backward compatibility.
     """
     projects = list_team_projects(conn, team_name)
     members = list_members(conn, team_name)
@@ -433,20 +452,21 @@ async def auto_share_folders(proxy, config, conn, team_name, new_device_id) -> d
 
     # Read member subscriptions from metadata folder
     member_subscriptions: dict[str, dict] = {}
-    try:
-        from karma.config import KARMA_BASE
-        from services.sync_metadata import read_all_member_states
-        meta_dir = KARMA_BASE / "metadata-folders" / team_name
-        if meta_dir.exists():
-            for state in read_all_member_states(meta_dir):
-                device = state.get("device_id", "")
-                subs = state.get("subscriptions", {})
-                if device:
-                    member_subscriptions[device] = subs
-    except Exception as e:
-        logger.debug("Failed to read member subscriptions: %s", e)
+    if not metadata_only:
+        try:
+            from karma.config import KARMA_BASE
+            from services.sync_metadata import read_all_member_states
+            meta_dir = KARMA_BASE / "metadata-folders" / team_name
+            if meta_dir.exists():
+                for state in read_all_member_states(meta_dir):
+                    device = state.get("device_id", "")
+                    subs = state.get("subscriptions", {})
+                    if device:
+                        member_subscriptions[device] = subs
+        except Exception as e:
+            logger.debug("Failed to read member subscriptions: %s", e)
 
-    # Add new device to metadata folder
+    # Add new device to metadata folder (always — both phases need this)
     try:
         all_device_ids = [new_device_id]
         for m in members:
@@ -457,9 +477,18 @@ async def auto_share_folders(proxy, config, conn, team_name, new_device_id) -> d
     except Exception as e:
         logger.debug("Failed to update metadata folder devices: %s", e)
 
+    # BP-12: In metadata_only mode, stop here — project folders are deferred
+    # to the 60s reconciliation timer (compute_and_apply_device_lists).
+    if metadata_only:
+        return result
+
     for proj in projects:
         encoded = proj["project_encoded_name"]
-        proj_suffix = _compute_proj_suffix(proj.get("git_identity"), proj.get("path"), encoded)
+        proj_suffix = proj.get("folder_suffix")
+        if not proj_suffix:
+            # BP-13: Compute and persist immutable folder_suffix
+            proj_suffix = _compute_proj_suffix(proj.get("git_identity"), proj.get("path"), encoded)
+            upsert_team_project(conn, team_name, encoded, folder_suffix=proj_suffix)
 
         # Collect all device IDs for this team (deduped)
         all_device_ids = [new_device_id]

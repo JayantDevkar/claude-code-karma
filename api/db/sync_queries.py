@@ -52,6 +52,7 @@ def list_teams(conn: sqlite3.Connection) -> list[dict]:
 def get_team(conn: sqlite3.Connection, name: str) -> Optional[dict]:
     row = conn.execute(
         """SELECT t.name, t.backend, t.join_code, t.created_at, t.sync_session_limit,
+                  t.pending_leave,
                   (SELECT COUNT(*) FROM sync_members m WHERE m.team_name = t.name) as member_count,
                   (SELECT COUNT(*) FROM sync_team_projects p WHERE p.team_name = t.name) as project_count
            FROM sync_teams t WHERE t.name = ?""",
@@ -286,7 +287,7 @@ def upsert_team_project(
            ON CONFLICT (team_name, project_encoded_name)
            DO UPDATE SET path = COALESCE(excluded.path, path),
                          git_identity = COALESCE(excluded.git_identity, git_identity),
-                         folder_suffix = COALESCE(excluded.folder_suffix, folder_suffix)""",
+                         folder_suffix = COALESCE(folder_suffix, excluded.folder_suffix)""",
         (team_name, project_encoded_name, path, git_identity, folder_suffix),
     )
     conn.commit()

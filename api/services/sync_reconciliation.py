@@ -32,6 +32,67 @@ from services.syncthing_proxy import run_sync
 logger = logging.getLogger(__name__)
 
 
+def detect_device_id_change(conn, config) -> int:
+    """EC-2: Detect if our Syncthing device_id changed (e.g., reinstall).
+
+    Compares config.syncthing.device_id against sync_members rows for our
+    member_tag. If any row has a stale device_id, updates it and logs a warning.
+
+    Returns count of rows updated.
+    """
+    device_id = config.syncthing.device_id if config.syncthing else None
+    member_tag = config.member_tag
+    if not device_id or not member_tag:
+        return 0
+
+    rows = conn.execute(
+        "SELECT team_name, device_id FROM sync_members WHERE member_tag = ? AND device_id != ?",
+        (member_tag, device_id),
+    ).fetchall()
+
+    if not rows:
+        return 0
+
+    logger.warning(
+        "EC-2 device ID change detected for %s: updating %d stale rows (old IDs: %s)",
+        member_tag, len(rows), ", ".join(r["device_id"][:20] for r in rows),
+    )
+
+    conn.execute(
+        "UPDATE sync_members SET device_id = ? WHERE member_tag = ? AND device_id != ?",
+        (device_id, member_tag, device_id),
+    )
+    conn.commit()
+
+    from db.sync_queries import log_event
+    log_event(conn, "device_id_changed", member_name=member_tag,
+              detail={"new_device_id": device_id[:20], "stale_count": len(rows)})
+
+    return len(rows)
+
+
+def _has_member_tag_collision(conn, team_name: str, member_tag: str, device_id: str) -> bool:
+    """BP-9: Detect member_tag collision — same tag, different device.
+
+    Returns True if a member with the same member_tag but a DIFFERENT
+    device_id already exists in the team. This indicates a spoofing
+    attempt or accidental collision.
+    """
+    if not member_tag:
+        return False
+    row = conn.execute(
+        "SELECT device_id FROM sync_members WHERE team_name = ? AND member_tag = ? AND device_id != ?",
+        (team_name, member_tag, device_id),
+    ).fetchone()
+    if row:
+        logger.critical(
+            "BP-9 member_tag collision: tag=%s team=%s existing_device=%s new_device=%s",
+            member_tag, team_name, row["device_id"][:20], device_id[:20],
+        )
+        return True
+    return False
+
+
 async def disable_all_introducers(proxy) -> int:
     """Disable introducer flag on all configured devices (v3 migration).
 
@@ -288,10 +349,25 @@ async def reconcile_pending_handshakes(proxy, config, conn) -> int:
                     pass
                 continue
 
+            # RC-1: Skip if team has pending_leave (cleanup in progress).
+            # A stale handshake must not re-create a team being left.
+            existing_team = get_team(conn, team_name)
+            if existing_team and existing_team.get("pending_leave"):
+                logger.debug(
+                    "Handshake reconciliation: skipping %s for team %s "
+                    "(pending_leave in progress)", device_id[:20], team_name,
+                )
+                try:
+                    await run_sync(
+                        proxy.dismiss_pending_folder_offer, folder_id, device_id,
+                    )
+                except Exception:
+                    pass
+                continue
+
             # Ensure team exists locally (device may be signaling a team
             # we haven't joined yet — create it like the join code flow)
-            team = get_team(conn, team_name)
-            if team is None:
+            if existing_team is None:
                 create_team(conn, team_name, backend="syncthing")
                 log_event(
                     conn, "team_created", team_name=team_name,
@@ -307,8 +383,20 @@ async def reconcile_pending_handshakes(proxy, config, conn) -> int:
             # Add the offering device as a team member
             # Parse member_tag from the username extracted from handshake folder
             user_id, machine_tag_part = parse_member_tag(username)
+            effective_tag = username if machine_tag_part else None
+
+            # BP-9: Collision detection — reject if tag already used by different device
+            if effective_tag and _has_member_tag_collision(conn, team_name, effective_tag, device_id):
+                try:
+                    await run_sync(
+                        proxy.dismiss_pending_folder_offer, folder_id, device_id,
+                    )
+                except Exception:
+                    pass
+                continue
+
             upsert_member(conn, team_name, user_id, device_id=device_id,
-                          machine_tag=machine_tag_part, member_tag=username if machine_tag_part else None)
+                          machine_tag=machine_tag_part, member_tag=effective_tag)
             log_event(
                 conn, "member_auto_accepted", team_name=team_name,
                 member_name=username,
@@ -324,6 +412,7 @@ async def reconcile_pending_handshakes(proxy, config, conn) -> int:
                 from services.sync_folders import auto_share_folders
                 await auto_share_folders(
                     proxy, config, conn, team_name, device_id,
+                    metadata_only=True,
                 )
             except Exception as e:
                 logger.warning(
@@ -440,15 +529,23 @@ async def auto_accept_pending_peers(proxy, config, conn) -> tuple[int, dict]:
 
             # Add as team member in DB
             user_id, machine_tag_part = parse_member_tag(username)
+            effective_tag = username if machine_tag_part else None
+
+            # BP-9: Collision detection — reject if tag already used by different device
+            if effective_tag and _has_member_tag_collision(conn, team_name, effective_tag, device_id):
+                continue
+
             upsert_member(conn, team_name, user_id, device_id=device_id,
-                          machine_tag=machine_tag_part, member_tag=username if machine_tag_part else None)
+                          machine_tag=machine_tag_part, member_tag=effective_tag)
             log_event(conn, "member_auto_accepted", team_name=team_name, member_name=username)
             logger.info("Auto-accepted peer %s (%s) into team %s", username, device_id[:20], team_name)
 
             # Auto-share folders back
             try:
                 from services.sync_folders import auto_share_folders
-                await auto_share_folders(proxy, config, conn, team_name, device_id)
+                await auto_share_folders(
+                    proxy, config, conn, team_name, device_id, metadata_only=True,
+                )
             except Exception as e:
                 logger.warning("Auto-accept: failed to share folders back to %s: %s", username, e)
 

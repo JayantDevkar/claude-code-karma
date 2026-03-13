@@ -334,8 +334,8 @@ class TestFolderSuffixInCRUD:
         projects = list_team_projects(conn, "T1")
         assert projects[0]["folder_suffix"] == "org-p1"
 
-    def test_upsert_updates_suffix_when_provided(self, conn):
-        """Upsert with a new folder_suffix should update the existing value."""
+    def test_upsert_preserves_existing_suffix(self, conn):
+        """BP-13: folder_suffix is immutable once set — upsert must NOT overwrite."""
         from db.sync_queries import create_team, upsert_team_project, list_team_projects
 
         create_team(conn, "T1", "syncthing")
@@ -343,7 +343,7 @@ class TestFolderSuffixInCRUD:
         upsert_team_project(conn, "T1", "P1", git_identity="org/p1", folder_suffix="new-suffix")
 
         projects = list_team_projects(conn, "T1")
-        assert projects[0]["folder_suffix"] == "new-suffix"
+        assert projects[0]["folder_suffix"] == "old-suffix"
 
     def test_add_team_project_null_suffix_allowed(self, conn):
         """folder_suffix may be NULL (not all projects have it set yet)."""
