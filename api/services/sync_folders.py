@@ -536,17 +536,17 @@ async def cleanup_syncthing_for_team(proxy, config, conn, team_name: str) -> dic
     self_device_id = config.syncthing.device_id if config and config.syncthing else None
 
     # Phase A: For each project, recompute device lists WITHOUT this team
+    # Fetch configured folders once (avoid N+1 API calls per project)
+    try:
+        all_folders = await run_sync(proxy.get_configured_folders)
+    except Exception as e:
+        logger.warning("cleanup_for_team: failed to get folders: %s", e)
+        all_folders = []
+
     for proj in projects:
         suffix = proj.get("folder_suffix") or _compute_proj_suffix(
             proj.get("git_identity"), proj.get("path"), proj["project_encoded_name"]
         )
-
-        # Get all outbox/inbox folders matching this suffix
-        try:
-            all_folders = await run_sync(proxy.get_configured_folders)
-        except Exception as e:
-            logger.warning("cleanup_for_team: failed to get folders: %s", e)
-            continue
 
         for folder in all_folders:
             folder_id = folder.get("id", "")

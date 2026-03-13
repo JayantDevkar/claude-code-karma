@@ -148,9 +148,8 @@ class TestPendingLeaveHelpers:
 class TestCleanupForTeamLeave:
     """Tests for cleanup_syncthing_for_team (v3 device subtraction).
 
-    The function calls proxy.get_configured_folders once per project
-    in Phase A (inner loop), then once more for Phase B (handshake/metadata).
-    T2 has 2 projects → 3 total calls to get_configured_folders.
+    get_configured_folders is called once for Phase A (hoisted above project
+    loop), then once for Phase B (handshake/metadata) = 2 total calls.
     """
 
     @pytest.mark.asyncio
@@ -165,10 +164,9 @@ class TestCleanupForTeamLeave:
         m1_p2_outbox = build_outbox_id("m1.laptop", "org-p2")
 
         proxy = MagicMock()
-        # T2 has P2 and P3 — Phase A loops over both; Phase B is one more.
+        # Phase A (hoisted, 1 call) + Phase B (1 call) = 2
         proxy.get_configured_folders.side_effect = [
-            [{"id": m1_p2_outbox}],  # Phase A, project P2
-            [],                       # Phase A, project P3
+            [{"id": m1_p2_outbox}],  # Phase A (all folders)
             [],                       # Phase B
         ]
         proxy.set_folder_devices.return_value = {"added": [], "removed": ["D3"]}
@@ -196,9 +194,8 @@ class TestCleanupForTeamLeave:
 
         proxy = MagicMock()
         proxy.get_configured_folders.side_effect = [
-            [],                        # Phase A, project P2
-            [{"id": m3_p3_outbox}],    # Phase A, project P3
-            [],                        # Phase B
+            [{"id": m3_p3_outbox}],  # Phase A
+            [],                       # Phase B
         ]
         proxy.remove_folder.return_value = None
         proxy.set_folder_devices.return_value = {"added": [], "removed": []}
@@ -230,8 +227,7 @@ class TestCleanupForTeamLeave:
 
         proxy = MagicMock()
         proxy.get_configured_folders.side_effect = [
-            [],                                   # Phase A, project P2
-            [],                                   # Phase A, project P3
+            [],                                   # Phase A (no outbox folders)
             [{"id": hs_id}, {"id": meta_id}],    # Phase B
         ]
         proxy.remove_folder.return_value = None
@@ -246,18 +242,14 @@ class TestCleanupForTeamLeave:
 
     @pytest.mark.asyncio
     async def test_device_removed_only_if_not_in_other_teams(self, conn):
-        """M4 only in T4 → D4 removed. M1 in T1+T2 → D1 NOT removed.
-
-        Note: M3 is in T2 AND T3, so leaving T2 would NOT remove D3.
-        M4 is the only device exclusively in one team (T4), with 1 project.
-        """
+        """M4 only in T4 → D4 removed. M1 in T1+T2 → D1 NOT removed."""
         from services.sync_folders import cleanup_syncthing_for_team
 
         devices, tags = _setup_multi_team(conn)
         config = _make_config(device_id="SELF-DID", member_tag="self.laptop")
 
         proxy = MagicMock()
-        # T4 has 1 project (P2): 1 Phase A + 1 Phase B = 2 calls
+        # Phase A + Phase B = 2 calls
         proxy.get_configured_folders.side_effect = [[], []]
         proxy.remove_folder.return_value = None
         proxy.remove_device.return_value = None
@@ -278,8 +270,8 @@ class TestCleanupForTeamLeave:
         config = _make_config(device_id="SELF-DID", member_tag="self.laptop")
 
         proxy = MagicMock()
-        # T1 has 2 projects (P1, P2): 2 Phase A + 1 Phase B = 3 calls
-        proxy.get_configured_folders.side_effect = [[], [], []]
+        # Phase A + Phase B = 2 calls
+        proxy.get_configured_folders.side_effect = [[], []]
         proxy.remove_folder.return_value = None
         proxy.remove_device.return_value = None
         proxy.set_folder_devices.return_value = {"added": [], "removed": []}
