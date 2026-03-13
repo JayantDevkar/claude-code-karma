@@ -256,6 +256,71 @@ class SyncthingProxy:
 
         return {"ok": True, "folder_id": folder_id, "added": added}
 
+    def set_folder_devices(self, folder_id: str, device_ids: list[str]) -> dict:
+        """Declaratively set a folder's device list to exactly these device_ids.
+
+        Unlike update_folder_devices (additive-only), this replaces the entire
+        device list. Devices not in the provided list are removed. The local
+        device ID is always included (Syncthing requires it).
+
+        MUST be called while holding client._config_lock for the full
+        GET-compute-PUT cycle. This method acquires the lock itself.
+
+        Args:
+            folder_id: The Syncthing folder ID.
+            device_ids: The desired device list (local device added automatically).
+
+        Returns:
+            {"ok": True, "folder_id": folder_id, "added": [...], "removed": [...]}
+            or {"ok": True, "folder_id": folder_id, "found": False} if folder doesn't exist.
+        """
+        client = self._require_client()
+        with client._config_lock:
+            config = client._get_config()
+
+            folder = None
+            for f in config.get("folders", []):
+                if f.get("id") == folder_id:
+                    folder = f
+                    break
+
+            if folder is None:
+                logger.debug("Folder '%s' not found; nothing to set", folder_id)
+                return {"ok": True, "folder_id": folder_id, "found": False}
+
+            # Build desired set — always include self
+            desired = set(device_ids)
+            self_id = self._self_id
+            if self_id:
+                desired.add(self_id)
+
+            # Current device set
+            current = {d.get("deviceID") for d in folder.get("devices", [])}
+
+            added = desired - current
+            removed = current - desired
+
+            if not added and not removed:
+                return {"ok": True, "folder_id": folder_id, "added": [], "removed": []}
+
+            # Replace device list
+            folder["devices"] = [{"deviceID": did} for did in sorted(desired)]
+
+            resp = requests.put(
+                f"{client.api_url}/rest/config/folders/{folder_id}",
+                headers=client.headers,
+                json=folder,
+                timeout=10,
+            )
+            resp.raise_for_status()
+
+        return {
+            "ok": True,
+            "folder_id": folder_id,
+            "added": sorted(added),
+            "removed": sorted(removed),
+        }
+
     def remove_folder(self, folder_id: str) -> dict:
         """Remove a Syncthing shared folder.
 
