@@ -743,9 +743,19 @@ def reject_folder(
     conn.commit()
 
 
-def unreject_folder(conn: sqlite3.Connection, folder_id: str) -> None:
-    """Remove a folder rejection (allows re-offering)."""
-    conn.execute("DELETE FROM sync_rejected_folders WHERE folder_id = ?", (folder_id,))
+def unreject_folder(conn: sqlite3.Connection, folder_id: str, *, team_name: Optional[str] = None) -> None:
+    """Remove a folder rejection (allows re-offering).
+
+    If team_name is provided, only removes the rejection for that team.
+    Otherwise removes all rejections for the folder across all teams.
+    """
+    if team_name:
+        conn.execute(
+            "DELETE FROM sync_rejected_folders WHERE folder_id = ? AND team_name = ?",
+            (folder_id, team_name),
+        )
+    else:
+        conn.execute("DELETE FROM sync_rejected_folders WHERE folder_id = ?", (folder_id,))
     conn.commit()
 
 

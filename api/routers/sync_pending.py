@@ -243,18 +243,24 @@ async def sync_accept_single_folder(folder_id: str) -> Any:
         proxy = _sid.get_proxy()
         conn = _sid._get_sync_conn()
 
-        # Remove any prior rejection so re-acceptance works
-        unreject_folder(conn, folder_id)
-
-        # Update metadata subscriptions to restore opt-in
+        # Resolve team for this folder (needed for team-scoped unrejection)
+        team = None
         try:
             from services.sync_folders import find_team_for_folder
-            from services.sync_metadata_writer import update_own_metadata
             team = find_team_for_folder(conn, [folder_id])
-            if team:
-                update_own_metadata(config, conn, team)
         except Exception as e:
-            logger.debug("Failed to update metadata after accept: %s", e)
+            logger.debug("Failed to find team for folder %s: %s", folder_id, e)
+
+        # Remove any prior rejection so re-acceptance works (team-scoped)
+        unreject_folder(conn, folder_id, team_name=team)
+
+        # Update metadata subscriptions to restore opt-in
+        if team:
+            try:
+                from services.sync_metadata_writer import update_own_metadata
+                update_own_metadata(config, conn, team)
+            except Exception as e:
+                logger.debug("Failed to update metadata after accept: %s", e)
 
         accepted = await run_sync(
             proxy.accept_pending_folders, config, conn, only_folder_id=folder_id,
