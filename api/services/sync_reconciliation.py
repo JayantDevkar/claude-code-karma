@@ -435,8 +435,12 @@ async def auto_accept_pending_peers(proxy, config, conn) -> tuple[int, dict]:
             if resolved:
                 username = resolved
 
-            # Policy gate: check if auto-accept is enabled for this team
-            if not should_auto_accept_device(conn, team_name):
+            # Policy gate: check if auto-accept is enabled for this team.
+            # Exception: handshake folders (karma-join--*) are join-code-authorized
+            # signals and should always be processed, regardless of auto_accept_members
+            # policy. The handshake folder proves the joiner had the join code.
+            has_handshake = any(parse_handshake_id(fid) is not None for fid in karma_folders)
+            if not has_handshake and not should_auto_accept_device(conn, team_name):
                 logger.debug(
                     "Auto-accept disabled for team %s — skipping device %s",
                     team_name, device_id[:20],
