@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Optional
 
 from db.sync_queries import (
+    compute_union_devices,
     get_team,
     list_members,
     list_team_projects,
@@ -66,16 +67,24 @@ async def ensure_metadata_folder(
     )
 
 
-async def ensure_outbox_folder(proxy, config, encoded: str, proj_suffix: str, device_ids: list[str]) -> None:
+async def ensure_outbox_folder(proxy, config, encoded: str, proj_suffix: str, device_ids: list[str], *, conn=None) -> None:
     """Create or update an outbox Syncthing folder for a project.
 
-    Tries update_folder_devices first (idempotent), falls back to add_folder.
+    If conn is provided, uses compute_union_devices for the device list
+    (v3 behavior). Otherwise uses the passed-in device_ids (v2 compat).
     """
     from karma.config import KARMA_BASE
 
     outbox_id = build_outbox_id(config.member_tag, proj_suffix)
     outbox_path = str(KARMA_BASE / "remote-sessions" / config.member_tag / encoded)
     Path(outbox_path).mkdir(parents=True, exist_ok=True)
+
+    # v3: compute union device list from DB
+    if conn is not None:
+        union_devices = compute_union_devices(conn, proj_suffix, config.member_tag)
+        if config.syncthing.device_id:
+            union_devices.add(config.syncthing.device_id)
+        device_ids = list(union_devices)
 
     try:
         await run_sync(proxy.update_folder_devices, outbox_id, device_ids)
@@ -90,6 +99,7 @@ async def ensure_inbox_folders(
     proxy, config, members: list[dict], encoded: str, proj_suffix: str,
     *, only_device_id: Optional[str] = None,
     member_subscriptions: Optional[dict[str, dict]] = None,
+    conn=None,
 ) -> dict:
     """Create receiveonly inbox folders for team members' outboxes.
 
@@ -100,12 +110,15 @@ async def ensure_inbox_folders(
     sender+self). This ensures the Syncthing introducer mechanism can
     propagate folder access to all team devices, even if they haven't
     independently run reconciliation yet.
+
+    If conn is provided, uses compute_union_devices per-member for the
+    device list (v3 behavior). Otherwise uses all team devices (v2 compat).
     """
     from karma.config import KARMA_BASE
 
     result = {"inboxes": 0, "errors": []}
 
-    # Build the full team device list once (used for all inbox folders)
+    # Build the full team device list once (used for all inbox folders in v2 path)
     all_team_devices = []
     for m in members:
         if m["device_id"] and m["device_id"] not in all_team_devices:
@@ -132,16 +145,26 @@ async def ensure_inbox_folders(
                 continue
 
         member_tag = m.get("member_tag") or m["name"]  # fallback for legacy members
+
+        # v3: compute union device list for this member's inbox folder
+        if conn is not None:
+            union_devices = compute_union_devices(conn, proj_suffix, member_tag)
+            if config.syncthing.device_id:
+                union_devices.add(config.syncthing.device_id)
+            inbox_device_ids = list(union_devices)
+        else:
+            inbox_device_ids = all_team_devices
+
         inbox_path = str(KARMA_BASE / "remote-sessions" / member_tag / encoded)
         inbox_id = build_outbox_id(member_tag, proj_suffix)
         try:
             Path(inbox_path).mkdir(parents=True, exist_ok=True)
             # Try update first (folder may already exist from another team sharing the same project)
             try:
-                await run_sync(proxy.update_folder_devices, inbox_id, all_team_devices)
+                await run_sync(proxy.update_folder_devices, inbox_id, inbox_device_ids)
             except ValueError:
                 # Folder doesn't exist yet — create it
-                await run_sync(proxy.add_folder, inbox_id, inbox_path, all_team_devices, "receiveonly")
+                await run_sync(proxy.add_folder, inbox_id, inbox_path, inbox_device_ids, "receiveonly")
             result["inboxes"] += 1
         except Exception as e:
             result["errors"].append(f"inbox {member_tag}/{proj_suffix}: {e}")
@@ -164,6 +187,115 @@ async def ensure_handshake_folder(proxy, config, team_name: str, device_ids: lis
         if config.syncthing.device_id and config.syncthing.device_id not in all_ids:
             all_ids.append(config.syncthing.device_id)
         await run_sync(proxy.add_folder, folder_id, folder_path, all_ids, "sendonly")
+
+
+async def compute_and_apply_device_lists(proxy, config, conn, team_name=None) -> dict:
+    """Compute desired device lists for all project folders and apply them.
+
+    For each outbox/inbox folder, computes the union of all team devices
+    across all teams that share the project AND include the folder owner
+    as a member. Then applies the desired device list declaratively
+    (adding missing, removing stale devices).
+
+    Args:
+        proxy: SyncthingProxy instance.
+        config: Loaded sync identity config.
+        conn: SQLite connection.
+        team_name: If provided, only recomputes folders for that team's projects.
+            Otherwise recomputes all folders.
+
+    Returns:
+        {"folders_updated": int, "folders_deleted": int, "errors": list[str]}
+    """
+    result = {"folders_updated": 0, "folders_deleted": 0, "errors": []}
+
+    # Get all configured Syncthing folders
+    try:
+        all_folders = await run_sync(proxy.get_configured_folders)
+    except Exception as e:
+        result["errors"].append(f"Failed to get folders: {e}")
+        return result
+
+    # Folder count warnings (BP-15)
+    karma_folders = [f for f in all_folders if is_karma_folder(f.get("id", ""))]
+    folder_count = len(karma_folders)
+    if folder_count >= 500:
+        logger.error("Syncthing folder count critically high: %d folders (>= 500)", folder_count)
+    elif folder_count >= 200:
+        logger.warning("Syncthing folder count elevated: %d folders (>= 200)", folder_count)
+
+    # Determine which suffixes to recompute
+    if team_name:
+        projects = list_team_projects(conn, team_name)
+        suffixes_to_check = set()
+        for proj in projects:
+            suffix = proj.get("folder_suffix") or _compute_proj_suffix(
+                proj.get("git_identity"), proj.get("path"), proj["project_encoded_name"]
+            )
+            suffixes_to_check.add(suffix)
+    else:
+        # All suffixes from all teams
+        from db.sync_queries import list_teams
+        suffixes_to_check = set()
+        for team in list_teams(conn):
+            for proj in list_team_projects(conn, team["name"]):
+                suffix = proj.get("folder_suffix") or _compute_proj_suffix(
+                    proj.get("git_identity"), proj.get("path"), proj["project_encoded_name"]
+                )
+                suffixes_to_check.add(suffix)
+
+    # Process each outbox/inbox folder
+    for folder in all_folders:
+        folder_id = folder.get("id", "")
+        if not is_outbox_folder(folder_id):
+            continue
+
+        parsed = parse_outbox_id(folder_id)
+        if not parsed:
+            continue
+
+        owner_member_tag, suffix = parsed
+
+        # Only process folders matching our target suffixes
+        if suffix not in suffixes_to_check:
+            continue
+
+        # Compute desired device list (union across all teams sharing this project
+        # where the folder owner is a member)
+        try:
+            desired_devices = compute_union_devices(conn, suffix, owner_member_tag)
+        except Exception as e:
+            result["errors"].append(f"Union query failed for {folder_id}: {e}")
+            continue
+
+        # Add self device (always required)
+        self_device_id = config.syncthing.device_id if config.syncthing else None
+        if self_device_id:
+            desired_devices.add(self_device_id)
+
+        # If only self remains, no team claims this folder — delete it
+        if len(desired_devices) <= 1 and self_device_id and desired_devices == {self_device_id}:
+            try:
+                await run_sync(proxy.remove_folder, folder_id)
+                result["folders_deleted"] += 1
+                logger.info("Deleted empty folder %s (no team claims it)", folder_id)
+            except Exception as e:
+                result["errors"].append(f"Delete {folder_id}: {e}")
+            continue
+
+        # Apply the desired device list declaratively
+        try:
+            res = await run_sync(proxy.set_folder_devices, folder_id, list(desired_devices))
+            if res.get("added") or res.get("removed"):
+                result["folders_updated"] += 1
+                logger.debug(
+                    "Updated %s: +%d -%d devices",
+                    folder_id, len(res.get("added", [])), len(res.get("removed", [])),
+                )
+        except Exception as e:
+            result["errors"].append(f"Set devices {folder_id}: {e}")
+
+    return result
 
 
 def friendly_project_label(conn, folder_id: str, parsed_suffix: str) -> str:

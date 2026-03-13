@@ -227,13 +227,14 @@ def add_team_project(
     project_encoded_name: str,
     path: Optional[str] = None,
     git_identity: Optional[str] = None,
+    folder_suffix: Optional[str] = None,
 ) -> dict:
     conn.execute(
-        "INSERT INTO sync_team_projects (team_name, project_encoded_name, path, git_identity) VALUES (?, ?, ?, ?)",
-        (team_name, project_encoded_name, path, git_identity),
+        "INSERT INTO sync_team_projects (team_name, project_encoded_name, path, git_identity, folder_suffix) VALUES (?, ?, ?, ?, ?)",
+        (team_name, project_encoded_name, path, git_identity, folder_suffix),
     )
     conn.commit()
-    return {"team_name": team_name, "project_encoded_name": project_encoded_name, "git_identity": git_identity}
+    return {"team_name": team_name, "project_encoded_name": project_encoded_name, "git_identity": git_identity, "folder_suffix": folder_suffix}
 
 
 def remove_team_project(conn: sqlite3.Connection, team_name: str, project_encoded_name: str) -> None:
@@ -246,7 +247,7 @@ def remove_team_project(conn: sqlite3.Connection, team_name: str, project_encode
 
 def list_team_projects(conn: sqlite3.Connection, team_name: str) -> list[dict]:
     rows = conn.execute(
-        "SELECT team_name, project_encoded_name, path, git_identity, added_at FROM sync_team_projects WHERE team_name = ? ORDER BY added_at",
+        "SELECT team_name, project_encoded_name, path, git_identity, folder_suffix, added_at FROM sync_team_projects WHERE team_name = ? ORDER BY added_at",
         (team_name,),
     ).fetchall()
     return [dict(r) for r in rows]
@@ -258,6 +259,7 @@ def upsert_team_project(
     project_encoded_name: str,
     path: Optional[str] = None,
     git_identity: Optional[str] = None,
+    folder_suffix: Optional[str] = None,
 ) -> dict:
     """Create or update a sync_team_projects record.
 
@@ -279,12 +281,13 @@ def upsert_team_project(
 
     # Upsert into sync_team_projects
     conn.execute(
-        """INSERT INTO sync_team_projects (team_name, project_encoded_name, path, git_identity)
-           VALUES (?, ?, ?, ?)
+        """INSERT INTO sync_team_projects (team_name, project_encoded_name, path, git_identity, folder_suffix)
+           VALUES (?, ?, ?, ?, ?)
            ON CONFLICT (team_name, project_encoded_name)
            DO UPDATE SET path = COALESCE(excluded.path, path),
-                         git_identity = COALESCE(excluded.git_identity, git_identity)""",
-        (team_name, project_encoded_name, path, git_identity),
+                         git_identity = COALESCE(excluded.git_identity, git_identity),
+                         folder_suffix = COALESCE(excluded.folder_suffix, folder_suffix)""",
+        (team_name, project_encoded_name, path, git_identity, folder_suffix),
     )
     conn.commit()
     return {
@@ -292,7 +295,85 @@ def upsert_team_project(
         "project_encoded_name": project_encoded_name,
         "path": path,
         "git_identity": git_identity,
+        "folder_suffix": folder_suffix,
     }
+
+
+def compute_union_devices(
+    conn: sqlite3.Connection,
+    suffix: str,
+    owner_member_tag: str,
+) -> set[str]:
+    """Compute the union of all device_ids that should have access to a folder.
+
+    For a given folder suffix and owner, returns all devices from all teams
+    that (a) share a project with that suffix AND (b) include the folder
+    owner as a member. This prevents data leaks across teams where the
+    owner is not a member.
+
+    Args:
+        conn: SQLite connection.
+        suffix: The folder_suffix (e.g., "jayantdevkar-claude-karma").
+        owner_member_tag: The member_tag of the folder owner (extracted from folder ID).
+
+    Returns:
+        Set of device_id strings.
+    """
+    rows = conn.execute(
+        """
+        SELECT DISTINCT sm.device_id
+        FROM sync_team_projects stp
+        JOIN sync_members sm ON sm.team_name = stp.team_name
+        WHERE stp.folder_suffix = :suffix
+          AND sm.device_id IS NOT NULL
+          AND sm.device_id != ''
+          AND stp.team_name IN (
+            SELECT team_name FROM sync_members
+            WHERE member_tag = :owner_member_tag
+          )
+        """,
+        {"suffix": suffix, "owner_member_tag": owner_member_tag},
+    ).fetchall()
+    return {row[0] if isinstance(row, (tuple, list)) else row["device_id"] for row in rows}
+
+
+def compute_union_devices_excluding_team(
+    conn: sqlite3.Connection,
+    suffix: str,
+    excluded_team: str,
+    owner_member_tag: str,
+) -> set[str]:
+    """Compute union device list excluding a specific team.
+
+    Used by cleanup operations (leave team, remove project) to determine
+    what device list should remain after removing one team's claim.
+
+    Args:
+        conn: SQLite connection.
+        suffix: The folder_suffix.
+        excluded_team: Team name to exclude from the union.
+        owner_member_tag: The member_tag of the folder owner.
+
+    Returns:
+        Set of device_id strings (may be empty if no other team claims the folder).
+    """
+    rows = conn.execute(
+        """
+        SELECT DISTINCT sm.device_id
+        FROM sync_team_projects stp
+        JOIN sync_members sm ON sm.team_name = stp.team_name
+        WHERE stp.folder_suffix = :suffix
+          AND stp.team_name != :excluded_team
+          AND sm.device_id IS NOT NULL
+          AND sm.device_id != ''
+          AND stp.team_name IN (
+            SELECT team_name FROM sync_members
+            WHERE member_tag = :owner_member_tag
+          )
+        """,
+        {"suffix": suffix, "excluded_team": excluded_team, "owner_member_tag": owner_member_tag},
+    ).fetchall()
+    return {row[0] if isinstance(row, (tuple, list)) else row["device_id"] for row in rows}
 
 
 # ── Events ─────────────────────────────────────────────────────────────
@@ -668,11 +749,17 @@ def unreject_folder(conn: sqlite3.Connection, folder_id: str) -> None:
     conn.commit()
 
 
-def is_folder_rejected(conn: sqlite3.Connection, folder_id: str) -> bool:
-    """Check if a folder has been persistently rejected."""
-    row = conn.execute(
-        "SELECT 1 FROM sync_rejected_folders WHERE folder_id = ?", (folder_id,),
-    ).fetchone()
+def is_folder_rejected(conn: sqlite3.Connection, folder_id: str, *, team_name: Optional[str] = None) -> bool:
+    """Check if a folder has been persistently rejected, optionally scoped to a team."""
+    if team_name:
+        row = conn.execute(
+            "SELECT 1 FROM sync_rejected_folders WHERE folder_id = ? AND team_name = ?",
+            (folder_id, team_name),
+        ).fetchone()
+    else:
+        row = conn.execute(
+            "SELECT 1 FROM sync_rejected_folders WHERE folder_id = ?", (folder_id,),
+        ).fetchone()
     return row is not None
 
 

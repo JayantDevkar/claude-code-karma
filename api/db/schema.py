@@ -12,7 +12,7 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 17
+SCHEMA_VERSION = 18
 
 SCHEMA_SQL = """
 -- Schema versioning
@@ -230,6 +230,7 @@ CREATE TABLE IF NOT EXISTS sync_teams (
     backend TEXT NOT NULL DEFAULT 'syncthing',
     join_code TEXT,
     sync_session_limit TEXT DEFAULT 'all',
+    pending_leave TEXT,
     created_at TEXT DEFAULT (datetime('now'))
 );
 
@@ -255,6 +256,7 @@ CREATE TABLE IF NOT EXISTS sync_team_projects (
     project_encoded_name TEXT NOT NULL,
     path TEXT,
     git_identity TEXT,
+    folder_suffix TEXT,
     added_at TEXT DEFAULT (datetime('now')),
     PRIMARY KEY (team_name, project_encoded_name),
     FOREIGN KEY (team_name) REFERENCES sync_teams(name) ON DELETE CASCADE,
@@ -301,10 +303,13 @@ CREATE TABLE IF NOT EXISTS sync_removed_members (
 
 -- Rejected folder offers (persistent rejection to prevent reappearance)
 CREATE TABLE IF NOT EXISTS sync_rejected_folders (
-    folder_id TEXT PRIMARY KEY,
-    team_name TEXT,
-    rejected_at TEXT DEFAULT (datetime('now'))
+    folder_id TEXT NOT NULL,
+    team_name TEXT NOT NULL,
+    rejected_at TEXT DEFAULT (datetime('now')),
+    PRIMARY KEY (folder_id, team_name)
 );
+
+CREATE INDEX IF NOT EXISTS idx_sync_team_projects_suffix ON sync_team_projects(folder_suffix);
 
 -- Skill definitions (content + metadata extracted from JSONL or manifest)
 CREATE TABLE IF NOT EXISTS skill_definitions (
@@ -426,14 +431,38 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
                 FOREIGN KEY (team_name) REFERENCES sync_teams(name) ON DELETE CASCADE
             );
         """)
-        # Ensure sync_rejected_folders table exists (may be missing on older installs)
+        # Ensure sync_rejected_folders table exists with correct schema (may be missing or
+        # have the old single-PK schema on older installs)
         conn.executescript("""
             CREATE TABLE IF NOT EXISTS sync_rejected_folders (
-                folder_id TEXT PRIMARY KEY,
-                team_name TEXT,
-                rejected_at TEXT DEFAULT (datetime('now'))
+                folder_id TEXT NOT NULL,
+                team_name TEXT NOT NULL,
+                rejected_at TEXT DEFAULT (datetime('now')),
+                PRIMARY KEY (folder_id, team_name)
             );
         """)
+        # Check if existing sync_rejected_folders has the old single-PK schema and upgrade it
+        rf_cols = {r[1] for r in conn.execute("PRAGMA table_info(sync_rejected_folders)").fetchall()}
+        if rf_cols and "team_name" not in rf_cols:
+            # Old schema: folder_id TEXT PRIMARY KEY — recreate with composite PK
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS sync_rejected_folders_new (
+                    folder_id TEXT NOT NULL,
+                    team_name TEXT NOT NULL,
+                    rejected_at TEXT DEFAULT (datetime('now')),
+                    PRIMARY KEY (folder_id, team_name)
+                )
+            """)
+            conn.execute("DROP TABLE sync_rejected_folders")
+            conn.execute("ALTER TABLE sync_rejected_folders_new RENAME TO sync_rejected_folders")
+        # Patch v18 columns that may be missing on installs that skipped the migration
+        tp_cols = {r[1] for r in conn.execute("PRAGMA table_info(sync_team_projects)").fetchall()}
+        if tp_cols and "folder_suffix" not in tp_cols:
+            conn.execute("ALTER TABLE sync_team_projects ADD COLUMN folder_suffix TEXT")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_sync_team_projects_suffix ON sync_team_projects(folder_suffix)")
+        t_cols = {r[1] for r in conn.execute("PRAGMA table_info(sync_teams)").fetchall()}
+        if t_cols and "pending_leave" not in t_cols:
+            conn.execute("ALTER TABLE sync_teams ADD COLUMN pending_leave TEXT")
         # Ensure skill_definitions table exists (may be missing on older installs)
         conn.executescript("""
             CREATE TABLE IF NOT EXISTS skill_definitions (
@@ -866,6 +895,105 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
                     rejected_at TEXT DEFAULT (datetime('now'))
                 );
             """)
+
+        if current_version < 18:
+            logger.info("Migrating → v18: v3 sync — declarative device lists")
+
+            # 1. Add folder_suffix column to sync_team_projects
+            existing_cols = {r[1] for r in conn.execute("PRAGMA table_info(sync_team_projects)").fetchall()}
+            if "folder_suffix" not in existing_cols:
+                conn.execute("ALTER TABLE sync_team_projects ADD COLUMN folder_suffix TEXT")
+
+            # 2. Add pending_leave column to sync_teams
+            team_cols = {r[1] for r in conn.execute("PRAGMA table_info(sync_teams)").fetchall()}
+            if "pending_leave" not in team_cols:
+                conn.execute("ALTER TABLE sync_teams ADD COLUMN pending_leave TEXT")
+
+            # 3. Recreate sync_rejected_folders with team-scoped PK
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS sync_rejected_folders_v18 (
+                    folder_id TEXT NOT NULL,
+                    team_name TEXT NOT NULL,
+                    rejected_at TEXT DEFAULT (datetime('now')),
+                    PRIMARY KEY (folder_id, team_name)
+                )
+            """)
+
+            # Migrate existing rejections — attribute to teams, drop orphans
+            try:
+                old_rows = conn.execute(
+                    "SELECT folder_id, team_name, rejected_at FROM sync_rejected_folders"
+                ).fetchall()
+                for row in old_rows:
+                    folder_id = row[0] if isinstance(row, (tuple, list)) else row["folder_id"]
+                    team_name = row[1] if isinstance(row, (tuple, list)) else row["team_name"]
+                    rejected_at = row[2] if isinstance(row, (tuple, list)) else row["rejected_at"]
+
+                    if team_name:
+                        # Already has team attribution — migrate directly
+                        conn.execute(
+                            "INSERT OR IGNORE INTO sync_rejected_folders_v18 (folder_id, team_name, rejected_at) VALUES (?, ?, ?)",
+                            (folder_id, team_name, rejected_at),
+                        )
+                    else:
+                        # Try to determine team from folder_id
+                        from services.sync_folders import find_team_for_folder
+                        team = find_team_for_folder(conn, [folder_id])
+                        if team:
+                            conn.execute(
+                                "INSERT OR IGNORE INTO sync_rejected_folders_v18 (folder_id, team_name, rejected_at) VALUES (?, ?, ?)",
+                                (folder_id, team, rejected_at),
+                            )
+                        else:
+                            logger.info("Dropping orphaned rejection for folder %s (no team claims it)", folder_id)
+            except Exception as e:
+                logger.warning("Failed to migrate rejected folders: %s", e)
+
+            # Swap tables
+            conn.execute("DROP TABLE IF EXISTS sync_rejected_folders")
+            conn.execute("ALTER TABLE sync_rejected_folders_v18 RENAME TO sync_rejected_folders")
+
+            # 4. Add index on folder_suffix
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_sync_team_projects_suffix ON sync_team_projects(folder_suffix)")
+
+            # 5. Backfill folder_suffix from existing data
+            try:
+                rows = conn.execute(
+                    "SELECT team_name, project_encoded_name, git_identity, path FROM sync_team_projects WHERE folder_suffix IS NULL"
+                ).fetchall()
+                for row in rows:
+                    team_name = row[0] if isinstance(row, (tuple, list)) else row["team_name"]
+                    encoded = row[1] if isinstance(row, (tuple, list)) else row["project_encoded_name"]
+                    git_id = row[2] if isinstance(row, (tuple, list)) else row["git_identity"]
+                    path = row[3] if isinstance(row, (tuple, list)) else row["path"]
+
+                    # Compute suffix (same logic as _compute_proj_suffix)
+                    if git_id:
+                        suffix = git_id.replace("/", "-")
+                    elif path:
+                        suffix = Path(path).name
+                    else:
+                        suffix = encoded
+
+                    conn.execute(
+                        "UPDATE sync_team_projects SET folder_suffix = ? WHERE team_name = ? AND project_encoded_name = ?",
+                        (suffix, team_name, encoded),
+                    )
+                if rows:
+                    logger.info("  Backfilled folder_suffix for %d team projects", len(rows))
+            except Exception as e:
+                logger.warning("Failed to backfill folder_suffix: %s", e)
+
+            # 6. Check for interrupted cleanups
+            try:
+                pending = conn.execute(
+                    "SELECT name FROM sync_teams WHERE pending_leave IS NOT NULL"
+                ).fetchall()
+                for row in pending:
+                    name = row[0] if isinstance(row, (tuple, list)) else row["name"]
+                    logger.warning("Team %s has interrupted cleanup — will retry on next timer cycle", name)
+            except Exception:
+                pass
 
     # Record version
     conn.execute(
