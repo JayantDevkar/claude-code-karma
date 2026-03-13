@@ -171,8 +171,18 @@ def _auto_leave_team(config, conn, team_name: str) -> None:
 
     Cleans up Syncthing folders/devices and deletes the team from local DB.
     Called from sync context (watcher thread), so uses asyncio for async calls.
+
+    Uses pending_leave marker for crash recovery (RC-2): if the process
+    crashes during cleanup, the marker survives and cleanup is resumed
+    on next startup.
     """
-    from db.sync_queries import delete_team
+    from db.sync_queries import delete_team, set_pending_leave
+
+    # Mark pending_leave for crash recovery (RC-2)
+    try:
+        set_pending_leave(conn, team_name)
+    except Exception as e:
+        logger.warning("Failed to set pending_leave for %s: %s", team_name, e)
 
     syncthing_cleaned = False
     try:
@@ -208,7 +218,7 @@ def _auto_leave_team(config, conn, team_name: str) -> None:
     try:
         log_event(conn, "team_left", team_name=team_name,
                   detail={"reason": "removed_via_metadata", "syncthing_cleaned": syncthing_cleaned})
-        delete_team(conn, team_name)
+        delete_team(conn, team_name)  # This removes the row, clearing pending_leave
         logger.info("Auto-left team %s (removed via metadata, syncthing_cleaned=%s)", team_name, syncthing_cleaned)
     except Exception as e:
         logger.warning("Failed to delete team %s during auto-leave: %s", team_name, e)
