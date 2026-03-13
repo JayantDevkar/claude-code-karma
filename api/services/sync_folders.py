@@ -10,9 +10,11 @@ from typing import Optional
 
 from db.sync_queries import (
     compute_union_devices,
+    compute_union_devices_excluding_team,
     get_team,
     list_members,
     list_team_projects,
+    set_pending_leave,
 )
 from services.folder_id import (
     build_handshake_id,
@@ -485,49 +487,89 @@ async def auto_share_folders(proxy, config, conn, team_name, new_device_id) -> d
 
 
 async def cleanup_syncthing_for_team(proxy, config, conn, team_name: str) -> dict:
-    """Clean up all Syncthing folders and devices for a team (reverse of join).
+    """Clean up Syncthing state when leaving a team (v3: device subtraction).
 
-    Removes:
-    - My outbox folders for this team's projects
-    - Inbox folders (other members' outboxes) for this team's projects
-    - Handshake folders for this team
-    - Team member devices (if not used by other teams)
+    Instead of deleting folders (which breaks cross-team sharing), subtracts
+    this team's devices from shared project folders. Folders are only deleted
+    when no other team claims them (refcount = 0).
+
+    Handshake and metadata folders are team-scoped, so always safe to delete.
+
+    Fixes BP-3 (destructive team cleanup) and BP-4 (cross-team inbox removal).
     """
+    # Mark pending_leave for crash recovery (RC-2)
+    set_pending_leave(conn, team_name)
+
     members = list_members(conn, team_name)
     projects = list_team_projects(conn, team_name)
-    result = {"folders_removed": 0, "devices_removed": 0}
+    result = {"folders_removed": 0, "folders_updated": 0, "devices_removed": 0}
 
-    proj_suffixes = set()
+    self_device_id = config.syncthing.device_id if config and config.syncthing else None
+
+    # Phase A: For each project, recompute device lists WITHOUT this team
     for proj in projects:
-        suffix = _compute_proj_suffix(
+        suffix = proj.get("folder_suffix") or _compute_proj_suffix(
             proj.get("git_identity"), proj.get("path"), proj["project_encoded_name"]
         )
-        proj_suffixes.add(suffix)
 
-    member_tags = {m.get("member_tag") or m["name"] for m in members}
-    if config and hasattr(config, 'member_tag'):
-        member_tags.add(config.member_tag)
+        # Get all outbox/inbox folders matching this suffix
+        try:
+            all_folders = await run_sync(proxy.get_configured_folders)
+        except Exception as e:
+            logger.warning("cleanup_for_team: failed to get folders: %s", e)
+            continue
 
-    try:
-        folders = await run_sync(proxy.get_configured_folders)
-        for folder in folders:
+        for folder in all_folders:
             folder_id = folder.get("id", "")
-            if is_outbox_folder(folder_id):
-                parsed = parse_outbox_id(folder_id)
-                if parsed and parsed[1] in proj_suffixes and parsed[0] in member_tags:
-                    try:
-                        await run_sync(proxy.remove_folder, folder_id)
-                        result["folders_removed"] += 1
-                    except Exception as e:
-                        logger.warning("Failed to remove folder %s: %s", folder_id, e)
-            elif is_handshake_folder(folder_id):
+            if not is_outbox_folder(folder_id):
+                continue
+            parsed = parse_outbox_id(folder_id)
+            if not parsed or parsed[1] != suffix:
+                continue
+
+            owner_member_tag = parsed[0]
+
+            # Compute desired devices WITHOUT the team being left
+            try:
+                desired = compute_union_devices_excluding_team(
+                    conn, suffix, team_name, owner_member_tag
+                )
+            except Exception as e:
+                logger.warning("cleanup_for_team: union query failed for %s: %s", folder_id, e)
+                continue
+
+            if self_device_id:
+                desired.add(self_device_id)
+
+            # If only self remains (or empty), no team claims this folder — delete it
+            if len(desired) <= 1 and self_device_id and desired <= {self_device_id}:
+                try:
+                    await run_sync(proxy.remove_folder, folder_id)
+                    result["folders_removed"] += 1
+                except Exception as e:
+                    logger.warning("cleanup_for_team: failed to remove folder %s: %s", folder_id, e)
+            else:
+                # Subtract this team's devices, keep the rest
+                try:
+                    res = await run_sync(proxy.set_folder_devices, folder_id, list(desired))
+                    if res.get("removed"):
+                        result["folders_updated"] += 1
+                except Exception as e:
+                    logger.warning("cleanup_for_team: failed to update folder %s: %s", folder_id, e)
+
+    # Phase B: Remove team-scoped folders (handshake + metadata) — always safe
+    try:
+        all_folders = await run_sync(proxy.get_configured_folders)
+        for folder in all_folders:
+            folder_id = folder.get("id", "")
+            if is_handshake_folder(folder_id):
                 parsed = parse_handshake_id(folder_id)
                 if parsed and parsed[1] == team_name:
                     try:
                         await run_sync(proxy.remove_folder, folder_id)
                         result["folders_removed"] += 1
                     except Exception as e:
-                        logger.warning("Failed to remove handshake folder %s: %s", folder_id, e)
+                        logger.warning("cleanup_for_team: failed to remove handshake %s: %s", folder_id, e)
             elif is_metadata_folder(folder_id):
                 from services.sync_metadata import parse_metadata_folder_id
                 parsed_team = parse_metadata_folder_id(folder_id)
@@ -536,13 +578,16 @@ async def cleanup_syncthing_for_team(proxy, config, conn, team_name: str) -> dic
                         await run_sync(proxy.remove_folder, folder_id)
                         result["folders_removed"] += 1
                     except Exception as e:
-                        logger.warning("Failed to remove metadata folder %s: %s", folder_id, e)
+                        logger.warning("cleanup_for_team: failed to remove metadata %s: %s", folder_id, e)
     except Exception as e:
-        logger.warning("Failed to scan Syncthing folders for cleanup: %s", e)
+        logger.warning("cleanup_for_team: failed to scan folders for cleanup: %s", e)
 
+    # Phase C: Remove devices not used by any remaining team
     for m in members:
         device_id = m["device_id"]
-        if config and config.syncthing.device_id and device_id == config.syncthing.device_id:
+        if not device_id:
+            continue
+        if self_device_id and device_id == self_device_id:
             continue
         other_count = conn.execute(
             "SELECT COUNT(*) FROM sync_members WHERE device_id = ? AND team_name != ?",
@@ -553,7 +598,7 @@ async def cleanup_syncthing_for_team(proxy, config, conn, team_name: str) -> dic
                 await run_sync(proxy.remove_device, device_id)
                 result["devices_removed"] += 1
             except Exception as e:
-                logger.warning("Failed to remove device %s: %s", device_id[:20], e)
+                logger.warning("cleanup_for_team: failed to remove device %s: %s", device_id[:20], e)
 
     return result
 
@@ -561,51 +606,68 @@ async def cleanup_syncthing_for_team(proxy, config, conn, team_name: str) -> dic
 async def cleanup_syncthing_for_member(
     proxy, config, conn, team_name: str, member_device_id: str, member_name: str,
 ) -> dict:
-    """Clean up Syncthing state when removing a member (reverse of add-member)."""
-    projects = list_team_projects(conn, team_name)
-    result = {"folders_removed": 0, "devices_updated": 0}
+    """Clean up Syncthing state when removing a member (v3: declarative recompute).
 
-    proj_suffixes = set()
+    Uses compute_and_apply_device_lists to recompute all project folders.
+    The removed member's device is excluded from the union query (since they're
+    being removed from sync_members). Member's inbox folders are deleted only
+    if no other team claims them (refcount check).
+
+    Fixes BP-4 (cross-team inbox removal).
+    """
+    result = {"folders_removed": 0, "folders_updated": 0, "devices_removed": 0}
+
+    # Recompute device lists — the removed member's device won't appear
+    # in the union since they're being removed from this team
+    try:
+        recompute = await compute_and_apply_device_lists(proxy, config, conn, team_name)
+        result["folders_updated"] = recompute.get("folders_updated", 0)
+    except Exception as e:
+        logger.warning("cleanup_for_member: recompute failed: %s", e)
+
+    # Remove the member's inbox folders ONLY if no other team claims them
+    projects = list_team_projects(conn, team_name)
     for proj in projects:
-        suffix = _compute_proj_suffix(
+        suffix = proj.get("folder_suffix") or _compute_proj_suffix(
             proj.get("git_identity"), proj.get("path"), proj["project_encoded_name"]
         )
-        proj_suffixes.add(suffix)
+        inbox_id = build_outbox_id(member_name, suffix)
 
-    try:
-        folders = await run_sync(proxy.get_configured_folders)
-        for folder in folders:
-            folder_id = folder.get("id", "")
-            if not is_outbox_folder(folder_id):
-                continue
-            parsed = parse_outbox_id(folder_id)
-            if not parsed or parsed[1] not in proj_suffixes:
-                continue
-            username, suffix = parsed
-            if config and (username == config.member_tag or username == config.user_id):
-                try:
-                    res = await run_sync(
-                        proxy.remove_device_from_folder, folder_id, member_device_id,
-                    )
-                    if res.get("removed"):
-                        result["devices_updated"] += 1
-                except Exception as e:
-                    logger.warning("Failed to remove device from folder %s: %s", folder_id, e)
-            elif username == member_name:
-                try:
-                    await run_sync(proxy.remove_folder, folder_id)
-                    result["folders_removed"] += 1
-                except Exception as e:
-                    logger.warning("Failed to remove inbox folder %s: %s", folder_id, e)
-    except Exception as e:
-        logger.warning("Failed to scan Syncthing folders for member cleanup: %s", e)
+        # Compute what the device list SHOULD be for this member's folder
+        # If no other team shares this project with this member, it'll be empty
+        try:
+            desired = compute_union_devices(conn, suffix, member_name)
+        except Exception:
+            desired = set()
 
+        self_device_id = config.syncthing.device_id if config and config.syncthing else None
+        if self_device_id:
+            desired.add(self_device_id)
+
+        if len(desired) <= 1 and self_device_id and desired <= {self_device_id}:
+            # No team claims this folder — safe to delete
+            try:
+                await run_sync(proxy.remove_folder, inbox_id)
+                result["folders_removed"] += 1
+            except Exception as e:
+                logger.debug("cleanup_for_member: remove inbox %s: %s", inbox_id, e)
+        else:
+            # Other teams still need this folder — update device list
+            try:
+                res = await run_sync(proxy.set_folder_devices, inbox_id, list(desired))
+                if res.get("removed"):
+                    result["folders_updated"] += 1
+            except Exception as e:
+                logger.debug("cleanup_for_member: update inbox %s: %s", inbox_id, e)
+
+    # Remove handshake folder (team-scoped, always safe)
     handshake_id = build_handshake_id(member_name, team_name)
     try:
         await run_sync(proxy.remove_folder, handshake_id)
     except Exception as e:
-        logger.debug("Remove handshake folder %s no-op: %s", handshake_id, e)
+        logger.debug("cleanup_for_member: remove handshake %s: %s", handshake_id, e)
 
+    # Remove device if not in any other team
     other_count = conn.execute(
         "SELECT COUNT(*) FROM sync_members WHERE device_id = ? AND team_name != ?",
         (member_device_id, team_name),
@@ -613,7 +675,8 @@ async def cleanup_syncthing_for_member(
     if other_count == 0:
         try:
             await run_sync(proxy.remove_device, member_device_id)
+            result["devices_removed"] = 1
         except Exception as e:
-            logger.warning("Failed to remove device %s: %s", member_device_id[:20], e)
+            logger.warning("cleanup_for_member: failed to remove device %s: %s", member_device_id[:20], e)
 
     return result

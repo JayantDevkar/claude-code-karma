@@ -171,8 +171,11 @@ async def sync_remove_team_project(team_name: str, project_name: str) -> Any:
     if not any(p["project_encoded_name"] == project_name for p in projects):
         raise HTTPException(404, f"Project '{project_name}' not found in team")
 
-    # Clean up Syncthing folders (outbox + inboxes) before removing DB row
+    # Clean up Syncthing folders: device subtraction (v3, fixes BP-3/BP-4)
+    # Instead of deleting folders, recompute device lists WITHOUT this team.
+    # Folders are only deleted when no other team claims them.
     folders_removed = 0
+    folders_updated = 0
     try:
         proj = next(p for p in projects if p["project_encoded_name"] == project_name)
         git_identity = proj.get("git_identity")
@@ -180,24 +183,40 @@ async def sync_remove_team_project(team_name: str, project_name: str) -> Any:
         config = await run_sync(_sid._load_identity)
         if config is not None:
             proxy = _sid.get_proxy()
-            # Remove outbox folder
-            outbox_id = build_outbox_id(config.member_tag, proj_suffix)
-            try:
-                await run_sync(proxy.remove_folder, outbox_id)
-                folders_removed += 1
-            except Exception as e:
-                logger.debug("Failed to remove outbox folder %s: %s", outbox_id, e)
-            # Remove inbox folders for each member
-            members = list_members(conn, team_name)
-            for m in members:
-                if m["device_id"] == config.syncthing.device_id:
+            from db.sync_queries import compute_union_devices_excluding_team
+
+            # Get all configured folders matching this project suffix
+            all_folders = await run_sync(proxy.get_configured_folders)
+            for folder in all_folders:
+                folder_id = folder.get("id", "")
+                parsed = parse_outbox_id(folder_id)
+                if not parsed or parsed[1] != proj_suffix:
                     continue
-                inbox_id = build_outbox_id(m.get("member_tag") or m["name"], proj_suffix)
-                try:
-                    await run_sync(proxy.remove_folder, inbox_id)
-                    folders_removed += 1
-                except Exception as e:
-                    logger.debug("Failed to remove inbox folder %s: %s", inbox_id, e)
+
+                owner_member_tag = parsed[0]
+                # Compute desired devices WITHOUT this team
+                desired = compute_union_devices_excluding_team(
+                    conn, proj_suffix, team_name, owner_member_tag
+                )
+                self_device_id = config.syncthing.device_id
+                if self_device_id:
+                    desired.add(self_device_id)
+
+                if len(desired) <= 1 and self_device_id and desired <= {self_device_id}:
+                    # No other team claims this folder — delete it
+                    try:
+                        await run_sync(proxy.remove_folder, folder_id)
+                        folders_removed += 1
+                    except Exception as e:
+                        logger.debug("Failed to remove folder %s: %s", folder_id, e)
+                else:
+                    # Other teams still need it — update device list
+                    try:
+                        res = await run_sync(proxy.set_folder_devices, folder_id, list(desired))
+                        if res.get("removed"):
+                            folders_updated += 1
+                    except Exception as e:
+                        logger.debug("Failed to update folder %s: %s", folder_id, e)
     except Exception as e:
         logger.warning("Syncthing cleanup for project %s failed: %s", project_name, e)
 
@@ -226,7 +245,7 @@ async def sync_remove_team_project(team_name: str, project_name: str) -> Any:
     except Exception as e:
         logger.debug("Failed to update own metadata: %s", e)
 
-    return {"ok": True, "name": project_name, "folders_removed": folders_removed}
+    return {"ok": True, "name": project_name, "folders_removed": folders_removed, "folders_updated": folders_updated}
 
 
 @router.get("/teams/{team_name}/project-status")

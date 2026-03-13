@@ -176,8 +176,13 @@ async def sync_delete_team(team_name: str) -> Any:
     if get_team(conn, team_name) is None:
         raise HTTPException(404, f"Team '{team_name}' not found")
 
+    # Mark pending_leave for crash recovery (RC-2) — cleanup_syncthing_for_team
+    # also sets this, but we set it early in case of failure before that call.
+    from db.sync_queries import set_pending_leave
+    set_pending_leave(conn, team_name)
+
     # Clean up Syncthing state before deleting DB records (need member/project data)
-    cleanup = {"folders_removed": 0, "devices_removed": 0}
+    cleanup = {"folders_removed": 0, "folders_updated": 0, "devices_removed": 0}
     try:
         config = await run_sync(_sid._load_identity)
         if config:

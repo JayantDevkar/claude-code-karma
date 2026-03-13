@@ -759,6 +759,23 @@ def unreject_folder(conn: sqlite3.Connection, folder_id: str, *, team_name: Opti
     conn.commit()
 
 
+def set_pending_leave(conn: sqlite3.Connection, team_name: str) -> None:
+    """Mark a team as pending-leave (cleanup in progress). Survives restarts (RC-2)."""
+    conn.execute(
+        "UPDATE sync_teams SET pending_leave = datetime('now') WHERE name = ?",
+        (team_name,),
+    )
+    conn.commit()
+
+
+def get_teams_with_pending_leave(conn: sqlite3.Connection) -> list[dict]:
+    """Get teams with interrupted cleanup (pending_leave IS NOT NULL)."""
+    rows = conn.execute(
+        "SELECT name, pending_leave FROM sync_teams WHERE pending_leave IS NOT NULL"
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
 def is_folder_rejected(conn: sqlite3.Connection, folder_id: str, *, team_name: Optional[str] = None) -> bool:
     """Check if a folder has been persistently rejected, optionally scoped to a team."""
     if team_name:
