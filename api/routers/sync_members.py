@@ -129,7 +129,12 @@ async def sync_remove_member(
     except Exception as e:
         logger.warning("Failed to write removal signal: %s", e)
 
-    # Clean up Syncthing state before removing DB record
+    # Remove member from DB FIRST so that compute_and_apply_device_lists
+    # (called by cleanup_syncthing_for_member) correctly excludes this
+    # device from union queries. Device ID and name are already captured.
+    remove_member(conn, team_name, device_id)
+
+    # Clean up Syncthing state (device lists, orphaned folders/devices)
     cleanup = {"folders_removed": 0, "devices_updated": 0}
     try:
         config = await run_sync(_sid._load_identity)
@@ -159,7 +164,6 @@ async def sync_remove_member(
         except Exception as e:
             logger.debug("Cache invalidation failed: %s", e)
 
-    remove_member(conn, team_name, device_id)
     log_event(conn, "member_removed", team_name=team_name, member_name=member_name,
               detail={**cleanup, **data_cleanup})
 
