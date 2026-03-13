@@ -813,7 +813,7 @@ def _index_session(
     models_used = list(session.get_models_used())
     git_branches = list(session.get_git_branches())
     session_titles = session.session_titles or session_titles_override or []
-    initial_prompt = get_initial_prompt(session, max_length=500)
+    initial_prompt = get_initial_prompt(session)
 
     # Count subagents via filesystem (fast, no JSONL parse)
     subagent_count = 0

@@ -1131,6 +1131,19 @@ def get_session(uuid: str, request: Request, fresh: bool = False):
                 if conn is not None:
                     detail = query_session_detail(conn, uuid)
                     if detail:
+                        # Supplement truncated initial_prompt from JSONL
+                        # (legacy indexed sessions stored only 500 chars)
+                        db_prompt = detail.get("initial_prompt")
+                        if db_prompt and len(db_prompt) == 500:
+                            try:
+                                result = find_session_with_project(uuid)
+                                if result:
+                                    full_prompt = get_initial_prompt(result.session)
+                                    if full_prompt:
+                                        detail["initial_prompt"] = full_prompt
+                            except Exception:
+                                pass  # Keep DB value on failure
+
                         todos = _load_todos_direct(uuid)
                         tasks = _load_tasks_direct(uuid)
                         response_data = _build_session_detail_from_db(detail, todos, tasks)
