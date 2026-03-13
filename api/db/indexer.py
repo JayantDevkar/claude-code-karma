@@ -306,6 +306,89 @@ def _load_manifest_classifications(encoded_dir: Path) -> dict[str, str]:
         return {}
 
 
+def _load_manifest_skill_definitions(encoded_dir: Path) -> dict:
+    """Load skill_definitions from a remote project's manifest.json.
+
+    Returns a dict of skill_name → {content, description, category, base_directory}.
+    Returns empty dict if manifest doesn't exist or lacks the field.
+    """
+    manifest_path = encoded_dir / "manifest.json"
+    if not manifest_path.exists():
+        return {}
+    try:
+        from services.file_validator import validate_manifest
+
+        manifest, reason = validate_manifest(manifest_path)
+        if manifest is None:
+            logger.warning("Invalid manifest at %s: %s", manifest_path, reason)
+            return {}
+        # Convert SkillDefinitionEntry models to plain dicts
+        return {
+            name: entry.model_dump() if hasattr(entry, "model_dump") else entry
+            for name, entry in manifest.skill_definitions.items()
+        }
+    except Exception as e:
+        logger.warning("Error loading manifest skill definitions at %s: %s", manifest_path, e)
+        return {}
+
+
+def _apply_manifest_skill_definitions(
+    conn: sqlite3.Connection,
+    skill_definitions: dict,
+    source_user_id: str,
+    source_machine_id: str,
+) -> None:
+    """Write manifest-provided skill definitions to the skill_definitions table.
+
+    Called once per manifest (not per session). Manifest content takes precedence
+    over heuristic JSONL extraction because it was read directly from the
+    exporting machine's filesystem.
+
+    Hard-overrides content and category (manifest is authoritative).
+    Uses COALESCE for description and base_directory (preserves existing
+    values when the manifest entry has nulls, e.g. no YAML frontmatter).
+    Sets extracted_from_session to NULL since this content is from the filesystem.
+    """
+    for skill_name, entry in skill_definitions.items():
+        content = entry.get("content") if isinstance(entry, dict) else None
+        if not content:
+            continue  # Skip entries without content
+
+        category = entry.get("category", "plugin_skill")
+        description = entry.get("description")
+        base_directory = entry.get("base_directory")
+
+        try:
+            conn.execute(
+                """
+                INSERT INTO skill_definitions
+                    (skill_name, source_user_id, source_machine_id, category,
+                     content, base_directory, description, extracted_from_session,
+                     updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, NULL, datetime('now'))
+                ON CONFLICT(skill_name, source_user_id) DO UPDATE SET
+                    content      = excluded.content,
+                    category     = excluded.category,
+                    base_directory = COALESCE(excluded.base_directory, skill_definitions.base_directory),
+                    description  = COALESCE(excluded.description, skill_definitions.description),
+                    updated_at   = datetime('now')
+                """,
+                (
+                    skill_name,
+                    source_user_id,
+                    source_machine_id,
+                    category,
+                    content,
+                    base_directory,
+                    description,
+                ),
+            )
+        except Exception as e:
+            logger.debug(
+                "Error writing manifest skill definition for %s: %s", skill_name, e
+            )
+
+
 def index_remote_sessions(conn: sqlite3.Connection) -> dict:
     """
     Index remote sessions from Syncthing-synced directories into SQLite.
@@ -435,6 +518,16 @@ def index_remote_sessions(conn: sqlite3.Connection) -> dict:
                                 break
                     except (ValueError, OSError):
                         pass
+
+            # Apply manifest skill definitions once per project (before per-session loop).
+            # Manifest content is authoritative — takes precedence over JSONL heuristics.
+            manifest_skill_defs = _load_manifest_skill_definitions(encoded_dir)
+            if manifest_skill_defs:
+                _apply_manifest_skill_definitions(
+                    conn, manifest_skill_defs,
+                    source_user_id=resolved_uid,
+                    source_machine_id=dir_name,
+                )
 
             for jsonl_path in sessions_dir.glob("*.jsonl"):
                 if jsonl_path.name.startswith("agent-"):

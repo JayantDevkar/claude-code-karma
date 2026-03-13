@@ -10,11 +10,12 @@ from pathlib import Path
 from typing import Optional
 
 from karma.config import KARMA_BASE
-from karma.manifest import SessionEntry, SyncManifest
+from karma.manifest import SessionEntry, SkillDefinitionEntry, SyncManifest
 
 logger = logging.getLogger(__name__)
 
 MIN_FREE_BYTES = 10 * 1024 * 1024 * 1024  # 10 GiB
+MAX_SKILL_SIZE = 1_000_000  # 1 MB, mirrors api/config.py
 
 
 STALE_LIVE_SESSION_SECONDS = 30 * 60  # 30 minutes
@@ -209,6 +210,141 @@ def _build_titles_from_db(session_uuids: list[str]) -> dict[str, dict]:
         conn.close()
 
     return titles
+
+
+def _resolve_skill_file(skill_name: str, claude_base: Path) -> Optional[Path]:
+    """Resolve a skill name to its definition file path on disk.
+
+    Synchronous, no HTTP dependencies. Checks global commands/skills,
+    plugin cache (with manifest custom paths), and inherited skills.
+    Returns None if no file is found.
+    """
+    is_plugin = ":" in skill_name
+
+    if not is_plugin:
+        # Non-plugin: check global commands and skills directories
+        for candidate in (
+            claude_base / "commands" / f"{skill_name}.md",
+            claude_base / "skills" / skill_name / "SKILL.md",
+        ):
+            if candidate.is_file():
+                return candidate
+
+    # Extract plugin/skill parts for cache walk
+    if is_plugin:
+        plugin_short_name = skill_name.split(":")[0].split("@")[0]
+        actual_skill = skill_name.split(":", 1)[1]
+    else:
+        plugin_short_name = None
+        actual_skill = skill_name
+
+    # Try to import read_plugin_manifest for custom path support
+    try:
+        from models.plugin import read_plugin_manifest
+    except ImportError:
+        read_plugin_manifest = None  # type: ignore[assignment]
+
+    plugins_cache = claude_base / "plugins" / "cache"
+    if plugins_cache.is_dir():
+        for registry_dir in plugins_cache.iterdir():
+            if not registry_dir.is_dir():
+                continue
+            for plugin_dir in registry_dir.iterdir():
+                if not plugin_dir.is_dir():
+                    continue
+                if plugin_short_name and plugin_dir.name != plugin_short_name:
+                    continue
+                for version_dir in plugin_dir.iterdir():
+                    if not version_dir.is_dir():
+                        continue
+
+                    # Check default locations
+                    for candidate in (
+                        version_dir / "commands" / f"{actual_skill}.md",
+                        version_dir / "skills" / actual_skill / "SKILL.md",
+                    ):
+                        if candidate.is_file():
+                            return candidate
+
+                    # Check manifest custom paths
+                    if read_plugin_manifest:
+                        manifest = read_plugin_manifest(version_dir)
+                        if manifest:
+                            for key, filename in [
+                                ("skills", f"{actual_skill}/SKILL.md"),
+                                ("commands", f"{actual_skill}.md"),
+                            ]:
+                                custom = manifest.get(key)
+                                if not custom:
+                                    continue
+                                for cp in (
+                                    [custom] if isinstance(custom, str) else custom
+                                ):
+                                    d = version_dir / cp.removeprefix("./")
+                                    candidate = d / filename
+                                    if candidate.is_file():
+                                        return candidate
+
+    # Fallback: check inherited skills (colon-form and dash-form)
+    if is_plugin:
+        for candidate_name in (skill_name, skill_name.replace(":", "-")):
+            inherited = claude_base / "skills" / candidate_name / "SKILL.md"
+            if inherited.is_file():
+                return inherited
+
+    return None
+
+
+def _build_skill_definitions(
+    skill_classifications: dict[str, str],
+    claude_base: Path,
+) -> dict[str, SkillDefinitionEntry]:
+    """Resolve skill definition files and build content entries for the manifest.
+
+    Iterates skill_classifications keys, resolves each to its SKILL.md file,
+    reads content (capped at MAX_SKILL_SIZE), and builds SkillDefinitionEntry
+    objects. Only includes skills where a file was found and readable.
+    Skips bundled/builtin categories (they ship with Claude Code).
+    """
+    definitions: dict[str, SkillDefinitionEntry] = {}
+    skip_categories = {"bundled_skill", "builtin_command"}
+
+    for name, category in skill_classifications.items():
+        if category in skip_categories:
+            continue
+        try:
+            skill_file = _resolve_skill_file(name, claude_base)
+            if not skill_file:
+                continue
+            if skill_file.stat().st_size > MAX_SKILL_SIZE:
+                continue
+
+            content = skill_file.read_text(encoding="utf-8", errors="replace")
+
+            # Parse description from YAML frontmatter
+            description = None
+            if content.startswith("---"):
+                parts = content.split("---", 2)
+                if len(parts) >= 3:
+                    try:
+                        import yaml
+
+                        frontmatter = yaml.safe_load(parts[1])
+                        if isinstance(frontmatter, dict):
+                            description = frontmatter.get("description")
+                    except Exception:
+                        pass  # Best-effort: skip unparseable frontmatter
+
+            definitions[name] = SkillDefinitionEntry(
+                content=content,
+                description=description,
+                category=category,
+                base_directory=str(skill_file.parent),
+            )
+        except Exception as e:
+            logger.debug("Skipping skill definition for %s: %s", name, e)
+
+    return definitions
 
 
 def _build_skill_classifications_from_db(
@@ -583,6 +719,17 @@ class SessionPackager:
             [entry.uuid for entry in sessions]
         )
 
+        # Build skill definitions from the local filesystem (best-effort).
+        # Resolves each skill in skill_classifications to its SKILL.md file
+        # and includes the content in the manifest for reliable remote import.
+        try:
+            skill_definitions = _build_skill_definitions(
+                skill_classifications, self._claude_base
+            )
+        except Exception as e:
+            logger.debug("Skill definitions packaging failed (best-effort): %s", e)
+            skill_definitions = {}
+
         # Build manifest
         manifest = SyncManifest(
             user_id=self.user_id,
@@ -598,6 +745,7 @@ class SessionPackager:
             team_name=self.team_name,
             proj_suffix=self.proj_suffix,
             skill_classifications=skill_classifications,
+            skill_definitions=skill_definitions,
         )
 
         manifest_path = staging_dir / "manifest.json"

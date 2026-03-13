@@ -17,6 +17,23 @@ class SessionEntry(BaseModel):
     git_branch: Optional[str] = Field(default=None, description="Git branch the session was on")
 
 
+class SkillDefinitionEntry(BaseModel):
+    """Skill definition content from the exporting machine's filesystem."""
+
+    model_config = ConfigDict(frozen=True)
+
+    content: Optional[str] = Field(default=None, description="SKILL.md body text")
+    description: Optional[str] = Field(
+        default=None, description="Description parsed from YAML frontmatter"
+    )
+    category: str = Field(
+        ..., description="Classification category (e.g., plugin_skill, custom_skill)"
+    )
+    base_directory: Optional[str] = Field(
+        default=None, description="Parent directory of the skill file on the source machine"
+    )
+
+
 class SyncManifest(BaseModel):
     """Manifest describing a sync snapshot."""
 
@@ -51,5 +68,13 @@ class SyncManifest(BaseModel):
             "E.g. {'feature-dev:feature-dev': 'plugin_command', 'superpowers:brainstorming': 'plugin_skill'}. "
             "Used by the importing side to classify remote skills/commands correctly "
             "without relying on the local plugin cache."
+        ),
+    )
+    skill_definitions: Dict[str, SkillDefinitionEntry] = Field(
+        default_factory=dict,
+        description=(
+            "skill_name → definition entry with content read from the exporting machine's "
+            "filesystem. Provides authoritative skill content so the importing machine "
+            "does not need heuristic JSONL extraction."
         ),
     )
