@@ -61,6 +61,11 @@ class SyncManifest(BaseModel):
         default=None,
         description="Agreed Syncthing folder ID suffix (e.g., 'acme-org-acme-app' for git, 'experiments' for non-git)",
     )
+    project_name: Optional[str] = Field(
+        default=None,
+        description="Human-readable project name from the CLI 'project add' command. "
+        "Used by receivers to display meaningful labels for unresolved (especially non-git) projects.",
+    )
     skill_classifications: Dict[str, str] = Field(
         default_factory=dict,
         description=(

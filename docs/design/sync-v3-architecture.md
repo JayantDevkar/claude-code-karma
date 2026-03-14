@@ -618,6 +618,96 @@ During the migration window, v2 and v3 devices may oscillate device lists. v3 re
 
 ---
 
+## ADR-7: Non-Git Project Handling
+
+### Decision
+
+Address gaps in how non-git projects and projects missing from some members are handled across the sync layer.
+
+### Status
+
+Accepted.
+
+### Context
+
+The v2/v3 sync layer relies heavily on `git_identity` (normalized `owner/repo` from git remote URL) for two purposes:
+1. **Folder suffix computation:** `_compute_proj_suffix()` uses `git_identity.replace("/", "-")` as a stable, universal project identifier
+2. **Cross-machine project resolution:** `resolve_local_project()` matches received sessions to local Claude project directories via `git_identity`
+
+For non-git projects (no git repo or no `origin` remote), both mechanisms break down. The directory name fallback (`Path(path).name`) is machine-specific and collision-prone.
+
+### Gaps Identified
+
+| Gap | Severity | Description |
+|-----|----------|-------------|
+| GAP-1 | High | Non-git suffix collision: two different projects with same directory name produce identical folder suffixes, causing session mixing in `compute_union_devices` |
+| GAP-2 | Medium | Non-git project resolution impossible: `resolve_local_project()` has no fallback when `git_identity` is `None` — all steps (A0, A, A1, B, C) require it |
+| GAP-3 | Low | Non-git suffix instability on re-share: already handled by BP-13 (immutable `folder_suffix`) |
+| GAP-4 | None | Empty outbox for missing project: working as designed (EC-4) |
+| GAP-5 | Low | Git project resolution without local clone: self-healing once member clones the repo and uses Claude Code on it |
+| GAP-6 | High | Non-git + member doesn't have project = permanently unresolved sessions. No self-healing path exists |
+| GAP-7 | Medium | Mixed resolution in multi-team: some projects resolve, others silently don't. No UX signal |
+| Pre-existing bug | High | CLI/API suffix mismatch: CLI computes suffix from `name` argument, API recomputes from `Path(path).name`. Different values for the same project |
+
+### Solutions
+
+**Fix A: Store suffix at share time (GAP-1, pre-existing bug)**
+
+The CLI `karma project add` now passes `folder_suffix` to `add_team_project()` immediately at share time. The suffix is computed once:
+- Git projects: `git_identity.replace("/", "-")` (unchanged)
+- Non-git projects: CLI `name` argument (user-chosen, meaningful)
+
+The `_compute_proj_suffix()` function becomes a legacy fallback only, used during migration for records that lack a stored `folder_suffix`.
+
+**Fix B: Suffix uniqueness check (GAP-1)**
+
+Before adding a project, the CLI checks for existing projects in the team with the same `folder_suffix`. If a collision is detected, the user is prompted to use `--suffix` to specify a different one:
+
+```
+karma project add my-notes --path ~/notes/ --team alpha --suffix my-design-notes
+```
+
+**Fix C: `project_name` in manifest (GAP-2, GAP-7)**
+
+The `SyncManifest` model now includes a `project_name` field populated from the project's directory name. Receivers can use this to display meaningful labels for unresolved projects and prompt users to map them.
+
+**Fix D: Manual project mapping CLI (GAP-2, GAP-6)**
+
+New CLI command for explicit cross-machine mapping:
+
+```
+karma project map <suffix> --team <team> --path <local_path>
+```
+
+This is the ONLY correct solution for non-git cross-machine resolution. Without a universal identifier, only the user knows which local directory corresponds to a remote project. The command:
+1. Validates the team has a project with the given suffix
+2. Updates `sync_team_projects` with the local path and encoded name
+3. Registers in the local `projects` table
+4. Cleans up stale encoded name records if they differ
+
+### Gaps NOT Requiring Code Fixes
+
+- **GAP-3:** Protected by BP-13 (immutable `folder_suffix` stored in DB)
+- **GAP-4:** Syncthing handles empty folders correctly (EC-4)
+- **GAP-5:** Self-healing — once a member clones the repo and runs Claude Code, `resolve_local_project()` succeeds at Step C
+
+### Breakpoints Addressed
+
+- Pre-existing CLI/API suffix mismatch (new)
+- GAP-1: Non-git suffix collision prevention
+- GAP-2: Non-git project resolution via manual mapping
+- GAP-6: Permanent unresolved sessions for non-git projects
+- GAP-7: Manifest metadata for dashboard display
+
+### Consequences
+
+- Non-git projects require explicit CLI name choice at share time (was already the case but now enforced)
+- Cross-machine resolution for non-git projects requires manual `karma project map` (no auto-resolution possible without universal identifier)
+- The `--suffix` CLI option provides escape hatch for suffix collisions
+- `project_name` in manifest enables future dashboard UX improvements (out of scope for v3)
+
+---
+
 ## Data Flow Diagrams
 
 ### Join Team Flow (v3)
@@ -1138,6 +1228,9 @@ Key test scenarios derived from this setup:
 3. **Remove member — cross-team preservation:** Remove M2 from T1. M2's P1 outbox should still include T3 devices. M2's P2 outbox should still include T2 devices.
 4. **Folder rejection — team-scoped:** M3 rejects P1 in T1. M3 should still receive P1 from T3.
 5. **Device ID change:** M4 reinstalls Syncthing. M4's stale device_id is cleaned up from T3 and T4 folders by peers on next recompute cycle.
+6. **Non-git suffix collision prevention:** Two non-git projects with different paths but same CLI name in the same team should be rejected with a collision error.
+7. **Manual project mapping:** After `karma project map`, `resolve_local_project` should return the mapped path.
+8. **Manifest project_name:** Packaged manifest.json should include `project_name` field for both git and non-git projects.
 
 Tests should use mocked Syncthing API responses and in-memory SQLite to validate the SQL queries and reconciliation logic without requiring actual Syncthing instances.
 

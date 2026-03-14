@@ -111,7 +111,8 @@ def project():
 @click.argument("name")
 @click.option("--path", required=True, help="Absolute path to the project directory")
 @click.option("--team", "team_name", required=True, help="Team to add project to")
-def project_add(name: str, path: str, team_name: str):
+@click.option("--suffix", "custom_suffix", default=None, help="Custom folder suffix (overrides auto-computed suffix)")
+def project_add(name: str, path: str, team_name: str, custom_suffix: str | None):
     """Add a project for syncing."""
     if not _SAFE_NAME.match(name):
         raise click.ClickException("Project name must be alphanumeric, dash, or underscore only.")
@@ -131,6 +132,29 @@ def project_add(name: str, path: str, team_name: str):
     encoded = encode_project_path(path)
     git_identity = detect_git_identity(path)
 
+    # Compute folder suffix: explicit override > git_identity > CLI name
+    if custom_suffix:
+        if not _SAFE_NAME.match(custom_suffix):
+            raise click.ClickException("Suffix must be alphanumeric, dash, or underscore only.")
+        proj_suffix = custom_suffix
+    elif git_identity:
+        proj_suffix = git_identity.replace("/", "-")
+    else:
+        proj_suffix = name
+
+    # Check for suffix collision within the team (GAP-1: non-git suffix collision)
+    existing = conn.execute(
+        "SELECT project_encoded_name FROM sync_team_projects WHERE team_name = ? AND folder_suffix = ?",
+        (team_name, proj_suffix),
+    ).fetchone()
+    if existing:
+        existing_name = existing[0] if isinstance(existing, (tuple, list)) else existing["project_encoded_name"]
+        if existing_name != encoded:
+            raise click.ClickException(
+                f"Another project in team '{team_name}' already uses suffix '{proj_suffix}'. "
+                f"Use --suffix to specify a different one."
+            )
+
     # Ensure project exists in projects table (FK requirement), include git_identity
     conn.execute(
         "INSERT OR IGNORE INTO projects (encoded_name, project_path, git_identity) VALUES (?, ?, ?)",
@@ -146,17 +170,15 @@ def project_add(name: str, path: str, team_name: str):
     if git_identity:
         click.echo(f"Detected git identity: {git_identity}")
 
+    # Store folder_suffix at share time (fixes CLI/API suffix mismatch)
     try:
-        add_team_project(conn, team_name, encoded, path, git_identity=git_identity)
+        add_team_project(conn, team_name, encoded, path, git_identity=git_identity, folder_suffix=proj_suffix)
     except Exception as e:
         if "UNIQUE constraint" in str(e):
             raise click.ClickException(f"Project already exists in team '{team_name}'.")
         raise
 
     log_event(conn, "project_added", team_name=team_name, project_encoded_name=encoded)
-
-    # Compute folder suffix: prefer git_identity, fall back to CLI name
-    proj_suffix = git_identity.replace("/", "-") if git_identity else name
 
     # Auto-create shared folders if team has Syncthing members
     members = list_members(conn, team_name)
@@ -247,6 +269,81 @@ def project_remove(name: str, team_name: str):
     log_event(conn, "project_removed", team_name=team_name, project_encoded_name=target["project_encoded_name"])
     remove_team_project(conn, team_name, target["project_encoded_name"])
     click.echo(f"Removed project '{name}'.")
+
+
+@project.command("map")
+@click.argument("suffix")
+@click.option("--team", "team_name", required=True, help="Team the project belongs to")
+@click.option("--path", required=True, help="Local absolute path to map this project to")
+def project_map(suffix: str, team_name: str, path: str):
+    """Map a remote project to a local directory (for non-git projects).
+
+    When a teammate shares a non-git project, it can't be auto-resolved
+    to your local directory. Use this command to manually map it.
+
+    SUFFIX is the folder suffix shown in 'karma project list' or pending folders.
+    """
+    if not Path(path).is_absolute():
+        raise click.ClickException("Project path must be absolute (e.g., /Users/alice/my-project).")
+
+    if not Path(path).is_dir():
+        raise click.ClickException(f"Directory does not exist: {path}")
+
+    config = require_config()
+    conn = _get_db()
+
+    from db.sync_queries import get_team, list_team_projects, upsert_team_project
+
+    team = get_team(conn, team_name)
+    if not team:
+        raise click.ClickException(f"Team '{team_name}' not found.")
+
+    # Find the team project with matching suffix
+    projects = list_team_projects(conn, team_name)
+    target = None
+    for proj in projects:
+        proj_suffix = proj.get("folder_suffix") or ""
+        if proj_suffix == suffix:
+            target = proj
+            break
+
+    if not target:
+        available = [p.get("folder_suffix", "?") for p in projects]
+        raise click.ClickException(
+            f"No project with suffix '{suffix}' in team '{team_name}'. "
+            f"Available suffixes: {', '.join(available) or '(none)'}"
+        )
+
+    new_encoded = encode_project_path(path)
+    old_encoded = target["project_encoded_name"]
+    git_identity = detect_git_identity(path)
+
+    # Register in local projects table
+    conn.execute(
+        "INSERT OR REPLACE INTO projects (encoded_name, project_path, git_identity) VALUES (?, ?, ?)",
+        (new_encoded, path, git_identity),
+    )
+    conn.commit()
+
+    # Update team project record with local path
+    upsert_team_project(
+        conn, team_name, new_encoded, path,
+        git_identity=git_identity,
+        folder_suffix=suffix,
+    )
+
+    # Clean up old record if encoded name changed
+    if new_encoded != old_encoded:
+        from db.sync_queries import remove_team_project
+        try:
+            remove_team_project(conn, team_name, old_encoded)
+        except Exception:
+            pass
+
+    click.echo(f"Mapped project suffix '{suffix}' -> {path}")
+    if git_identity:
+        click.echo(f"  Detected git identity: {git_identity}")
+    click.echo(f"  Encoded as: {new_encoded}")
 
 
 # --- ls ---

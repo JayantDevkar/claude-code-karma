@@ -730,6 +730,10 @@ class SessionPackager:
             logger.debug("Skill definitions packaging failed (best-effort): %s", e)
             skill_definitions = {}
 
+        # Derive human-readable project name for manifest
+        # Prefer: directory name from project path > proj_suffix > encoded name
+        _project_name = Path(self.project_path).name if self.project_path else self.proj_suffix
+
         # Build manifest
         manifest = SyncManifest(
             user_id=self.user_id,
@@ -744,6 +748,7 @@ class SessionPackager:
             git_identity=git_id,
             team_name=self.team_name,
             proj_suffix=self.proj_suffix,
+            project_name=_project_name,
             skill_classifications=skill_classifications,
             skill_definitions=skill_definitions,
         )
