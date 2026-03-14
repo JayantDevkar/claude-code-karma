@@ -73,10 +73,16 @@ def write_member_state(
     machine_id: str = "",
     device_id: str = "",
     subscriptions: dict[str, bool] | None = None,
+    projects: list[dict] | None = None,
     sync_direction: str = "both",
     session_limit: str = "all",
 ) -> Path:
-    """Write this device's state file to the metadata folder."""
+    """Write this device's state file to the metadata folder.
+
+    The ``projects`` field publishes this device's known project list so
+    that joiners (who have empty ``sync_team_projects``) can discover
+    which projects are shared in the team before accepting any folders.
+    """
     members_dir = meta_dir / "members"
 
     state = {
@@ -85,6 +91,7 @@ def write_member_state(
         "machine_id": machine_id,
         "device_id": device_id,
         "subscriptions": subscriptions or {},
+        "projects": projects or [],
         "sync_direction": sync_direction,
         "session_limit": session_limit,
         "updated_at": _now_iso(),

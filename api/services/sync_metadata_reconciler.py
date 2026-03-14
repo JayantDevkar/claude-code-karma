@@ -94,11 +94,59 @@ def reconcile_metadata_folder(config, conn, team_name: str) -> dict:
             )
             stats["members_updated"] += 1
 
+    # Discover projects from peer metadata — joiners learn about the
+    # team's project list before accepting any folders.  This fixes
+    # broken project links and wrong from_team attribution in pending UI.
+    _reconcile_projects_from_metadata(conn, team_name, member_states, config.member_tag)
+
     # Auto-share project folders with newly discovered members
     if stats["new_device_ids"]:
         _auto_share_with_new_members(config, conn, team_name, stats["new_device_ids"])
 
     return stats
+
+
+def _reconcile_projects_from_metadata(
+    conn, team_name: str, member_states: list[dict], own_member_tag: str,
+) -> int:
+    """Discover team projects from peer metadata and populate sync_team_projects.
+
+    Each member publishes their known project list in their metadata state
+    file.  We union all peers' project lists and upsert any projects missing
+    from our local ``sync_team_projects`` table.  This allows joiners to
+    learn about a team's projects before accepting any folders, fixing:
+    - Broken project links on the team page
+    - Wrong ``from_team`` attribution in the pending UI
+    - Missing project labels for incoming session offers
+    """
+    from db.sync_queries import list_team_projects, upsert_team_project
+
+    existing = {p["project_encoded_name"] for p in list_team_projects(conn, team_name)}
+    added = 0
+
+    for state in member_states:
+        mtag = state.get("member_tag", "")
+        if mtag == own_member_tag:
+            continue
+
+        for proj in state.get("projects", []):
+            encoded = proj.get("encoded_name", "")
+            if not encoded or encoded in existing:
+                continue
+
+            upsert_team_project(
+                conn, team_name, encoded,
+                git_identity=proj.get("git_identity") or None,
+                folder_suffix=proj.get("folder_suffix") or None,
+            )
+            existing.add(encoded)
+            added += 1
+            logger.info(
+                "Discovered project %s in team %s from peer %s",
+                encoded, team_name, mtag,
+            )
+
+    return added
 
 
 def _auto_share_with_new_members(config, conn, team_name: str, device_ids: list[str]) -> None:
