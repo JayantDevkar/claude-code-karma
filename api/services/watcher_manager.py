@@ -163,6 +163,23 @@ class MetadataReconciliationTimer:
                 result["members_added"], result["self_removed_teams"],
             )
 
+        # Auto-accept pending folders from known team members.
+        # This eliminates the manual "Accept" step for folders offered when
+        # a new member is added or a new project is shared by a teammate.
+        self._auto_accept_pending_folders(config, conn)
+
+    def _auto_accept_pending_folders(self, config, conn):
+        """Accept pending Syncthing folder offers from known team members."""
+        try:
+            from services.sync_identity import get_proxy
+
+            proxy = get_proxy()
+            accepted = proxy.accept_pending_folders(config, conn)
+            if accepted:
+                logger.info("Auto-accepted %d pending folder(s) from known team members", accepted)
+        except Exception as e:
+            logger.debug("Auto-accept pending folders skipped: %s", e)
+
     def stop(self):
         self._running = False
         if self._timer is not None:

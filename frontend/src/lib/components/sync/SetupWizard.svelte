@@ -17,7 +17,9 @@
 		Info,
 		Monitor,
 		Cpu,
-		Globe
+		Globe,
+		Users,
+		FolderOpen
 	} from 'lucide-svelte';
 	import type { SyncDetect, SyncStatusResponse } from '$lib/api-types';
 	import { API_BASE } from '$lib/config';
@@ -365,6 +367,170 @@
 							Each device gets a unique <strong class="text-[var(--text-primary)]">Device ID</strong> (a cryptographic fingerprint). To pair devices, you exchange Device IDs — no accounts, no passwords. Only devices you've explicitly paired can connect and sync data.
 						</p>
 					</div>
+				</div>
+
+				<!-- Three core concepts -->
+				<div class="border-t border-[var(--border)] pt-4 space-y-3">
+					<p class="text-xs font-semibold text-[var(--text-primary)] uppercase tracking-wide">Three things to know</p>
+					<p class="text-[11px] text-[var(--text-secondary)] leading-relaxed">
+						Everything in Karma sync is built on three simple ideas.
+					</p>
+
+					<div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+						<!-- Member card -->
+						<div class="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-base)] p-3 space-y-2">
+							<div class="flex items-center gap-2">
+								<div class="w-6 h-6 rounded-full bg-[var(--accent)]/10 flex items-center justify-center shrink-0">
+									<Fingerprint size={12} class="text-[var(--accent)]" />
+								</div>
+								<span class="text-xs font-semibold text-[var(--text-primary)]">You (Member)</span>
+							</div>
+							<p class="text-[11px] text-[var(--text-secondary)] leading-relaxed">
+								Each person + machine is a unique member.
+							</p>
+							<div class="rounded bg-[var(--bg-muted)] px-2 py-1.5">
+								<code class="text-[10px] font-mono text-[var(--text-muted)]">
+									<span class="text-[var(--accent)]">jayant</span>.<span class="text-[var(--success)]">macbook</span>
+								</code>
+								<div class="flex items-center gap-1 mt-1">
+									<span class="text-[9px] text-[var(--accent)]">you</span>
+									<span class="text-[9px] text-[var(--text-faint)]">+</span>
+									<span class="text-[9px] text-[var(--success)]">your machine</span>
+								</div>
+							</div>
+						</div>
+
+						<!-- Team card -->
+						<div class="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-base)] p-3 space-y-2">
+							<div class="flex items-center gap-2">
+								<div class="w-6 h-6 rounded-full bg-[var(--info)]/10 flex items-center justify-center shrink-0">
+									<Users size={12} class="text-[var(--info)]" />
+								</div>
+								<span class="text-xs font-semibold text-[var(--text-primary)]">Team</span>
+							</div>
+							<p class="text-[11px] text-[var(--text-secondary)] leading-relaxed">
+								A group of members who can see each other's sessions.
+							</p>
+							<div class="rounded bg-[var(--bg-muted)] px-2 py-1.5 space-y-0.5">
+								<code class="text-[10px] font-mono text-[var(--text-muted)]">backend-crew</code>
+								<div class="flex flex-wrap gap-1 mt-1">
+									<span class="text-[9px] bg-[var(--accent)]/10 text-[var(--accent)] px-1 rounded">jayant</span>
+									<span class="text-[9px] bg-[var(--info)]/10 text-[var(--info)] px-1 rounded">ayush</span>
+									<span class="text-[9px] bg-[var(--success)]/10 text-[var(--success)] px-1 rounded">priya</span>
+								</div>
+							</div>
+						</div>
+
+						<!-- Project card -->
+						<div class="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-base)] p-3 space-y-2">
+							<div class="flex items-center gap-2">
+								<div class="w-6 h-6 rounded-full bg-[var(--success)]/10 flex items-center justify-center shrink-0">
+									<FolderOpen size={12} class="text-[var(--success)]" />
+								</div>
+								<span class="text-xs font-semibold text-[var(--text-primary)]">Project</span>
+							</div>
+							<p class="text-[11px] text-[var(--text-secondary)] leading-relaxed">
+								You pick which projects to share with each team.
+							</p>
+							<div class="rounded bg-[var(--bg-muted)] px-2 py-1.5 space-y-0.5">
+								<code class="text-[10px] font-mono text-[var(--text-muted)]">org/claude-karma</code>
+								<div class="mt-1">
+									<span class="text-[9px] text-[var(--text-faint)]">shared with backend-crew</span>
+								</div>
+							</div>
+						</div>
+					</div>
+				</div>
+
+				<!-- Visual data flow diagram -->
+				<div class="border-t border-[var(--border)] pt-4 space-y-3">
+					<p class="text-xs font-semibold text-[var(--text-primary)] uppercase tracking-wide">How sessions move</p>
+
+					<div class="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-base)] p-4">
+						<!-- Two machines with arrow -->
+						<div class="flex items-stretch gap-2 sm:gap-3">
+							<!-- Your machine -->
+							<div class="flex-1 rounded-[var(--radius-md)] border border-[var(--accent)]/30 bg-[var(--accent)]/5 p-3 space-y-2 min-w-0">
+								<div class="flex items-center gap-1.5">
+									<Monitor size={12} class="text-[var(--accent)] shrink-0" />
+									<span class="text-[11px] font-semibold text-[var(--accent)] truncate">Your Machine</span>
+								</div>
+								<div class="space-y-1.5">
+									<div class="flex items-center gap-1.5">
+										<span class="w-1.5 h-1.5 rounded-full bg-[var(--success)] shrink-0"></span>
+										<span class="text-[10px] text-[var(--text-secondary)]">Use Claude Code</span>
+									</div>
+									<div class="flex items-center gap-1.5">
+										<span class="w-1.5 h-1.5 rounded-full bg-[var(--success)] shrink-0"></span>
+										<span class="text-[10px] text-[var(--text-secondary)]">Session saved</span>
+									</div>
+									<div class="flex items-center gap-1.5">
+										<span class="w-1.5 h-1.5 rounded-full bg-[var(--success)] shrink-0"></span>
+										<span class="text-[10px] text-[var(--text-secondary)]">Auto-packaged</span>
+									</div>
+									<div class="rounded bg-[var(--accent)]/10 px-2 py-1 mt-1">
+										<span class="text-[9px] font-mono text-[var(--accent)]">YOUR OUTBOX</span>
+									</div>
+								</div>
+							</div>
+
+							<!-- Sync arrows -->
+							<div class="flex flex-col items-center justify-center gap-1 shrink-0 py-4">
+								<div class="flex items-center gap-0.5">
+									<div class="w-4 sm:w-8 h-px bg-[var(--success)]"></div>
+									<ArrowRight size={10} class="text-[var(--success)]" />
+								</div>
+								<div class="px-1.5 py-0.5 rounded bg-[var(--success)]/10">
+									<span class="text-[8px] font-semibold text-[var(--success)] uppercase whitespace-nowrap">Encrypted</span>
+								</div>
+								<div class="flex items-center gap-0.5">
+									<ArrowLeft size={10} class="text-[var(--info)]" />
+									<div class="w-4 sm:w-8 h-px bg-[var(--info)]"></div>
+								</div>
+							</div>
+
+							<!-- Teammate's machine -->
+							<div class="flex-1 rounded-[var(--radius-md)] border border-[var(--info)]/30 bg-[var(--info)]/5 p-3 space-y-2 min-w-0">
+								<div class="flex items-center gap-1.5">
+									<Monitor size={12} class="text-[var(--info)] shrink-0" />
+									<span class="text-[11px] font-semibold text-[var(--info)] truncate">Teammate's Machine</span>
+								</div>
+								<div class="space-y-1.5">
+									<div class="rounded bg-[var(--info)]/10 px-2 py-1">
+										<span class="text-[9px] font-mono text-[var(--info)]">THEIR INBOX</span>
+									</div>
+									<div class="flex items-center gap-1.5">
+										<span class="w-1.5 h-1.5 rounded-full bg-[var(--success)] shrink-0"></span>
+										<span class="text-[10px] text-[var(--text-secondary)]">Session appears</span>
+									</div>
+									<div class="flex items-center gap-1.5">
+										<span class="w-1.5 h-1.5 rounded-full bg-[var(--success)] shrink-0"></span>
+										<span class="text-[10px] text-[var(--text-secondary)]">Visible in Karma</span>
+									</div>
+									<div class="flex items-center gap-1.5">
+										<span class="w-1.5 h-1.5 rounded-full bg-[var(--info)] shrink-0"></span>
+										<span class="text-[10px] text-[var(--text-secondary)]">Works both ways</span>
+									</div>
+								</div>
+							</div>
+						</div>
+
+						<!-- Caption -->
+						<p class="text-[10px] text-[var(--text-muted)] text-center mt-3 leading-relaxed">
+							Your outbox and their inbox are the <strong class="text-[var(--text-secondary)]">same folder</strong>.
+							You send; they receive. No copying, no uploading — sessions just appear.
+						</p>
+					</div>
+				</div>
+
+				<!-- Learn more link + CTA -->
+				<div class="flex items-center justify-between pt-1">
+					<a
+						href="/about"
+						class="text-[11px] text-[var(--accent)] hover:underline"
+					>
+						Read the full sync guide &rarr;
+					</a>
 				</div>
 
 				<div class="flex items-center gap-3">

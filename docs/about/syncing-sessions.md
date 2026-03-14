@@ -1,263 +1,243 @@
-# Syncing Sessions with Your Team
+# Syncing Sessions
 
-How to share Claude Code sessions across machines and teams.
+Share Claude Code sessions across your machines and with your team — no cloud, no accounts, no servers.
 
-## Why sync sessions?
+## The problem
 
-Claude Code Karma reads from `~/.claude/` on your local machine. If you have freelancers or team members, each person has their own machine with their own `~/.claude/` directory.
+Claude Code Karma reads from `~/.claude/` on your local machine. That's great for solo use, but the moment you have two machines or a teammate, each person's sessions are invisible to everyone else.
 
-Syncing solves this. Freelancers share their sessions with you automatically. You see everything in one unified dashboard. They control what gets shared.
+You lose context. You duplicate work. You can't learn from how your teammates use Claude.
 
-## How Syncthing sync works
+## The solution: peer-to-peer sync
 
-Syncthing is a tool that automatically syncs files between machines. Once set up, new sessions are packaged and synced without any manual commands.
+We use **Syncthing** — an open-source, encrypted, peer-to-peer file sync tool. There's no central server. Sessions travel directly from one machine to another. Your data stays entirely under your control.
 
-**The flow:**
-1. Claude Code writes a new session JSONL file
-2. `karma watch` detects the new file
-3. Sessions are packaged into `~/.claude_karma/remote-sessions/`
-4. Syncthing auto-syncs to other team members' machines (encrypted)
-5. Their dashboards show the sessions
+Think of it like AirDrop for Claude sessions, but it works across the internet too.
 
-No manual commands needed. It just happens.
+## Three concepts you need to know
 
-## Setup
+Everything in Karma sync is built on three ideas: **you**, **teams**, and **projects**.
 
-### Prerequisites
+### 1. You (the Member)
 
-Everyone needs [Syncthing](https://syncthing.net/downloads/) installed.
+Every person + machine combination is a unique **member**. Your identity looks like this:
 
-### Step 1: Initialize Karma
-
-Everyone runs this once:
-
-```bash
-karma init
+```
+jayant.macbook
+  ↑        ↑
+  you    your machine
 ```
 
-You'll be prompted for your user ID (e.g., your name). Karma checks if Syncthing is running and reads your device ID.
+Why per-machine? Because your sessions are machine-specific. If you're "jayant" on a MacBook and also "jayant" on a desktop, those are two separate members with separate session outboxes. Same person, different machines, different sessions.
 
-You'll see:
+You choose your `user_id` once (your name, no dots). The `machine_tag` is auto-detected from your hostname.
+
+### 2. Teams (who can see your stuff)
+
+A **team** is a group of members who can see each other's sessions. That's all it is — an access control list.
+
 ```
-Your Syncthing Device ID: AAAA-BBBB-CCCC-DDDD-EEEE-FFFF-GGGG-HHHH
-```
-
-Save this. You'll share it with your team.
-
-### Step 2: Create a Team
-
-The project owner creates a team:
-
-```bash
-karma team create alpha
+Team "backend-crew"
+├── jayant.macbook    (creator)
+├── ayush.laptop
+└── priya.desktop
 ```
 
-Then adds the freelancer by device ID:
+Teams don't own data. They don't store anything. They just answer the question: "who should get a copy of my sessions?"
 
-```bash
-karma team add alice XXXX-YYYY-ZZZZ-WWWW-...
+You can be in multiple teams. A freelancer might be in a team with Client A and a separate team with Client B. Sessions shared with Team A are invisible to Team B.
+
+**Creator privilege:** only the person who created the team can remove members. This prevents accidental or unauthorized removals.
+
+### 3. Projects (what gets shared)
+
+You choose which **projects** to share with each team. A project is just a directory you've used Claude Code in — Karma identifies it by its git remote (like `org/repo`).
+
+```
+Team "backend-crew" shares:
+├── claude-karma     (jayantdevkar/claude-karma)
+└── api-gateway      (acme/api-gateway)
 ```
 
-The freelancer does the same on their machine:
+Sharing is per-project, per-team. You might share `claude-karma` with your team but keep `personal-notes` private. You're always in control of what gets shared.
 
-```bash
-karma team add owner AAAA-BBBB-CCCC-DDDD-...
+## How sessions flow
+
+Here's what happens when you use Claude Code with sync enabled:
+
+```
+  YOUR MACHINE                                    TEAMMATE'S MACHINE
+ ┌─────────────────────┐                          ┌─────────────────────┐
+ │                     │                          │                     │
+ │  You use Claude     │                          │                     │
+ │  Code on a project  │                          │                     │
+ │        │            │                          │                     │
+ │        ▼            │                          │                     │
+ │  Session saved to   │                          │                     │
+ │  ~/.claude/         │                          │                     │
+ │        │            │                          │                     │
+ │        ▼            │                          │                     │
+ │  Watcher detects    │                          │                     │
+ │  the new session    │                          │                     │
+ │        │            │                          │                     │
+ │        ▼            │      Syncthing P2P       │                     │
+ │  Packaged into      │      (encrypted,         │  Session appears    │
+ │  YOUR OUTBOX     ───┼──── automatic) ──────────┼──► in THEIR INBOX   │
+ │                     │                          │        │            │
+ │                     │                          │        ▼            │
+ │                     │                          │  Shows up in their  │
+ │                     │                          │  Karma dashboard    │
+ │                     │                          │                     │
+ │  Their session      │      Syncthing P2P       │  They use Claude    │
+ │  appears in     ◄───┼──── (encrypted,  ◄───────┼── Code too, session │
+ │  YOUR INBOX         │      automatic)          │  goes to THEIR      │
+ │        │            │                          │  OUTBOX             │
+ │        ▼            │                          │                     │
+ │  Shows up in your   │                          │                     │
+ │  Karma dashboard    │                          │                     │
+ │                     │                          │                     │
+ └─────────────────────┘                          └─────────────────────┘
 ```
 
-(Use the owner's device ID from their `karma init` output.)
+**Key insight:** your outbox and their inbox are the *same folder*. You create it as "send-only"; they add it as "receive-only". Syncthing handles the rest. No copying, no uploading — files just appear.
 
-### Step 3: Register Projects
+## The folder model
 
-The freelancer registers the project they're working on:
+Karma creates three types of Syncthing folders automatically. You never have to manage these — they're invisible plumbing.
 
-```bash
-karma project add acme-app --path /Users/alice/work/acme-app --team alpha
+| Type | What it does | Example |
+|------|-------------|---------|
+| **Outbox** | Your sessions → teammates (send-only) | `karma-out--jayant.macbook--org-repo` |
+| **Inbox** | Teammate's sessions → you (receive-only) | `karma-out--ayush.laptop--org-repo` |
+| **Metadata** | Team member list & signals (shared) | `karma-meta--backend-crew` |
+
+Notice that "outbox" and "inbox" have the same naming pattern (`karma-out--{member}--{project}`). That's because they're the same folder seen from different sides. Jayant's outbox IS ayush's inbox for that project.
+
+The **metadata folder** is how members discover each other. Each device writes a small JSON file with its identity. When a new member joins, everyone else picks up their info from the metadata folder automatically — no central coordinator needed.
+
+## Multiple teams, one outbox
+
+Here's where it gets clever. If you're in two teams that both share the same project, Karma doesn't create two outboxes. It creates ONE outbox and expands the device list:
+
+```
+Team A shares "claude-karma":  members = {jayant, ayush, priya}
+Team B shares "claude-karma":  members = {jayant, bob, charlie}
+                                          ↓
+Jayant's outbox device list = {ayush, priya, bob, charlie}
 ```
 
-### Step 4: Start the Watcher
+This is the **"project channels" model**. Sessions belong to projects, not teams. Teams just decide who has access. This avoids duplicating session data and keeps things efficient.
 
-The freelancer starts the watcher:
+When jayant leaves Team B, only Team B's devices (bob, charlie) are removed from the outbox. Team A's devices stay. No data is lost.
 
-```bash
-karma watch --team alpha
+## What gets synced (and what doesn't)
+
+**Synced:**
+- Session conversations and messages
+- Tool usage and token statistics
+- Session metadata and timelines
+- Subagent activity
+
+**Never synced:**
+- Your source code
+- Secrets, credentials, or `.env` files
+- Files outside `~/.claude/projects/`
+- Anything from projects you haven't explicitly shared
+
+## The lifecycle
+
+### Getting started (one-time)
+
+```
+1. Install Syncthing        →  brew install syncthing (macOS)
+2. Open Karma → /sync       →  The setup wizard walks you through it
+3. Pick your user_id        →  Your name, like "jayant"
+4. Machine tag auto-detects →  From your hostname, like "macbook"
 ```
 
-This runs in the foreground. Sessions sync automatically while it's running. Press Ctrl+C to stop.
+### Creating a team
 
-## Daily workflow
-
-### For the freelancer
-
-Start the watcher when you begin working:
-
-```bash
-karma watch --team alpha
+```
+1. Create team              →  Give it a name like "backend-crew"
+2. Get a join code          →  A short code like "backend-crew:jayant:DEVICE-ID"
+3. Share the code           →  Send it to your teammate via Slack, email, anything
 ```
 
-Keep it running in a terminal. Sessions sync automatically as you work. Press Ctrl+C when done.
+### Joining a team
 
-### For the owner
-
-Nothing to do. Sessions appear automatically in your Karma dashboard on the **Team** page.
-
-Check status anytime:
-
-```bash
-karma status
 ```
+1. Enter the join code      →  Paste what your teammate sent you
+2. Devices pair             →  Automatic, encrypted handshake
+3. Pick projects to share   →  Select which local projects to sync
+4. Sessions start flowing   →  Within seconds on LAN, minutes over internet
+```
+
+### Day to day
+
+Nothing. It just works. Karma's watcher runs in the background, packaging new sessions and syncing them automatically. Sessions from teammates appear in your dashboard.
+
+## Settings you can tweak
+
+| Setting | What it does | Default |
+|---------|-------------|---------|
+| **Sync direction** | Send only, receive only, both, or none | Both |
+| **Session limit** | Sync all sessions, recent 100, or recent 10 | All |
+| **Auto-accept members** | Automatically accept new team members | Off |
+| **Project subscription** | Opt out of receiving specific projects | Everything |
+
+Settings cascade: you can set them per-member, per-team, or per-device. The most specific setting wins.
+
+## Security model
+
+### In transit
+All transfers use **TLS 1.3** with mutual certificate authentication. Only devices you've explicitly paired can connect. Even Syncthing's relay servers (used when devices can't connect directly) see only encrypted blobs.
+
+### At rest
+Session files are stored unencrypted on disk. Protect your `~/.claude_karma/` directory with standard filesystem permissions (mode 0700 by default).
+
+### Access control
+- Only the team **creator** can remove members
+- Removed members are notified via a removal signal in the metadata folder
+- Removed members auto-leave and their data is cleaned up
+- You can reject (unsubscribe from) specific projects per team
+
+### What Karma manages for you
+- Device pairing and folder creation
+- Member discovery via metadata folders
+- Automatic cleanup when leaving teams
+- Folder device lists (who can sync what)
+
+You never touch Syncthing directly — Karma handles all of it through Syncthing's REST API.
 
 ## Network setup
 
-By default, Syncthing only works on the same local network (LAN).
+### Same network (LAN)
+Works out of the box. Syncthing discovers peers automatically. Sync is near-instant.
 
-### Local teams (same network)
+### Different networks (internet)
+Three options:
 
-Syncthing works out of the box.
-
-### Remote teams (different networks)
-
-**Option A: Open a port**
-
-Open port 22000 on both machines and give Syncthing the public IP. Syncthing connects directly.
-
-**Option B: Use a VPN**
-
-Put everyone on a VPN (Tailscale, WireGuard, etc). Syncthing discovers peers over the VPN.
-
-**Option C: Use Syncthing relays**
-
-Enable Syncthing relays. Data is end-to-end encrypted; relays can't read it. Go to `localhost:8384` (Syncthing's UI) and enable relays in Settings.
-
-## CLI Reference
-
-Install the CLI first:
-
-```bash
-pip install -e cli/karma/
-```
-
-### Initialization
-
-| Command | What |
-|---------|------|
-| `karma init` | Initialize on this machine |
-
-### Teams
-
-| Command | What |
-|---------|------|
-| `karma team create <name>` | Create a team |
-| `karma team add <name> <device-id> --team <team>` | Add a member |
-| `karma team list` | List teams and members |
-| `karma team remove <name> --team <team>` | Remove a member |
-| `karma team leave <name>` | Leave and clean up |
-
-### Projects
-
-| Command | What |
-|---------|------|
-| `karma project add <name> --path <path> --team <team>` | Register a project |
-| `karma project list` | List registered projects |
-| `karma project remove <name>` | Stop syncing |
-
-### Syncing
-
-| Command | What |
-|---------|------|
-| `karma watch --team <team>` | Start auto-sync (keep running) |
-| `karma accept` | Accept pending folder offers |
-| `karma ls` | List remote sessions |
-| `karma status` | Check sync status |
-
-## Configuration
-
-All sync config is stored at `~/.claude_karma/sync-config.json`:
-
-```json
-{
-  "user_id": "alice",
-  "machine_id": "alice-macbook",
-  "teams": {
-    "alpha": {
-      "projects": {
-        "acme-app": {
-          "path": "/Users/alice/work/acme-app"
-        }
-      },
-      "syncthing_members": {
-        "owner": {
-          "syncthing_device_id": "AAAA-BBBB-..."
-        }
-      }
-    }
-  },
-  "syncthing": {
-    "api_url": "http://127.0.0.1:8384",
-    "api_key": "...",
-    "device_id": "AAAA-BBBB-..."
-  }
-}
-```
-
-This file is private (mode 0600). It's created during `karma init`.
-
-## Security
-
-### What gets synced
-
-Only projects you explicitly register with `karma project add`. Everything else stays local.
-
-### In transit
-
-Syncthing uses TLS 1.3 with certificate authentication. All data is encrypted.
-
-### At rest
-
-Syncthing doesn't encrypt data at rest. Keep your `remote-sessions/` directory protected. Session files may contain sensitive code.
-
-## Onboarding checklist
-
-### For the owner
-
-- [ ] Install Syncthing
-- [ ] Run `karma init`
-- [ ] Create a team: `karma team create alpha`
-- [ ] Share your device ID with the freelancer
-- [ ] Add the freelancer: `karma team add alice <device-id>`
-- [ ] Sessions appear in the **Team** page
-
-### For the freelancer
-
-- [ ] Install Syncthing
-- [ ] Run `karma init`
-- [ ] Add the owner: `karma team add owner <device-id>`
-- [ ] Register your project: `karma project add app --path /work/app --team alpha`
-- [ ] Start the watcher: `karma watch --team alpha`
-- [ ] Keep it running while you work
-
-That's it. No manual commands. Sessions sync automatically.
+1. **Syncthing relays** (easiest) — Enabled by default. Data is end-to-end encrypted; relays can't read it. Slightly slower.
+2. **VPN** (Tailscale, WireGuard) — Put everyone on a VPN. Syncthing discovers peers over the VPN as if they were on the same LAN.
+3. **Port forwarding** — Open port 22000. Syncthing connects directly. Fastest, but requires router config.
 
 ## Troubleshooting
 
-**"Team not found" error**
+**Sessions not appearing?**
+- Check that the watcher is running (`/sync` page shows status)
+- Verify both devices are online in Syncthing (`localhost:8384`)
+- Make sure the project is shared with the team
 
-Make sure the team exists. Check with `karma team list`. If it doesn't exist, run `karma team create <name>`.
+**"Syncthing not detected"?**
+- Install Syncthing and start it as a background service
+- macOS: `brew install syncthing && brew services start syncthing`
+- Linux: `sudo apt install syncthing && systemctl --user enable --now syncthing`
 
-**"Syncthing not running" error**
+**Teammate's sessions not syncing?**
+- Both machines need the project shared with the same team
+- Check pending folders on the `/sync` page — you may need to accept new folders
+- Verify network connectivity between machines
 
-Start Syncthing. It runs as a background service or tray application depending on your OS.
-
-**Sessions not syncing**
-
-1. Make sure `karma watch` is running: `karma status`
-2. Check Syncthing is running: `localhost:8384`
-3. Verify folders are paired (both devices should see them in Syncthing UI)
-4. Check network connectivity between machines
-
-**"Project not found" error**
-
-Register the project first: `karma project add <name> --path <path> --team <team>`
-
-**Syncthing folders not appearing**
-
-Run `karma accept` to accept pending folder offers from team members.
+**Want to stop sharing a project?**
+- Remove the project from the team on the `/sync` page
+- Sessions already synced remain on teammates' machines (they're copies)
