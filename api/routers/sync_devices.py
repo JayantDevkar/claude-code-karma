@@ -268,6 +268,43 @@ async def sync_accept_pending_device(device_id: str, req: AcceptPendingDeviceReq
         logger.exception("Failed to pair device %s: %s", device_id[:20], e)
         raise HTTPException(500, "Failed to pair device")
 
+    # 1.5. Now that the device is paired, Syncthing may reveal its pending
+    # folder offers (handshake folders).  Re-check to get the correct
+    # member_tag — the pre-pairing check often fails because Syncthing
+    # doesn't show folder offers from unpaired devices.
+    if not karma_folder_ids:
+        try:
+            post_pair_pending = await run_sync(proxy.get_pending_folders)
+            for folder_id, info in post_pair_pending.items():
+                if not is_karma_folder(folder_id):
+                    continue
+                if device_id in info.get("offeredBy", {}):
+                    karma_folder_ids.append(folder_id)
+            if karma_folder_ids:
+                real_name = extract_username_from_folder_ids(karma_folder_ids)
+                if real_name and real_name != member_name:
+                    logger.info(
+                        "Post-pair identity correction: %s → %s for device %s",
+                        member_name, real_name, device_id[:20],
+                    )
+                    member_name = real_name
+        except Exception as e:
+            logger.debug("Post-pair pending folder check failed: %s", e)
+
+    # Also try metadata (may have synced by now)
+    if member_name == _sanitize_device_name(device_info.get("name", "")):
+        try:
+            from services.sync_folders import resolve_member_tag_from_metadata
+            resolved = resolve_member_tag_from_metadata(team_name, device_id)
+            if resolved:
+                logger.info(
+                    "Metadata identity correction: %s → %s for device %s",
+                    member_name, resolved, device_id[:20],
+                )
+                member_name = resolved
+        except Exception as e:
+            logger.debug("Metadata identity check failed: %s", e)
+
     # 2. Add as team member (clear any previous removal — explicit user action)
     clear_member_removal(conn, team_name, device_id)
     # Parse member_tag if the resolved name contains one (e.g. "jayant.mac-mini")

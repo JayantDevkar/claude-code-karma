@@ -16,6 +16,7 @@ from services.sync_identity import (
     _trigger_remote_reindex_bg, _compute_proj_suffix,
 )
 from services.sync_folders import friendly_project_label
+from services.sync_identity_match import build_own_names
 from services.sync_reconciliation import (
     mesh_pair_from_metadata,
     reconcile_pending_handshakes,
@@ -102,19 +103,15 @@ async def sync_pending() -> Any:
     except Exception as e:
         logger.debug("Failed to filter configured folders from pending: %s", e)
 
-    own_user_id = config.user_id if config else None
-    own_machine_id = config.machine_id if config else None
-    own_member_tag = config.member_tag if config else None
-
-    # Build set of names that identify THIS machine (user_id, machine_id, member_tag, etc.)
-    # The remote leader may have used any of these when creating our outbox folder.
-    own_names = set()
-    if own_user_id:
-        own_names.add(own_user_id)
-    if own_machine_id:
-        own_names.add(own_machine_id)
-    if own_member_tag:
-        own_names.add(own_member_tag)
+    # Build set of names that identify THIS machine.  Includes sanitized
+    # hostname variants so we recognise our own outbox even when the remote
+    # leader fell through to the _sanitize_device_name fallback.
+    own_names = build_own_names(
+        user_id=config.user_id if config else None,
+        machine_id=config.machine_id if config else None,
+        machine_tag=config.machine_tag if config else None,
+        member_tag=config.member_tag if config else None,
+    )
 
     def _is_own_outbox(folder_id: str) -> bool:
         """Check if folder is our own outbox (leader may have used user_id OR machine_id)."""
