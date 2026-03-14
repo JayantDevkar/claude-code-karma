@@ -45,6 +45,25 @@ async def sync_pending() -> Any:
     except Exception:
         return {"pending": []}
 
+    # Discover projects from peer metadata — ensures sync_team_projects is
+    # populated before the from_team correction loop below.  Without this,
+    # joiners see wrong team attribution until the 60s timer fires.
+    # Lightweight: only file reads + DB writes, no Syncthing API calls.
+    try:
+        if config:
+            from karma.config import KARMA_BASE
+            from db.sync_queries import list_teams
+            from services.sync_metadata import read_all_member_states
+            from services.sync_metadata_reconciler import _reconcile_projects_from_metadata
+
+            for team in list_teams(conn):
+                meta_dir = KARMA_BASE / "metadata-folders" / team["name"]
+                if meta_dir.exists():
+                    states = read_all_member_states(meta_dir)
+                    _reconcile_projects_from_metadata(conn, team["name"], states, config.member_tag)
+    except Exception as e:
+        logger.debug("Project reconciliation from metadata failed: %s", e)
+
     # Discover and pair with peers via metadata folders (v3 explicit mesh).
     # Must run before get_pending_folders_for_ui so newly paired devices'
     # pending folders become visible.
