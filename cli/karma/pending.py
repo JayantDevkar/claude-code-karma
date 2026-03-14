@@ -174,6 +174,20 @@ def _handle_peer_outbox(
 
     if matched_project:
         encoded = matched_project["project_encoded_name"]
+        # The matched record may contain a REMOTE peer's encoded_name
+        # (populated by _reconcile_projects_from_metadata from their
+        # metadata state file).  Always resolve to the correct LOCAL
+        # encoded_name so the inbox directory matches what
+        # list_remote_sessions_for_project expects.
+        try:
+            resolved = resolve_local_project(conn, team_name, suffix)
+            if resolved:
+                r_encoded, _, _ = resolved
+                if r_encoded != encoded:
+                    click.echo(f"  Resolved project '{encoded}' -> '{r_encoded}'")
+                    encoded = r_encoded
+        except Exception as e:
+            click.echo(f"  Warning: project resolution failed for '{suffix}': {e}")
         inbox_path = str(KARMA_BASE / "remote-sessions" / sender_name / encoded)
     else:
         # Auto-create a sync_team_projects record
