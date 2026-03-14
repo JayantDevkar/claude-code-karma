@@ -105,40 +105,56 @@
 		}
 	}
 
-	async function acceptFolder(folderId: string) {
-		folderActing = { ...folderActing, [folderId]: 'accepting' };
+	async function acceptFolder(folderId: string, allFolderIds?: string[]) {
+		const ids = allFolderIds ?? [folderId];
+		for (const id of ids) {
+			folderActing = { ...folderActing, [id]: 'accepting' };
+		}
 		try {
-			const res = await fetch(`${API_BASE}/sync/pending/accept/${encodeURIComponent(folderId)}`, { method: 'POST' });
-			if (res.ok) {
+			let anyFailed = false;
+			for (const id of ids) {
+				const res = await fetch(`${API_BASE}/sync/pending/accept/${encodeURIComponent(id)}`, { method: 'POST' });
+				if (!res.ok) anyFailed = true;
+			}
+			if (!anyFailed) {
 				await fetchTeamData();
 			} else {
-				folderActing = { ...folderActing, [folderId]: 'error' };
+				for (const id of ids) folderActing = { ...folderActing, [id]: 'error' };
 				return;
 			}
 		} catch {
-			folderActing = { ...folderActing, [folderId]: 'error' };
+			for (const id of ids) folderActing = { ...folderActing, [id]: 'error' };
 			return;
 		}
-		const { [folderId]: _, ...rest } = folderActing;
-		folderActing = rest;
+		const updated = { ...folderActing };
+		for (const id of ids) delete updated[id];
+		folderActing = updated;
 	}
 
-	async function rejectFolder(folderId: string) {
-		folderActing = { ...folderActing, [folderId]: 'rejecting' };
+	async function rejectFolder(folderId: string, allFolderIds?: string[]) {
+		const ids = allFolderIds ?? [folderId];
+		for (const id of ids) {
+			folderActing = { ...folderActing, [id]: 'rejecting' };
+		}
 		try {
-			const res = await fetch(`${API_BASE}/sync/pending/reject/${encodeURIComponent(folderId)}`, { method: 'POST' });
-			if (res.ok) {
+			let anyFailed = false;
+			for (const id of ids) {
+				const res = await fetch(`${API_BASE}/sync/pending/reject/${encodeURIComponent(id)}`, { method: 'POST' });
+				if (!res.ok) anyFailed = true;
+			}
+			if (!anyFailed) {
 				await fetchTeamData();
 			} else {
-				folderActing = { ...folderActing, [folderId]: 'error' };
+				for (const id of ids) folderActing = { ...folderActing, [id]: 'error' };
 				return;
 			}
 		} catch {
-			folderActing = { ...folderActing, [folderId]: 'error' };
+			for (const id of ids) folderActing = { ...folderActing, [id]: 'error' };
 			return;
 		}
-		const { [folderId]: _, ...rest } = folderActing;
-		folderActing = rest;
+		const updated = { ...folderActing };
+		for (const id of ids) delete updated[id];
+		folderActing = updated;
 	}
 
 	// Pending device requests
@@ -464,6 +480,8 @@
 				{#each pendingFolders as offer (offer.folder_id + ':' + offer.from_device)}
 					{@const acting = folderActing[offer.folder_id]}
 					{@const isOutbox = offer.folder_type === 'outbox'}
+					{@const deviceCount = offer.device_count ?? 1}
+					{@const allIds = offer.folder_ids ?? [offer.folder_id]}
 
 					<div class="flex items-center gap-4 px-5 py-4">
 						<!-- Folder icon -->
@@ -484,16 +502,24 @@
 							<p class="text-[11px] text-[var(--text-muted)] mt-0.5">
 								{#if isOutbox}
 									Start sending your sessions for this project
+								{:else if deviceCount > 1}
+									Receive sessions from <span class="font-medium text-[var(--text-secondary)]">{deviceCount} devices</span>
 								{:else}
 									Receive <span class="font-medium text-[var(--text-secondary)]">{offer.from_member}</span>'s sessions
 								{/if}
 							</p>
 						</div>
 
+						{#if deviceCount > 1}
+							<span class="flex items-center justify-center min-w-[20px] h-5 px-1.5 text-[10px] font-bold rounded-full bg-[var(--bg-muted)] text-[var(--text-secondary)]">
+								{deviceCount}x
+							</span>
+						{/if}
+
 						<!-- Actions -->
 						<div class="flex items-center gap-2 shrink-0">
 							<button
-								onclick={() => acceptFolder(offer.folder_id)}
+								onclick={() => acceptFolder(offer.folder_id, allIds)}
 								disabled={!!acting}
 								aria-label="Accept project share"
 								class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md
@@ -508,7 +534,7 @@
 								Accept
 							</button>
 							<button
-								onclick={() => rejectFolder(offer.folder_id)}
+								onclick={() => rejectFolder(offer.folder_id, allIds)}
 								disabled={!!acting}
 								aria-label="Reject project share"
 								class="px-2.5 py-1.5 text-xs font-medium rounded-md

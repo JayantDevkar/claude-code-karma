@@ -11,8 +11,13 @@ logger = logging.getLogger(__name__)
 def update_own_metadata(config, conn, team_name: str) -> None:
     """Write/update this device's state in the team metadata folder.
 
-    Reads current subscriptions and settings from DB, writes to the
-    metadata folder so other members can see our state.
+    Reads current subscriptions, projects, and settings from DB, writes
+    to the metadata folder so other members can see our state.
+
+    The ``projects`` field publishes the team's project list so joiners
+    can populate their local ``sync_team_projects`` before accepting
+    folders — fixing broken project links and wrong ``from_team``
+    attribution in the pending UI.
     """
     from karma.config import KARMA_BASE
     from db.sync_queries import list_team_projects, get_effective_setting
@@ -29,6 +34,21 @@ def update_own_metadata(config, conn, team_name: str) -> None:
         encoded = proj["project_encoded_name"]
         subscriptions[encoded] = True  # default opt-in
 
+    # Build project list for metadata publication (so joiners can discover projects)
+    from services.sync_identity import _compute_proj_suffix
+
+    projects_meta = []
+    for proj in projects:
+        suffix = _compute_proj_suffix(
+            proj.get("git_identity"), proj.get("path"), proj["project_encoded_name"]
+        )
+        projects_meta.append({
+            "encoded_name": proj["project_encoded_name"],
+            "folder_suffix": suffix,
+            "git_identity": proj.get("git_identity") or "",
+            "project_name": proj.get("project_name") or "",
+        })
+
     # Check rejected folders for opt-out
     try:
         rows = conn.execute(
@@ -37,7 +57,6 @@ def update_own_metadata(config, conn, team_name: str) -> None:
         ).fetchall()
         if rows:
             from services.folder_id import parse_outbox_id
-            from services.sync_identity import _compute_proj_suffix
 
             rejected_suffixes = set()
             for row in rows:
@@ -69,6 +88,7 @@ def update_own_metadata(config, conn, team_name: str) -> None:
         machine_id=config.machine_id,
         device_id=config.syncthing.device_id or "",
         subscriptions=subscriptions,
+        projects=projects_meta,
         sync_direction=sync_direction,
         session_limit=session_limit,
     )

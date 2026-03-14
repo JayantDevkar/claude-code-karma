@@ -199,6 +199,42 @@ async def sync_pending() -> Any:
             item["folder_type"] = "unknown"
             item["description"] = folder_id
 
+    # Deduplicate pending by project suffix — multiple devices offering
+    # the same project appear as a single entry with device_count.
+    # This prevents confusing UX where the same project appears N times
+    # (once per device) when a user has multiple machines.
+    grouped: dict[tuple[str, str], dict] = {}  # (suffix, folder_type) → merged item
+    ungroupable = []
+    for item in pending:
+        folder_id = item["folder_id"]
+        if is_outbox_folder(folder_id):
+            parsed = parse_outbox_id(folder_id)
+            if parsed:
+                _, suffix = parsed
+                key = (suffix, item.get("folder_type", "unknown"))
+                if key not in grouped:
+                    item["folder_ids"] = [folder_id]
+                    item["device_count"] = 1
+                    item["devices"] = [{
+                        "device_id": item.get("from_device"),
+                        "member": item.get("from_member"),
+                        "folder_id": folder_id,
+                    }]
+                    grouped[key] = item
+                else:
+                    existing = grouped[key]
+                    existing["folder_ids"].append(folder_id)
+                    existing["device_count"] += 1
+                    existing["devices"].append({
+                        "device_id": item.get("from_device"),
+                        "member": item.get("from_member"),
+                        "folder_id": folder_id,
+                    })
+                continue
+        ungroupable.append(item)
+
+    pending = list(grouped.values()) + ungroupable
+
     return {"pending": pending}
 
 
