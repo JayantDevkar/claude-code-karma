@@ -18,7 +18,7 @@ _HOSTNAME_SUFFIXES = (".local", ".lan", ".home", ".internal", ".localdomain")
 
 def _sanitize_hostname(raw: str) -> str:
     """Strip domain suffix and lowercase — mirrors sync_devices._sanitize_device_name."""
-    lower = raw.lower()
+    lower = raw.strip().lower()
     for suffix in _HOSTNAME_SUFFIXES:
         if lower.endswith(suffix):
             return lower[: -len(suffix)]

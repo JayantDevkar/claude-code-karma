@@ -17,7 +17,9 @@ from services.sync_identity import (
 from services.sync_folders import (
     auto_share_folders, ensure_handshake_folder,
     extract_username_from_folder_ids,
+    resolve_member_tag_from_metadata,
 )
+from services.sync_identity_match import _HOSTNAME_SUFFIXES
 from services.sync_reconciliation import (
     disable_all_introducers,
     mesh_pair_from_metadata,
@@ -27,9 +29,6 @@ from services.sync_reconciliation import (
 from services.syncthing_proxy import SyncthingNotRunning, run_sync
 
 logger = logging.getLogger(__name__)
-
-# Domain suffixes commonly seen on Syncthing device names (macOS/Linux).
-_HOSTNAME_SUFFIXES = (".local", ".lan", ".home", ".internal", ".localdomain")
 
 
 def _sanitize_device_name(raw: str) -> str:
@@ -294,7 +293,6 @@ async def sync_accept_pending_device(device_id: str, req: AcceptPendingDeviceReq
     # Also try metadata (may have synced by now)
     if member_name == _sanitize_device_name(device_info.get("name", "")):
         try:
-            from services.sync_folders import resolve_member_tag_from_metadata
             resolved = resolve_member_tag_from_metadata(team_name, device_id)
             if resolved:
                 logger.info(
