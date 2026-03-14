@@ -277,16 +277,24 @@ def upsert_team_project(
     Uses INSERT ... ON CONFLICT ... DO UPDATE for idempotent upsert
     (updates in-place without triggering FK cascade deletes).
     """
+    # Derive a display_name from git_identity (e.g. "owner/repo" → "repo")
+    display_name = None
+    if git_identity:
+        display_name = git_identity.split("/")[-1]
+
     # Ensure FK parent row exists in projects table
     conn.execute(
-        "INSERT OR IGNORE INTO projects (encoded_name, project_path, git_identity) VALUES (?, ?, ?)",
-        (project_encoded_name, path, git_identity),
+        "INSERT OR IGNORE INTO projects (encoded_name, project_path, git_identity, display_name)"
+        " VALUES (?, ?, ?, ?)",
+        (project_encoded_name, path, git_identity, display_name),
     )
-    # Update git_identity on the projects row if it was previously NULL
+    # Update git_identity and display_name on the projects row if previously NULL
     if git_identity:
         conn.execute(
-            "UPDATE projects SET git_identity = ? WHERE encoded_name = ? AND git_identity IS NULL",
-            (git_identity, project_encoded_name),
+            "UPDATE projects SET git_identity = ?"
+            ", display_name = COALESCE(display_name, ?)"
+            " WHERE encoded_name = ? AND git_identity IS NULL",
+            (git_identity, display_name, project_encoded_name),
         )
 
     # Upsert into sync_team_projects
