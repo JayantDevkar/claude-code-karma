@@ -178,13 +178,21 @@ def _find_cli_js_path() -> Path | None:
     if claude_bin:
         try:
             resolved = Path(claude_bin).resolve()
-            # npm global: .../bin/claude → .../lib/node_modules/@anthropic-ai/claude-code/cli.js
-            cli_js = resolved.parent.parent / "lib" / "node_modules" / "@anthropic-ai" / "claude-code" / "cli.js"
-            if cli_js.is_file():
-                return cli_js
-            # Direct symlink to cli.js (e.g., Homebrew)
-            if resolved.name == "cli.js" and resolved.is_file():
-                return resolved
+            if "Caskroom" in str(resolved):
+                logger.debug(
+                    "Homebrew Cask install detected (%s) — no cli.js available; "
+                    "using hardcoded command sets as fallback",
+                    resolved,
+                )
+                # Cask distributes a native binary, not Node.js — skip npm traversal
+            else:
+                # npm global: .../bin/claude → .../lib/node_modules/@anthropic-ai/claude-code/cli.js
+                cli_js = resolved.parent.parent / "lib" / "node_modules" / "@anthropic-ai" / "claude-code" / "cli.js"
+                if cli_js.is_file():
+                    return cli_js
+                # Direct symlink to cli.js (e.g., Homebrew)
+                if resolved.name == "cli.js" and resolved.is_file():
+                    return resolved
         except (OSError, ValueError):
             pass
 

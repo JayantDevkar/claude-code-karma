@@ -24,7 +24,7 @@ sys.path.insert(0, str(models_path))
 from http_caching import cacheable
 from models import AssistantMessage, Project, ToolUseBlock
 from schemas import DashboardStats, ProjectAnalytics, WorkModeDistribution
-from utils import list_all_projects, parse_timestamp_range
+from utils import list_all_projects, local_timezone, parse_timestamp_range
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -70,6 +70,18 @@ def _get_analytics_sqlite(
             except (ValueError, TypeError):
                 continue
 
+        # Per-user session counts
+        sessions_by_date_by_user: dict[str, Counter[str]] = {}
+        for entry in data.get("start_times_with_user", []):
+            user_id = entry["user_id"]
+            try:
+                ts = datetime.fromisoformat(entry["start_time"])
+                local_time = ts.astimezone(local_tz)
+                date_key = local_time.strftime("%Y-%m-%d")
+                sessions_by_date_by_user.setdefault(user_id, Counter())[date_key] += 1
+            except (ValueError, TypeError):
+                continue
+
         # Peak hours
         hour_totals = [(sum(temporal_heatmap[d][h] for d in range(7)), h) for h in range(24)]
         hour_totals.sort(reverse=True)
@@ -104,6 +116,8 @@ def _get_analytics_sqlite(
             time_distribution=time_distribution,
             work_mode_distribution=work_mode_distribution,
             projects_active=totals.get("projects_active", 0),
+            sessions_by_date_by_user={k: dict(v) for k, v in sessions_by_date_by_user.items()},
+            user_names=data.get("user_names", {}),
         )
     except sqlite3.Error as e:
         logger.warning("SQLite analytics query failed, falling back: %s", e)
@@ -639,6 +653,13 @@ def _get_stats_for_period(start_dt: datetime, end_dt: datetime) -> tuple:
     return sessions_count, projects_active, duration_seconds
 
 
+def _local_day_boundaries(date, local_tz: timezone) -> tuple[datetime, datetime]:
+    """Return UTC-converted start/end datetimes for a local calendar date."""
+    start = datetime.combine(date, datetime.min.time(), tzinfo=local_tz).astimezone(timezone.utc)
+    end = datetime.combine(date, datetime.max.time(), tzinfo=local_tz).astimezone(timezone.utc)
+    return start, end
+
+
 def _get_dashboard_stats_sqlite() -> DashboardStats | None:
     """SQLite fast path for dashboard stats."""
     try:
@@ -649,18 +670,17 @@ def _get_dashboard_stats_sqlite() -> DashboardStats | None:
             if conn is None:
                 return None
 
-            now_utc = datetime.now(timezone.utc)
-            today = now_utc.date()
+            local_tz = local_timezone()
+            now_local = datetime.now(timezone.utc).astimezone(local_tz)
+            today = now_local.date()
             yesterday = today - timedelta(days=1)
             days_since_monday = today.weekday()
             week_start = today - timedelta(days=days_since_monday)
 
-            today_start = datetime.combine(today, datetime.min.time(), tzinfo=timezone.utc)
-            today_end = datetime.combine(today, datetime.max.time(), tzinfo=timezone.utc)
-            yesterday_start = datetime.combine(yesterday, datetime.min.time(), tzinfo=timezone.utc)
-            yesterday_end = datetime.combine(yesterday, datetime.max.time(), tzinfo=timezone.utc)
-            week_start_dt = datetime.combine(week_start, datetime.min.time(), tzinfo=timezone.utc)
-            week_end_dt = datetime.combine(today, datetime.max.time(), tzinfo=timezone.utc)
+            today_start, today_end = _local_day_boundaries(today, local_tz)
+            yesterday_start, yesterday_end = _local_day_boundaries(yesterday, local_tz)
+            week_start_dt, _ = _local_day_boundaries(week_start, local_tz)
+            _, week_end_dt = _local_day_boundaries(today, local_tz)
 
             # Priority cascade: today → yesterday → this week
             for period, start, end, start_str, end_str in [
@@ -715,23 +735,20 @@ def get_dashboard_stats(request: Request):
     if sqlite_result is not None:
         return sqlite_result
 
-    now_utc = datetime.now(timezone.utc)
-    today = now_utc.date()
+    local_tz = local_timezone()
+    now_local = datetime.now(timezone.utc).astimezone(local_tz)
+    today = now_local.date()
     yesterday = today - timedelta(days=1)
 
     # Calculate start of week (Monday)
     days_since_monday = today.weekday()
     week_start = today - timedelta(days=days_since_monday)
 
-    # Make timezone-aware to match session timestamps
-    today_start = datetime.combine(today, datetime.min.time(), tzinfo=timezone.utc)
-    today_end = datetime.combine(today, datetime.max.time(), tzinfo=timezone.utc)
-
-    yesterday_start = datetime.combine(yesterday, datetime.min.time(), tzinfo=timezone.utc)
-    yesterday_end = datetime.combine(yesterday, datetime.max.time(), tzinfo=timezone.utc)
-
-    week_start_dt = datetime.combine(week_start, datetime.min.time(), tzinfo=timezone.utc)
-    week_end_dt = datetime.combine(today, datetime.max.time(), tzinfo=timezone.utc)
+    # Use local timezone boundaries converted to UTC for accurate filtering
+    today_start, today_end = _local_day_boundaries(today, local_tz)
+    yesterday_start, yesterday_end = _local_day_boundaries(yesterday, local_tz)
+    week_start_dt, _ = _local_day_boundaries(week_start, local_tz)
+    _, week_end_dt = _local_day_boundaries(today, local_tz)
 
     # Priority 1: Today
     sessions_count, projects_active, duration_seconds = _get_stats_for_period(

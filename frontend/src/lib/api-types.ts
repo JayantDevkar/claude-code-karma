@@ -40,6 +40,7 @@ export interface TimelineEventMetadata {
 	spawned_agent_id?: string;
 	spawned_agent_slug?: string;
 	subagent_type?: string;
+	display_name?: string;
 	full_content?: string;
 	full_thinking?: string;
 	full_text?: string;
@@ -52,7 +53,17 @@ export interface TimelineEventMetadata {
 	command_name?: string;
 	is_plugin?: boolean;
 	plugin?: string;
+	image_attachments?: ImageAttachment[];
 	[key: string]: unknown;
+}
+
+// ============================================
+// Image Attachments
+// ============================================
+
+export interface ImageAttachment {
+	media_type: string;
+	data: string;
 }
 
 // ============================================
@@ -97,7 +108,7 @@ export interface ToolUsage {
 // Skill Usage
 // ============================================
 
-export type SkillCategory = 'bundled_skill' | 'plugin_skill' | 'custom_skill';
+export type SkillCategory = 'bundled_skill' | 'plugin_skill' | 'custom_skill' | 'inherited_skill';
 
 export interface SkillUsage {
 	name: string;
@@ -167,6 +178,8 @@ export interface ProjectAnalytics {
 	cache_hit_rate: number;
 	tools_used: Record<string, number>;
 	sessions_by_date: Record<string, number>;
+	sessions_by_date_by_user?: Record<string, Record<string, number>>;
+	user_names?: Record<string, string>;
 	projects_active: number;
 	temporal_heatmap: number[][];
 	peak_hours: number[];
@@ -247,7 +260,15 @@ export interface SessionSummary {
 	chain_title?: string;
 	/** Session origin: 'desktop' for Claude Desktop sessions, undefined for CLI */
 	session_source?: 'desktop' | null;
+	/** Session source: 'local' for this machine, 'remote' for synced from another machine */
+	source?: 'local' | 'remote';
+	/** User ID of the remote machine that produced this session */
+	remote_user_id?: string;
+	/** Machine ID of the remote machine that produced this session */
+	remote_machine_id?: string;
 }
+
+export type SessionSourceFilter = 'all' | 'local' | 'remote';
 
 /**
  * Structured compaction summary with trigger and token metadata.
@@ -288,6 +309,8 @@ export interface SessionDetail extends SessionSummary {
 	skills_used?: SkillUsage[];
 	// Command usage tracking (user-authored slash commands)
 	commands_used?: CommandUsage[];
+	// Image attachments from the initial prompt
+	initial_prompt_images?: ImageAttachment[];
 }
 
 /**
@@ -315,6 +338,7 @@ export interface SubagentSummary {
 	agent_id: string;
 	slug: string | null;
 	subagent_type: string | null;
+	display_name?: string | null;
 	tools_used: Record<string, number>;
 	message_count: number;
 	initial_prompt: string | null;
@@ -357,6 +381,8 @@ export interface Project {
 	latest_session_time?: string;
 	/** Sessions array (only populated in project detail API) */
 	sessions?: SessionSummary[];
+	/** Number of remote sessions from team members */
+	remote_session_count?: number;
 }
 
 export interface BranchSummary {
@@ -446,7 +472,7 @@ export interface AnalyticsFilterOption {
 // Stats Display
 // ============================================
 
-export type StatColor = 'blue' | 'green' | 'orange' | 'purple' | 'teal' | 'gray' | 'accent';
+export type StatColor = 'blue' | 'green' | 'orange' | 'purple' | 'teal' | 'gray' | 'accent' | 'rose';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export interface StatItem {
@@ -679,7 +705,12 @@ export interface SubagentSessionDetail {
 
 	// Subagent-specific metadata
 	subagent_type: string | null;
+	display_name?: string | null;
 	initial_prompt: string | null;
+	initial_prompt_images?: ImageAttachment[];
+
+	// Remote session metadata
+	remote_user_id?: string;
 }
 
 /**
@@ -879,6 +910,7 @@ export interface AgentInvocation {
 	output_tokens: number;
 	cost_usd: number;
 	description: string | null;
+	display_name?: string | null;
 }
 
 /**
@@ -916,6 +948,10 @@ export interface PlanSummary {
  */
 export interface PlanDetail extends PlanSummary {
 	content: string; // Full markdown content
+	// Remote plan fields (present when fetched with ?remote_user)
+	remote_user_id?: string;
+	project_encoded_name?: string;
+	linked_sessions?: Array<{ uuid: string; operation: string; remote_user_id?: string }>;
 }
 
 /**
@@ -935,6 +971,8 @@ export interface PlanSessionContext {
  */
 export interface PlanWithContext extends PlanSummary {
 	session_context: PlanSessionContext | null;
+	remote_user_id?: string | null;
+	linked_sessions?: Array<{ uuid: string; operation: string; remote_user_id?: string }> | null;
 }
 
 /**
@@ -1239,6 +1277,8 @@ export interface SearchFilters {
 	customEnd?: Date;
 	/** Live sub-statuses to show when status is 'live' or 'all' */
 	liveSubStatuses?: LiveSubStatus[];
+	/** Filter by session source: local, remote, or all */
+	source?: SessionSourceFilter;
 }
 
 /**
@@ -1297,6 +1337,8 @@ export interface UsageTrendResponse {
 	trend_by_item?: Record<string, UsageTrendItem[]>;
 	first_used: string | null;
 	last_used: string | null;
+	trend_by_user?: Record<string, UsageTrendItem[]>;
+	user_names?: Record<string, string>;
 }
 
 // ============================================================================
@@ -1494,6 +1536,14 @@ export interface McpSessionSummary {
 	tool_source?: 'main' | 'subagent' | 'both';
 	subagent_agent_ids?: string[];
 	invocation_sources?: string[];
+	/** Session origin: 'desktop' for Claude Desktop sessions, undefined for CLI */
+	session_source?: 'desktop' | null;
+	/** Session source: 'local' for this machine, 'remote' for synced from another machine */
+	source?: 'local' | 'remote';
+	/** User ID of the remote machine that produced this session */
+	remote_user_id?: string;
+	/** Machine ID of the remote machine that produced this session */
+	remote_machine_id?: string;
 }
 
 /**
@@ -1558,6 +1608,12 @@ export interface SkillDetailResponse {
 	trend: SkillTrendItem[];
 	sessions: McpSessionSummary[];
 	sessions_total: number;
+	remote_count?: number;
+	local_count?: number;
+	remote_user_ids?: string[];
+	is_remote_only?: boolean;
+	remote_definition?: RemoteDefinition | null;
+	inherited_from?: string | null;
 }
 
 // ============================================================================
@@ -1661,4 +1717,241 @@ export interface HookScriptDetail {
 	modified_at: string | null;
 	line_count: number | null;
 	error: string | null;
+}
+
+// ============================================
+// Sync Types
+// ============================================
+
+export interface SyncDetect {
+	installed: boolean;
+	running: boolean;
+	version: string | null;
+	device_id: string | null;
+}
+
+export interface SyncStatusTeamEntry {
+	backend: 'syncthing';
+	member_count: number;
+	project_count: number;
+}
+
+export interface SyncStatusResponse {
+	configured: boolean;
+	user_id?: string;
+	machine_id?: string;
+	device_id?: string | null;
+	teams?: Record<string, SyncStatusTeamEntry>;
+}
+
+export interface SyncDevice {
+	device_id: string;
+	name: string;
+	connected: boolean;
+	address?: string;
+	type?: string;
+	crypto?: string;
+	in_bytes_total?: number;
+	out_bytes_total?: number;
+	is_self?: boolean;
+}
+
+export interface SyncProject {
+	name: string;
+	encoded_name: string;
+	local_session_count: number;
+	synced: boolean;
+	status: 'synced' | 'syncing' | 'pending' | 'not-syncing';
+	last_sync_at: string | null;
+	machine_count: number;
+	pending_count: number;
+}
+
+// --- New sync types for redesign ---
+
+export type SyncSessionLimit = 'all' | 'recent_100' | 'recent_10';
+
+export interface SyncTeam {
+	name: string;
+	backend: 'syncthing';
+	projects: SyncTeamProject[];
+	members: SyncTeamMember[];
+	member_count?: number;
+	project_count?: number;
+	sync_session_limit?: SyncSessionLimit;
+}
+
+export interface SyncTeamProject {
+	name: string;
+	encoded_name: string;
+	path: string;
+	local_count: number;
+	packaged_count: number;
+	received_counts: Record<string, number>;
+	gap: number;
+	teams?: string[];
+}
+
+/** Per-project sync status (alias for SyncTeamProject) */
+export type SyncProjectStatus = SyncTeamProject;
+
+export interface SyncTeamMember {
+	name: string;
+	device_id: string;
+	connected: boolean;
+	in_bytes_total: number;
+	out_bytes_total: number;
+}
+
+export interface SyncWatchStatus {
+	running: boolean;
+	team: string | null;
+	started_at: string | null;
+	last_packaged_at: string | null;
+	projects_watched: string[];
+}
+
+export interface SyncPendingDevice {
+	device_id: string;
+	member: string;
+	folder_id: string;
+}
+
+export interface SyncPendingFolder {
+	folder_id: string;
+	from_device: string;
+	from_member: string;
+	from_team: string;
+	offered_at: string | null;
+	label: string;
+	description: string;
+	folder_type: 'handshake' | 'sessions' | 'outbox' | 'unknown';
+	/** When multiple devices offer the same project, entries are grouped. */
+	folder_ids?: string[];
+	device_count?: number;
+	devices?: SyncPendingDevice[];
+}
+
+export interface SyncEvent {
+	id: number;
+	event_type: string;
+	team_name: string | null;
+	member_name: string | null;
+	project_encoded_name: string | null;
+	session_uuid: string | null;
+	detail: string | null;
+	created_at: string;
+}
+
+export interface TeamSessionStat {
+	date: string;
+	member_name: string;
+	out: number;
+	packaged: number;
+	received: number;
+}
+
+export interface IncomingStat {
+	date: string;
+	incoming: number;
+}
+
+export interface MemberTeamProject {
+	encoded_name: string;
+	name: string;
+	session_count: number;
+}
+
+export interface MemberTeam {
+	name: string;
+	member_count: number;
+	project_count: number;
+	online_count: number;
+	projects: MemberTeamProject[];
+}
+
+export interface MemberStats {
+	total_sessions: number;
+	sessions_sent: number;
+	sessions_received: number;
+	total_projects: number;
+	last_active: string | null;
+}
+
+export interface MemberProfile {
+	user_id: string;
+	device_id: string;
+	connected: boolean;
+	is_you: boolean;
+	in_bytes_total: number;
+	out_bytes_total: number;
+	teams: MemberTeam[];
+	stats: MemberStats;
+	session_stats: TeamSessionStat[];
+	incoming_stats: IncomingStat[];
+	activity: SyncEvent[];
+}
+
+export interface MatchingProject {
+	encoded_name: string;
+	path: string;
+	git_identity: string;
+	session_count: number;
+}
+
+export interface JoinTeamResponse {
+	ok: boolean;
+	team_name: string;
+	leader_name: string;
+	paired: boolean;
+	team_created: boolean;
+	matching_projects: MatchingProject[];
+}
+
+export interface JoinCodeResponse {
+	join_code: string;
+	team_name: string;
+	user_id: string;
+}
+
+export interface PendingDevice {
+	device_id: string;
+	name: string;
+	address: string;
+	time: string;
+}
+
+export interface RemoteSessionUser {
+	user_id: string;
+	machine_id: string | null;
+	synced_at: string | null;
+	session_count: number;
+	sessions: SessionSummary[];
+}
+
+/** @deprecated Use SessionSummary instead — kept for backwards compat */
+export interface RemoteSession {
+	uuid: string;
+	mtime: number;
+	size_bytes: number;
+}
+
+// ============================================
+// Remote / Inherit
+// ============================================
+
+export interface RemoteDefinition {
+	content: string;
+	category: string;
+	source_user_id: string;
+	base_directory: string;
+	description: string | null;
+}
+
+export interface InheritResult {
+	status: string;
+	path: string;
+	skill_name: string;
+	inherited_name: string;
+	scope: string;
 }

@@ -15,7 +15,10 @@
 		Play,
 		Bot,
 		TrendingUp,
-		Layers
+		Layers,
+		Globe,
+		Download,
+		Check
 	} from 'lucide-svelte';
 	import { formatDistanceToNow, isToday, isYesterday, isThisWeek, isThisMonth } from 'date-fns';
 	import { onMount, tick } from 'svelte';
@@ -32,6 +35,7 @@
 	import FiltersDropdown from '$lib/components/FiltersDropdown.svelte';
 	import FiltersBottomSheet from '$lib/components/FiltersBottomSheet.svelte';
 	import ActiveFilterChips from '$lib/components/ActiveFilterChips.svelte';
+	import InheritModal from '$lib/components/shared/InheritModal.svelte';
 	import { renderMarkdownEffect, cleanSkillName, getPluginColorVars, getPluginChartHex, getProjectNameFromEncoded, getSkillCategoryLabel, getSkillCategoryColorVars, toSessionWithContext } from '$lib/utils';
 	import SkeletonBox from '$lib/components/skeleton/SkeletonBox.svelte';
 	import SkeletonText from '$lib/components/skeleton/SkeletonText.svelte';
@@ -436,6 +440,12 @@
 	}
 
 	// Skill-specific state
+	// Inherit state
+	let inheritModalOpen = $state(false);
+	let canInherit = $derived(
+		!!(detail?.is_remote_only && detail?.remote_definition?.content)
+	);
+
 	let hasContent = $derived(detail?.content && detail.content.trim().length > 0);
 
 	let pluginColors = $derived(
@@ -485,7 +495,7 @@
 
 			<!-- Stats Skeleton -->
 			<div class="rounded-2xl p-8 border border-[var(--border)]">
-				<div class="grid grid-cols-4 gap-6">
+				<div class="grid grid-cols-2 sm:grid-cols-4 gap-6">
 					{#each Array(4) as _}
 						<div class="space-y-2">
 							<SkeletonText width="80px" size="xs" />
@@ -651,6 +661,45 @@
 					</div>
 				{/snippet}
 			</CollapsibleGroup>
+		{/if}
+
+		<!-- Inherited skill banner -->
+		{#if detail.inherited_from}
+			<div class="flex items-center gap-3 px-5 py-4 rounded-xl border border-[var(--nav-amber)]/30 bg-[var(--nav-amber-subtle)]">
+				<Check size={18} class="text-[var(--nav-amber)] shrink-0" />
+				<div class="min-w-0">
+					<p class="text-sm font-medium text-[var(--nav-amber)]">
+						Inherited from <span class="font-semibold">{detail.inherited_from}</span>
+					</p>
+					<p class="text-xs text-[var(--text-muted)] mt-0.5">
+						Invocable as <code class="font-mono text-[var(--text-secondary)]">/{detail.name}</code>
+					</p>
+				</div>
+			</div>
+		<!-- Remote origin banner -->
+		{:else if detail.is_remote_only && detail.remote_definition?.content}
+			<div class="flex items-center justify-between gap-4 px-5 py-4 rounded-xl border border-[var(--info)]/30 bg-[var(--info-subtle)]">
+				<div class="flex items-center gap-3 min-w-0">
+					<Globe size={18} class="text-[var(--info)] shrink-0" />
+					<div class="min-w-0">
+						<p class="text-sm font-medium text-[var(--info)]">
+							Remote skill from <span class="font-semibold">{detail.remote_definition?.source_user_id}</span>
+						</p>
+						{#if detail.remote_definition?.description}
+							<p class="text-xs text-[var(--text-muted)] mt-0.5 truncate">
+								{detail.remote_definition.description}
+							</p>
+						{/if}
+					</div>
+				</div>
+				<button
+					onclick={() => (inheritModalOpen = true)}
+					class="shrink-0 inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-[var(--bg-base)] bg-[var(--info)] hover:opacity-90 rounded-lg transition-all active:scale-95"
+				>
+					<Download size={15} />
+					Inherit Skill
+				</button>
+			</div>
 		{/if}
 
 		<!-- Tab Navigation -->
@@ -1083,3 +1132,15 @@
 		{/if}
 	{/if}
 </div>
+
+{#if detail?.is_remote_only && detail?.remote_definition?.content}
+	<InheritModal
+		open={inheritModalOpen}
+		itemName={detail.name}
+		itemType="skill"
+		content={detail.remote_definition.content}
+		sourceUserId={detail.remote_definition.source_user_id}
+		onClose={() => (inheritModalOpen = false)}
+		onInherited={() => { inheritModalOpen = false; }}
+	/>
+{/if}

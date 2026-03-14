@@ -86,6 +86,9 @@
 		justify-content: center;
 		gap: 0.5rem;
 		flex-wrap: wrap;
+		max-width: clamp(75rem, 90vw, 100rem);
+		margin-inline: auto;
+		padding-inline: clamp(1rem, 3vw, 2.5rem);
 	}
 
 	.command-btn {

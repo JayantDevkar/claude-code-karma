@@ -24,7 +24,8 @@
 		Archive,
 		LayoutGrid,
 		List,
-		Brain
+		Brain,
+		Users
 	} from 'lucide-svelte';
 	import { isToday, isYesterday, isThisWeek, isThisMonth } from 'date-fns';
 	import TabsTrigger from '$lib/components/ui/TabsTrigger.svelte';
@@ -39,6 +40,7 @@
 	import SkillList from '$lib/components/skills/SkillList.svelte';
 	import ToolList from '$lib/components/tools/ToolList.svelte';
 	import MemoryViewer from '$lib/components/memory/MemoryViewer.svelte';
+	import ProjectTeamTab from '$lib/components/sync/ProjectTeamTab.svelte';
 	import StatsGrid from '$lib/components/StatsGrid.svelte';
 	import ActiveBranches from '$lib/components/ActiveBranches.svelte';
 	import Pagination from '$lib/components/Pagination.svelte';
@@ -87,6 +89,7 @@
 		filterSessionsByStatus,
 		filterSessionsByDateRange,
 		filterSessionsByBranch,
+		filterSessionsBySource,
 		createLiveSessionLookup,
 		calculateLiveStatusCounts,
 		createHistoricalSessionLookup,
@@ -146,6 +149,7 @@
 	let project = $derived(data.project as Project);
 	let branchesData = $derived(data.branches as BranchesData);
 	let archived = $derived(data.archived as ProjectArchivedResponse);
+	let remoteSessionCount = $derived(project?.remote_session_count ?? 0);
 
 	// Analytics state - fetched client-side on-demand
 	let analytics = $state<ProjectAnalytics | null>(null);
@@ -237,6 +241,13 @@
 						}
 					}
 				}
+				// Deduplicate by UUID — remote sessions may appear across pages
+				const seen = new Set<string>();
+				loaded = loaded.filter((s) => {
+					if (seen.has(s.uuid)) return false;
+					seen.add(s.uuid);
+					return true;
+				});
 				allSessions = loaded;
 				allSessionsLoaded = true;
 			}
@@ -305,7 +316,7 @@
 	});
 
 	// Tab state - initialize from URL immediately (not deferred to onMount)
-	const validTabs = ['overview', 'analytics', 'agents', 'skills', 'tools', 'memory', 'archived'];
+	const validTabs = ['overview', 'analytics', 'agents', 'skills', 'tools', 'memory', 'team', 'archived'];
 	const initialTab = $page.url.searchParams.get('tab');
 	let activeTab = $state(initialTab && validTabs.includes(initialTab) ? initialTab : 'overview');
 	let tabsReady = $state(false);
@@ -719,6 +730,10 @@
 		filters.dateRange = range;
 	}
 
+	function handleSourceChange(source: SearchFilters['source']) {
+		filters.source = source;
+	}
+
 	function handleLiveSubStatusChange(statuses: LiveSubStatus[]) {
 		selectedLiveSubStatuses = statuses;
 	}
@@ -832,6 +847,9 @@
 			filters.customEnd
 		);
 
+		// Filter by source (local vs remote)
+		sessions = filterSessionsBySource(sessions, filters.source || 'all');
+
 		return sessions.length;
 	});
 
@@ -845,7 +863,8 @@
 		searchTokens.length > 0 ||
 			scopeSelectionToApi(scopeSelection) !== 'both' ||
 			filters.status !== 'all' ||
-			selectedBranchFilters.size > 0
+			selectedBranchFilters.size > 0 ||
+			(filters.source !== undefined && filters.source !== 'all')
 	);
 
 	// Clear server search results when search tokens are removed.
@@ -911,6 +930,9 @@
 			filters.customStart,
 			filters.customEnd
 		);
+
+		// Filter by source (local vs remote)
+		sessions = filterSessionsBySource(sessions, filters.source || 'all');
 
 		// Exclude sessions that appear in the "Recently Ended" section to avoid duplicates
 		const recentlyEndedUuids = new Set(recentlyEndedSessions.map((pair) => pair.session.uuid));
@@ -1034,6 +1056,9 @@
 					<TabsTrigger value="tools" icon={Cable}>Project Tools</TabsTrigger>
 					<TabsTrigger value="memory" icon={Brain}>Project Memory</TabsTrigger>
 					<TabsTrigger value="analytics" icon={BarChart3}>Analytics</TabsTrigger>
+					{#if remoteSessionCount > 0}
+						<TabsTrigger value="team" icon={Users}>Team ({remoteSessionCount})</TabsTrigger>
+					{/if}
 					{#if archived.total_sessions > 0}
 						<TabsTrigger value="archived" icon={Archive}>
 							Archived ({archived.total_sessions})
@@ -1153,6 +1178,8 @@
 										{liveStatusCounts}
 										{completedCount}
 										isLoading={isLoadingAllSessions || isServerSearching}
+										source={filters.source || 'all'}
+										onSourceChange={handleSourceChange}
 									/>
 								{/if}
 							</div>
@@ -1174,6 +1201,8 @@
 								onLiveSubStatusChange={handleLiveSubStatusChange}
 								{liveStatusCounts}
 								{completedCount}
+								source={filters.source || 'all'}
+								onSourceChange={handleSourceChange}
 							/>
 						{/if}
 
@@ -1649,7 +1678,11 @@
 							<!-- Additional Detailed Charts or Analysis -->
 							<div class="mt-6">
 								<!-- Sessions Chart - uses full history from analytics API -->
-								<SessionsChart sessionsByDate={analytics.sessions_by_date} />
+								<SessionsChart
+									sessionsByDate={analytics.sessions_by_date}
+									sessionsByDateByUser={analytics.sessions_by_date_by_user}
+									userNames={analytics.user_names}
+								/>
 							</div>
 						{:else}
 							<EmptyState
@@ -1679,6 +1712,11 @@
 				<!-- Memory Tab -->
 				<Tabs.Content value="memory" class="animate-fade-in">
 					<MemoryViewer projectEncodedName={project.encoded_name} />
+				</Tabs.Content>
+
+				<!-- Team Tab -->
+				<Tabs.Content value="team" class="animate-fade-in">
+					<ProjectTeamTab projectEncodedName={project.encoded_name} active={activeTab === 'team'} />
 				</Tabs.Content>
 
 				<!-- Archived Tab -->

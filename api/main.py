@@ -32,9 +32,17 @@ from routers import (  # noqa: E402
     plans,
     plugins,
     projects,
+    remote_sessions,
     sessions,
     skills,
     subagent_sessions,
+    sync_devices,
+    sync_members,
+    sync_operations,
+    sync_pending,
+    sync_projects,
+    sync_system,
+    sync_teams,
     tools,
 )
 from routers import settings as settings_router  # noqa: E402
@@ -93,6 +101,21 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning(f"SQLite indexing failed to start (non-critical): {e}")
 
+    # Start remote session watcher (monitors incoming Syncthing files)
+    remote_watcher = None
+    if settings.use_sqlite:
+        try:
+            from services.watcher_manager import RemoteSessionWatcher
+
+            remote_dir = settings.karma_base / "remote-sessions"
+            remote_watcher = RemoteSessionWatcher(watch_dir=remote_dir)
+            remote_watcher.start()
+            logger.info("Remote session watcher started: %s", remote_dir)
+        except Exception as e:
+            logger.warning(
+                "Remote session watcher failed to start (non-critical): %s", e
+            )
+
     # Start live session reconciler
     reconciler_task = None
     if settings.reconciler_enabled:
@@ -113,6 +136,10 @@ async def lifespan(app: FastAPI):
     yield
 
     # Shutdown
+    if remote_watcher is not None:
+        remote_watcher.stop()
+        logger.info("Remote session watcher stopped")
+
     if reconciler_task is not None:
         reconciler_task.cancel()
         logger.info("Session reconciler cancelled")
@@ -171,6 +198,14 @@ app.include_router(
     prefix="/agents",
     tags=["subagent-sessions"],
 )
+app.include_router(remote_sessions.router, prefix="/remote", tags=["remote"])
+app.include_router(sync_system.router)
+app.include_router(sync_teams.router)
+app.include_router(sync_members.router)
+app.include_router(sync_projects.router)
+app.include_router(sync_devices.router)
+app.include_router(sync_pending.router)
+app.include_router(sync_operations.router)
 app.include_router(admin.router)
 
 

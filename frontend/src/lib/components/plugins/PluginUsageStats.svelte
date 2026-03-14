@@ -19,7 +19,8 @@
 		createResponsiveConfig,
 		createCommonScaleConfig,
 		chartColorPalette,
-		getThemeColors
+		getThemeColors,
+		onThemeChange
 	} from '../charts/chartConfig';
 	import SegmentedControl from '$lib/components/ui/SegmentedControl.svelte';
 
@@ -361,11 +362,15 @@
 		});
 	}
 
+	let cleanupTheme: (() => void) | null = null;
+
 	onMount(() => {
 		createChart();
+		cleanupTheme = onThemeChange(() => createChart());
 	});
 
 	onDestroy(() => {
+		cleanupTheme?.();
 		chart?.destroy();
 	});
 

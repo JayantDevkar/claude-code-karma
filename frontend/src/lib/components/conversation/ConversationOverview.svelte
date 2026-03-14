@@ -13,8 +13,7 @@
 		ChevronUp,
 		ExternalLink,
 		Zap,
-		Tag,
-		Monitor
+		Tag
 	} from 'lucide-svelte';
 	import StatsCard from '$lib/components/StatsCard.svelte';
 	import ExpandablePrompt from '$lib/components/ExpandablePrompt.svelte';
@@ -86,7 +85,10 @@
 <div class="space-y-6 animate-fade-in">
 	<!-- Initial Prompt -->
 	{#if entity.initial_prompt}
-		<ExpandablePrompt prompt={entity.initial_prompt} />
+		<ExpandablePrompt
+			prompt={entity.initial_prompt}
+			imageAttachments={entity.initial_prompt_images}
+		/>
 	{/if}
 
 	<!-- Continuation Session Indicator (sessions only) -->
@@ -373,15 +375,6 @@
 						{/each}
 					{:else}
 						<span class="text-sm text-[var(--text-muted)]">-</span>
-					{/if}
-					{#if entity.session_source === 'desktop'}
-						<div
-							class="flex items-center gap-1 px-2 py-0.5 rounded-full border bg-[var(--bg-muted)] text-[var(--text-secondary)] border-[var(--border)] text-xs"
-							title="Claude Desktop session"
-						>
-							<Monitor size={12} strokeWidth={2} />
-							<span class="font-medium">Desktop</span>
-						</div>
 					{/if}
 				</div>
 			</div>

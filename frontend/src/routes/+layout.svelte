@@ -23,7 +23,9 @@
 		PlanDetailSkeleton,
 		SessionsPageSkeleton,
 		SkillsPageSkeleton,
-		HooksPageSkeleton
+		HooksPageSkeleton,
+		MembersPageSkeleton,
+		MemberDetailSkeleton
 	} from '$lib/components/skeleton';
 
 	let { children } = $props();
@@ -71,6 +73,13 @@
 			return 'project-detail';
 		}
 		if (path === '/hooks') return 'hooks';
+		if (path.startsWith('/sync')) return 'settings';
+		// Members routes
+		if (path === '/members') return 'members';
+		if (path.startsWith('/members/')) return 'member-detail';
+		// Team routes
+		if (path === '/team') return 'members';
+		if (path.startsWith('/team/')) return 'member-detail';
 
 		return null;
 	});
@@ -119,7 +128,7 @@
 		<Header />
 		<main
 			id="main-content"
-			class="flex-1 w-full max-w-[1200px] mx-auto px-6 py-8"
+			class="flex-1 w-full mx-auto py-6 sm:py-8 main-content"
 			tabindex="-1"
 		>
 			{#if navigationSkeletonType}
@@ -152,6 +161,10 @@
 						<SessionsPageSkeleton />
 					{:else if navigationSkeletonType === 'hooks'}
 						<HooksPageSkeleton />
+					{:else if navigationSkeletonType === 'members'}
+						<MembersPageSkeleton />
+					{:else if navigationSkeletonType === 'member-detail'}
+						<MemberDetailSkeleton />
 					{/if}
 				</div>
 			{:else}
@@ -167,3 +180,10 @@
 	<!-- Keyboard Shortcuts Help Modal -->
 	<KeyboardShortcutsHelp bind:open={showKeyboardHelp} />
 </div>
+
+<style>
+	:global(.main-content) {
+		max-width: clamp(75rem, 90vw, 100rem);
+		padding-inline: clamp(1rem, 3vw, 2.5rem);
+	}
+</style>

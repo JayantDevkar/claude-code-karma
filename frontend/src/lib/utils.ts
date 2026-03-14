@@ -214,6 +214,19 @@ export function truncate(text: string, maxLength: number): string {
 }
 
 /**
+ * Clean prompt text by removing command tags (skill invocation metadata)
+ * and any stray HTML tags. Shared by ExpandablePrompt, SessionChainView, SubagentCard, etc.
+ */
+export function cleanPromptText(text: string): string {
+	return text
+		.replace(/<command-message>[^<]*<\/command-message>\s*/g, '')
+		.replace(/<command-name>[^<]*<\/command-name>\s*/g, '')
+		.replace(/<command-args>[\s\S]*?<\/command-args>\s*/g, '')
+		.replace(/<[^>]+>/g, '') // Strip any remaining HTML tags
+		.trim();
+}
+
+/**
  * Format file size in human-readable format (e.g., "1.2 KB", "3.4 MB")
  */
 export function formatFileSize(bytes: number): string {
@@ -389,7 +402,7 @@ export function getSessionDisplayPrompt(
 	initialPrompt?: string,
 	sessionTitles?: string[]
 ): string | null {
-	if (initialPrompt && initialPrompt !== 'No prompt') return initialPrompt;
+	if (initialPrompt && initialPrompt !== 'No prompt') return cleanPromptText(initialPrompt);
 	return sessionTitles?.[0] || null;
 }
 
@@ -674,6 +687,121 @@ export const modelColorConfig: Record<
 		iconBg: 'var(--accent-subtle)'
 	}
 };
+
+// ============================================
+// Team Member Color Utilities (Remote Sessions)
+// ============================================
+
+/** Color palette for team members, avoiding model colors (purple/blue/green) */
+const TEAM_MEMBER_PALETTE = [
+	'coral',
+	'rose',
+	'amber',
+	'cyan',
+	'pink',
+	'lime',
+	'indigo',
+	'teal',
+	'sky',
+	'violet',
+	'emerald',
+	'orange',
+	'fuchsia',
+	'slate',
+	'gold',
+	'ruby'
+] as const;
+
+type TeamColor = (typeof TEAM_MEMBER_PALETTE)[number];
+
+export interface TeamMemberColorConfig {
+	border: string;
+	badge: string;
+	text: string;
+	bg: string;
+}
+
+/** Deterministic hash to palette index for a userId */
+function teamMemberPaletteIndex(userId: string): number {
+	let hash = 0;
+	for (let i = 0; i < userId.length; i++) {
+		hash = (hash << 5) - hash + userId.charCodeAt(i);
+		hash |= 0;
+	}
+	return Math.abs(hash) % TEAM_MEMBER_PALETTE.length;
+}
+
+/**
+ * Deterministic hash-based color assignment for team members.
+ * Same userId always gets the same color.
+ */
+export function getTeamMemberColor(userId: string): TeamMemberColorConfig {
+	const color: TeamColor = TEAM_MEMBER_PALETTE[teamMemberPaletteIndex(userId)];
+	return {
+		border: `var(--team-${color})`,
+		badge: `bg-[var(--team-${color}-subtle)] border-[var(--team-${color})]/20`,
+		text: `text-[var(--team-${color})]`,
+		bg: `var(--team-${color}-subtle)`
+	};
+}
+
+// ============================================
+// Chart Hex Color Utilities (for Chart.js canvas)
+// ============================================
+
+/** Hex colors matching TEAM_MEMBER_PALETTE CSS var names — for Chart.js canvas rendering */
+const TEAM_HEX_COLORS: Record<string, string> = {
+	coral: '#f97066',
+	rose: '#f43f5e',
+	amber: '#f59e0b',
+	cyan: '#06b6d4',
+	pink: '#ec4899',
+	lime: '#84cc16',
+	indigo: '#6366f1',
+	teal: '#14b8a6',
+	sky: '#0ea5e9',
+	violet: '#7c3aed',
+	emerald: '#10b981',
+	orange: '#f97316',
+	fuchsia: '#c026d3',
+	slate: '#64748b',
+	gold: '#eab308',
+	ruby: '#be123c'
+};
+
+/** Accent purple used for local user in charts */
+export const LOCAL_USER_HEX = '#7c3aed';
+
+/**
+ * Get hex color for a team member (for Chart.js).
+ * Uses same hash as getTeamMemberColor() for consistency.
+ */
+export function getTeamMemberHexColor(userId: string): string {
+	return TEAM_HEX_COLORS[TEAM_MEMBER_PALETTE[teamMemberPaletteIndex(userId)]];
+}
+
+/** Get hex color for a user_id. '_local' → accent purple, others → team color */
+export function getUserChartColor(userId: string): string {
+	return userId === '_local' ? LOCAL_USER_HEX : getTeamMemberHexColor(userId);
+}
+
+/** Get display label for a user in charts */
+export function getUserChartLabel(
+	userId: string,
+	userNames?: Record<string, string>
+): string {
+	if (userId === '_local') return 'You';
+	const name = userNames?.[userId];
+	if (name) return name;
+	return userId.length > 16 ? userId.slice(0, 14) + '\u2026' : userId;
+}
+
+/**
+ * Check if a session is from a remote machine
+ */
+export function isRemoteSession(session: { remote_user_id?: string }): boolean {
+	return !!session.remote_user_id;
+}
 
 // ============================================
 // Subagent Color Utilities
@@ -991,6 +1119,8 @@ export function getSkillCategoryLabel(category: string): string {
 			return 'Plugin';
 		case 'custom_skill':
 			return 'Custom';
+		case 'inherited_skill':
+			return 'Inherited';
 		default:
 			return category;
 	}
@@ -1006,6 +1136,8 @@ export function getSkillCategoryColorVars(category: string): { color: string; su
 		case 'plugin_skill':
 		case 'custom_skill':
 			return _getSharedCategoryColorVars(category);
+		case 'inherited_skill':
+			return { color: 'var(--nav-amber)', subtle: 'oklch(0.75 0.1 80 / 0.1)' };
 		default:
 			return { color: 'var(--text-muted)', subtle: 'var(--bg-muted)' };
 	}
@@ -1488,6 +1620,37 @@ export function toSessionWithContext(s: McpSessionSummary | SessionSummary): Ses
 		session_titles: s.session_titles,
 		project_encoded_name: encoded,
 		project_path: encoded ?? '',
-		project_name: displayName || getProjectNameFromEncoded(encoded ?? '')
+		project_name: displayName || getProjectNameFromEncoded(encoded ?? ''),
+		session_source: ('session_source' in s ? s.session_source : undefined) ?? undefined,
+		source: ('source' in s ? s.source : undefined) ?? undefined,
+		remote_user_id: ('remote_user_id' in s ? s.remote_user_id : undefined) ?? undefined,
+		remote_machine_id: ('remote_machine_id' in s ? s.remote_machine_id : undefined) ?? undefined
 	};
+}
+
+// ============================================
+// Byte Formatting
+// ============================================
+
+/**
+ * Format bytes into human-readable size (e.g., "1.2 MB", "3.5 GB")
+ * Uses binary units (1024-based).
+ */
+export function formatBytes(bytes: number): string {
+	if (bytes < 1024) return `${bytes} B`;
+	if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+	if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+	return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+}
+
+/**
+ * Format bytes per second into human-readable rate (e.g., "1.2 KB/s")
+ * Uses binary units (1024-based).
+ */
+export function formatBytesRate(bytesPerSec: number): string {
+	if (bytesPerSec < 1024) return `${bytesPerSec.toFixed(0)} B/s`;
+	if (bytesPerSec < 1024 * 1024) return `${(bytesPerSec / 1024).toFixed(1)} KB/s`;
+	if (bytesPerSec < 1024 * 1024 * 1024)
+		return `${(bytesPerSec / (1024 * 1024)).toFixed(1)} MB/s`;
+	return `${(bytesPerSec / (1024 * 1024 * 1024)).toFixed(1)} GB/s`;
 }

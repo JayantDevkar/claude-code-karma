@@ -18,6 +18,30 @@ from services.session_filter import ACTIVE_THRESHOLD_SECONDS
 
 logger = logging.getLogger(__name__)
 
+
+def _local_tz_modifier() -> str:
+    """Return SQLite time modifier for the machine's local timezone.
+
+    E.g. '-480 minutes' for UTC-8 (PST), '+330 minutes' for UTC+5:30 (IST).
+    Used in DATE()/TIME() functions to group by local calendar date.
+    Correctly handles DST transitions via datetime.astimezone().
+    """
+    from utils import local_timezone
+
+    offset = local_timezone().utcoffset(None)
+    offset_min = int(offset.total_seconds() // 60)
+    return f"{offset_min:+d} minutes"
+
+
+def _tz_date(col: str = "s.start_time") -> str:
+    """Return SQL expression for DATE in local timezone.
+
+    >>> _tz_date()  # on a UTC-7 machine
+    "DATE(s.start_time, '-420 minutes')"
+    """
+    return f"DATE({col}, '{_local_tz_modifier()}')"
+
+
 # Allowlist for SQL fragments interpolated into _query_per_item_trend.
 # Prevents future callers from accidentally passing user input.
 _ALLOWED_ITEM_COLS = frozenset({"sc.command_name", "sk.skill_name", "st.tool_name", "si.subagent_type"})
@@ -40,17 +64,56 @@ def _query_per_item_trend(
     if item_col not in _ALLOWED_ITEM_COLS:
         raise ValueError(f"Disallowed item_col: {item_col!r}")
     rows = conn.execute(
-        f"""SELECT {item_col} as item, DATE(s.start_time) as date, {count_expr} as count
+        f"""SELECT {item_col} as item, {_tz_date()} as date, {count_expr} as count
         {from_clause}
         {where}
         {"AND" if where else "WHERE"} s.start_time IS NOT NULL
-        GROUP BY {item_col}, DATE(s.start_time)
+        GROUP BY {item_col}, {_tz_date()}
         ORDER BY item, date""",
         params,
     ).fetchall()
     result: dict[str, list[dict]] = {}
     for row in rows:
         result.setdefault(row["item"], []).append({"date": row["date"], "count": row["count"]})
+    return result
+
+
+def _resolve_user_names(conn: sqlite3.Connection, user_ids: list[str]) -> dict[str, str]:
+    """Resolve user_ids to display names from sync_members table."""
+    if not user_ids:
+        return {}
+    placeholders = ",".join("?" * len(user_ids))
+    rows = conn.execute(
+        f"SELECT DISTINCT device_id, name FROM sync_members WHERE device_id IN ({placeholders})",
+        user_ids,
+    ).fetchall()
+    return {row["device_id"]: row["name"] for row in rows}
+
+
+def _query_per_user_trend(
+    conn: sqlite3.Connection,
+    from_clause: str,
+    where: str,
+    params: dict,
+    count_expr: str = "COUNT(*)",
+) -> dict[str, list[dict]]:
+    """Per-user daily trend. Returns {user_id: [{date, count}, ...]}."""
+    and_or_where = "AND" if where else "WHERE"
+    rows = conn.execute(
+        f"""SELECT COALESCE(s.remote_user_id, '_local') as user_id,
+            {_tz_date()} as date, {count_expr} as count
+        {from_clause}
+        {where}
+        {and_or_where} s.start_time IS NOT NULL
+        GROUP BY user_id, {_tz_date()}
+        ORDER BY user_id, date""",
+        params,
+    ).fetchall()
+    result: dict[str, list[dict]] = {}
+    for row in rows:
+        result.setdefault(row["user_id"], []).append(
+            {"date": row["date"], "count": row["count"]}
+        )
     return result
 
 
@@ -61,10 +124,12 @@ def query_all_sessions(
     branch: Optional[str] = None,
     scope: str = "both",
     status: str = "all",
+    source: str = "all",
     start_dt: Optional[datetime] = None,
     end_dt: Optional[datetime] = None,
     limit: int = 200,
     offset: int = 0,
+    user: Optional[str] = None,
 ) -> dict:
     """
     Query sessions from SQLite with filtering, sorting, and pagination.
@@ -94,6 +159,14 @@ def query_all_sessions(
     if end_dt:
         conditions.append("s.end_time <= :end_dt")
         params["end_dt"] = end_dt.isoformat()
+
+    if source and source != "all":
+        conditions.append("s.source = :source")
+        params["source"] = source
+
+    if user:
+        conditions.append("s.remote_user_id = :user")
+        params["user"] = user
 
     # Search via FTS5
     fts_join = ""
@@ -185,7 +258,8 @@ def query_all_sessions(
             s.input_tokens, s.output_tokens, s.total_cost,
             s.initial_prompt, s.git_branch, s.models_used,
             s.session_titles, s.is_continuation_marker, s.was_compacted,
-            s.subagent_count, s.session_source
+            s.subagent_count, s.session_source,
+            s.source, s.remote_user_id, s.remote_machine_id
         FROM sessions s
         {fts_join}
         {where}
@@ -455,11 +529,29 @@ def query_analytics(
     time_rows = conn.execute(f"SELECT start_time FROM sessions s {time_where}", params).fetchall()
     start_times = [row["start_time"] for row in time_rows]
 
+    # 4b. Start times with user_id for per-user breakdowns
+    time_user_rows = conn.execute(
+        f"""SELECT COALESCE(s.remote_user_id, '_local') as user_id, s.start_time
+        FROM sessions s
+        {time_where}""",
+        params,
+    ).fetchall()
+    start_times_with_user = [
+        {"user_id": row["user_id"], "start_time": row["start_time"]}
+        for row in time_user_rows
+    ]
+
+    # 5. Resolve user display names from sync_members
+    user_ids = list({e["user_id"] for e in start_times_with_user if e["user_id"] != "_local"})
+    user_names = _resolve_user_names(conn, user_ids) if user_ids else {}
+
     return {
         "totals": totals,
         "tools": tools,
         "models_used_list": models_used_list,
         "start_times": start_times,
+        "start_times_with_user": start_times_with_user,
+        "user_names": user_names,
     }
 
 
@@ -507,7 +599,10 @@ def _query_item_usage(
             {count_expr}
             COUNT(DISTINCT {alias}.session_uuid) as session_count,
             MAX(s.end_time) as last_used,
-            GROUP_CONCAT(DISTINCT {alias}.invocation_source) as invocation_sources
+            GROUP_CONCAT(DISTINCT {alias}.invocation_source) as invocation_sources,
+            SUM(CASE WHEN s.source = 'remote' THEN {alias}.count ELSE 0 END) as remote_count,
+            SUM(CASE WHEN s.source != 'remote' THEN {alias}.count ELSE 0 END) as local_count,
+            GROUP_CONCAT(DISTINCT CASE WHEN s.source = 'remote' THEN s.remote_user_id END) as remote_user_ids
         FROM {table} {alias}
         JOIN sessions s ON {alias}.session_uuid = s.uuid
         {_where}
@@ -563,7 +658,8 @@ def query_sessions_by_skill(
             s.uuid, s.slug, s.project_encoded_name, s.project_path,
             s.message_count, s.start_time, s.end_time, s.duration_seconds,
             s.models_used, s.subagent_count, s.initial_prompt,
-            s.git_branch, s.session_titles
+            s.git_branch, s.session_titles,
+            s.session_source, s.source, s.remote_user_id, s.remote_machine_id
         FROM sessions s
         JOIN session_skills sk ON s.uuid = sk.session_uuid
         WHERE sk.skill_name = :skill AND sk.invocation_source != 'text_detection'
@@ -615,7 +711,9 @@ def _query_item_detail(
     param_name = "item"
     item_param = {param_name: item_value}
 
-    mention_exclusion = f"AND {alias}.invocation_source != 'text_detection'" if track_mentions else ""
+    mention_exclusion = (
+        f"AND {alias}.invocation_source != 'text_detection'" if track_mentions else ""
+    )
 
     # Main session stats
     main_row = conn.execute(
@@ -671,7 +769,12 @@ def _query_item_detail(
             item_param,
         ).fetchone()[0]
 
-        if main_calls == 0 and sub_calls == 0 and mentioned_calls == 0 and command_triggered_calls == 0:
+        if (
+            main_calls == 0
+            and sub_calls == 0
+            and mentioned_calls == 0
+            and command_triggered_calls == 0
+        ):
             return None
     else:
         if main_calls == 0 and sub_calls == 0:
@@ -679,14 +782,14 @@ def _query_item_detail(
 
     # Daily trend
     trend_rows = conn.execute(
-        f"""SELECT DATE(s.start_time) as date,
+        f"""SELECT {_tz_date()} as date,
             SUM({alias}.count) as calls,
             COUNT(DISTINCT {alias}.session_uuid) as sessions
         FROM {table} {alias}
         JOIN sessions s ON {alias}.session_uuid = s.uuid
         WHERE {alias}.{item_col} = :{param_name} AND s.start_time IS NOT NULL
             {mention_exclusion}
-        GROUP BY DATE(s.start_time)
+        GROUP BY {_tz_date()}
         ORDER BY date""",
         item_param,
     ).fetchall()
@@ -740,6 +843,7 @@ def _query_item_detail(
             s.message_count, s.start_time, s.end_time, s.duration_seconds,
             s.models_used, s.subagent_count, s.initial_prompt,
             s.git_branch, s.session_titles,
+            s.session_source, s.source, s.remote_user_id, s.remote_machine_id,
             agg.has_main, agg.has_sub, agg.agent_ids,
             ss.invocation_sources
         FROM sessions s
@@ -982,11 +1086,11 @@ def _query_item_usage_trend(
     # Daily trend
     and_or_where = "AND" if where_items else "WHERE"
     trend_rows = conn.execute(
-        f"""SELECT DATE(s.start_time) as date, SUM({table}.count) as count
+        f"""SELECT {_tz_date()} as date, SUM({table}.count) as count
         {from_clause}
         {where_items}
         {and_or_where} s.start_time IS NOT NULL
-        GROUP BY DATE(s.start_time)
+        GROUP BY {_tz_date()}
         ORDER BY date""",
         params,
     ).fetchall()
@@ -1013,11 +1117,25 @@ def _query_item_usage_trend(
     first_used = time_row["first_used"] if time_row else None
     last_used = time_row["last_used"] if time_row else None
 
+    # Per-user trend
+    trend_by_user = _query_per_user_trend(
+        conn,
+        from_clause=from_clause,
+        where=where_items,
+        params=params,
+        count_expr=f"SUM({table}.count)",
+    )
+    # Resolve user names
+    trend_user_ids = [uid for uid in trend_by_user if uid != "_local"]
+    user_names = _resolve_user_names(conn, trend_user_ids) if trend_user_ids else {}
+
     return {
         "total": total,
         "by_item": by_item,
         "trend": trend,
         "trend_by_item": trend_by_item,
+        "trend_by_user": trend_by_user,
+        "user_names": user_names,
         "first_used": first_used,
         "last_used": last_used,
     }
@@ -1102,7 +1220,8 @@ def query_project_sessions(
             s.initial_prompt, s.git_branch, s.session_titles,
             s.is_continuation_marker, s.was_compacted, s.input_tokens,
             s.output_tokens, s.total_cost, s.compaction_count,
-            s.session_source
+            s.session_source,
+            s.source, s.remote_user_id, s.remote_machine_id
         FROM sessions s
         {fts_join}
         WHERE {where}
@@ -1342,7 +1461,7 @@ def query_continuation_session(
 def query_session_by_message_uuid(conn: sqlite3.Connection, message_uuid: str) -> dict | None:
     """Look up a session by a message UUID it contains."""
     row = conn.execute(
-        """SELECT mu.session_uuid, s.slug, s.project_encoded_name
+        """SELECT mu.session_uuid, s.slug, s.project_encoded_name, s.source_encoded_name
         FROM message_uuids mu
         JOIN sessions s ON mu.session_uuid = s.uuid
         WHERE mu.message_uuid = :msg_uuid""",
@@ -1775,12 +1894,12 @@ def query_agent_usage_trend(
 
     # Daily trend
     trend_rows = conn.execute(
-        f"""SELECT DATE(s.start_time) as date, COUNT(*) as count
+        f"""SELECT {_tz_date()} as date, COUNT(*) as count
         FROM subagent_invocations si
         JOIN sessions s ON si.session_uuid = s.uuid
         {where}
         AND s.start_time IS NOT NULL
-        GROUP BY DATE(s.start_time)
+        GROUP BY {_tz_date()}
         ORDER BY date""",
         params,
     ).fetchall()
@@ -1795,6 +1914,15 @@ def query_agent_usage_trend(
         params=params,
         count_expr="COUNT(*)",
     )
+
+    trend_by_user = _query_per_user_trend(
+        conn,
+        from_clause="FROM subagent_invocations si JOIN sessions s ON si.session_uuid = s.uuid",
+        where=where,
+        params=params,
+        count_expr="COUNT(*)",
+    )
+    user_names = _resolve_user_names(conn, [u for u in trend_by_user if u != "_local"])
 
     # First/last used
     time_row = conn.execute(
@@ -1813,6 +1941,8 @@ def query_agent_usage_trend(
         "by_item": by_item,
         "trend": trend,
         "trend_by_item": trend_by_item,
+        "trend_by_user": trend_by_user,
+        "user_names": user_names,
         "first_used": first_used,
         "last_used": last_used,
     }
@@ -1997,7 +2127,8 @@ def query_agent_history(
             si.duration_seconds,
             si.input_tokens,
             si.output_tokens,
-            si.cost_usd
+            si.cost_usd,
+            si.agent_display_name
         FROM subagent_invocations si
         JOIN sessions s ON si.session_uuid = s.uuid
         WHERE si.subagent_type = :type
@@ -2031,7 +2162,8 @@ def query_sessions_by_agent(
             s.uuid, s.slug, s.project_encoded_name, s.project_path,
             s.message_count, s.start_time, s.end_time, s.duration_seconds,
             s.models_used, s.subagent_count, s.initial_prompt,
-            s.git_branch, s.session_titles
+            s.git_branch, s.session_titles,
+            s.session_source, s.source, s.remote_user_id, s.remote_machine_id
         FROM sessions s
         JOIN (SELECT DISTINCT session_uuid FROM subagent_invocations WHERE subagent_type = :type) si
             ON s.uuid = si.session_uuid
@@ -2660,13 +2792,13 @@ def query_mcp_server_trend(
 
     # Main session calls per day
     main_rows = conn.execute(
-        f"""SELECT DATE(s.start_time) as date,
+        f"""SELECT {_tz_date()} as date,
             SUM(st.count) as calls,
             COUNT(DISTINCT st.session_uuid) as sessions
         FROM session_tools st
         JOIN sessions s ON st.session_uuid = s.uuid
         {where}
-        GROUP BY DATE(s.start_time)""",
+        GROUP BY {_tz_date()}""",
         params,
     ).fetchall()
 
@@ -2684,14 +2816,14 @@ def query_mcp_server_trend(
     sub_where = "WHERE " + " AND ".join(sub_conditions)
 
     sub_rows = conn.execute(
-        f"""SELECT DATE(s.start_time) as date,
+        f"""SELECT {_tz_date()} as date,
             SUM(sat.count) as calls,
             COUNT(DISTINCT si.session_uuid) as sessions
         FROM subagent_tools sat
         JOIN subagent_invocations si ON sat.invocation_id = si.id
         JOIN sessions s ON si.session_uuid = s.uuid
         {sub_where}
-        GROUP BY DATE(s.start_time)""",
+        GROUP BY {_tz_date()}""",
         sub_params,
     ).fetchall()
 
@@ -2806,6 +2938,7 @@ def query_sessions_by_mcp_server(
             s.message_count, s.start_time, s.end_time, s.duration_seconds,
             s.models_used, s.subagent_count, s.initial_prompt,
             s.git_branch, s.session_titles,
+            s.session_source, s.source, s.remote_user_id, s.remote_machine_id,
             agg.has_main, agg.has_sub, agg.agent_ids
         FROM sessions s
         JOIN aggregated_sessions agg ON s.uuid = agg.session_uuid
@@ -2919,12 +3052,12 @@ def query_mcp_tool_usage_trend(
 
     # Daily trend
     trend_rows = conn.execute(
-        f"""SELECT DATE(s.start_time) as date, SUM(st.count) as count
+        f"""SELECT {_tz_date()} as date, SUM(st.count) as count
         FROM session_tools st
         JOIN sessions s ON st.session_uuid = s.uuid
         {where}
         AND s.start_time IS NOT NULL
-        GROUP BY DATE(s.start_time)
+        GROUP BY {_tz_date()}
         ORDER BY date""",
         params,
     ).fetchall()
@@ -2939,6 +3072,15 @@ def query_mcp_tool_usage_trend(
         params=params,
         count_expr="SUM(st.count)",
     )
+
+    trend_by_user = _query_per_user_trend(
+        conn,
+        from_clause="FROM session_tools st JOIN sessions s ON st.session_uuid = s.uuid",
+        where=where,
+        params=params,
+        count_expr="SUM(st.count)",
+    )
+    user_names = _resolve_user_names(conn, [u for u in trend_by_user if u != "_local"])
 
     # First/last used
     time_row = conn.execute(
@@ -2957,6 +3099,8 @@ def query_mcp_tool_usage_trend(
         "by_item": by_item,
         "trend": trend,
         "trend_by_item": trend_by_item,
+        "trend_by_user": trend_by_user,
+        "user_names": user_names,
         "first_used": first_used,
         "last_used": last_used,
     }
@@ -3034,12 +3178,12 @@ def query_builtin_tool_usage_trend(
 
     # Daily trend
     trend_rows = conn.execute(
-        f"""SELECT DATE(s.start_time) as date, SUM(st.count) as count
+        f"""SELECT {_tz_date()} as date, SUM(st.count) as count
         FROM session_tools st
         JOIN sessions s ON st.session_uuid = s.uuid
         {where}
         AND s.start_time IS NOT NULL
-        GROUP BY DATE(s.start_time)
+        GROUP BY {_tz_date()}
         ORDER BY date""",
         params,
     ).fetchall()
@@ -3055,6 +3199,15 @@ def query_builtin_tool_usage_trend(
         count_expr="SUM(st.count)",
     )
 
+    trend_by_user = _query_per_user_trend(
+        conn,
+        from_clause="FROM session_tools st JOIN sessions s ON st.session_uuid = s.uuid",
+        where=where,
+        params=params,
+        count_expr="SUM(st.count)",
+    )
+    user_names = _resolve_user_names(conn, [u for u in trend_by_user if u != "_local"])
+
     # First/last used
     time_row = conn.execute(
         f"""SELECT MIN(s.start_time) as first_used, MAX(s.start_time) as last_used
@@ -3069,6 +3222,8 @@ def query_builtin_tool_usage_trend(
         "by_item": by_item,
         "trend": trend,
         "trend_by_item": trend_by_item,
+        "trend_by_user": trend_by_user,
+        "user_names": user_names,
         "first_used": time_row["first_used"] if time_row else None,
         "last_used": time_row["last_used"] if time_row else None,
     }
@@ -3147,13 +3302,13 @@ def query_mcp_tool_detail(
     trend_where = "WHERE " + " AND ".join(trend_conditions)
 
     trend_rows = conn.execute(
-        f"""SELECT DATE(s.start_time) as date,
+        f"""SELECT {_tz_date()} as date,
             SUM(st.count) as calls,
             COUNT(DISTINCT st.session_uuid) as sessions
         FROM session_tools st
         JOIN sessions s ON st.session_uuid = s.uuid
         {trend_where}
-        GROUP BY DATE(s.start_time)""",
+        GROUP BY {_tz_date()}""",
         params,
     ).fetchall()
 
@@ -3162,13 +3317,13 @@ def query_mcp_tool_detail(
     sub_trend_where = "WHERE " + " AND ".join(sub_trend_conditions)
 
     sub_trend_rows = conn.execute(
-        f"""SELECT DATE(s.start_time) as date,
+        f"""SELECT {_tz_date()} as date,
             SUM(sat.count) as calls
         FROM subagent_tools sat
         JOIN subagent_invocations si ON sat.invocation_id = si.id
         JOIN sessions s ON si.session_uuid = s.uuid
         {sub_trend_where}
-        GROUP BY DATE(s.start_time)""",
+        GROUP BY {_tz_date()}""",
         sub_params,
     ).fetchall()
 
@@ -3291,6 +3446,7 @@ def query_sessions_by_mcp_tool(
             s.message_count, s.start_time, s.end_time, s.duration_seconds,
             s.models_used, s.subagent_count, s.initial_prompt,
             s.git_branch, s.session_titles,
+            s.session_source, s.source, s.remote_user_id, s.remote_machine_id,
             agg.has_main, agg.has_sub, agg.agent_ids
         FROM sessions s
         JOIN aggregated_sessions agg ON s.uuid = agg.session_uuid
@@ -3503,13 +3659,13 @@ def query_builtin_server_trend(
     where = "WHERE " + " AND ".join(conditions)
 
     main_rows = conn.execute(
-        f"""SELECT DATE(s.start_time) as date,
+        f"""SELECT {_tz_date()} as date,
             SUM(st.count) as calls,
             COUNT(DISTINCT st.session_uuid) as sessions
         FROM session_tools st
         JOIN sessions s ON st.session_uuid = s.uuid
         {where}
-        GROUP BY DATE(s.start_time)""",
+        GROUP BY {_tz_date()}""",
         params,
     ).fetchall()
 
@@ -3526,14 +3682,14 @@ def query_builtin_server_trend(
     sub_where = "WHERE " + " AND ".join(sub_conditions)
 
     sub_rows = conn.execute(
-        f"""SELECT DATE(s.start_time) as date,
+        f"""SELECT {_tz_date()} as date,
             SUM(sat.count) as calls,
             COUNT(DISTINCT si.session_uuid) as sessions
         FROM subagent_tools sat
         JOIN subagent_invocations si ON sat.invocation_id = si.id
         JOIN sessions s ON si.session_uuid = s.uuid
         {sub_where}
-        GROUP BY DATE(s.start_time)""",
+        GROUP BY {_tz_date()}""",
         sub_params,
     ).fetchall()
 
@@ -3632,13 +3788,13 @@ def query_builtin_tool_detail(
     trend_where = "WHERE " + " AND ".join(trend_conditions)
 
     trend_rows = conn.execute(
-        f"""SELECT DATE(s.start_time) as date,
+        f"""SELECT {_tz_date()} as date,
             SUM(st.count) as calls,
             COUNT(DISTINCT st.session_uuid) as sessions
         FROM session_tools st
         JOIN sessions s ON st.session_uuid = s.uuid
         {trend_where}
-        GROUP BY DATE(s.start_time)""",
+        GROUP BY {_tz_date()}""",
         params,
     ).fetchall()
 
@@ -3647,13 +3803,13 @@ def query_builtin_tool_detail(
     sub_trend_where = "WHERE " + " AND ".join(sub_trend_conditions)
 
     sub_trend_rows = conn.execute(
-        f"""SELECT DATE(s.start_time) as date,
+        f"""SELECT {_tz_date()} as date,
             SUM(sat.count) as calls
         FROM subagent_tools sat
         JOIN subagent_invocations si ON sat.invocation_id = si.id
         JOIN sessions s ON si.session_uuid = s.uuid
         {sub_trend_where}
-        GROUP BY DATE(s.start_time)""",
+        GROUP BY {_tz_date()}""",
         sub_params,
     ).fetchall()
 
@@ -3769,6 +3925,7 @@ def query_sessions_by_builtin_server(
             s.message_count, s.start_time, s.end_time, s.duration_seconds,
             s.models_used, s.subagent_count, s.initial_prompt,
             s.git_branch, s.session_titles,
+            s.session_source, s.source, s.remote_user_id, s.remote_machine_id,
             agg.has_main, agg.has_sub, agg.agent_ids
         FROM sessions s
         JOIN aggregated_sessions agg ON s.uuid = agg.session_uuid
@@ -3844,6 +4001,7 @@ def query_sessions_by_builtin_tool(
             s.message_count, s.start_time, s.end_time, s.duration_seconds,
             s.models_used, s.subagent_count, s.initial_prompt,
             s.git_branch, s.session_titles,
+            s.session_source, s.source, s.remote_user_id, s.remote_machine_id,
             agg.has_main, agg.has_sub, agg.agent_ids
         FROM sessions s
         JOIN aggregated_sessions agg ON s.uuid = agg.session_uuid
@@ -3930,3 +4088,126 @@ def query_subagent_command_usage(
         params,
     ).fetchall()
     return [dict(row) for row in rows]
+
+
+# ---------------------------------------------------------------------------
+# Parse-once: Session detail & tool breakdown queries
+# ---------------------------------------------------------------------------
+
+
+def query_session_detail(conn: sqlite3.Connection, uuid: str) -> dict | None:
+    """
+    Fetch all SessionDetail fields available in the DB for a single session.
+
+    Returns a dict ready to be mapped to the SessionDetail schema, or None
+    if the session is not in the DB.
+    """
+    # 1. Core session row
+    row = conn.execute(
+        """SELECT uuid, slug, project_encoded_name, project_path,
+                  message_count, start_time, end_time, duration_seconds,
+                  input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens,
+                  total_cost, initial_prompt, git_branch, models_used,
+                  session_titles, is_continuation_marker, was_compacted,
+                  compaction_count, file_snapshot_count, subagent_count,
+                  session_source, source, remote_user_id, remote_machine_id,
+                  jsonl_mtime
+        FROM sessions WHERE uuid = ?""",
+        (uuid,),
+    ).fetchone()
+    if not row:
+        return None
+
+    session = dict(row)
+
+    # Parse JSON columns
+    session["models_used"] = _parse_json_list(session.get("models_used"))
+    session["session_titles"] = _parse_json_list(session.get("session_titles"))
+
+    # Compute derived fields
+    input_tokens = session.get("input_tokens") or 0
+    cache_read = session.get("cache_read_tokens") or 0
+    denom = input_tokens + cache_read
+    session["cache_hit_rate"] = cache_read / denom if denom > 0 else 0.0
+
+    git_branch = session.get("git_branch")
+    session["git_branches"] = [git_branch] if git_branch else []
+
+    project_path = session.get("project_path") or ""
+    session["working_directories"] = [project_path] if project_path else []
+    session["project_display_name"] = Path(project_path).name if project_path else None
+
+    # 2. Tool counts
+    tool_rows = conn.execute(
+        "SELECT tool_name, count FROM session_tools WHERE session_uuid = ?",
+        (uuid,),
+    ).fetchall()
+    session["tools_used"] = {r["tool_name"]: r["count"] for r in tool_rows}
+
+    # 3. Skill usage (with invocation_source)
+    skill_rows = conn.execute(
+        "SELECT skill_name, invocation_source, count FROM session_skills WHERE session_uuid = ?",
+        (uuid,),
+    ).fetchall()
+    session["skills_used_raw"] = [
+        (r["skill_name"], r["invocation_source"], r["count"]) for r in skill_rows
+    ]
+
+    # 4. Command usage (with invocation_source)
+    cmd_rows = conn.execute(
+        "SELECT command_name, invocation_source, count FROM session_commands WHERE session_uuid = ?",
+        (uuid,),
+    ).fetchall()
+    session["commands_used_raw"] = [
+        (r["command_name"], r["invocation_source"], r["count"]) for r in cmd_rows
+    ]
+
+    # 5. Leaf UUIDs (for project_context_leaf_uuids display)
+    leaf_rows = conn.execute(
+        "SELECT leaf_uuid FROM session_leaf_refs WHERE session_uuid = ?",
+        (uuid,),
+    ).fetchall()
+    session["project_context_leaf_uuids"] = [r["leaf_uuid"] for r in leaf_rows]
+
+    # 6. Chain detection
+    session["has_chain"] = query_session_has_chain(conn, uuid)
+
+    return session
+
+
+def query_session_tool_breakdown(
+    conn: sqlite3.Connection, uuid: str
+) -> tuple[dict[str, int] | None, dict[str, int]]:
+    """
+    Fetch session + subagent tool counts from DB.
+
+    Returns (session_tool_counts, subagent_tool_counts).
+    Returns (None, {}) if session not found.
+    """
+    # Session tools
+    session_rows = conn.execute(
+        "SELECT tool_name, count FROM session_tools WHERE session_uuid = ?",
+        (uuid,),
+    ).fetchall()
+    session_counts = {r["tool_name"]: r["count"] for r in session_rows}
+
+    # Subagent tools (aggregated across all invocations)
+    subagent_rows = conn.execute(
+        """SELECT sat.tool_name, SUM(sat.count) as count
+        FROM subagent_tools sat
+        JOIN subagent_invocations si ON sat.invocation_id = si.id
+        WHERE si.session_uuid = ?
+        GROUP BY sat.tool_name""",
+        (uuid,),
+    ).fetchall()
+    subagent_counts = {r["tool_name"]: r["count"] for r in subagent_rows}
+
+    # Only check existence when both are empty (distinguish "no tools" from "no session")
+    if not session_counts and not subagent_counts:
+        exists = conn.execute(
+            "SELECT 1 FROM sessions WHERE uuid = ?", (uuid,)
+        ).fetchone()
+        if not exists:
+            return None, {}
+
+    return session_counts, subagent_counts

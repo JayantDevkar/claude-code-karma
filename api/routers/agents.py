@@ -335,6 +335,11 @@ def get_agent_usage_trend(
                         item: [UsageTrendItem(date=t["date"], count=t["count"]) for t in points]
                         for item, points in data.get("trend_by_item", {}).items()
                     },
+                    trend_by_user={
+                        user: [UsageTrendItem(date=t["date"], count=t["count"]) for t in points]
+                        for user, points in data.get("trend_by_user", {}).items()
+                    },
+                    user_names=data.get("user_names", {}),
                     first_used=data.get("first_used"),
                     last_used=data.get("last_used"),
                 )
@@ -377,6 +382,11 @@ def get_single_agent_usage_trend(
                         item: [UsageTrendItem(date=t["date"], count=t["count"]) for t in points]
                         for item, points in data.get("trend_by_item", {}).items()
                     },
+                    trend_by_user={
+                        user: [UsageTrendItem(date=t["date"], count=t["count"]) for t in points]
+                        for user, points in data.get("trend_by_user", {}).items()
+                    },
+                    user_names=data.get("user_names", {}),
                     first_used=data.get("first_used"),
                     last_used=data.get("last_used"),
                 )
@@ -485,6 +495,10 @@ async def get_agent_sessions(
                             session_titles=row.get("session_titles", [])
                             or title_cache.get_titles(row["project_encoded_name"], row["uuid"])
                             or [],
+                            session_source=row.get("session_source"),
+                            source=row.get("source"),
+                            remote_user_id=row.get("remote_user_id"),
+                            remote_machine_id=row.get("remote_machine_id"),
                         )
                     )
 

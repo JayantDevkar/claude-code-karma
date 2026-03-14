@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { navigating } from '$app/stores';
-	import { Puzzle, Clock, Package, FolderOpen } from 'lucide-svelte';
+	import { Puzzle, Clock, Package, FolderOpen, FileText, ArrowRight } from 'lucide-svelte';
 	import { formatDistanceToNow } from 'date-fns';
 	import PageHeader from '$lib/components/layout/PageHeader.svelte';
 	import PluginCapabilities from '$lib/components/plugins/PluginCapabilities.svelte';
@@ -150,6 +150,28 @@
 					pluginColor={colorVars.color}
 					pluginColorSubtle={colorVars.subtle}
 				/>
+
+				<!-- Browse Skills Link -->
+				{#if plugin.capabilities.skills.length > 0 || plugin.capabilities.commands.length > 0}
+					<a
+						href="/plugins/{encodeURIComponent(plugin.name)}/skills"
+						class="mt-4 flex items-center justify-between p-3 rounded-xl bg-[var(--bg-subtle)] hover:bg-[var(--bg-muted)] transition-colors group"
+					>
+						<div class="flex items-center gap-3">
+							<FileText
+								size={16}
+								style="color: {colorVars.color};"
+							/>
+							<span class="text-sm font-medium text-[var(--text-primary)]">
+								Browse all {plugin.capabilities.skills.length + plugin.capabilities.commands.length} skill files
+							</span>
+						</div>
+						<ArrowRight
+							size={16}
+							class="text-[var(--text-muted)] group-hover:text-[var(--text-primary)] transition-colors"
+						/>
+					</a>
+				{/if}
 			</div>
 		{/if}
 

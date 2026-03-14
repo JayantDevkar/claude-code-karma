@@ -11,14 +11,18 @@
 		Maximize2
 	} from 'lucide-svelte';
 	import Modal from '$lib/components/ui/Modal.svelte';
+	import ImageAttachments from '$lib/components/ImageAttachments.svelte';
+	import type { ImageAttachment } from '$lib/api-types';
+	import { cleanPromptText, copyToClipboard } from '$lib/utils';
 
 	interface Props {
 		prompt: string;
 		previewLines?: number;
+		imageAttachments?: ImageAttachment[];
 		class?: string;
 	}
 
-	let { prompt, previewLines = 8, class: className = '' }: Props = $props();
+	let { prompt, previewLines = 8, imageAttachments, class: className = '' }: Props = $props();
 
 	let isExpanded = $state(false);
 	let copied = $state(false);
@@ -31,16 +35,6 @@
 	function extractCommandName(text: string): string | null {
 		const match = text.match(/<command-name>([^<]+)<\/command-name>/);
 		return match ? match[1] : null;
-	}
-
-	// Clean prompt text by removing command tags (skill invocation metadata)
-	function cleanPromptText(text: string): string {
-		return text
-			.replace(/<command-message>[^<]*<\/command-message>\s*/g, '')
-			.replace(/<command-name>[^<]*<\/command-name>\s*/g, '')
-			.replace(/<command-args>/g, '')
-			.replace(/<\/command-args>/g, '')
-			.trim();
 	}
 
 	// Format character count for display
@@ -97,16 +91,13 @@
 		}
 	});
 
-	// Copy to clipboard
-	async function copyToClipboard() {
-		try {
-			await navigator.clipboard.writeText(cleanedPrompt);
+	async function handleCopy() {
+		const success = await copyToClipboard(cleanedPrompt);
+		if (success) {
 			copied = true;
 			setTimeout(() => {
 				copied = false;
 			}, 2000);
-		} catch (err) {
-			console.error('Failed to copy:', err);
 		}
 	}
 </script>
@@ -189,7 +180,7 @@
 				{/if}
 				<button
 					type="button"
-					onclick={copyToClipboard}
+					onclick={handleCopy}
 					class="
 						p-1.5 rounded-md
 						text-[var(--text-muted)]
@@ -212,6 +203,9 @@
 
 		<!-- Markdown content -->
 		<div class="bg-[var(--bg-muted)] px-3 py-2 rounded-md">
+			{#if imageAttachments && imageAttachments.length > 0}
+				<ImageAttachments attachments={imageAttachments} class="mt-1" />
+			{/if}
 			<div
 				class="markdown-preview text-sm prompt-content {!isExpanded && needsExpansion
 					? 'prompt-preview'
@@ -257,7 +251,7 @@
 			<div class="flex justify-end mb-4">
 				<button
 					type="button"
-					onclick={copyToClipboard}
+					onclick={handleCopy}
 					class="
 						flex items-center gap-1.5 px-3 py-1.5
 						text-xs font-medium rounded-md
@@ -277,6 +271,9 @@
 					{/if}
 				</button>
 			</div>
+			{#if imageAttachments && imageAttachments.length > 0}
+				<ImageAttachments attachments={imageAttachments} class="mb-3" />
+			{/if}
 			<div
 				class="markdown-preview max-h-[70vh] overflow-y-auto pr-2 custom-scrollbar break-words"
 			>

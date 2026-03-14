@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Set
 
-from command_helpers import classify_invocation, is_command_category, is_skill_category
+from command_helpers import category_from_base_directory, classify_invocation, is_command_category, is_skill_category
 from config import FILE_TOOL_MAPPINGS
 from models import AssistantMessage, Session, ToolUseBlock, UserMessage
 from models.conversation import ConversationEntity
@@ -45,6 +45,12 @@ class ConversationData:
     skills: Counter = field(default_factory=Counter)
     commands: Counter = field(default_factory=Counter)
 
+    # Skill categories extracted from JSONL path ("Base directory for this skill:" lines).
+    # Maps skill_name → category string (e.g. "custom_skill", "user_command", "plugin_skill").
+    # This is a secondary source of truth — more reliable than local classify_invocation()
+    # for remote sessions where the plugin may not be installed locally.
+    skill_categories: Dict[str, str] = field(default_factory=dict)
+
     # File activity
     file_operations: List[FileOperation] = field(default_factory=list)
 
@@ -54,6 +60,7 @@ class ConversationData:
 
     # Initial prompt
     initial_prompt: Optional[str] = None
+    initial_prompt_images: List[Dict[str, str]] = field(default_factory=list)
 
 
 @dataclass
@@ -84,6 +91,7 @@ class SessionData:
 
     # Subagent spawning info
     task_tool_to_type: Dict[str, str] = field(default_factory=dict)  # tool_use_id -> subagent_type
+    task_tool_to_name: Dict[str, str] = field(default_factory=dict)  # tool_use_id -> display_name
     task_descriptions: Dict[str, str] = field(
         default_factory=dict
     )  # normalized_desc -> subagent_type
@@ -148,6 +156,7 @@ def _extract_file_operation(
     )
 
 
+
 def _collect_conversation_data_core(
     entity: ConversationEntity,
     actor: str,
@@ -170,6 +179,10 @@ def _collect_conversation_data_core(
     """
     data = ConversationData()
 
+    # Track the last Skill tool invocation so we can look for the base directory
+    # in the next UserMessage (Claude Code injects skill content as a user turn).
+    _pending_skill_name: Optional[str] = None
+
     for msg in entity.iter_messages():
         # Extract context from any message
         git_branch = getattr(msg, "git_branch", None)
@@ -180,13 +193,34 @@ def _collect_conversation_data_core(
         if cwd:
             data.working_directories.add(cwd)
 
-        # User message - get initial prompt
+        # User message - get initial prompt and check for skill base directory
         if isinstance(msg, UserMessage):
             if data.initial_prompt is None:
                 content = msg.content or ""
                 # Skip tool result and internal messages
                 if not msg.is_tool_result and not msg.is_internal_message:
                     data.initial_prompt = content[:5000] if content else None
+                    if msg.image_attachments:
+                        data.initial_prompt_images = list(msg.image_attachments)
+
+            # If we had a pending Skill invocation, check if this message carries
+            # the base directory line injected by Claude Code.
+            if _pending_skill_name is not None:
+                content = msg.content or ""
+                if "Base directory for this skill:" in content:
+                    try:
+                        # Extract first line after the marker
+                        marker = "Base directory for this skill:"
+                        idx = content.index(marker)
+                        after = content[idx + len(marker):]
+                        first_line = after.strip().splitlines()[0].strip() if after.strip() else ""
+                        if first_line:
+                            cat = category_from_base_directory(first_line)
+                            if cat:
+                                data.skill_categories[_pending_skill_name] = cat
+                    except (ValueError, IndexError):
+                        pass
+                _pending_skill_name = None
 
         # Assistant message - extract tools and file operations
         elif isinstance(msg, AssistantMessage):
@@ -204,11 +238,17 @@ def _collect_conversation_data_core(
                                 data.skills[skill_name] += 1
                             elif is_command_category(kind):
                                 data.commands[skill_name] += 1
+                            # Track for base-directory lookahead in next UserMessage
+                            _pending_skill_name = skill_name
 
                     # Extract file operations using shared utility
                     file_op = _extract_file_operation(block, msg.timestamp, actor, actor_type)
                     if file_op:
                         data.file_operations.append(file_op)
+        else:
+            # Non-user, non-assistant message clears the pending skill tracker
+            # (the injected content always comes in the very next message)
+            _pending_skill_name = None
 
     return data
 
@@ -292,6 +332,8 @@ def collect_session_data(session: Session, include_subagents: bool = False) -> S
                 # Skip tool result messages
                 if not (content.strip().startswith("{") and "'tool_use_id':" in content):
                     data.initial_prompt = content[:5000] if content else None
+                    if msg.image_attachments:
+                        data.initial_prompt_images = list(msg.image_attachments)
 
         # Assistant message processing
         elif isinstance(msg, AssistantMessage):
@@ -330,21 +372,24 @@ def collect_session_data(session: Session, include_subagents: bool = False) -> S
                     if file_op:
                         data.file_operations.append(file_op)
 
-                    # Extract Task -> subagent_type mapping
+                    # Extract Task -> subagent_type and name mappings
                     if tool_name in ("Task", "Agent"):
-                        subagent_type = block.input.get("subagent_type")
-                        if subagent_type:
-                            data.task_tool_to_type[block.id] = subagent_type
-                            # Store both description and prompt for fallback matching
-                            # The subagent's initial_prompt comes from Task's "prompt" field,
-                            # not the "description" field, so we need to match by prompt
-                            prompt = block.input.get("prompt", "")[:100]
-                            if prompt:
-                                data.task_descriptions[normalize_key(prompt)] = subagent_type
-                            # Also store description as secondary fallback
-                            desc = block.input.get("description", "")[:100]
-                            if desc:
-                                data.task_descriptions[normalize_key(desc)] = subagent_type
+                        subagent_type = block.input.get("subagent_type") or "general-purpose"
+                        data.task_tool_to_type[block.id] = subagent_type
+                        # Store both description and prompt for fallback matching
+                        # The subagent's initial_prompt comes from Task's "prompt" field,
+                        # not the "description" field, so we need to match by prompt
+                        prompt = block.input.get("prompt", "")[:100]
+                        if prompt:
+                            data.task_descriptions[normalize_key(prompt)] = subagent_type
+                        # Also store description as secondary fallback
+                        desc = block.input.get("description", "")[:100]
+                        if desc:
+                            data.task_descriptions[normalize_key(desc)] = subagent_type
+                        # Extract display name from `name` input field
+                        agent_display_name = block.input.get("name")
+                        if agent_display_name:
+                            data.task_tool_to_name[block.id] = agent_display_name
 
     # Collect subagent data if requested
     if include_subagents:
@@ -404,7 +449,9 @@ class SubagentInfo:
     skills_used: Counter
     commands_used: Counter
     initial_prompt: Optional[str]
+    initial_prompt_images: List[Dict[str, str]]
     subagent_type: Optional[str]
+    display_name: Optional[str]
     message_count: int
 
 
@@ -422,8 +469,9 @@ def collect_subagent_info(
     Returns:
         List of SubagentInfo for each subagent
     """
-    # Build agent_id -> subagent_type mapping from tool results
+    # Build agent_id -> subagent_type and agent_id -> display_name mappings from tool results
     agent_id_to_type: Dict[str, str] = {}
+    agent_id_to_name: Dict[str, str] = {}
 
     for tool_use_id, subagent_type in session_data.task_tool_to_type.items():
         result_data = tool_results.get(tool_use_id)
@@ -434,33 +482,25 @@ def collect_subagent_info(
         ):
             agent_id_to_type[result_data.spawned_agent_id] = subagent_type
 
+    for tool_use_id, display_name in session_data.task_tool_to_name.items():
+        result_data = tool_results.get(tool_use_id)
+        if (
+            result_data
+            and hasattr(result_data, "spawned_agent_id")
+            and result_data.spawned_agent_id
+        ):
+            agent_id_to_name[result_data.spawned_agent_id] = display_name
+
     subagents_info: List[SubagentInfo] = []
 
     for subagent in session.list_subagents():
-        # Count tools, skills, and commands for this subagent - single pass
-        tool_counts: Counter = Counter()
-        skill_counts: Counter = Counter()
-        command_counts: Counter = Counter()
-        initial_prompt = None
-
-        for msg in subagent.iter_messages():
-            if isinstance(msg, UserMessage):
-                if initial_prompt is None:
-                    initial_prompt = msg.content[:5000] if msg.content else None
-            elif isinstance(msg, AssistantMessage):
-                for block in msg.content_blocks:
-                    if isinstance(block, ToolUseBlock):
-                        tool_counts[block.name] += 1
-
-                        # Extract skill/command names from Skill tool inputs
-                        if block.name == "Skill" and block.input:
-                            skill_name = block.input.get("skill")
-                            if skill_name:
-                                kind = classify_invocation(skill_name, source="skill_tool")
-                                if is_skill_category(kind):
-                                    skill_counts[skill_name] += 1
-                                elif is_command_category(kind):
-                                    command_counts[skill_name] += 1
+        # Collect all subagent data in a single pass via collect_agent_data
+        agent_data = collect_agent_data(subagent)
+        tool_counts = agent_data.tool_counts
+        skill_counts = agent_data.skills
+        command_counts = agent_data.commands
+        initial_prompt = agent_data.initial_prompt
+        initial_prompt_images = list(agent_data.initial_prompt_images)
 
         # Match subagent to Task invocation
         subagent_type = agent_id_to_type.get(subagent.agent_id)
@@ -489,7 +529,9 @@ def collect_subagent_info(
                 skills_used=skill_counts,
                 commands_used=command_counts,
                 initial_prompt=initial_prompt,
+                initial_prompt_images=initial_prompt_images,
                 subagent_type=subagent_type,
+                display_name=agent_id_to_name.get(subagent.agent_id),
                 message_count=subagent.message_count,
             )
         )

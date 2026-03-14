@@ -332,15 +332,98 @@ def get_plugin_cache_path(plugin_name: str) -> Optional[Path]:
     return None
 
 
+def read_plugin_manifest(cache_path: Path) -> dict:
+    """
+    Read a plugin's .claude-plugin/plugin.json manifest.
+
+    The manifest can specify custom paths for skills, commands, and agents
+    that supplement the default directories.
+
+    Args:
+        cache_path: Plugin install/cache directory
+
+    Returns:
+        Parsed manifest dict, or empty dict if not found
+    """
+    manifest_file = cache_path / ".claude-plugin" / "plugin.json"
+    if not manifest_file.exists():
+        return {}
+    try:
+        with open(manifest_file, "r") as f:
+            return json.load(f)
+    except Exception as e:
+        logger.debug(f"Failed to read plugin manifest at {manifest_file}: {e}")
+        return {}
+
+
+def _resolve_manifest_dirs(
+    cache_path: Path, manifest: dict, key: str, defaults: list[str]
+) -> list[Path]:
+    """
+    Resolve directory paths from manifest custom paths + defaults.
+
+    Custom paths from plugin.json supplement (not replace) defaults.
+    Returns deduplicated list of existing directories.
+
+    Args:
+        cache_path: Plugin install directory
+        manifest: Parsed plugin.json manifest
+        key: Manifest key ("skills", "commands", "agents")
+        defaults: Default subdirectory names to check
+
+    Returns:
+        List of existing directory Paths to scan
+    """
+    resolved_cache = cache_path.resolve()
+    plugins_base = (settings.claude_base / "plugins").resolve()
+    dirs: list[Path] = []
+    seen: set[Path] = set()
+
+    # Add default directories first
+    for default in defaults:
+        d = cache_path / default
+        if d.exists() and d.is_dir():
+            resolved = d.resolve()
+            if resolved not in seen:
+                dirs.append(d)
+                seen.add(resolved)
+
+    # Add custom path from manifest (supplements defaults)
+    custom = manifest.get(key)
+    if custom:
+        custom_paths = [custom] if isinstance(custom, str) else custom
+        for cp in custom_paths:
+            # Strip leading ./ prefix for path resolution
+            clean = cp.removeprefix("./")
+            d = cache_path / clean
+            if d.exists() and d.is_dir():
+                resolved = d.resolve()
+                # Security: ensure path stays within plugin directory
+                try:
+                    resolved.relative_to(resolved_cache)
+                except ValueError:
+                    logger.warning(f"Custom path escapes plugin dir: {cp}")
+                    continue
+                if resolved not in seen:
+                    dirs.append(d)
+                    seen.add(resolved)
+
+    return dirs
+
+
 def scan_plugin_capabilities(plugin_name: str) -> dict:
     """
     Scan a plugin's directory for its capabilities.
 
     Looks for:
     - agents/*.md files
+    - skills/*/SKILL.md files
     - commands/*.md files
     - hooks/*.{py,js,ts} files
     - .mcp.json for MCP tools
+
+    Also reads .claude-plugin/plugin.json manifest for custom paths
+    that supplement the default directories.
 
     Args:
         plugin_name: Plugin identifier
@@ -363,26 +446,28 @@ def scan_plugin_capabilities(plugin_name: str) -> dict:
         logger.warning(f"Plugin path outside plugins directory: {plugin_name}")
         return result
 
-    # Scan agents directory
-    agents_dir = cache_path / "agents"
-    if agents_dir.exists():
-        for f in agents_dir.glob("*.md"):
-            result["agents"].append(f.stem)
+    # Read manifest for custom paths
+    manifest = read_plugin_manifest(cache_path)
 
-    # Scan skills directory first (recursive for SKILL.md)
+    # Scan agents directories (default + manifest custom paths)
+    for agents_dir in _resolve_manifest_dirs(cache_path, manifest, "agents", ["agents"]):
+        for f in agents_dir.glob("*.md"):
+            if f.stem not in result["agents"]:
+                result["agents"].append(f.stem)
+
+    # Scan skills directories first (recursive for SKILL.md)
     # Skills take priority over commands when both exist (skills have richer structure)
-    skills_dir = cache_path / "skills"
-    if skills_dir.exists():
+    for skills_dir in _resolve_manifest_dirs(cache_path, manifest, "skills", ["skills"]):
         for f in skills_dir.rglob("SKILL.md"):
             skill_name = f.parent.name
-            result["skills"].append(skill_name)
+            if skill_name not in result["skills"]:
+                result["skills"].append(skill_name)
 
-    # Scan commands directory — skip entries already found as skills
+    # Scan commands directories — skip entries already found as skills
     skills_set = set(result["skills"])
-    commands_dir = cache_path / "commands"
-    if commands_dir.exists():
+    for commands_dir in _resolve_manifest_dirs(cache_path, manifest, "commands", ["commands"]):
         for f in commands_dir.glob("*.md"):
-            if f.stem not in skills_set:
+            if f.stem not in skills_set and f.stem not in result["commands"]:
                 result["commands"].append(f.stem)
 
     # Scan hooks directory
@@ -433,7 +518,10 @@ def scan_plugin_capabilities(plugin_name: str) -> dict:
 
 def read_command_contents(plugin_name: str) -> list[dict]:
     """
-    Read command .md file contents for a plugin.
+    Read command/skill .md file contents for a plugin.
+
+    Reads from both default directories (commands/, skills/) and
+    custom paths defined in .claude-plugin/plugin.json manifest.
 
     Args:
         plugin_name: Plugin identifier
@@ -442,6 +530,7 @@ def read_command_contents(plugin_name: str) -> list[dict]:
         List of dicts with 'name' and 'content' keys
     """
     result = []
+    seen_names: set[str] = set()
 
     cache_path = get_plugin_cache_path(plugin_name)
     if not cache_path or not cache_path.exists():
@@ -456,17 +545,32 @@ def read_command_contents(plugin_name: str) -> list[dict]:
         logger.warning(f"Plugin path outside plugins directory: {plugin_name}")
         return result
 
-    commands_dir = cache_path / "commands"
-    if not commands_dir.exists():
-        return result
+    manifest = read_plugin_manifest(cache_path)
 
-    for f in sorted(commands_dir.glob("*.md")):
-        try:
-            content = f.read_text(encoding="utf-8")
-            result.append({"name": f.stem, "content": content})
-        except Exception as e:
-            logger.debug(f"Failed to read command file {f}: {e}")
-            result.append({"name": f.stem, "content": None})
+    # Scan skills directories for SKILL.md files
+    for skills_dir in _resolve_manifest_dirs(cache_path, manifest, "skills", ["skills"]):
+        for f in sorted(skills_dir.rglob("SKILL.md")):
+            name = f.parent.name
+            if name not in seen_names:
+                seen_names.add(name)
+                try:
+                    content = f.read_text(encoding="utf-8")
+                    result.append({"name": name, "content": content})
+                except Exception as e:
+                    logger.debug(f"Failed to read skill file {f}: {e}")
+                    result.append({"name": name, "content": None})
+
+    # Scan commands directories for .md files
+    for commands_dir in _resolve_manifest_dirs(cache_path, manifest, "commands", ["commands"]):
+        for f in sorted(commands_dir.glob("*.md")):
+            if f.stem not in seen_names:
+                seen_names.add(f.stem)
+                try:
+                    content = f.read_text(encoding="utf-8")
+                    result.append({"name": f.stem, "content": content})
+                except Exception as e:
+                    logger.debug(f"Failed to read command file {f}: {e}")
+                    result.append({"name": f.stem, "content": None})
 
     return result
 

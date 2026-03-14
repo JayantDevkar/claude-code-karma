@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import { browser } from '$app/environment';
 	import { Activity, Zap, Database, Cpu, FolderOpen, Clock, BarChart3 } from 'lucide-svelte';
 	import { goto } from '$app/navigation';
@@ -7,7 +7,7 @@
 	import SkeletonBox from '$lib/components/skeleton/SkeletonBox.svelte';
 	import SkeletonText from '$lib/components/skeleton/SkeletonText.svelte';
 	import SkeletonStatsCard from '$lib/components/skeleton/SkeletonStatsCard.svelte';
-	import { getChartColorPalette } from '$lib/components/charts/chartConfig';
+	import { getChartColorPalette, onThemeChange } from '$lib/components/charts/chartConfig';
 	import TimeFilterDropdown from '$lib/components/TimeFilterDropdown.svelte';
 	import PageHeader from '$lib/components/layout/PageHeader.svelte';
 	import StatsGrid from '$lib/components/StatsGrid.svelte';
@@ -17,7 +17,9 @@
 		analyticsFilterOptions,
 		getTimestampRangeForFilter,
 		isHourBasedFilter,
-		getAnalyticsFilterLabel
+		getAnalyticsFilterLabel,
+		getUserChartColor,
+		getUserChartLabel
 	} from '$lib/utils';
 
 	// Read filter directly from URL
@@ -68,6 +70,8 @@
 		cache_hit_rate: number;
 		tools_used: Record<string, number>;
 		sessions_by_date: Record<string, number>;
+		sessions_by_date_by_user?: Record<string, Record<string, number>>;
+		user_names?: Record<string, string>;
 		projects_active: number;
 		temporal_heatmap: number[][];
 		peak_hours: number[];
@@ -122,6 +126,11 @@
 			}
 		};
 	});
+
+	let hasMultiUser = $derived(
+		!!analytics.sessions_by_date_by_user &&
+		Object.keys(analytics.sessions_by_date_by_user).length > 1
+	);
 
 	// --- Helpers ---
 	const formatK = (n: number) => {
@@ -291,71 +300,172 @@
 
 	$effect(() => {
 		if (chartInstance && sortedDates) {
-			const newCounts = sortedDates.map((date) => analytics.sessions_by_date[date]);
 			const newLabels = sortedDates.map((date) => formatDateLabel(date));
-
 			chartInstance.data.labels = newLabels;
-			chartInstance.data.datasets[0].data = newCounts;
+
+			if (hasMultiUser && analytics.sessions_by_date_by_user) {
+				const userIds = Object.keys(analytics.sessions_by_date_by_user);
+				const sorted = userIds.filter(id => id !== '_local').sort();
+				if (userIds.includes('_local')) sorted.unshift('_local');
+
+				// Update each dataset's data
+				sorted.forEach((userId, i) => {
+					if (chartInstance.data.datasets[i]) {
+						chartInstance.data.datasets[i].data = sortedDates.map(
+							date => analytics.sessions_by_date_by_user![userId]?.[date] ?? 0
+						);
+					}
+				});
+			} else {
+				const newCounts = sortedDates.map((date) => analytics.sessions_by_date[date]);
+				chartInstance.data.datasets[0].data = newCounts;
+			}
 			chartInstance.update();
 		}
 	});
 
-	onMount(async () => {
-		const Chart = (await import('chart.js/auto')).default;
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	let ChartCtor: any = null;
+	let cleanupTheme: (() => void) | null = null;
+
+	async function createAnalyticsChart() {
+		if (!ChartCtor) {
+			ChartCtor = (await import('chart.js/auto')).default;
+		}
+		chartInstance?.destroy();
+		chartInstance = null;
+		if (!chartCanvas) return;
+
 		const colors = getChartColorPalette();
 		const style = getComputedStyle(document.documentElement);
 		const textMuted = style.getPropertyValue('--text-muted').trim() || '#94a3b8';
 		const textPrimary = style.getPropertyValue('--text-primary').trim() || '#0f172a';
 		const border = style.getPropertyValue('--border').trim() || 'rgba(0,0,0,0.08)';
 
-		const sessionCounts = sortedDates.map((date) => analytics.sessions_by_date[date]);
+		const labels = sortedDates.map((date) => formatDateLabel(date));
 
-		chartInstance = new Chart(chartCanvas, {
-			type: 'bar',
-			data: {
-				labels: sortedDates.map((date) => formatDateLabel(date)),
-				datasets: [
-					{
-						label: 'Sessions',
-						data: sessionCounts,
-						backgroundColor: textMuted,
-						hoverBackgroundColor: colors[0],
-						borderRadius: 3,
-						barThickness: 'flex',
-						maxBarThickness: 14
-					}
-				]
-			},
-			options: {
-				responsive: true,
-				maintainAspectRatio: false,
-				plugins: {
-					legend: { display: false },
-					tooltip: {
-						backgroundColor: textPrimary,
-						padding: 10,
-						cornerRadius: 6,
-						displayColors: false
-					}
-				},
-				scales: {
-					y: { beginAtZero: true, grid: { color: border }, ticks: { display: false } },
-					x: {
-						grid: { display: false },
-						ticks: {
-							font: { size: 10 },
-							color: textMuted,
-							maxTicksLimit: 8,
-							maxRotation: 0
+		if (hasMultiUser) {
+			const userIds = Object.keys(analytics.sessions_by_date_by_user!);
+			const sorted = userIds.filter(id => id !== '_local').sort();
+			if (userIds.includes('_local')) sorted.unshift('_local');
+
+			const datasets = sorted.map(userId => ({
+				label: getUserChartLabel(userId, analytics.user_names),
+				data: sortedDates.map(date => analytics.sessions_by_date_by_user![userId]?.[date] ?? 0),
+				backgroundColor: getUserChartColor(userId),
+				hoverBackgroundColor: getUserChartColor(userId),
+				borderRadius: 3,
+				barThickness: 'flex' as const,
+				maxBarThickness: 14
+			}));
+
+			chartInstance = new ChartCtor(chartCanvas, {
+				type: 'bar',
+				data: { labels, datasets },
+				options: {
+					responsive: true,
+					maintainAspectRatio: false,
+					plugins: {
+						legend: {
+							display: true,
+							position: 'top',
+							align: 'end',
+							labels: {
+								boxWidth: 8,
+								boxHeight: 8,
+								usePointStyle: true,
+								pointStyle: 'circle',
+								font: { size: 10 },
+								color: textMuted,
+								padding: 12
+							}
+						},
+						tooltip: {
+							backgroundColor: textPrimary,
+							padding: 10,
+							cornerRadius: 6,
+							mode: 'index'
+						}
+					},
+					scales: {
+						y: {
+							beginAtZero: true,
+							stacked: true,
+							grid: { color: border },
+							ticks: { display: false }
+						},
+						x: {
+							stacked: true,
+							grid: { display: false },
+							ticks: {
+								font: { size: 10 },
+								color: textMuted,
+								maxTicksLimit: 8,
+								maxRotation: 0
+							}
 						}
 					}
 				}
-			}
-		});
+			});
+		} else {
+			const sessionCounts = sortedDates.map((date) => analytics.sessions_by_date[date]);
+			chartInstance = new ChartCtor(chartCanvas, {
+				type: 'bar',
+				data: {
+					labels,
+					datasets: [
+						{
+							label: 'Sessions',
+							data: sessionCounts,
+							backgroundColor: textMuted,
+							hoverBackgroundColor: colors[0],
+							borderRadius: 3,
+							barThickness: 'flex',
+							maxBarThickness: 14
+						}
+					]
+				},
+				options: {
+					responsive: true,
+					maintainAspectRatio: false,
+					plugins: {
+						legend: { display: false },
+						tooltip: {
+							backgroundColor: textPrimary,
+							padding: 10,
+							cornerRadius: 6,
+							displayColors: false
+						}
+					},
+					scales: {
+						y: { beginAtZero: true, grid: { color: border }, ticks: { display: false } },
+						x: {
+							grid: { display: false },
+							ticks: {
+								font: { size: 10 },
+								color: textMuted,
+								maxTicksLimit: 8,
+								maxRotation: 0
+							}
+						}
+					}
+				}
+			});
+		}
+	}
+
+	onMount(async () => {
+		await createAnalyticsChart();
+		cleanupTheme = onThemeChange(() => createAnalyticsChart());
+	});
+
+	onDestroy(() => {
+		cleanupTheme?.();
+		chartInstance?.destroy();
 	});
 </script>
 
-<div class="max-w-[1100px] mx-auto space-y-6">
+<div class="space-y-6">
 	{#if isPageLoading}
 		<div class="space-y-6" role="status" aria-busy="true" aria-label="Loading...">
 			<!-- Page Header skeleton -->

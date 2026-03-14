@@ -15,6 +15,7 @@
 	import { eventTypeConfig, getToolIcon } from './tool-icons';
 	import ToolCallDetail from './ToolCallDetail.svelte';
 	import TodoUpdateDetail from './TodoUpdateDetail.svelte';
+	import ImageAttachments from '$lib/components/ImageAttachments.svelte';
 
 	interface Props {
 		event: TimelineEvent;
@@ -97,10 +98,11 @@
 		event.event_type === 'tool_call' ? getToolIcon(toolName) : config.icon
 	);
 
-	// Display title — for subagent spawns, show "Spawn [type] subagent"
+	// Display title — for subagent spawns, show "Spawn [type] subagent" with optional display_name
 	const displayTitle = $derived.by(() => {
 		if (event.metadata?.spawned_agent_id && event.metadata?.subagent_type) {
-			return `Spawn ${event.metadata.subagent_type} subagent`;
+			const name = event.metadata.display_name ? ` "${event.metadata.display_name}"` : '';
+			return `Spawn ${event.metadata.subagent_type}${name} subagent`;
 		}
 		return event.title;
 	});
@@ -425,6 +427,9 @@
 								<Copy size={14} />
 							{/if}
 						</button>
+						{#if event.metadata?.image_attachments?.length}
+							<ImageAttachments attachments={event.metadata.image_attachments} />
+						{/if}
 						<div class="markdown-preview text-sm">
 							{@html renderedExpandedContent}
 						</div>
