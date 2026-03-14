@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
 	import { RefreshCw } from 'lucide-svelte';
-	import type { SyncDetect, SyncStatusResponse, SyncWatchStatus } from '$lib/api-types';
+	import type { SyncDetect, SyncStatusResponse } from '$lib/api-types';
 	import PageHeader from '$lib/components/layout/PageHeader.svelte';
 	import SetupWizard from '$lib/components/sync/SetupWizard.svelte';
 	import OverviewTab from '$lib/components/sync/OverviewTab.svelte';
@@ -11,12 +11,10 @@
 
 	let syncDetect = $state<SyncDetect | null>(null);
 	let syncStatus = $state<SyncStatusResponse | null>(null);
-	let watchStatus = $state<SyncWatchStatus | null>(null);
 
 	// Sync from server data on load/invalidation
 	$effect(() => { syncDetect = data.detect ?? null; });
 	$effect(() => { syncStatus = data.status ?? null; });
-	$effect(() => { watchStatus = data.watchStatus ?? null; });
 
 	// Auto-select first team for the overview dashboard
 	let activeTeamName = $derived.by(() => {
@@ -38,14 +36,12 @@
 		abortController?.abort();
 		abortController = new AbortController();
 		try {
-			const [detectRes, statusRes, watchRes] = await Promise.all([
+			const [detectRes, statusRes] = await Promise.all([
 				fetch(`${API_BASE}/sync/detect`, { signal: abortController.signal }),
-				fetch(`${API_BASE}/sync/status`, { signal: abortController.signal }),
-				fetch(`${API_BASE}/sync/watch/status`, { signal: abortController.signal })
+				fetch(`${API_BASE}/sync/status`, { signal: abortController.signal })
 			]);
 			if (detectRes.ok) syncDetect = await detectRes.json();
 			if (statusRes.ok) syncStatus = await statusRes.json();
-			if (watchRes.ok) watchStatus = await watchRes.json();
 			lastUpdated = new Date();
 			secondsSinceUpdate = 0;
 		} catch (e) {
@@ -110,7 +106,6 @@
 			active={true}
 			teamName={activeTeamName}
 			onteamchange={refreshData}
-			initialWatchStatus={watchStatus}
 		/>
 	{/if}
 </div>

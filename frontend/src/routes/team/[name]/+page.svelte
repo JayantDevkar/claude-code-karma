@@ -1,6 +1,5 @@
 <script lang="ts">
 	import PageHeader from '$lib/components/layout/PageHeader.svelte';
-	import SyncStatusBanner from '$lib/components/sync/SyncStatusBanner.svelte';
 	import { Tabs } from 'bits-ui';
 	import TabsTrigger from '$lib/components/ui/TabsTrigger.svelte';
 	import TeamOverviewTab from '$lib/components/team/TeamOverviewTab.svelte';
@@ -354,13 +353,6 @@
 		</button>
 	{/snippet}
 </PageHeader>
-
-<div class="mb-6">
-	<SyncStatusBanner
-		running={data.watchStatus?.running ?? false}
-		syncthingUp={data.detectData?.running ?? false}
-	/>
-</div>
 
 <!-- Pending Device Requests (above tabs) -->
 {#if pendingDevices.length > 0}

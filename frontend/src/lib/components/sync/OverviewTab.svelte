@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import { Play, Square, Monitor, FolderGit2, ArrowUp, ArrowDown, CheckCircle2, Loader2, Users, RotateCcw, Clock, RefreshCw, ChevronDown, Copy, CheckCircle } from 'lucide-svelte';
-	import type { SyncDetect, SyncStatusResponse, SyncWatchStatus, SyncProjectStatus, SyncEvent } from '$lib/api-types';
+	import { FolderGit2, ArrowUp, ArrowDown, CheckCircle2, Loader2, Users, RotateCcw, Clock, RefreshCw, ChevronDown, Copy, CheckCircle, Monitor } from 'lucide-svelte';
+	import type { SyncDetect, SyncStatusResponse, SyncProjectStatus, SyncEvent } from '$lib/api-types';
 	import { formatRelativeTime, copyToClipboard } from '$lib/utils';
 	import { formatSyncEvent } from '$lib/utils/sync-events';
 	import { API_BASE } from '$lib/config';
@@ -11,72 +11,14 @@
 		status = null,
 		active = false,
 		teamName = null,
-		onteamchange,
-		initialWatchStatus = null
+		onteamchange
 	}: {
 		detect: SyncDetect | null;
 		status: SyncStatusResponse | null;
 		active?: boolean;
 		teamName: string | null;
 		onteamchange?: () => void;
-		initialWatchStatus?: SyncWatchStatus | null;
 	} = $props();
-
-	// ── Sync Engine watch status ──────────────────────────────────────────────
-	let watchStatus = $state<SyncWatchStatus | null>(null);
-	let watchLoading = $state(true);
-
-	// Seed from parent's cached data when available
-	$effect(() => {
-		if (initialWatchStatus !== null) {
-			watchStatus = initialWatchStatus;
-			watchLoading = false;
-		}
-	});
-	let watchActing = $state(false);
-
-	async function loadWatchStatus() {
-		if (watchStatus === null) watchLoading = true;
-		try {
-			const res = await fetch(`${API_BASE}/sync/watch/status`).catch(() => null);
-			if (res?.ok) {
-				watchStatus = await res.json();
-			} else {
-				watchStatus = null;
-			}
-		} finally {
-			watchLoading = false;
-		}
-	}
-
-	async function startWatch() {
-		if (!teamName) return;
-		watchActing = true;
-		try {
-			const url = new URL(`${API_BASE}/sync/watch/start`, window.location.origin);
-			if (teamName) url.searchParams.set('team_name', teamName);
-			const res = await fetch(url.toString(), { method: 'POST' }).catch(() => null);
-			if (res?.ok) {
-				watchStatus = await res.json();
-				// Auto-sync all existing unsynced sessions when watcher starts
-				await syncAllNow();
-			}
-		} finally {
-			watchActing = false;
-		}
-	}
-
-	async function stopWatch() {
-		watchActing = true;
-		try {
-			const res = await fetch(`${API_BASE}/sync/watch/stop`, { method: 'POST' }).catch(() => null);
-			if (res?.ok) {
-				watchStatus = await res.json();
-			}
-		} finally {
-			watchActing = false;
-		}
-	}
 
 	// ── Stats ─────────────────────────────────────────────────────────────────
 	let connectedMembers = $state(0);
@@ -118,6 +60,10 @@
 		return received;
 	});
 
+	let totalUnsynced = $derived(
+		projectStatuses.reduce((sum, p) => sum + ((p as { gap?: number }).gap ?? 0), 0)
+	);
+
 	async function loadMemberStats() {
 		if (!membersLoaded) membersLoading = true;
 		try {
@@ -136,8 +82,6 @@
 			membersLoaded = true;
 		}
 	}
-
-	// Pending actions are handled on individual team detail pages
 
 	async function loadProjectStatus() {
 		try {
@@ -160,22 +104,15 @@
 	async function syncAllNow() {
 		syncAllActing = true;
 		try {
-			// Sync all teams, not just the active one
-			const teamNames = status?.teams ? Object.keys(status.teams) : [];
-			await Promise.all(
-				teamNames.map((t) =>
-					fetch(`${API_BASE}/sync/teams/${encodeURIComponent(t)}/sync-now`, {
-						method: 'POST'
-					}).catch(() => null)
-				)
-			);
+			// Use the global sync-now endpoint (all teams, only unsynced sessions)
+			await fetch(`${API_BASE}/sync/sync-now`, { method: 'POST' }).catch(() => null);
 			await loadProjectStatus();
 		} finally {
 			syncAllActing = false;
 		}
 	}
 
-	// ── Recent Activity (Task 6) ─────────────────────────────────────────────
+	// ── Recent Activity ─────────────────────────────────────────────────────
 	let recentEvents = $state<SyncEvent[]>([]);
 	let activityLoading = $state(true);
 
@@ -198,7 +135,7 @@
 		}
 	}
 
-	// ── Machine Details accordion (Task 7) ───────────────────────────────────
+	// ── Machine Details accordion ───────────────────────────────────────────
 	let machineDetailsOpen = $state(false);
 	let copiedJoinCode = $state(false);
 	let copiedDeviceId = $state(false);
@@ -260,18 +197,18 @@
 		untrack(() => {
 			membersLoaded = false;
 			membersLoading = true;
-			watchLoading = true;
 			projectStatusLoading = true;
 			activityLoading = true;
 		});
 	});
+
+	let syncthingUp = $derived(detect?.running ?? false);
 
 	// ── Load everything when tab becomes active or team changes ──────────────
 	$effect(() => {
 		if (!active) return;
 		const _team = teamName; // track teamName so we re-fetch on team switch
 		untrack(() => {
-			loadWatchStatus();
 			loadMemberStats();
 			loadProjectStatus();
 			loadRecentActivity();
@@ -281,67 +218,43 @@
 
 <div class="space-y-5">
 
-	<!-- ── 1. Sync Engine Banner ─────────────────────────────────────────── -->
-	{#if watchLoading}
-		<div class="h-14 rounded-[var(--radius-lg)] bg-[var(--bg-muted)] animate-pulse" aria-hidden="true"></div>
-	{:else}
-		{@const running = watchStatus?.running ?? false}
-		{@const syncthingUp = detect?.running ?? false}
-		<div
-			class="flex items-center gap-3 p-4 rounded-[var(--radius-lg)] border {running
-				? 'border-[var(--success)]/30 bg-[var(--status-active-bg)]'
-				: 'border-[var(--warning)]/30 bg-[var(--status-idle-bg)]'}"
-		>
-			<span
-				class="w-2.5 h-2.5 rounded-full shrink-0 {running ? 'bg-[var(--success)]' : 'bg-[var(--warning)]'}"
-				aria-hidden="true"
-			></span>
-			<div class="flex-1 min-w-0">
-				<span class="text-sm font-semibold text-[var(--text-primary)]">
-					{running ? 'Session Watcher Running' : 'Session Watcher Stopped'}
-				</span>
-				{#if running && watchStatus?.team}
-					<p class="text-xs text-[var(--text-secondary)] mt-0.5 truncate">
-						Team: {watchStatus.team}{#if watchStatus.started_at} &middot; started {formatRelativeTime(watchStatus.started_at)}{/if}
-					</p>
-				{:else if !running}
-					<p class="text-xs text-[var(--text-muted)] mt-0.5">Start the watcher to detect new sessions and package them for your teammates.</p>
-				{/if}
-				<p class="text-[11px] mt-1 {syncthingUp ? 'text-[var(--success)]' : 'text-[var(--error)]'}">
-					Syncthing: {syncthingUp ? 'connected' : 'not running'}
+	<!-- ── 1. Syncthing Status + Sync Now ─────────────────────────────────── -->
+	<div
+		class="flex items-center gap-3 p-4 rounded-[var(--radius-lg)] border {syncthingUp
+			? 'border-[var(--success)]/30 bg-[var(--status-active-bg)]'
+			: 'border-[var(--warning)]/30 bg-[var(--status-idle-bg)]'}"
+	>
+		<span
+			class="w-2.5 h-2.5 rounded-full shrink-0 {syncthingUp ? 'bg-[var(--success)]' : 'bg-[var(--warning)]'}"
+			aria-hidden="true"
+		></span>
+		<div class="flex-1 min-w-0">
+			<span class="text-sm font-semibold text-[var(--text-primary)]">
+				Syncthing: {syncthingUp ? 'Connected' : 'Not Running'}
+			</span>
+			{#if totalUnsynced > 0}
+				<p class="text-xs text-[var(--warning)] mt-0.5">
+					{totalUnsynced} session{totalUnsynced !== 1 ? 's' : ''} not yet synced
 				</p>
-			</div>
-			{#if running}
-				<button
-					onclick={stopWatch}
-					disabled={watchActing}
-					aria-label="Stop sync engine"
-					class="shrink-0 flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-[var(--radius)] border border-[var(--error)]/30 text-[var(--error)] hover:bg-[var(--error-subtle)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-				>
-					{#if watchActing}
-						<Loader2 size={12} class="animate-spin" />
-					{:else}
-						<Square size={12} />
-					{/if}
-					Stop
-				</button>
-			{:else}
-				<button
-					onclick={startWatch}
-					disabled={watchActing || !teamName}
-					aria-label="Start sync engine"
-					class="shrink-0 flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-[var(--radius)] bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-				>
-					{#if watchActing}
-						<Loader2 size={12} class="animate-spin" />
-					{:else}
-						<Play size={12} />
-					{/if}
-					Start
-				</button>
+			{:else if projectStatuses.length > 0}
+				<p class="text-xs text-[var(--success)] mt-0.5">All sessions in sync</p>
 			{/if}
 		</div>
-	{/if}
+		<button
+			onclick={syncAllNow}
+			disabled={syncAllActing || !syncthingUp}
+			aria-label="Sync all projects now"
+			class="shrink-0 flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-[var(--radius)] bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+		>
+			{#if syncAllActing}
+				<Loader2 size={14} class="animate-spin" />
+				Syncing...
+			{:else}
+				<RefreshCw size={14} />
+				Sync Now
+			{/if}
+		</button>
+	</div>
 
 	<!-- ── 2. Stats Row ──────────────────────────────────────────────────── -->
 	{#if membersLoading && projectStatusLoading}
@@ -376,9 +289,7 @@
 		</div>
 	{/if}
 
-	<!-- Pending actions are shown on individual team pages (teams/{name}) -->
-
-	<!-- ── 4. Per-Project Sync Status ──────────────────────────────────── -->
+	<!-- ── 3. Per-Project Sync Status ──────────────────────────────────── -->
 	{#if projectStatusLoading}
 		<div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-subtle)]">
 			<div class="px-5 py-4 space-y-2">
@@ -398,20 +309,6 @@
 						{projectStatuses.length}
 					</span>
 				</div>
-				<button
-					onclick={syncAllNow}
-					disabled={syncAllActing}
-					aria-label="Sync all projects now"
-					class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-[var(--radius)] bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-				>
-					{#if syncAllActing}
-						<Loader2 size={12} class="animate-spin" />
-						Syncing...
-					{:else}
-						<RefreshCw size={12} />
-						Sync All Now
-					{/if}
-				</button>
 			</div>
 
 			<!-- Body -->
@@ -455,7 +352,7 @@
 		</div>
 	{/if}
 
-	<!-- ── 5. Recent Activity ─────────────────────────────────────────── -->
+	<!-- ── 4. Recent Activity ─────────────────────────────────────────── -->
 	{#if activityLoading}
 		<div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-subtle)]">
 			<div class="px-5 py-4 space-y-2">
@@ -484,7 +381,7 @@
 		</div>
 	{/if}
 
-	<!-- ── 6. Machine Details Card (collapsible) ───────────────────────── -->
+	<!-- ── 5. Machine Details Card (collapsible) ───────────────────────── -->
 	<div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-subtle)]">
 		<button
 			onclick={() => (machineDetailsOpen = !machineDetailsOpen)}

@@ -14,7 +14,6 @@ from schemas import InitRequest, ResetOptions
 import services.sync_identity as _sid
 from services.sync_identity import (
     reset_proxy,
-    get_watcher,
     validate_user_id,
     ALLOWED_PROJECT_NAME,
 )
@@ -104,11 +103,7 @@ async def sync_reset(options: Optional[ResetOptions] = None) -> Any:
 
     steps: dict[str, Any] = {}
 
-    # 1. Stop watcher if running
-    watcher = get_watcher()
-    if watcher.is_running:
-        await run_sync(watcher.stop)
-        steps["watcher_stopped"] = True
+    # 1. (Watcher removed — sync is now manual via sync-now)
 
     # 2. Clean Syncthing config (remove karma folders & team devices) then shut it down
     try:

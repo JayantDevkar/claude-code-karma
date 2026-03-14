@@ -9,7 +9,7 @@
 		Tooltip,
 		Legend
 	} from 'chart.js';
-	import { Users, FolderSync, ArrowUpDown, AlertTriangle, Loader2 } from 'lucide-svelte';
+	import { Users, FolderSync, ArrowUpDown, AlertTriangle, Loader2, RefreshCw } from 'lucide-svelte';
 	import type {
 		SyncTeam,
 		SyncProjectStatus,
@@ -18,6 +18,8 @@
 	} from '$lib/api-types';
 	import JoinCodeCard from './JoinCodeCard.svelte';
 	import StatsGrid from '$lib/components/StatsGrid.svelte';
+	import { API_BASE } from '$lib/config';
+	import { invalidateAll } from '$app/navigation';
 	import {
 		registerChartDefaults,
 		createResponsiveConfig,
@@ -59,6 +61,25 @@
 		ondeleteconfirm,
 		ondeleteerror
 	}: Props = $props();
+
+	let syncActing = $state(false);
+
+	async function syncTeamNow() {
+		syncActing = true;
+		try {
+			const res = await fetch(
+				`${API_BASE}/sync/teams/${encodeURIComponent(teamName)}/sync-now`,
+				{ method: 'POST' }
+			);
+			if (res.ok) {
+				invalidateAll();
+			}
+		} catch {
+			// best-effort
+		} finally {
+			syncActing = false;
+		}
+	}
 
 	let canvas = $state<HTMLCanvasElement>(undefined!);
 	let chart: Chart | null = null;
@@ -201,6 +222,37 @@
 			<JoinCodeCard code={joinCode} />
 		</section>
 	{/if}
+
+	<!-- Sync Now -->
+	<section>
+		<div class="flex items-center justify-between p-4 rounded-lg border border-[var(--border)] bg-[var(--bg-subtle)]">
+			<div>
+				<p class="text-sm font-medium text-[var(--text-primary)]">
+					{#if totalUnsyncedSessions > 0}
+						{totalUnsyncedSessions} session{totalUnsyncedSessions !== 1 ? 's' : ''} not yet synced
+					{:else}
+						All sessions in sync
+					{/if}
+				</p>
+				<p class="text-xs text-[var(--text-muted)] mt-0.5">Package and share unsynced sessions with your team</p>
+			</div>
+			<button
+				onclick={syncTeamNow}
+				disabled={syncActing}
+				class="flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-[var(--radius-md)]
+					bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)] transition-colors
+					disabled:opacity-50 disabled:cursor-not-allowed"
+			>
+				{#if syncActing}
+					<Loader2 size={14} class="animate-spin" />
+					Syncing...
+				{:else}
+					<RefreshCw size={14} />
+					Sync Now
+				{/if}
+			</button>
+		</div>
+	</section>
 
 	<!-- Stats Row -->
 	<section>

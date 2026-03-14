@@ -4,7 +4,6 @@
 	import {
 		FolderSync,
 		Plus,
-		RefreshCw,
 		Trash2,
 		CheckCircle2,
 		Loader2
@@ -46,33 +45,11 @@
 	}: Props = $props();
 
 	let showAddProject = $state(false);
-	let syncAllActing = $state(false);
-	let syncError = $state('');
 	let removeProjectConfirm = $state<string | null>(null);
 	let removeProjectError = $state<string | null>(null);
 
 	function getProjectStatus(encodedName: string): SyncProjectStatus | undefined {
 		return projectStatuses.find((p) => p.encoded_name === encodedName);
-	}
-
-	async function syncAllNow() {
-		syncAllActing = true;
-		syncError = '';
-		try {
-			const res = await fetch(
-				`${API_BASE}/sync/teams/${encodeURIComponent(teamName)}/sync-now`,
-				{ method: 'POST' }
-			);
-			if (!res.ok) {
-				syncError = 'Sync failed \u2014 try again';
-			} else {
-				invalidateAll();
-			}
-		} catch {
-			syncError = 'Network error';
-		} finally {
-			syncAllActing = false;
-		}
 	}
 
 	async function handleRemoveProject(encodedName: string) {
@@ -98,42 +75,19 @@
 <div class="space-y-4">
 	<!-- Header row -->
 	<div class="flex items-center justify-between">
-		<div class="flex items-center gap-2">
-			{#if projects.length > 0}
-				<button
-					onclick={syncAllNow}
-					disabled={syncAllActing}
-					class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-[var(--radius-md)]
-						bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)] transition-colors
-						disabled:opacity-50 disabled:cursor-not-allowed"
-				>
-					{#if syncAllActing}
-						<Loader2 size={12} class="animate-spin" />
-						Syncing...
-					{:else}
-						<RefreshCw size={12} />
-						Sync Now
-					{/if}
-				</button>
-			{/if}
-			<button
-				onclick={() => (showAddProject = true)}
-				class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-[var(--radius-md)]
-					border border-[var(--border)] text-[var(--text-secondary)]
-					hover:bg-[var(--bg-muted)] hover:text-[var(--text-primary)] transition-colors"
-			>
-				<Plus size={13} />
-				Add Projects
-			</button>
-		</div>
+		<button
+			onclick={() => (showAddProject = true)}
+			class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-[var(--radius-md)]
+				border border-[var(--border)] text-[var(--text-secondary)]
+				hover:bg-[var(--bg-muted)] hover:text-[var(--text-primary)] transition-colors"
+		>
+			<Plus size={13} />
+			Add Projects
+		</button>
 		{#if projects.length > 0}
 			<SessionLimitSelector {teamName} currentLimit={syncSessionLimit} />
 		{/if}
 	</div>
-
-	{#if syncError}
-		<p class="text-xs text-[var(--error)]" aria-live="polite">{syncError}</p>
-	{/if}
 
 	{#if removeProjectError}
 		<p class="text-xs text-[var(--error)]" aria-live="polite">{removeProjectError}</p>

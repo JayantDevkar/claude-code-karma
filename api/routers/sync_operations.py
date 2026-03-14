@@ -16,7 +16,7 @@ from db.sync_queries import (
 from services.folder_id import build_outbox_id
 import services.sync_identity as _sid
 from services.sync_identity import (
-    get_watcher, validate_project_name, _trigger_remote_reindex_bg,
+    validate_project_name, _trigger_remote_reindex_bg,
     validate_event_type_filter, cap_pagination,
     ALLOWED_PROJECT_NAME, ALLOWED_MEMBER_NAME,
     _VALID_EVENT_TYPES, _compute_proj_suffix,
@@ -45,21 +45,12 @@ async def sync_rescan_all() -> Any:
 # ─── Sync now ────────────────────────────────────────────────────────
 
 
-@router.post("/teams/{team_name}/sync-now")
-async def sync_team_sync_now(team_name: str) -> Any:
-    """Trigger an immediate session package for all projects in a team."""
-    if not ALLOWED_PROJECT_NAME.match(team_name):
-        raise HTTPException(400, "Invalid team name")
+async def _do_sync_now(config, conn, team_name: str) -> dict:
+    """Core sync-now logic: package unsynced sessions for all projects in a team.
 
-    config = await run_sync(_sid._load_identity)
-    if config is None:
-        raise HTTPException(400, "Not initialized")
-
-    conn = _sid._get_sync_conn()
-    team = get_team(conn, team_name)
-    if team is None:
-        raise HTTPException(404, f"Team '{team_name}' not found")
-
+    SessionPackager only packages sessions not already in the outbox,
+    so calling this repeatedly is safe and avoids duplicate data.
+    """
     from karma.config import KARMA_BASE
     from karma.packager import SessionPackager
     from karma.worktree_discovery import find_all_worktree_dirs
@@ -98,16 +89,12 @@ async def sync_team_sync_now(team_name: str) -> Any:
                     claude_dir = resolved_dir
                     logger.info("sync-now: resolved '%s' -> '%s'", proj["project_encoded_name"], encoded)
 
-                    # Fix Syncthing outbox folder: it may still point to the
-                    # old suffix-based dir. Remove it and recreate with the
-                    # correct encoded path via ensure_outbox_folder.
+                    # Fix Syncthing outbox folder path
                     try:
                         proxy = _sid.get_proxy()
                         git_id = local.get("git_identity")
                         proj_suffix = _compute_proj_suffix(git_id, resolved_path, resolved_encoded)
                         outbox_id = build_outbox_id(config.member_tag, proj_suffix)
-                        # Remove the potentially-wrong folder so ensure_outbox_folder
-                        # recreates it with the correct path
                         try:
                             await run_sync(proxy.remove_folder, outbox_id)
                         except Exception as e:
@@ -118,7 +105,6 @@ async def sync_team_sync_now(team_name: str) -> Any:
                             if m["device_id"] and m["device_id"] != (config.syncthing.device_id if config.syncthing else None)
                         ]
                         await ensure_outbox_folder(proxy, config, resolved_encoded, proj_suffix, all_device_ids)
-                        logger.info("sync-now: recreated outbox folder '%s' with correct path", outbox_id)
                     except Exception as e:
                         logger.warning("sync-now: could not fix outbox folder path: %s", e)
                 else:
@@ -143,7 +129,6 @@ async def sync_team_sync_now(team_name: str) -> Any:
             )
             manifest = await run_sync(packager.package, outbox)
             packaged_count += manifest.session_count
-            # Log session_packaged per unique session (dedup)
             log_session_packaged_events(
                 conn, team_name, encoded, config.user_id, manifest.sessions
             )
@@ -157,105 +142,71 @@ async def sync_team_sync_now(team_name: str) -> Any:
     )
 
     return {
-        "ok": True,
-        "team_name": team_name,
         "packaged_count": packaged_count,
         "project_count": len(projects),
         "errors": errors,
     }
 
 
-# ─── Watcher manager endpoints ────────────────────────────────────────
+@router.post("/teams/{team_name}/sync-now")
+async def sync_team_sync_now(team_name: str) -> Any:
+    """Trigger an immediate session package for all projects in a team."""
+    if not ALLOWED_PROJECT_NAME.match(team_name):
+        raise HTTPException(400, "Invalid team name")
+
+    config = await run_sync(_sid._load_identity)
+    if config is None:
+        raise HTTPException(400, "Not initialized")
+
+    conn = _sid._get_sync_conn()
+    team = get_team(conn, team_name)
+    if team is None:
+        raise HTTPException(404, f"Team '{team_name}' not found")
+
+    result = await _do_sync_now(config, conn, team_name)
+    return {"ok": True, "team_name": team_name, **result}
 
 
-@router.get("/watch/status")
-async def sync_watch_status() -> Any:
-    """Get watcher status."""
-    return get_watcher().status()
+# ─── Global sync-now ─────────────────────────────────────────────────
 
 
-@router.post("/watch/start")
-async def sync_watch_start(team_name: Optional[str] = None) -> Any:
-    """Start the session watcher for a team (or all teams if none specified)."""
+@router.post("/sync-now")
+async def sync_all_teams_now() -> Any:
+    """Trigger an immediate session package for ALL teams (only unsynced sessions)."""
     config = await run_sync(_sid._load_identity)
     if config is None:
         raise HTTPException(400, "Not initialized")
 
     conn = _sid._get_sync_conn()
     teams_data = list_teams(conn)
-
-    watcher = get_watcher()
-    if watcher.is_running:
-        raise HTTPException(409, "Watcher already running. Stop it first.")
-
     syncthing_teams = [t for t in teams_data if t["backend"] == "syncthing"]
+
     if not syncthing_teams:
         raise HTTPException(400, "No syncthing teams configured")
 
-    if team_name is not None:
-        # Single-team mode: validate the specified team
-        team = get_team(conn, team_name)
-        if team is None:
-            raise HTTPException(404, f"Team '{team_name}' not found")
-        target_teams = [team]
-    else:
-        # Multi-team mode: aggregate all syncthing teams
-        target_teams = syncthing_teams
+    total_packaged = 0
+    total_projects = 0
+    all_errors = []
+    team_results = []
 
-    # Build config_data dict with all target teams' projects (deduped by encoded_name)
-    teams_config = {}
-    seen_projects = set()
-    for t in target_teams:
-        t_name = t["name"]
-        projects = list_team_projects(conn, t_name)
-        team_projects = {}
-        for p in projects:
-            enc = p["project_encoded_name"]
-            if enc not in seen_projects:
-                team_projects[enc] = {
-                    "encoded_name": enc,
-                    "path": p["path"] or "",
-                }
-                seen_projects.add(enc)
-        teams_config[t_name] = {
-            "backend": t["backend"],
-            "projects": team_projects,
-        }
+    for t in syncthing_teams:
+        result = await _do_sync_now(config, conn, t["name"])
+        total_packaged += result["packaged_count"]
+        total_projects += result["project_count"]
+        all_errors.extend(result["errors"])
+        team_results.append({
+            "team_name": t["name"],
+            "packaged_count": result["packaged_count"],
+            "project_count": result["project_count"],
+        })
 
-    config_data = {
-        "user_id": config.user_id,
-        "machine_id": config.machine_id,
-        "member_tag": config.member_tag,
-        "device_id": config.syncthing.device_id if config.syncthing else None,
-        "teams": teams_config,
+    return {
+        "ok": True,
+        "total_packaged": total_packaged,
+        "total_projects": total_projects,
+        "teams": team_results,
+        "errors": all_errors,
     }
-
-    try:
-        result = await run_sync(watcher.start_all, config_data)
-        for t in target_teams:
-            log_event(conn, "watcher_started", team_name=t["name"])
-        return result
-    except Exception as e:
-        logger.exception("Failed to start watcher: %s", e)
-        raise HTTPException(500, "Failed to start watcher")
-
-
-@router.post("/watch/stop")
-async def sync_watch_stop() -> Any:
-    """Stop the session watcher."""
-    watcher = get_watcher()
-    if not watcher.is_running:
-        return watcher.status()
-    teams = list(watcher.status().get("teams", []))
-    result = await run_sync(watcher.stop)
-    if teams:
-        try:
-            conn = _sid._get_sync_conn()
-            for team in teams:
-                log_event(conn, "watcher_stopped", team_name=team)
-        except Exception as e:
-            logger.debug("Failed to log watcher_stopped events: %s", e)
-    return result
 
 
 # ─── Activity & stats ────────────────────────────────────────────────
