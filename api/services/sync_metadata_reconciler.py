@@ -173,10 +173,19 @@ def _auto_share_with_new_members(config, conn, team_name: str, device_ids: list[
     for device_id in device_ids:
         try:
             if loop and loop.is_running():
+                # SAFETY: conn belongs to the caller's thread.  We block on
+                # future.result() so the coroutine has exclusive access while
+                # we wait.  On timeout we cancel the future to prevent the
+                # coroutine from touching conn after we return.
                 future = asyncio.run_coroutine_threadsafe(
                     auto_share_folders(proxy, config, conn, team_name, device_id), loop
                 )
-                result = future.result(timeout=30)
+                try:
+                    result = future.result(timeout=30)
+                except TimeoutError:
+                    future.cancel()
+                    logger.warning("auto_share_folders timed out for %s", device_id[:20])
+                    continue
             else:
                 new_loop = asyncio.new_event_loop()
                 try:

@@ -208,10 +208,10 @@ def validate_removal_authority(
             if row:
                 join_code = row[0] if isinstance(row, tuple) else row["join_code"]
                 if join_code:
-                    # join_code format: team:user_id:device_id
+                    # join_code format: team:user_id:device_id (always 3 parts)
                     parts = join_code.split(":", 2)
-                    if len(parts) >= 2:
-                        creator_user = parts[1] if len(parts) == 3 else parts[0]
+                    if len(parts) == 3:
+                        creator_user = parts[1]
                         # remover_member_tag is "user.machine" — check user part
                         remover_user = remover_member_tag.split(".", 1)[0]
                         return remover_user == creator_user

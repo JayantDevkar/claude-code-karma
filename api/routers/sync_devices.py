@@ -265,7 +265,8 @@ async def sync_accept_pending_device(device_id: str, req: AcceptPendingDeviceReq
     try:
         await run_sync(proxy.add_device, device_id, member_name)
     except Exception as e:
-        raise HTTPException(500, f"Failed to pair device: {e}")
+        logger.exception("Failed to pair device %s: %s", device_id[:20], e)
+        raise HTTPException(500, "Failed to pair device")
 
     # 2. Add as team member (clear any previous removal — explicit user action)
     clear_member_removal(conn, team_name, device_id)
@@ -316,5 +317,6 @@ async def sync_dismiss_pending_device(device_id: str) -> Any:
     except SyncthingNotRunning:
         raise HTTPException(503, "Syncthing is not running")
     except Exception as e:
-        raise HTTPException(500, f"Failed to dismiss device: {e}")
+        logger.exception("Failed to dismiss device %s: %s", device_id[:20], e)
+        raise HTTPException(500, "Failed to dismiss device")
     return {"ok": True, "device_id": device_id}

@@ -35,13 +35,16 @@ def update_own_metadata(config, conn, team_name: str) -> None:
         subscriptions[encoded] = True  # default opt-in
 
     # Build project list for metadata publication (so joiners can discover projects)
+    # Pre-compute suffix per project (reused for both metadata and rejection check)
     from services.sync_identity import _compute_proj_suffix
 
     projects_meta = []
+    suffix_by_encoded: dict[str, str] = {}
     for proj in projects:
         suffix = _compute_proj_suffix(
             proj.get("git_identity"), proj.get("path"), proj["project_encoded_name"]
         )
+        suffix_by_encoded[proj["project_encoded_name"]] = suffix
         projects_meta.append({
             "encoded_name": proj["project_encoded_name"],
             "folder_suffix": suffix,
@@ -65,12 +68,9 @@ def update_own_metadata(config, conn, team_name: str) -> None:
                 if parsed:
                     rejected_suffixes.add(parsed[1])
 
-            for proj in projects:
-                suffix = _compute_proj_suffix(
-                    proj.get("git_identity"), proj.get("path"), proj["project_encoded_name"]
-                )
+            for encoded, suffix in suffix_by_encoded.items():
                 if suffix in rejected_suffixes:
-                    subscriptions[proj["project_encoded_name"]] = False
+                    subscriptions[encoded] = False
     except Exception as e:
         logger.debug("Failed to check rejected folders: %s", e)
 

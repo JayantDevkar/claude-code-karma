@@ -335,7 +335,7 @@ async def sync_accept_single_folder(folder_id: str) -> Any:
         raise HTTPException(503, "Syncthing is not running")
     except Exception as e:
         logger.exception("Failed to accept folder %s: %s", folder_id, e)
-        raise HTTPException(500, f"Failed to accept folder: {e}")
+        raise HTTPException(500, "Failed to accept folder")
 
 
 @router.post("/pending/reject/{folder_id:path}")
@@ -381,4 +381,4 @@ async def sync_reject_single_folder(folder_id: str) -> Any:
         raise HTTPException(404, str(e))
     except Exception as e:
         logger.exception("Failed to reject folder %s: %s", folder_id, e)
-        raise HTTPException(500, f"Failed to reject folder: {e}")
+        raise HTTPException(500, "Failed to reject folder")
