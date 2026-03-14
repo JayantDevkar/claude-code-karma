@@ -188,8 +188,42 @@ async def sync_reset(options: Optional[ResetOptions] = None) -> Any:
     except sqlite3.OperationalError:
         steps["remote_sessions_db_deleted"] = 0
 
+    # Clean up orphaned project rows that have no remaining sessions.
+    # After deleting remote sessions above, remote-only projects become orphans
+    # in the projects table and keep showing up in the project listing.
+    orphan_projects_deleted = []
+    try:
+        orphan_rows = conn.execute(
+            "SELECT encoded_name FROM projects "
+            "WHERE encoded_name NOT IN (SELECT DISTINCT project_encoded_name FROM sessions)"
+        ).fetchall()
+        for row in orphan_rows:
+            orphan_projects_deleted.append(row[0])
+        if orphan_projects_deleted:
+            conn.execute(
+                "DELETE FROM projects WHERE encoded_name IN ({})".format(
+                    ",".join("?" for _ in orphan_projects_deleted)
+                ),
+                orphan_projects_deleted,
+            )
+        steps["orphan_projects_deleted"] = orphan_projects_deleted
+    except sqlite3.OperationalError:
+        steps["orphan_projects_deleted"] = []
+
     conn.commit()
     steps["tables_cleared"] = tables_cleared
+
+    # Clean up title cache files for deleted orphan projects
+    titles_dir = KARMA_BASE / "cache" / "titles"
+    titles_cleaned = []
+    if titles_dir.is_dir():
+        for encoded_name in orphan_projects_deleted:
+            cache_file = titles_dir / f"{encoded_name}.json"
+            if cache_file.is_file():
+                cache_file.unlink()
+                titles_cleaned.append(encoded_name)
+    if titles_cleaned:
+        steps["title_caches_deleted"] = titles_cleaned
 
     # 6. Stop brew service FIRST to deregister launchd plist (prevents respawn),
     #    then kill any remaining Syncthing processes.
