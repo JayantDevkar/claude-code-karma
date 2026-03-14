@@ -1789,6 +1789,7 @@ export interface SyncTeamProject {
 	packaged_count: number;
 	received_counts: Record<string, number>;
 	gap: number;
+	teams?: string[];
 }
 
 /** Per-project sync status (alias for SyncTeamProject) */
@@ -1810,6 +1811,12 @@ export interface SyncWatchStatus {
 	projects_watched: string[];
 }
 
+export interface SyncPendingDevice {
+	device_id: string;
+	member: string;
+	folder_id: string;
+}
+
 export interface SyncPendingFolder {
 	folder_id: string;
 	from_device: string;
@@ -1819,6 +1826,10 @@ export interface SyncPendingFolder {
 	label: string;
 	description: string;
 	folder_type: 'handshake' | 'sessions' | 'outbox' | 'unknown';
+	/** When multiple devices offer the same project, entries are grouped. */
+	folder_ids?: string[];
+	device_count?: number;
+	devices?: SyncPendingDevice[];
 }
 
 export interface SyncEvent {

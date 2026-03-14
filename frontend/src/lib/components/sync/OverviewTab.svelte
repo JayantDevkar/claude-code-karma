@@ -90,12 +90,13 @@
 		return team?.member_count ?? 0;
 	});
 
-	// Derive project count from status, scoped to active team
-	let projectCount = $derived.by(() => {
-		if (!teamName || !status?.teams) return 0;
-		const team = status.teams[teamName] as { project_count?: number } | undefined;
-		return team?.project_count ?? 0;
-	});
+	// ── Per-Project Sync Status ──────────────────────────────────────────────
+	let projectStatuses = $state<SyncProjectStatus[]>([]);
+	let projectStatusLoading = $state(true);
+	let syncAllActing = $state(false);
+
+	// Derive project count from loaded project statuses (across all teams)
+	let projectCount = $derived(projectStatuses.length);
 
 	// Derive session counts from projectStatuses (fetched by loadProjectStatus)
 	let sessionsSharedCount = $derived.by(() => {
@@ -138,20 +139,10 @@
 
 	// Pending actions are handled on individual team detail pages
 
-	// ── Per-Project Sync Status (Task 5) ─────────────────────────────────────
-	let projectStatuses = $state<SyncProjectStatus[]>([]);
-	let projectStatusLoading = $state(true);
-	let syncAllActing = $state(false);
-
 	async function loadProjectStatus() {
-		if (!teamName) {
-			projectStatuses = [];
-			projectStatusLoading = false;
-			return;
-		}
 		try {
 			const res = await fetch(
-				`${API_BASE}/sync/teams/${encodeURIComponent(teamName)}/project-status`
+				`${API_BASE}/sync/project-status`
 			).catch(() => null);
 			if (res?.ok) {
 				const data = await res.json();
@@ -167,13 +158,17 @@
 	}
 
 	async function syncAllNow() {
-		if (!teamName) return;
 		syncAllActing = true;
 		try {
-			await fetch(
-				`${API_BASE}/sync/teams/${encodeURIComponent(teamName)}/sync-now`,
-				{ method: 'POST' }
-			).catch(() => null);
+			// Sync all teams, not just the active one
+			const teamNames = status?.teams ? Object.keys(status.teams) : [];
+			await Promise.all(
+				teamNames.map((t) =>
+					fetch(`${API_BASE}/sync/teams/${encodeURIComponent(t)}/sync-now`, {
+						method: 'POST'
+					}).catch(() => null)
+				)
+			);
 			await loadProjectStatus();
 		} finally {
 			syncAllActing = false;
@@ -431,9 +426,18 @@
 							>
 								{proj.name}
 							</a>
-							<p class="text-xs text-[var(--text-muted)] mt-0.5">
-								{proj.packaged_count}/{proj.local_count} sessions packaged
-							</p>
+							<div class="flex items-center gap-1.5 mt-0.5">
+								<span class="text-xs text-[var(--text-muted)]">
+									{proj.packaged_count}/{proj.local_count} sessions packaged
+								</span>
+								{#if proj.teams && proj.teams.length > 0}
+									{#each proj.teams as t (t)}
+										<span class="px-1.5 py-0.5 text-[9px] font-medium rounded bg-[var(--bg-muted)] text-[var(--text-secondary)] border border-[var(--border-subtle)]">
+											{t}
+										</span>
+									{/each}
+								{/if}
+							</div>
 						</div>
 						{#if proj.gap === 0}
 							<span class="shrink-0 flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded-full bg-[var(--success)]/10 text-[var(--success)] border border-[var(--success)]/20">

@@ -254,6 +254,15 @@ def list_team_projects(conn: sqlite3.Connection, team_name: str) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def list_all_team_projects(conn: sqlite3.Connection) -> list[dict]:
+    """Return projects from ALL teams, ordered by added_at."""
+    rows = conn.execute(
+        "SELECT team_name, project_encoded_name, path, git_identity, folder_suffix, added_at "
+        "FROM sync_team_projects ORDER BY added_at",
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
 def upsert_team_project(
     conn: sqlite3.Connection,
     team_name: str,
