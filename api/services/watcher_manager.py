@@ -8,7 +8,9 @@ in ~/.claude_karma/remote-sessions/ and triggering remote reindex.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
+import sqlite3
 import sys
 import threading
 from datetime import datetime, timezone
@@ -127,6 +129,7 @@ class MetadataReconciliationTimer:
         self._interval = interval
         self._timer: Optional[threading.Timer] = None
         self._running = False
+        self._first_cycle = True
 
     def start(self):
         self._running = True
@@ -149,36 +152,144 @@ class MetadataReconciliationTimer:
             self._schedule()
 
     def _reconcile(self):
-        from db.connection import get_writer_db
+        from db.connection import get_db_path, _apply_pragmas
         from services.sync_metadata_reconciler import reconcile_all_teams_metadata
 
         # Build a minimal config object from config_data
         config = _ConfigProxy(self._config_data)
-        conn = get_writer_db()
 
-        result = reconcile_all_teams_metadata(config, conn, auto_leave=True)
-        if result["members_added"] or result["self_removed_teams"]:
-            logger.info(
-                "Metadata reconciliation: added=%d, auto-left=%s",
-                result["members_added"], result["self_removed_teams"],
-            )
+        # H1 fix: Create a dedicated connection for the timer thread.
+        # Avoids sharing the writer singleton across threads without a mutex,
+        # which can cause interleaved transactions and data corruption.
+        db_path = get_db_path()
+        conn = sqlite3.connect(str(db_path), timeout=10.0)
+        conn.row_factory = sqlite3.Row
+        _apply_pragmas(conn, readonly=False)
 
-        # Auto-accept pending folders from known team members.
-        # This eliminates the manual "Accept" step for folders offered when
-        # a new member is added or a new project is shared by a teammate.
-        self._auto_accept_pending_folders(config, conn)
+        try:
+            # RC-2: On first cycle, resume any interrupted auto-leave cleanup
+            if self._first_cycle:
+                self._first_cycle = False
+                self._resume_pending_leaves(config, conn)
+
+            # Phase 0: Metadata folder reconciliation (member discovery, auto-leave)
+            result = reconcile_all_teams_metadata(config, conn, auto_leave=True)
+            if result["members_added"] or result["self_removed_teams"]:
+                logger.info(
+                    "Metadata reconciliation: added=%d, auto-left=%s",
+                    result["members_added"], result["self_removed_teams"],
+                )
+
+            # Phases 1-4: Async reconciliation pipeline (each phase independent)
+            self._run_async_phases(config, conn)
+
+            # Phase 5: Accept pending folders (auto_only=True — skip peer outboxes)
+            self._auto_accept_pending_folders(config, conn)
+        finally:
+            conn.close()
+
+    def _resume_pending_leaves(self, config, conn):
+        """RC-2: Resume interrupted auto-leave cleanup on startup."""
+        try:
+            from db.sync_queries import get_teams_with_pending_leave
+            from services.sync_metadata_reconciler import _auto_leave_team
+
+            pending = get_teams_with_pending_leave(conn)
+            for team in pending:
+                team_name = team["name"]
+                logger.info("RC-2: Resuming pending_leave cleanup for team %s", team_name)
+                try:
+                    _auto_leave_team(config, conn, team_name)
+                except Exception as e:
+                    logger.warning("RC-2: Failed to resume auto-leave for %s: %s", team_name, e)
+        except Exception as e:
+            logger.debug("RC-2: pending_leave check failed: %s", e)
+
+    def _run_async_phases(self, config, conn):
+        """Run phases 1-4 of the async reconciliation pipeline.
+
+        Each phase is independent — failure in one does not block others.
+        Uses asyncio.new_event_loop() pattern (same as _auto_share_with_new_members
+        in sync_metadata_reconciler.py).
+
+        H2 fix: All phases run inside a single async function with a 120s overall
+        timeout, preventing indefinite blocking if a Syncthing API call hangs.
+        """
+        try:
+            from services.sync_identity import get_proxy
+            proxy = get_proxy()
+        except Exception as e:
+            logger.debug("Async reconciliation phases skipped (no proxy): %s", e)
+            return
+
+        async def _all_phases():
+            # Phase 1: Mesh pair from metadata (discover undiscovered devices)
+            try:
+                from services.sync_reconciliation import mesh_pair_from_metadata
+                paired = await mesh_pair_from_metadata(proxy, config, conn)
+                if paired:
+                    logger.info("Phase 1 mesh_pair: paired with %d new device(s)", paired)
+            except Exception as e:
+                logger.debug("Phase 1 mesh_pair failed: %s", e)
+
+            # Phase 2: Reconcile pending handshakes (process handshake signals)
+            try:
+                from services.sync_reconciliation import reconcile_pending_handshakes
+                reconciled = await reconcile_pending_handshakes(proxy, config, conn)
+                if reconciled:
+                    logger.info("Phase 2 handshakes: reconciled %d membership(s)", reconciled)
+            except Exception as e:
+                logger.debug("Phase 2 handshakes failed: %s", e)
+
+            # Phase 3: Auto-accept pending peers (policy-gated)
+            try:
+                from services.sync_reconciliation import auto_accept_pending_peers
+                accepted, _ = await auto_accept_pending_peers(proxy, config, conn)
+                if accepted:
+                    logger.info("Phase 3 auto_accept: accepted %d pending peer(s)", accepted)
+            except Exception as e:
+                logger.debug("Phase 3 auto_accept failed: %s", e)
+
+            # Phase 4: Compute and apply device lists (declarative sync)
+            try:
+                from services.sync_folders import compute_and_apply_device_lists
+                result = await compute_and_apply_device_lists(proxy, config, conn)
+                updated = result.get("folders_updated", 0)
+                deleted = result.get("folders_deleted", 0)
+                if updated or deleted:
+                    logger.info(
+                        "Phase 4 device_lists: updated=%d, deleted=%d",
+                        updated, deleted,
+                    )
+            except Exception as e:
+                logger.debug("Phase 4 device_lists failed: %s", e)
+
+        loop = asyncio.new_event_loop()
+        try:
+            loop.run_until_complete(asyncio.wait_for(_all_phases(), timeout=120))
+        except asyncio.TimeoutError:
+            logger.warning("Async reconciliation phases timed out after 120s")
+        except Exception as e:
+            logger.debug("Async reconciliation phases failed: %s", e)
+        finally:
+            loop.close()
 
     def _auto_accept_pending_folders(self, config, conn):
-        """Accept pending Syncthing folder offers from known team members."""
+        """Phase 5: Accept pending Syncthing folder offers from known team members.
+
+        Uses auto_only=True to skip peer outboxes (those require explicit user
+        acceptance via the UI). Only processes handshake folders and own outbox
+        offers automatically.
+        """
         try:
             from services.sync_identity import get_proxy
 
             proxy = get_proxy()
-            accepted = proxy.accept_pending_folders(config, conn)
+            accepted = proxy.accept_pending_folders(config, conn, auto_only=True)
             if accepted:
-                logger.info("Auto-accepted %d pending folder(s) from known team members", accepted)
+                logger.info("Phase 5 accept_folders: auto-accepted %d folder(s)", accepted)
         except Exception as e:
-            logger.debug("Auto-accept pending folders skipped: %s", e)
+            logger.debug("Phase 5 accept_folders skipped: %s", e)
 
     def stop(self):
         self._running = False

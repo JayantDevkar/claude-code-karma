@@ -580,7 +580,9 @@ class SyncthingProxy:
         }
 
     def accept_pending_folders(
-        self, config: Any, conn: Any, *, only_folder_id: str | None = None
+        self, config: Any, conn: Any, *,
+        auto_only: bool = False,
+        only_folder_id: str | None = None,
     ) -> int:
         """Accept pending folder offers from known team members.
 
@@ -591,6 +593,8 @@ class SyncthingProxy:
         Args:
             config: The loaded sync identity config.
             conn: SQLite connection for sync DB.
+            auto_only: When True, only process handshake folders and own outbox.
+                Skip peer outboxes (those require explicit user acceptance).
             only_folder_id: If set, only accept this specific folder.
 
         Returns:
@@ -600,7 +604,9 @@ class SyncthingProxy:
 
         client = self._require_client()
         return accept_pending_folders(
-            client, config, conn, only_folder_id=only_folder_id,
+            client, config, conn,
+            auto_only=auto_only,
+            only_folder_id=only_folder_id,
         )
 
     def reject_pending_folder(self, folder_id: str) -> dict:
