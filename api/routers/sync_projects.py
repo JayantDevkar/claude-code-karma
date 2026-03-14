@@ -10,6 +10,7 @@ from db.sync_queries import (
     get_team,
     list_members,
     list_team_projects,
+    list_all_team_projects,
     add_team_project,
     remove_team_project,
     log_event,
@@ -70,6 +71,113 @@ async def sync_project_sync_now(project_name: str) -> Any:
         return {"ok": True, "project": project_name, "scanned": [r["folder"] for r in results]}
     except SyncthingNotRunning:
         raise HTTPException(503, "Syncthing is not running")
+
+
+def _compute_project_stats(
+    encoded: str,
+    proj_path: str,
+    config: Any,
+    projects_dir: Path,
+    conn: Any,
+) -> dict:
+    """Compute local/packaged/received counts for a single project."""
+    from karma.config import KARMA_BASE
+    from karma.worktree_discovery import find_all_worktree_dirs
+
+    claude_dir = projects_dir / encoded
+
+    local_count = 0
+    if claude_dir.is_dir():
+        local_count = sum(
+            1
+            for f in claude_dir.glob("*.jsonl")
+            if not f.name.startswith("agent-") and f.stat().st_size > 0
+        )
+    wt_dirs = find_all_worktree_dirs(encoded, proj_path, projects_dir)
+    for wd in wt_dirs:
+        local_count += sum(
+            1
+            for f in wd.glob("*.jsonl")
+            if not f.name.startswith("agent-") and f.stat().st_size > 0
+        )
+
+    outbox = KARMA_BASE / "remote-sessions" / config.member_tag / encoded / "sessions"
+    packaged_count = 0
+    if outbox.is_dir():
+        packaged_count = sum(
+            1
+            for f in outbox.glob("*.jsonl")
+            if not f.name.startswith("agent-")
+        )
+
+    received_counts: dict[str, int] = {}
+    remote_base = KARMA_BASE / "remote-sessions"
+    if remote_base.is_dir():
+        for user_dir in remote_base.iterdir():
+            if not user_dir.is_dir():
+                continue
+            dir_name = user_dir.name
+            if dir_name == config.user_id or dir_name == config.member_tag:
+                continue
+            from services.remote_sessions import _resolve_user_id
+            resolved = _resolve_user_id(user_dir, conn=conn)
+            if resolved == config.user_id:
+                continue
+            inbox = user_dir / encoded / "sessions"
+            if inbox.is_dir():
+                count = sum(
+                    1
+                    for f in inbox.glob("*.jsonl")
+                    if not f.name.startswith("agent-")
+                )
+                if count > 0:
+                    received_counts[resolved] = count
+
+    return {
+        "name": encoded,
+        "encoded_name": encoded,
+        "path": proj_path,
+        "local_count": local_count,
+        "packaged_count": packaged_count,
+        "received_counts": received_counts,
+        "gap": max(0, local_count - packaged_count),
+    }
+
+
+@router.get("/project-status")
+async def sync_all_project_status() -> Any:
+    """Get per-project sync status across ALL teams (deduplicated)."""
+    config = await run_sync(_sid._load_identity)
+    if config is None:
+        raise HTTPException(400, "Not initialized")
+
+    conn = _sid._get_sync_conn()
+    all_projects = list_all_team_projects(conn)
+    projects_dir = Path.home() / ".claude" / "projects"
+
+    # Deduplicate by encoded_name, collect team names
+    seen: dict[str, dict] = {}
+    for proj in all_projects:
+        encoded = proj["project_encoded_name"]
+        if encoded not in seen:
+            seen[encoded] = {
+                "encoded": encoded,
+                "path": proj.get("path") or "",
+                "teams": [proj["team_name"]],
+            }
+        else:
+            if proj["team_name"] not in seen[encoded]["teams"]:
+                seen[encoded]["teams"].append(proj["team_name"])
+
+    result = []
+    for info in seen.values():
+        stats = _compute_project_stats(
+            info["encoded"], info["path"], config, projects_dir, conn
+        )
+        stats["teams"] = info["teams"]
+        result.append(stats)
+
+    return {"projects": result}
 
 
 @router.post("/teams/{team_name}/projects")
@@ -263,75 +371,14 @@ async def sync_team_project_status(team_name: str) -> Any:
     if team is None:
         raise HTTPException(404, f"Team '{team_name}' not found")
 
-    from karma.config import KARMA_BASE
-    from karma.worktree_discovery import find_all_worktree_dirs
-
     projects = list_team_projects(conn, team_name)
-    members = list_members(conn, team_name)
     projects_dir = Path.home() / ".claude" / "projects"
     result = []
 
     for proj in projects:
         encoded = proj["project_encoded_name"]
         proj_path = proj.get("path") or ""
-        claude_dir = projects_dir / encoded
-
-        local_count = 0
-        if claude_dir.is_dir():
-            local_count = sum(
-                1
-                for f in claude_dir.glob("*.jsonl")
-                if not f.name.startswith("agent-") and f.stat().st_size > 0
-            )
-        wt_dirs = find_all_worktree_dirs(encoded, proj_path, projects_dir)
-        for wd in wt_dirs:
-            local_count += sum(
-                1
-                for f in wd.glob("*.jsonl")
-                if not f.name.startswith("agent-") and f.stat().st_size > 0
-            )
-
-        outbox = KARMA_BASE / "remote-sessions" / config.member_tag / encoded / "sessions"
-        packaged_count = 0
-        if outbox.is_dir():
-            packaged_count = sum(
-                1
-                for f in outbox.glob("*.jsonl")
-                if not f.name.startswith("agent-")
-            )
-
-        received_counts = {}
-        remote_base = KARMA_BASE / "remote-sessions"
-        if remote_base.is_dir():
-            for user_dir in remote_base.iterdir():
-                if not user_dir.is_dir():
-                    continue
-                dir_name = user_dir.name
-                # Skip own outbox (check dir name, user_id, and member_tag)
-                if dir_name == config.user_id or dir_name == config.member_tag:
-                    continue
-                from services.remote_sessions import _resolve_user_id
-                resolved = _resolve_user_id(user_dir, conn=conn)
-                if resolved == config.user_id:
-                    continue
-                inbox = user_dir / encoded / "sessions"
-                if inbox.is_dir():
-                    count = sum(
-                        1
-                        for f in inbox.glob("*.jsonl")
-                        if not f.name.startswith("agent-")
-                    )
-                    if count > 0:
-                        received_counts[resolved] = count
-
-        result.append({
-            "name": encoded,
-            "encoded_name": encoded,
-            "path": proj_path,
-            "local_count": local_count,
-            "packaged_count": packaged_count,
-            "received_counts": received_counts,
-            "gap": max(0, local_count - packaged_count),
-        })
+        stats = _compute_project_stats(encoded, proj_path, config, projects_dir, conn)
+        result.append(stats)
 
     return {"projects": result}
