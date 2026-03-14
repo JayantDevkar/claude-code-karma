@@ -396,6 +396,7 @@ class WatcherManager:
 
         watchers = []
         watched = []
+        initial_package_fns = []
 
         for encoded, info in unique_projects.items():
             proj = info["proj"]
@@ -453,13 +454,15 @@ class WatcherManager:
                         logger.debug("Failed to log session_packaged events", exc_info=True)
                 return package
 
+            pkg_fn = make_package_fn()
             watcher = SessionWatcher(
                 watch_dir=claude_dir,
-                package_fn=make_package_fn(),
+                package_fn=pkg_fn,
             )
             watcher.start()
             watchers.append(watcher)
             watched.append(proj_name)
+            initial_package_fns.append((proj_name, pkg_fn))
 
             # Also watch worktree dirs
             wt_dirs = find_worktree_dirs(encoded, projects_dir)
@@ -476,6 +479,20 @@ class WatcherManager:
         self._teams = team_names
         self._started_at = datetime.now(timezone.utc).isoformat()
         self._projects_watched = watched
+
+        # Initial sync: package all existing sessions in a background thread
+        # so pre-existing and missed sessions are staged for sending immediately.
+        if initial_package_fns:
+            def _initial_sync():
+                for proj_name, pkg_fn in initial_package_fns:
+                    try:
+                        pkg_fn()
+                    except Exception as e:
+                        logger.warning("Initial package failed for %s: %s", proj_name, e)
+                logger.info("Initial sync complete: packaged %d project(s)", len(initial_package_fns))
+
+            t = threading.Thread(target=_initial_sync, daemon=True, name="initial-sync")
+            t.start()
 
         # Start metadata reconciliation timer (~60s periodic)
         if self._metadata_timer is None:
