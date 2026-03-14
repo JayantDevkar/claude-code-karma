@@ -1437,7 +1437,7 @@ def _update_project_summaries(conn: sqlite3.Connection) -> None:
         project_path = _resolve_project_path(encoded_name, [r[0] for r in path_rows])
 
         slug = compute_project_slug(encoded_name, project_path)
-        display_name = Path(project_path).name if project_path else encoded_name
+        display_name = Path(project_path).name if project_path else None
 
         # Detect git identity for cross-machine project matching (skip if already known)
         git_identity = known_git_ids.get(encoded_name)
@@ -1447,6 +1447,14 @@ def _update_project_summaries(conn: sqlite3.Connection) -> None:
                 git_identity = detect_git_identity(project_path)
             except Exception:
                 pass
+
+        # For remote-only projects (no project_path), derive display_name
+        # from git_identity so it reads nicely (e.g. "claude-code-karma"
+        # instead of the raw encoded_name).
+        if display_name is None and git_identity:
+            display_name = git_identity.split("/")[-1]
+        if display_name is None:
+            display_name = encoded_name
 
         conn.execute(
             """

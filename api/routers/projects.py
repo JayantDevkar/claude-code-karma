@@ -480,8 +480,43 @@ def get_project(
     except Exception as e:
         raise HTTPException(status_code=404, detail=f"Project not found: {e}") from e
 
+    # For remote-only projects, check for synced sessions before returning 404
+    # and fetch the display_name already populated by upsert_team_project/indexer.
+    _remote_display_name: Optional[str] = None
     if not project.exists:
-        raise HTTPException(status_code=404, detail="Project directory not found")
+        has_remote = False
+        try:
+            from db.connection import sqlite_read
+
+            with sqlite_read() as conn:
+                if conn is not None:
+                    row = conn.execute(
+                        "SELECT COUNT(*) FROM sessions WHERE project_encoded_name = ?",
+                        (encoded_name,),
+                    ).fetchone()
+                    if row and row[0] > 0:
+                        has_remote = True
+                    # Fetch display_name from projects table (populated by
+                    # upsert_team_project and the indexer from git_identity).
+                    dn_row = conn.execute(
+                        "SELECT display_name FROM projects"
+                        " WHERE encoded_name = ? AND display_name IS NOT NULL"
+                        " LIMIT 1",
+                        (encoded_name,),
+                    ).fetchone()
+                    if dn_row and dn_row[0]:
+                        _remote_display_name = dn_row[0]
+        except Exception:
+            pass
+        if not has_remote:
+            try:
+                remote_metas = _get_cached_remote_sessions(encoded_name)
+                if remote_metas:
+                    has_remote = True
+            except Exception:
+                pass
+        if not has_remote:
+            raise HTTPException(status_code=404, detail="Project directory not found")
 
     # Compute offset from page/per_page
     per_page = max(1, min(per_page, 200))
@@ -638,7 +673,7 @@ def get_project(
             path=project.path,
             encoded_name=project.encoded_name,
             slug=project.slug,
-            display_name=project.display_name,
+            display_name=_remote_display_name or project.display_name,
             session_count=total_count,
             agent_count=project.agent_count,
             exists=project.exists,
@@ -751,7 +786,7 @@ def get_project(
         path=project.path,
         encoded_name=project.encoded_name,
         slug=project.slug,
-        display_name=project.display_name,
+        display_name=_remote_display_name or project.display_name,
         session_count=total_session_count,
         agent_count=project.agent_count,
         exists=project.exists,
@@ -1174,8 +1209,8 @@ def get_project_branches(encoded_name: str, request: Request):
     except Exception as e:
         raise HTTPException(status_code=404, detail=f"Project not found: {e}") from e
 
-    if not project.exists:
-        raise HTTPException(status_code=404, detail="Project directory not found")
+    # No exists check — remote-only projects serve branches from the DB
+    # (remote sessions are indexed with git_branch metadata).
 
     # SQLite fast path
     try:
