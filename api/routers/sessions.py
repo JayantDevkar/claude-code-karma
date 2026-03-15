@@ -983,11 +983,8 @@ def get_session(uuid: str, request: Request, fresh: bool = False):
     initial_prompt = get_initial_prompt(session)
 
     # Extract image attachments from first user message
-    initial_prompt_images: list[dict[str, str]] = []
-    for msg in session.iter_user_messages():
-        if msg.image_attachments:
-            initial_prompt_images = list(msg.image_attachments)
-        break  # Only check the first user message
+    first_user_msg = next(session.iter_user_messages(), None)
+    initial_prompt_images = list(first_user_msg.image_attachments) if first_user_msg and first_user_msg.image_attachments else []
 
     # Load todos
     todos: list[TodoItemSchema] = []
