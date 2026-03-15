@@ -802,6 +802,36 @@ def get_skill_sessions(
     )
 
 
+def _find_skill_in_version_dir(version_dir: Path, target_skill: str) -> Path | None:
+    """Search for a skill file in a plugin version directory.
+
+    Checks default locations (commands/, skills/) and custom paths
+    from .claude-plugin/plugin.json manifest.
+    """
+    from models.plugin import read_plugin_manifest, _resolve_manifest_dirs
+
+    # Check default locations first
+    commands_file = version_dir / "commands" / f"{target_skill}.md"
+    if commands_file.is_file():
+        return commands_file
+    skills_file = version_dir / "skills" / target_skill / "SKILL.md"
+    if skills_file.is_file():
+        return skills_file
+
+    # Check manifest custom paths
+    manifest = read_plugin_manifest(version_dir)
+    for skills_dir in _resolve_manifest_dirs(version_dir, manifest, "skills", []):
+        candidate = skills_dir / target_skill / "SKILL.md"
+        if candidate.is_file():
+            return candidate
+    for commands_dir in _resolve_manifest_dirs(version_dir, manifest, "commands", []):
+        candidate = commands_dir / f"{target_skill}.md"
+        if candidate.is_file():
+            return candidate
+
+    return None
+
+
 async def _resolve_skill_info(skill_name: str, config: Settings) -> SkillInfo:
     """
     Core skill info resolution logic (shared by get_skill_info and get_skill_detail).
@@ -842,35 +872,6 @@ async def _resolve_skill_info(skill_name: str, config: Settings) -> SkillInfo:
     )
 
     skill_file = None
-
-    def _find_skill_in_version_dir(version_dir: Path, target_skill: str) -> Path | None:
-        """Search for a skill file in a plugin version directory.
-
-        Checks default locations (commands/, skills/) and custom paths
-        from .claude-plugin/plugin.json manifest.
-        """
-        from models.plugin import read_plugin_manifest, _resolve_manifest_dirs
-
-        # Check default locations first
-        commands_file = version_dir / "commands" / f"{target_skill}.md"
-        if commands_file.is_file():
-            return commands_file
-        skills_file = version_dir / "skills" / target_skill / "SKILL.md"
-        if skills_file.is_file():
-            return skills_file
-
-        # Check manifest custom paths
-        manifest = read_plugin_manifest(version_dir)
-        for skills_dir in _resolve_manifest_dirs(version_dir, manifest, "skills", []):
-            candidate = skills_dir / target_skill / "SKILL.md"
-            if candidate.is_file():
-                return candidate
-        for commands_dir in _resolve_manifest_dirs(version_dir, manifest, "commands", []):
-            candidate = commands_dir / f"{target_skill}.md"
-            if candidate.is_file():
-                return candidate
-
-        return None
 
     if is_plugin:
         actual_skill_name = skill_name.split(":", 1)[1] if ":" in skill_name else skill_name

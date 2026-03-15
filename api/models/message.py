@@ -108,9 +108,13 @@ class UserMessage(MessageBase):
                     if part.get("type") == "image":
                         source = part.get("source", {})
                         if source.get("type") == "base64":
+                            _ALLOWED_IMAGE_TYPES = {"image/png", "image/jpeg", "image/gif", "image/webp", "image/svg+xml"}
+                            mt = source.get("media_type", "image/png")
+                            if mt not in _ALLOWED_IMAGE_TYPES:
+                                mt = "image/png"
                             images.append(
                                 {
-                                    "media_type": source.get("media_type", "image/png"),
+                                    "media_type": mt,
                                     "data": source.get("data", ""),
                                 }
                             )

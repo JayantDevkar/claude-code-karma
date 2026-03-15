@@ -33,6 +33,8 @@ def local_timezone() -> timezone:
 
 def utc_to_local_date(dt: datetime) -> str:
     """Convert a UTC datetime to a local-timezone date string (YYYY-MM-DD)."""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
     return dt.astimezone(local_timezone()).strftime("%Y-%m-%d")
 
 

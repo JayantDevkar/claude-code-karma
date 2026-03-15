@@ -639,10 +639,10 @@ def _get_stats_for_period(start_dt: datetime, end_dt: datetime) -> tuple:
     return sessions_count, projects_active, duration_seconds
 
 
-def _local_day_boundaries(date, local_tz: timezone) -> tuple[datetime, datetime]:
+def _local_day_boundaries(day, local_tz: timezone) -> tuple[datetime, datetime]:
     """Return UTC-converted start/end datetimes for a local calendar date."""
-    start = datetime.combine(date, datetime.min.time(), tzinfo=local_tz).astimezone(timezone.utc)
-    end = datetime.combine(date, datetime.max.time(), tzinfo=local_tz).astimezone(timezone.utc)
+    start = datetime.combine(day, datetime.min.time(), tzinfo=local_tz).astimezone(timezone.utc)
+    end = datetime.combine(day, datetime.max.time(), tzinfo=local_tz).astimezone(timezone.utc)
     return start, end
 
 
