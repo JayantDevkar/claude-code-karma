@@ -16,8 +16,6 @@ from threading import Lock
 from typing import Annotated, Optional
 from urllib.parse import unquote
 
-from utils import utc_to_local_date
-
 from fastapi import APIRouter, HTTPException, Query, Request
 
 from command_helpers import is_plugin_skill
@@ -28,11 +26,11 @@ from models import (
     load_installed_plugins,
 )
 from models.plugin import (
+    _resolve_manifest_dirs,
     get_plugin_description,
     read_command_contents,
     read_plugin_manifest,
     scan_plugin_capabilities,
-    _resolve_manifest_dirs,
 )
 from schemas import (
     DailyUsage,
@@ -47,6 +45,7 @@ from schemas import (
     SkillContent,
     SkillItem,
 )
+from utils import utc_to_local_date
 
 logger = logging.getLogger(__name__)
 

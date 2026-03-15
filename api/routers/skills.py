@@ -808,7 +808,7 @@ def _find_skill_in_version_dir(version_dir: Path, target_skill: str) -> Path | N
     Checks default locations (commands/, skills/) and custom paths
     from .claude-plugin/plugin.json manifest.
     """
-    from models.plugin import read_plugin_manifest, _resolve_manifest_dirs
+    from models.plugin import _resolve_manifest_dirs, read_plugin_manifest
 
     # Check default locations first
     commands_file = version_dir / "commands" / f"{target_skill}.md"
