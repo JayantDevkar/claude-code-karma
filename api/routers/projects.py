@@ -70,6 +70,7 @@ from utils import (
     get_initial_prompt,
     get_initial_prompt_from_index,
     get_worktree_mappings_for_project,
+    is_encoded_project_dir,
     list_all_projects,
     normalize_timezone,
     parse_timestamp_range,
@@ -97,7 +98,7 @@ def resolve_project_identifier(identifier: str) -> str:
         is_worktree_project,
     )
 
-    if identifier.startswith("-"):
+    if is_encoded_project_dir(identifier):
         # Safety net: redirect worktree encoded names to real project
         if is_worktree_project(identifier):
             try:

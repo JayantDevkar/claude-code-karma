@@ -486,7 +486,7 @@ def scan_plugin_capabilities(plugin_name: str) -> dict:
     mcp_config = cache_path / ".mcp.json"
     if mcp_config.exists():
         try:
-            with open(mcp_config, "r") as f:
+            with open(mcp_config, "r", encoding="utf-8", errors="replace") as f:
                 mcp_data = json.load(f)
                 server_keys = []
                 if "mcpServers" in mcp_data:
@@ -591,7 +591,7 @@ def get_plugin_description(plugin_name: str) -> Optional[str]:
     plugin_json = cache_path / "plugin.json"
     if plugin_json.exists():
         try:
-            with open(plugin_json, "r") as f:
+            with open(plugin_json, "r", encoding="utf-8", errors="replace") as f:
                 data = json.load(f)
                 return data.get("description")
         except Exception as e:

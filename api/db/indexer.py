@@ -21,6 +21,8 @@ import time
 from pathlib import Path
 from typing import Optional
 
+from utils import is_encoded_project_dir
+
 # Ensure api/ is on the import path (needed when called from background thread)
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -91,7 +93,7 @@ def sync_all_projects(conn: sqlite3.Connection) -> dict:
 
         # First pass: normal projects
         for encoded_dir in projects_dir.iterdir():
-            if not encoded_dir.is_dir() or not encoded_dir.name.startswith("-"):
+            if not encoded_dir.is_dir() or not is_encoded_project_dir(encoded_dir.name):
                 continue
             if is_worktree_project(encoded_dir.name):
                 worktree_dirs.append(encoded_dir)
@@ -580,6 +582,16 @@ def _detect_project_path(session, encoded_name: str) -> Optional[str]:
         decoded = "/" + encoded_name[1:].replace("-", "/")
         if Path(decoded).is_dir():
             return decoded
+    else:
+        import re
+
+        win_match = re.match(r"^([A-Za-z])--(.*)", encoded_name)
+        if win_match:
+            drive = win_match.group(1).upper()
+            rest = win_match.group(2).replace("-", "/")
+            decoded = f"{drive}:/{rest}"
+            if Path(decoded).is_dir():
+                return decoded
 
     # Don't store a bad path — let _update_project_summaries resolve it
     # from sibling sessions that have working directory data.
@@ -691,6 +703,14 @@ def _resolve_project_path(encoded_name: str, candidate_paths: list) -> str:
         # Last resort: decode from encoded name (lossy for hyphenated paths)
         if encoded_name.startswith("-"):
             return "/" + encoded_name[1:].replace("-", "/")
+        # Windows encoded: C--Code-Tools -> C:/Code/Tools
+        import re as _re
+
+        win_match = _re.match(r"^([A-Za-z])--(.*)", encoded_name)
+        if win_match:
+            drive = win_match.group(1).upper()
+            rest = win_match.group(2).replace("-", "/")
+            return f"{drive}:/{rest}"
         return encoded_name
 
     # Find all paths whose encoding matches the encoded_name
@@ -702,7 +722,8 @@ def _resolve_project_path(encoded_name: str, candidate_paths: list) -> str:
         if path.startswith("/"):
             encoded = "-" + path[1:].replace("/", "-")
         else:
-            encoded = path.replace("/", "-")
+            # Windows path: C:/Code/Tools -> C--Code-Tools
+            encoded = path.replace(":", "-").replace("/", "-").replace("\\", "-")
         if encoded == encoded_name:
             matches.append(path)
 

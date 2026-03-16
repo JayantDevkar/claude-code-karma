@@ -89,23 +89,34 @@ class Project(BaseModel):
         """
         Encode a project path to Claude's directory name format.
 
+        Unix:    /Users/me/repo  -> -Users-me-repo   (leading / -> leading -)
+        Windows: C:\\Code\\Tools -> C--Code-Tools     (colon -> dash, backslash -> dash)
+
         Args:
             path: Absolute project path
 
         Returns:
-            Encoded directory name (e.g., -Users-me-repo)
+            Encoded directory name (e.g., -Users-me-repo or C--Code-Tools)
         """
         p = str(path)
-        # Claude's encoding: replace '/' with '-' (leading '/' becomes leading '-')
+        # Normalise Windows backslashes
         p = p.replace("\\", "/")
         if p.startswith("/"):
+            # Unix absolute path: strip leading slash, prepend dash
             p = p[1:]
-        return "-" + p.replace("/", "-")
+            return "-" + p.replace("/", "-")
+        else:
+            # Windows absolute path like C:/Code/Tools
+            # Claude Code encodes colon and slash both as dash -> C--Code-Tools
+            return p.replace(":", "-").replace("/", "-")
 
     @staticmethod
     def decode_path(encoded: str) -> str:
         """
         Decode a Claude directory name back to original path.
+
+        Unix:    -Users-me-repo  -> /Users/me/repo
+        Windows: C--Code-Tools   -> C:/Code/Tools
 
         Note: This is lossy if the original path contained '-' characters.
         Use _extract_real_path_from_sessions() for accurate path recovery.
@@ -116,10 +127,22 @@ class Project(BaseModel):
         Returns:
             Decoded absolute path (may be incorrect if original had dashes)
         """
-        e = encoded
-        if e.startswith("-"):
-            e = e[1:]
-        return "/" + e.replace("-", "/")
+        import re
+
+        if encoded.startswith("-"):
+            # Unix encoded path: -Users-me-repo -> /Users/me/repo
+            return "/" + encoded[1:].replace("-", "/")
+
+        # Windows encoded path: C--Code-Tools -> C:/Code/Tools
+        # Pattern: single drive letter followed by --
+        win_match = re.match(r"^([A-Za-z])--(.*)", encoded)
+        if win_match:
+            drive = win_match.group(1).upper()
+            rest = win_match.group(2).replace("-", "/")
+            return f"{drive}:/{rest}"
+
+        # Fallback: treat as Unix-style without leading slash
+        return "/" + encoded.replace("-", "/")
 
     @staticmethod
     def _extract_real_path_from_sessions(project_dir: Path) -> Optional[str]:

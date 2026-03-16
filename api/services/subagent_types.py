@@ -92,7 +92,7 @@ def _extract_types_from_raw_jsonl(path: Path) -> dict[str, str]:
     agent_id_to_type: dict[str, str] = {}
 
     try:
-        with open(path, "r") as f:
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
             for line in f:
                 line = line.strip()
                 if not line:
@@ -214,7 +214,7 @@ def _classify_by_first_message(agent_file: Path) -> str | None:
         A type string ("_warmup", "_teammate") or None if unclassifiable.
     """
     try:
-        with open(agent_file, "r") as f:
+        with open(agent_file, "r", encoding="utf-8", errors="replace") as f:
             first_line = f.readline().strip()
             if not first_line:
                 return None

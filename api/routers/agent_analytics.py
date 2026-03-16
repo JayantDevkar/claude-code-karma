@@ -15,6 +15,8 @@ from typing import Optional
 
 from cachetools import TTLCache, cached
 
+from utils import is_encoded_project_dir
+
 from schemas import (
     AgentCategory,
     AgentInvocation,
@@ -83,14 +85,12 @@ def _get_all_project_agent_names() -> frozenset[str]:
     for encoded_dir in projects_dir.iterdir():
         if not encoded_dir.is_dir() or encoded_dir.name.startswith("."):
             continue
-        # Decode: leading "-" → "/", all "-" → "/"
-        decoded_path = (
-            "/" + encoded_dir.name[1:].replace("-", "/")
-            if encoded_dir.name.startswith("-")
-            else None
-        )
-        if not decoded_path:
+        if not is_encoded_project_dir(encoded_dir.name):
             continue
+        # Decode to real project path using Project model
+        from models.project import Project
+
+        decoded_path = Project.decode_path(encoded_dir.name)
         project_dir = Path(decoded_path)
         if not project_dir.is_dir():
             continue

@@ -139,7 +139,7 @@ def parse_history_file(history_path: Path) -> list[HistoryEntry]:
     if not history_path.exists():
         return entries
 
-    with open(history_path, "r") as f:
+    with open(history_path, "r", encoding="utf-8", errors="replace") as f:
         for line in f:
             line = line.strip()
             if not line:

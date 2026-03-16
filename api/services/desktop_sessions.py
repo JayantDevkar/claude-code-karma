@@ -19,6 +19,8 @@ import time
 from pathlib import Path
 from typing import Optional
 
+from utils import is_encoded_project_dir
+
 logger = logging.getLogger(__name__)
 
 
@@ -156,8 +158,8 @@ def _extract_project_prefix_from_worktree(encoded_name: str) -> Optional[str]:
         idx = encoded_name.find(marker)
         if idx > 0:
             prefix = encoded_name[:idx]
-            # Sanity check: prefix should look like an encoded path
-            if prefix.startswith("-") and len(prefix) > 1:
+            # Sanity check: prefix should look like an encoded path (Unix or Windows)
+            if is_encoded_project_dir(prefix) and len(prefix) > 1:
                 return prefix
     return None
 
@@ -282,7 +284,7 @@ def get_real_project_encoded_name(
         matches: list[str] = []
         try:
             for encoded_dir in settings.projects_dir.iterdir():
-                if not encoded_dir.is_dir() or not encoded_dir.name.startswith("-"):
+                if not encoded_dir.is_dir() or not is_encoded_project_dir(encoded_dir.name):
                     continue
                 # Skip other worktree dirs
                 if is_worktree_project(encoded_dir.name):

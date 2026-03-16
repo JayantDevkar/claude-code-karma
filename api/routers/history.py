@@ -18,6 +18,8 @@ from pydantic import BaseModel, Field
 api_path = Path(__file__).parent.parent
 sys.path.insert(0, str(api_path))
 
+from utils import is_encoded_project_dir
+
 from config import settings
 from models.history import get_archived_prompts, get_project_name
 
@@ -244,12 +246,10 @@ async def get_project_archived_prompts(
 
     if not archived_projects:
         # Return empty response rather than 404 - project may just have no archived prompts
-        # Decode the path to get project name
-        project_path = (
-            "/" + encoded_name[1:].replace("-", "/")
-            if encoded_name.startswith("-")
-            else encoded_name.replace("-", "/")
-        )
+        # Decode the path using Project model (handles both Unix and Windows)
+        from models.project import Project
+
+        project_path = Project.decode_path(encoded_name)
         return ProjectArchivedResponse(
             project_name=get_project_name(project_path),
             project_path=project_path,

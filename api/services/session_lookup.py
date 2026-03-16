@@ -12,6 +12,7 @@ from typing import Optional
 
 from config import settings
 from models import Agent, Session
+from utils import is_encoded_project_dir
 
 
 @dataclass
@@ -71,7 +72,7 @@ def find_session_with_project(uuid: str) -> Optional[SessionLookupResult]:
         return None
 
     for encoded_dir in projects_dir.iterdir():
-        if encoded_dir.is_dir() and encoded_dir.name.startswith("-"):
+        if encoded_dir.is_dir() and is_encoded_project_dir(encoded_dir.name):
             jsonl_path = encoded_dir / f"{uuid}.jsonl"
             if jsonl_path.exists():
                 return SessionLookupResult(
@@ -118,7 +119,7 @@ def find_session_by_message_uuid(message_uuid: str) -> Optional[SessionLookupRes
         return None
 
     for encoded_dir in projects_dir.iterdir():
-        if not encoded_dir.is_dir() or not encoded_dir.name.startswith("-"):
+        if not encoded_dir.is_dir() or not is_encoded_project_dir(encoded_dir.name):
             continue
 
         # Search all session JSONL files in this project

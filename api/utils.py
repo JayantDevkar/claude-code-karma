@@ -38,6 +38,23 @@ def utc_to_local_date(dt: datetime) -> str:
     return dt.astimezone(local_timezone()).strftime("%Y-%m-%d")
 
 
+def is_encoded_project_dir(name: str) -> bool:
+    """
+    Check if a directory name looks like a Claude-encoded project path.
+
+    Unix paths encode as:   -Users-me-repo   (leading dash from leading slash)
+    Windows paths encode as: C--Code-Tools   (drive letter + double-dash)
+
+    This is used to filter out non-project dirs like 'memory/', '__pycache__/', etc.
+    """
+    if name.startswith("-"):
+        return True
+    # Windows: single drive letter followed by -- (e.g. C--, D--)
+    if re.match(r"^[A-Za-z]--", name):
+        return True
+    return False
+
+
 def resolve_git_root(path: str) -> Optional[str]:
     """Find the git repository root for a path.
 
@@ -426,7 +443,7 @@ def _list_all_projects_impl() -> list:
 
     # First pass: collect normal projects and identify worktree dirs
     for encoded_dir in projects_dir.iterdir():
-        if not encoded_dir.is_dir() or not encoded_dir.name.startswith("-"):
+        if not encoded_dir.is_dir() or not is_encoded_project_dir(encoded_dir.name):
             continue
         if is_worktree_project(encoded_dir.name):
             worktree_dirs.append(encoded_dir)

@@ -112,6 +112,7 @@ from utils import (
     compute_project_slug,
     get_initial_prompt,
     get_initial_prompt_from_index,
+    is_encoded_project_dir,
     normalize_timezone,
     parse_timestamp_range,
 )
@@ -211,7 +212,7 @@ def _list_all_projects_with_sessions_optimized() -> tuple[
     project_options: list[ProjectFilterOption] = []
 
     for encoded_dir in projects_dir.iterdir():
-        if not encoded_dir.is_dir() or not encoded_dir.name.startswith("-"):
+        if not encoded_dir.is_dir() or not is_encoded_project_dir(encoded_dir.name):
             continue
         try:
             # Use skip_path_recovery=True for performance - we'll get accurate
@@ -368,7 +369,7 @@ def get_all_sessions(
     start_dt, end_dt = parse_timestamp_range(start_ts, end_ts)
 
     # Resolve project slug to encoded_name if needed
-    if project and not project.startswith("-"):
+    if project and not is_encoded_project_dir(project):
         try:
             from db.connection import create_read_connection
             from db.queries import query_project_by_slug
