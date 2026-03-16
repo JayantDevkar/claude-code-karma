@@ -27,6 +27,10 @@
 		sessionCount?: number | null;
 		icon: Snippet;
 		subheader?: Snippet;
+		statsOverride?: Snippet;
+		footerOverride?: Snippet;
+		extraBadge?: Snippet;
+		neverUsed?: boolean;
 		class?: string;
 	}
 
@@ -44,6 +48,10 @@
 		sessionCount = null,
 		icon,
 		subheader,
+		statsOverride,
+		footerOverride,
+		extraBadge,
+		neverUsed = false,
 		class: className = ''
 	}: Props = $props();
 
@@ -58,17 +66,16 @@
 	{href}
 	class="
 		group block
-		bg-[var(--bg-base)]
-		border border-[var(--border)]
-		rounded-xl
+		border rounded-xl
 		p-6
 		shadow-sm hover:shadow-xl hover:-translate-y-1
 		transition-all duration-300
 		relative overflow-hidden
 		focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2
+		{neverUsed ? 'bg-[var(--bg-subtle)] border-dashed border-[var(--border)]' : 'bg-[var(--bg-base)] border-[var(--border)]'}
 		{className}
 	"
-	style="border-left: 4px solid {colorVars.color};"
+	style="border-left: 4px solid {neverUsed ? colorVars.color + '40' : colorVars.color};"
 	data-list-item
 >
 	<!-- Header row: Icon + Badges -->
@@ -80,7 +87,11 @@
 			{@render icon()}
 		</div>
 		<div class="flex items-center gap-2">
-			<TierBadge {tier} />
+			{#if extraBadge}
+				{@render extraBadge()}
+			{:else}
+				<TierBadge {tier} />
+			{/if}
 			<Badge variant={badgeVariant} size="sm" rounded="full">
 				{categoryLabel}
 			</Badge>
@@ -109,54 +120,65 @@
 		<div class="mb-4"></div>
 	{/if}
 
-	<!-- Stats with progress bar -->
-	<div class="space-y-3 mb-4">
-		<!-- Uses stat with progress bar -->
-		<div>
-			<div class="flex items-center justify-between mb-1.5">
-				<div class="flex items-center gap-2 text-xs text-[var(--text-muted)]">
-					<Play size={12} />
-					<span class="font-medium">Uses</span>
+	<!-- Stats + footer wrapped for opacity on neverUsed -->
+	<div class={neverUsed ? 'opacity-50' : ''}>
+		<!-- Stats with progress bar -->
+		{#if statsOverride}
+			{@render statsOverride()}
+		{:else}
+		<div class="space-y-3 mb-4">
+			<!-- Uses stat with progress bar -->
+			<div>
+				<div class="flex items-center justify-between mb-1.5">
+					<div class="flex items-center gap-2 text-xs text-[var(--text-muted)]">
+						<Play size={12} />
+						<span class="font-medium">Uses</span>
+					</div>
+					<span class="text-sm font-semibold text-[var(--text-primary)] tabular-nums">
+						{count.toLocaleString()}
+					</span>
 				</div>
-				<span class="text-sm font-semibold text-[var(--text-primary)] tabular-nums">
-					{count.toLocaleString()}
-				</span>
+				<div class="h-1.5 bg-[var(--bg-subtle)] rounded-full overflow-hidden">
+					<div
+						class="h-full rounded-full transition-all duration-300"
+						style="width: {usagePercentage}%; background-color: {colorVars.color};"
+					></div>
+				</div>
 			</div>
-			<div class="h-1.5 bg-[var(--bg-subtle)] rounded-full overflow-hidden">
-				<div
-					class="h-full rounded-full transition-all duration-300"
-					style="width: {usagePercentage}%; background-color: {colorVars.color};"
-				></div>
-			</div>
+
+			<!-- Sessions stat -->
+			{#if sessionCount != null}
+				<div class="flex items-center justify-between text-xs">
+					<div class="flex items-center gap-2 text-[var(--text-muted)]">
+						<MessageSquare size={12} />
+						<span class="font-medium">Sessions</span>
+					</div>
+					<span class="text-sm font-semibold text-[var(--text-primary)] tabular-nums">
+						{sessionCount}
+					</span>
+				</div>
+			{/if}
 		</div>
-
-		<!-- Sessions stat -->
-		{#if sessionCount != null}
-			<div class="flex items-center justify-between text-xs">
-				<div class="flex items-center gap-2 text-[var(--text-muted)]">
-					<MessageSquare size={12} />
-					<span class="font-medium">Sessions</span>
-				</div>
-				<span class="text-sm font-semibold text-[var(--text-primary)] tabular-nums">
-					{sessionCount}
-				</span>
-			</div>
 		{/if}
-	</div>
 
-	<!-- Footer row: Last used -->
-	<div
-		class="flex items-center justify-between text-xs text-[var(--text-muted)] pt-4 border-t border-[var(--border-subtle)]"
-	>
-		<span class="flex items-center gap-1.5">
-			<Clock size={12} />
-			<span>{lastUsedFormatted}</span>
-		</span>
-		{#if sessionCount != null}
+		<!-- Footer row: Last used -->
+		{#if footerOverride}
+			{@render footerOverride()}
+		{:else}
+		<div
+			class="flex items-center justify-between text-xs text-[var(--text-muted)] pt-4 border-t border-[var(--border-subtle)]"
+		>
 			<span class="flex items-center gap-1.5">
-				<MessageSquare size={12} />
-				<span>{sessionCount} session{sessionCount !== 1 ? 's' : ''}</span>
+				<Clock size={12} />
+				<span>{lastUsedFormatted}</span>
 			</span>
+			{#if sessionCount != null}
+				<span class="flex items-center gap-1.5">
+					<MessageSquare size={12} />
+					<span>{sessionCount} session{sessionCount !== 1 ? 's' : ''}</span>
+				</span>
+			{/if}
+		</div>
 		{/if}
 	</div>
 </a>

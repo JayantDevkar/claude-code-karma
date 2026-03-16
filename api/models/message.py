@@ -71,6 +71,9 @@ class UserMessage(MessageBase):
         default=False, description="True if content was a tool_result wrapper"
     )
     tool_result_id: Optional[str] = Field(default=None, description="tool_use_id if is_tool_result")
+    image_attachments: List[Dict[str, str]] = Field(
+        default_factory=list, description="Image attachments extracted from content blocks"
+    )
     is_internal_message: bool = Field(
         default=False,
         description="True if content is internal (local commands, task notifications, etc)",
@@ -99,8 +102,29 @@ class UserMessage(MessageBase):
                     data["tool_result_id"] = part.get("tool_use_id")
                     break
             parts = []
+            images = []
             for part in content:
                 if isinstance(part, dict):
+                    if part.get("type") == "image":
+                        source = part.get("source", {})
+                        if source.get("type") == "base64":
+                            _ALLOWED_IMAGE_TYPES = {
+                                "image/png",
+                                "image/jpeg",
+                                "image/gif",
+                                "image/webp",
+                                "image/svg+xml",
+                            }
+                            mt = source.get("media_type", "image/png")
+                            if mt not in _ALLOWED_IMAGE_TYPES:
+                                mt = "image/png"
+                            images.append(
+                                {
+                                    "media_type": mt,
+                                    "data": source.get("data", ""),
+                                }
+                            )
+                        continue  # Don't stringify image blocks
                     text = part.get("text") or part.get("content")
                     if isinstance(text, str):
                         parts.append(text)
@@ -108,7 +132,9 @@ class UserMessage(MessageBase):
                         parts.append(str(part))
                 elif isinstance(part, str):
                     parts.append(part)
-            content = "\n".join(parts) or str(content)
+            content = "\n".join(parts) or ""
+            if images:
+                data["image_attachments"] = images
         # Detect internal message patterns on the extracted text
         _detect_internal_message(data, content if isinstance(content, str) else "")
         return {**data, "content": content}

@@ -11,14 +11,17 @@
 		Maximize2
 	} from 'lucide-svelte';
 	import Modal from '$lib/components/ui/Modal.svelte';
+	import ImageAttachments from '$lib/components/ImageAttachments.svelte';
+	import type { ImageAttachment } from '$lib/api-types';
 
 	interface Props {
 		prompt: string;
 		previewLines?: number;
+		imageAttachments?: ImageAttachment[];
 		class?: string;
 	}
 
-	let { prompt, previewLines = 8, class: className = '' }: Props = $props();
+	let { prompt, previewLines = 8, imageAttachments, class: className = '' }: Props = $props();
 
 	let isExpanded = $state(false);
 	let copied = $state(false);
@@ -212,6 +215,9 @@
 
 		<!-- Markdown content -->
 		<div class="bg-[var(--bg-muted)] px-3 py-2 rounded-md">
+			{#if imageAttachments && imageAttachments.length > 0}
+				<ImageAttachments attachments={imageAttachments} class="mt-1" />
+			{/if}
 			<div
 				class="markdown-preview text-sm prompt-content {!isExpanded && needsExpansion
 					? 'prompt-preview'
@@ -277,6 +283,9 @@
 					{/if}
 				</button>
 			</div>
+			{#if imageAttachments && imageAttachments.length > 0}
+				<ImageAttachments attachments={imageAttachments} class="mb-3" />
+			{/if}
 			<div
 				class="markdown-preview max-h-[70vh] overflow-y-auto pr-2 custom-scrollbar break-words"
 			>

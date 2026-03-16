@@ -25,7 +25,13 @@ from models import (
     get_plugins_file,
     load_installed_plugins,
 )
-from models.plugin import get_plugin_description, read_command_contents, scan_plugin_capabilities
+from models.plugin import (
+    _resolve_manifest_dirs,
+    get_plugin_description,
+    read_command_contents,
+    read_plugin_manifest,
+    scan_plugin_capabilities,
+)
 from schemas import (
     DailyUsage,
     PluginCapabilities,
@@ -39,6 +45,7 @@ from schemas import (
     SkillContent,
     SkillItem,
 )
+from utils import utc_to_local_date
 
 logger = logging.getLogger(__name__)
 
@@ -171,7 +178,7 @@ def _query_plugin_mcp_usage_sqlite(
 
         if start_time:
             try:
-                date_key = datetime.fromisoformat(start_time).strftime("%Y-%m-%d")
+                date_key = utc_to_local_date(datetime.fromisoformat(start_time))
                 daily_usage[date_key] += count
                 by_mcp_tool_daily[short][date_key] += count
             except (ValueError, TypeError):
@@ -307,7 +314,7 @@ def _query_plugin_usage_sqlite(
         total_skill_invocations += count
 
         if start_time:
-            date_key = start_time.strftime("%Y-%m-%d")
+            date_key = utc_to_local_date(start_time)
             daily_usage[date_key]["skill_invocations"] += count
             by_skill_daily[skill_short][date_key] += count
 
@@ -331,7 +338,7 @@ def _query_plugin_usage_sqlite(
         total_cost += cost
 
         if start_time:
-            date_key = start_time.strftime("%Y-%m-%d")
+            date_key = utc_to_local_date(start_time)
             daily_usage[date_key]["agent_runs"] += 1
             daily_usage[date_key]["cost_usd"] += cost
             by_agent_daily[agent_short][date_key] += 1
@@ -352,7 +359,7 @@ def _query_plugin_usage_sqlite(
         total_command_invocations += count
 
         if start_time:
-            date_key = start_time.strftime("%Y-%m-%d")
+            date_key = utc_to_local_date(start_time)
             daily_usage[date_key]["command_invocations"] += count
             by_command_daily[cmd_short][date_key] += count
 
@@ -462,7 +469,7 @@ def _collect_plugin_usage_sync(period: str = "all") -> dict[str, dict]:
                     continue
 
                 # Get date key for daily tracking
-                date_key = session_time.strftime("%Y-%m-%d") if session_time else "unknown"
+                date_key = utc_to_local_date(session_time) if session_time else "unknown"
 
                 # Track which plugins are used in this session
                 plugins_in_session = set()
@@ -1178,6 +1185,259 @@ def get_plugin_commands(plugin_name: str, request: Request) -> PluginCommandsRes
     )
 
 
+@router.get("/{plugin_name:path}/skills", response_model=list[SkillItem])
+@cacheable(max_age=300, stale_while_revalidate=600, private=True)
+def list_plugin_skills(plugin_name: str, request: Request) -> list[SkillItem]:
+    """
+    List skills in a plugin's skills and commands directories.
+
+    Plugin skills are SKILL.md files in {install_path}/skills/**/SKILL.md and
+    markdown files in {install_path}/commands/*.md. Also checks manifest custom paths.
+    Returns empty list if the plugin has no skills/commands or if they are empty.
+
+    Args:
+        plugin_name: Plugin identifier (URL-decoded automatically)
+
+    Returns:
+        List of skill items (files) sorted by name
+
+    Raises:
+        404: Plugin not found
+
+    Cache: 5 minutes (plugin skills change infrequently)
+    """
+    # URL decode the plugin name
+    decoded_name = unquote(plugin_name)
+
+    installed = load_installed_plugins()
+
+    if not installed:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No plugins installed. Plugin '{decoded_name}' not found.",
+        )
+
+    installations = installed.get_plugin(decoded_name)
+
+    if not installations:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Plugin '{decoded_name}' not found in installed plugins.",
+        )
+
+    install_path = Path(installations[0].install_path)
+    manifest = read_plugin_manifest(install_path)
+
+    items: list[SkillItem] = []
+    seen_names: set[str] = set()
+
+    # Scan skills directories for SKILL.md files
+    for skills_dir in _resolve_manifest_dirs(install_path, manifest, "skills", ["skills"]):
+        try:
+            for skill_md in sorted(
+                skills_dir.rglob("SKILL.md"), key=lambda p: p.parent.name.lower()
+            ):
+                name = skill_md.parent.name
+                if name in seen_names:
+                    continue
+                seen_names.add(name)
+                try:
+                    stat = skill_md.stat()
+                    items.append(
+                        SkillItem(
+                            name=name,
+                            path=name,
+                            type="file",
+                            size_bytes=stat.st_size,
+                            modified_at=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc),
+                        )
+                    )
+                except OSError as e:
+                    logger.warning(f"Failed to stat skill file {skill_md}: {e}")
+        except OSError as e:
+            logger.error(f"Failed to scan skills directory {skills_dir}: {e}")
+
+    # Scan commands directories for .md files
+    for commands_dir in _resolve_manifest_dirs(install_path, manifest, "commands", ["commands"]):
+        try:
+            for entry in sorted(commands_dir.iterdir(), key=lambda p: p.name.lower()):
+                if entry.name.startswith(".") or not entry.is_file():
+                    continue
+                if entry.name in seen_names or entry.stem in seen_names:
+                    continue
+                seen_names.add(entry.name)
+                seen_names.add(entry.stem)
+                try:
+                    stat = entry.stat()
+                    items.append(
+                        SkillItem(
+                            name=entry.name,
+                            path=entry.name,
+                            type="file",
+                            size_bytes=stat.st_size,
+                            modified_at=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc),
+                        )
+                    )
+                except OSError as e:
+                    logger.warning(f"Failed to process skill entry {entry}: {e}")
+        except OSError as e:
+            logger.error(f"Failed to list commands directory {commands_dir}: {e}")
+            raise HTTPException(
+                status_code=500, detail="Failed to list plugin skills directory"
+            ) from e
+
+    # Sort alphabetically by name
+    return sorted(items, key=lambda x: x.name.lower())
+
+
+@router.get("/{plugin_name:path}/skills/content", response_model=SkillContent)
+@cacheable(max_age=300, stale_while_revalidate=600, private=True)
+def get_plugin_skill_content(
+    plugin_name: str,
+    path: str = Query(..., description="Relative path within skills/commands directory"),
+    request: Request = None,
+) -> SkillContent:
+    """
+    Get content of a specific plugin skill file.
+
+    Searches manifest custom paths in addition to default skills/ and commands/ dirs.
+
+    Args:
+        plugin_name: Plugin identifier (URL-decoded automatically)
+        path: Relative path to the skill file (name only or subdirectory/name)
+
+    Returns:
+        Skill file content and metadata
+
+    Raises:
+        400: Invalid path (directory traversal attempt)
+        404: Plugin not found or file not found
+
+    Cache: 5 minutes (plugin skills change infrequently)
+    """
+    # URL decode the plugin name
+    decoded_name = unquote(plugin_name)
+
+    installed = load_installed_plugins()
+
+    if not installed:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No plugins installed. Plugin '{decoded_name}' not found.",
+        )
+
+    installations = installed.get_plugin(decoded_name)
+
+    if not installations:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Plugin '{decoded_name}' not found in installed plugins.",
+        )
+
+    # Validate path for security (prevent directory traversal)
+    clean_path = path.strip("/").strip()
+
+    if not clean_path:
+        raise HTTPException(status_code=400, detail="Invalid path")
+
+    # Prevent directory traversal
+    if ".." in clean_path:
+        raise HTTPException(status_code=400, detail="Path traversal not allowed")
+
+    install_path = Path(installations[0].install_path)
+    manifest = read_plugin_manifest(install_path)
+
+    target_file = None
+
+    # Search skills directories for SKILL.md (path is skill name)
+    for skills_dir in _resolve_manifest_dirs(install_path, manifest, "skills", ["skills"]):
+        candidate = (skills_dir / clean_path / "SKILL.md").resolve()
+        try:
+            candidate.relative_to(skills_dir.resolve())
+        except ValueError:
+            continue
+        if candidate.is_file():
+            target_file = candidate
+            break
+
+    # Search commands directories for .md file
+    if target_file is None:
+        for commands_dir in _resolve_manifest_dirs(
+            install_path, manifest, "commands", ["commands"]
+        ):
+            candidate = (commands_dir / clean_path).resolve()
+            try:
+                candidate.relative_to(commands_dir.resolve())
+            except ValueError:
+                continue
+            if candidate.is_file():
+                target_file = candidate
+                break
+
+    if target_file is None:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    if not target_file.is_file():
+        raise HTTPException(status_code=400, detail="Path is not a file")
+
+    # Read the file content
+    try:
+        content = target_file.read_text(encoding="utf-8")
+        stat = target_file.stat()
+
+        return SkillContent(
+            name=target_file.name,
+            path=clean_path,
+            content=content,
+            size_bytes=stat.st_size,
+            modified_at=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc),
+        )
+    except UnicodeDecodeError:
+        raise HTTPException(status_code=400, detail="File is not valid UTF-8 text") from None
+    except OSError as e:
+        logger.error(f"Failed to read skill file {target_file}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to read skill file") from e
+
+
+@router.get("/installed-skills")
+@cacheable(max_age=120, stale_while_revalidate=300, private=True)
+def list_installed_skills(request: Request) -> list[dict]:
+    """
+    List all skills across all installed plugins.
+
+    Returns a flat list of skill entries with prefixed names (e.g. "superpowers:brainstorming"),
+    suitable for merging with usage data to show 0-use plugin skills on the skills page.
+
+    Cache: 2 minutes
+    """
+    installed = load_installed_plugins()
+
+    if not installed:
+        return []
+
+    seen: set[str] = set()
+    result: list[dict] = []
+
+    for plugin_name in installed.plugins:
+        full_name = installed.get_plugin_full_name(plugin_name) or plugin_name
+        short_name = _get_plugin_short_name(full_name)
+        capabilities = scan_plugin_capabilities(plugin_name)
+        for skill_name in capabilities.get("skills", []):
+            prefixed = f"{short_name}:{skill_name}"
+            if prefixed in seen:
+                continue
+            seen.add(prefixed)
+            result.append(
+                {
+                    "name": prefixed,
+                    "plugin": full_name,
+                    "category": "plugin_skill",
+                }
+            )
+
+    return result
+
+
 @router.get("/{plugin_name:path}", response_model=PluginDetail)
 @cacheable(max_age=300, stale_while_revalidate=600, private=True)
 def get_plugin(plugin_name: str, request: Request) -> PluginDetail:
@@ -1219,184 +1479,3 @@ def get_plugin(plugin_name: str, request: Request) -> PluginDetail:
     resolved_name = installed.get_plugin_full_name(decoded_name) or decoded_name
 
     return plugin_to_detail(resolved_name, installations)
-
-
-@router.get("/{plugin_name:path}/skills", response_model=list[SkillItem])
-@cacheable(max_age=300, stale_while_revalidate=600, private=True)
-def list_plugin_skills(plugin_name: str, request: Request) -> list[SkillItem]:
-    """
-    List skills in a plugin's commands directory.
-
-    Plugin skills are markdown files stored in {install_path}/commands/*.md.
-    Returns empty list if the plugin has no commands directory or if it's empty.
-
-    Args:
-        plugin_name: Plugin identifier (URL-decoded automatically)
-
-    Returns:
-        List of skill items (files) sorted by name
-
-    Raises:
-        404: Plugin not found
-
-    Cache: 5 minutes (plugin skills change infrequently)
-    """
-    # URL decode the plugin name
-    decoded_name = unquote(plugin_name)
-
-    installed = load_installed_plugins()
-
-    if not installed:
-        raise HTTPException(
-            status_code=404,
-            detail=f"No plugins installed. Plugin '{decoded_name}' not found.",
-        )
-
-    installations = installed.get_plugin(decoded_name)
-
-    if not installations:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Plugin '{decoded_name}' not found in installed plugins.",
-        )
-
-    # Use the first installation's install_path to find commands directory
-    install_path = Path(installations[0].install_path)
-    commands_dir = install_path / "commands"
-
-    # If commands directory doesn't exist or isn't a directory, return empty list
-    if not commands_dir.exists() or not commands_dir.is_dir():
-        logger.debug(f"No commands directory found for plugin '{decoded_name}' at {commands_dir}")
-        return []
-
-    items: list[SkillItem] = []
-
-    try:
-        for entry in commands_dir.iterdir():
-            # Skip hidden files and non-markdown files
-            if entry.name.startswith(".") or not entry.is_file():
-                continue
-
-            try:
-                stat = entry.stat()
-                # Calculate relative path from commands directory
-                rel_path = entry.name
-
-                items.append(
-                    SkillItem(
-                        name=entry.name,
-                        path=rel_path,
-                        type="file",
-                        size_bytes=stat.st_size,
-                        modified_at=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc),
-                    )
-                )
-            except OSError as e:
-                logger.warning(f"Failed to process skill entry {entry}: {e}")
-                continue
-    except OSError as e:
-        logger.error(f"Failed to list commands directory {commands_dir}: {e}")
-        raise HTTPException(status_code=500, detail="Failed to list plugin skills directory") from e
-
-    # Sort alphabetically by name
-    return sorted(items, key=lambda x: x.name.lower())
-
-
-@router.get("/{plugin_name:path}/skills/content", response_model=SkillContent)
-@cacheable(max_age=300, stale_while_revalidate=600, private=True)
-def get_plugin_skill_content(
-    plugin_name: str,
-    path: str = Query(..., description="Relative path within commands directory"),
-    request: Request = None,
-) -> SkillContent:
-    """
-    Get content of a specific plugin skill file.
-
-    Args:
-        plugin_name: Plugin identifier (URL-decoded automatically)
-        path: Relative path to the skill file within the commands directory
-
-    Returns:
-        Skill file content and metadata
-
-    Raises:
-        400: Invalid path (directory traversal attempt)
-        404: Plugin not found or file not found
-
-    Cache: 5 minutes (plugin skills change infrequently)
-    """
-    # URL decode the plugin name
-    decoded_name = unquote(plugin_name)
-
-    installed = load_installed_plugins()
-
-    if not installed:
-        raise HTTPException(
-            status_code=404,
-            detail=f"No plugins installed. Plugin '{decoded_name}' not found.",
-        )
-
-    installations = installed.get_plugin(decoded_name)
-
-    if not installations:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Plugin '{decoded_name}' not found in installed plugins.",
-        )
-
-    # Use the first installation's install_path to find commands directory
-    install_path = Path(installations[0].install_path)
-    commands_dir = install_path / "commands"
-
-    if not commands_dir.exists() or not commands_dir.is_dir():
-        raise HTTPException(
-            status_code=404,
-            detail=f"Plugin '{decoded_name}' has no commands directory.",
-        )
-
-    # Validate path for security (prevent directory traversal)
-    clean_path = path.strip("/").strip()
-
-    if not clean_path:
-        raise HTTPException(status_code=400, detail="Invalid path")
-
-    # Prevent directory traversal
-    if ".." in clean_path:
-        raise HTTPException(status_code=400, detail="Path traversal not allowed")
-
-    # Resolve to absolute path
-    target_file = (commands_dir / clean_path).resolve()
-
-    # Ensure the resolved path is still within commands directory
-    try:
-        resolved_commands_dir = commands_dir.resolve()
-        target_file.relative_to(resolved_commands_dir)
-    except ValueError as e:
-        logger.warning(f"Path traversal attempt detected: {path}")
-        raise HTTPException(
-            status_code=400, detail="Invalid path: outside commands directory"
-        ) from e
-
-    if not target_file.exists():
-        raise HTTPException(status_code=404, detail="File not found")
-
-    if not target_file.is_file():
-        raise HTTPException(status_code=400, detail="Path is not a file")
-
-    # Read the file content
-    try:
-        content = target_file.read_text(encoding="utf-8")
-        stat = target_file.stat()
-
-        return SkillContent(
-            name=target_file.name,
-            path=clean_path,
-            content=content,
-            size_bytes=stat.st_size,
-            modified_at=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc),
-        )
-    except UnicodeDecodeError:
-        raise HTTPException(status_code=400, detail="File is not valid UTF-8 text") from None
-    except OSError as e:
-        logger.error(f"Failed to read skill file {target_file}: {e}")
-        raise HTTPException(status_code=500, detail="Failed to read skill file") from e

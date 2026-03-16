@@ -18,6 +18,30 @@ from services.session_filter import ACTIVE_THRESHOLD_SECONDS
 
 logger = logging.getLogger(__name__)
 
+
+def _local_tz_modifier() -> str:
+    """Return SQLite time modifier for the machine's local timezone.
+
+    E.g. '-480 minutes' for UTC-8 (PST), '+330 minutes' for UTC+5:30 (IST).
+    Used in DATE()/TIME() functions to group by local calendar date.
+    Correctly handles DST transitions via datetime.astimezone().
+    """
+    from utils import local_timezone
+
+    offset = local_timezone().utcoffset(None)
+    offset_min = int(offset.total_seconds() // 60)
+    return f"{offset_min:+d} minutes"
+
+
+def _tz_date(col: str = "s.start_time") -> str:
+    """Return SQL expression for DATE in local timezone.
+
+    >>> _tz_date()  # on a UTC-7 machine
+    "DATE(s.start_time, '-420 minutes')"
+    """
+    return f"DATE({col}, '{_local_tz_modifier()}')"
+
+
 # Allowlist for SQL fragments interpolated into _query_per_item_trend.
 # Prevents future callers from accidentally passing user input.
 _ALLOWED_ITEM_COLS = frozenset({"sc.command_name", "sk.skill_name", "st.tool_name", "si.subagent_type"})
@@ -40,11 +64,11 @@ def _query_per_item_trend(
     if item_col not in _ALLOWED_ITEM_COLS:
         raise ValueError(f"Disallowed item_col: {item_col!r}")
     rows = conn.execute(
-        f"""SELECT {item_col} as item, DATE(s.start_time) as date, {count_expr} as count
+        f"""SELECT {item_col} as item, {_tz_date()} as date, {count_expr} as count
         {from_clause}
         {where}
         {"AND" if where else "WHERE"} s.start_time IS NOT NULL
-        GROUP BY {item_col}, DATE(s.start_time)
+        GROUP BY {item_col}, {_tz_date()}
         ORDER BY item, date""",
         params,
     ).fetchall()
@@ -679,14 +703,14 @@ def _query_item_detail(
 
     # Daily trend
     trend_rows = conn.execute(
-        f"""SELECT DATE(s.start_time) as date,
+        f"""SELECT {_tz_date()} as date,
             SUM({alias}.count) as calls,
             COUNT(DISTINCT {alias}.session_uuid) as sessions
         FROM {table} {alias}
         JOIN sessions s ON {alias}.session_uuid = s.uuid
         WHERE {alias}.{item_col} = :{param_name} AND s.start_time IS NOT NULL
             {mention_exclusion}
-        GROUP BY DATE(s.start_time)
+        GROUP BY {_tz_date()}
         ORDER BY date""",
         item_param,
     ).fetchall()
@@ -982,11 +1006,11 @@ def _query_item_usage_trend(
     # Daily trend
     and_or_where = "AND" if where_items else "WHERE"
     trend_rows = conn.execute(
-        f"""SELECT DATE(s.start_time) as date, SUM({table}.count) as count
+        f"""SELECT {_tz_date()} as date, SUM({table}.count) as count
         {from_clause}
         {where_items}
         {and_or_where} s.start_time IS NOT NULL
-        GROUP BY DATE(s.start_time)
+        GROUP BY {_tz_date()}
         ORDER BY date""",
         params,
     ).fetchall()
@@ -1775,12 +1799,12 @@ def query_agent_usage_trend(
 
     # Daily trend
     trend_rows = conn.execute(
-        f"""SELECT DATE(s.start_time) as date, COUNT(*) as count
+        f"""SELECT {_tz_date()} as date, COUNT(*) as count
         FROM subagent_invocations si
         JOIN sessions s ON si.session_uuid = s.uuid
         {where}
         AND s.start_time IS NOT NULL
-        GROUP BY DATE(s.start_time)
+        GROUP BY {_tz_date()}
         ORDER BY date""",
         params,
     ).fetchall()
@@ -2660,13 +2684,13 @@ def query_mcp_server_trend(
 
     # Main session calls per day
     main_rows = conn.execute(
-        f"""SELECT DATE(s.start_time) as date,
+        f"""SELECT {_tz_date()} as date,
             SUM(st.count) as calls,
             COUNT(DISTINCT st.session_uuid) as sessions
         FROM session_tools st
         JOIN sessions s ON st.session_uuid = s.uuid
         {where}
-        GROUP BY DATE(s.start_time)""",
+        GROUP BY {_tz_date()}""",
         params,
     ).fetchall()
 
@@ -2684,14 +2708,14 @@ def query_mcp_server_trend(
     sub_where = "WHERE " + " AND ".join(sub_conditions)
 
     sub_rows = conn.execute(
-        f"""SELECT DATE(s.start_time) as date,
+        f"""SELECT {_tz_date()} as date,
             SUM(sat.count) as calls,
             COUNT(DISTINCT si.session_uuid) as sessions
         FROM subagent_tools sat
         JOIN subagent_invocations si ON sat.invocation_id = si.id
         JOIN sessions s ON si.session_uuid = s.uuid
         {sub_where}
-        GROUP BY DATE(s.start_time)""",
+        GROUP BY {_tz_date()}""",
         sub_params,
     ).fetchall()
 
@@ -2919,12 +2943,12 @@ def query_mcp_tool_usage_trend(
 
     # Daily trend
     trend_rows = conn.execute(
-        f"""SELECT DATE(s.start_time) as date, SUM(st.count) as count
+        f"""SELECT {_tz_date()} as date, SUM(st.count) as count
         FROM session_tools st
         JOIN sessions s ON st.session_uuid = s.uuid
         {where}
         AND s.start_time IS NOT NULL
-        GROUP BY DATE(s.start_time)
+        GROUP BY {_tz_date()}
         ORDER BY date""",
         params,
     ).fetchall()
@@ -3034,12 +3058,12 @@ def query_builtin_tool_usage_trend(
 
     # Daily trend
     trend_rows = conn.execute(
-        f"""SELECT DATE(s.start_time) as date, SUM(st.count) as count
+        f"""SELECT {_tz_date()} as date, SUM(st.count) as count
         FROM session_tools st
         JOIN sessions s ON st.session_uuid = s.uuid
         {where}
         AND s.start_time IS NOT NULL
-        GROUP BY DATE(s.start_time)
+        GROUP BY {_tz_date()}
         ORDER BY date""",
         params,
     ).fetchall()
@@ -3147,13 +3171,13 @@ def query_mcp_tool_detail(
     trend_where = "WHERE " + " AND ".join(trend_conditions)
 
     trend_rows = conn.execute(
-        f"""SELECT DATE(s.start_time) as date,
+        f"""SELECT {_tz_date()} as date,
             SUM(st.count) as calls,
             COUNT(DISTINCT st.session_uuid) as sessions
         FROM session_tools st
         JOIN sessions s ON st.session_uuid = s.uuid
         {trend_where}
-        GROUP BY DATE(s.start_time)""",
+        GROUP BY {_tz_date()}""",
         params,
     ).fetchall()
 
@@ -3162,13 +3186,13 @@ def query_mcp_tool_detail(
     sub_trend_where = "WHERE " + " AND ".join(sub_trend_conditions)
 
     sub_trend_rows = conn.execute(
-        f"""SELECT DATE(s.start_time) as date,
+        f"""SELECT {_tz_date()} as date,
             SUM(sat.count) as calls
         FROM subagent_tools sat
         JOIN subagent_invocations si ON sat.invocation_id = si.id
         JOIN sessions s ON si.session_uuid = s.uuid
         {sub_trend_where}
-        GROUP BY DATE(s.start_time)""",
+        GROUP BY {_tz_date()}""",
         sub_params,
     ).fetchall()
 
@@ -3503,13 +3527,13 @@ def query_builtin_server_trend(
     where = "WHERE " + " AND ".join(conditions)
 
     main_rows = conn.execute(
-        f"""SELECT DATE(s.start_time) as date,
+        f"""SELECT {_tz_date()} as date,
             SUM(st.count) as calls,
             COUNT(DISTINCT st.session_uuid) as sessions
         FROM session_tools st
         JOIN sessions s ON st.session_uuid = s.uuid
         {where}
-        GROUP BY DATE(s.start_time)""",
+        GROUP BY {_tz_date()}""",
         params,
     ).fetchall()
 
@@ -3526,14 +3550,14 @@ def query_builtin_server_trend(
     sub_where = "WHERE " + " AND ".join(sub_conditions)
 
     sub_rows = conn.execute(
-        f"""SELECT DATE(s.start_time) as date,
+        f"""SELECT {_tz_date()} as date,
             SUM(sat.count) as calls,
             COUNT(DISTINCT si.session_uuid) as sessions
         FROM subagent_tools sat
         JOIN subagent_invocations si ON sat.invocation_id = si.id
         JOIN sessions s ON si.session_uuid = s.uuid
         {sub_where}
-        GROUP BY DATE(s.start_time)""",
+        GROUP BY {_tz_date()}""",
         sub_params,
     ).fetchall()
 
@@ -3632,13 +3656,13 @@ def query_builtin_tool_detail(
     trend_where = "WHERE " + " AND ".join(trend_conditions)
 
     trend_rows = conn.execute(
-        f"""SELECT DATE(s.start_time) as date,
+        f"""SELECT {_tz_date()} as date,
             SUM(st.count) as calls,
             COUNT(DISTINCT st.session_uuid) as sessions
         FROM session_tools st
         JOIN sessions s ON st.session_uuid = s.uuid
         {trend_where}
-        GROUP BY DATE(s.start_time)""",
+        GROUP BY {_tz_date()}""",
         params,
     ).fetchall()
 
@@ -3647,13 +3671,13 @@ def query_builtin_tool_detail(
     sub_trend_where = "WHERE " + " AND ".join(sub_trend_conditions)
 
     sub_trend_rows = conn.execute(
-        f"""SELECT DATE(s.start_time) as date,
+        f"""SELECT {_tz_date()} as date,
             SUM(sat.count) as calls
         FROM subagent_tools sat
         JOIN subagent_invocations si ON sat.invocation_id = si.id
         JOIN sessions s ON si.session_uuid = s.uuid
         {sub_trend_where}
-        GROUP BY DATE(s.start_time)""",
+        GROUP BY {_tz_date()}""",
         sub_params,
     ).fetchall()
 

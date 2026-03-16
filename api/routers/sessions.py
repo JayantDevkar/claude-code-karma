@@ -982,6 +982,14 @@ def get_session(uuid: str, request: Request, fresh: bool = False):
     # Get initial prompt using shared helper
     initial_prompt = get_initial_prompt(session)
 
+    # Extract image attachments from first user message
+    first_user_msg = next(session.iter_user_messages(), None)
+    initial_prompt_images = (
+        list(first_user_msg.image_attachments)
+        if first_user_msg and first_user_msg.image_attachments
+        else []
+    )
+
     # Load todos
     todos: list[TodoItemSchema] = []
     try:
@@ -1045,6 +1053,7 @@ def get_session(uuid: str, request: Request, fresh: bool = False):
         session_source=get_session_source(session.uuid),
         todo_count=len(todos),
         initial_prompt=initial_prompt,
+        initial_prompt_images=initial_prompt_images,
         tools_used=dict(tools_used),
         git_branches=list(session.get_git_branches()),
         working_directories=list(session.get_working_directories()),
@@ -1461,6 +1470,7 @@ def get_session_initial_prompt(uuid: str, request: Request):
         return InitialPrompt(
             content=msg.content,
             timestamp=msg.timestamp,
+            image_attachments=list(msg.image_attachments) if msg.image_attachments else [],
         )
 
     raise HTTPException(status_code=404, detail="No user messages found in session")

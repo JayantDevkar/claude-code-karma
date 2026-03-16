@@ -1,5 +1,8 @@
 <script lang="ts">
+	import { tick, onMount } from 'svelte';
 	import { navigating } from '$app/stores';
+	import { browser } from '$app/environment';
+	import { replaceState, beforeNavigate } from '$app/navigation';
 	import {
 		Terminal,
 		Search,
@@ -30,12 +33,40 @@
 	// Loading state: navigating TO this page from elsewhere
 	let isPageLoading = $derived(!!$navigating && $navigating.to?.route.id === '/commands');
 
-	// View state
-	let activeView = $state<'groups' | 'table' | 'analytics'>('groups');
+	// Helper: read initial URL param safely (SSR-safe)
+	function initParam(key: string, fallback: string): string {
+		if (browser) return new URLSearchParams(window.location.search).get(key) ?? fallback;
+		return fallback;
+	}
 
-	// Filter state
-	let searchQuery = $state('');
-	let selectedFilter = $state<'all' | 'builtin' | 'bundled' | 'plugin' | 'user'>('all');
+	// View state — initialized from URL
+	let activeView = $state<'groups' | 'table' | 'analytics'>(
+		initParam('view', 'groups') as 'groups' | 'table' | 'analytics'
+	);
+
+	// Filter state — initialized from URL
+	let searchQuery = $state(initParam('search', ''));
+	let selectedFilter = $state<'all' | 'builtin' | 'bundled' | 'plugin' | 'user'>(
+		initParam('filter', 'all') as 'all' | 'builtin' | 'bundled' | 'plugin' | 'user'
+	);
+
+	// Sync view/filter/search to URL
+	$effect(() => {
+		if (!browser) return;
+		const v = activeView;
+		const f = selectedFilter;
+		const s = searchQuery;
+		tick().then(() => {
+			const url = new URL(window.location.href);
+			if (v !== 'groups') url.searchParams.set('view', v);
+			else url.searchParams.delete('view');
+			if (f !== 'all') url.searchParams.set('filter', f);
+			else url.searchParams.delete('filter');
+			if (s.trim()) url.searchParams.set('search', s.trim());
+			else url.searchParams.delete('search');
+			replaceState(url.toString(), {});
+		});
+	});
 
 	const filterOptions = [
 		{ label: 'All', value: 'all' },
@@ -205,9 +236,48 @@
 		});
 	});
 
-	// Track which groups are expanded
-	let expandedGroups = $state<Set<string>>(new Set(['builtin_command']));
+	// Track which groups are expanded — initialized from URL param `expanded`
+	function initExpandedGroups(): Set<string> {
+		if (browser) {
+			const param = new URLSearchParams(window.location.search).get('expanded');
+			if (param) return new Set(param.split(',').filter(Boolean));
+		}
+		return new Set(['builtin_command']);
+	}
+	let expandedGroups = $state<Set<string>>(initExpandedGroups());
 	let previousExpandedGroups = $state<Set<string> | null>(null);
+
+	function syncExpandedToUrl() {
+		if (!browser) return;
+		tick().then(() => {
+			const url = new URL(window.location.href);
+			const keys = Array.from(expandedGroups);
+			if (keys.length > 0) url.searchParams.set('expanded', keys.join(','));
+			else url.searchParams.delete('expanded');
+			replaceState(url.toString(), {});
+		});
+	}
+
+	// Scroll save/restore
+	const SCROLL_KEY = 'commands_scroll';
+
+	beforeNavigate(({ to }) => {
+		if (!browser) return;
+		if (to?.route.id?.startsWith('/commands/')) {
+			sessionStorage.setItem(SCROLL_KEY, String(window.scrollY));
+		} else {
+			sessionStorage.removeItem(SCROLL_KEY);
+		}
+	});
+
+	onMount(() => {
+		const saved = sessionStorage.getItem(SCROLL_KEY);
+		if (saved !== null) {
+			sessionStorage.removeItem(SCROLL_KEY);
+			const y = Number(saved);
+			requestAnimationFrame(() => window.scrollTo({ top: y, behavior: 'instant' }));
+		}
+	});
 
 	// Auto-expand groups when searching
 	$effect(() => {
@@ -235,6 +305,7 @@
 			expandedGroups.add(key);
 		}
 		expandedGroups = new Set(expandedGroups);
+		syncExpandedToUrl();
 	}
 
 	let allExpanded = $derived(
@@ -247,6 +318,7 @@
 		} else {
 			expandedGroups = new Set(groupedCommands.map((g) => g.key));
 		}
+		syncExpandedToUrl();
 	}
 
 	// Calculate max usage for progress bars
