@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { ChevronRight } from 'lucide-svelte';
-	import { Collapsible } from 'bits-ui';
+	import { slide } from 'svelte/transition';
 	import type { Snippet } from 'svelte';
 
 	interface Props {
@@ -25,15 +25,14 @@
 		class: className = ''
 	}: Props = $props();
 
-	function handleOpenChange(isOpen: boolean) {
-		open = isOpen;
-		if (onOpenChange) {
-			onOpenChange(isOpen);
-		}
+	function toggle() {
+		const next = !open;
+		open = next;
+		onOpenChange?.(next);
 	}
 </script>
 
-<Collapsible.Root {open} onOpenChange={handleOpenChange} class="group {className}">
+<div class="group {className}">
 	<div
 		class="
 			border border-[var(--border)]
@@ -47,7 +46,10 @@
 			: ''}"
 	>
 		<!-- Header -->
-		<Collapsible.Trigger
+		<button
+			type="button"
+			onclick={toggle}
+			aria-expanded={open}
 			class="
 				w-full
 				flex items-center gap-3
@@ -92,27 +94,18 @@
 					{@render metadata()}
 				</div>
 			{/if}
-		</Collapsible.Trigger>
+		</button>
 
 		<!-- Content -->
-		<Collapsible.Content
-			class="
-				border-t border-[var(--border)]
-				overflow-hidden
-				transition-all
-			"
-			style="transition-duration: var(--duration-normal);"
-		>
-			<div class="p-4">
-				{@render children()}
+		{#if open}
+			<div
+				transition:slide={{ duration: 200 }}
+				class="border-t border-[var(--border)] overflow-hidden"
+			>
+				<div class="p-4">
+					{@render children()}
+				</div>
 			</div>
-		</Collapsible.Content>
+		{/if}
 	</div>
-</Collapsible.Root>
-
-<style>
-	/* Ensure smooth transitions for bits-ui Collapsible */
-	:global([data-collapsible-content]) {
-		transition: height var(--duration-normal) ease-in-out;
-	}
-</style>
+</div>

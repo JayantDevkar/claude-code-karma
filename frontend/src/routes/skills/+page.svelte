@@ -9,11 +9,12 @@
 		Sparkles,
 		ChevronsUpDown,
 		ChevronsDownUp,
-		ExternalLink,
-		LayoutGrid,
-		List
+		ExternalLink
 	} from 'lucide-svelte';
+	import { tick, onMount } from 'svelte';
 	import { navigating } from '$app/stores';
+	import { browser } from '$app/environment';
+	import { replaceState, beforeNavigate } from '$app/navigation';
 	import { listNavigation } from '$lib/actions/listNavigation';
 	import PageHeader from '$lib/components/layout/PageHeader.svelte';
 	import SkeletonBox from '$lib/components/skeleton/SkeletonBox.svelte';
@@ -24,7 +25,6 @@
 	import SegmentedControl from '$lib/components/ui/SegmentedControl.svelte';
 	import CollapsibleGroup from '$lib/components/ui/CollapsibleGroup.svelte';
 	import SkillUsageCard from '$lib/components/skills/SkillUsageCard.svelte';
-	import SkillUsageRow from '$lib/components/skills/SkillUsageRow.svelte';
 	import SkillUsageTable from '$lib/components/skills/SkillUsageTable.svelte';
 	import UsageAnalytics from '$lib/components/charts/UsageAnalytics.svelte';
 	import { getSkillGroupColorVars, getSkillCategoryColorVars, getSkillChartHex, cleanSkillName } from '$lib/utils';
@@ -33,15 +33,41 @@
 	// Server data
 	let { data } = $props();
 
-	// View state — default to "By Category" grouped view
-	let activeView = $state<'groups' | 'table' | 'analytics'>('groups');
+	// Helper: read initial URL param safely (SSR-safe, uses window.location directly)
+	function initParam(key: string, fallback: string): string {
+		if (browser) return new URLSearchParams(window.location.search).get(key) ?? fallback;
+		return fallback;
+	}
 
-	// Card layout toggle for the groups view
-	let cardLayout = $state<'grid' | 'list'>('grid');
+	// View state — initialized from URL, default "By Category"
+	let activeView = $state<'groups' | 'table' | 'analytics'>(
+		(initParam('view', 'groups') as 'groups' | 'table' | 'analytics')
+	);
 
-	// Filter state
-	let searchQuery = $state('');
-	let selectedFilter = $state<'all' | 'bundled' | 'plugin' | 'custom'>('all');
+	// Filter state — initialized from URL
+	let searchQuery = $state(initParam('search', ''));
+	let selectedFilter = $state<'all' | 'bundled' | 'plugin' | 'custom'>(
+		(initParam('filter', 'all') as 'all' | 'bundled' | 'plugin' | 'custom')
+	);
+
+	// Sync view/filter/layout/search state to URL params via replaceState
+	$effect(() => {
+		if (!browser) return;
+		// Read all reactive values inside $effect so Svelte tracks them
+		const v = activeView;
+		const f = selectedFilter;
+		const s = searchQuery;
+		tick().then(() => {
+			const url = new URL(window.location.href);
+			if (v !== 'groups') url.searchParams.set('view', v);
+			else url.searchParams.delete('view');
+			if (f !== 'all') url.searchParams.set('filter', f);
+			else url.searchParams.delete('filter');
+			if (s.trim()) url.searchParams.set('search', s.trim());
+			else url.searchParams.delete('search');
+			replaceState(url.toString(), {});
+		});
+	});
 
 	// Filter options
 	const filterOptions = [
@@ -188,9 +214,55 @@
 		});
 	});
 
-	// Track which groups are expanded
-	let expandedGroups = $state<Set<string>>(new Set(['bundled_skill']));
+	// Track which groups are expanded — initialized from URL param `expanded`
+	function initExpandedGroups(): Set<string> {
+		if (browser) {
+			const param = new URLSearchParams(window.location.search).get('expanded');
+			if (param) return new Set(param.split(',').filter(Boolean));
+		}
+		return new Set(['bundled_skill']);
+	}
+	let expandedGroups = $state<Set<string>>(initExpandedGroups());
 	let previousExpandedGroups = $state<Set<string> | null>(null);
+
+	// Sync expanded groups to URL (separate from the main view/filter sync)
+	function syncExpandedToUrl() {
+		if (!browser) return;
+		tick().then(() => {
+			const url = new URL(window.location.href);
+			const keys = Array.from(expandedGroups);
+			if (keys.length > 0) url.searchParams.set('expanded', keys.join(','));
+			else url.searchParams.delete('expanded');
+			replaceState(url.toString(), {});
+		});
+	}
+
+	// Scroll save/restore
+	// Save only when navigating into a skill detail — this avoids stale keys
+	// from unrelated navigations away from /skills.
+	const SCROLL_KEY = 'skills_scroll';
+
+	beforeNavigate(({ to }) => {
+		if (!browser) return;
+		if (to?.route.id?.startsWith('/skills/')) {
+			sessionStorage.setItem(SCROLL_KEY, String(window.scrollY));
+		} else {
+			// Navigating somewhere other than a skill detail — clear any stale key
+			sessionStorage.removeItem(SCROLL_KEY);
+		}
+	});
+
+	// Restore on mount: the component mounts AFTER the skeleton clears, which is
+	// after SvelteKit finishes navigation — afterNavigate would fire too early
+	// (before this component exists), so onMount is the reliable hook here.
+	onMount(() => {
+		const saved = sessionStorage.getItem(SCROLL_KEY);
+		if (saved !== null) {
+			sessionStorage.removeItem(SCROLL_KEY);
+			const y = Number(saved);
+			requestAnimationFrame(() => window.scrollTo({ top: y, behavior: 'instant' }));
+		}
+	});
 
 	// Auto-expand groups when searching rule:
 	// 1. When entering search (query > 0), snapshot current state
@@ -224,6 +296,7 @@
 			expandedGroups.add(key);
 		}
 		expandedGroups = new Set(expandedGroups);
+		syncExpandedToUrl();
 	}
 
 	// Check if all groups are expanded
@@ -233,10 +306,12 @@
 
 	function expandAll() {
 		expandedGroups = new Set(groupedSkills.map((g) => g.key));
+		syncExpandedToUrl();
 	}
 
 	function collapseAll() {
 		expandedGroups = new Set();
+		syncExpandedToUrl();
 	}
 
 	function toggleAllGroups() {
@@ -434,44 +509,6 @@
 					/>
 				</div>
 
-				<!-- Grid / List layout toggle (groups view only) -->
-				{#if activeView === 'groups'}
-					<div
-						class="flex items-center p-0.5 bg-[var(--bg-base)] border border-[var(--border)] rounded-lg"
-					>
-						<button
-							type="button"
-							onclick={() => (cardLayout = 'grid')}
-							aria-label="Grid view"
-							aria-pressed={cardLayout === 'grid'}
-							title="Grid view"
-							class="
-								p-1.5 rounded-md transition-all duration-150
-								{cardLayout === 'grid'
-								? 'bg-[var(--accent)] text-white shadow-sm'
-								: 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'}
-							"
-						>
-							<LayoutGrid size={15} />
-						</button>
-						<button
-							type="button"
-							onclick={() => (cardLayout = 'list')}
-							aria-label="List view"
-							aria-pressed={cardLayout === 'list'}
-							title="List view"
-							class="
-								p-1.5 rounded-md transition-all duration-150
-								{cardLayout === 'list'
-								? 'bg-[var(--accent)] text-white shadow-sm'
-								: 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'}
-							"
-						>
-							<List size={15} />
-						</button>
-					</div>
-				{/if}
-
 				<!-- Expand/Collapse All Toggle -->
 				{#if activeView === 'groups' && groupedSkills.length > 1}
 					<button
@@ -603,19 +640,11 @@
 						if (a.count > 0 && b.count > 0) return b.count - a.count;
 						return a.name.localeCompare(b.name);
 					})}
-					{#if cardLayout === 'grid'}
-						<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 stagger-children">
-							{#each sortedSkills as skill (skill.name)}
-								<SkillUsageCard {skill} {maxUsage} />
-							{/each}
-						</div>
-					{:else}
-						<div class="divide-y divide-[var(--border)]">
-							{#each sortedSkills as skill (skill.name)}
-								<SkillUsageRow {skill} {maxUsage} />
-							{/each}
-						</div>
-					{/if}
+					<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 stagger-children">
+						{#each sortedSkills as skill (skill.name)}
+							<SkillUsageCard {skill} {maxUsage} />
+						{/each}
+					</div>
 				</CollapsibleGroup>
 			{/each}
 		</div>
