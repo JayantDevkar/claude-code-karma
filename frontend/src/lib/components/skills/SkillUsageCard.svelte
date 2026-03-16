@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { Zap, Puzzle } from 'lucide-svelte';
+	import { Zap, Puzzle, Circle } from 'lucide-svelte';
 	import UsageCard from '$lib/components/shared/UsageCard.svelte';
 	import { getSkillColorVars, getSkillCategoryLabel, cleanSkillName } from '$lib/utils';
 	import type { SkillCategory } from '$lib/api-types';
@@ -44,6 +44,7 @@
 	);
 
 	let detailHref = $derived(`/skills/${encodeURIComponent(skill.name)}`);
+	let neverUsed = $derived(skill.count === 0);
 </script>
 
 <UsageCard
@@ -58,10 +59,30 @@
 	description={skill.description}
 	lastUsed={skill.last_used}
 	sessionCount={skill.session_count ?? null}
+	{neverUsed}
 	class={className}
 >
 	{#snippet icon()}
 		<Zap size={22} strokeWidth={2.5} />
+	{/snippet}
+
+	{#snippet extraBadge()}
+		{#if neverUsed}
+			<span
+				class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium text-[var(--text-muted)] bg-[var(--bg-muted)]"
+			>
+				<Circle size={8} />
+				Available
+			</span>
+		{/if}
+	{/snippet}
+
+	{#snippet footerOverride()}
+		{#if neverUsed}
+			<div class="pt-4 border-t border-[var(--border-subtle)]">
+				<p class="text-xs text-[var(--text-faint)]">Invoke once to start tracking</p>
+			</div>
+		{/if}
 	{/snippet}
 
 	{#snippet subheader()}

@@ -1399,6 +1399,45 @@ def get_plugin_skill_content(
         raise HTTPException(status_code=500, detail="Failed to read skill file") from e
 
 
+@router.get("/installed-skills")
+@cacheable(max_age=120, stale_while_revalidate=300, private=True)
+def list_installed_skills(request: Request) -> list[dict]:
+    """
+    List all skills across all installed plugins.
+
+    Returns a flat list of skill entries with prefixed names (e.g. "superpowers:brainstorming"),
+    suitable for merging with usage data to show 0-use plugin skills on the skills page.
+
+    Cache: 2 minutes
+    """
+    installed = load_installed_plugins()
+
+    if not installed:
+        return []
+
+    seen: set[str] = set()
+    result: list[dict] = []
+
+    for plugin_name in installed.plugins:
+        full_name = installed.get_plugin_full_name(plugin_name) or plugin_name
+        short_name = _get_plugin_short_name(full_name)
+        capabilities = scan_plugin_capabilities(plugin_name)
+        for skill_name in capabilities.get("skills", []):
+            prefixed = f"{short_name}:{skill_name}"
+            if prefixed in seen:
+                continue
+            seen.add(prefixed)
+            result.append(
+                {
+                    "name": prefixed,
+                    "plugin": full_name,
+                    "category": "plugin_skill",
+                }
+            )
+
+    return result
+
+
 @router.get("/{plugin_name:path}", response_model=PluginDetail)
 @cacheable(max_age=300, stale_while_revalidate=600, private=True)
 def get_plugin(plugin_name: str, request: Request) -> PluginDetail:

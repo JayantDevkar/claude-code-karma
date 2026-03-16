@@ -9,7 +9,9 @@
 		Sparkles,
 		ChevronsUpDown,
 		ChevronsDownUp,
-		ExternalLink
+		ExternalLink,
+		LayoutGrid,
+		List
 	} from 'lucide-svelte';
 	import { navigating } from '$app/stores';
 	import { listNavigation } from '$lib/actions/listNavigation';
@@ -22,6 +24,7 @@
 	import SegmentedControl from '$lib/components/ui/SegmentedControl.svelte';
 	import CollapsibleGroup from '$lib/components/ui/CollapsibleGroup.svelte';
 	import SkillUsageCard from '$lib/components/skills/SkillUsageCard.svelte';
+	import SkillUsageRow from '$lib/components/skills/SkillUsageRow.svelte';
 	import SkillUsageTable from '$lib/components/skills/SkillUsageTable.svelte';
 	import UsageAnalytics from '$lib/components/charts/UsageAnalytics.svelte';
 	import { getSkillGroupColorVars, getSkillCategoryColorVars, getSkillChartHex, cleanSkillName } from '$lib/utils';
@@ -32,6 +35,9 @@
 
 	// View state — default to "By Category" grouped view
 	let activeView = $state<'groups' | 'table' | 'analytics'>('groups');
+
+	// Card layout toggle for the groups view
+	let cardLayout = $state<'grid' | 'list'>('grid');
 
 	// Filter state
 	let searchQuery = $state('');
@@ -428,6 +434,44 @@
 					/>
 				</div>
 
+				<!-- Grid / List layout toggle (groups view only) -->
+				{#if activeView === 'groups'}
+					<div
+						class="flex items-center p-0.5 bg-[var(--bg-base)] border border-[var(--border)] rounded-lg"
+					>
+						<button
+							type="button"
+							onclick={() => (cardLayout = 'grid')}
+							aria-label="Grid view"
+							aria-pressed={cardLayout === 'grid'}
+							title="Grid view"
+							class="
+								p-1.5 rounded-md transition-all duration-150
+								{cardLayout === 'grid'
+								? 'bg-[var(--accent)] text-white shadow-sm'
+								: 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'}
+							"
+						>
+							<LayoutGrid size={15} />
+						</button>
+						<button
+							type="button"
+							onclick={() => (cardLayout = 'list')}
+							aria-label="List view"
+							aria-pressed={cardLayout === 'list'}
+							title="List view"
+							class="
+								p-1.5 rounded-md transition-all duration-150
+								{cardLayout === 'list'
+								? 'bg-[var(--accent)] text-white shadow-sm'
+								: 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'}
+							"
+						>
+							<List size={15} />
+						</button>
+					</div>
+				{/if}
+
 				<!-- Expand/Collapse All Toggle -->
 				{#if activeView === 'groups' && groupedSkills.length > 1}
 					<button
@@ -522,11 +566,14 @@
 						</div>
 					{/snippet}
 					{#snippet metadata()}
+						{@const usedCount = group.skills.filter((s) => s.count > 0).length}
 						<div class="flex items-center gap-3">
 							<span class="text-xs text-[var(--text-muted)] tabular-nums">
-								{group.skills.length} skill{group.skills.length !== 1
-									? 's'
-									: ''}
+								{#if usedCount < group.skills.length}
+									{usedCount} used · {group.skills.length} total
+								{:else}
+									{group.skills.length} skill{group.skills.length !== 1 ? 's' : ''}
+								{/if}
 							</span>
 							{#if group.pluginName}
 								<a
@@ -550,13 +597,25 @@
 						</div>
 					{/snippet}
 
-					<div
-						class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 stagger-children"
-					>
-						{#each group.skills as skill (skill.name)}
-							<SkillUsageCard {skill} {maxUsage} />
-						{/each}
-					</div>
+					{@const sortedSkills = group.skills.slice().sort((a, b) => {
+						if (a.count > 0 && b.count === 0) return -1;
+						if (a.count === 0 && b.count > 0) return 1;
+						if (a.count > 0 && b.count > 0) return b.count - a.count;
+						return a.name.localeCompare(b.name);
+					})}
+					{#if cardLayout === 'grid'}
+						<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 stagger-children">
+							{#each sortedSkills as skill (skill.name)}
+								<SkillUsageCard {skill} {maxUsage} />
+							{/each}
+						</div>
+					{:else}
+						<div class="divide-y divide-[var(--border)]">
+							{#each sortedSkills as skill (skill.name)}
+								<SkillUsageRow {skill} {maxUsage} />
+							{/each}
+						</div>
+					{/if}
 				</CollapsibleGroup>
 			{/each}
 		</div>
