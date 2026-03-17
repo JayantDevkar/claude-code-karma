@@ -508,6 +508,18 @@ def get_project(
 
                 total_count = data["total"]
 
+                # Bug fix: If SQLite returns 0 sessions but files exist on disk, fall back to filesystem
+                if total_count == 0:
+                    # Check if any .jsonl session files exist on disk
+                    session_files = list(project.project_dir.glob("*.jsonl"))
+                    if session_files:
+                        logger.info(
+                            "SQLite reports 0 sessions but %d .jsonl files found on disk, falling back to filesystem",
+                            len(session_files),
+                        )
+                        # Fall through to filesystem scan below
+                        raise Exception("Session count mismatch - falling back to filesystem")
+
                 _enrich_chain_titles(session_summaries)
                 return ProjectDetail(
                     path=project.path,

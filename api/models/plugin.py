@@ -229,7 +229,7 @@ class InstalledPlugins(BaseModel):
             return None
 
         try:
-            with open(path, "r", encoding="utf-8") as f:
+            with open(path, "r", encoding="utf-8", errors="replace") as f:
                 data = json.load(f)
 
             # Parse datetime strings in nested structures

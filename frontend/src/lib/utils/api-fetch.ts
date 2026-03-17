@@ -66,7 +66,7 @@ export async function safeFetch<T>(fetchFn: typeof fetch, url: string): Promise<
 		try {
 			const data = await response.json();
 			return { ok: true, data };
-		} catch (parseError) {
+		} catch {
 			return {
 				ok: false,
 				status: response.status,

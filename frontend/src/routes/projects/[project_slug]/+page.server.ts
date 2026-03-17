@@ -1,7 +1,6 @@
 import type {
 	Project,
 	BranchesData,
-	ProjectAnalytics,
 	ProjectArchivedResponse,
 	LiveSessionSummary
 } from '$lib/api-types';
@@ -23,10 +22,6 @@ export async function load({ params, fetch, url }) {
 	if (startTs) analyticsParams.set('start_ts', startTs);
 	if (endTs) analyticsParams.set('end_ts', endTs);
 	if (tzOffset) analyticsParams.set('tz_offset', tzOffset);
-
-	const analyticsUrl = analyticsParams.toString()
-		? `${API_BASE}/analytics/projects/${params.project_slug}?${analyticsParams}`
-		: `${API_BASE}/analytics/projects/${params.project_slug}`;
 
 	// Build project URL with pagination params
 	const projectParams = new URLSearchParams();
