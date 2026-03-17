@@ -286,10 +286,8 @@
 	}
 
 	// Chart
-	// chartCanvas is bound with bind:this which Svelte treats as reactive
-	// We use $derived.by to create a non-reactive reference that satisfies the compiler
-	let canvasElement: HTMLCanvasElement;
-	let chartCanvas = $derived.by(() => canvasElement);
+	// svelte-ignore non_reactive_update: chartCanvas is only bound once during mount
+	let chartCanvas: HTMLCanvasElement;
 	let chartInstance = $state<any>(null);
 
 	$effect(() => {
@@ -510,7 +508,7 @@
 
 			<!-- Bar chart -->
 			<div class="h-40 w-full">
-				<canvas bind:this={canvasElement}></canvas>
+				<canvas bind:this={chartCanvas}></canvas>
 			</div>
 		</div>
 	</CollapsibleGroup>
