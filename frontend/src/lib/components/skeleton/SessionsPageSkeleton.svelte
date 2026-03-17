@@ -2,6 +2,20 @@
 	import SkeletonBox from './SkeletonBox.svelte';
 	import SkeletonText from './SkeletonText.svelte';
 	import SkeletonGlobalSessionCard from './SkeletonGlobalSessionCard.svelte';
+	import SkeletonLiveSessionsSection from './SkeletonLiveSessionsSection.svelte';
+
+	interface Props {
+		viewMode?: 'list' | 'grid';
+	}
+
+	let { viewMode = 'list' }: Props = $props();
+
+	const isGrid = $derived(viewMode === 'grid');
+	const gridClass = $derived(
+		isGrid
+			? 'grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2'
+			: 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3'
+	);
 </script>
 
 <div>
@@ -37,6 +51,9 @@
 		<SkeletonBox width="80px" height="36px" rounded="md" />
 	</div>
 
+	<!-- LIVE NOW Section -->
+	<SkeletonLiveSessionsSection />
+
 	<!-- Day-based Groups -->
 	<div class="space-y-8">
 		<!-- Today Group -->
@@ -45,9 +62,9 @@
 				<SkeletonText width="50px" size="sm" />
 				<SkeletonText width="30px" size="xs" />
 			</div>
-			<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+			<div class={gridClass}>
 				{#each Array(3) as _}
-					<SkeletonGlobalSessionCard />
+					<SkeletonGlobalSessionCard compact={isGrid} />
 				{/each}
 			</div>
 		</div>
@@ -58,9 +75,9 @@
 				<SkeletonText width="80px" size="sm" />
 				<SkeletonText width="30px" size="xs" />
 			</div>
-			<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+			<div class={gridClass}>
 				{#each Array(3) as _}
-					<SkeletonGlobalSessionCard />
+					<SkeletonGlobalSessionCard compact={isGrid} />
 				{/each}
 			</div>
 		</div>
@@ -71,9 +88,9 @@
 				<SkeletonText width="50px" size="sm" />
 				<SkeletonText width="30px" size="xs" />
 			</div>
-			<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+			<div class={gridClass}>
 				{#each Array(2) as _}
-					<SkeletonGlobalSessionCard />
+					<SkeletonGlobalSessionCard compact={isGrid} />
 				{/each}
 			</div>
 		</div>
