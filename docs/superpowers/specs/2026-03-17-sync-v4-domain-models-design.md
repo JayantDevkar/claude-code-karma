@@ -518,7 +518,7 @@ CREATE TABLE sync_events (
     event_type       TEXT NOT NULL,
     team_name        TEXT,
     member_tag       TEXT,
-    project_encoded_name TEXT,
+    project_git_identity TEXT,
     session_uuid     TEXT,
     detail           TEXT,
     created_at       TEXT NOT NULL DEFAULT (datetime('now'))
@@ -574,7 +574,7 @@ class MemberRepository:
     def save(self, conn, member: Member) -> None
     def list_for_team(self, conn, team_name: str) -> list[Member]
     def was_removed(self, conn, team_name: str, device_id: str) -> bool
-    def record_removal(self, conn, team_name: str, device_id: str) -> None
+    def record_removal(self, conn, team_name: str, device_id: str, member_tag: str = None) -> None
 
 class ProjectRepository:
     def get(self, conn, team_name: str, git_identity: str) -> SharedProject | None
@@ -699,7 +699,8 @@ class ReconciliationService:
 - Read team metadata folder
 - Detect removal signals → auto-leave if own member_tag is removed
 - Discover new members → register as ADDED, transition to ACTIVE
-- Discover new projects → create OFFERED subscriptions
+- Discover new projects from leader's metadata → create OFFERED subscriptions
+- Detect removed projects — compare locally known projects against leader's current metadata project list; DECLINE subscriptions for projects no longer listed by the leader
 
 **Phase 2 — Mesh Pairing:**
 - For each active team member, ensure Syncthing device is paired
@@ -741,9 +742,11 @@ class FolderManager:
     """Folder lifecycle tied to subscriptions."""
     def ensure_outbox_folder(self, conn, sub: Subscription) -> None
     def ensure_inbox_folders(self, conn, sub: Subscription) -> None
+    def remove_outbox_folder(self, conn, sub: Subscription) -> None
     def set_folder_devices(self, suffix: str, device_ids: set[str]) -> None
     def remove_device_from_team_folders(self, conn, team: str, device_id: str) -> None
     def cleanup_team_folders(self, conn, team: str) -> None
+    def cleanup_project_folders(self, conn, team: str, folder_suffix: str) -> None
 ```
 
 ### MetadataService
@@ -754,6 +757,7 @@ class MetadataService:
     def write_removal_signal(self, team_name: str, member_tag: str) -> None
     def read_team_metadata(self, team_name: str) -> dict[str, dict]
     def write_own_state(self, team_name: str, member_tag: str,
+                       projects: list[SharedProject],
                        subscriptions: list[Subscription]) -> None
 ```
 
