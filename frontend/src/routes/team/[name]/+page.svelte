@@ -41,7 +41,7 @@
 	let teamEverLoaded = $state(false);
 	$effect(() => {
 		team = data.team ?? null;
-		if (team) teamEverLoaded = true;
+		if (data.team) teamEverLoaded = true;
 	});
 	let members = $derived(team?.members ?? []);
 	let projects = $derived(team?.projects ?? []);
