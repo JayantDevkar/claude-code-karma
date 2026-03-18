@@ -100,14 +100,13 @@ class TeamService:
         )
         added = team.add_member(member, by_device=by_device)  # auth check
         self.members.save(conn, added)
-        await self.devices.pair(new_device_id)
 
-        # Ensure metadata folder exists in Syncthing before sharing
-        await self.folders.ensure_metadata_folder(team_name)
-
-        # Immediately share metadata + project outbox folders with the new device
-        # so the joiner sees pending folders without waiting for the 60s reconciliation timer.
+        # Syncthing operations are best-effort — failures must not block
+        # DB operations (subscriptions, metadata, events) below.
         try:
+            await self.devices.pair(new_device_id)
+            await self.folders.ensure_metadata_folder(team_name)
+
             all_folders = await self.folders.get_configured_folders()
 
             # Share metadata folder
@@ -129,7 +128,7 @@ class TeamService:
                         existing.add(new_device_id)
                         await self.folders.set_folder_devices(folder_id, existing)
         except Exception as e:
-            logger.warning("Failed to share folders with new member %s: %s", new_member_tag, e)
+            logger.warning("Syncthing setup failed for new member %s (reconciliation will retry): %s", new_member_tag, e)
 
         # Update metadata with all current members
         all_members = self.members.list_for_team(conn, team_name)
