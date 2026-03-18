@@ -50,15 +50,27 @@ class RemoteSessionWatcher(FileSystemEventHandler):
         return self._observer is not None and self._observer.is_alive()
 
     def _should_process(self, path: str) -> bool:
-        """Only process session JSONL files (not agent files or Syncthing temp files)."""
+        """Only process session JSONL files in remote-sessions/ or karma-out-- inbox dirs.
+
+        Skips agent files, Syncthing temp files, and our own sendonly outbox
+        files (those are outgoing, not incoming).
+        """
         p = Path(path)
-        if ".stversions" in p.parts:
+        if ".stversions" in p.parts or ".stfolder" in p.parts:
             return False
         if p.name.startswith(".syncthing."):
             return False
         if ".sync-conflict-" in p.name:
             return False
-        return p.suffix == ".jsonl" and not p.name.startswith("agent-")
+        if p.suffix != ".jsonl" or p.name.startswith("agent-"):
+            return False
+        # Only trigger on files inside remote-sessions/ or karma-out-- dirs
+        parts_str = str(p)
+        if "remote-sessions" in parts_str:
+            return True
+        if "karma-out--" in parts_str:
+            return True
+        return False
 
     def on_created(self, event):
         if self._should_process(event.src_path):
@@ -324,30 +336,48 @@ class WatcherManager:
                 logger.warning("Skipping %s: dir not found %s", proj_name, claude_dir)
                 continue
 
-            outbox = KARMA_BASE / "remote-sessions" / (member_tag or user_id) / encoded
-
             def make_package_fn(
-                cd=claude_dir, ob=outbox, en=encoded, pp=proj.get("path", ""),
-                pt=proj_teams,
+                cd=claude_dir, en=encoded, pp=proj.get("path", ""),
+                pt=proj_teams, mt=member_tag or user_id,
             ):
                 def package():
                     # v4 policy gate: skip packaging unless member has an ACCEPTED
-                    # subscription with send|both direction for this project's teams
+                    # subscription with send|both direction for this project's teams.
+                    # Also resolve the correct Syncthing outbox path from the DB.
+                    ob = None
                     try:
                         from db.connection import get_writer_db
                         from repositories.subscription_repo import SubscriptionRepository
+                        from repositories.project_repo import ProjectRepository
+                        from services.syncthing.folder_manager import build_outbox_folder_id
                         db = get_writer_db()
-                        subs = SubscriptionRepository().list_for_member(db, member_tag or user_id)
-                        if not any(
-                            s.status.value == "accepted"
-                            and s.direction.value in ("send", "both")
-                            and s.team_name in pt
-                            for s in subs
-                        ):
+                        subs = SubscriptionRepository().list_for_member(db, mt)
+                        accepted_sub = None
+                        for s in subs:
+                            if (s.status.value == "accepted"
+                                    and s.direction.value in ("send", "both")
+                                    and s.team_name in pt):
+                                accepted_sub = s
+                                break
+                        if not accepted_sub:
                             logger.debug("No send subscription for %s — skipping package", en)
                             return
+
+                        # Resolve outbox to Syncthing folder path
+                        project = ProjectRepository().get(
+                            db, accepted_sub.team_name,
+                            accepted_sub.project_git_identity,
+                        )
+                        if project and project.folder_suffix:
+                            folder_id = build_outbox_folder_id(mt, project.folder_suffix)
+                            ob = KARMA_BASE / folder_id
+                        else:
+                            ob = KARMA_BASE / "remote-sessions" / mt / en
                     except Exception as exc:
                         logger.warning("Subscription check failed for %s, proceeding: %s", en, exc)
+
+                    if ob is None:
+                        ob = KARMA_BASE / "remote-sessions" / mt / en
 
                     wt_dirs = find_worktree_dirs(en, projects_dir)
                     packager = SessionPackager(

@@ -629,6 +629,182 @@ def index_remote_sessions(conn: sqlite3.Connection) -> dict:
                     logger.debug("Error indexing remote session %s: %s", uuid, e)
                     stats["errors"] += 1
 
+    # ---------------------------------------------------------------
+    # v4 inbox scan: karma-out--{member_tag}--{suffix}/ directories
+    # ---------------------------------------------------------------
+    karma_base = settings.karma_base
+    local_member_tag = None
+    try:
+        import json as _json
+        cfg_path = karma_base / "sync-config.json"
+        if cfg_path.exists():
+            cfg = _json.loads(cfg_path.read_text())
+            uid = cfg.get("user_id", "")
+            mtag = cfg.get("machine_tag", "")
+            if uid and mtag:
+                local_member_tag = f"{uid}.{mtag}"
+    except Exception:
+        pass
+
+    for inbox_dir in karma_base.iterdir():
+        if not inbox_dir.is_dir():
+            continue
+        dname = inbox_dir.name
+        if not dname.startswith("karma-out--"):
+            continue
+        # Parse: karma-out--{member_tag}--{folder_suffix}
+        rest = dname[len("karma-out--"):]
+        parts = rest.split("--", 1)
+        if len(parts) != 2:
+            continue
+        inbox_member_tag, inbox_suffix = parts
+
+        # Skip our own outbox (we only want inboxes from teammates)
+        if local_member_tag and inbox_member_tag == local_member_tag:
+            continue
+
+        sessions_dir = inbox_dir / "sessions"
+        if not sessions_dir.exists():
+            continue
+
+        # Resolve local project encoded_name via git identity matching.
+        # The inbox_suffix is derived from git_identity (e.g.
+        # "https:--github.com-User-repo" from "https://github.com/User/repo.git").
+        # We match it against the local projects table's git_identity.
+        local_encoded = inbox_suffix  # fallback
+        try:
+            # Reverse derive: replace "-" back to "/" to approximate the git URL
+            approx_url = inbox_suffix.replace("-", "/")
+            local_rows = conn.execute(
+                "SELECT encoded_name, git_identity FROM projects WHERE git_identity IS NOT NULL"
+            ).fetchall()
+            for (enc, local_git) in local_rows:
+                lg = (local_git or "").rstrip("/").lower()
+                if lg.endswith(".git"):
+                    lg = lg[:-4]
+                au = approx_url.lower()
+                if lg and (lg in au or au.endswith(lg)):
+                    local_encoded = enc
+                    break
+        except Exception:
+            pass
+
+        # Also try mapping from get_project_mapping()
+        if local_encoded == inbox_suffix:
+            try:
+                row = conn.execute(
+                    "SELECT encoded_name FROM sync_projects WHERE folder_suffix = ? AND status = 'shared' LIMIT 1",
+                    (inbox_suffix,),
+                ).fetchone()
+                if row and row[0]:
+                    local_encoded = mapping.get(
+                        (inbox_member_tag, row[0]), row[0]
+                    )
+            except Exception:
+                pass
+
+        classification_overrides = _load_manifest_classifications(inbox_dir)
+        titles_map = _load_remote_titles(inbox_member_tag, local_encoded)
+
+        force_reindex = False
+        metadata_files = []
+        if classification_overrides:
+            mf = inbox_dir / "manifest.json"
+            if mf.exists():
+                metadata_files.append(mf)
+        if titles_map:
+            tf = inbox_dir / "titles.json"
+            if tf.exists():
+                metadata_files.append(tf)
+        if metadata_files:
+            oldest_indexed = conn.execute(
+                "SELECT MIN(indexed_at) FROM sessions WHERE remote_user_id = ? AND project_encoded_name = ? AND source = 'remote'",
+                (inbox_member_tag, local_encoded),
+            ).fetchone()
+            if oldest_indexed and oldest_indexed[0]:
+                from datetime import datetime as _dt2, timezone as _tz2
+                try:
+                    indexed_dt = _dt2.fromisoformat(oldest_indexed[0])
+                    for mf2 in metadata_files:
+                        mtime2 = mf2.stat().st_mtime
+                        mdt2 = _dt2.fromtimestamp(mtime2, tz=_tz2.utc).replace(tzinfo=None)
+                        if mdt2 > indexed_dt:
+                            force_reindex = True
+                            break
+                except (ValueError, OSError):
+                    pass
+
+        manifest_skill_defs = _load_manifest_skill_definitions(inbox_dir)
+        if manifest_skill_defs:
+            _apply_manifest_skill_definitions(
+                conn, manifest_skill_defs,
+                source_user_id=inbox_member_tag,
+                source_machine_id=inbox_member_tag,
+            )
+
+        for jsonl_path in sessions_dir.glob("*.jsonl"):
+            if jsonl_path.name.startswith("agent-"):
+                continue
+            uuid = jsonl_path.stem
+            stats["total"] += 1
+            try:
+                file_stat = jsonl_path.stat()
+                current_mtime = file_stat.st_mtime
+
+                if not force_reindex and uuid in db_mtimes and abs(db_mtimes[uuid] - current_mtime) < 0.001:
+                    stats["skipped"] += 1
+                    continue
+
+                from services.file_validator import quarantine_file, validate_received_file
+                valid, reason = validate_received_file(jsonl_path)
+                if not valid:
+                    quarantine_file(jsonl_path, reason, member_name=inbox_member_tag)
+                    stats["errors"] += 1
+                    continue
+
+                _index_session(
+                    conn,
+                    jsonl_path,
+                    local_encoded,
+                    current_mtime,
+                    file_stat.st_size,
+                    source="remote",
+                    remote_user_id=inbox_member_tag,
+                    remote_machine_id=inbox_member_tag,
+                    claude_base_dir=inbox_dir,
+                    classification_overrides=classification_overrides,
+                    session_titles_override=[titles_map[uuid]] if uuid in titles_map else None,
+                )
+                stats["indexed"] += 1
+
+                if uuid not in db_mtimes:
+                    try:
+                        from repositories.event_repo import EventRepository
+                        from domain.events import SyncEvent, SyncEventType
+                        already_logged = conn.execute(
+                            "SELECT 1 FROM sync_events WHERE event_type = 'session_received' AND session_uuid = ? LIMIT 1",
+                            (uuid,),
+                        ).fetchone()
+                        if not already_logged:
+                            team_names = conn.execute(
+                                "SELECT team_name FROM sync_projects WHERE folder_suffix = ?",
+                                (inbox_suffix,),
+                            ).fetchall()
+                            event_repo = EventRepository()
+                            for (tn,) in team_names:
+                                event_repo.log(conn, SyncEvent(
+                                    event_type=SyncEventType.session_received,
+                                    team_name=tn,
+                                    member_tag=inbox_member_tag,
+                                    project_git_identity=local_encoded,
+                                    session_uuid=uuid,
+                                ))
+                    except Exception:
+                        pass
+            except Exception as e:
+                logger.debug("Error indexing v4 inbox session %s: %s", uuid, e)
+                stats["errors"] += 1
+
     conn.commit()
     return stats
 

@@ -246,6 +246,42 @@ def get_project_mapping() -> dict[tuple[str, str], str]:
                                     mapping[(dir_name, remote_encoded)] = local_encoded
                         except (json.JSONDecodeError, OSError):
                             continue
+
+            # Also scan v4 karma-out--* inbox directories for manifests
+            karma_base = settings.karma_base
+            local_member_tag = None
+            machine_tag = config.get("machine_tag", "")
+            if local_user_id and machine_tag:
+                local_member_tag = f"{local_user_id}.{machine_tag}"
+
+            for inbox_dir in karma_base.iterdir():
+                if not inbox_dir.is_dir():
+                    continue
+                dname = inbox_dir.name
+                if not dname.startswith("karma-out--"):
+                    continue
+                rest = dname[len("karma-out--"):]
+                parts = rest.split("--", 1)
+                if len(parts) != 2:
+                    continue
+                inbox_tag, _suffix = parts
+                # Skip our own outbox
+                if local_member_tag and inbox_tag == local_member_tag:
+                    continue
+                manifest_path = inbox_dir / "manifest.json"
+                if not manifest_path.exists():
+                    continue
+                try:
+                    with open(manifest_path) as f:
+                        manifest = json.load(f)
+                    remote_git_id = manifest.get("git_identity")
+                    remote_encoded = manifest.get("project_encoded_name", "")
+                    if remote_git_id and remote_git_id in git_lookup:
+                        local_enc = git_lookup[remote_git_id]
+                        if remote_encoded and (inbox_tag, remote_encoded) not in mapping:
+                            mapping[(inbox_tag, remote_encoded)] = local_enc
+                except (json.JSONDecodeError, OSError):
+                    continue
     except Exception as e:
         logger.debug("git_identity augmentation failed: %s", e)
 
