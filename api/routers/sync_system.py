@@ -61,10 +61,10 @@ async def sync_status(
         "machine_id": config.machine_id,
         "member_tag": config.member_tag,
         "device_id": config.syncthing.device_id if config.syncthing else None,
-        "teams": {
-            t.name: {"status": t.status.value, "leader": t.leader_member_tag}
+        "teams": [
+            {"name": t.name, "status": t.status.value, "leader_member_tag": t.leader_member_tag}
             for t in teams
-        },
+        ],
     }
 
 

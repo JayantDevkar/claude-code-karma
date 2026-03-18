@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import { FolderGit2, ArrowUp, ArrowDown, CheckCircle2, Loader2, Users, RotateCcw, Clock, RefreshCw, ChevronDown, Copy, CheckCircle, Monitor } from 'lucide-svelte';
+	import { FolderGit2, ArrowUp, ArrowDown, CheckCircle2, Loader2, Users, RotateCcw, Clock, RefreshCw, ChevronDown, Copy, CheckCircle, Monitor, Fingerprint } from 'lucide-svelte';
 	import type { SyncDetect, SyncStatusResponse, SyncProjectStatus, SyncEvent } from '$lib/api-types';
 	import { formatRelativeTime, copyToClipboard } from '$lib/utils';
 	import { formatSyncEvent } from '$lib/utils/sync-events';
@@ -137,26 +137,41 @@
 		}
 	}
 
+	// ── Pairing Code (v4) ──────────────────────────────────────────────────
+	let pairingCode = $state<string | null>(null);
+	let pairingMemberTag = $state<string | null>(null);
+	let pairingLoading = $state(true);
+	let copiedPairing = $state(false);
+
+	async function loadPairingCode() {
+		try {
+			const res = await fetch(`${API_BASE}/sync/pairing/code`);
+			if (res.ok) {
+				const data = await res.json();
+				pairingCode = data.code;
+				pairingMemberTag = data.member_tag ?? null;
+			}
+		} catch {
+			/* non-critical */
+		} finally {
+			pairingLoading = false;
+		}
+	}
+
+	async function copyPairingCode() {
+		if (!pairingCode) return;
+		const ok = await copyToClipboard(pairingCode);
+		if (ok) {
+			copiedPairing = true;
+			setTimeout(() => (copiedPairing = false), 2000);
+		}
+	}
+
 	// ── Machine Details accordion ───────────────────────────────────────────
 	let machineDetailsOpen = $state(false);
-	let copiedJoinCode = $state(false);
 	let copiedDeviceId = $state(false);
 
 	let ownDeviceId = $derived(detect?.device_id ?? status?.device_id ?? null);
-	let ownJoinCode = $derived(
-		status?.user_id && ownDeviceId
-			? `${status.user_id}:${ownDeviceId}`
-			: null
-	);
-
-	async function copyJoinCode() {
-		if (!ownJoinCode) return;
-		const ok = await copyToClipboard(ownJoinCode);
-		if (ok) {
-			copiedJoinCode = true;
-			setTimeout(() => (copiedJoinCode = false), 2000);
-		}
-	}
 
 	async function copyDeviceId() {
 		if (!ownDeviceId) return;
@@ -214,6 +229,7 @@
 			loadMemberStats();
 			loadProjectStatus();
 			loadRecentActivity();
+			loadPairingCode();
 		});
 	});
 </script>
@@ -256,6 +272,52 @@
 				Sync Now
 			{/if}
 		</button>
+	</div>
+
+	<!-- ── 1b. Your Pairing Code ─────────────────────────────────────────── -->
+	<div class="rounded-[var(--radius-lg)] border border-[var(--accent)]/30 bg-[var(--bg-subtle)]">
+		<div class="px-5 py-4">
+			<div class="flex items-center gap-2 mb-1">
+				<Fingerprint size={16} class="text-[var(--accent)]" />
+				<h3 class="text-sm font-semibold text-[var(--text-primary)]">Your Pairing Code</h3>
+			</div>
+			<p class="text-xs text-[var(--text-muted)] mb-3">Share this with a team leader so they can add you to their team</p>
+
+			{#if pairingLoading}
+				<div class="flex items-center gap-2 px-4 py-3 rounded-[var(--radius-md)] bg-[var(--bg-muted)] border border-[var(--border)]">
+					<Loader2 size={14} class="animate-spin text-[var(--text-muted)]" />
+					<span class="text-xs text-[var(--text-muted)]">Loading pairing code...</span>
+				</div>
+			{:else if pairingCode}
+				<div class="flex items-center gap-2">
+					<code
+						class="flex-1 px-4 py-3 text-base font-mono font-semibold tracking-wider rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-muted)] text-[var(--text-primary)] select-all leading-relaxed"
+					>
+						{pairingCode}
+					</code>
+					<button
+						onclick={copyPairingCode}
+						aria-label="Copy pairing code"
+						class="shrink-0 p-3 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-base)] text-[var(--text-muted)] hover:text-[var(--accent)] hover:border-[var(--accent)]/40 hover:bg-[var(--accent)]/5 transition-colors"
+					>
+						{#if copiedPairing}
+							<CheckCircle size={16} class="text-[var(--success)]" />
+						{:else}
+							<Copy size={16} />
+						{/if}
+					</button>
+				</div>
+				{#if pairingMemberTag}
+					<p class="text-[11px] text-[var(--text-muted)] mt-2.5">
+						Your identity: <span class="font-mono text-[var(--text-secondary)]">{pairingMemberTag}</span>
+					</p>
+				{/if}
+			{:else}
+				<div class="px-4 py-3 rounded-[var(--radius-md)] bg-[var(--bg-muted)] border border-[var(--border)]">
+					<p class="text-xs text-[var(--text-muted)]">Pairing code unavailable. Make sure sync is configured.</p>
+				</div>
+			{/if}
+		</div>
 	</div>
 
 	<!-- ── 2. Stats Row ──────────────────────────────────────────────────── -->
@@ -438,31 +500,6 @@
 										<CheckCircle size={12} class="text-[var(--success)]" />
 									{:else}
 										<Copy size={12} />
-									{/if}
-								</button>
-							</div>
-						</div>
-					{/if}
-
-					{#if ownJoinCode}
-						<div class="mb-3 space-y-1.5">
-							<span class="text-xs font-medium text-[var(--text-secondary)]">Your Join Code</span>
-							<p class="text-[11px] text-[var(--text-muted)]">Share this with teammates so they can add you via "Add Member".</p>
-							<div class="flex items-center gap-2">
-								<code
-									class="flex-1 px-3 py-2 text-xs font-mono rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-muted)] text-[var(--text-primary)] break-all select-all leading-relaxed"
-								>
-									{ownJoinCode}
-								</code>
-								<button
-									onclick={copyJoinCode}
-									aria-label="Copy join code"
-									class="shrink-0 p-2 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-base)] text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-muted)] transition-colors"
-								>
-									{#if copiedJoinCode}
-										<CheckCircle size={14} class="text-[var(--success)]" />
-									{:else}
-										<Copy size={14} />
 									{/if}
 								</button>
 							</div>

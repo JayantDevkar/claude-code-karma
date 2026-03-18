@@ -6,7 +6,6 @@
 	import TeamMembersTab from '$lib/components/team/TeamMembersTab.svelte';
 	import TeamProjectsTab from '$lib/components/team/TeamProjectsTab.svelte';
 	import TeamActivityTab from '$lib/components/team/TeamActivityTab.svelte';
-	import TeamSettings from '$lib/components/TeamSettings.svelte';
 	import { API_BASE } from '$lib/config';
 	import { POLLING_INTERVALS } from '$lib/config';
 	import { invalidateAll } from '$app/navigation';
@@ -201,12 +200,8 @@
 			<TeamOverviewTab
 				{team}
 				teamName={data.teamName}
-				{deleteConfirm}
-				{deleting}
-				{deleteError}
-				onleave={handleLeaveTeam}
-				ondeleteconfirm={(v) => deleteConfirm = v}
-				ondeleteerror={(v) => deleteError = v}
+				{memberTag}
+				onswitchtab={(tab) => activeTab = tab}
 			/>
 		</Tabs.Content>
 
@@ -239,7 +234,41 @@
 		</Tabs.Content>
 
 		<Tabs.Content value="settings" class="mt-4">
-			<TeamSettings teamName={data.teamName} />
+			<div class="space-y-6">
+				<!-- Team Actions -->
+				<div class="rounded-lg border border-[var(--border)] bg-[var(--bg-subtle)] p-5 space-y-4">
+					<h3 class="text-sm font-semibold text-[var(--text-primary)]">Team Actions</h3>
+
+					{#if deleteConfirm}
+						<!-- Confirmation card -->
+						<div class="flex items-center gap-3 p-4 rounded-lg border border-[var(--error)]/20 bg-[var(--error)]/5">
+							<AlertTriangle size={16} class="text-[var(--error)] shrink-0" />
+							<p class="text-sm text-[var(--text-primary)] flex-1">
+								Leave team "{data.teamName}"? This will stop syncing with all members and clean up Syncthing folders.
+							</p>
+							<div class="flex items-center gap-2 shrink-0">
+								<button onclick={handleLeaveTeam} disabled={deleting}
+									class="px-3 py-1.5 text-xs font-medium rounded bg-[var(--error)] text-white hover:bg-[var(--error)]/80 transition-colors disabled:opacity-50">
+									{#if deleting}<Loader2 size={12} class="animate-spin" />{:else}Leave{/if}
+								</button>
+								<button onclick={() => { deleteConfirm = false; deleteError = null; }}
+									class="px-3 py-1.5 text-xs rounded text-[var(--text-muted)] hover:bg-[var(--bg-muted)] transition-colors">
+									Cancel
+								</button>
+							</div>
+						</div>
+						{#if deleteError}
+							<p class="text-xs text-[var(--error)]" aria-live="polite">{deleteError}</p>
+						{/if}
+					{:else}
+						<button onclick={() => deleteConfirm = true}
+							class="px-4 py-2 text-sm font-medium rounded-[var(--radius-md)] border border-[var(--error)]/30
+								text-[var(--error)] hover:bg-[var(--error)]/5 transition-colors">
+							Leave Team
+						</button>
+					{/if}
+				</div>
+			</div>
 		</Tabs.Content>
 	</Tabs.Root>
 {:else}

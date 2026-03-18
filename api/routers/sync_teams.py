@@ -103,7 +103,7 @@ async def get_team(name: str, conn: sqlite3.Connection = Depends(get_conn)):
         "subscriptions": [
             {
                 "member_tag": s.member_tag,
-                "project": s.project_git_identity,
+                "project_git_identity": s.project_git_identity,
                 "status": s.status.value,
                 "direction": s.direction.value,
             }

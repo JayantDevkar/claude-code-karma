@@ -1,9 +1,9 @@
 <script lang="ts">
-	import { Users, FolderSync, ChevronRight } from 'lucide-svelte';
+	import { Users, FolderSync, ChevronRight, Bell } from 'lucide-svelte';
 	import type { SyncTeam } from '$lib/api-types';
 	import { getTeamMemberHexColor } from '$lib/utils';
 
-	let { team }: { team: SyncTeam } = $props();
+	let { team, pendingCount = 0 }: { team: SyncTeam; pendingCount?: number } = $props();
 
 	let members = $derived(team.members ?? []);
 	let projects = $derived(team.projects ?? []);
@@ -51,6 +51,13 @@
 					bg-[var(--success)]/10 text-[var(--success)] border border-[var(--success)]/20 whitespace-nowrap">
 					<span class="w-1.5 h-1.5 rounded-full bg-[var(--success)] animate-pulse"></span>
 					{activeCount} active
+				</span>
+			{/if}
+			{#if pendingCount > 0}
+				<span class="flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium rounded-full
+					bg-[var(--warning)]/10 text-[var(--warning)] border border-[var(--warning)]/20 whitespace-nowrap">
+					<Bell size={10} />
+					{pendingCount} pending
 				</span>
 			{/if}
 		</div>
