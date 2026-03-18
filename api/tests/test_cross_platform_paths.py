@@ -21,7 +21,6 @@ import pytest
 from models.project import Project, _is_absolute_path
 from utils import is_encoded_project_dir
 
-
 # =============================================================================
 # Encoding Roundtrip Tests (all platforms)
 # =============================================================================
