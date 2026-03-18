@@ -75,6 +75,14 @@
 		return null;
 	});
 
+	// Read saved view mode from localStorage for sessions skeleton
+	const savedViewMode = $derived.by((): 'list' | 'grid' => {
+		if (navigationSkeletonType !== 'sessions') return 'list';
+		if (typeof window === 'undefined') return 'list';
+		const saved = localStorage.getItem('claude-code-karma-sessions-view-mode');
+		return saved === 'grid' ? 'grid' : 'list';
+	});
+
 	// Register WebMCP tools for AI agent access (Chrome 146+, no-op otherwise)
 	$effect(() => {
 		registerWebMCPTools();
@@ -149,7 +157,7 @@
 					{:else if navigationSkeletonType === 'plan-detail'}
 						<PlanDetailSkeleton />
 					{:else if navigationSkeletonType === 'sessions'}
-						<SessionsPageSkeleton />
+						<SessionsPageSkeleton viewMode={savedViewMode} />
 					{:else if navigationSkeletonType === 'hooks'}
 						<HooksPageSkeleton />
 					{/if}

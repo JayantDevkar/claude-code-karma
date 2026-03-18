@@ -65,11 +65,9 @@
 		hasActiveFilters as checkHasActiveFilters,
 		filterSessionsByStatus,
 		filterSessionsByDateRange,
-		createLiveSessionLookup,
 		calculateLiveStatusCounts,
 		createHistoricalSessionLookup,
-		shouldShowEndedStatus,
-		type LiveSessionLookupFn
+		shouldShowEndedStatus
 	} from '$lib/search';
 	import { getProjectNameFromEncoded } from '$lib/utils';
 
@@ -150,16 +148,6 @@
 			return true;
 		})
 	);
-
-	// Unified live session lookup using shared utility (slug-first strategy)
-	const getLiveSessionFn: LiveSessionLookupFn = $derived(
-		createLiveSessionLookup(data.liveSessions)
-	);
-
-	// Wrapper function for components that need function reference
-	function getLiveSession(session: SessionWithContext): LiveSessionSummary | null {
-		return getLiveSessionFn(session);
-	}
 
 	// Unified historical session lookup using shared utility
 	const getHistoricalSessionFn = $derived(createHistoricalSessionLookup(data.sessions));
@@ -623,6 +611,14 @@
 			localStorage.setItem('claude-code-karma-sessions-view-mode', viewMode);
 		}
 	});
+
+	// Derived grid helpers (avoid duplicating class strings)
+	const isGrid = $derived(viewMode === 'grid');
+	const gridClass = $derived(
+		isGrid
+			? 'grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2'
+			: 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3'
+	);
 
 	// Dropdown state
 	let showProjectDropdown = $state(false);
@@ -1315,13 +1311,9 @@
 			</div>
 
 			<!-- Recently Ended Cards Grid - respects view mode -->
-			<div
-				class={viewMode === 'grid'
-					? 'grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2'
-					: 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3'}
-			>
+			<div class={gridClass}>
 				{#each recentlyEndedSessions as { session, liveSession } (session.uuid)}
-					<GlobalSessionCard {session} {liveSession} compact={viewMode === 'grid'} />
+					<GlobalSessionCard {session} {liveSession} compact={isGrid} />
 				{/each}
 			</div>
 		</div>
@@ -1336,9 +1328,9 @@
 					<div class="h-4 w-16 skeleton-shimmer rounded"></div>
 					<div class="h-3 w-8 skeleton-shimmer rounded"></div>
 				</div>
-				<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+				<div class={gridClass}>
 					{#each Array(6) as _}
-						<SkeletonGlobalSessionCard />
+						<SkeletonGlobalSessionCard compact={isGrid} />
 					{/each}
 				</div>
 			</div>
@@ -1405,7 +1397,7 @@
 					<!-- Session Cards Grid -->
 					<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
 						{#each group.sessions as session (session.uuid)}
-							<GlobalSessionCard {session} liveSession={getLiveSession(session)} />
+							<GlobalSessionCard {session} />
 						{/each}
 					</div>
 				</div>
@@ -1444,7 +1436,6 @@
 							<GlobalSessionCard
 								{session}
 								compact
-								liveSession={getLiveSession(session)}
 							/>
 						{/each}
 					</div>
