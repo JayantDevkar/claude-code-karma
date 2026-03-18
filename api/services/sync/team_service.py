@@ -1,6 +1,7 @@
 """TeamService — team lifecycle + member management orchestration."""
 from __future__ import annotations
 
+import logging
 import sqlite3
 from typing import TYPE_CHECKING
 
@@ -8,6 +9,9 @@ from domain.team import Team
 from domain.member import Member, MemberStatus
 from domain.subscription import Subscription
 from domain.events import SyncEvent, SyncEventType
+from services.syncthing.folder_manager import build_outbox_folder_id, build_metadata_folder_id
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from repositories.team_repo import TeamRepository
@@ -96,6 +100,32 @@ class TeamService:
         added = team.add_member(member, by_device=by_device)  # auth check
         self.members.save(conn, added)
         await self.devices.pair(new_device_id)
+
+        # Immediately share metadata + project outbox folders with the new device
+        # so the joiner sees pending folders without waiting for the 60s reconciliation timer.
+        try:
+            all_folders = await self.folders._client.get_config_folders()
+
+            # Share metadata folder
+            meta_folder_id = build_metadata_folder_id(team_name)
+            meta_folder = next((f for f in all_folders if f["id"] == meta_folder_id), None)
+            if meta_folder:
+                existing_device_ids = {d["deviceID"] for d in meta_folder.get("devices", [])}
+                existing_device_ids.add(new_device_id)
+                await self.folders.set_folder_devices(meta_folder_id, existing_device_ids)
+
+            # Share all project outbox folders
+            shared_projects = self.projects.list_for_team(conn, team_name)
+            for project in shared_projects:
+                if project.status.value == "shared":
+                    folder_id = build_outbox_folder_id(team.leader_member_tag, project.folder_suffix)
+                    folder = next((f for f in all_folders if f["id"] == folder_id), None)
+                    if folder:
+                        existing = {d["deviceID"] for d in folder.get("devices", [])}
+                        existing.add(new_device_id)
+                        await self.folders.set_folder_devices(folder_id, existing)
+        except Exception as e:
+            logger.warning("Failed to share folders with new member %s: %s", new_member_tag, e)
 
         # Update metadata with all current members
         all_members = self.members.list_for_team(conn, team_name)

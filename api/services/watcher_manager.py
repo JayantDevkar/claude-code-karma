@@ -207,6 +207,7 @@ class ReconciliationTimer:
                 folders=folders,
                 metadata=metadata,
                 my_member_tag=config.member_tag,
+                my_device_id=config.syncthing.device_id if config.syncthing else "",
             )
 
             # Run the async 3-phase pipeline with 120s timeout

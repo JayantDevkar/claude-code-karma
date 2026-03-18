@@ -69,7 +69,7 @@ async def accept_pending_device(
     req: AcceptDeviceRequest,
     client=Depends(get_syncthing_client),
 ):
-    """Accept a pending device by adding it to Syncthing config."""
+    """Accept a pending device and auto-accept any karma-meta--* folders from it."""
     device_config = {
         "deviceID": device_id,
         "name": req.name or "",
@@ -80,7 +80,55 @@ async def accept_pending_device(
         await client.put_config_device(device_config)
     except Exception as e:
         raise HTTPException(500, f"Failed to accept device: {e}")
-    return {"ok": True, "device_id": device_id}
+
+    # Auto-accept karma-meta--* folders offered by the same device
+    discovered_teams: list[str] = []
+    try:
+        from config import settings as app_settings
+
+        karma_base = app_settings.karma_base
+        raw = await client.get_pending_folders()
+
+        _meta_re = re.compile(r"^karma-meta--(.+)$")
+
+        for folder_id, device_map in raw.items():
+            m = _meta_re.match(folder_id)
+            if not m:
+                continue
+            # Check if this folder is offered by the device we just accepted
+            if device_id not in device_map:
+                continue
+
+            team_name = m.group(1)
+
+            try:
+                folder_config = {
+                    "id": folder_id,
+                    "label": folder_id,
+                    "path": str(karma_base / "metadata-folders" / folder_id),
+                    "type": "sendreceive",
+                    "devices": [
+                        {"deviceID": device_id, "encryptionPassword": ""},
+                    ],
+                    "rescanIntervalS": 3600,
+                    "fsWatcherEnabled": True,
+                    "fsWatcherDelayS": 10,
+                    "ignorePerms": False,
+                    "autoNormalize": True,
+                }
+                await client.put_config_folder(folder_config)
+                await client.dismiss_pending_folder(folder_id, device_id)
+                discovered_teams.append(team_name)
+            except Exception as folder_exc:
+                logger.warning(
+                    "Failed to auto-accept metadata folder %s: %s",
+                    folder_id,
+                    folder_exc,
+                )
+    except Exception as e:
+        logger.warning("Failed to auto-accept metadata folders: %s", e)
+
+    return {"ok": True, "device_id": device_id, "teams": discovered_teams}
 
 
 @router.delete("/pending-devices/{device_id}")
