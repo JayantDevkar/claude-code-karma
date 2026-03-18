@@ -381,7 +381,7 @@
 
 			<!-- Body -->
 			<div class="px-5 divide-y divide-[var(--border-subtle)]">
-				{#each projectStatuses as proj (proj.encoded_name)}
+				{#each projectStatuses as proj (proj.git_identity)}
 					<div class="flex items-center gap-3 py-3.5">
 						<FolderGit2 size={15} class="shrink-0 text-[var(--text-muted)]" />
 						<div class="flex-1 min-w-0">
