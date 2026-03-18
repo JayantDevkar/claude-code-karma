@@ -87,8 +87,9 @@
 
 	async function loadProjectStatus() {
 		try {
+			if (!teamName) { projectStatusLoading = false; return; }
 			const res = await fetch(
-				`${API_BASE}/sync/project-status`
+				`${API_BASE}/sync/teams/${encodeURIComponent(teamName)}/project-status`
 			).catch(() => null);
 			if (res?.ok) {
 				const data = await res.json();
@@ -106,8 +107,8 @@
 	async function syncAllNow() {
 		syncAllActing = true;
 		try {
-			// Use the global sync-now endpoint (all teams, only unsynced sessions)
-			await fetch(`${API_BASE}/sync/sync-now`, { method: 'POST' }).catch(() => null);
+			// Trigger reconciliation which handles sync across all teams
+			await fetch(`${API_BASE}/sync/reconcile`, { method: 'POST' }).catch(() => null);
 			await loadProjectStatus();
 		} finally {
 			syncAllActing = false;

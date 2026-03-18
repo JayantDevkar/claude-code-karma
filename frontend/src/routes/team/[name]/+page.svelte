@@ -129,15 +129,20 @@
 		window.history.replaceState(window.history.state, '', url.toString());
 	});
 
+	let isLeader = $derived(
+		!!memberTag && team?.leader_member_tag === memberTag
+	);
+
 	async function handleLeaveTeam() {
 		if (deleting) return;
 		deleting = true;
 		deleteError = null;
 		try {
-			const res = await fetch(
-				`${API_BASE}/sync/teams/${encodeURIComponent(data.teamName)}`,
-				{ method: 'DELETE' }
-			);
+			// Leader dissolves; non-leader leaves
+			const url = isLeader
+				? `${API_BASE}/sync/teams/${encodeURIComponent(data.teamName)}`
+				: `${API_BASE}/sync/teams/${encodeURIComponent(data.teamName)}/leave`;
+			const res = await fetch(url, { method: isLeader ? 'DELETE' : 'POST' });
 			if (res.ok) {
 				window.location.href = '/team';
 			} else {
@@ -145,11 +150,11 @@
 				if (res.status === 409) {
 					deleteError = 'Team is already dissolved.';
 				} else {
-					deleteError = body.detail || `Failed to leave team (${res.status})`;
+					deleteError = body.detail || `Failed (${res.status})`;
 				}
 			}
 		} catch {
-			deleteError = 'Network error. Could not leave team.';
+			deleteError = 'Network error.';
 		} finally {
 			deleting = false;
 		}
@@ -267,12 +272,16 @@
 						<div class="flex items-center gap-3 p-4 rounded-lg border border-[var(--error)]/20 bg-[var(--error)]/5">
 							<AlertTriangle size={16} class="text-[var(--error)] shrink-0" />
 							<p class="text-sm text-[var(--text-primary)] flex-1">
-								Leave team "{data.teamName}"? This will stop syncing with all members and clean up Syncthing folders.
+								{#if isLeader}
+									Dissolve team "{data.teamName}"? This will remove all members, stop syncing, and clean up Syncthing folders for everyone.
+								{:else}
+									Leave team "{data.teamName}"? This will stop syncing with all members and clean up Syncthing folders on this machine.
+								{/if}
 							</p>
 							<div class="flex items-center gap-2 shrink-0">
 								<button onclick={handleLeaveTeam} disabled={deleting}
 									class="px-3 py-1.5 text-xs font-medium rounded bg-[var(--error)] text-white hover:bg-[var(--error)]/80 transition-colors disabled:opacity-50">
-									{#if deleting}<Loader2 size={12} class="animate-spin" />{:else}Leave{/if}
+									{#if deleting}<Loader2 size={12} class="animate-spin" />{:else}{isLeader ? 'Dissolve' : 'Leave'}{/if}
 								</button>
 								<button onclick={() => { deleteConfirm = false; deleteError = null; }}
 									class="px-3 py-1.5 text-xs rounded text-[var(--text-muted)] hover:bg-[var(--bg-muted)] transition-colors">
@@ -287,7 +296,7 @@
 						<button onclick={() => deleteConfirm = true}
 							class="px-4 py-2 text-sm font-medium rounded-[var(--radius-md)] border border-[var(--error)]/30
 								text-[var(--error)] hover:bg-[var(--error)]/5 transition-colors">
-							Leave Team
+							{isLeader ? 'Dissolve Team' : 'Leave Team'}
 						</button>
 					{/if}
 				</div>
