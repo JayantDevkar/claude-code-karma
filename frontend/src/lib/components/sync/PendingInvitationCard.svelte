@@ -151,6 +151,8 @@
 	async function acceptInvitation(inv: Invitation) {
 		acceptingId = inv.device_id;
 		try {
+			let acceptedTeams: string[] = [];
+
 			// Try accepting as a pending device first (auto-accepts karma-meta-- folders)
 			const devRes = await fetch(`${API_BASE}/sync/pending-devices/${encodeURIComponent(inv.device_id)}/accept`, {
 				method: 'POST',
@@ -160,8 +162,7 @@
 
 			if (devRes.ok) {
 				const data = await devRes.json();
-				const teams: string[] = data.teams ?? (inv.team_name ? [inv.team_name] : []);
-				onaccepted?.(teams);
+				acceptedTeams = data.teams ?? (inv.team_name ? [inv.team_name] : []);
 			} else if (inv.team_name) {
 				// Device already accepted — accept the pending meta folder directly
 				const folderId = `karma-meta--${inv.team_name}`;
@@ -170,8 +171,15 @@
 					headers: { 'Content-Type': 'application/json' }
 				});
 				if (folderRes.ok) {
-					onaccepted?.([inv.team_name]);
+					acceptedTeams = [inv.team_name];
 				}
+			}
+
+			if (acceptedTeams.length > 0) {
+				// Trigger reconciliation so team record gets created from metadata
+				// before we navigate to the team page
+				await fetch(`${API_BASE}/sync/reconcile`, { method: 'POST' }).catch(() => {});
+				onaccepted?.(acceptedTeams);
 			}
 
 			await fetchPending();

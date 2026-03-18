@@ -38,8 +38,10 @@
 
 	// Team data — $state so polling can update it directly
 	let team = $state<SyncTeam | null>(null);
+	let teamEverLoaded = $state(false);
 	$effect(() => {
 		team = data.team ?? null;
+		if (team) teamEverLoaded = true;
 	});
 	let members = $derived(team?.members ?? []);
 	let projects = $derived(team?.projects ?? []);
@@ -93,9 +95,26 @@
 	// Poll for team data and activity
 	onMount(() => {
 		let controller = new AbortController();
+		let retryCount = 0;
+		let fastRetryTimer: ReturnType<typeof setTimeout> | null = null;
 
 		// Fetch pending count immediately on mount
 		fetchPendingCount();
+
+		// Fast retry when team isn't loaded yet (e.g. just accepted invitation)
+		async function fastRetryIfNeeded() {
+			if (team || teamEverLoaded || retryCount >= 10) return;
+			retryCount++;
+			try {
+				// Trigger reconciliation to pick up freshly synced metadata
+				await fetch(`${API_BASE}/sync/reconcile`, { method: 'POST' }).catch(() => {});
+				await fetchTeamData();
+			} catch { /* ignore */ }
+			if (!team && retryCount < 10) {
+				fastRetryTimer = setTimeout(fastRetryIfNeeded, 3000);
+			}
+		}
+		if (!team) fastRetryTimer = setTimeout(fastRetryIfNeeded, 2000);
 
 		const interval = setInterval(async () => {
 			controller.abort();
@@ -122,6 +141,7 @@
 
 		return () => {
 			clearInterval(interval);
+			if (fastRetryTimer) clearTimeout(fastRetryTimer);
 			controller.abort();
 			window.removeEventListener('popstate', handlePopstate);
 		};
@@ -313,6 +333,12 @@
 			</div>
 		</Tabs.Content>
 	</Tabs.Root>
+{:else if !teamEverLoaded}
+	<div class="text-center py-16">
+		<Loader2 size={32} class="mx-auto mb-3 text-[var(--accent)] animate-spin" />
+		<p class="text-[var(--text-primary)] font-medium">Setting up "{data.teamName}"...</p>
+		<p class="text-sm text-[var(--text-muted)] mt-1">Waiting for team metadata to sync</p>
+	</div>
 {:else}
 	<div class="text-center py-16">
 		<AlertTriangle size={32} class="mx-auto mb-3 text-[var(--warning)]" />
