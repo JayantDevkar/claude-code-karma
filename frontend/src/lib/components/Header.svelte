@@ -5,6 +5,7 @@
 	import { Menu, X, Settings } from 'lucide-svelte';
 	import LogoIcon from '$lib/assets/LogoIcon.svelte';
 	import NavDropdown from './NavDropdown.svelte';
+	import { API_BASE } from '$lib/config';
 
 	const navGroups = [
 		{
@@ -41,6 +42,19 @@
 			]
 		}
 	] as const;
+
+	let pendingDeviceCount = $state(0);
+	let pendingPollInterval: ReturnType<typeof setInterval> | null = null;
+
+	async function checkPendingDevices() {
+		try {
+			const res = await fetch(`${API_BASE}/sync/pending-devices`);
+			if (res.ok) {
+				const data = await res.json();
+				pendingDeviceCount = data.devices?.length ?? 0;
+			}
+		} catch { /* non-critical */ }
+	}
 
 	let mobileMenuOpen = $state(false);
 	let openDropdown = $state<string | null>(null);
@@ -85,12 +99,15 @@
 
 	onMount(() => {
 		document.addEventListener('click', handleClickOutside);
+		checkPendingDevices();
+		pendingPollInterval = setInterval(checkPendingDevices, 30000);
 	});
 
 	onDestroy(() => {
 		if (browser) {
 			document.removeEventListener('click', handleClickOutside);
 		}
+		if (pendingPollInterval) clearInterval(pendingPollInterval);
 	});
 </script>
 
@@ -159,6 +176,7 @@
 						onToggle={() => toggleDropdown(group.label)}
 						onClose={closeDropdowns}
 						align={i === navGroups.length - 1 ? 'right' : 'left'}
+						badge={group.label === 'Teams' && pendingDeviceCount > 0}
 					/>
 				{/each}
 

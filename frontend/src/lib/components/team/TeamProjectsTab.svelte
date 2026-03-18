@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { API_BASE } from '$lib/config';
 	import { invalidateAll } from '$app/navigation';
+	import { onMount, onDestroy } from 'svelte';
 	import {
 		FolderSync,
 		Plus,
@@ -136,9 +137,148 @@
 		const idx = order.indexOf(current);
 		return order[(idx + 1) % order.length];
 	}
+
+	// --- Pending folders ---
+	interface PendingFolder {
+		folder_id: string;
+		label: string;
+		from_device: string;
+		from_member: string | null;
+		offered_at: string;
+		folder_type: string;
+		project_name: string;
+	}
+
+	let pendingFolders = $state<PendingFolder[]>([]);
+	let pendingLoading = $state(true);
+	let acceptingId = $state<string | null>(null);
+	let rejectingId = $state<string | null>(null);
+	let acceptingAll = $state(false);
+
+	async function loadPendingFolders() {
+		try {
+			const res = await fetch(`${API_BASE}/sync/pending`);
+			if (res.ok) {
+				const data = await res.json();
+				pendingFolders = (data.folders ?? [])
+					.filter((f: any) => f.folder_type === 'out')
+					.map((f: any) => {
+						const parts = f.folder_id.split('--');
+						const suffix = parts.length >= 3 ? parts.slice(2).join('--') : f.folder_id;
+						return { ...f, project_name: suffix };
+					});
+			}
+		} catch { /* non-critical */ }
+		finally { pendingLoading = false; }
+	}
+
+	async function acceptFolder(folder: PendingFolder) {
+		acceptingId = folder.folder_id;
+		try {
+			const res = await fetch(`${API_BASE}/sync/pending/accept/${encodeURIComponent(folder.folder_id)}`, {
+				method: 'POST'
+			});
+			if (res.ok) {
+				await loadPendingFolders();
+				onrefresh();
+			}
+		} catch { /* */ }
+		finally { acceptingId = null; }
+	}
+
+	async function rejectFolder(folder: PendingFolder) {
+		rejectingId = folder.folder_id;
+		try {
+			const res = await fetch(`${API_BASE}/sync/pending/reject/${encodeURIComponent(folder.folder_id)}`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ device_id: folder.from_device })
+			});
+			if (res.ok) {
+				await loadPendingFolders();
+			}
+		} catch { /* */ }
+		finally { rejectingId = null; }
+	}
+
+	async function acceptAll() {
+		acceptingAll = true;
+		try {
+			for (const folder of pendingFolders) {
+				await acceptFolder(folder);
+			}
+		} finally {
+			acceptingAll = false;
+		}
+	}
+
+	let pollInterval: ReturnType<typeof setInterval> | null = null;
+
+	onMount(() => {
+		loadPendingFolders();
+		pollInterval = setInterval(loadPendingFolders, 15000);
+	});
+
+	onDestroy(() => {
+		if (pollInterval) clearInterval(pollInterval);
+	});
 </script>
 
 <div class="space-y-4">
+	<!-- Pending folder invitations -->
+	{#if pendingFolders.length > 0}
+		<div class="space-y-3 mb-6">
+			<div class="flex items-center gap-3">
+				<span class="text-sm font-semibold text-[var(--warning)]">Pending Invitations</span>
+				<div class="flex-1 h-px bg-[var(--warning)]/15"></div>
+				<button
+					onclick={acceptAll}
+					disabled={acceptingAll}
+					class="px-3 py-1.5 text-xs font-medium rounded-[var(--radius-md)] bg-[var(--success)]/10 text-[var(--success)] border border-[var(--success)]/20 hover:bg-[var(--success)]/15 transition-colors disabled:opacity-50"
+				>
+					{#if acceptingAll}
+						<Loader2 size={12} class="animate-spin inline mr-1" />
+					{/if}
+					Accept All
+				</button>
+			</div>
+
+			{#each pendingFolders as folder (folder.folder_id)}
+				<div class="flex items-center gap-3 p-3.5 rounded-[var(--radius-lg)] border border-[var(--warning)]/15 bg-[var(--warning)]/[0.02]">
+					<div class="w-8 h-8 rounded-lg bg-[var(--accent)]/10 flex items-center justify-center shrink-0">
+						<FolderSync size={15} class="text-[var(--accent)]" />
+					</div>
+					<div class="flex-1 min-w-0">
+						<div class="text-sm font-medium text-[var(--text-primary)] truncate">{folder.project_name}</div>
+						{#if folder.from_member}
+							<div class="text-[11px] text-[var(--text-muted)] mt-0.5">from {folder.from_member}</div>
+						{/if}
+					</div>
+					<div class="flex gap-2 shrink-0">
+						<button
+							onclick={() => acceptFolder(folder)}
+							disabled={acceptingId === folder.folder_id}
+							class="px-3 py-1.5 text-xs font-medium rounded-[var(--radius-md)] bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)] transition-colors disabled:opacity-50"
+						>
+							{#if acceptingId === folder.folder_id}
+								<Loader2 size={12} class="animate-spin" />
+							{:else}
+								Accept
+							{/if}
+						</button>
+						<button
+							onclick={() => rejectFolder(folder)}
+							disabled={rejectingId === folder.folder_id}
+							class="px-3 py-1.5 text-xs font-medium rounded-[var(--radius-md)] border border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-muted)] transition-colors disabled:opacity-50"
+						>
+							Reject
+						</button>
+					</div>
+				</div>
+			{/each}
+		</div>
+	{/if}
+
 	<!-- Header row -->
 	<div class="flex items-center justify-between">
 		<button

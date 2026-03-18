@@ -51,12 +51,26 @@
 
 	let memberTag = $derived(data.syncStatus?.member_tag);
 
+	// Pending folder count (for overview banner + tab badge)
+	let pendingCount = $state(0);
+
+	async function fetchPendingCount(signal?: AbortSignal) {
+		try {
+			const res = await fetch(`${API_BASE}/sync/pending`, { signal });
+			if (res.ok) {
+				const data = await res.json();
+				pendingCount = (data.folders ?? []).filter((f: any) => f.folder_type === 'out').length;
+			}
+		} catch { /* non-critical */ }
+	}
+
 	// Fetch all team data (used by both polling and manual refresh)
 	async function fetchTeamData(signal?: AbortSignal) {
 		const teamNameEnc = encodeURIComponent(data.teamName);
 		const [teamRes, activityRes] = await Promise.all([
 			fetch(`${API_BASE}/sync/teams/${teamNameEnc}`, { signal }),
-			fetch(`${API_BASE}/sync/teams/${teamNameEnc}/activity?limit=20`, { signal })
+			fetch(`${API_BASE}/sync/teams/${teamNameEnc}/activity?limit=20`, { signal }),
+			fetchPendingCount(signal)
 		]);
 
 		if (teamRes.ok) {
@@ -72,6 +86,9 @@
 	// Poll for team data and activity
 	onMount(() => {
 		let controller = new AbortController();
+
+		// Fetch pending count immediately on mount
+		fetchPendingCount();
 
 		const interval = setInterval(async () => {
 			controller.abort();
@@ -191,7 +208,12 @@
 		<Tabs.List class="flex gap-1 p-1 bg-[var(--bg-subtle)] border border-[var(--border)] rounded-lg w-fit mx-auto max-w-full overflow-x-auto">
 			<TabsTrigger value="overview" icon={LayoutDashboard}>Overview</TabsTrigger>
 			<TabsTrigger value="members" icon={Contact}>Members ({members.length})</TabsTrigger>
-			<TabsTrigger value="projects" icon={FolderSync}>Projects ({projects.length})</TabsTrigger>
+			<TabsTrigger value="projects" icon={FolderSync}>
+				Projects ({projects.length})
+				{#if pendingCount > 0}
+					<span class="ml-1 px-1.5 py-0.5 text-[10px] font-bold rounded-full bg-[var(--warning)] text-[var(--bg-base)]">{pendingCount}</span>
+				{/if}
+			</TabsTrigger>
 			<TabsTrigger value="activity" icon={Activity}>Activity</TabsTrigger>
 			<TabsTrigger value="settings" icon={Settings}>Settings</TabsTrigger>
 		</Tabs.List>
@@ -202,6 +224,7 @@
 				teamName={data.teamName}
 				{memberTag}
 				onswitchtab={(tab) => activeTab = tab}
+				pendingFolderCount={pendingCount}
 			/>
 		</Tabs.Content>
 

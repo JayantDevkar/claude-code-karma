@@ -3,6 +3,7 @@
 	import StatsGrid from '$lib/components/StatsGrid.svelte';
 	import TeamCard from '$lib/components/team/TeamCard.svelte';
 	import CreateTeamDialog from '$lib/components/team/CreateTeamDialog.svelte';
+	import PendingInvitationCard from '$lib/components/sync/PendingInvitationCard.svelte';
 	import { Users, Plus, ArrowRight, FolderSync, Contact, Crown, UserPlus, Copy, Check } from 'lucide-svelte';
 	import { goto, invalidateAll } from '$app/navigation';
 	import { listNavigation } from '$lib/actions/listNavigation';
@@ -98,6 +99,11 @@
 </PageHeader>
 
 <div class="space-y-6">
+	<PendingInvitationCard onaccepted={(teams) => {
+		if (teams?.length) goto(`/team/${encodeURIComponent(teams[0])}`);
+		else invalidateAll();
+	}} />
+
 	{#if !configured}
 		<!-- State 1: Sync not configured -->
 		<div class="flex flex-col items-center justify-center py-16 text-center">

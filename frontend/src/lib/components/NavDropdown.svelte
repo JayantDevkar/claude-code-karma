@@ -14,9 +14,10 @@
 		onToggle: () => void;
 		onClose: () => void;
 		align?: 'left' | 'right';
+		badge?: boolean;
 	}
 
-	let { label, items, open, onToggle, onClose, align = 'left' }: Props = $props();
+	let { label, items, open, onToggle, onClose, align = 'left', badge = false }: Props = $props();
 
 	let isActive = $derived(items.some((item) => $page.url.pathname.startsWith(item.href)));
 </script>
@@ -24,7 +25,7 @@
 <div class="relative">
 	<button
 		type="button"
-		class="flex items-center gap-1 text-sm font-medium transition-colors {isActive
+		class="relative flex items-center gap-1 text-sm font-medium transition-colors {isActive
 			? 'text-[var(--text-primary)]'
 			: 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'}"
 		onclick={onToggle}
@@ -32,6 +33,9 @@
 		aria-haspopup="true"
 	>
 		{label}
+		{#if badge}
+			<span class="w-2 h-2 rounded-full bg-[var(--warning)] absolute -top-0.5 -right-0.5"></span>
+		{/if}
 		<ChevronDown
 			size={13}
 			strokeWidth={2.5}
