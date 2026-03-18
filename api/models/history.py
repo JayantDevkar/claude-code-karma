@@ -97,10 +97,17 @@ class ArchivedProject:
 
 
 def encode_path(path: str) -> str:
-    """Encode a path to Claude's format: /Users/me/repo -> -Users-me-repo"""
-    if path.startswith("/"):
-        return "-" + path[1:].replace("/", "-")
-    return path.replace("/", "-")
+    """Encode a path to Claude's format.
+
+    Delegates to the canonical Project.encode_path() which handles
+    both Unix and Windows paths correctly.
+
+    Unix:    /Users/me/repo  -> -Users-me-repo
+    Windows: C:\\Code\\Tools -> C--Code-Tools
+    """
+    from models.project import Project
+
+    return Project.encode_path(path)
 
 
 def get_project_name(path: str) -> str:

@@ -152,9 +152,13 @@ function getGroupLatestTime(group: GitRootGroup): number {
 /**
  * Extract display name from absolute path
  * /Users/me/repo -> "repo"
+ * C:/Users/me/repo -> "repo"
+ * C:\Users\me\repo -> "repo"
  */
 function getDisplayName(path: string): string {
-	const segments = path.split('/').filter(Boolean);
+	// Normalize backslashes for cross-platform support
+	const normalized = path.replace(/\\/g, '/');
+	const segments = normalized.split('/').filter(Boolean);
 	return segments[segments.length - 1] || path;
 }
 
@@ -163,11 +167,15 @@ function getDisplayName(path: string): string {
  * /Users/me/repo/packages/api -> "./packages/api"
  */
 export function getRelativePath(projectPath: string, rootPath: string): string {
-	if (projectPath === rootPath) {
+	// Normalize backslashes for cross-platform support
+	const normalizedProject = projectPath.replace(/\\/g, '/');
+	const normalizedRoot = rootPath.replace(/\\/g, '/');
+
+	if (normalizedProject === normalizedRoot) {
 		return '';
 	}
-	if (projectPath.startsWith(rootPath + '/')) {
-		return './' + projectPath.slice(rootPath.length + 1);
+	if (normalizedProject.startsWith(normalizedRoot + '/')) {
+		return './' + normalizedProject.slice(normalizedRoot.length + 1);
 	}
 	return projectPath;
 }

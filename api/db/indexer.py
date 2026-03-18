@@ -578,20 +578,11 @@ def _detect_project_path(session, encoded_name: str) -> Optional[str]:
     # Fallback: Decode from encoded name (lossy for paths with hyphens).
     # Only use the decoded path if it actually exists on disk, to avoid
     # storing wrong paths (e.g. "claude-karma" → "claude/karma").
-    if encoded_name.startswith("-"):
-        decoded = "/" + encoded_name[1:].replace("-", "/")
-        if Path(decoded).is_dir():
-            return decoded
-    else:
-        import re
+    from models.project import Project
 
-        win_match = re.match(r"^([A-Za-z])--(.*)", encoded_name)
-        if win_match:
-            drive = win_match.group(1).upper()
-            rest = win_match.group(2).replace("-", "/")
-            decoded = f"{drive}:/{rest}"
-            if Path(decoded).is_dir():
-                return decoded
+    decoded = Project.decode_path(encoded_name)
+    if Path(decoded).is_dir():
+        return decoded
 
     # Don't store a bad path — let _update_project_summaries resolve it
     # from sibling sessions that have working directory data.
@@ -699,19 +690,11 @@ def _resolve_project_path(encoded_name: str, candidate_paths: list) -> str:
     """
     from pathlib import Path
 
+    from models.project import Project
+
     if not candidate_paths:
         # Last resort: decode from encoded name (lossy for hyphenated paths)
-        if encoded_name.startswith("-"):
-            return "/" + encoded_name[1:].replace("-", "/")
-        # Windows encoded: C--Code-Tools -> C:/Code/Tools
-        import re as _re
-
-        win_match = _re.match(r"^([A-Za-z])--(.*)", encoded_name)
-        if win_match:
-            drive = win_match.group(1).upper()
-            rest = win_match.group(2).replace("-", "/")
-            return f"{drive}:/{rest}"
-        return encoded_name
+        return Project.decode_path(encoded_name)
 
     # Find all paths whose encoding matches the encoded_name
     # (multiple paths can match due to lossy encoding: / and - both become -)
@@ -719,12 +702,7 @@ def _resolve_project_path(encoded_name: str, candidate_paths: list) -> str:
     for path in candidate_paths:
         if not path:
             continue
-        if path.startswith("/"):
-            encoded = "-" + path[1:].replace("/", "-")
-        else:
-            # Windows path: C:/Code/Tools -> C--Code-Tools
-            encoded = path.replace(":", "-").replace("/", "-").replace("\\", "-")
-        if encoded == encoded_name:
+        if Project.encode_path(path) == encoded_name:
             matches.append(path)
 
     if matches:

@@ -192,4 +192,63 @@ describe('getRelativePath', () => {
 	it('handles deeply nested paths', () => {
 		expect(getRelativePath('/root/a/b/c/d', '/root')).toBe('./a/b/c/d');
 	});
+
+	// Windows path tests
+	it('handles Windows forward-slash paths', () => {
+		expect(getRelativePath('C:/Users/me/repo/packages/api', 'C:/Users/me/repo')).toBe(
+			'./packages/api'
+		);
+	});
+
+	it('handles Windows backslash paths via normalization', () => {
+		expect(
+			getRelativePath('C:\\Users\\me\\repo\\packages\\api', 'C:\\Users\\me\\repo')
+		).toBe('./packages/api');
+	});
+
+	it('returns empty for matching Windows paths', () => {
+		expect(getRelativePath('C:/Users/me/repo', 'C:/Users/me/repo')).toBe('');
+	});
+});
+
+// ============================================================
+// groupProjects — Windows paths
+// ============================================================
+describe('groupProjects — Windows paths', () => {
+	it('groups Windows projects by git root with correct display name', () => {
+		const projects = [
+			makeProject({
+				encoded_name: 'C--Users-me-monorepo',
+				path: 'C:/Users/me/monorepo',
+				git_root_path: 'C:/Users/me/monorepo',
+				is_nested_project: false,
+				session_count: 3
+			}),
+			makeProject({
+				encoded_name: 'C--Users-me-monorepo-packages-api',
+				path: 'C:/Users/me/monorepo/packages/api',
+				git_root_path: 'C:/Users/me/monorepo',
+				is_nested_project: true,
+				session_count: 2
+			})
+		];
+		const result = groupProjects(projects as any);
+		expect(result.gitRoots).toHaveLength(1);
+		const group = result.gitRoots[0];
+		expect(group.displayName).toBe('monorepo');
+		expect(group.totalSessions).toBe(5);
+	});
+
+	it('places single Windows git project into singleGitProjects', () => {
+		const projects = [
+			makeProject({
+				encoded_name: 'D--Projects-myapp',
+				path: 'D:/Projects/myapp',
+				git_root_path: 'D:/Projects/myapp',
+				is_nested_project: false
+			})
+		];
+		const result = groupProjects(projects as any);
+		expect(result.singleGitProjects).toHaveLength(1);
+	});
 });

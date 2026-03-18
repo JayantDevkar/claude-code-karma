@@ -330,7 +330,37 @@ export function getProjectName(path: string): string {
  * so this is a best-effort decode using common path patterns.
  */
 export function decodeProjectPath(encodedName: string): string {
-	// Common path prefixes to match (order matters - more specific first)
+	// Windows encoded path: C--Code-Tools -> C:/Code/Tools
+	// Pattern: single drive letter followed by --
+	const winMatch = encodedName.match(/^([A-Za-z])--(.*)/);
+	if (winMatch) {
+		const drive = winMatch[1].toUpperCase();
+		const rest = winMatch[2];
+
+		// Windows-specific prefix patterns (preserve hyphens in project name)
+		const winPatterns = [
+			/^Users-[^-]+-Documents-GitHub-/,
+			/^Users-[^-]+-Documents-/,
+			/^Users-[^-]+-Desktop-/,
+			/^Users-[^-]+-Projects-/,
+			/^Users-[^-]+-Code-/,
+			/^Users-[^-]+-/
+		];
+
+		for (const pattern of winPatterns) {
+			const match = rest.match(pattern);
+			if (match) {
+				const projectPart = rest.slice(match[0].length);
+				const prefixPath = match[0].replace(/-/g, '/');
+				return `${drive}:/${prefixPath}${projectPart}`;
+			}
+		}
+
+		// Simple Windows decode: replace remaining - with /
+		return `${drive}:/${rest.replace(/-/g, '/')}`;
+	}
+
+	// Unix/Linux encoded paths
 	const patterns = [
 		/^-Users-[^-]+-Documents-GitHub-/,
 		/^-Users-[^-]+-Documents-/,
@@ -401,9 +431,20 @@ export function getProjectNameFromEncoded(encodedName: string): string {
 	// Strip the platform prefix: -Users-{username}- or -home-{username}-
 	// Returns everything after the user's home directory
 	// This is a last-resort fallback — prefer API-provided display_name
+
+	// Windows: C--Users-{username}-{rest} -> {rest}
+	const windowsMatch = encodedName.match(/^[A-Za-z]--Users-[^-]+-(.+)$/);
+	if (windowsMatch) return windowsMatch[1];
+
+	// Windows non-Users path: C--{rest} -> {rest}
+	const windowsOtherMatch = encodedName.match(/^[A-Za-z]--(.+)$/);
+	if (windowsOtherMatch) return windowsOtherMatch[1];
+
+	// macOS: -Users-{username}-{rest} -> {rest}
 	const macosMatch = encodedName.match(/^-Users-[^-]+-(.+)$/);
 	if (macosMatch) return macosMatch[1];
 
+	// Linux: -home-{username}-{rest} -> {rest}
 	const linuxMatch = encodedName.match(/^-home-[^-]+-(.+)$/);
 	if (linuxMatch) return linuxMatch[1];
 

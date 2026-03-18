@@ -243,6 +243,79 @@ class TestIsEncodedProjectDir:
         assert is_encoded_project_dir("C-something") is False
 
 
+class TestIsAbsolutePath:
+    """Tests for _is_absolute_path() cross-platform helper."""
+
+    def test_unix_absolute(self):
+        from models.project import _is_absolute_path
+
+        assert _is_absolute_path("/Users/test/repo") is True
+
+    def test_unix_root(self):
+        from models.project import _is_absolute_path
+
+        assert _is_absolute_path("/") is True
+
+    def test_windows_backslash(self):
+        from models.project import _is_absolute_path
+
+        assert _is_absolute_path("C:\\Users\\test\\repo") is True
+
+    def test_windows_forward_slash(self):
+        from models.project import _is_absolute_path
+
+        assert _is_absolute_path("C:/Users/test/repo") is True
+
+    def test_windows_lowercase_drive(self):
+        from models.project import _is_absolute_path
+
+        assert _is_absolute_path("d:/Projects/myapp") is True
+
+    def test_windows_unc_backslash(self):
+        from models.project import _is_absolute_path
+
+        assert _is_absolute_path("\\\\server\\share\\folder") is True
+
+    def test_windows_unc_forward_slash(self):
+        from models.project import _is_absolute_path
+
+        assert _is_absolute_path("//server/share/folder") is True
+
+    def test_rejects_relative(self):
+        from models.project import _is_absolute_path
+
+        assert _is_absolute_path("src/main.py") is False
+
+    def test_rejects_bare_drive_letter(self):
+        from models.project import _is_absolute_path
+
+        assert _is_absolute_path("C:") is False
+
+    def test_rejects_empty(self):
+        from models.project import _is_absolute_path
+
+        assert _is_absolute_path("") is False
+
+
+class TestHistoryEncodePathDelegation:
+    """Tests that history.encode_path delegates to the canonical Project.encode_path."""
+
+    def test_unix_path(self):
+        from models.history import encode_path
+
+        assert encode_path("/Users/test/repo") == "-Users-test-repo"
+
+    def test_windows_path(self):
+        from models.history import encode_path
+
+        assert encode_path("C:\\Code\\Tools") == "C--Code-Tools"
+
+    def test_windows_forward_slash(self):
+        from models.history import encode_path
+
+        assert encode_path("C:/Users/test/repo") == "C--Users-test-repo"
+
+
 class TestFromPath:
     """Tests for Project.from_path() factory method."""
 
@@ -1154,6 +1227,35 @@ class TestExtractRealPathFromSessions:
         result = Project._extract_real_path_from_sessions(temp_project_dir)
 
         assert result == "/first/valid/path"
+
+    def test_recognizes_windows_cwd_as_absolute(self, temp_project_dir: Path):
+        """Test that Windows absolute paths (C:\\...) are recognized on any OS."""
+        session_file = temp_project_dir / "test-uuid.jsonl"
+        session_file.write_text('{"cwd": "C:\\\\Users\\\\test\\\\myproject", "type": "user"}\n')
+
+        result = Project._extract_real_path_from_sessions(temp_project_dir)
+
+        # Should be recognized as absolute AND normalized to forward slashes
+        assert result is not None
+        assert result == "C:/Users/test/myproject"
+
+    def test_normalizes_windows_backslashes_to_forward(self, temp_project_dir: Path):
+        """Test that backslashes in Windows cwd are normalized to forward slashes."""
+        session_file = temp_project_dir / "test-uuid.jsonl"
+        session_file.write_text('{"cwd": "D:\\\\Projects\\\\my-app", "type": "user"}\n')
+
+        result = Project._extract_real_path_from_sessions(temp_project_dir)
+
+        assert result == "D:/Projects/my-app"
+
+    def test_windows_forward_slash_cwd_unchanged(self, temp_project_dir: Path):
+        """Test that Windows cwd with forward slashes is returned as-is."""
+        session_file = temp_project_dir / "test-uuid.jsonl"
+        session_file.write_text('{"cwd": "C:/Users/test/myproject", "type": "user"}\n')
+
+        result = Project._extract_real_path_from_sessions(temp_project_dir)
+
+        assert result == "C:/Users/test/myproject"
 
 
 class TestFromEncodedNameSkipPathRecovery:

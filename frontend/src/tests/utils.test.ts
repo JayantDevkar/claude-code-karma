@@ -422,6 +422,18 @@ describe('formatDisplayPath', () => {
 	it('handles Linux home paths', () => {
 		expect(formatDisplayPath('/home/user/file.txt')).toBe('~/file.txt');
 	});
+
+	it('handles Windows paths with backslashes', () => {
+		expect(
+			formatDisplayPath('C:\\Users\\jay\\project\\src\\file.ts', 'C:/Users/jay/project')
+		).toBe('src/file.ts');
+	});
+
+	it('handles Windows home dir with ~ shortening', () => {
+		expect(
+			formatDisplayPath('C:/Users/jay/.config/settings.json', 'C:/Users/jay/project')
+		).toBe('~/.config/settings.json');
+	});
 });
 
 // ============================================================
@@ -442,6 +454,28 @@ describe('decodeProjectPath', () => {
 	it('fallback decode replaces hyphens with slashes', () => {
 		const result = decodeProjectPath('-etc-config-file');
 		expect(result).toBe('/etc/config/file');
+	});
+
+	// Windows path tests
+	it('decodes a Windows C: drive path', () => {
+		const result = decodeProjectPath('C--Code-Tools');
+		expect(result).toBe('C:/Code/Tools');
+	});
+
+	it('decodes a Windows user path', () => {
+		const result = decodeProjectPath('C--Users-test-Documents-GitHub-my-project');
+		expect(result).toContain('C:/Users/test/');
+		expect(result).toContain('my-project');
+	});
+
+	it('decodes a Windows D: drive path', () => {
+		const result = decodeProjectPath('D--Projects-myapp');
+		expect(result).toBe('D:/Projects/myapp');
+	});
+
+	it('normalizes lowercase Windows drive letter to uppercase', () => {
+		const result = decodeProjectPath('c--Code-Tools');
+		expect(result).toBe('C:/Code/Tools');
 	});
 });
 
@@ -482,6 +516,22 @@ describe('getProjectNameFromEncoded', () => {
 	it('handles single-component after user prefix', () => {
 		const result = getProjectNameFromEncoded('-Users-me-myrepo');
 		expect(result).toBe('myrepo');
+	});
+
+	// Windows path tests
+	it('extracts from Windows Users path', () => {
+		const result = getProjectNameFromEncoded('C--Users-test-Documents-GitHub-my-project');
+		expect(result).toBe('Documents-GitHub-my-project');
+	});
+
+	it('extracts from Windows non-Users path', () => {
+		const result = getProjectNameFromEncoded('C--Code-Tools');
+		expect(result).toBe('Code-Tools');
+	});
+
+	it('extracts from Windows D: drive path', () => {
+		const result = getProjectNameFromEncoded('D--Projects-myapp');
+		expect(result).toBe('Projects-myapp');
 	});
 });
 

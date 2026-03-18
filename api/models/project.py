@@ -63,6 +63,25 @@ if TYPE_CHECKING:
 PathLike = Union[str, Path]
 
 
+def _is_absolute_path(path: str) -> bool:
+    """Check if a path is absolute, recognizing both Unix and Windows formats.
+
+    Unlike Path.is_absolute(), this works cross-platform: a Windows path like
+    'C:\\Users\\test' is recognized as absolute even when running on macOS/Linux.
+    This is important for reading session data synced from other operating systems.
+    """
+    # Unix absolute path
+    if path.startswith("/"):
+        return True
+    # Windows absolute path: drive letter followed by colon and separator
+    if re.match(r"^[A-Za-z]:[/\\]", path):
+        return True
+    # Windows UNC path
+    if path.startswith("\\\\") or path.startswith("//"):
+        return True
+    return False
+
+
 class Project(BaseModel):
     """
     Represents a Claude Code project directory under ~/.claude/projects/.
@@ -179,9 +198,9 @@ class Project(BaseModel):
                         try:
                             data = json.loads(line.strip())
                             cwd = data.get("cwd")
-                            # Validate cwd is an absolute path
-                            if cwd and Path(cwd).is_absolute():
-                                return cwd
+                            if cwd and _is_absolute_path(cwd):
+                                # Normalize Windows backslashes to forward slashes
+                                return cwd.replace("\\", "/")
                         except json.JSONDecodeError:
                             continue
             except (OSError, PermissionError, UnicodeDecodeError):
