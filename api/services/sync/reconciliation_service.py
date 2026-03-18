@@ -189,6 +189,23 @@ class ReconciliationService:
             elif existing.status == MemberStatus.ADDED:
                 # Activate if we can see them in metadata (they've acknowledged)
                 self.members.save(conn, existing.activate())
+                # Backfill OFFERED subscriptions for shared projects the member missed
+                # (they were ADDED when share_project ran, so no sub was created)
+                for proj in self.projects.list_for_team(conn, team.name):
+                    if proj.status != SharedProjectStatus.SHARED:
+                        continue
+                    existing_sub = self.subs.get(conn, tag, team.name, proj.git_identity)
+                    if existing_sub is None:
+                        sub = Subscription(
+                            member_tag=tag,
+                            team_name=team.name,
+                            project_git_identity=proj.git_identity,
+                        )
+                        self.subs.save(conn, sub)
+                        logger.info(
+                            "phase_metadata: backfilled OFFERED subscription for member '%s' on project '%s'",
+                            tag, proj.git_identity,
+                        )
 
         # Discover/remove projects from leader's metadata state
         leader_state = states.get(team.leader_member_tag, {})
