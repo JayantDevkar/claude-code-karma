@@ -26,10 +26,10 @@ from models import (
     load_installed_plugins,
 )
 from models.plugin import (
-    resolve_manifest_dirs,
     get_plugin_description,
     read_command_contents,
     read_plugin_manifest,
+    resolve_manifest_dirs,
     scan_plugin_capabilities,
 )
 from schemas import (
@@ -1362,9 +1362,7 @@ def get_plugin_skill_content(
 
     # Search commands directories for .md file
     if target_file is None:
-        for commands_dir in resolve_manifest_dirs(
-            install_path, manifest, "commands", ["commands"]
-        ):
+        for commands_dir in resolve_manifest_dirs(install_path, manifest, "commands", ["commands"]):
             candidate = (commands_dir / clean_path).resolve()
             try:
                 candidate.relative_to(commands_dir.resolve())

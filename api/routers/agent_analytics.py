@@ -15,8 +15,6 @@ from typing import Optional
 
 from cachetools import TTLCache, cached
 
-from utils import is_encoded_project_dir
-
 from schemas import (
     AgentCategory,
     AgentInvocation,
@@ -24,6 +22,7 @@ from schemas import (
     AgentUsageListResponse,
     AgentUsageSummary,
 )
+from utils import is_encoded_project_dir
 
 logger = logging.getLogger(__name__)
 

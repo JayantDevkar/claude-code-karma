@@ -18,8 +18,6 @@ from pydantic import BaseModel, Field
 api_path = Path(__file__).parent.parent
 sys.path.insert(0, str(api_path))
 
-from utils import is_encoded_project_dir
-
 from config import settings
 from models.history import get_archived_prompts, get_project_name
 
