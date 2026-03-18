@@ -439,7 +439,7 @@
 
 			<!-- Body -->
 			<div class="px-5 divide-y divide-[var(--border-subtle)]">
-				{#each recentEvents as ev (ev.id)}
+				{#each recentEvents as ev, i (ev.created_at ?? i)}
 					<div class="flex items-center justify-between gap-3 py-3">
 						<p class="text-xs text-[var(--text-secondary)] truncate flex-1">{formatSyncEvent(ev)}</p>
 						<span class="text-[11px] text-[var(--text-muted)] shrink-0 whitespace-nowrap">{formatRelativeTime(ev.created_at)}</span>
