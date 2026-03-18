@@ -80,6 +80,17 @@ class FolderManager:
     # Outbox / Inbox
     # ------------------------------------------------------------------
 
+    async def ensure_metadata_folder(self, team_name: str) -> None:
+        """Create a sendreceive metadata folder if it does not already exist."""
+        folder_id = build_metadata_folder_id(team_name)
+        existing_ids = await self._get_folder_ids()
+        if folder_id in existing_ids:
+            return
+        folder = self._make_folder_config(folder_id, "sendreceive")
+        # Metadata folders live under metadata-folders/ subdirectory
+        folder["path"] = str(self._karma_base / "metadata-folders" / folder_id)
+        await self._client.put_config_folder(folder)
+
     async def ensure_outbox_folder(self, member_tag: str, folder_suffix: str) -> None:
         """Create a sendonly outbox folder if it does not already exist."""
         folder_id = build_outbox_folder_id(member_tag, folder_suffix)

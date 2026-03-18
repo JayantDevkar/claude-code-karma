@@ -68,6 +68,7 @@ class TeamService:
         self.teams.save(conn, team)
         self.members.save(conn, leader)
         self.metadata.write_team_state(team, [leader])
+        await self.folders.ensure_metadata_folder(name)
         self.events.log(conn, SyncEvent(
             event_type=SyncEventType.team_created,
             team_name=name,
@@ -100,6 +101,9 @@ class TeamService:
         added = team.add_member(member, by_device=by_device)  # auth check
         self.members.save(conn, added)
         await self.devices.pair(new_device_id)
+
+        # Ensure metadata folder exists in Syncthing before sharing
+        await self.folders.ensure_metadata_folder(team_name)
 
         # Immediately share metadata + project outbox folders with the new device
         # so the joiner sees pending folders without waiting for the 60s reconciliation timer.
