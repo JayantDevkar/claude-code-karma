@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onDestroy } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import { Fingerprint, Loader2, X } from 'lucide-svelte';
 	import { API_BASE } from '$lib/config';
 	import { formatRelativeTime } from '$lib/utils';
@@ -150,9 +150,16 @@
 	}
 
 	// ── Polling: load on mount, re-poll every 15s ──────────────────────────
-	fetchPending();
-	const pollInterval = setInterval(fetchPending, 15_000);
-	onDestroy(() => clearInterval(pollInterval));
+	let pollInterval: ReturnType<typeof setInterval> | null = null;
+
+	onMount(() => {
+		fetchPending();
+		pollInterval = setInterval(fetchPending, 15_000);
+	});
+
+	onDestroy(() => {
+		if (pollInterval) clearInterval(pollInterval);
+	});
 </script>
 
 {#if loading && !firstLoadDone}
