@@ -62,11 +62,14 @@ class SyncthingClient:
             )
             resp.raise_for_status()
 
-    async def _delete(self, path: str) -> None:
+    async def _delete(
+        self, path: str, params: Optional[Dict[str, str]] = None
+    ) -> None:
         async with httpx.AsyncClient(timeout=self.timeout) as http:
             resp = await http.delete(
                 self.api_url + path,
                 headers=self._headers(),
+                params=params,
             )
             resp.raise_for_status()
 
@@ -134,9 +137,20 @@ class SyncthingClient:
         """GET /rest/cluster/pending/devices — devices requesting connection."""
         return await self._get("/rest/cluster/pending/devices")
 
+    async def dismiss_pending_device(self, device_id: str) -> None:
+        """DELETE /rest/cluster/pending/devices?device={device_id} — dismiss a pending device."""
+        await self._delete("/rest/cluster/pending/devices", params={"device": device_id})
+
     async def get_pending_folders(self) -> Dict[str, Any]:
         """GET /rest/cluster/pending/folders — folders offered by peers."""
         return await self._get("/rest/cluster/pending/folders")
+
+    async def dismiss_pending_folder(self, folder_id: str, device_id: str) -> None:
+        """DELETE /rest/cluster/pending/folders?folder={id}&device={id} — dismiss a pending folder."""
+        await self._delete(
+            "/rest/cluster/pending/folders",
+            params={"folder": folder_id, "device": device_id},
+        )
 
     # ------------------------------------------------------------------
     # Database / folder ops

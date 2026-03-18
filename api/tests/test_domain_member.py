@@ -65,6 +65,14 @@ class TestMemberModel:
         assert m.machine_tag == "desktop"
         assert m.member_tag == "bob.desktop"
 
+    def test_from_member_tag_no_dot_raises(self):
+        with pytest.raises(ValueError, match="must contain a dot"):
+            Member.from_member_tag(
+                member_tag="nodot",
+                team_name="team-abc",
+                device_id="DEVICE000",
+            )
+
     def test_from_member_tag_with_dot_in_machine_tag(self):
         # user_id cannot contain dots per spec — first dot splits user.machine
         m = Member.from_member_tag(

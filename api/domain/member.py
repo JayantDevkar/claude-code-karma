@@ -67,6 +67,10 @@ class Member(BaseModel):
 
         Per spec: user_id cannot contain dots; first dot separates user from machine.
         """
+        if "." not in member_tag:
+            raise ValueError(
+                f"member_tag '{member_tag}' must contain a dot separating user_id and machine_tag"
+            )
         user_id, machine_tag = member_tag.split(".", 1)
         kwargs: dict = dict(
             member_tag=member_tag,

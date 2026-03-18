@@ -117,6 +117,21 @@ class TestTeamModel:
         assert TeamStatus.DISSOLVED.value == "dissolved"
 
 
+    def test_add_member_on_dissolved_team_raises(self):
+        team = make_team()
+        dissolved = team.dissolve(by_device="alice.macbook")
+        member = make_member()
+        with pytest.raises(InvalidTransitionError, match="dissolved"):
+            dissolved.add_member(member, by_device="alice.macbook")
+
+    def test_remove_member_on_dissolved_team_raises(self):
+        team = make_team()
+        dissolved = team.dissolve(by_device="alice.macbook")
+        member = make_member()
+        with pytest.raises(InvalidTransitionError, match="dissolved"):
+            dissolved.remove_member(member, by_device="alice.macbook")
+
+
 class TestAuthorizationError:
     def test_is_exception(self):
         err = AuthorizationError("not allowed")
@@ -125,7 +140,7 @@ class TestAuthorizationError:
 
 
 class TestInvalidTransitionError:
-    def test_is_exception(self):
+    def test_is_value_error(self):
         err = InvalidTransitionError("bad transition")
-        assert isinstance(err, Exception)
+        assert isinstance(err, ValueError)
         assert str(err) == "bad transition"

@@ -17,11 +17,23 @@ if TYPE_CHECKING:
     from domain.team import Team
 
 
+import re
+
+_SAFE_PATH_COMPONENT = re.compile(r"^[a-zA-Z0-9._-]+$")
+
+
+def _validate_path_component(value: str, label: str) -> None:
+    """Reject values that could escape their intended directory."""
+    if not value or ".." in value or not _SAFE_PATH_COMPONENT.match(value):
+        raise ValueError(f"Unsafe {label}: {value!r}")
+
+
 class MetadataService:
     def __init__(self, meta_base: Path):
         self.meta_base = meta_base
 
     def _team_dir(self, team_name: str) -> Path:
+        _validate_path_component(team_name, "team_name")
         return self.meta_base / f"karma-meta--{team_name}"
 
     def write_team_state(self, team: "Team", members: list["Member"]) -> None:
@@ -42,6 +54,7 @@ class MetadataService:
 
         # Write member state files
         for member in members:
+            _validate_path_component(member.member_tag, "member_tag")
             member_data = {
                 "member_tag": member.member_tag,
                 "device_id": member.device_id,
@@ -84,6 +97,7 @@ class MetadataService:
             "subscriptions": subs_data,
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }
+        _validate_path_component(member_tag, "member_tag")
         state_file = team_dir / "members" / f"{member_tag}.json"
         state_file.write_text(json.dumps(state, indent=2))
 
@@ -91,6 +105,7 @@ class MetadataService:
         self, team_name: str, member_tag: str, *, removed_by: str
     ) -> None:
         """Write removal signal to metadata folder."""
+        _validate_path_component(member_tag, "member_tag")
         team_dir = self._team_dir(team_name)
         (team_dir / "removed").mkdir(parents=True, exist_ok=True)
 

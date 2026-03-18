@@ -3,11 +3,12 @@ from __future__ import annotations
 
 import logging
 import sqlite3
+from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
-from domain.team import AuthorizationError
+from domain.team import AuthorizationError, InvalidTransitionError
 from routers.sync_deps import (
     get_conn,
     make_repos,
@@ -124,6 +125,8 @@ async def dissolve_team(
         team = await svc.dissolve_team(conn, team_name=name, by_device=device_id)
     except AuthorizationError:
         raise HTTPException(403, "Only the team leader can dissolve the team")
+    except InvalidTransitionError as e:
+        raise HTTPException(409, str(e))
     except ValueError as e:
         raise HTTPException(404, str(e))
     return {"ok": True, "name": team.name, "status": team.status.value}
@@ -156,6 +159,8 @@ async def add_member(
         )
     except AuthorizationError:
         raise HTTPException(403, "Only the team leader can add members")
+    except InvalidTransitionError as e:
+        raise HTTPException(409, str(e))
     except ValueError as e:
         raise HTTPException(404, str(e))
     return _member_dict(member)
@@ -177,6 +182,8 @@ async def remove_member(
         )
     except AuthorizationError:
         raise HTTPException(403, "Only the team leader can remove members")
+    except InvalidTransitionError as e:
+        raise HTTPException(409, str(e))
     except ValueError as e:
         raise HTTPException(404, str(e))
     return _member_dict(member)
@@ -191,6 +198,112 @@ async def list_members(name: str, conn: sqlite3.Connection = Depends(get_conn)):
         raise HTTPException(404, f"Team '{name}' not found")
     members = repos["members"].list_for_team(conn, name)
     return {"members": [_member_dict(m) for m in members]}
+
+
+# --- Join code endpoint ----------------------------------------------------
+
+@router.get("/teams/{name}/join-code")
+async def get_join_code(
+    name: str,
+    conn: sqlite3.Connection = Depends(get_conn),
+    config=Depends(require_config),
+    pairing=Depends(get_pairing_svc),
+):
+    """Generate a join code for this team's device."""
+    repos = make_repos()
+    team = repos["teams"].get(conn, name)
+    if team is None:
+        raise HTTPException(404, f"Team '{name}' not found")
+    device_id = config.syncthing.device_id if config.syncthing else ""
+    if not device_id:
+        raise HTTPException(400, "No Syncthing device ID configured")
+    code = pairing.generate_code(config.member_tag, device_id)
+    return {"code": code, "member_tag": config.member_tag, "device_id": device_id}
+
+
+# --- Activity endpoint -----------------------------------------------------
+
+@router.get("/teams/{name}/activity")
+async def get_team_activity(
+    name: str,
+    limit: int = Query(default=20, ge=1, le=200),
+    conn: sqlite3.Connection = Depends(get_conn),
+):
+    """Return recent activity events for a team."""
+    repos = make_repos()
+    team = repos["teams"].get(conn, name)
+    if team is None:
+        raise HTTPException(404, f"Team '{name}' not found")
+    events = repos["events"].query(conn, team=name, limit=limit)
+    return {
+        "events": [
+            {
+                "event_type": e.event_type.value,
+                "team_name": e.team_name,
+                "member_tag": e.member_tag,
+                "detail": e.detail,
+                "created_at": e.created_at.isoformat(),
+            }
+            for e in events
+        ]
+    }
+
+
+# --- Project status endpoint -----------------------------------------------
+
+@router.get("/teams/{name}/project-status")
+async def get_project_status(
+    name: str,
+    conn: sqlite3.Connection = Depends(get_conn),
+):
+    """Per-project subscription counts for a team."""
+    repos = make_repos()
+    team = repos["teams"].get(conn, name)
+    if team is None:
+        raise HTTPException(404, f"Team '{name}' not found")
+    projects = repos["projects"].list_for_team(conn, name)
+    result = []
+    for p in projects:
+        subs = repos["subs"].list_for_project(conn, name, p.git_identity)
+        counts = {"offered": 0, "accepted": 0, "paused": 0, "declined": 0}
+        for s in subs:
+            if s.status.value in counts:
+                counts[s.status.value] += 1
+        result.append({
+            "git_identity": p.git_identity,
+            "folder_suffix": p.folder_suffix,
+            "status": p.status.value,
+            "subscription_counts": counts,
+        })
+    return {"projects": result}
+
+
+# --- Session stats endpoint ------------------------------------------------
+
+@router.get("/teams/{name}/session-stats")
+async def get_session_stats(
+    name: str,
+    days: int = Query(default=30, ge=1, le=365),
+    conn: sqlite3.Connection = Depends(get_conn),
+):
+    """Per-member stats for a team: status and subscription count."""
+    repos = make_repos()
+    team = repos["teams"].get(conn, name)
+    if team is None:
+        raise HTTPException(404, f"Team '{name}' not found")
+    members = repos["members"].list_for_team(conn, name)
+    result = []
+    for m in members:
+        subs = repos["subs"].list_for_member(conn, m.member_tag)
+        # Filter to this team's subscriptions
+        team_subs = [s for s in subs if s.team_name == name]
+        result.append({
+            "member_tag": m.member_tag,
+            "user_id": m.user_id,
+            "status": m.status.value,
+            "subscription_count": len(team_subs),
+        })
+    return {"members": result}
 
 
 # --- Helpers ---------------------------------------------------------------

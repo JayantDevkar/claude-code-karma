@@ -5,6 +5,7 @@ import sqlite3
 from typing import TYPE_CHECKING
 
 from domain.member import Member, MemberStatus
+from domain.project import SharedProjectStatus
 from domain.subscription import Subscription, SubscriptionStatus, SyncDirection
 from domain.events import SyncEvent, SyncEventType
 
@@ -101,7 +102,7 @@ class ReconciliationService:
         local_projects = self.projects.list_for_team(conn, team.name)
 
         for lp in local_projects:
-            if lp.git_identity not in leader_projects and lp.status == "shared":
+            if lp.git_identity not in leader_projects and lp.status == SharedProjectStatus.SHARED:
                 # Project removed by leader — decline all non-declined subs
                 removed = lp.remove()
                 self.projects.save(conn, removed)

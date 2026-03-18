@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from domain.subscription import SyncDirection
-from domain.team import AuthorizationError
+from domain.team import AuthorizationError, InvalidTransitionError
 from routers.sync_deps import (
     get_conn,
     make_project_service,
@@ -123,6 +123,8 @@ async def accept_subscription(
             git_identity=git_identity,
             direction=direction,
         )
+    except InvalidTransitionError as e:
+        raise HTTPException(409, str(e))
     except ValueError as e:
         raise HTTPException(404, str(e))
     return _sub_dict(sub)
@@ -144,6 +146,8 @@ async def pause_subscription(
             team_name=team,
             git_identity=git_identity,
         )
+    except InvalidTransitionError as e:
+        raise HTTPException(409, str(e))
     except ValueError as e:
         raise HTTPException(404, str(e))
     return _sub_dict(sub)
@@ -165,6 +169,8 @@ async def resume_subscription(
             team_name=team,
             git_identity=git_identity,
         )
+    except InvalidTransitionError as e:
+        raise HTTPException(409, str(e))
     except ValueError as e:
         raise HTTPException(404, str(e))
     return _sub_dict(sub)
@@ -186,6 +192,8 @@ async def decline_subscription(
             team_name=team,
             git_identity=git_identity,
         )
+    except InvalidTransitionError as e:
+        raise HTTPException(409, str(e))
     except ValueError as e:
         raise HTTPException(404, str(e))
     return _sub_dict(sub)
@@ -210,6 +218,8 @@ async def change_direction(
             git_identity=git_identity,
             direction=direction,
         )
+    except InvalidTransitionError as e:
+        raise HTTPException(409, str(e))
     except ValueError as e:
         raise HTTPException(404, str(e))
     return _sub_dict(sub)

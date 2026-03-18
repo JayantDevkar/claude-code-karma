@@ -24,7 +24,7 @@ class AuthorizationError(Exception):
     """Raised when a device tries to perform an action it is not authorized for."""
 
 
-class InvalidTransitionError(Exception):
+class InvalidTransitionError(ValueError):
     """Raised when a state transition is not allowed from the current state."""
 
 
@@ -70,12 +70,21 @@ class Team(BaseModel):
             )
         return self.model_copy(update={"status": TeamStatus.DISSOLVED})
 
+    def _assert_active(self) -> None:
+        """Raise if the team is not ACTIVE."""
+        if self.status != TeamStatus.ACTIVE:
+            raise InvalidTransitionError(
+                f"Team '{self.name}' is {self.status.value}; operation requires ACTIVE status."
+            )
+
     def add_member(self, member: "Member", *, by_device: str) -> "Member":
         """Add *member* to the team.  Only the leader may add members.
 
         Raises:
+            InvalidTransitionError: if the team is not ACTIVE.
             AuthorizationError: if *by_device* is not the leader.
         """
+        self._assert_active()
         if not self.is_leader(by_device):
             raise AuthorizationError(
                 f"Device '{by_device}' is not the team leader and cannot add members."
@@ -88,8 +97,10 @@ class Team(BaseModel):
         Calls member.remove() and returns the removed Member.
 
         Raises:
+            InvalidTransitionError: if the team is not ACTIVE.
             AuthorizationError: if *by_device* is not the leader.
         """
+        self._assert_active()
         if not self.is_leader(by_device):
             raise AuthorizationError(
                 f"Device '{by_device}' is not the team leader and cannot remove members."
