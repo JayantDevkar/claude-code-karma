@@ -440,21 +440,16 @@ def index_remote_sessions(conn: sqlite3.Connection) -> dict:
         # packaged sessions, only received them from us).
         if "." in resolved_uid:
             try:
-                from services.syncthing_proxy import get_proxy
-                from utils.async_runner import run_sync
-                proxy = get_proxy()
-                devices = run_sync(proxy.get_devices)
-                for dev in devices:
-                    if dev.get("name") == dir_name or dev.get("name") == resolved_uid:
-                        member_row = conn.execute(
-                            "SELECT name FROM sync_members WHERE device_id = ?",
-                            (dev["device_id"],),
-                        ).fetchone()
-                        if member_row:
-                            resolved_uid = member_row[0]
-                            break
+                from repositories.member_repo import MemberRepository
+                # Look up member by member_tag pattern in v4 schema
+                row = conn.execute(
+                    "SELECT member_tag FROM sync_members WHERE member_tag = ?",
+                    (resolved_uid,),
+                ).fetchone()
+                if row:
+                    resolved_uid = row[0]
             except Exception:
-                pass  # Syncthing not running — keep resolved_uid as-is
+                pass  # DB lookup failed — keep resolved_uid as-is
 
         # Fixup stale remote_user_id values (e.g. hostname → clean user_id)
         if dir_name != resolved_uid:
@@ -554,14 +549,15 @@ def index_remote_sessions(conn: sqlite3.Connection) -> dict:
                             "Rejected remote file %s from %s: %s", jsonl_path.name, resolved_uid, reason
                         )
                         try:
-                            from db.sync_queries import log_event
-                            log_event(
-                                conn, "file_rejected",
-                                member_name=resolved_uid,
-                                project_encoded_name=local_encoded,
+                            from repositories.event_repo import EventRepository
+                            from domain.events import SyncEvent, SyncEventType
+                            EventRepository().log(conn, SyncEvent(
+                                event_type=SyncEventType.session_received,
+                                member_tag=resolved_uid,
+                                project_git_identity=local_encoded,
                                 session_uuid=uuid,
-                                detail={"reason": reason, "file": jsonl_path.name},
-                            )
+                                detail={"reason": reason, "file": jsonl_path.name, "rejected": True},
+                            ))
                         except Exception:
                             pass  # Best-effort logging
                         stats["errors"] += 1
@@ -599,33 +595,34 @@ def index_remote_sessions(conn: sqlite3.Connection) -> dict:
                     # indexer runs (reindex_all + trigger_remote_reindex use separate locks).
                     if uuid not in db_mtimes:
                         try:
-                            from db.sync_queries import log_event
+                            from repositories.event_repo import EventRepository
+                            from domain.events import SyncEvent, SyncEventType
                             already_logged = conn.execute(
                                 "SELECT 1 FROM sync_events WHERE event_type = 'session_received' AND session_uuid = ? LIMIT 1",
                                 (uuid,),
                             ).fetchone()
                             if not already_logged:
                                 team_names = conn.execute(
-                                    "SELECT team_name FROM sync_team_projects WHERE project_encoded_name = ?",
+                                    "SELECT team_name FROM sync_projects WHERE encoded_name = ?",
                                     (local_encoded,),
                                 ).fetchall()
+                                event_repo = EventRepository()
                                 if team_names:
                                     for (tn,) in team_names:
-                                        log_event(
-                                            conn, "session_received",
+                                        event_repo.log(conn, SyncEvent(
+                                            event_type=SyncEventType.session_received,
                                             team_name=tn,
-                                            member_name=resolved_uid,
-                                            project_encoded_name=local_encoded,
+                                            member_tag=resolved_uid,
+                                            project_git_identity=local_encoded,
                                             session_uuid=uuid,
-                                        )
+                                        ))
                                 else:
-                                    # No team found — log without team_name as fallback
-                                    log_event(
-                                        conn, "session_received",
-                                        member_name=resolved_uid,
-                                        project_encoded_name=local_encoded,
+                                    event_repo.log(conn, SyncEvent(
+                                        event_type=SyncEventType.session_received,
+                                        member_tag=resolved_uid,
+                                        project_git_identity=local_encoded,
                                         session_uuid=uuid,
-                                    )
+                                    ))
                         except Exception:
                             pass  # Best-effort logging
                 except Exception as e:

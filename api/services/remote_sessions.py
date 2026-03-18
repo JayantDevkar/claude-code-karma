@@ -308,10 +308,10 @@ def _resolve_user_id(user_dir: Path, conn=None) -> str:
                 # while manifest user_id may be stale (written at package time).
                 if device_id and conn is not None:
                     try:
-                        from db.sync_queries import get_member_by_device_id
-                        member = get_member_by_device_id(conn, device_id)
-                        if member:
-                            db_name = member["name"]
+                        from repositories.member_repo import MemberRepository
+                        members = MemberRepository().get_by_device(conn, device_id)
+                        if members:
+                            db_name = members[0].member_tag
                             if manifest_uid and db_name != manifest_uid:
                                 logger.debug(
                                     "DB name '%s' differs from manifest '%s' for device %s "
