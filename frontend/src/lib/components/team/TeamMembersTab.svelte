@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { API_BASE } from '$lib/config';
-	import { Trash2, Loader2 } from 'lucide-svelte';
+	import { Trash2, Loader2, UserPlus } from 'lucide-svelte';
 	import type { SyncTeamMember } from '$lib/api-types';
 	import { getTeamMemberColor, getTeamMemberHexColor } from '$lib/utils';
 
@@ -15,6 +15,42 @@
 
 	let confirmRemove = $state<string | null>(null);
 	let removing = $state(false);
+
+	// Add member state
+	let showAddForm = $state(false);
+	let pairingCode = $state('');
+	let adding = $state(false);
+	let addError = $state<string | null>(null);
+
+	async function handleAddMember() {
+		if (!pairingCode.trim() || adding) return;
+		adding = true;
+		addError = null;
+
+		try {
+			const res = await fetch(
+				`${API_BASE}/sync/teams/${encodeURIComponent(teamName)}/members`,
+				{
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ pairing_code: pairingCode.trim() })
+				}
+			);
+
+			if (res.ok) {
+				pairingCode = '';
+				showAddForm = false;
+				onrefresh();
+			} else {
+				const data = await res.json().catch(() => ({}));
+				addError = data.detail || `Failed to add member (${res.status})`;
+			}
+		} catch {
+			addError = 'Network error';
+		} finally {
+			adding = false;
+		}
+	}
 
 	function memberDisplayName(member: SyncTeamMember): string {
 		return member.user_id || member.member_tag;
@@ -60,11 +96,72 @@
 </script>
 
 <div class="space-y-4">
-	{#if members.length === 0}
-		<p class="text-sm text-[var(--text-muted)] py-8 text-center">
-			No members yet. Ask teammates to share their pairing code from /sync, then add them here.
-		</p>
+	<!-- Add Member Section -->
+	{#if showAddForm}
+		<div class="p-4 rounded-lg border border-[var(--accent)]/30 bg-[var(--accent)]/5 space-y-3">
+			<div class="space-y-1.5">
+				<label for="pairing-code" class="block text-xs font-medium text-[var(--text-secondary)]">
+					Paste your teammate's pairing code
+				</label>
+				<textarea
+					id="pairing-code"
+					bind:value={pairingCode}
+					placeholder="MFZWI3D-BONSGYC-YLTMRWG-..."
+					rows={2}
+					class="w-full px-3 py-2 text-sm font-mono rounded-[var(--radius-md)] border border-[var(--border)]
+						bg-[var(--bg-base)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]
+						focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/40 focus:border-[var(--accent)]
+						transition-colors resize-none"
+				></textarea>
+				<p class="text-[11px] text-[var(--text-muted)]">
+					Your teammate can find their pairing code on the <a href="/sync" class="text-[var(--accent)] hover:underline">/sync</a> page.
+				</p>
+			</div>
+			{#if addError}
+				<p class="text-xs text-[var(--error)]">{addError}</p>
+			{/if}
+			<div class="flex items-center gap-2">
+				<button
+					onclick={handleAddMember}
+					disabled={!pairingCode.trim() || adding}
+					class="px-3 py-1.5 text-sm font-medium rounded-[var(--radius-md)] bg-[var(--accent)] text-white
+						hover:bg-[var(--accent-hover)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+				>
+					{#if adding}
+						<span class="flex items-center gap-2">
+							<Loader2 size={14} class="animate-spin" />
+							Adding...
+						</span>
+					{:else}
+						Add Member
+					{/if}
+				</button>
+				<button
+					onclick={() => { showAddForm = false; pairingCode = ''; addError = null; }}
+					class="px-3 py-1.5 text-sm rounded-[var(--radius-md)] text-[var(--text-secondary)]
+						hover:bg-[var(--bg-muted)] transition-colors"
+				>
+					Cancel
+				</button>
+			</div>
+		</div>
 	{:else}
+		<button
+			onclick={() => (showAddForm = true)}
+			class="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-[var(--radius-md)]
+				border border-dashed border-[var(--border)] text-[var(--text-secondary)]
+				hover:border-[var(--accent)] hover:text-[var(--accent)] hover:bg-[var(--accent)]/5 transition-colors"
+		>
+			<UserPlus size={14} />
+			Add Member
+		</button>
+	{/if}
+
+	{#if members.length === 0 && !showAddForm}
+		<p class="text-sm text-[var(--text-muted)] py-8 text-center">
+			No members yet. Click "Add Member" and paste a teammate's pairing code.
+		</p>
+	{:else if members.length > 0}
 		<div class="grid grid-cols-1 md:grid-cols-2 gap-3">
 			{#each members as member (member.member_tag)}
 				{@const displayName = memberDisplayName(member)}
