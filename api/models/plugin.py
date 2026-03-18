@@ -356,7 +356,7 @@ def read_plugin_manifest(cache_path: Path) -> dict:
         return {}
 
 
-def _resolve_manifest_dirs(
+def resolve_manifest_dirs(
     cache_path: Path, manifest: dict, key: str, defaults: list[str]
 ) -> list[Path]:
     """
@@ -449,14 +449,14 @@ def scan_plugin_capabilities(plugin_name: str) -> dict:
     manifest = read_plugin_manifest(cache_path)
 
     # Scan agents directories (default + manifest custom paths)
-    for agents_dir in _resolve_manifest_dirs(cache_path, manifest, "agents", ["agents"]):
+    for agents_dir in resolve_manifest_dirs(cache_path, manifest, "agents", ["agents"]):
         for f in agents_dir.glob("*.md"):
             if f.stem not in result["agents"]:
                 result["agents"].append(f.stem)
 
     # Scan skills directories first (recursive for SKILL.md)
     # Skills take priority over commands when both exist (skills have richer structure)
-    for skills_dir in _resolve_manifest_dirs(cache_path, manifest, "skills", ["skills"]):
+    for skills_dir in resolve_manifest_dirs(cache_path, manifest, "skills", ["skills"]):
         for f in skills_dir.rglob("SKILL.md"):
             skill_name = f.parent.name
             if skill_name not in result["skills"]:
@@ -464,7 +464,7 @@ def scan_plugin_capabilities(plugin_name: str) -> dict:
 
     # Scan commands directories — skip entries already found as skills
     skills_set = set(result["skills"])
-    for commands_dir in _resolve_manifest_dirs(cache_path, manifest, "commands", ["commands"]):
+    for commands_dir in resolve_manifest_dirs(cache_path, manifest, "commands", ["commands"]):
         for f in commands_dir.glob("*.md"):
             if f.stem not in skills_set and f.stem not in result["commands"]:
                 result["commands"].append(f.stem)
@@ -547,7 +547,7 @@ def read_command_contents(plugin_name: str) -> list[dict]:
     manifest = read_plugin_manifest(cache_path)
 
     # Scan skills directories for SKILL.md files
-    for skills_dir in _resolve_manifest_dirs(cache_path, manifest, "skills", ["skills"]):
+    for skills_dir in resolve_manifest_dirs(cache_path, manifest, "skills", ["skills"]):
         for f in sorted(skills_dir.rglob("SKILL.md")):
             name = f.parent.name
             if name not in seen_names:
@@ -560,7 +560,7 @@ def read_command_contents(plugin_name: str) -> list[dict]:
                     result.append({"name": name, "content": None})
 
     # Scan commands directories for .md files
-    for commands_dir in _resolve_manifest_dirs(cache_path, manifest, "commands", ["commands"]):
+    for commands_dir in resolve_manifest_dirs(cache_path, manifest, "commands", ["commands"]):
         for f in sorted(commands_dir.glob("*.md")):
             if f.stem not in seen_names:
                 seen_names.add(f.stem)

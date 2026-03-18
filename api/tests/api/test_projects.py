@@ -35,6 +35,7 @@ sys.path.insert(0, str(_api_root))
 
 # Import models
 from models import Project, Session
+from utils import is_encoded_project_dir
 
 # =============================================================================
 # Mock Schemas (to avoid relative import issues)
@@ -89,7 +90,7 @@ def list_all_projects() -> List[Project]:
 
     projects = []
     for encoded_dir in projects_dir.iterdir():
-        if encoded_dir.is_dir() and encoded_dir.name.startswith("-"):
+        if encoded_dir.is_dir() and is_encoded_project_dir(encoded_dir.name):
             try:
                 project = Project.from_encoded_name(encoded_dir.name)
                 projects.append(project)

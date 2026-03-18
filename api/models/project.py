@@ -6,6 +6,7 @@ Projects are stored in ~/.claude/projects/ with path-encoded directory names.
 
 from __future__ import annotations
 
+import re
 from functools import cached_property
 from pathlib import Path
 from typing import TYPE_CHECKING, List, Optional, Union
@@ -127,8 +128,6 @@ class Project(BaseModel):
         Returns:
             Decoded absolute path (may be incorrect if original had dashes)
         """
-        import re
-
         if encoded.startswith("-"):
             # Unix encoded path: -Users-me-repo -> /Users/me/repo
             return "/" + encoded[1:].replace("-", "/")

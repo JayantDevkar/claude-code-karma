@@ -26,7 +26,7 @@ from models import (
     load_installed_plugins,
 )
 from models.plugin import (
-    _resolve_manifest_dirs,
+    resolve_manifest_dirs,
     get_plugin_description,
     read_command_contents,
     read_plugin_manifest,
@@ -1232,7 +1232,7 @@ def list_plugin_skills(plugin_name: str, request: Request) -> list[SkillItem]:
     seen_names: set[str] = set()
 
     # Scan skills directories for SKILL.md files
-    for skills_dir in _resolve_manifest_dirs(install_path, manifest, "skills", ["skills"]):
+    for skills_dir in resolve_manifest_dirs(install_path, manifest, "skills", ["skills"]):
         try:
             for skill_md in sorted(
                 skills_dir.rglob("SKILL.md"), key=lambda p: p.parent.name.lower()
@@ -1258,7 +1258,7 @@ def list_plugin_skills(plugin_name: str, request: Request) -> list[SkillItem]:
             logger.error(f"Failed to scan skills directory {skills_dir}: {e}")
 
     # Scan commands directories for .md files
-    for commands_dir in _resolve_manifest_dirs(install_path, manifest, "commands", ["commands"]):
+    for commands_dir in resolve_manifest_dirs(install_path, manifest, "commands", ["commands"]):
         try:
             for entry in sorted(commands_dir.iterdir(), key=lambda p: p.name.lower()):
                 if entry.name.startswith(".") or not entry.is_file():
@@ -1350,7 +1350,7 @@ def get_plugin_skill_content(
     target_file = None
 
     # Search skills directories for SKILL.md (path is skill name)
-    for skills_dir in _resolve_manifest_dirs(install_path, manifest, "skills", ["skills"]):
+    for skills_dir in resolve_manifest_dirs(install_path, manifest, "skills", ["skills"]):
         candidate = (skills_dir / clean_path / "SKILL.md").resolve()
         try:
             candidate.relative_to(skills_dir.resolve())
@@ -1362,7 +1362,7 @@ def get_plugin_skill_content(
 
     # Search commands directories for .md file
     if target_file is None:
-        for commands_dir in _resolve_manifest_dirs(
+        for commands_dir in resolve_manifest_dirs(
             install_path, manifest, "commands", ["commands"]
         ):
             candidate = (commands_dir / clean_path).resolve()

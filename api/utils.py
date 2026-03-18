@@ -46,6 +46,10 @@ def is_encoded_project_dir(name: str) -> bool:
     Windows paths encode as: C--Code-Tools   (drive letter + double-dash)
 
     This is used to filter out non-project dirs like 'memory/', '__pycache__/', etc.
+
+    Note: The Windows check (single letter + '--') could theoretically match
+    non-path dirs like 'a--something', but Claude Code never creates such names
+    in ~/.claude/projects/.
     """
     if name.startswith("-"):
         return True

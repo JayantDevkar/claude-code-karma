@@ -40,7 +40,7 @@ from schemas import (
     TodoItemSchema,
     ToolUsageSummary,
 )
-from utils import normalize_key
+from utils import is_encoded_project_dir, normalize_key
 
 # =============================================================================
 # Recreate the router functions here for testing
@@ -60,7 +60,7 @@ def find_session(uuid: str) -> Optional[Session]:
         return None
 
     for encoded_dir in projects_dir.iterdir():
-        if encoded_dir.is_dir() and encoded_dir.name.startswith("-"):
+        if encoded_dir.is_dir() and is_encoded_project_dir(encoded_dir.name):
             jsonl_path = encoded_dir / f"{uuid}.jsonl"
             if jsonl_path.exists():
                 return Session.from_path(jsonl_path)

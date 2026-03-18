@@ -19,6 +19,7 @@ import pytest
 from pydantic import ValidationError
 
 from models import Agent, Project, Session
+from utils import is_encoded_project_dir
 
 
 class TestProjectInstantiation:
@@ -85,24 +86,37 @@ class TestEncodePath:
         assert result == "-Users-test-myproject"
 
     def test_encode_path_without_leading_slash(self):
-        """Test encoding a path that doesn't start with slash (edge case)."""
-        # The implementation adds leading dash regardless
+        """Test encoding a relative path (no leading slash, no drive letter)."""
+        # Relative paths go through the else branch: colon+slash replaced with dash
+        # No leading dash since there's no leading /
         result = Project.encode_path("Users/test/myproject")
-        assert result == "-Users-test-myproject"
+        assert result == "Users-test-myproject"
 
 
-class TestEncodePathWindowsBackslashes:
+class TestEncodePathWindows:
     """Tests for Project.encode_path() with Windows paths."""
 
-    def test_encode_windows_path_with_backslashes(self):
-        """Test encoding Windows path with backslashes."""
+    def test_encode_windows_absolute_path(self):
+        """Test encoding a Windows absolute path (C:\\...)."""
+        # Windows: C:\Code\Tools -> normalize -> C:/Code/Tools
+        # Then replace : and / with - -> C--Code-Tools
+        result = Project.encode_path("C:\\Code\\Tools")
+        assert result == "C--Code-Tools"
+
+    def test_encode_windows_user_path(self):
+        """Test encoding a Windows user path."""
         result = Project.encode_path("C:\\Users\\test\\myproject")
-        assert result == "-C:-Users-test-myproject"
+        assert result == "C--Users-test-myproject"
 
     def test_encode_mixed_slashes(self):
         """Test encoding path with mixed forward and back slashes."""
         result = Project.encode_path("C:\\Users/test\\myproject")
-        assert result == "-C:-Users-test-myproject"
+        assert result == "C--Users-test-myproject"
+
+    def test_encode_windows_different_drive(self):
+        """Test encoding a path on D: drive."""
+        result = Project.encode_path("D:\\Projects\\myapp")
+        assert result == "D--Projects-myapp"
 
     def test_encode_windows_unc_path(self):
         """Test encoding Windows UNC path."""
@@ -147,6 +161,86 @@ class TestDecodePath:
         # This demonstrates the lossy nature
         assert decoded != original
         assert decoded == "/Users/my/project"
+
+
+class TestDecodePathWindows:
+    """Tests for Project.decode_path() with Windows-encoded names."""
+
+    def test_decode_windows_c_drive(self):
+        """Test decoding a Windows C: drive encoded path."""
+        result = Project.decode_path("C--Code-Tools")
+        assert result == "C:/Code/Tools"
+
+    def test_decode_windows_d_drive(self):
+        """Test decoding a Windows D: drive encoded path."""
+        result = Project.decode_path("D--Projects-myapp")
+        assert result == "D:/Projects/myapp"
+
+    def test_decode_windows_user_path(self):
+        """Test decoding a Windows user directory encoded path."""
+        result = Project.decode_path("C--Users-test-myproject")
+        assert result == "C:/Users/test/myproject"
+
+    def test_decode_windows_lowercase_drive(self):
+        """Test decoding with lowercase drive letter normalizes to uppercase."""
+        result = Project.decode_path("c--Code-Tools")
+        assert result == "C:/Code/Tools"
+
+    def test_decode_windows_roundtrip(self):
+        """Test encode/decode roundtrip for Windows paths (lossy for dashes)."""
+        original = "C:\\Code\\Tools"
+        encoded = Project.encode_path(original)
+        assert encoded == "C--Code-Tools"
+        decoded = Project.decode_path(encoded)
+        assert decoded == "C:/Code/Tools"  # Forward slashes in decoded output
+
+
+class TestIsEncodedProjectDir:
+    """Tests for is_encoded_project_dir() utility function."""
+
+    def test_unix_encoded_path(self):
+        """Unix-encoded dirs start with dash."""
+        assert is_encoded_project_dir("-Users-me-repo") is True
+
+    def test_unix_root(self):
+        """Encoded root path is just a dash."""
+        assert is_encoded_project_dir("-") is True
+
+    def test_windows_c_drive(self):
+        """Windows C: drive encoded path."""
+        assert is_encoded_project_dir("C--Code-Tools") is True
+
+    def test_windows_d_drive(self):
+        """Windows D: drive encoded path."""
+        assert is_encoded_project_dir("D--Projects-myapp") is True
+
+    def test_windows_lowercase_drive(self):
+        """Windows lowercase drive letter."""
+        assert is_encoded_project_dir("c--Users-test") is True
+
+    def test_rejects_plain_directory(self):
+        """Non-project dirs like 'memory' should be rejected."""
+        assert is_encoded_project_dir("memory") is False
+
+    def test_rejects_pycache(self):
+        """__pycache__ should be rejected."""
+        assert is_encoded_project_dir("__pycache__") is False
+
+    def test_rejects_dotdir(self):
+        """Hidden directories should be rejected."""
+        assert is_encoded_project_dir(".git") is False
+
+    def test_rejects_empty_string(self):
+        """Empty string should be rejected."""
+        assert is_encoded_project_dir("") is False
+
+    def test_rejects_single_letter(self):
+        """Single letter without -- should be rejected."""
+        assert is_encoded_project_dir("C") is False
+
+    def test_rejects_letter_single_dash(self):
+        """Letter with single dash is not a Windows pattern."""
+        assert is_encoded_project_dir("C-something") is False
 
 
 class TestFromPath:
