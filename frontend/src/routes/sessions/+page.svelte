@@ -612,6 +612,14 @@
 		}
 	});
 
+	// Derived grid helpers (avoid duplicating class strings)
+	const isGrid = $derived(viewMode === 'grid');
+	const gridClass = $derived(
+		isGrid
+			? 'grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2'
+			: 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3'
+	);
+
 	// Dropdown state
 	let showProjectDropdown = $state(false);
 
@@ -1303,13 +1311,9 @@
 			</div>
 
 			<!-- Recently Ended Cards Grid - respects view mode -->
-			<div
-				class={viewMode === 'grid'
-					? 'grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2'
-					: 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3'}
-			>
+			<div class={gridClass}>
 				{#each recentlyEndedSessions as { session, liveSession } (session.uuid)}
-					<GlobalSessionCard {session} {liveSession} compact={viewMode === 'grid'} />
+					<GlobalSessionCard {session} {liveSession} compact={isGrid} />
 				{/each}
 			</div>
 		</div>
@@ -1324,13 +1328,9 @@
 					<div class="h-4 w-16 skeleton-shimmer rounded"></div>
 					<div class="h-3 w-8 skeleton-shimmer rounded"></div>
 				</div>
-				<div
-					class={viewMode === 'grid'
-						? 'grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2'
-						: 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3'}
-				>
+				<div class={gridClass}>
 					{#each Array(6) as _}
-						<SkeletonGlobalSessionCard compact={viewMode === 'grid'} />
+						<SkeletonGlobalSessionCard compact={isGrid} />
 					{/each}
 				</div>
 			</div>
