@@ -87,11 +87,13 @@ class Member(BaseModel):
 **State machine:**
 ```
 ADDED ──activate()──→ ACTIVE ──remove()──→ REMOVED
+  │                                           ▲
+  └────────────remove()───────────────────────┘
 ```
 
 **Methods:**
 - `activate() -> Member` — ADDED → ACTIVE (device acknowledged)
-- `remove() -> Member` — ACTIVE → REMOVED (authorization checked by Team, not here)
+- `remove() -> Member` — ADDED|ACTIVE → REMOVED (authorization checked by Team, not here). Allows removal before device acknowledges.
 - `is_active -> bool` — property
 
 ### SharedProject
@@ -107,8 +109,8 @@ class SharedProject(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     team_name: str
-    encoded_name: str       # local path encoding (optional — set if member has repo cloned)
-    git_identity: str       # REQUIRED — "owner/repo", the universal key
+    git_identity: str       # REQUIRED — "owner/repo", the universal key (PK component)
+    encoded_name: str | None = None  # local path encoding — set if member has repo cloned, machine-specific
     folder_suffix: str      # derived from git_identity (owner-repo)
     status: SharedProjectStatus = SharedProjectStatus.SHARED
 ```
@@ -139,7 +141,7 @@ class Subscription(BaseModel):
 
     member_tag: str
     team_name: str
-    project_encoded_name: str
+    project_git_identity: str   # references SharedProject.git_identity (universal key)
     status: SubscriptionStatus = SubscriptionStatus.OFFERED
     direction: SyncDirection = SyncDirection.BOTH
 ```
@@ -202,6 +204,261 @@ class PairingService:
 - Leader is the gatekeeper — possessing a code doesn't grant access, the leader must explicitly add the member
 - Displayed in member's UI with copy button for out-of-band sharing (Slack, text, etc.)
 
+## Sync Events
+
+Typed event classes for the audit trail. Each event captures a state transition with structured detail.
+
+```python
+class SyncEventType(str, Enum):
+    TEAM_CREATED = "team_created"
+    TEAM_DISSOLVED = "team_dissolved"
+    MEMBER_ADDED = "member_added"
+    MEMBER_ACTIVATED = "member_activated"      # device acknowledged
+    MEMBER_REMOVED = "member_removed"
+    MEMBER_AUTO_LEFT = "member_auto_left"       # removed via metadata signal
+    PROJECT_SHARED = "project_shared"
+    PROJECT_REMOVED = "project_removed"
+    SUBSCRIPTION_OFFERED = "subscription_offered"
+    SUBSCRIPTION_ACCEPTED = "subscription_accepted"
+    SUBSCRIPTION_PAUSED = "subscription_paused"
+    SUBSCRIPTION_RESUMED = "subscription_resumed"
+    SUBSCRIPTION_DECLINED = "subscription_declined"
+    DIRECTION_CHANGED = "direction_changed"
+    SESSION_PACKAGED = "session_packaged"
+    SESSION_RECEIVED = "session_received"
+    DEVICE_PAIRED = "device_paired"
+    DEVICE_UNPAIRED = "device_unpaired"
+
+class SyncEvent(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    event_type: SyncEventType
+    team_name: str | None = None
+    member_tag: str | None = None
+    project_git_identity: str | None = None
+    session_uuid: str | None = None
+    detail: dict | None = None          # structured per event type
+    created_at: datetime
+```
+
+**Detail structure per event type:**
+
+| Event Type | Detail Fields |
+|---|---|
+| `member_added` | `{device_id, added_by}` |
+| `member_removed` | `{device_id, removed_by}` |
+| `subscription_accepted` | `{direction}` |
+| `direction_changed` | `{old_direction, new_direction}` |
+| `session_packaged` | `{branches, session_created_at}` |
+| `session_received` | `{from_member_tag, branches}` |
+| `device_paired` | `{device_id}` |
+
+Events are deduplicated by `(event_type, session_uuid)` for `session_packaged`/`session_received` to prevent duplicate logging on re-scans.
+
+## Metadata Folder Structure
+
+Each team has a metadata folder (`karma-meta--{team}`, type `sendreceive`) shared with all members. Members write their own files — no conflicts.
+
+```
+karma-meta--karma-team/
+├── team.json                          # team definition (written by leader)
+├── members/
+│   ├── jayant.macbook.json            # leader's state
+│   ├── ayush.laptop.json              # member's state
+│   └── ...
+└── removed/
+    └── bob.desktop.json               # removal signal (written by leader)
+```
+
+**`team.json`** (written by leader only):
+```json
+{
+    "name": "karma-team",
+    "created_by": "jayant.macbook",
+    "leader_device_id": "XXXXXXX-...",
+    "created_at": "2026-03-17T10:00:00Z"
+}
+```
+
+**`members/{member_tag}.json`** (each member writes their own):
+```json
+{
+    "member_tag": "ayush.laptop",
+    "device_id": "YYYYYYY-...",
+    "user_id": "ayush",
+    "machine_tag": "laptop",
+    "status": "active",
+    "projects": [
+        {
+            "git_identity": "jayantdevkar/claude-karma",
+            "folder_suffix": "jayantdevkar-claude-karma"
+        }
+    ],
+    "subscriptions": {
+        "jayantdevkar/claude-karma": {
+            "status": "accepted",
+            "direction": "both"
+        }
+    },
+    "updated_at": "2026-03-17T10:05:00Z"
+}
+```
+
+**`removed/{member_tag}.json`** (written by leader on removal):
+```json
+{
+    "member_tag": "bob.desktop",
+    "removed_by": "jayant.macbook",
+    "removed_at": "2026-03-17T12:00:00Z"
+}
+```
+
+**How the reconciler uses metadata:**
+- Phase 1 reads `members/*.json` to discover new peers and their device IDs
+- Phase 1 reads `removed/*.json` to detect own removal → triggers auto-leave
+- Phase 1 reads `members/*.json` `projects` list to discover projects shared by other members → creates OFFERED subscriptions locally
+- Phase 3 reads `members/*.json` `subscriptions` to compute which devices should be in each folder's device list (only members with `accepted` + `send`|`both` for a project contribute their device to that project's folder)
+
+## Session Packaging Integration
+
+The watcher/packager integrates with the subscription model:
+
+**Packaging gate:** Only package sessions for projects where the local member has an ACCEPTED subscription with direction `send` or `both`.
+
+```python
+# In watcher_manager.py (rewritten)
+class WatcherManager:
+    def package_new_sessions(self, conn) -> None:
+        """Package sessions into outbox folders, gated by subscriptions."""
+        my_tag = self.config.member_tag
+        accepted_subs = self.subs.list_for_member(conn, my_tag)
+        for sub in accepted_subs:
+            if sub.status != SubscriptionStatus.ACCEPTED:
+                continue
+            if sub.direction not in (SyncDirection.SEND, SyncDirection.BOTH):
+                continue
+            project = self.projects.get(conn, sub.team_name, sub.project_git_identity)
+            if not project or not project.encoded_name:
+                continue  # don't have repo cloned locally
+            sessions = self.find_new_sessions(project.encoded_name)
+            for session in sessions:
+                meta = PackagedSessionMeta(
+                    session_uuid=session.uuid,
+                    git_identity=project.git_identity,
+                    branches=session.get_git_branches(),
+                    member_tag=my_tag,
+                    created_at=session.created_at,
+                )
+                self.write_to_outbox(project.folder_suffix, session, meta)
+                self.events.log(conn, SyncEvent(
+                    event_type=SyncEventType.SESSION_PACKAGED,
+                    team_name=sub.team_name,
+                    member_tag=my_tag,
+                    project_git_identity=project.git_identity,
+                    session_uuid=session.uuid,
+                    detail={"branches": list(meta.branches)},
+                ))
+```
+
+**Receiving sessions:** `remote_sessions.py` remains largely unchanged but uses `git_identity` to map received sessions to local projects. When a session arrives in an inbox folder, the receiver:
+1. Reads `PackagedSessionMeta` from the packaged session
+2. Looks up local project by `git_identity` — if found, maps to `encoded_name`; if not, stores under `git_identity` until repo is cloned
+3. Logs `SESSION_RECEIVED` event with `from_member_tag` and `branches`
+
+## Cleanup Logic
+
+### Member Removal Cleanup
+
+When a member is removed (by leader) or auto-leaves (via metadata signal), received session data must be cleaned up:
+
+```python
+# In TeamService.remove_member() — leader's machine
+def remove_member(self, conn, *, team_name, by_device, member_tag):
+    # ... (authorization, state transition, removal signal) ...
+    # Cleanup received sessions from this member
+    self._cleanup_received_data(conn, team_name, member_tag)
+
+def _cleanup_received_data(self, conn, team_name: str, member_tag: str) -> dict:
+    """Remove received session files + DB rows for a removed member."""
+    stats = {"files_removed": 0, "rows_removed": 0}
+    # Find inbox folders for this member's outboxes
+    inbox_pattern = f"karma-out--{member_tag}--*"
+    for folder_path in self.folders.find_folders(inbox_pattern):
+        shutil.rmtree(folder_path, ignore_errors=True)
+        stats["files_removed"] += 1
+    # Remove session DB rows from this member
+    rows = conn.execute(
+        "DELETE FROM sessions WHERE source='remote' AND remote_user_id=? RETURNING uuid",
+        (member_tag.split(".")[0],)
+    ).fetchall()
+    stats["rows_removed"] = len(rows)
+    return stats
+```
+
+### Project Removal Cleanup
+
+When a project is removed from a team:
+
+```python
+# In ProjectService.remove_project()
+def remove_project(self, conn, *, team_name, by_device, git_identity):
+    # ... (authorization, state transition) ...
+    project = self.projects.get(conn, team_name, git_identity)
+    # Remove all subscriptions for this project
+    subs = self.subs.list_for_project(conn, team_name, git_identity)
+    for sub in subs:
+        declined = sub.decline()
+        self.subs.save(conn, declined)
+    # Cleanup Syncthing folders for this project
+    self.folders.cleanup_project_folders(conn, team_name, project.folder_suffix)
+    # Cleanup received session files for this project
+    self._cleanup_project_data(conn, project)
+```
+
+### Auto-Leave Cleanup (Member's Machine)
+
+When the reconciler detects a removal signal for the local member:
+
+```python
+def _auto_leave(self, conn, team: Team) -> None:
+    """Clean up everything related to this team on the local machine."""
+    # 1. Remove all Syncthing folders for this team
+    self.folders.cleanup_team_folders(conn, team.name)
+    # 2. Unpair devices that are not in any other team
+    members = self.members.list_for_team(conn, team.name)
+    for member in members:
+        other_teams = self.members.get_by_device(conn, member.device_id)
+        if len(other_teams) <= 1:  # only this team
+            self.devices.unpair(member.device_id)
+    # 3. Delete team from local DB (CASCADE handles members, projects, subs)
+    self.teams.delete(conn, team.name)
+    # 4. Log event
+    self.events.log(conn, SyncEvent(event_type=SyncEventType.MEMBER_AUTO_LEFT, team_name=team.name))
+```
+
+## Sync Direction → Syncthing Folder Type Mapping
+
+| Direction | Outbox Folder | Inbox Folders | Syncthing Type |
+|---|---|---|---|
+| `send` | Created (own sessions packaged here) | Not created | Outbox: `sendonly` |
+| `receive` | Not created | Accepted from teammates | Inbox: `receiveonly` |
+| `both` | Created | Accepted from teammates | Outbox: `sendonly`, Inbox: `receiveonly` |
+
+- **Outbox:** `karma-out--{my_member_tag}--{folder_suffix}` — type `sendonly` on my machine. Other members receive it as `receiveonly`.
+- **Inbox:** `karma-out--{their_member_tag}--{folder_suffix}` — type `receiveonly` on my machine. The folder name uses the sender's member_tag because it's their outbox.
+- **Changing direction** from `both` to `receive` removes the outbox folder. From `both` to `send` removes inbox folder acceptance (stops syncing inbound, but does not delete already-received data).
+
+## sync_removed_members Purpose in v4
+
+This table prevents the reconciler from re-adding a removed member via stale metadata. Scenario:
+
+1. Leader removes Bob → writes removal signal to metadata
+2. Bob's machine processes removal, auto-leaves
+3. But Bob's old `members/bob.desktop.json` state file may still exist in the metadata folder (Syncthing doesn't delete files, only syncs changes)
+4. Without `sync_removed_members`, the leader's next reconciliation cycle would see Bob's state file and think "new member discovered"
+
+The table acts as a blocklist: `was_removed(team, device_id)` returns `True`, and the reconciler skips re-adding. The entry is cleared only if the leader explicitly re-adds Bob via a new pairing code.
+
 ## Database Schema (v19)
 
 Clean break. All existing sync_* tables dropped and recreated.
@@ -225,34 +482,35 @@ CREATE TABLE sync_members (
     status           TEXT NOT NULL DEFAULT 'added'
                      CHECK(status IN ('added', 'active', 'removed')),
     added_at         TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at       TEXT NOT NULL DEFAULT (datetime('now')),
     PRIMARY KEY (team_name, member_tag)
 );
 
 CREATE TABLE sync_projects (
     team_name        TEXT NOT NULL REFERENCES sync_teams(name) ON DELETE CASCADE,
-    encoded_name     TEXT NOT NULL,
-    git_identity     TEXT NOT NULL,
-    folder_suffix    TEXT NOT NULL,
+    git_identity     TEXT NOT NULL,      -- "owner/repo" — universal cross-machine key
+    encoded_name     TEXT,               -- local path encoding, nullable (machine-specific)
+    folder_suffix    TEXT NOT NULL,       -- derived from git_identity (owner-repo)
     status           TEXT NOT NULL DEFAULT 'shared'
                      CHECK(status IN ('shared', 'removed')),
     shared_at        TEXT NOT NULL DEFAULT (datetime('now')),
-    PRIMARY KEY (team_name, encoded_name)
+    PRIMARY KEY (team_name, git_identity)
 );
 
 CREATE TABLE sync_subscriptions (
     member_tag       TEXT NOT NULL,
     team_name        TEXT NOT NULL,
-    project_encoded_name TEXT NOT NULL,
+    project_git_identity TEXT NOT NULL,
     status           TEXT NOT NULL DEFAULT 'offered'
                      CHECK(status IN ('offered', 'accepted', 'paused', 'declined')),
     direction        TEXT NOT NULL DEFAULT 'both'
                      CHECK(direction IN ('receive', 'send', 'both')),
     updated_at       TEXT NOT NULL DEFAULT (datetime('now')),
-    PRIMARY KEY (member_tag, team_name, project_encoded_name),
+    PRIMARY KEY (member_tag, team_name, project_git_identity),
     FOREIGN KEY (team_name, member_tag)
         REFERENCES sync_members(team_name, member_tag) ON DELETE CASCADE,
-    FOREIGN KEY (team_name, project_encoded_name)
-        REFERENCES sync_projects(team_name, encoded_name) ON DELETE CASCADE
+    FOREIGN KEY (team_name, project_git_identity)
+        REFERENCES sync_projects(team_name, git_identity) ON DELETE CASCADE
 );
 
 CREATE TABLE sync_events (
@@ -278,8 +536,10 @@ CREATE TABLE sync_removed_members (
 CREATE INDEX idx_members_device ON sync_members(device_id);
 CREATE INDEX idx_members_status ON sync_members(team_name, status);
 CREATE INDEX idx_projects_suffix ON sync_projects(folder_suffix);
+CREATE INDEX idx_projects_git ON sync_projects(git_identity);
 CREATE INDEX idx_subs_member ON sync_subscriptions(member_tag);
 CREATE INDEX idx_subs_status ON sync_subscriptions(status);
+CREATE INDEX idx_subs_project ON sync_subscriptions(project_git_identity);
 CREATE INDEX idx_events_type ON sync_events(event_type);
 CREATE INDEX idx_events_team ON sync_events(team_name);
 CREATE INDEX idx_events_time ON sync_events(created_at);
@@ -290,10 +550,11 @@ CREATE INDEX idx_events_time ON sync_events(created_at);
 **Changes from v18:**
 - `sync_settings` → deleted (replaced by `sync_subscriptions.direction`)
 - `sync_rejected_folders` → deleted (replaced by `sync_subscriptions.status='declined'`)
-- `sync_members` PK changed from `(team_name, device_id)` to `(team_name, member_tag)`
-- `sync_team_projects` → renamed to `sync_projects`, added `status` column
+- `sync_members` PK changed from `(team_name, device_id)` to `(team_name, member_tag)`, added `updated_at`
+- `sync_team_projects` → renamed to `sync_projects`, PK changed from `(team_name, encoded_name)` to `(team_name, git_identity)`, `encoded_name` now nullable, added `status` column
 - `sync_teams` simplified — removed `join_code`, `backend`, `sync_session_limit`, `pending_leave`
-- `sync_subscriptions` → new table
+- `sync_subscriptions` → new table (references `git_identity` not `encoded_name`)
+- `sync_events` column `member_name` renamed to `member_tag`
 
 ## Repositories
 
@@ -316,17 +577,18 @@ class MemberRepository:
     def record_removal(self, conn, team_name: str, device_id: str) -> None
 
 class ProjectRepository:
-    def get(self, conn, team_name: str, encoded_name: str) -> SharedProject | None
+    def get(self, conn, team_name: str, git_identity: str) -> SharedProject | None
     def save(self, conn, project: SharedProject) -> None
     def list_for_team(self, conn, team_name: str) -> list[SharedProject]
     def find_by_suffix(self, conn, suffix: str) -> list[SharedProject]
+    def find_by_git_identity(self, conn, git_identity: str) -> list[SharedProject]  # cross-team
 
 class SubscriptionRepository:
-    def get(self, conn, member_tag: str, team_name: str, project: str) -> Subscription | None
+    def get(self, conn, member_tag: str, team_name: str, git_identity: str) -> Subscription | None
     def save(self, conn, sub: Subscription) -> None
     def list_for_member(self, conn, member_tag: str) -> list[Subscription]
-    def list_for_project(self, conn, team_name: str, project: str) -> list[Subscription]
-    def list_accepted_for_suffix(self, conn, suffix: str) -> list[Subscription]
+    def list_for_project(self, conn, team_name: str, git_identity: str) -> list[Subscription]
+    def list_accepted_for_suffix(self, conn, suffix: str) -> list[Subscription]  # for device list computation
 
 class EventRepository:
     def log(self, conn, event: SyncEvent) -> int
@@ -352,6 +614,16 @@ class TeamService:
     def dissolve_team(self, conn, *, team_name, by_device) -> Team
 ```
 
+**`dissolve_team` flow:**
+1. `team.dissolve(by_device=leader)` — validates leader authorization
+2. Write dissolution signal to metadata folder (so remote members auto-leave)
+3. Cleanup all Syncthing folders for this team (`FolderManager.cleanup_team_folders()`)
+4. Unpair devices not shared with other teams (cross-team safety check)
+5. Delete team from DB — `ON DELETE CASCADE` handles members, projects, subscriptions at DB level
+6. Log TeamDissolved event
+
+Note: DB cascade is acceptable here because dissolution is a terminal operation. The domain model validates the transition (only leader can dissolve), then the DB handles the bulk cleanup. Remote members' machines clean up independently via the metadata dissolution signal.
+
 **`create_team` flow:**
 1. Create Team (ACTIVE) + leader as Member (ACTIVE)
 2. Save to repos
@@ -367,11 +639,13 @@ class TeamService:
 6. Log MemberAdded event
 
 **`remove_member` flow:**
-1. `team.remove_member()` — validates leader authorization
-2. Member → REMOVED, record removal
-3. Write removal signal to metadata folder
+1. `team.remove_member()` — validates leader authorization (works for ADDED or ACTIVE members)
+2. Member → REMOVED, record removal in `sync_removed_members` (prevents re-add from stale metadata)
+3. Write removal signal to metadata folder (`removed/{member_tag}.json`)
 4. Remove device from all team folder device lists
-5. Log MemberRemoved event
+5. Cleanup received session data from this member (files + DB rows)
+6. Unpair device only if not used by any other team (cross-team safety check)
+7. Log MemberRemoved event
 
 ### ProjectService
 
@@ -382,21 +656,21 @@ class ProjectService:
                  folders: FolderManager, metadata: MetadataService,
                  events: EventRepository): ...
 
-    def share_project(self, conn, *, team_name, by_device, encoded_name, git_identity) -> SharedProject
-    def remove_project(self, conn, *, team_name, by_device, encoded_name) -> SharedProject
-    def accept_subscription(self, conn, *, member_tag, team_name, project, direction) -> Subscription
-    def pause_subscription(self, conn, *, member_tag, team_name, project) -> Subscription
-    def resume_subscription(self, conn, *, member_tag, team_name, project) -> Subscription
-    def decline_subscription(self, conn, *, member_tag, team_name, project) -> Subscription
-    def change_direction(self, conn, *, member_tag, team_name, project, direction) -> Subscription
+    def share_project(self, conn, *, team_name, by_device, git_identity, encoded_name=None) -> SharedProject
+    def remove_project(self, conn, *, team_name, by_device, git_identity) -> SharedProject
+    def accept_subscription(self, conn, *, member_tag, team_name, git_identity, direction) -> Subscription
+    def pause_subscription(self, conn, *, member_tag, team_name, git_identity) -> Subscription
+    def resume_subscription(self, conn, *, member_tag, team_name, git_identity) -> Subscription
+    def decline_subscription(self, conn, *, member_tag, team_name, git_identity) -> Subscription
+    def change_direction(self, conn, *, member_tag, team_name, git_identity, direction) -> Subscription
 ```
 
 **`share_project` flow:**
 1. Validate leader authorization
 2. Validate git_identity is present (git-only constraint)
-3. Create SharedProject (SHARED)
-4. Create OFFERED subscription for each active member
-5. Create leader's outbox folder in Syncthing
+3. Create SharedProject (SHARED) with `git_identity` as PK, `encoded_name` optional (set if leader has repo cloned)
+4. Create OFFERED subscription for each active member (excluding leader)
+5. Create leader's outbox folder in Syncthing (if leader has `encoded_name`)
 6. Update metadata with project list
 7. Log ProjectShared event
 
@@ -512,7 +786,7 @@ class PairingService:
 | Method | Endpoint | Description |
 |---|---|---|
 | POST | `/sync/teams/{name}/projects` | Share project (git-only) |
-| DELETE | `/sync/teams/{name}/projects/{encoded_name}` | Remove project |
+| DELETE | `/sync/teams/{name}/projects/{git_identity}` | Remove project |
 | GET | `/sync/teams/{name}/projects` | List team projects |
 | POST | `/sync/subscriptions/{team}/{project}/accept` | Accept with direction |
 | POST | `/sync/subscriptions/{team}/{project}/pause` | Pause subscription |
@@ -619,13 +893,14 @@ Leader → POST /sync/teams { name: "karma-team" }
     → Team(ACTIVE) + leader Member(ACTIVE)
     → MetadataService.write_team_state()
       → creates karma-meta--karma-team/ folder
-      → writes team.json + leader's member state
+      → writes team.json + leader's member state file
 
-Leader → POST /sync/teams/karma-team/projects { git_identity: "owner/repo" }
+Leader → POST /sync/teams/karma-team/projects
+    { git_identity: "jayantdevkar/claude-karma", encoded_name: "-Users-jayant-..." }
   → ProjectService.share_project()
-    → SharedProject(SHARED) with folder_suffix derived from git_identity
+    → SharedProject(SHARED, git_identity=PK, folder_suffix="jayantdevkar-claude-karma")
     → FolderManager.ensure_outbox_folder()
-      → creates karma-out--leader.machine--owner-repo
+      → creates karma-out--jayant.macbook--jayantdevkar-claude-karma (sendonly)
     → MetadataService.write_own_state() (includes project list)
 ```
 
@@ -657,15 +932,19 @@ Member's ReconciliationService.phase_metadata()
 ### Flow 3: Member Accepts Project
 
 ```
-Member → POST /sync/subscriptions/karma-team/project/accept { direction: "both" }
+Member → POST /sync/subscriptions/karma-team/jayantdevkar%2Fclaude-karma/accept
+    { direction: "both" }
   → ProjectService.accept_subscription()
     → sub.accept(BOTH) → OFFERED → ACCEPTED
-    → FolderManager.ensure_inbox_folders() (receive)
-    → FolderManager.ensure_outbox_folder() (send)
-    → MetadataService.write_own_state()
+    → FolderManager.ensure_outbox_folder(sub)
+      → creates karma-out--ayush.laptop--jayantdevkar-claude-karma (sendonly)
+    → FolderManager.ensure_inbox_folders(sub)
+      → accepts karma-out--jayant.macbook--jayantdevkar-claude-karma (receiveonly)
+    → MetadataService.write_own_state() (subscriptions: {claude-karma: accepted/both})
 
-Next reconciliation cycle:
-  → phase_device_lists() computes union of accepted devices
+Next reconciliation cycle (60s):
+  → phase_device_lists() queries accepted subs for suffix "jayantdevkar-claude-karma"
+  → desired_devices = {jayant.macbook_device, ayush.laptop_device}
   → FolderManager.set_folder_devices() applies declaratively
 
 ═══ SYNCING ═══
@@ -699,6 +978,28 @@ Member → PATCH /sync/subscriptions/karma-team/project/direction { direction: "
     → FolderManager.remove_outbox_folder() (stops sending)
     → Inbox folders remain (still receiving)
     → MetadataService.write_own_state()
+```
+
+### Flow 6: Leader Removes Project
+
+```
+Leader → DELETE /sync/teams/karma-team/projects/jayantdevkar%2Fclaude-karma
+  → ProjectService.remove_project()
+    → Validates leader authorization
+    → SharedProject → REMOVED
+    → Decline all subscriptions for this project (all members)
+    → FolderManager.cleanup_project_folders()
+      → removes outbox + inbox folders for this project's suffix
+    → Cleanup received session files for this project
+    → MetadataService.write_own_state() (project removed from list)
+    → EventRepository.log(ProjectRemoved)
+
+═══ Syncthing syncs metadata folder ═══
+
+Members' ReconciliationService.phase_metadata()
+  → Reads leader's updated state, project no longer listed
+  → Local subscriptions already DECLINED via metadata reconciliation
+  → Folder cleanup on next phase_device_lists() (device removed from folders)
 ```
 
 ## Conflict Resolution
