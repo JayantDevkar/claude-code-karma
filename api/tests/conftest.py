@@ -266,6 +266,39 @@ def sample_debug_log(temp_claude_dir: Path) -> Path:
     return debug_file
 
 
+# =============================================================================
+# Windows Path Fixtures
+# =============================================================================
+
+
+@pytest.fixture
+def temp_windows_project_dir(temp_claude_dir: Path) -> Path:
+    """Create a temporary Windows-encoded project directory (C--Users-test-myproject)."""
+    project_dir = temp_claude_dir / "projects" / "C--Users-test-myproject"
+    project_dir.mkdir(parents=True)
+    return project_dir
+
+
+@pytest.fixture
+def sample_windows_session_jsonl(temp_windows_project_dir: Path) -> Path:
+    """Create a session JSONL file with Windows-style cwd (backslashes)."""
+    session_file = temp_windows_project_dir / "win-session-uuid.jsonl"
+    session_file.write_text(
+        json.dumps(
+            {
+                "cwd": "C:\\Users\\test\\myproject",
+                "type": "user",
+                "sessionId": "win-session-uuid",
+                "message": {"role": "user", "content": "Hello from Windows"},
+                "uuid": "win-msg-001",
+                "timestamp": "2026-01-08T13:00:00.000Z",
+            }
+        )
+        + "\n"
+    )
+    return session_file
+
+
 @pytest.fixture
 def sample_file_history(temp_claude_dir: Path) -> Path:
     """Create a sample file history directory."""
