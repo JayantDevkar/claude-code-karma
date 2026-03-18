@@ -117,11 +117,15 @@ class RemoteSessionWatcher(FileSystemEventHandler):
         logger.info("Remote session watcher stopped")
 
 
-class MetadataReconciliationTimer:
-    """Periodic timer that runs metadata folder reconciliation every N seconds.
+class ReconciliationTimer:
+    """Periodic timer that runs v4 3-phase reconciliation every N seconds.
 
-    Discovers new members, updates identity columns, and triggers auto-leave
-    when removal signals are detected.
+    Uses ReconciliationService.run_cycle() which handles:
+      Phase 1 (metadata): member/project discovery, removal signals, auto-leave
+      Phase 2 (mesh pair): ensure Syncthing devices are paired
+      Phase 3 (device lists): declarative folder device-list sync
+
+    H1 fix preserved: dedicated SQLite connection per timer thread.
     """
 
     def __init__(self, config_data: dict, interval: float = 60.0):
@@ -129,12 +133,11 @@ class MetadataReconciliationTimer:
         self._interval = interval
         self._timer: Optional[threading.Timer] = None
         self._running = False
-        self._first_cycle = True
 
     def start(self):
         self._running = True
         self._schedule()
-        logger.info("Metadata reconciliation timer started (interval=%ds)", self._interval)
+        logger.info("Reconciliation timer started (interval=%ds)", self._interval)
 
     def _schedule(self):
         if not self._running:
@@ -147,172 +150,84 @@ class MetadataReconciliationTimer:
         try:
             self._reconcile()
         except Exception as e:
-            logger.warning("Metadata reconciliation failed: %s", e)
+            logger.warning("Reconciliation cycle failed: %s", e)
         finally:
             self._schedule()
 
     def _reconcile(self):
+        """Run ReconciliationService.run_cycle() with a dedicated connection."""
+        from karma.config import SyncConfig
+
+        config = SyncConfig.load()
+        if config is None:
+            logger.debug("Reconciliation skipped: not initialized")
+            return
+
+        # H1 fix: dedicated connection per timer thread
         from db.connection import get_db_path, _apply_pragmas
-        from services.sync_metadata_reconciler import reconcile_all_teams_metadata
 
-        # Build a minimal config object from config_data
-        config = _ConfigProxy(self._config_data)
-
-        # H1 fix: Create a dedicated connection for the timer thread.
-        # Avoids sharing the writer singleton across threads without a mutex,
-        # which can cause interleaved transactions and data corruption.
         db_path = get_db_path()
         conn = sqlite3.connect(str(db_path), timeout=10.0)
         conn.row_factory = sqlite3.Row
         _apply_pragmas(conn, readonly=False)
 
         try:
-            # RC-2: On first cycle, resume any interrupted auto-leave cleanup
-            if self._first_cycle:
-                self._first_cycle = False
-                self._resume_pending_leaves(config, conn)
+            # Build v4 service stack
+            from config import settings as app_settings
+            from repositories.team_repo import TeamRepository
+            from repositories.member_repo import MemberRepository
+            from repositories.project_repo import ProjectRepository
+            from repositories.subscription_repo import SubscriptionRepository
+            from repositories.event_repo import EventRepository
+            from services.syncthing.client import SyncthingClient
+            from services.syncthing.device_manager import DeviceManager
+            from services.syncthing.folder_manager import FolderManager
+            from services.sync.metadata_service import MetadataService
+            from services.sync.reconciliation_service import ReconciliationService
 
-            # Phase 0: Metadata folder reconciliation (member discovery, auto-leave)
-            result = reconcile_all_teams_metadata(config, conn, auto_leave=True)
-            if result["members_added"] or result["self_removed_teams"]:
-                logger.info(
-                    "Metadata reconciliation: added=%d, auto-left=%s",
-                    result["members_added"], result["self_removed_teams"],
+            api_key = config.syncthing.api_key if config.syncthing else ""
+            client = SyncthingClient(
+                api_url="http://localhost:8384", api_key=api_key,
+            )
+            devices = DeviceManager(client)
+            folders = FolderManager(client, karma_base=app_settings.karma_base)
+            metadata = MetadataService(
+                meta_base=app_settings.karma_base / "metadata-folders",
+            )
+            repos = dict(
+                teams=TeamRepository(),
+                members=MemberRepository(),
+                projects=ProjectRepository(),
+                subs=SubscriptionRepository(),
+                events=EventRepository(),
+            )
+            recon = ReconciliationService(
+                **repos,
+                devices=devices,
+                folders=folders,
+                metadata=metadata,
+                my_member_tag=config.member_tag,
+            )
+
+            # Run the async 3-phase pipeline with 120s timeout
+            loop = asyncio.new_event_loop()
+            try:
+                loop.run_until_complete(
+                    asyncio.wait_for(recon.run_cycle(conn), timeout=120)
                 )
-
-            # Phases 1-4: Async reconciliation pipeline (each phase independent)
-            self._run_async_phases(config, conn)
-
-            # Phase 5: Accept pending folders (auto_only=True — skip peer outboxes)
-            self._auto_accept_pending_folders(config, conn)
+            except asyncio.TimeoutError:
+                logger.warning("Reconciliation timed out after 120s")
+            finally:
+                loop.close()
         finally:
             conn.close()
-
-    def _resume_pending_leaves(self, config, conn):
-        """RC-2: Resume interrupted auto-leave cleanup on startup."""
-        try:
-            from db.sync_queries import get_teams_with_pending_leave
-            from services.sync_metadata_reconciler import _auto_leave_team
-
-            pending = get_teams_with_pending_leave(conn)
-            for team in pending:
-                team_name = team["name"]
-                logger.info("RC-2: Resuming pending_leave cleanup for team %s", team_name)
-                try:
-                    _auto_leave_team(config, conn, team_name)
-                except Exception as e:
-                    logger.warning("RC-2: Failed to resume auto-leave for %s: %s", team_name, e)
-        except Exception as e:
-            logger.debug("RC-2: pending_leave check failed: %s", e)
-
-    def _run_async_phases(self, config, conn):
-        """Run phases 1-4 of the async reconciliation pipeline.
-
-        Each phase is independent — failure in one does not block others.
-        Uses asyncio.new_event_loop() pattern (same as _auto_share_with_new_members
-        in sync_metadata_reconciler.py).
-
-        H2 fix: All phases run inside a single async function with a 120s overall
-        timeout, preventing indefinite blocking if a Syncthing API call hangs.
-        """
-        try:
-            from services.sync_identity import get_proxy
-            proxy = get_proxy()
-        except Exception as e:
-            logger.debug("Async reconciliation phases skipped (no proxy): %s", e)
-            return
-
-        async def _all_phases():
-            # Phase 1: Mesh pair from metadata (discover undiscovered devices)
-            try:
-                from services.sync_reconciliation import mesh_pair_from_metadata
-                paired = await mesh_pair_from_metadata(proxy, config, conn)
-                if paired:
-                    logger.info("Phase 1 mesh_pair: paired with %d new device(s)", paired)
-            except Exception as e:
-                logger.debug("Phase 1 mesh_pair failed: %s", e)
-
-            # Phase 2: Reconcile pending handshakes (process handshake signals)
-            try:
-                from services.sync_reconciliation import reconcile_pending_handshakes
-                reconciled = await reconcile_pending_handshakes(proxy, config, conn)
-                if reconciled:
-                    logger.info("Phase 2 handshakes: reconciled %d membership(s)", reconciled)
-            except Exception as e:
-                logger.debug("Phase 2 handshakes failed: %s", e)
-
-            # Phase 3: Auto-accept pending peers (policy-gated)
-            try:
-                from services.sync_reconciliation import auto_accept_pending_peers
-                accepted, _ = await auto_accept_pending_peers(proxy, config, conn)
-                if accepted:
-                    logger.info("Phase 3 auto_accept: accepted %d pending peer(s)", accepted)
-            except Exception as e:
-                logger.debug("Phase 3 auto_accept failed: %s", e)
-
-            # Phase 4: Compute and apply device lists (declarative sync)
-            try:
-                from services.sync_folders import compute_and_apply_device_lists
-                result = await compute_and_apply_device_lists(proxy, config, conn)
-                updated = result.get("folders_updated", 0)
-                deleted = result.get("folders_deleted", 0)
-                if updated or deleted:
-                    logger.info(
-                        "Phase 4 device_lists: updated=%d, deleted=%d",
-                        updated, deleted,
-                    )
-            except Exception as e:
-                logger.debug("Phase 4 device_lists failed: %s", e)
-
-        loop = asyncio.new_event_loop()
-        try:
-            loop.run_until_complete(asyncio.wait_for(_all_phases(), timeout=120))
-        except asyncio.TimeoutError:
-            logger.warning("Async reconciliation phases timed out after 120s")
-        except Exception as e:
-            logger.debug("Async reconciliation phases failed: %s", e)
-        finally:
-            loop.close()
-
-    def _auto_accept_pending_folders(self, config, conn):
-        """Phase 5: Accept pending Syncthing folder offers from known team members.
-
-        Uses auto_only=True to skip peer outboxes (those require explicit user
-        acceptance via the UI). Only processes handshake folders and own outbox
-        offers automatically.
-        """
-        try:
-            from services.sync_identity import get_proxy
-
-            proxy = get_proxy()
-            accepted = proxy.accept_pending_folders(config, conn, auto_only=True)
-            if accepted:
-                logger.info("Phase 5 accept_folders: auto-accepted %d folder(s)", accepted)
-        except Exception as e:
-            logger.debug("Phase 5 accept_folders skipped: %s", e)
 
     def stop(self):
         self._running = False
         if self._timer is not None:
             self._timer.cancel()
             self._timer = None
-        logger.info("Metadata reconciliation timer stopped")
-
-
-class _ConfigProxy:
-    """Minimal config proxy for reconciliation (avoids async _load_identity)."""
-
-    def __init__(self, config_data: dict):
-        self.user_id = config_data.get("user_id", "")
-        self.machine_id = config_data.get("machine_id", "")
-        self.member_tag = config_data.get("member_tag", "")
-        self.machine_tag = self.member_tag.split(".", 1)[1] if "." in self.member_tag else ""
-        self.syncthing = _SyncthingProxy(config_data.get("device_id"))
-
-
-class _SyncthingProxy:
-    def __init__(self, device_id: Optional[str]):
-        self.device_id = device_id
+        logger.info("Reconciliation timer stopped")
 
 
 class WatcherManager:
@@ -326,7 +241,7 @@ class WatcherManager:
         self._last_packaged_at: Optional[str] = None
         self._projects_watched: list[str] = []
         self._remote_watcher: Optional[RemoteSessionWatcher] = None
-        self._metadata_timer: Optional[MetadataReconciliationTimer] = None
+        self._metadata_timer: Optional[ReconciliationTimer] = None
 
     @property
     def is_running(self) -> bool:
@@ -415,16 +330,23 @@ class WatcherManager:
                 pt=proj_teams,
             ):
                 def package():
-                    # Policy gate: skip packaging if send is disabled for ALL teams
+                    # v4 policy gate: skip packaging unless member has an ACCEPTED
+                    # subscription with send|both direction for this project's teams
                     try:
                         from db.connection import get_writer_db
-                        from services.sync_policy import should_send_to
+                        from repositories.subscription_repo import SubscriptionRepository
                         db = get_writer_db()
-                        if not any(should_send_to(db, tn) for tn in pt):
-                            logger.debug("Send disabled for all teams of %s — skipping package", en)
+                        subs = SubscriptionRepository().list_for_member(db, member_tag or user_id)
+                        if not any(
+                            s.status.value == "accepted"
+                            and s.direction.value in ("send", "both")
+                            and s.team_name in pt
+                            for s in subs
+                        ):
+                            logger.debug("No send subscription for %s — skipping package", en)
                             return
                     except Exception as exc:
-                        logger.warning("Policy check failed for %s, proceeding: %s", en, exc)
+                        logger.warning("Subscription check failed for %s, proceeding: %s", en, exc)
 
                     wt_dirs = find_worktree_dirs(en, projects_dir)
                     packager = SessionPackager(
@@ -441,15 +363,21 @@ class WatcherManager:
                     self._last_packaged_at = (
                         datetime.now(timezone.utc).isoformat()
                     )
-                    # Log session_packaged per session (dedup against already-logged)
+                    # Log session_packaged events via v4 EventRepository
                     try:
                         from db.connection import get_writer_db
-                        from db.sync_queries import log_session_packaged_events
+                        from repositories.event_repo import EventRepository
+                        from domain.events import SyncEvent, SyncEventType
                         db = get_writer_db()
-                        for tn in pt:
-                            log_session_packaged_events(
-                                db, tn, en, user_id, manifest.sessions
-                            )
+                        event_repo = EventRepository()
+                        for session_uuid in manifest.sessions:
+                            for tn in pt:
+                                event_repo.log(db, SyncEvent(
+                                    event_type=SyncEventType.session_packaged,
+                                    team_name=tn,
+                                    project_git_identity=en,
+                                    session_uuid=session_uuid,
+                                ))
                     except Exception:
                         logger.debug("Failed to log session_packaged events", exc_info=True)
                 return package
@@ -497,7 +425,7 @@ class WatcherManager:
         # Start metadata reconciliation timer (~60s periodic)
         if self._metadata_timer is None:
             try:
-                self._metadata_timer = MetadataReconciliationTimer(config_data)
+                self._metadata_timer = ReconciliationTimer(config_data)
                 self._metadata_timer.start()
             except Exception as e:
                 logger.warning("Failed to start metadata reconciliation timer: %s", e)
