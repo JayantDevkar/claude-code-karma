@@ -82,6 +82,29 @@ class TestProjectRepoListForTeam:
         identities = {p.git_identity for p in projects}
         assert identities == {"o/r1", "o/r2"}
 
+    def test_list_excludes_removed_by_default(self, conn_with_team, repo):
+        repo.save(conn_with_team, SharedProject(
+            team_name="t", git_identity="o/active", folder_suffix="o-active",
+        ))
+        removed = SharedProject(
+            team_name="t", git_identity="o/gone", folder_suffix="o-gone",
+        ).remove()
+        repo.save(conn_with_team, removed)
+        projects = repo.list_for_team(conn_with_team, "t")
+        assert len(projects) == 1
+        assert projects[0].git_identity == "o/active"
+
+    def test_list_includes_removed_when_requested(self, conn_with_team, repo):
+        repo.save(conn_with_team, SharedProject(
+            team_name="t", git_identity="o/active", folder_suffix="o-active",
+        ))
+        removed = SharedProject(
+            team_name="t", git_identity="o/gone", folder_suffix="o-gone",
+        ).remove()
+        repo.save(conn_with_team, removed)
+        projects = repo.list_for_team(conn_with_team, "t", include_removed=True)
+        assert len(projects) == 2
+
     def test_list_for_nonexistent_team_returns_empty(self, conn_with_team, repo):
         assert repo.list_for_team(conn_with_team, "nope") == []
 

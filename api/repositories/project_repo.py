@@ -33,10 +33,21 @@ class ProjectRepository:
         )
         conn.commit()
 
-    def list_for_team(self, conn: sqlite3.Connection, team_name: str) -> list[SharedProject]:
-        rows = conn.execute(
-            "SELECT * FROM sync_projects WHERE team_name = ?", (team_name,)
-        ).fetchall()
+    def list_for_team(
+        self,
+        conn: sqlite3.Connection,
+        team_name: str,
+        include_removed: bool = False,
+    ) -> list[SharedProject]:
+        if include_removed:
+            rows = conn.execute(
+                "SELECT * FROM sync_projects WHERE team_name = ?", (team_name,)
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM sync_projects WHERE team_name = ? AND status != 'removed'",
+                (team_name,),
+            ).fetchall()
         return [self._row_to_project(r) for r in rows]
 
     def find_by_suffix(self, conn: sqlite3.Connection, suffix: str) -> list[SharedProject]:

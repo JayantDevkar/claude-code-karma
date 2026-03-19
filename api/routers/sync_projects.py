@@ -10,6 +10,7 @@ from pydantic import BaseModel
 
 from domain.subscription import SyncDirection
 from domain.team import AuthorizationError, InvalidTransitionError
+from domain.project import SharedProjectStatus
 from routers.sync_deps import (
     get_conn,
     make_project_service,
@@ -86,6 +87,8 @@ async def remove_project(
         )
     except AuthorizationError:
         raise HTTPException(403, "Only the team leader can remove projects")
+    except InvalidTransitionError as e:
+        raise HTTPException(409, str(e))
     except ValueError as e:
         raise HTTPException(404, str(e))
     return {"ok": True, **_project_dict(project)}
