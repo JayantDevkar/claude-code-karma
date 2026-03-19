@@ -43,20 +43,21 @@ class TestGetDesktopSessionsDir:
                 == Path("C:\\Users\\test\\AppData\\Roaming") / "Claude" / "claude-code-sessions"
             )
 
-    def test_windows_path_without_appdata(self):
+    def test_windows_path_without_appdata(self, tmp_path: Path):
         with (
             patch("services.desktop_sessions.platform.system", return_value="Windows"),
             patch.dict("os.environ", {}, clear=True),
             patch("services.desktop_sessions.os.environ.get", return_value=None),
+            patch("services.desktop_sessions.Path.home", return_value=tmp_path),
         ):
             from services.desktop_sessions import _get_desktop_sessions_dir
 
             result = _get_desktop_sessions_dir()
             assert result == (
-                Path.home() / "AppData" / "Roaming" / "Claude" / "claude-code-sessions"
+                tmp_path / "AppData" / "Roaming" / "Claude" / "claude-code-sessions"
             )
 
-    def test_linux_path_default(self):
+    def test_linux_path_default(self, tmp_path: Path):
         with (
             patch("services.desktop_sessions.platform.system", return_value="Linux"),
             patch.dict("os.environ", {}, clear=True),
@@ -64,11 +65,12 @@ class TestGetDesktopSessionsDir:
                 "services.desktop_sessions.os.environ.get",
                 side_effect=lambda k, d=None: d,
             ),
+            patch("services.desktop_sessions.Path.home", return_value=tmp_path),
         ):
             from services.desktop_sessions import _get_desktop_sessions_dir
 
             result = _get_desktop_sessions_dir()
-            assert result == (Path.home() / ".config" / "Claude" / "claude-code-sessions")
+            assert result == (tmp_path / ".config" / "Claude" / "claude-code-sessions")
 
     def test_linux_path_with_xdg(self):
         with (
@@ -92,17 +94,19 @@ class TestGetDesktopSessionsDir:
 class TestGetWorktreeBase:
     """Tests for _get_worktree_base with env var override."""
 
-    def test_default_path(self):
-        with patch.dict("os.environ", {}, clear=True):
-            # Need to re-read since os.environ.get is called at function time
-            with patch(
+    def test_default_path(self, tmp_path: Path):
+        with (
+            patch.dict("os.environ", {}, clear=True),
+            patch(
                 "services.desktop_sessions.os.environ.get",
                 side_effect=lambda k, d=None: None if k == "CLAUDE_KARMA_WORKTREE_BASE" else d,
-            ):
-                from services.desktop_sessions import _get_worktree_base
+            ),
+            patch("services.desktop_sessions.Path.home", return_value=tmp_path),
+        ):
+            from services.desktop_sessions import _get_worktree_base
 
-                result = _get_worktree_base()
-                assert result == Path.home() / ".claude-worktrees"
+            result = _get_worktree_base()
+            assert result == tmp_path / ".claude-worktrees"
 
     def test_custom_path_via_env(self):
         with patch(

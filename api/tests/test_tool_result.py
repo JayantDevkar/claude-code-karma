@@ -417,7 +417,9 @@ class TestSizeBytesProperty:
     def test_size_bytes_returns_file_size(self, sample_tool_result_file: Path):
         """Test size_bytes returns correct file size."""
         result = ToolResult.from_path(sample_tool_result_file)
-        expected_size = len("Sample tool output content\nLine 2\nLine 3")
+        # Use actual file size rather than hardcoded len() — line endings differ
+        # by platform (CRLF on Windows vs LF on Unix), so stat() is authoritative.
+        expected_size = sample_tool_result_file.stat().st_size
 
         assert result.size_bytes == expected_size
 

@@ -13,6 +13,7 @@ Tests cover:
 """
 
 import json
+import sys
 from pathlib import Path
 
 import pytest
@@ -316,33 +317,67 @@ class TestHistoryEncodePathDelegation:
         assert encode_path("C:/Users/test/repo") == "C--Users-test-repo"
 
 
+class TestGetProjectName:
+    """Tests for history.get_project_name() cross-platform behavior."""
+
+    def test_unix_path_returns_last_two_segments(self):
+        from models.history import get_project_name
+
+        assert get_project_name("/Users/me/my-project") == "me/my-project"
+
+    def test_windows_backslash_path_returns_last_two_segments(self):
+        from models.history import get_project_name
+
+        # Without the fix, this returns "C:\\Users\\me\\my-project" (the whole raw path)
+        assert get_project_name("C:\\Users\\me\\my-project") == "me/my-project"
+
+    def test_windows_forward_slash_path(self):
+        from models.history import get_project_name
+
+        assert get_project_name("C:/Users/me/my-project") == "me/my-project"
+
+    def test_single_segment_unix(self):
+        from models.history import get_project_name
+
+        # split("/") on "/repo" gives ["", "repo"] — last 2 joined = "/repo"
+        assert get_project_name("/repo") == "/repo"
+
+    def test_single_segment_windows(self):
+        from models.history import get_project_name
+
+        # normalized "C:\\repo" → "C:/repo", split gives ["C:", "repo"] → "C:/repo"
+        assert get_project_name("C:\\repo") == "C:/repo"
+
+
 class TestFromPath:
     """Tests for Project.from_path() factory method."""
 
-    def test_from_path_absolute(self, temp_claude_dir: Path):
-        """Test creating Project from absolute path."""
+    def test_from_path_absolute(self, temp_claude_dir: Path, tmp_path: Path):
+        """Test creating Project from absolute path (OS-appropriate path)."""
+        project_path = tmp_path / "myproject"
         project = Project.from_path(
-            "/Users/test/myproject",
+            str(project_path),
             claude_projects_dir=temp_claude_dir / "projects",
         )
 
-        assert project.path == "/Users/test/myproject"
-        assert project.encoded_name == "-Users-test-myproject"
+        assert project.path == str(project_path)
+        assert project.encoded_name == Project.encode_path(str(project_path))
         assert project.claude_projects_dir == temp_claude_dir / "projects"
 
-    def test_from_path_with_path_object(self, temp_claude_dir: Path):
-        """Test creating Project from Path object."""
+    def test_from_path_with_path_object(self, temp_claude_dir: Path, tmp_path: Path):
+        """Test creating Project from Path object (OS-appropriate path)."""
+        project_path = tmp_path / "myproject"
         project = Project.from_path(
-            Path("/Users/test/myproject"),
+            project_path,
             claude_projects_dir=temp_claude_dir / "projects",
         )
 
-        assert project.path == "/Users/test/myproject"
-        assert project.encoded_name == "-Users-test-myproject"
+        assert project.path == str(project_path)
+        assert project.encoded_name == Project.encode_path(str(project_path))
 
-    def test_from_path_default_claude_projects_dir(self):
+    def test_from_path_default_claude_projects_dir(self, tmp_path: Path):
         """Test creating Project with default claude_projects_dir."""
-        project = Project.from_path("/Users/test/myproject")
+        project = Project.from_path(tmp_path / "myproject")
 
         assert project.claude_projects_dir == Path.home() / ".claude" / "projects"
 
@@ -1109,6 +1144,10 @@ class TestIsGitRepository:
 
         assert project.is_git_repository is False
 
+    @pytest.mark.skipif(
+        sys.platform == "win32",
+        reason="symlink creation requires elevated privileges on Windows",
+    )
     def test_git_symlink_returns_true(self, tmp_path: Path):
         """Test that project with symlinked .git returns True."""
         real_git = tmp_path / "real_git_dir"
@@ -1351,7 +1390,9 @@ class TestGitRootPath:
         """Project at git root returns its own path."""
         # Create a project at the git repo root
         project = Project.from_path(temp_git_repo, claude_projects_dir=temp_claude_dir / "projects")
-        assert project.git_root_path == str(temp_git_repo)
+        # Compare as Path objects: git outputs forward slashes on Windows,
+        # str(Path) gives backslashes — Path normalises both.
+        assert Path(project.git_root_path) == temp_git_repo
 
     def test_git_root_path_nested(self, temp_claude_dir: Path, temp_git_repo: Path):
         """Nested project returns parent git root."""
@@ -1360,7 +1401,7 @@ class TestGitRootPath:
         nested_dir.mkdir(parents=True)
 
         project = Project.from_path(nested_dir, claude_projects_dir=temp_claude_dir / "projects")
-        assert project.git_root_path == str(temp_git_repo)
+        assert Path(project.git_root_path) == temp_git_repo
 
     def test_git_root_path_non_git(self, temp_claude_dir: Path, tmp_path: Path):
         """Non-git project returns None."""
@@ -1370,10 +1411,12 @@ class TestGitRootPath:
         project = Project.from_path(non_git_dir, claude_projects_dir=temp_claude_dir / "projects")
         assert project.git_root_path is None
 
-    def test_git_root_path_nonexistent_path(self, temp_claude_dir: Path):
+    def test_git_root_path_nonexistent_path(self, temp_claude_dir: Path, tmp_path: Path):
         """Nonexistent path returns None gracefully."""
+        nonexistent = tmp_path / "does-not-exist"
+        # Note: do NOT call mkdir — the path must not exist
         project = Project.from_path(
-            "/nonexistent/path/that/does/not/exist",
+            nonexistent,
             claude_projects_dir=temp_claude_dir / "projects",
         )
         assert project.git_root_path is None
