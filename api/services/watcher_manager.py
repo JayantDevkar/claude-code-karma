@@ -291,9 +291,7 @@ class WatcherManager:
             )
 
         from karma.watcher import SessionWatcher
-        from karma.packager import SessionPackager
         from karma.worktree_discovery import find_worktree_dirs
-        from karma.config import KARMA_BASE
 
         all_teams = config_data.get("teams", {})
         user_id = config_data.get("user_id", "unknown")
@@ -337,81 +335,32 @@ class WatcherManager:
                 continue
 
             def make_package_fn(
-                cd=claude_dir, en=encoded, pp=proj.get("path", ""),
-                pt=proj_teams, mt=member_tag or user_id,
+                en=encoded, pt=proj_teams,
+                ps=proj.get("folder_suffix", encoded),
+                gi=proj.get("git_identity", encoded),
             ):
                 def package():
-                    # v4 policy gate: skip packaging unless member has an ACCEPTED
-                    # subscription with send|both direction for this project's teams.
-                    # Also resolve the correct Syncthing outbox path from the DB.
-                    ob = None
-                    try:
-                        from db.connection import get_writer_db
-                        from repositories.subscription_repo import SubscriptionRepository
-                        from repositories.project_repo import ProjectRepository
-                        from services.syncthing.folder_manager import build_outbox_folder_id
-                        db = get_writer_db()
-                        subs = SubscriptionRepository().list_for_member(db, mt)
-                        accepted_sub = None
-                        for s in subs:
-                            if (s.status.value == "accepted"
-                                    and s.direction.value in ("send", "both")
-                                    and s.team_name in pt):
-                                accepted_sub = s
-                                break
-                        if not accepted_sub:
-                            logger.debug("No send subscription for %s — skipping package", en)
-                            return
+                    from db.connection import get_writer_db
+                    from services.sync.packaging_service import PackagingService
 
-                        # Resolve outbox to Syncthing folder path
-                        project = ProjectRepository().get(
-                            db, accepted_sub.team_name,
-                            accepted_sub.project_git_identity,
-                        )
-                        if project and project.folder_suffix:
-                            folder_id = build_outbox_folder_id(mt, project.folder_suffix)
-                            ob = KARMA_BASE / folder_id
-                        else:
-                            ob = KARMA_BASE / "remote-sessions" / mt / en
-                    except Exception as exc:
-                        logger.warning("Subscription check failed for %s, proceeding: %s", en, exc)
-
-                    if ob is None:
-                        ob = KARMA_BASE / "remote-sessions" / mt / en
-
-                    wt_dirs = find_worktree_dirs(en, projects_dir)
-                    packager = SessionPackager(
-                        project_dir=cd,
+                    db = get_writer_db()
+                    svc = PackagingService(
+                        member_tag=member_tag or user_id,
                         user_id=user_id,
                         machine_id=machine_id,
                         device_id=device_id,
-                        project_path=pp,
-                        extra_dirs=wt_dirs,
-                        member_tag=member_tag,
                     )
-                    ob.mkdir(parents=True, exist_ok=True)
-                    manifest = packager.package(staging_dir=ob)
+                    for tn in pt:
+                        svc.package_project(
+                            db,
+                            team_name=tn,
+                            git_identity=gi,
+                            encoded_name=en,
+                            folder_suffix=ps,
+                        )
                     self._last_packaged_at = (
                         datetime.now(timezone.utc).isoformat()
                     )
-                    # Log session_packaged events via v4 EventRepository
-                    try:
-                        from db.connection import get_writer_db
-                        from repositories.event_repo import EventRepository
-                        from domain.events import SyncEvent, SyncEventType
-                        db = get_writer_db()
-                        event_repo = EventRepository()
-                        for session_uuid in manifest.sessions:
-                            for tn in pt:
-                                event_repo.log(db, SyncEvent(
-                                    event_type=SyncEventType.session_packaged,
-                                    team_name=tn,
-                                    member_tag=mt,
-                                    project_git_identity=en,
-                                    session_uuid=session_uuid,
-                                ))
-                    except Exception:
-                        logger.debug("Failed to log session_packaged events", exc_info=True)
                 return package
 
             pkg_fn = make_package_fn()
