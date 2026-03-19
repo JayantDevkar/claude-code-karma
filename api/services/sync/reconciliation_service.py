@@ -207,6 +207,42 @@ class ReconciliationService:
                             tag, proj.git_identity,
                         )
 
+        # Sync subscription status from peer metadata to local DB.
+        # When a member accepts/declines on their machine, they publish the status
+        # to their metadata state file. We read it and update our local record so
+        # Phase 3 device lists reflect the actual subscription state.
+        for tag, state in states.items():
+            if tag == self.my_member_tag:
+                continue
+            peer_subs = state.get("subscriptions", {})
+            for git_id, sub_info in peer_subs.items():
+                peer_status = sub_info.get("status")
+                peer_direction = sub_info.get("direction")
+                if not peer_status:
+                    continue
+                local_sub = self.subs.get(conn, tag, team.name, git_id)
+                if local_sub is None:
+                    continue
+                # Only sync if the peer has progressed beyond our local record
+                if local_sub.status.value != peer_status:
+                    try:
+                        if peer_status == "accepted" and local_sub.status.value == "offered":
+                            direction = SyncDirection(peer_direction) if peer_direction else SyncDirection.BOTH
+                            updated = local_sub.accept(direction)
+                            self.subs.save(conn, updated)
+                            logger.info(
+                                "phase_metadata: synced subscription %s/%s → accepted/%s (from peer metadata)",
+                                tag, git_id, direction.value,
+                            )
+                        elif peer_status == "declined" and local_sub.status.value in ("offered", "accepted", "paused"):
+                            self.subs.save(conn, local_sub.decline())
+                            logger.info(
+                                "phase_metadata: synced subscription %s/%s → declined (from peer metadata)",
+                                tag, git_id,
+                            )
+                    except Exception as e:
+                        logger.debug("phase_metadata: subscription sync skip %s/%s: %s", tag, git_id, e)
+
         # Discover/remove projects from leader's metadata state
         leader_state = states.get(team.leader_member_tag, {})
 
