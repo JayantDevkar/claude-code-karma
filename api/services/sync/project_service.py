@@ -272,7 +272,8 @@ class ProjectService:
     ) -> Subscription:
         """Change the sync direction of an accepted subscription.
 
-        Removes outbox if switching away from send/both.
+        Removes outbox if switching away from send/both — but only if no
+        other team's subscription for the same member+suffix still needs it.
         Creates outbox if switching to send/both from receive.
         """
         sub = self.subs.get(conn, member_tag, team_name, git_identity)
@@ -291,7 +292,16 @@ class ProjectService:
 
         if project:
             if was_sending and not now_sending:
-                await self.folders.remove_outbox_folder(member_tag, project.folder_suffix)
+                # Check if another team's subscription still needs this outbox
+                other_subs = self.subs.list_accepted_for_suffix(conn, project.folder_suffix)
+                other_team_needs = any(
+                    s.member_tag == member_tag
+                    and s.team_name != team_name
+                    and s.direction in (SyncDirection.SEND, SyncDirection.BOTH)
+                    for s in other_subs
+                )
+                if not other_team_needs:
+                    await self.folders.remove_outbox_folder(member_tag, project.folder_suffix)
             elif not was_sending and now_sending:
                 await self.folders.ensure_outbox_folder(member_tag, project.folder_suffix)
 
@@ -305,6 +315,35 @@ class ProjectService:
             detail={"old_direction": old_direction.value, "new_direction": direction.value},
         ))
         return changed
+
+    async def reopen_subscription(
+        self,
+        conn: sqlite3.Connection,
+        *,
+        member_tag: str,
+        team_name: str,
+        git_identity: str,
+    ) -> Subscription:
+        """Reopen a declined subscription, returning it to OFFERED status.
+
+        The member can then accept it again with a new direction choice.
+        """
+        sub = self.subs.get(conn, member_tag, team_name, git_identity)
+        if sub is None:
+            raise ValueError("Subscription not found")
+
+        reopened = sub.reopen()
+        self.subs.save(conn, reopened)
+        self._publish_member_metadata(conn, team_name, member_tag)
+
+        self.events.log(conn, SyncEvent(
+            event_type=SyncEventType.subscription_offered,
+            team_name=team_name,
+            member_tag=member_tag,
+            project_git_identity=git_identity,
+            detail={"reopened": True},
+        ))
+        return reopened
 
     # ------------------------------------------------------------------
     # Internal helpers

@@ -94,15 +94,21 @@ class Team(BaseModel):
     def remove_member(self, member: "Member", *, by_device: str) -> "Member":
         """Remove *member* from the team.  Only the leader may remove members.
 
+        The leader cannot remove themselves — they must dissolve the team instead.
         Calls member.remove() and returns the removed Member.
 
         Raises:
-            InvalidTransitionError: if the team is not ACTIVE.
+            InvalidTransitionError: if the team is not ACTIVE, or if
+                trying to remove the leader.
             AuthorizationError: if *by_device* is not the leader.
         """
         self._assert_active()
         if not self.is_leader(by_device):
             raise AuthorizationError(
                 f"Device '{by_device}' is not the team leader and cannot remove members."
+            )
+        if member.member_tag == self.leader_member_tag:
+            raise InvalidTransitionError(
+                f"Cannot remove the team leader. Use dissolve_team() instead."
             )
         return member.remove()

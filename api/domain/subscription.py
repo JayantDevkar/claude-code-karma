@@ -6,6 +6,7 @@ State machine:
   ACCEPTED → PAUSED (pause)
   PAUSED → ACCEPTED (resume)
   OFFERED|ACCEPTED|PAUSED → DECLINED (decline)
+  DECLINED → OFFERED (reopen)
   change_direction: only allowed when ACCEPTED
 
 All state transitions return new immutable instances.
@@ -112,6 +113,22 @@ class Subscription(BaseModel):
             )
         return self.model_copy(update={
             "status": SubscriptionStatus.DECLINED,
+            "updated_at": datetime.now(timezone.utc),
+        })
+
+    def reopen(self) -> "Subscription":
+        """Transition DECLINED → OFFERED, allowing the member to reconsider.
+
+        Raises:
+            InvalidTransitionError: if status is not DECLINED.
+        """
+        if self.status != SubscriptionStatus.DECLINED:
+            raise InvalidTransitionError(
+                f"Cannot reopen subscription in status '{self.status.value}'. "
+                "Must be in DECLINED status."
+            )
+        return self.model_copy(update={
+            "status": SubscriptionStatus.OFFERED,
             "updated_at": datetime.now(timezone.utc),
         })
 

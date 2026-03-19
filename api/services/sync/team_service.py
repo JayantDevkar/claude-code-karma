@@ -257,8 +257,10 @@ class TeamService:
     ) -> Team:
         """Dissolve the team. Only the leader may dissolve.
 
-        Cleans up all Syncthing folders, then deletes the team from DB
-        (CASCADE handles members, projects, subscriptions).
+        Writes removal signals for all non-leader members so their
+        reconciliation auto-leaves. Then cleans up Syncthing folders
+        and deletes the team from DB (CASCADE handles members, projects,
+        subscriptions).
         """
         team = self.teams.get(conn, team_name)
         if team is None:
@@ -266,9 +268,24 @@ class TeamService:
 
         dissolved = team.dissolve(by_device=by_device)  # auth check
 
+        # Write removal signals for all non-leader members so their
+        # reconciliation Phase 1 detects dissolution and auto-leaves.
+        members = self.members.list_for_team(conn, team_name)
+        for member in members:
+            if member.member_tag != team.leader_member_tag:
+                try:
+                    self.metadata.write_removal_signal(
+                        team_name, member.member_tag,
+                        removed_by=team.leader_member_tag,
+                    )
+                except Exception as e:
+                    logger.warning(
+                        "Failed to write dissolution removal signal for %s: %s",
+                        member.member_tag, e,
+                    )
+
         # Cleanup Syncthing folders for all projects + members
         projects = self.projects.list_for_team(conn, team_name)
-        members = self.members.list_for_team(conn, team_name)
         suffixes = [p.folder_suffix for p in projects]
         tags = [m.member_tag for m in members]
         await self.folders.cleanup_team_folders(suffixes, tags, team_name, conn=conn)

@@ -202,6 +202,29 @@ async def decline_subscription(
     return _sub_dict(sub)
 
 
+@router.post("/subscriptions/{team}/{git_identity:path}/reopen")
+async def reopen_subscription(
+    team: str,
+    git_identity: str,
+    conn: sqlite3.Connection = Depends(get_conn),
+    config=Depends(require_config),
+    svc=Depends(get_project_svc),
+):
+    """Reopen a declined subscription, returning it to OFFERED status."""
+    try:
+        sub = await svc.reopen_subscription(
+            conn,
+            member_tag=config.member_tag,
+            team_name=team,
+            git_identity=git_identity,
+        )
+    except InvalidTransitionError as e:
+        raise HTTPException(409, str(e))
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+    return _sub_dict(sub)
+
+
 @router.patch("/subscriptions/{team}/{git_identity:path}/direction")
 async def change_direction(
     team: str,

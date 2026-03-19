@@ -334,8 +334,13 @@ class ReconciliationService:
                         )
 
             # Compute desired device set: members with send|both direction
+            # IMPORTANT: filter by current team to prevent cross-team data leaks.
+            # list_accepted_for_suffix() returns subs from ALL teams sharing
+            # the same folder_suffix — we must only include THIS team's members.
             desired: set[str] = set()
             for sub in accepted:
+                if sub.team_name != team.name:
+                    continue
                 if sub.direction in (SyncDirection.SEND, SyncDirection.BOTH):
                     member = self.members.get(conn, sub.team_name, sub.member_tag)
                     if member and member.is_active:
