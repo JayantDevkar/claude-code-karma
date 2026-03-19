@@ -112,8 +112,10 @@ def encode_path(path: str) -> str:
 
 def get_project_name(path: str) -> str:
     """Extract a readable project name from a full path."""
-    # Get last 2 path components for context
-    parts = path.rstrip("/").split("/")
+    # Normalize Windows backslashes before splitting so C:\Users\me\repo
+    # produces "me/repo" instead of the raw backslash string.
+    # Mac/Linux paths are unchanged (no backslashes to normalize).
+    parts = path.replace("\\", "/").rstrip("/").split("/")
     if len(parts) >= 2:
         return "/".join(parts[-2:])
     return parts[-1] if parts else path
