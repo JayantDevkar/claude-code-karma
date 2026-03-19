@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import logging
 import sqlite3
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -335,6 +337,9 @@ async def get_project_status(
     # Local member_tag for outbox counting
     member_tag = config.member_tag if config else None
 
+    # Get active session counts to exclude from gap
+    active_counts = _get_active_counts()
+
     result = []
     for p in projects:
         subs = repos["subs"].list_for_project(conn, name, p.git_identity)
@@ -350,6 +355,7 @@ async def get_project_status(
         packaged_count = (
             _count_packaged(member_tag, p.folder_suffix) if member_tag else 0
         )
+        active_count = active_counts.get(encoded, 0) if encoded else 0
 
         result.append({
             "git_identity": p.git_identity,
@@ -360,8 +366,9 @@ async def get_project_status(
             "subscription_counts": sub_counts,
             "local_count": local_count,
             "packaged_count": packaged_count,
+            "active_count": active_count,
             "received_counts": received,
-            "gap": max(0, local_count - packaged_count) if member_tag else None,
+            "gap": max(0, local_count - packaged_count - active_count) if member_tag else None,
         })
     return {"projects": result}
 
@@ -466,3 +473,59 @@ def _count_packaged(member_tag: str, folder_suffix: str) -> int:
     if not sessions_dir.is_dir():
         return 0
     return sum(1 for _ in sessions_dir.glob("*.jsonl"))
+
+
+def _get_active_counts(live_sessions_dir: Path | None = None) -> dict[str, int]:
+    """Count active (non-ended, non-stale) sessions per project encoded_name.
+
+    Reads ~/.claude_karma/live-sessions/*.json. Returns {encoded_name: count}.
+    Uses worktree-to-parent resolution so worktree sessions roll up to
+    the real project.
+    """
+    from karma.packager import STALE_LIVE_SESSION_SECONDS
+
+    if live_sessions_dir is None:
+        from config import settings as app_settings
+        live_sessions_dir = app_settings.karma_base / "live-sessions"
+
+    if not live_sessions_dir.is_dir():
+        return {}
+
+    import json as _json
+    now = datetime.now(timezone.utc)
+    counts: dict[str, int] = {}
+
+    for json_file in live_sessions_dir.glob("*.json"):
+        try:
+            data = _json.loads(json_file.read_text(encoding="utf-8"))
+            if data.get("state") == "ENDED":
+                continue
+
+            # Check staleness
+            updated_str = data.get("updated_at")
+            if updated_str:
+                updated = datetime.fromisoformat(updated_str.replace("Z", "+00:00"))
+                if updated.tzinfo is None:
+                    updated = updated.replace(tzinfo=timezone.utc)
+                if (now - updated).total_seconds() > STALE_LIVE_SESSION_SECONDS:
+                    continue
+
+            # Extract encoded_name from transcript_path
+            tp = data.get("transcript_path", "")
+            if "/projects/" not in tp:
+                continue
+            parts = tp.split("/projects/", 1)[1].split("/")
+            if not parts:
+                continue
+            enc = parts[0]
+
+            # Worktree resolution: if encoded name is a worktree path, resolve
+            # to real project via git_root if available
+            git_root = data.get("git_root")
+            if git_root and (".claude-worktrees" in enc or "-worktrees-" in enc):
+                enc = "-" + git_root.lstrip("/").replace("/", "-")
+
+            counts[enc] = counts.get(enc, 0) + 1
+        except (ValueError, OSError):
+            continue
+    return counts
