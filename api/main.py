@@ -36,6 +36,7 @@ from routers import (  # noqa: E402
     sessions,
     skills,
     subagent_sessions,
+    sync_members,
     sync_pairing,
     sync_pending,
     sync_projects,
@@ -288,6 +289,7 @@ app.include_router(
 )
 app.include_router(remote_sessions.router, prefix="/remote", tags=["remote"])
 app.include_router(sync_system.router)
+app.include_router(sync_members.router)
 app.include_router(sync_teams.router)
 app.include_router(sync_projects.router)
 app.include_router(sync_pairing.router)

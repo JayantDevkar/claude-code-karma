@@ -35,6 +35,7 @@ class EventRepository:
         conn: sqlite3.Connection,
         *,
         team: Optional[str] = None,
+        member_tag: Optional[str] = None,
         event_type: Optional[str] = None,
         limit: int = 50,
     ) -> list[SyncEvent]:
@@ -44,6 +45,9 @@ class EventRepository:
         if team is not None:
             parts.append("team_name = ?")
             params.append(team)
+        if member_tag is not None:
+            parts.append("member_tag = ?")
+            params.append(member_tag)
         if event_type is not None:
             parts.append("event_type = ?")
             params.append(event_type)

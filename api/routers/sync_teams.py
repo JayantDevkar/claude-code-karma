@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from domain.team import AuthorizationError, InvalidTransitionError
 from routers.sync_deps import (
     get_conn,
+    get_optional_config,
     make_repos,
     make_team_service,
     require_config,
@@ -291,25 +292,76 @@ async def get_team_activity(
 async def get_project_status(
     name: str,
     conn: sqlite3.Connection = Depends(get_conn),
+    config=Depends(get_optional_config),
 ):
-    """Per-project subscription counts for a team."""
+    """Per-project sync status: subscriptions, session counts, sync gap."""
     repos = make_repos()
     team = repos["teams"].get(conn, name)
     if team is None:
         raise HTTPException(404, f"Team '{name}' not found")
     projects = repos["projects"].list_for_team(conn, name)
+
+    # Resolve local encoded_name and display_name for each project
+    encoded_map, name_map = _resolve_project_names(conn, projects)
+    relevant_encoded = {v for v in encoded_map.values() if v is not None}
+
+    # Batch query: local session counts
+    local_counts: dict[str, int] = {}
+    if relevant_encoded:
+        placeholders = ",".join("?" * len(relevant_encoded))
+        rows = conn.execute(
+            f"SELECT project_encoded_name, COUNT(*) FROM sessions "
+            f"WHERE (source IS NULL OR source != 'remote') "
+            f"AND project_encoded_name IN ({placeholders}) "
+            f"GROUP BY project_encoded_name",
+            list(relevant_encoded),
+        ).fetchall()
+        local_counts = {r[0]: r[1] for r in rows}
+
+    # Batch query: received session counts per project + remote member
+    received_by_encoded: dict[str, dict[str, int]] = {}
+    if relevant_encoded:
+        placeholders = ",".join("?" * len(relevant_encoded))
+        rows = conn.execute(
+            f"SELECT project_encoded_name, remote_user_id, COUNT(*) FROM sessions "
+            f"WHERE source = 'remote' AND remote_user_id IS NOT NULL "
+            f"AND project_encoded_name IN ({placeholders}) "
+            f"GROUP BY project_encoded_name, remote_user_id",
+            list(relevant_encoded),
+        ).fetchall()
+        for enc, uid, cnt in rows:
+            received_by_encoded.setdefault(enc, {})[uid] = cnt
+
+    # Local member_tag for outbox counting
+    member_tag = config.member_tag if config else None
+
     result = []
     for p in projects:
         subs = repos["subs"].list_for_project(conn, name, p.git_identity)
-        counts = {"offered": 0, "accepted": 0, "paused": 0, "declined": 0}
+        sub_counts = {"offered": 0, "accepted": 0, "paused": 0, "declined": 0}
         for s in subs:
-            if s.status.value in counts:
-                counts[s.status.value] += 1
+            if s.status.value in sub_counts:
+                sub_counts[s.status.value] += 1
+
+        encoded = encoded_map.get(p.git_identity)
+        display = name_map.get(p.git_identity)
+        local_count = local_counts.get(encoded, 0) if encoded else 0
+        received = received_by_encoded.get(encoded, {}) if encoded else {}
+        packaged_count = (
+            _count_packaged(member_tag, p.folder_suffix) if member_tag else 0
+        )
+
         result.append({
             "git_identity": p.git_identity,
             "folder_suffix": p.folder_suffix,
             "status": p.status.value,
-            "subscription_counts": counts,
+            "encoded_name": encoded,
+            "name": display,
+            "subscription_counts": sub_counts,
+            "local_count": local_count,
+            "packaged_count": packaged_count,
+            "received_counts": received,
+            "gap": max(0, local_count - packaged_count) if member_tag else None,
         })
     return {"projects": result}
 
@@ -361,3 +413,56 @@ def _member_dict(member) -> dict:
         "machine_tag": member.machine_tag,
         "status": member.status.value,
     }
+
+
+def _resolve_project_names(
+    conn: sqlite3.Connection, projects,
+) -> tuple[dict[str, str | None], dict[str, str | None]]:
+    """Resolve local encoded_name and display_name for sync projects.
+
+    Uses git_identity substring matching (same pattern as indexer.py).
+    Returns (encoded_by_git, name_by_git).
+    """
+    local_rows = conn.execute(
+        "SELECT encoded_name, git_identity, display_name FROM projects "
+        "WHERE git_identity IS NOT NULL"
+    ).fetchall()
+
+    encoded_by_git: dict[str, str | None] = {}
+    name_by_git: dict[str, str | None] = {}
+
+    for p in projects:
+        sync_git = (p.git_identity or "").rstrip("/").lower()
+        if sync_git.endswith(".git"):
+            sync_git = sync_git[:-4]
+
+        matched_enc = None
+        matched_name = None
+        for enc, local_git, display_name in local_rows:
+            lg = (local_git or "").rstrip("/").lower()
+            if lg.endswith(".git"):
+                lg = lg[:-4]
+            if lg and (
+                lg in sync_git or sync_git in lg
+                or lg.endswith(sync_git) or sync_git.endswith(lg)
+            ):
+                matched_enc = enc
+                matched_name = display_name
+                break
+
+        encoded_by_git[p.git_identity] = matched_enc
+        name_by_git[p.git_identity] = matched_name
+
+    return encoded_by_git, name_by_git
+
+
+def _count_packaged(member_tag: str, folder_suffix: str) -> int:
+    """Count *.jsonl files in the local Syncthing outbox for a project."""
+    from config import settings as app_settings
+    from services.syncthing.folder_manager import build_outbox_folder_id
+
+    folder_id = build_outbox_folder_id(member_tag, folder_suffix)
+    sessions_dir = app_settings.karma_base / folder_id / "sessions"
+    if not sessions_dir.is_dir():
+        return 0
+    return sum(1 for _ in sessions_dir.glob("*.jsonl"))
