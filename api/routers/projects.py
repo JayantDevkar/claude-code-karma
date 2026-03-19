@@ -360,7 +360,7 @@ def list_projects(request: Request):
                 if rows:
                     summaries = []
                     for row in rows:
-                        path = row.get("project_path") or ""
+                        path = (row.get("project_path") or "").replace("\\", "/")
                         encoded_name = row["encoded_name"]
                         is_git = False
                         git_root = None

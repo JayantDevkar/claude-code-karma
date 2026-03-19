@@ -48,10 +48,14 @@ export function groupProjects(projects: Project[]): GroupedProjects {
 	);
 	const nonGitProjects = projects.filter((p) => !p.git_root_path);
 
-	// Step 2: Group git projects by git_root_path
+	// Normalize path separators for cross-platform comparison (Windows uses backslashes,
+	// git outputs forward slashes — normalize both to forward slashes before comparing)
+	const normalizePath = (p: string) => p.replace(/\\/g, '/');
+
+	// Step 2: Group git projects by normalized git_root_path
 	const groupMap = new Map<string, Project[]>();
 	for (const project of gitProjects) {
-		const rootPath = project.git_root_path!;
+		const rootPath = normalizePath(project.git_root_path!);
 		if (!groupMap.has(rootPath)) {
 			groupMap.set(rootPath, []);
 		}
@@ -64,8 +68,11 @@ export function groupProjects(projects: Project[]): GroupedProjects {
 
 	for (const [rootPath, groupProjects] of groupMap.entries()) {
 		// Identify root project (where path === git_root_path and is_nested_project === false)
+		// Normalize both paths before comparing to handle Windows backslash vs forward slash
 		const rootProject =
-			groupProjects.find((p) => p.path === rootPath && !p.is_nested_project) || null;
+			groupProjects.find(
+				(p) => normalizePath(p.path) === rootPath && !p.is_nested_project
+			) || null;
 
 		// Identify nested projects (where is_nested_project === true)
 		const nestedProjects = groupProjects
