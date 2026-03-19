@@ -45,8 +45,14 @@ def mock_metadata(tmp_path):
 @pytest.fixture
 def mock_folders():
     m = MagicMock()
+    m.ensure_metadata_folder = AsyncMock()
+    m.ensure_outbox_folder = AsyncMock()
+    m.ensure_inbox_folder = AsyncMock()
+    m.set_folder_devices = AsyncMock()
+    m.get_configured_folders = AsyncMock(return_value=[])
     m.remove_device_from_team_folders = AsyncMock()
     m.cleanup_team_folders = AsyncMock()
+    m.cleanup_project_folders = AsyncMock()
     return m
 
 

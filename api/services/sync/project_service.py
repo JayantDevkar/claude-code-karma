@@ -138,7 +138,7 @@ class ProjectService:
         # Cleanup Syncthing folders for all members
         members = self.members.list_for_team(conn, team_name)
         tags = [m.member_tag for m in members]
-        await self.folders.cleanup_project_folders(removed.folder_suffix, tags)
+        await self.folders.cleanup_project_folders(removed.folder_suffix, tags, conn=conn, team_name=team_name)
 
         # Publish leader's updated project list to metadata folder
         self._publish_member_metadata(conn, team_name, team.leader_member_tag)

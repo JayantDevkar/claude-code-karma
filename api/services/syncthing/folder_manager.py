@@ -5,10 +5,14 @@ Wraps SyncthingClient to provide idempotent folder creation/deletion and
 declarative device-list management for karma outbox/inbox/metadata folders.
 """
 
+import logging
+import sqlite3
 from pathlib import Path
-from typing import List, Set
+from typing import List, Optional, Set
 
 from services.syncthing.client import SyncthingClient
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -170,36 +174,111 @@ class FolderManager:
     # Cleanup helpers
     # ------------------------------------------------------------------
 
+    def _is_folder_needed_by_other_team(
+        self,
+        conn: sqlite3.Connection,
+        folder_suffix: str,
+        member_tag: str,
+        team_name: str,
+    ) -> bool:
+        """Check if another team still needs a folder with this suffix for this member.
+
+        Returns True if at least one other team has an active subscription
+        (offered/accepted/paused) for a project with the same folder_suffix.
+        """
+        row = conn.execute(
+            """
+            SELECT COUNT(*) FROM sync_subscriptions s
+            JOIN sync_projects p
+              ON s.team_name = p.team_name
+             AND s.project_git_identity = p.git_identity
+            WHERE p.folder_suffix = ?
+              AND s.member_tag = ?
+              AND s.status IN ('offered', 'accepted', 'paused')
+              AND s.team_name != ?
+            """,
+            (folder_suffix, member_tag, team_name),
+        ).fetchone()
+        return row[0] > 0
+
     async def cleanup_team_folders(
         self,
         folder_suffixes: List[str],
         member_tags: List[str],
         team_name: str,
+        conn: Optional[sqlite3.Connection] = None,
     ) -> None:
-        """Delete all outbox folders for this team plus the metadata folder."""
-        target_ids = {
-            build_outbox_folder_id(mt, suffix)
-            for mt in member_tags
-            for suffix in folder_suffixes
-        }
+        """Delete all outbox folders for this team plus the metadata folder.
+
+        If ``conn`` is provided, each outbox folder is checked against other
+        teams' subscriptions before deletion.  Folders still needed by another
+        team are skipped.  The metadata folder (team-scoped) is always deleted.
+
+        When ``conn`` is None the legacy behaviour is preserved: all matching
+        folders are deleted unconditionally.
+        """
         meta_id = build_metadata_folder_id(team_name)
-        target_ids.add(meta_id)
 
         all_folders = await self._client.get_config_folders()
         for folder in all_folders:
-            if folder["id"] in target_ids:
-                await self._client.delete_config_folder(folder["id"])
+            fid = folder["id"]
+
+            # Metadata folder is always team-scoped — safe to delete
+            if fid == meta_id:
+                await self._client.delete_config_folder(fid)
+                continue
+
+            # Check each outbox folder
+            for mt in member_tags:
+                for suffix in folder_suffixes:
+                    if fid != build_outbox_folder_id(mt, suffix):
+                        continue
+                    if conn is not None and self._is_folder_needed_by_other_team(
+                        conn, suffix, mt, team_name,
+                    ):
+                        logger.info(
+                            "cleanup_team_folders: skipping folder %s "
+                            "(still needed by another team)",
+                            fid,
+                        )
+                        continue
+                    await self._client.delete_config_folder(fid)
 
     async def cleanup_project_folders(
         self,
         folder_suffix: str,
         member_tags: List[str],
+        conn: Optional[sqlite3.Connection] = None,
+        team_name: Optional[str] = None,
     ) -> None:
-        """Delete all outbox/inbox folders for a specific project suffix."""
-        target_ids = {
-            build_outbox_folder_id(mt, folder_suffix) for mt in member_tags
+        """Delete all outbox/inbox folders for a specific project suffix.
+
+        If ``conn`` and ``team_name`` are provided, each folder is checked
+        against other teams' subscriptions before deletion.  Folders still
+        needed by another team are skipped.
+
+        When ``conn`` is None the legacy behaviour is preserved.
+        """
+        # Build a map from folder_id → member_tag for cross-team lookups
+        folder_to_member: dict[str, str] = {
+            build_outbox_folder_id(mt, folder_suffix): mt for mt in member_tags
         }
         all_folders = await self._client.get_config_folders()
         for folder in all_folders:
-            if folder["id"] in target_ids:
-                await self._client.delete_config_folder(folder["id"])
+            fid = folder["id"]
+            mt = folder_to_member.get(fid)
+            if mt is None:
+                continue
+
+            if conn is not None and team_name is not None:
+                if self._is_folder_needed_by_other_team(
+                    conn, folder_suffix, mt, team_name,
+                ):
+                    logger.info(
+                        "cleanup_project_folders: skipping folder %s "
+                        "(still needed by another team)",
+                        fid,
+                    )
+                    continue
+
+            await self._client.delete_config_folder(fid)

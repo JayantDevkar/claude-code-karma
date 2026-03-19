@@ -231,7 +231,7 @@ class TeamService:
         suffixes = [p.folder_suffix for p in projects]
         tags = [m.member_tag for m in members]
 
-        await self.folders.cleanup_team_folders(suffixes, tags, team_name)
+        await self.folders.cleanup_team_folders(suffixes, tags, team_name, conn=conn)
 
         # Unpair devices not shared with other teams
         for member in members:
@@ -271,7 +271,7 @@ class TeamService:
         members = self.members.list_for_team(conn, team_name)
         suffixes = [p.folder_suffix for p in projects]
         tags = [m.member_tag for m in members]
-        await self.folders.cleanup_team_folders(suffixes, tags, team_name)
+        await self.folders.cleanup_team_folders(suffixes, tags, team_name, conn=conn)
 
         # Log event BEFORE delete so it survives even if an FK is later added
         self.events.log(conn, SyncEvent(

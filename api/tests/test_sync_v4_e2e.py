@@ -51,9 +51,11 @@ def stack(conn, meta_base):
     devices.ensure_paired = AsyncMock()
 
     folders = MagicMock()
+    folders.ensure_metadata_folder = AsyncMock()
     folders.ensure_outbox_folder = AsyncMock()
     folders.ensure_inbox_folder = AsyncMock()
     folders.set_folder_devices = AsyncMock()
+    folders.get_configured_folders = AsyncMock(return_value=[])
     folders.remove_outbox_folder = AsyncMock()
     folders.remove_device_from_team_folders = AsyncMock()
     folders.cleanup_team_folders = AsyncMock()

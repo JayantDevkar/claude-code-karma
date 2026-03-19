@@ -148,16 +148,18 @@ class TestShareProject:
         assert any(e.event_type.value == "project_shared" for e in events)
 
     @pytest.mark.asyncio
-    async def test_no_subscription_for_leader(self, service, conn):
-        """Leader does not get a subscription for their own shared project."""
+    async def test_leader_gets_accepted_subscription(self, service, conn):
+        """Leader gets an ACCEPTED/BOTH subscription for their own shared project."""
         _setup_team_with_member(conn, service)
         await service.share_project(
             conn, team_name="t", by_device="DEV-L",
             git_identity="owner/repo",
         )
-        # Leader (j.m) should not have a subscription
+        # Leader (j.m) should have an ACCEPTED subscription with direction=BOTH
         leader_subs = service.subs.list_for_member(conn, "j.m")
-        assert len(leader_subs) == 0
+        assert len(leader_subs) == 1
+        assert leader_subs[0].status.value == "accepted"
+        assert leader_subs[0].direction.value == "both"
 
 
 class TestAcceptSubscription:

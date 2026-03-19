@@ -341,7 +341,7 @@ class ReconciliationService:
         suffixes = [p.folder_suffix for p in projects]
         tags = [m.member_tag for m in members]
 
-        await self.folders.cleanup_team_folders(suffixes, tags, team.name)
+        await self.folders.cleanup_team_folders(suffixes, tags, team.name, conn=conn)
 
         # Unpair devices not shared with other teams
         for member in members:
