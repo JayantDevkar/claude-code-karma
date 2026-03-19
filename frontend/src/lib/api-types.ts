@@ -1821,8 +1821,16 @@ export interface SyncTeamProject {
 	teams?: string[];
 }
 
-/** Per-project sync status — v3 alias kept for compat */
-export type SyncProjectStatus = SyncTeamProject;
+/** Per-project sync status with active session tracking */
+export interface SyncProjectStatus extends SyncTeamProject {
+	active_count?: number;
+	subscription_counts?: {
+		offered: number;
+		accepted: number;
+		paused: number;
+		declined: number;
+	};
+}
 
 export interface SyncTeamMember {
 	member_tag: string;
