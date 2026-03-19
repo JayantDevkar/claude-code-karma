@@ -63,6 +63,7 @@ def mock_folders():
     m = MagicMock()
     m.set_folder_devices = AsyncMock()
     m.cleanup_team_folders = AsyncMock()
+    m.ensure_outbox_folder = AsyncMock()
     return m
 
 

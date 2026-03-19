@@ -321,6 +321,18 @@ class ReconciliationService:
 
             accepted = self.subs.list_accepted_for_suffix(conn, project.folder_suffix)
 
+            # Ensure outbox folders exist for members with send|both subs
+            # in THIS team (recovery from accidental deletion)
+            for sub in accepted:
+                if sub.team_name != team.name:
+                    continue
+                if sub.direction in (SyncDirection.SEND, SyncDirection.BOTH):
+                    member = self.members.get(conn, sub.team_name, sub.member_tag)
+                    if member and member.is_active:
+                        await self.folders.ensure_outbox_folder(
+                            sub.member_tag, project.folder_suffix,
+                        )
+
             # Compute desired device set: members with send|both direction
             desired: set[str] = set()
             for sub in accepted:
