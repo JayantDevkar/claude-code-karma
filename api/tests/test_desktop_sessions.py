@@ -53,9 +53,7 @@ class TestGetDesktopSessionsDir:
             from services.desktop_sessions import _get_desktop_sessions_dir
 
             result = _get_desktop_sessions_dir()
-            assert result == (
-                tmp_path / "AppData" / "Roaming" / "Claude" / "claude-code-sessions"
-            )
+            assert result == (tmp_path / "AppData" / "Roaming" / "Claude" / "claude-code-sessions")
 
     def test_linux_path_default(self, tmp_path: Path):
         with (
