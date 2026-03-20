@@ -186,6 +186,15 @@ class SessionTitleCache:
             # Persist to disk
             self._save_to_disk(cache_path, data)
 
+            # Also write to pending-titles file so JSONL build can find it
+            # (covers the case where SQLite is not enabled)
+            try:
+                pending_dir = settings.karma_base / "session-titles"
+                pending_dir.mkdir(parents=True, exist_ok=True)
+                (pending_dir / f"{uuid}.txt").write_text(title, encoding="utf-8")
+            except OSError:
+                pass
+
     # -------------------------------------------------------------------------
     # Staleness detection
     # -------------------------------------------------------------------------
@@ -452,6 +461,33 @@ class SessionTitleCache:
             )
             return None
 
+    @staticmethod
+    def _load_pending_titles() -> Dict[str, str]:
+        """
+        Load titles saved locally by the hook when the API was unavailable.
+
+        Reads ~/.claude_karma/session-titles/{uuid}.txt files written by the
+        session_title_generator hook as a fallback when the API is offline.
+
+        Returns:
+            Dict mapping session UUID to title string.
+        """
+        pending: Dict[str, str] = {}
+        pending_dir = settings.karma_base / "session-titles"
+        if not pending_dir.is_dir():
+            return pending
+
+        for title_file in pending_dir.glob("*.txt"):
+            uuid = title_file.stem
+            try:
+                title = title_file.read_text(encoding="utf-8").strip()
+                if title:
+                    pending[uuid] = title
+            except OSError:
+                pass
+
+        return pending
+
     def _build_from_jsonl(self, encoded_name: str) -> Dict[str, TitleEntry]:
         """
         Build title cache by scanning all session JSONL files (slow fallback).
@@ -468,6 +504,9 @@ class SessionTitleCache:
             for entry in index.entries:
                 if entry.summary:
                     index_summaries[entry.session_id] = entry.summary
+
+        # Load titles saved locally by the hook when API was unavailable
+        pending_titles = self._load_pending_titles()
 
         data: Dict[str, TitleEntry] = {}
 
@@ -493,6 +532,11 @@ class SessionTitleCache:
                 fallback = index_summaries.get(uuid)
                 if fallback:
                     titles = [fallback]
+
+            if not titles:
+                pending = pending_titles.get(uuid)
+                if pending:
+                    titles = [pending]
 
             data[uuid] = TitleEntry(titles=titles, slug=slug, mtime=mtime_ms)
 

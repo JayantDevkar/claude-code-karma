@@ -69,6 +69,25 @@ ruff check models/ tests/ routers/
 ruff format models/ tests/ routers/
 ```
 
+### CLI (karma)
+
+```bash
+cd api
+pip install -e ".[dev]"    # Registers `karma` command globally
+
+# Search sessions
+karma search --branch 1610
+karma search --date 2026-03-15
+karma search --keyword "refactor"
+karma search --skill ralph-loop
+karma search --branch 1610 --for-claude    # Structured markdown for Claude Code
+
+# Get session details
+karma sessions get <uuid>                   # Metadata table
+karma sessions get <uuid> --for-claude      # Structured markdown
+karma sessions get <uuid> --content         # Include conversation content
+```
+
 ### Frontend (SvelteKit/Svelte 5)
 
 ```bash

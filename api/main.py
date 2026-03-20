@@ -93,6 +93,35 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning(f"SQLite indexing failed to start (non-critical): {e}")
 
+    # Process title-retry queue in background (non-blocking)
+    try:
+        import threading
+
+        def _process_title_retries():
+            from routers.sessions import retry_pending_titles
+            try:
+                result = retry_pending_titles()
+                import json as _json
+                body = _json.loads(result.body)
+                if body.get("processed", 0) > 0:
+                    logger.info(
+                        "Title retry on startup: %d processed, %d failed, %d skipped",
+                        body["processed"],
+                        body["failed"],
+                        body["skipped"],
+                    )
+            except Exception as exc:
+                logger.debug("Title retry on startup failed (non-critical): %s", exc)
+
+        retry_thread = threading.Thread(
+            target=_process_title_retries,
+            name="title-retry",
+            daemon=True,
+        )
+        retry_thread.start()
+    except Exception as exc:
+        logger.debug("Could not start title retry thread: %s", exc)
+
     # Start live session reconciler
     reconciler_task = None
     if settings.reconciler_enabled:

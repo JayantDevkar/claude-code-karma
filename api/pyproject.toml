@@ -2,8 +2,11 @@
 requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
+[project.scripts]
+karma = "cli.main:cli"
+
 [tool.setuptools.packages.find]
-include = ["models*"]
+include = ["models*", "cli*"]
 
 [project]
 name = "claude-code-models"
@@ -15,6 +18,8 @@ requires-python = ">=3.9"
 dependencies = [
     "pydantic>=2.0",
     "pydantic-settings>=2.0.0",
+    "click>=8.0",
+    "tabulate>=0.9",
 ]
 
 [project.optional-dependencies]
