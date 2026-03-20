@@ -56,3 +56,4 @@ coverage/
 # yarn.lock
 .worktrees/
 cli/claude_karma_cli.egg-info/
+git-radio/
