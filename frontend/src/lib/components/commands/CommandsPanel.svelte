@@ -1,19 +1,15 @@
 <script lang="ts">
-	import { TerminalSquare, Zap, Loader2, Copy, Check } from 'lucide-svelte';
-	import { marked } from 'marked';
-	import DOMPurify from 'isomorphic-dompurify';
+	import { TerminalSquare, Zap } from 'lucide-svelte';
 	import type { CommandUsage } from '$lib/api-types';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
-	import Modal from '$lib/components/ui/Modal.svelte';
 	import { cleanSkillName, getCommandColorVars, getCommandCategoryColorVars, getCommandCategoryLabel } from '$lib/utils';
-	import { API_BASE } from '$lib/config';
 
 	interface Props {
 		commands: CommandUsage[];
 		projectEncodedName?: string;
 	}
 
-	let { commands, projectEncodedName }: Props = $props();
+	let { commands }: Props = $props();
 
 	// Deduplicate commands by name (same command can appear multiple times with different invocation_source)
 	let sortedCommands = $derived.by(() => {
@@ -29,51 +25,6 @@
 		return [...merged.values()].sort((a, b) => b.count - a.count);
 	});
 
-	// Modal state
-	let modalOpen = $state(false);
-	let modalTitle = $state('');
-	let modalContent = $state('');
-	let modalLoading = $state(false);
-	let modalError = $state<string | null>(null);
-	let copied = $state(false);
-
-	let renderedContent = $state('');
-
-	// Strip YAML frontmatter and leading h1 that duplicates the modal title
-	function stripFrontmatterAndTitle(raw: string, commandName: string): string {
-		let text = raw;
-		// Remove YAML frontmatter
-		if (text.startsWith('---')) {
-			const end = text.indexOf('---', 3);
-			if (end !== -1) {
-				text = text.slice(end + 3).trimStart();
-			}
-		}
-		// Remove leading h1 if it matches the command name
-		const h1Match = text.match(/^#\s+(.+)\n*/);
-		if (h1Match) {
-			const h1Text = h1Match[1].trim().replace(/^\//, '');
-			if (h1Text === commandName || h1Text === `/${commandName}`) {
-				text = text.slice(h1Match[0].length);
-			}
-		}
-		return text;
-	}
-
-	$effect(() => {
-		if (!modalContent) {
-			renderedContent = '';
-			return;
-		}
-		const cleaned = stripFrontmatterAndTitle(modalContent, modalTitle.replace(/^\//, ''));
-		const parsed = marked.parse(cleaned);
-		if (parsed instanceof Promise) {
-			parsed.then((html) => (renderedContent = DOMPurify.sanitize(html)));
-		} else {
-			renderedContent = DOMPurify.sanitize(parsed);
-		}
-	});
-
 	function isPluginCommand(command: CommandUsage): boolean {
 		if (command.category) {
 			return command.category === 'plugin_skill' || command.category === 'plugin_command';
@@ -86,49 +37,6 @@
 			return command.category === 'builtin_command';
 		}
 		return command.source === 'builtin' || command.source === 'unknown';
-	}
-
-	async function openCommand(command: CommandUsage) {
-		if (isBuiltinCommand(command)) return;
-		const displayName = isPluginCommand(command) ? cleanSkillName(command.name, true) : command.name;
-		modalTitle = `/${displayName}`;
-		modalContent = '';
-		modalError = null;
-		modalLoading = true;
-		modalOpen = true;
-
-		try {
-			let url: string;
-			if (isPluginCommand(command)) {
-				url = `${API_BASE}/skills/info/${encodeURIComponent(command.name)}`;
-			} else {
-				const base = `${API_BASE}/commands/info/${encodeURIComponent(command.name)}`;
-				url = projectEncodedName
-					? `${base}?project=${encodeURIComponent(projectEncodedName)}`
-					: base;
-			}
-
-			const res = await fetch(url);
-			if (!res.ok) {
-				modalError =
-					res.status === 404 ? 'Command file not found' : 'Failed to fetch command';
-				return;
-			}
-			const data = await res.json();
-			modalContent = data.content || '';
-		} catch (e: any) {
-			modalError = e.message;
-		} finally {
-			modalLoading = false;
-		}
-	}
-
-	function copyContent() {
-		if (modalContent) {
-			navigator.clipboard.writeText(modalContent);
-			copied = true;
-			setTimeout(() => (copied = false), 2000);
-		}
 	}
 
 	function getCommandColors(command: CommandUsage): { color: string; subtle: string } {
@@ -172,10 +80,9 @@
 				{@const Icon = isPluginCommand(command) ? Zap : TerminalSquare}
 				{@const isClickable = !isBuiltinCommand(command)}
 
-				<button
-					onclick={() => openCommand(command)}
-					disabled={!isClickable}
-					class="group flex items-start gap-4 p-4 bg-[var(--bg-base)] border border-[var(--border)] rounded-xl transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2 text-left {isClickable
+				<a
+					href="/commands/{encodeURIComponent(command.name)}"
+					class="group flex items-start gap-4 p-4 bg-[var(--bg-base)] border border-[var(--border)] rounded-xl transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2 text-left no-underline {isClickable
 						? 'cursor-pointer hover:border-[var(--accent)]/50 hover:shadow-sm'
 						: 'cursor-default opacity-75'}"
 				>
@@ -216,7 +123,7 @@
 					>
 						{command.count}x
 					</div>
-				</button>
+				</a>
 			{/each}
 		</div>
 	{:else}
@@ -227,56 +134,3 @@
 		/>
 	{/if}
 </div>
-
-<!-- Command content modal -->
-<Modal bind:open={modalOpen} title={modalTitle} maxWidth="xl">
-	{#snippet children()}
-		{#if modalLoading}
-			<div class="flex items-center justify-center gap-2 py-12 text-[var(--text-muted)]">
-				<Loader2 size={16} class="animate-spin" />
-				<span class="text-sm">Loading command content...</span>
-			</div>
-		{:else if modalError}
-			<div class="py-8 text-center text-sm text-[var(--text-muted)]">
-				{modalError}
-			</div>
-		{:else}
-			<div class="markdown-preview max-h-[70vh] overflow-y-auto pr-2 custom-scrollbar">
-				{@html renderedContent}
-			</div>
-		{/if}
-	{/snippet}
-	{#snippet footer()}
-		<button
-			onclick={copyContent}
-			class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-muted)] transition-colors {copied
-				? 'text-green-500'
-				: ''}"
-		>
-			{#if copied}
-				<Check size={14} />
-				<span>Copied!</span>
-			{:else}
-				<Copy size={14} />
-				<span>Copy</span>
-			{/if}
-		</button>
-	{/snippet}
-</Modal>
-
-<style>
-	.custom-scrollbar::-webkit-scrollbar {
-		width: 6px;
-	}
-	.custom-scrollbar::-webkit-scrollbar-track {
-		background: var(--bg-subtle);
-		border-radius: 3px;
-	}
-	.custom-scrollbar::-webkit-scrollbar-thumb {
-		background: var(--border);
-		border-radius: 3px;
-	}
-	.custom-scrollbar::-webkit-scrollbar-thumb:hover {
-		background: var(--text-muted);
-	}
-</style>
