@@ -23,7 +23,7 @@
 		ArrowDownUp,
 		Clock
 	} from 'lucide-svelte';
-	import { getTeamMemberHexColor, formatBytes, formatRelativeTime, formatDate } from '$lib/utils';
+	import { getTeamMemberHexColor, formatRelativeTime } from '$lib/utils';
 
 	let { data } = $props();
 
@@ -36,15 +36,10 @@
 	let hexColor = $derived(getTeamMemberHexColor(displayName));
 	let profile = $derived(data.profile);
 
-	// Inline stats
-	let lastActiveRelative = $derived(
-		profile?.stats.last_active
-			? formatRelativeTime(profile.stats.last_active.replace(' ', 'T'))
-			: null
-	);
-	let lastActiveFormatted = $derived(
-		profile?.stats.last_active
-			? formatDate(profile.stats.last_active.replace(' ', 'T'))
+	// Last packaged relative time (for self sync health)
+	let lastPackagedRelative = $derived(
+		profile?.last_packaged_at
+			? formatRelativeTime(profile.last_packaged_at.replace(' ', 'T'))
 			: null
 	);
 
@@ -52,14 +47,31 @@
 	let metadataItems = $derived.by(() => {
 		if (!profile) return [];
 		const items: { icon?: typeof Monitor; text: string; class?: string }[] = [
-			{ icon: Monitor, text: `${profile.device_id.slice(0, 8)}...` },
-			{
-				icon: ArrowDownUp,
-				text: `${formatBytes(profile.in_bytes_total)} in / ${formatBytes(profile.out_bytes_total)} out`
-			}
+			{ icon: Contact, text: profile.member_tag },
+			{ icon: Monitor, text: `Machine: ${profile.machine_tag}` },
+			{ icon: Users, text: `${profile.teams.length} team${profile.teams.length === 1 ? '' : 's'}` }
 		];
-		if (lastActiveRelative) {
-			items.push({ icon: Clock, text: `Active ${lastActiveRelative}` });
+		if (profile.is_you) {
+			// Unsynced count
+			if (profile.unsynced_count !== null) {
+				if (profile.unsynced_count > 0) {
+					items.push({
+						icon: AlertTriangle,
+						text: `${profile.unsynced_count} unsynced`,
+						class: 'text-[var(--warning)]'
+					});
+				} else {
+					items.push({ text: 'All synced', class: 'text-[var(--success)]' });
+				}
+			}
+			// Sync direction
+			if (profile.sync_direction !== null) {
+				items.push({ icon: ArrowDownUp, text: `Direction: ${profile.sync_direction}` });
+			}
+			// Last synced
+			if (lastPackagedRelative) {
+				items.push({ icon: Clock, text: `Last synced: ${lastPackagedRelative}` });
+			}
 		}
 		return items;
 	});
@@ -105,7 +117,7 @@
 	breadcrumbs={[
 		{ label: 'Dashboard', href: '/' },
 		{ label: 'Members', href: '/members' },
-		{ label: displayName }
+		{ label: profile?.user_id ?? data.memberTag, tooltip: profile?.member_tag }
 	]}
 	metadata={metadataItems}
 >
