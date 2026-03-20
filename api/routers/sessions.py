@@ -7,7 +7,9 @@ Phase 3: HTTP caching with conditional request support.
 import heapq
 import json
 import logging
+import os
 import sqlite3
+import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -1768,3 +1770,144 @@ def set_session_title(uuid: str, request: SetTitleRequest):
         content={"status": "ok", "uuid": uuid, "title": title},
         status_code=200,
     )
+
+
+@router.post("/retry-titles")
+def retry_pending_titles():
+    """
+    Process the title-retry queue, regenerating titles for sessions that
+    previously failed due to usage/rate limits or timeouts.
+
+    Reads ~/.claude_karma/title-retry/{uuid}.json files written by the
+    session_title_generator hook, attempts Haiku generation for each,
+    and removes the file on success.
+
+    Returns a summary of processed sessions.
+    """
+    from config import settings as app_settings
+
+    retry_dir = app_settings.karma_base / "title-retry"
+    if not retry_dir.is_dir():
+        return JSONResponse(content={"processed": 0, "failed": 0, "skipped": 0})
+
+    retry_files = list(retry_dir.glob("*.json"))
+    processed = 0
+    failed = 0
+    skipped = 0
+
+    for retry_file in retry_files:
+        try:
+            payload = json.loads(retry_file.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            skipped += 1
+            continue
+
+        session_id = payload.get("session_id", "")
+        initial_prompt = payload.get("initial_prompt", "")
+        first_response = payload.get("first_response")
+
+        if not session_id or not initial_prompt:
+            skipped += 1
+            retry_file.unlink(missing_ok=True)
+            continue
+
+        # Skip sessions that already have a title
+        existing = title_cache.get_titles(
+            _resolve_encoded_name(session_id), session_id
+        )
+        if existing:
+            skipped += 1
+            retry_file.unlink(missing_ok=True)
+            continue
+
+        # Attempt Haiku title generation
+        parts = [f"User asked: {initial_prompt}"]
+        if first_response:
+            parts.append(f"Assistant did: {first_response}")
+        context = "\n".join(parts)
+        prompt = (
+            "Generate a concise 5-10 word title for this coding session.\n"
+            "The title should describe what was accomplished or attempted.\n"
+            "Return ONLY the title, no quotes, no explanation.\n\n"
+            f"{context}\n\nTitle:"
+        )
+
+        try:
+            env = os.environ.copy()
+            env.pop("CLAUDECODE", None)
+            result = subprocess.run(
+                [
+                    "claude", "-p", prompt,
+                    "--model", "haiku",
+                    "--no-session-persistence",
+                    "--output-format", "text",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                env=env,
+            )
+
+            if result.returncode == 0 and result.stdout.strip():
+                title_text = result.stdout.strip().strip("\"'")
+                words = title_text.split()
+                if len(words) > 10:
+                    title_text = " ".join(words[:10])
+
+                # Store the title
+                enc = _resolve_encoded_name(session_id)
+                if enc:
+                    title_cache.set_title(enc, session_id, title_text)
+                    _persist_title_sqlite(session_id, title_text)
+
+                retry_file.unlink(missing_ok=True)
+                processed += 1
+            else:
+                # Still rate-limited or failed — leave file for next retry
+                failed += 1
+
+        except subprocess.TimeoutExpired:
+            failed += 1
+        except Exception as exc:
+            logger.warning("Error retrying title for %s: %s", session_id, exc)
+            failed += 1
+
+    return JSONResponse(
+        content={"processed": processed, "failed": failed, "skipped": skipped}
+    )
+
+
+def _resolve_encoded_name(uuid: str) -> Optional[str]:
+    """Resolve the encoded project name for a session UUID."""
+    result = find_session_with_project(uuid)
+    return result.project_encoded_name if result else None
+
+
+def _persist_title_sqlite(uuid: str, title: str) -> None:
+    """Update session_titles in SQLite for a single session."""
+    from config import settings as app_settings
+
+    if not app_settings.use_sqlite:
+        return
+    try:
+        from db.connection import get_writer_db
+
+        conn = get_writer_db()
+        row = conn.execute(
+            "SELECT session_titles FROM sessions WHERE uuid = ?", (uuid,)
+        ).fetchone()
+        if row:
+            existing: list = []
+            if row["session_titles"]:
+                try:
+                    existing = json.loads(row["session_titles"])
+                except json.JSONDecodeError:
+                    pass
+            if title not in existing:
+                conn.execute(
+                    "UPDATE sessions SET session_titles = ? WHERE uuid = ?",
+                    (json.dumps([title] + existing), uuid),
+                )
+                conn.commit()
+    except Exception as exc:
+        logger.warning("Failed to update SQLite title for %s: %s", uuid, exc)

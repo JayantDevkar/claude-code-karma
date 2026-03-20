@@ -95,6 +95,9 @@ def main():
 
     if title:
         post_title(session_id, title)
+    elif source in ("rate_limited", "timeout"):
+        # Enqueue for retry so the API can regenerate when limits reset
+        enqueue_title_retry(session_id, transcript_path, initial_prompt, first_response, cwd)
 
 
 def extract_session_context(transcript_path: str) -> Tuple[Optional[str], Optional[str]]:
@@ -216,7 +219,7 @@ Title:"""
             ["claude", "-p", prompt, "--model", "haiku", "--no-session-persistence", "--output-format", "text"],
             capture_output=True,
             text=True,
-            timeout=12,
+            timeout=30,
             env=env,
         )
 
@@ -228,7 +231,16 @@ Title:"""
                 title = " ".join(words[:TITLE_MAX_WORDS])
             return title, "haiku"
 
-    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        # Non-zero exit — check if it was a usage/rate limit error
+        stderr_lower = (result.stderr or "").lower()
+        if _is_rate_limit_error(stderr_lower):
+            return None, "rate_limited"
+
+    except subprocess.TimeoutExpired:
+        # Timeout likely means the system is under heavy load (e.g. active session)
+        # Return None so the caller can queue for retry rather than storing a bad title
+        return None, "timeout"
+    except (FileNotFoundError, OSError):
         pass
 
     # 3. Fallback: truncated initial prompt
@@ -236,6 +248,64 @@ Title:"""
     if len(initial_prompt) > 60:
         fallback += "..."
     return fallback, "fallback"
+
+
+_RATE_LIMIT_PHRASES = (
+    "usage limit",
+    "rate limit",
+    "too many requests",
+    "quota exceeded",
+    "overloaded",
+    "context window",
+)
+
+
+def _is_rate_limit_error(stderr: str) -> bool:
+    stderr_lower = stderr.lower()
+    return any(phrase in stderr_lower for phrase in _RATE_LIMIT_PHRASES)
+
+
+def enqueue_title_retry(
+    session_id: str,
+    transcript_path: str,
+    initial_prompt: str,
+    first_response: Optional[str],
+    cwd: str,
+) -> None:
+    """
+    Save session context to the retry queue so the API can regenerate the
+    title later (e.g. after a usage limit resets or system load drops).
+
+    Written to ~/.claude_karma/title-retry/{uuid}.json.
+    """
+    try:
+        retry_dir = KARMA_BASE / "title-retry"
+        retry_dir.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "session_id": session_id,
+            "transcript_path": transcript_path,
+            "initial_prompt": initial_prompt,
+            "first_response": first_response,
+            "cwd": cwd,
+        }
+        (retry_dir / f"{session_id}.json").write_text(
+            json.dumps(payload, ensure_ascii=False), encoding="utf-8"
+        )
+    except OSError:
+        pass
+
+
+KARMA_BASE = Path(os.path.expanduser("~/.claude_karma"))
+PENDING_TITLES_DIR = KARMA_BASE / "session-titles"
+
+
+def save_title_locally(session_id: str, title: str) -> None:
+    """Save title to a local file as fallback when API is unavailable."""
+    try:
+        PENDING_TITLES_DIR.mkdir(parents=True, exist_ok=True)
+        (PENDING_TITLES_DIR / f"{session_id}.txt").write_text(title, encoding="utf-8")
+    except OSError:
+        pass
 
 
 def post_title(session_id: str, title: str) -> bool:
@@ -256,6 +326,8 @@ def post_title(session_id: str, title: str) -> bool:
         urllib.request.urlopen(req, timeout=5)
         return True
     except (urllib.error.URLError, OSError):
+        # API unavailable — persist locally so the cache can pick it up later
+        save_title_locally(session_id, title)
         return False
 
 
