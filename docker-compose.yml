@@ -1,0 +1,38 @@
+services:
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    depends_on:
+      api:
+        condition: service_healthy
+      frontend:
+        condition: service_started
+    restart: unless-stopped
+
+  api:
+    image: ghcr.io/jayantdevkar/claude-code-karma-api:latest
+    build: ./api
+    volumes:
+      - ~/.claude:/root/.claude:ro
+      - karma-data:/root/.claude_karma
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    restart: unless-stopped
+
+  frontend:
+    image: ghcr.io/jayantdevkar/claude-code-karma-frontend:latest
+    build: ./frontend
+    environment:
+      - INTERNAL_API_URL=http://api:8000
+      - ORIGIN=http://localhost:8080
+    restart: unless-stopped
+
+volumes:
+  karma-data:

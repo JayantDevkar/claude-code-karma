@@ -199,8 +199,34 @@ Track which skills are invoked across sessions, grouped by plugin or shown indiv
 
 ## Quick Start
 
+### Docker (recommended)
+
 ```bash
-# Clone the repository
+git clone https://github.com/JayantDevkar/claude-code-karma.git
+cd claude-code-karma
+
+# Start all services (API + Frontend + Caddy reverse proxy)
+make up
+
+# Open the dashboard
+open http://localhost:8080
+```
+
+Other make targets:
+
+| Command | Description |
+|---------|-------------|
+| `make up` | Production mode (read-only `~/.claude` mount) |
+| `make dev` | Dev mode with frontend HMR |
+| `make rw` | Read-write `~/.claude` mount |
+| `make health` | Check API health |
+| `make logs` | Follow container logs |
+| `make down` | Stop all containers |
+| `make clean` | Stop and remove volumes |
+
+### Local (without Docker)
+
+```bash
 git clone https://github.com/JayantDevkar/claude-code-karma.git
 cd claude-code-karma
 
