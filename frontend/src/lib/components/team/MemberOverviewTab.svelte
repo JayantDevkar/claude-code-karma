@@ -10,7 +10,7 @@
 		CategoryScale,
 		Tooltip
 	} from 'chart.js';
-	import { FolderGit2, ArrowUp, ArrowDown, Clock, ChevronRight } from 'lucide-svelte';
+	import { FolderGit2, ArrowUp, ArrowDown, Clock, ChevronRight, RefreshCw, Loader2, CheckCircle2 } from 'lucide-svelte';
 	import type { MemberProfile } from '$lib/api-types';
 	import {
 		registerChartDefaults,
@@ -21,6 +21,8 @@
 	} from '$lib/components/charts/chartConfig';
 	import { formatRelativeTime } from '$lib/utils';
 	import { formatSyncEvent } from '$lib/utils/sync-events';
+	import { API_BASE } from '$lib/config';
+	import { invalidateAll } from '$app/navigation';
 
 	Chart.register(LineController, LineElement, PointElement, Filler, LinearScale, CategoryScale, Tooltip);
 
@@ -29,6 +31,18 @@
 	}
 
 	let { profile }: Props = $props();
+
+	let syncing = $state(false);
+
+	async function syncNow() {
+		syncing = true;
+		try {
+			await fetch(`${API_BASE}/sync/package`, { method: 'POST' }).catch(() => null);
+			await invalidateAll();
+		} finally {
+			syncing = false;
+		}
+	}
 
 	let canvas = $state<HTMLCanvasElement | null>(null);
 	let chart: Chart | null = null;
@@ -192,6 +206,95 @@
 </script>
 
 <div class="space-y-6">
+
+	<!-- ── 0. Stats Grid ────────────────────────────────────────────────── -->
+	<div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+		<div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-subtle)] p-4 text-center">
+			<p class="text-lg font-semibold text-[var(--text-primary)]">{profile.stats.total_sessions}</p>
+			<p class="text-[11px] text-[var(--text-muted)] mt-1">Total Sessions</p>
+		</div>
+		<div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-subtle)] p-4 text-center">
+			<p class="text-lg font-semibold text-[var(--text-primary)]">{profile.stats.sessions_sent}</p>
+			<p class="text-[11px] text-[var(--text-muted)] mt-1">Sent</p>
+		</div>
+		<div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-subtle)] p-4 text-center">
+			<p class="text-lg font-semibold text-[var(--text-primary)]">{profile.stats.sessions_received}</p>
+			<p class="text-[11px] text-[var(--text-muted)] mt-1">Received</p>
+		</div>
+		{#if profile.is_you}
+			<div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-subtle)] p-4 text-center">
+				<p class="text-lg font-semibold {(profile.unsynced_count ?? 0) > 0 ? 'text-[var(--warning)]' : 'text-[var(--text-primary)]'}">
+					{profile.unsynced_count ?? 0}
+				</p>
+				<p class="text-[11px] text-[var(--text-muted)] mt-1">Unsynced</p>
+			</div>
+		{:else}
+			<div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-subtle)] p-4 text-center">
+				<p class="text-lg font-semibold text-[var(--text-primary)]">{profile.stats.total_projects}</p>
+				<p class="text-[11px] text-[var(--text-muted)] mt-1">Projects</p>
+			</div>
+		{/if}
+	</div>
+
+	<!-- ── 0b. Sync Health (self only) ──────────────────────────────────── -->
+	{#if profile.is_you && profile.project_sync && profile.project_sync.length > 0}
+		<div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-subtle)]">
+			<div class="flex items-center justify-between px-5 py-3.5 border-b border-[var(--border-subtle)]">
+				<h3 class="text-sm font-semibold text-[var(--text-primary)]">Sync Health</h3>
+				<button
+					onclick={syncNow}
+					disabled={syncing}
+					class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-[var(--radius)] bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)] transition-colors disabled:opacity-50"
+				>
+					{#if syncing}
+						<Loader2 size={12} class="animate-spin" />
+						Syncing...
+					{:else}
+						<RefreshCw size={12} />
+						Sync Now
+					{/if}
+				</button>
+			</div>
+			<div class="px-5 divide-y divide-[var(--border-subtle)]">
+				{#each profile.project_sync as ps (ps.git_identity)}
+					<div class="flex items-center gap-3 py-3">
+						<span class="text-sm text-[var(--text-primary)] flex-1 truncate">{ps.name}</span>
+						<span class="text-xs text-[var(--text-muted)]">{ps.packaged_count}/{ps.local_count} packaged</span>
+						{#if ps.gap === 0}
+							<span class="shrink-0 flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium rounded-full bg-[var(--success)]/10 text-[var(--success)] border border-[var(--success)]/20">
+								<CheckCircle2 size={10} />
+								In Sync
+							</span>
+						{:else}
+							<span class="shrink-0 px-2 py-0.5 text-[10px] font-medium rounded-full bg-[var(--warning)]/10 text-[var(--warning)] border border-[var(--warning)]/20">
+								{ps.gap} ready
+							</span>
+						{/if}
+					</div>
+				{/each}
+			</div>
+		</div>
+	{/if}
+
+	<!-- ── 0c. Sessions from {name} (remote only) ──────────────────────── -->
+	{#if !profile.is_you}
+		{@const allProjects = profile.teams.flatMap(t => t.projects)}
+		{#if allProjects.length > 0}
+			<div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-subtle)]">
+				<div class="px-5 py-3.5 border-b border-[var(--border-subtle)]">
+					<h3 class="text-sm font-semibold text-[var(--text-primary)]">Sessions from {profile.user_id}</h3>
+				</div>
+				<div class="px-5 divide-y divide-[var(--border-subtle)]">
+					{#each allProjects as proj (proj.encoded_name)}
+						<div class="flex items-center justify-between py-3">
+							<span class="text-sm text-[var(--text-primary)]">{proj.name}</span>
+							<span class="text-xs text-[var(--text-muted)]">{proj.session_count} sessions</span>
+						</div>
+					{/each}
+				</div>
+			</div>
+		{/if}
+	{/if}
 
 	<!-- ── 1. Sent vs Received Chart ──────────────────────────────────── -->
 	{#if hasChartData}
