@@ -97,7 +97,7 @@ class TestDirectoryFilterCrossPlatform:
             # Valid Unix
             ("-Users-me-repo", True),
             ("-home-user-app", True),
-            ("-", True),
+            ("-", False),  # Bare dash (root "/") rejected — Claude Code never creates it
             # Valid Windows
             ("C--Code-Tools", True),
             ("D--Projects-myapp", True),

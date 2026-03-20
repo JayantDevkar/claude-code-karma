@@ -22,22 +22,6 @@ if TYPE_CHECKING:
     from models.session import Session
 
 
-def local_timezone() -> timezone:
-    """Return the machine's current local timezone as a fixed-offset timezone.
-
-    Uses datetime.astimezone() which queries the OS timezone database,
-    correctly handling DST transitions even in long-running processes.
-    """
-    return datetime.now(timezone.utc).astimezone().tzinfo  # type: ignore[return-value]
-
-
-def utc_to_local_date(dt: datetime) -> str:
-    """Convert a UTC datetime to a local-timezone date string (YYYY-MM-DD)."""
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(local_timezone()).strftime("%Y-%m-%d")
-
-
 def is_encoded_project_dir(name: str) -> bool:
     """
     Check if a directory name looks like a Claude-encoded project path.
@@ -51,7 +35,7 @@ def is_encoded_project_dir(name: str) -> bool:
     non-path dirs like 'a--something', but Claude Code never creates such names
     in ~/.claude/projects/.
     """
-    if name.startswith("-"):
+    if name.startswith("-") and len(name) > 1:
         return True
     # Windows: single drive letter followed by -- (e.g. C--, D--)
     if re.match(r"^[A-Za-z]--", name):

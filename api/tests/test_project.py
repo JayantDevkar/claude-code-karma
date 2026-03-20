@@ -203,9 +203,9 @@ class TestIsEncodedProjectDir:
         """Unix-encoded dirs start with dash."""
         assert is_encoded_project_dir("-Users-me-repo") is True
 
-    def test_unix_root(self):
-        """Encoded root path is just a dash."""
-        assert is_encoded_project_dir("-") is True
+    def test_unix_root_rejected(self):
+        """A bare dash (filesystem root '/') is rejected — Claude Code never creates it."""
+        assert is_encoded_project_dir("-") is False
 
     def test_windows_c_drive(self):
         """Windows C: drive encoded path."""

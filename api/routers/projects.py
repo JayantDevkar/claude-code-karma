@@ -25,6 +25,12 @@ sys.path.insert(0, str(models_path))
 from http_caching import cacheable
 
 logger = logging.getLogger(__name__)
+
+
+class _FallbackToFilesystem(Exception):
+    """Sentinel exception to signal intentional fallback from SQLite to filesystem scanning."""
+
+    pass
 from models import Project, Session, SessionIndexEntry
 
 # Import analytics calculation function
@@ -518,7 +524,7 @@ def get_project(
                             len(session_files),
                         )
                         # Fall through to filesystem scan below
-                        raise Exception("Session count mismatch - falling back to filesystem")
+                        raise _FallbackToFilesystem()
 
                 _enrich_chain_titles(session_summaries)
                 return ProjectDetail(
@@ -534,6 +540,8 @@ def get_project(
                     is_nested_project=project.is_nested_project,
                     sessions=session_summaries,
                 )
+    except _FallbackToFilesystem:
+        logger.info("SQLite/filesystem mismatch, falling back to filesystem scan")
     except Exception as e:
         logger.warning("SQLite project sessions query failed, falling back: %s", e)
 
