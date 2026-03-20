@@ -175,18 +175,23 @@
 					<!-- Top row: avatar + name + status -->
 					<div class="flex items-center gap-3">
 						<!-- Avatar -->
-						<div
-							class="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold shrink-0"
-							style="background: {hexColor}; color: white; box-shadow: 0 0 0 2px {hexColor}33;"
-						>
-							{displayName.charAt(0).toUpperCase()}
-						</div>
+						<a href="/members/{member.member_tag}" class="shrink-0 group">
+							<div
+								class="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold group-hover:ring-2 group-hover:ring-[var(--accent)]/40 transition-all"
+								style="background: {hexColor}; color: white; box-shadow: 0 0 0 2px {hexColor}33;"
+							>
+								{displayName.charAt(0).toUpperCase()}
+							</div>
+						</a>
 
 						<div class="flex-1 min-w-0">
 							<div class="flex items-center gap-2">
-								<span class="text-sm font-medium text-[var(--text-primary)] truncate">
+								<a
+									href="/members/{member.member_tag}"
+									class="text-sm font-semibold text-[var(--text-primary)] hover:underline hover:text-[var(--accent)] transition-colors truncate"
+								>
 									{member.user_id}
-								</span>
+								</a>
 								{#if self}
 									<span
 										class="shrink-0 px-1.5 py-0.5 text-[10px] font-medium rounded {colors.badge}"
