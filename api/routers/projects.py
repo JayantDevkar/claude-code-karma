@@ -31,6 +31,8 @@ class _FallbackToFilesystem(Exception):
     """Sentinel exception to signal intentional fallback from SQLite to filesystem scanning."""
 
     pass
+
+
 from models import Project, Session, SessionIndexEntry
 
 # Import analytics calculation function
