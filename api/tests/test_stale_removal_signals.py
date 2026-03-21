@@ -137,14 +137,14 @@ async def test_phase_metadata_ignores_stale_removal_signal(reconciliation, meta_
     removed_dir.mkdir(parents=True)
     (team_dir / "members").mkdir(parents=True)
 
-    # Stale removal signal from March 1
+    # Stale removal signal from March 1 (well over 60s before team creation)
     (removed_dir / "alice.mac-mini.json").write_text(json.dumps({
         "member_tag": "alice.mac-mini",
         "removed_by": "bob.macbook",
         "removed_at": "2026-03-01T00:00:00+00:00",
     }))
 
-    # Team was created on March 20 (newer than removal)
+    # Team was created on March 20 (19 days newer — clearly a different incarnation)
     team = Team(name="test-team", leader_member_tag="bob.macbook", leader_device_id="DEVICE-BOB",
                 created_at=datetime(2026, 3, 20, tzinfo=timezone.utc))
 

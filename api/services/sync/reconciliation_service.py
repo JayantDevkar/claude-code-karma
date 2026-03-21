@@ -233,7 +233,11 @@ class ReconciliationService:
             try:
                 from datetime import datetime, timezone
                 removed_at = datetime.fromisoformat(removed_at_str)
-                if team.created_at and removed_at < team.created_at:
+                from datetime import timedelta
+                # Use a 60s grace period: signals within 60s of team creation
+                # are ambiguous (could be from rapid dissolve+recreate in tests).
+                # Only skip signals that are clearly from a prior incarnation.
+                if team.created_at and removed_at < (team.created_at - timedelta(seconds=60)):
                     logger.info(
                         "phase_metadata: ignoring stale removal signal for '%s' in team '%s' "
                         "(removed_at=%s < created_at=%s)",
