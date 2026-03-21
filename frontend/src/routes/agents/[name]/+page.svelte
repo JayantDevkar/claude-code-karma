@@ -799,7 +799,7 @@
 	{:else if activeTab === 'activity'}
 		{#if data.detail}
 			<!-- Activity Summary Stats -->
-			<div class="grid grid-cols-3 gap-4">
+			<div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
 				<div class="bg-[var(--bg-base)] border border-[var(--border)] rounded-xl p-5 text-center">
 					<div class="flex items-center justify-center gap-2 mb-2">
 						<Wrench size={16} style="color: {colorVars.color};" />

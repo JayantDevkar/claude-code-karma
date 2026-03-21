@@ -9,7 +9,8 @@
 		Sparkles,
 		ChevronsUpDown,
 		ChevronsDownUp,
-		ExternalLink
+		ExternalLink,
+		Download
 	} from 'lucide-svelte';
 	import { tick, onMount } from 'svelte';
 	import { navigating } from '$app/stores';
@@ -27,8 +28,14 @@
 	import SkillUsageCard from '$lib/components/skills/SkillUsageCard.svelte';
 	import SkillUsageTable from '$lib/components/skills/SkillUsageTable.svelte';
 	import UsageAnalytics from '$lib/components/charts/UsageAnalytics.svelte';
+	import MemberUsageGrid from '$lib/components/members/MemberUsageGrid.svelte';
 	import { getSkillGroupColorVars, getSkillCategoryColorVars, getSkillChartHex, cleanSkillName } from '$lib/utils';
 	import type { SkillUsage, StatItem } from '$lib/api-types';
+
+	// The API returns extra fields not in the SkillUsage type
+	interface SkillWithRemote extends SkillUsage {
+		remote_user_ids?: string[];
+	}
 
 	// Server data
 	let { data } = $props();
@@ -40,14 +47,17 @@
 	}
 
 	// View state — initialized from URL, default "By Category"
-	let activeView = $state<'groups' | 'table' | 'analytics'>(
-		(initParam('view', 'groups') as 'groups' | 'table' | 'analytics')
+	let activeView = $state<'groups' | 'table' | 'analytics' | 'members'>(
+		(initParam('view', 'groups') as 'groups' | 'table' | 'analytics' | 'members')
 	);
+
+	// Reset sub-filter when entering members view
+	$effect(() => { if (activeView === 'members') selectedFilter = 'all'; });
 
 	// Filter state — initialized from URL
 	let searchQuery = $state(initParam('search', ''));
-	let selectedFilter = $state<'all' | 'bundled' | 'plugin' | 'custom'>(
-		(initParam('filter', 'all') as 'all' | 'bundled' | 'plugin' | 'custom')
+	let selectedFilter = $state<'all' | 'bundled' | 'plugin' | 'custom' | 'inherited'>(
+		(initParam('filter', 'all') as 'all' | 'bundled' | 'plugin' | 'custom' | 'inherited')
 	);
 
 	// Sync view/filter/layout/search state to URL params via replaceState
@@ -74,14 +84,16 @@
 		{ label: 'All', value: 'all' },
 		{ label: 'Bundled', value: 'bundled' },
 		{ label: 'Plugin', value: 'plugin' },
-		{ label: 'Custom', value: 'custom' }
+		{ label: 'Custom', value: 'custom' },
+		{ label: 'Inherited', value: 'inherited' }
 	];
 
 	// View tab options
 	const viewTabs = [
 		{ label: 'By Category', value: 'groups' },
 		{ label: 'All Skills', value: 'table' },
-		{ label: 'Usage Analytics', value: 'analytics' }
+		{ label: 'Usage Analytics', value: 'analytics' },
+		{ label: 'By Member', value: 'members' }
 	];
 
 	// Compute stats for hero section
@@ -131,6 +143,8 @@
 			skills = skills.filter((s: SkillUsage) => s.category === 'plugin_skill');
 		} else if (selectedFilter === 'custom') {
 			skills = skills.filter((s: SkillUsage) => s.category === 'custom_skill');
+		} else if (selectedFilter === 'inherited') {
+			skills = skills.filter((s: SkillUsage) => s.category === 'inherited_skill');
 		}
 
 		// Filter by search query
@@ -174,6 +188,10 @@
 				groupLabel = skill.plugin;
 				groupIcon = Puzzle;
 				pluginName = skill.plugin;
+			} else if (skill.category === 'inherited_skill') {
+				groupKey = 'inherited_skill';
+				groupLabel = 'Inherited Skills';
+				groupIcon = Download;
 			} else if (skill.category === 'custom_skill') {
 				groupKey = 'custom_skill';
 				groupLabel = 'Custom Skills';
@@ -206,9 +224,9 @@
 
 		// Sort groups: bundled first, then custom, then plugins alphabetically
 		return Array.from(groups.values()).sort((a, b) => {
-			const priority: Record<string, number> = { 'bundled_skill': 0, 'custom_skill': 1 };
-			const aPriority = priority[a.key] ?? 2;
-			const bPriority = priority[b.key] ?? 2;
+			const priority: Record<string, number> = { 'bundled_skill': 0, 'custom_skill': 1, 'inherited_skill': 2 };
+			const aPriority = priority[a.key] ?? 3;
+			const bPriority = priority[b.key] ?? 3;
 			if (aPriority !== bPriority) return aPriority - bPriority;
 			return a.label.localeCompare(b.label);
 		});
@@ -327,31 +345,28 @@
 		filteredSkills.length > 0 ? Math.max(...filteredSkills.map((s: SkillUsage) => s.count)) : 100
 	);
 
-	// Build a plugin lookup from skill data for analytics filtering
-	let skillPluginMap = $derived.by(() => {
-		const map = new Map<string, boolean>();
+	// Build lookup maps from skill data for analytics filtering (O(1) per lookup)
+	let skillCategoryMap = $derived.by(() => {
+		const map = new Map<string, string>();
 		for (const skill of (data.usage || [])) {
-			map.set(skill.name, skill.is_plugin);
+			map.set(skill.name, skill.category ?? (skill.is_plugin ? 'plugin_skill' : 'custom_skill'));
 		}
 		return map;
 	});
 
 	let excludeFn = $derived.by(() => {
 		if (selectedFilter === 'all') return undefined;
-		if (selectedFilter === 'bundled') {
-			return (name: string) => {
-				const skill = (data.usage || []).find((s: SkillUsage) => s.name === name);
-				return skill?.category !== 'bundled_skill';
-			};
-		}
-		if (selectedFilter === 'plugin') {
-			return (name: string) => skillPluginMap.get(name) !== true;
-		}
-		// 'custom'
-		return (name: string) => {
-			const skill = (data.usage || []).find((s: SkillUsage) => s.name === name);
-			return skill?.category !== 'custom_skill';
+		const categoryFilter: Record<string, string> = {
+			bundled: 'bundled_skill',
+			plugin: 'plugin_skill',
+			custom: 'custom_skill',
+			inherited: 'inherited_skill'
 		};
+		const targetCategory = categoryFilter[selectedFilter];
+		if (targetCategory) {
+			return (name: string) => skillCategoryMap.get(name) !== targetCategory;
+		}
+		return undefined;
 	});
 
 	// Check if we have any skills
@@ -425,7 +440,7 @@
 						</div>
 						{#if groupIndex === 0}
 							<div class="border-t border-[var(--border)] p-4">
-								<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+								<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
 									{#each Array(6) as _}
 										<SkeletonSkillCard />
 									{/each}
@@ -477,11 +492,13 @@
 				options={viewTabs}
 				bind:value={activeView}
 			/>
-			<SegmentedControl options={filterOptions} bind:value={selectedFilter} size="sm" />
+			{#if activeView !== 'members'}
+				<SegmentedControl options={filterOptions} bind:value={selectedFilter} size="sm" />
+			{/if}
 		</div>
 
 		<!-- Search and Expand/Collapse Controls -->
-		{#if activeView !== 'analytics'}
+		{#if activeView !== 'analytics' && activeView !== 'members'}
 			<div class="flex items-center gap-3 w-full sm:w-auto">
 				<!-- Search Input -->
 				<div class="relative flex-1 sm:flex-initial">
@@ -541,7 +558,22 @@
 	</div>
 
 	<!-- Content Area -->
-	{#if activeView === 'analytics'}
+	{#if activeView === 'members'}
+		<!-- By Member View -->
+		<MemberUsageGrid
+			endpoint="/skills/usage/trend"
+			domainLabel="Skills"
+			domainIcon={Wrench}
+			items={(data.usage as SkillWithRemote[] ?? []).map((s) => ({
+				name: s.name,
+				count: s.count,
+				remote_user_ids: s.remote_user_ids
+			}))}
+			itemDisplayFn={(name) => cleanSkillName(name, name.includes(':'))}
+			itemLinkFn={(name) => `/skills/${encodeURIComponent(name)}`}
+			excludeItemFn={excludeFn}
+		/>
+	{:else if activeView === 'analytics'}
 		<!-- Usage Analytics View -->
 		<UsageAnalytics
 			endpoint="/skills/usage/trend"
@@ -640,7 +672,7 @@
 						if (a.count > 0 && b.count > 0) return b.count - a.count;
 						return a.name.localeCompare(b.name);
 					})}
-					<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 stagger-children">
+					<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 stagger-children">
 						{#each sortedSkills as skill (skill.name)}
 							<SkillUsageCard {skill} {maxUsage} />
 						{/each}

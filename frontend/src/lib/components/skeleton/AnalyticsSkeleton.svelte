@@ -3,7 +3,7 @@
 	import SkeletonText from './SkeletonText.svelte';
 </script>
 
-<div class="max-w-[1100px] mx-auto">
+<div>
 	<!-- Breadcrumb -->
 	<div class="mb-2">
 		<SkeletonText width="150px" size="xs" />

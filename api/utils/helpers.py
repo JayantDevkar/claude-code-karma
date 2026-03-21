@@ -92,6 +92,49 @@ def resolve_git_root(path: str) -> Optional[str]:
         return None
 
 
+def _strip_git_credentials(url: str) -> str:
+    """Strip embedded credentials from a git remote URL.
+
+    https://user:token@github.com/org/repo.git → https://github.com/org/repo.git
+    """
+    from urllib.parse import urlparse, urlunparse
+
+    try:
+        parsed = urlparse(url)
+        if parsed.username or parsed.password:
+            # Rebuild without credentials
+            netloc = parsed.hostname or ""
+            if parsed.port:
+                netloc += f":{parsed.port}"
+            return urlunparse(parsed._replace(netloc=netloc))
+    except Exception:
+        pass
+    return url
+
+
+def resolve_git_remote_url(path: str) -> Optional[str]:
+    """Resolve the git remote 'origin' URL for a path.
+
+    Returns the remote URL with credentials stripped
+    (e.g., 'https://github.com/user/repo.git')
+    or None if not a git repo or no origin remote.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "remote", "get-url", "origin"],
+            cwd=path,
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return _strip_git_credentials(result.stdout.strip())
+        return None
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError, PermissionError):
+        return None
+
+
 def compute_project_slug(encoded_name: str, project_path: str) -> str:
     """Compute a URL-friendly project slug: lowercased name + 4-char md5 hash."""
     name = Path(project_path).name.lower() if project_path else encoded_name.lower()
@@ -331,6 +374,10 @@ def get_initial_prompt(session: "Session", max_length: Optional[int] = None) -> 
         if msg.content:
             # Extract actual prompt from command-wrapped content
             prompt = extract_prompt_from_content(msg.content)
+
+            # Skip empty prompts (e.g., bare command invocations without args)
+            if not prompt:
+                continue
 
             if max_length is not None:
                 return prompt[:max_length]

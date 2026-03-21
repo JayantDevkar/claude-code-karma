@@ -24,6 +24,30 @@
 	import DOMPurify from 'isomorphic-dompurify';
 	import type { TimelineEvent } from '$lib/api-types';
 	import { formatDisplayPath } from '$lib/utils';
+	import { Image } from 'lucide-svelte';
+
+	/**
+	 * Detect if a string looks like base64-encoded binary data.
+	 * Returns the detected media type if it looks like an image, null otherwise.
+	 */
+	function detectBase64Image(text: string): string | null {
+		if (!text || text.length < 100) return null;
+		// Check for data URI prefix
+		const dataUriMatch = text.match(/^data:(image\/[a-z+]+);base64,/i);
+		if (dataUriMatch) return dataUriMatch[1];
+		// Check if content is predominantly base64 chars (A-Z, a-z, 0-9, +, /, =)
+		// with minimal whitespace — a strong signal of binary data
+		const sample = text.slice(0, 500).replace(/\s/g, '');
+		const base64Ratio = sample.replace(/[^A-Za-z0-9+/=]/g, '').length / sample.length;
+		if (base64Ratio > 0.95 && text.length > 500) {
+			// Heuristic: PNG starts with iVBOR, JPEG with /9j/, GIF with R0lG
+			if (text.startsWith('iVBOR')) return 'image/png';
+			if (text.startsWith('/9j/')) return 'image/jpeg';
+			if (text.startsWith('R0lG')) return 'image/gif';
+			return 'application/octet-stream';
+		}
+		return null;
+	}
 
 	interface Props {
 		event: TimelineEvent;
@@ -1257,8 +1281,9 @@
 				? resultContent
 				: JSON.stringify(resultContent, null, 2)}
 		{@const isError = resultStatus === 'error'}
+		{@const detectedImageType = detectBase64Image(content)}
 		{@const maxLength = 1000}
-		{@const truncated = content.length > maxLength}
+		{@const truncated = !detectedImageType && content.length > maxLength}
 		<div>
 			<div class="flex items-center gap-2 mb-2">
 				<h4
@@ -1281,6 +1306,35 @@
 					{/if}
 				</span>
 			</div>
+			{#if detectedImageType && detectedImageType.startsWith('image/')}
+				<!-- Render base64 image instead of raw text -->
+				<div
+					class="relative rounded-[var(--radius-md)] border p-3 bg-[var(--bg-muted)] border-[var(--border)]"
+				>
+					<div class="flex items-center gap-2 mb-2">
+						<Image size={14} class="text-[var(--text-muted)]" />
+						<span class="text-xs text-[var(--text-muted)]">
+							Image result ({detectedImageType}, {Math.round(content.length * 0.75 / 1024)}KB)
+						</span>
+					</div>
+					<img
+						src="data:{detectedImageType};base64,{content}"
+						class="max-h-64 w-auto rounded-md object-contain"
+						alt="Tool result image"
+					/>
+				</div>
+			{:else if detectedImageType}
+				<!-- Binary data that isn't an image -->
+				<div
+					class="relative rounded-[var(--radius-md)] border p-3 bg-[var(--bg-muted)] border-[var(--border)]"
+				>
+					<div class="flex items-center gap-2">
+						<span class="text-xs text-[var(--text-muted)]">
+							Binary content ({Math.round(content.length * 0.75 / 1024)}KB)
+						</span>
+					</div>
+				</div>
+			{:else}
 			<div
 				class="relative rounded-[var(--radius-md)] border p-3
 				{isError
@@ -1315,6 +1369,7 @@
 					{/if}
 				</button>
 			</div>
+			{/if}
 		</div>
 	{/if}
 </div>

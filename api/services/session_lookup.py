@@ -6,6 +6,7 @@ from sessions.py, subagent_sessions.py, and live_sessions.py into a single
 service with consistent error handling and return types.
 """
 
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -13,6 +14,8 @@ from typing import Optional
 from config import settings
 from models import Agent, Session
 from utils import is_encoded_project_dir
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -30,6 +33,16 @@ class SubagentLookupResult:
     agent: Agent
     parent_session: Session
     project_encoded_name: str
+    remote_user_id: Optional[str] = None
+
+
+@dataclass
+class _ResolvedPath:
+    """Resolved JSONL path with source metadata."""
+
+    jsonl_path: Path
+    project_encoded_name: str
+    remote_user_id: Optional[str] = None
 
 
 def _is_valid_session_filename(path: Path) -> bool:
@@ -38,48 +51,143 @@ def _is_valid_session_filename(path: Path) -> bool:
 
     Valid session files have UUID-like stems with dashes and alphanumeric characters.
     This filters out non-session files like sessions-index.json.
-
-    Args:
-        path: Path to check
-
-    Returns:
-        True if the filename looks like a valid session file
     """
     stem = path.stem
-    # Must contain dashes (UUID format)
     if "-" not in stem:
         return False
-    # After removing dashes/underscores, should be alphanumeric
     if not stem.replace("-", "").replace("_", "").isalnum():
         return False
     return True
+
+
+def _resolve_from_db(uuid: str) -> Optional[_ResolvedPath]:
+    """
+    Resolve a session's JSONL path using the DB.
+
+    The DB stores `source` ('local' or 'remote') and `remote_user_id`,
+    so we can construct the correct path directly without scanning.
+    """
+    try:
+        from db.connection import sqlite_read
+
+        with sqlite_read() as conn:
+            if conn is None:
+                return None
+            row = conn.execute(
+                "SELECT project_encoded_name, source_encoded_name, "
+                "source, remote_user_id FROM sessions WHERE uuid = ?",
+                (uuid,),
+            ).fetchone()
+            if not row:
+                return None
+
+            project_enc = row["project_encoded_name"]
+            source = row["source"] or "local"
+
+            if source == "remote":
+                remote_uid = row["remote_user_id"]
+                if not remote_uid:
+                    logger.warning(
+                        "Session %s has source=remote but no remote_user_id", uuid
+                    )
+                    return None
+                jsonl_path = (
+                    settings.karma_base
+                    / "remote-sessions"
+                    / remote_uid
+                    / project_enc
+                    / "sessions"
+                    / f"{uuid}.jsonl"
+                )
+                if jsonl_path.exists():
+                    return _ResolvedPath(jsonl_path, project_enc, remote_uid)
+            else:
+                source_enc = row["source_encoded_name"] or project_enc
+                jsonl_path = settings.projects_dir / source_enc / f"{uuid}.jsonl"
+                if jsonl_path.exists():
+                    return _ResolvedPath(jsonl_path, project_enc)
+    except Exception:
+        logger.debug(
+            "DB path resolution failed for session %s", uuid, exc_info=True
+        )
+
+    return None
+
+
+def _resolve_from_filesystem(
+    uuid: str, encoded_name: Optional[str] = None
+) -> Optional[_ResolvedPath]:
+    """
+    Fallback: find a session JSONL by scanning the filesystem.
+
+    Used when DB is unavailable or session isn't indexed yet.
+    Searches the specific project dir first (with worktree fallback),
+    then all project dirs, then remote-sessions.
+    """
+    projects_dir = settings.projects_dir
+
+    # If we have a hint, check that project dir first (+ worktrees)
+    if encoded_name:
+        path = _find_session_jsonl(projects_dir, encoded_name, uuid)
+        if path:
+            return _ResolvedPath(path, encoded_name)
+
+    # Scan all project dirs
+    if projects_dir.exists():
+        for encoded_dir in projects_dir.iterdir():
+            if encoded_dir.is_dir() and encoded_dir.name.startswith("-"):
+                jsonl_path = encoded_dir / f"{uuid}.jsonl"
+                if jsonl_path.exists():
+                    return _ResolvedPath(jsonl_path, encoded_dir.name)
+
+    # Scan remote-sessions dirs
+    from services.remote_sessions import find_remote_session
+
+    remote = find_remote_session(uuid)
+    if remote:
+        return _ResolvedPath(
+            remote.session.jsonl_path,
+            remote.local_encoded_name,
+            remote.user_id,
+        )
+
+    return None
+
+
+def _resolve_session(
+    uuid: str, encoded_name: Optional[str] = None
+) -> Optional[_ResolvedPath]:
+    """
+    Resolve a session's JSONL path. DB first, filesystem fallback.
+
+    This is the single entry point for all session path resolution.
+    """
+    return _resolve_from_db(uuid) or _resolve_from_filesystem(uuid, encoded_name)
 
 
 def find_session_with_project(uuid: str) -> Optional[SessionLookupResult]:
     """
     Find a session by UUID and return both session and project encoded name.
 
-    Searches all projects in ~/.claude/projects/ for a session with the given UUID.
-
-    Args:
-        uuid: Session UUID to find
-
-    Returns:
-        SessionLookupResult with session and project info, or None if not found.
+    Uses DB for O(1) lookup, falls back to filesystem scan.
     """
-    projects_dir = settings.projects_dir
-    if not projects_dir.exists():
+    resolved = _resolve_session(uuid)
+    if not resolved:
         return None
 
-    for encoded_dir in projects_dir.iterdir():
-        if encoded_dir.is_dir() and is_encoded_project_dir(encoded_dir.name):
-            jsonl_path = encoded_dir / f"{uuid}.jsonl"
-            if jsonl_path.exists():
-                return SessionLookupResult(
-                    session=Session.from_path(jsonl_path),
-                    project_encoded_name=encoded_dir.name,
-                )
-    return None
+    # For remote sessions, set claude_base_dir to the project-level dir
+    # so that todos_dir, tasks_dir, debug_log, etc. resolve correctly.
+    # Path layout: .../remote-sessions/{user}/{encoded}/sessions/{uuid}.jsonl
+    # claude_base_dir should be: .../remote-sessions/{user}/{encoded}/
+    claude_base = None
+    if resolved.remote_user_id:
+        claude_base = resolved.jsonl_path.parent.parent
+
+    session = Session.from_path(resolved.jsonl_path, claude_base_dir=claude_base)
+    return SessionLookupResult(
+        session=session,
+        project_encoded_name=resolved.project_encoded_name,
+    )
 
 
 def find_session(uuid: str) -> Optional[Session]:
@@ -88,12 +196,6 @@ def find_session(uuid: str) -> Optional[Session]:
 
     Convenience wrapper around find_session_with_project() that returns
     just the Session object.
-
-    Args:
-        uuid: Session UUID to find
-
-    Returns:
-        Session if found, None otherwise.
     """
     result = find_session_with_project(uuid)
     return result.session if result else None
@@ -103,18 +205,35 @@ def find_session_by_message_uuid(message_uuid: str) -> Optional[SessionLookupRes
     """
     Find a session that contains a message with the given UUID.
 
-    Searches all sessions across all projects for a message with matching UUID.
-    Used to link continuation marker sessions to their continuation sessions.
-
-    Note: This is an expensive operation that may scan many JSONL files.
-
-    Args:
-        message_uuid: The UUID of a message to search for
-
-    Returns:
-        SessionLookupResult with session and project info, or None if not found.
+    Uses DB message_uuids table for O(1) lookup when available,
+    falls back to O(n*m) JSONL scan.
     """
     projects_dir = settings.projects_dir
+
+    # DB fast path: O(1) lookup via message_uuids table
+    try:
+        from db.connection import sqlite_read
+        from db.queries import query_session_by_message_uuid as db_lookup
+
+        with sqlite_read() as conn:
+            if conn is not None:
+                row = db_lookup(conn, message_uuid)
+                if row:
+                    session_uuid = row["session_uuid"]
+                    resolved = _resolve_session(session_uuid)
+                    if resolved:
+                        return SessionLookupResult(
+                            session=Session.from_path(resolved.jsonl_path),
+                            project_encoded_name=resolved.project_encoded_name,
+                        )
+    except Exception:
+        logger.debug(
+            "DB fast path failed for message UUID %s, falling back to scan",
+            message_uuid,
+            exc_info=True,
+        )
+
+    # JSONL fallback: O(n*m) scan of all sessions
     if not projects_dir.exists():
         return None
 
@@ -122,14 +241,12 @@ def find_session_by_message_uuid(message_uuid: str) -> Optional[SessionLookupRes
         if not encoded_dir.is_dir() or not is_encoded_project_dir(encoded_dir.name):
             continue
 
-        # Search all session JSONL files in this project
         for jsonl_path in encoded_dir.glob("*.jsonl"):
             if not _is_valid_session_filename(jsonl_path):
                 continue
 
             try:
                 session = Session.from_path(jsonl_path)
-                # Search messages for matching UUID
                 for msg in session.iter_messages():
                     if hasattr(msg, "uuid") and msg.uuid == message_uuid:
                         return SessionLookupResult(
@@ -137,7 +254,6 @@ def find_session_by_message_uuid(message_uuid: str) -> Optional[SessionLookupRes
                             project_encoded_name=encoded_dir.name,
                         )
             except Exception:
-                # Skip invalid session files
                 continue
 
     return None
@@ -153,14 +269,6 @@ def _find_session_jsonl(
     directory (e.g., -Users-...-worktrees-karma-focused-jepsen/) but the UI
     routes through the real project's encoded_name. This function handles
     the fallback transparently.
-
-    Args:
-        projects_dir: Root ~/.claude/projects/ directory
-        encoded_name: Encoded project directory name (may be the real project)
-        session_uuid: Session UUID to find
-
-    Returns:
-        Path to the session JSONL file, or None if not found.
     """
     # Primary: check the project directory itself
     session_jsonl = projects_dir / encoded_name / f"{session_uuid}.jsonl"
@@ -184,29 +292,17 @@ def find_subagent(
     """
     Find a subagent by project, session, and agent ID.
 
-    Supports worktree-grouped sessions: when the UI navigates via the real
-    project's encoded_name but the session JSONL lives in a worktree directory,
-    this function searches worktree dirs as a fallback.
-
-    Args:
-        encoded_name: Encoded project directory name
-        session_uuid: Parent session UUID
-        agent_id: Short hex agent ID
-
-    Returns:
-        SubagentLookupResult with agent, parent session, and project info,
-        or None if not found.
+    Uses DB to determine session source (local vs remote) and resolve
+    the correct JSONL path directly. Falls back to filesystem scan
+    when DB is unavailable.
     """
-    projects_dir = settings.projects_dir
-
-    # Find parent session (searches worktree dirs if needed)
-    session_jsonl = _find_session_jsonl(projects_dir, encoded_name, session_uuid)
-    if not session_jsonl:
+    resolved = _resolve_session(session_uuid, encoded_name)
+    if not resolved:
         return None
 
-    parent_session = Session.from_path(session_jsonl)
+    parent_session = Session.from_path(resolved.jsonl_path)
 
-    # Find subagent
+    # Find subagent in the parent session's subagents dir
     subagents_dir = parent_session.subagents_dir
     agent_jsonl = subagents_dir / f"agent-{agent_id}.jsonl"
 
@@ -218,5 +314,6 @@ def find_subagent(
     return SubagentLookupResult(
         agent=agent,
         parent_session=parent_session,
-        project_encoded_name=encoded_name,
+        project_encoded_name=resolved.project_encoded_name,
+        remote_user_id=resolved.remote_user_id,
     )

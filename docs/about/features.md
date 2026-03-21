@@ -1,136 +1,113 @@
 # Features
 
-A comprehensive overview of everything Claude Code Karma provides.
+## Core Features
 
----
+### Session Browsing
+Browse all your Claude Code sessions across all projects. See which sessions ran, how long they took, how many tokens they used, and which model ran them. Search, filter by date or project, and sort by any column.
 
-## Core Monitoring
-
-### Session Browser
-
-Browse all Claude Code sessions across every project. Filter by project, date range, session status, and more. Sessions display key metadata: duration, token count, message count, model used, and cost estimate.
+### Conversation Playback
+Read the full conversation from any session exactly as it happened. See user messages, Claude's responses, tool calls with inputs and outputs, and file modifications in chronological order.
 
 ### Timeline View
+Chronological event log showing everything that happened in a session. See messages, tool calls (with success/failure status), subagent activity, and file operations step-by-step.
 
-Chronological event stream for any session. Events include user messages, assistant responses, tool calls (with inputs and outputs), subagent spawns, file operations, and system events. Each event is timestamped and categorized.
+### Token and Cost Tracking
+Every session shows token counts: input tokens, output tokens, cache reads, and cache writes. Costs are calculated based on the model. Track per-session costs and see trends across all sessions.
 
-### Conversation Viewer
+### File Activity
+See every file that was touched during a session. Know which files were read, written, created, or modified. Useful for understanding what changed and where.
 
-Full conversation playback showing user and assistant messages in sequence. Supports markdown rendering, code blocks, and tool call visualization inline with the conversation flow.
+### Real-Time Session Monitoring
+With hooks installed, watch active sessions as they happen. See current state (STARTING, LIVE, WAITING, STOPPED, ENDED). Know when Claude is actively processing versus waiting for your input. Sessions with no activity for 30 minutes are marked stale.
 
-### Token Usage and Cost Tracking
+### Automatic Session Titles
+Sessions get descriptive titles when they end. Titles come from git commits made during the session, or Claude Haiku generates them if no commits were made. Makes sessions easy to find in the browser.
 
-Per-session and per-project token breakdowns: input tokens, output tokens, and cache reads/writes. Cost estimates based on model pricing. Aggregate views across all sessions for trend analysis.
+### Subagent Tracking
+See subagents (Task agents) spawned during sessions. Track which agents were created, their status, what tools they used, how long they ran, and their outcomes. Browse individual agent conversations.
 
-### File Activity Tracking
-
-See every file that was read, written, created, or modified during a session. Includes operation type, file path, and timestamp. Useful for understanding the scope of changes made by Claude Code.
-
----
-
-## Real-Time Monitoring
-
-### Live Session Tracking
-
-Real-time session state powered by Claude Code hooks. Sessions transition through a state machine:
-
-```
-STARTING --> LIVE --> WAITING --> STOPPED --> ENDED
-                \--> STALE (no heartbeat)
-```
-
-The live sessions view shows all active sessions with their current state, project, duration, and latest activity.
-
-### Subagent Monitoring
-
-Track subagent (Task agent) spawning within sessions. See which agents were created, their prompts, duration, tool usage, and outcomes. Subagent conversations are individually browsable.
-
-### Session Title Auto-Generation
-
-Automatic title generation when sessions end. Titles are derived from git commits made during the session, or generated via Claude Haiku when no commits are available. Titles appear in the session browser for quick identification.
-
----
-
-## Analytics and Insights
+## Analytics
 
 ### Project Analytics
-
-Per-project dashboards with charts covering:
+Per-project dashboards showing charts of:
 - Session count and duration over time
 - Token usage trends
-- Tool usage distribution
+- Tool usage breakdown
+- Cost estimates
 - Most active files
-- Cost breakdown by model
 
 ### Global Analytics
+Cross-project analytics comparing all projects by activity, cost, tool usage, and other metrics.
 
-Cross-project analytics aggregating data across all projects. Compare projects by activity, cost, and usage patterns.
+### Agent and Skill Analytics
+See which subagents are spawned most often and how frequently Claude Code skills are invoked.
 
-### Agent Analytics
-
-Track subagent usage patterns: which agent types are spawned most frequently, their success rates, average duration, and token consumption.
-
-### Skill Analytics
-
-Monitor Claude Code skill invocations across sessions. See which skills are used, how often, and in which projects.
-
-### Tool Usage Analytics
-
-Detailed breakdown of tool calls: Read, Write, Edit, Bash, Glob, Grep, and all MCP tools. Per-tool metrics include call count, success rate, and average execution time.
-
-### MCP Tools Tracking
-
-Discover and track MCP (Model Context Protocol) tool usage. See which MCP servers are configured, which tools are invoked, and their usage patterns across sessions.
-
----
+### MCP Tool Tracking
+Discover which MCP (Model Context Protocol) tools are configured and actually used, with usage patterns across sessions.
 
 ## Dashboard Pages
 
-Claude Code Karma provides 12 dashboard pages:
+| Page | What you see |
+|------|---|
+| **Home** | Overview of recent activity and quick stats |
+| **Projects** | All your projects with session counts and recent activity |
+| **Sessions** | Global session browser with search and filters |
+| **Analytics** | Cross-project charts and trends |
+| **Agents** | Subagent statistics and details |
+| **Skills** | Skill invocation data |
+| **Tools** | MCP tool discovery and usage |
+| **Plans** | Plan-mode sessions (read-only browsing) |
+| **Team** | Remote sessions synced from team members |
+| **Members** | Team members and their sync status |
+| **Hooks** | Hook status and event log |
+| **History** | All file changes across all sessions |
+| **Settings** | Preferences and dashboard configuration |
 
-| Page | Description |
-|------|-------------|
-| **Projects** | All Claude Code projects with session counts and recent activity |
-| **Sessions** | Session browser with filtering, sorting, and search |
-| **Analytics** | Global analytics with charts and trends |
-| **Plans** | Browse plan-mode sessions and approval workflows |
-| **Skills** | Skill usage tracking across sessions |
-| **Agents** | Subagent analytics and browsing |
-| **Tools** | MCP tool discovery and usage tracking |
-| **Hooks** | Hook configuration and event monitoring |
-| **Plugins** | Plugin management and MCP tool details |
-| **Settings** | User preferences and configuration |
-| **Archived** | Archived and completed sessions |
-| **About** | Documentation and guides (this section) |
+## Session Features
 
----
-
-## Advanced Features
-
-### Session Chains
-
-Claude Code Karma detects and links related sessions. When a session is resumed or continued, the chain is preserved so you can follow the full history of a task across multiple sessions. Detection uses `leaf_uuid` references and project slug matching.
+### Session Chaining
+Claude Code Karma detects when a session is resumed or related to another. These sessions are linked together so you can follow a task across multiple sessions and see the full chain.
 
 ### Compaction Detection
-
-Sessions that undergo context compaction (when conversation history is summarized to free up context window) are detected via the presence of `SummaryMessage` entries. Compacted sessions are flagged in the UI.
-
-### Plan Approval Workflow
-
-Integration with Claude Code's plan mode. When Claude Code enters plan mode and requests approval, the `plan_approval.py` hook gates execution. Plans can be reviewed and approved through the dashboard.
+When Claude Code runs out of context, it compacts the session by summarizing old messages. Sessions with compaction are flagged so you know the older part of the conversation has been summarized.
 
 ### Command Palette
-
-Press `Ctrl+K` (or `Cmd+K` on macOS) to open the command palette. Quickly navigate to any project, session, or page. Supports fuzzy search.
-
-### Keyboard Shortcuts
-
-Navigate the dashboard efficiently with keyboard shortcuts. Available shortcuts are displayed in the command palette.
+Press Ctrl+K (Cmd+K on Mac) to open the command palette. Quickly jump to any project or session by name.
 
 ### URL State
+All filters and view settings are saved in the URL. Share a link to give someone the exact view you're looking at with all filters applied.
 
-All filters, sort orders, and view states are persisted in the URL query parameters. Copy and share a URL to give someone the exact same view — including active filters, selected project, and page state.
+## Cross-Team Session Sharing
 
-### SQLite Metadata Index
+### Overview
+Share sessions with teammates and freelancers using peer-to-peer sync. Everyone sees relevant sessions in a unified dashboard — no manual copying, no central server.
 
-An optional SQLite index caches session metadata for fast queries. Instead of re-parsing JSONL files on every request, the index provides instant lookups for session lists, project summaries, and analytics aggregations.
+### How it Works
+1. You create a team from the `/team` page
+2. Your teammate generates a **join code** from their `/sync` page
+3. You paste the code to add them — devices pair automatically via Syncthing
+4. You share projects with the team — each member gets a **subscription**
+5. Members accept subscriptions and choose their sync direction (send, receive, or both)
+6. Sessions flow automatically — new sessions appear within seconds on LAN
+
+### Subscription Control
+Every member controls what they receive. When a project is shared with a team, each member gets an **offered** subscription. They can:
+- **Accept** it (and choose send-only, receive-only, or both)
+- **Pause** it temporarily
+- **Decline** it entirely
+
+This means a team of 5 people sharing 10 projects can each have different preferences — no one-size-fits-all.
+
+### Read-Only Remote Sessions
+Sessions from teammates show up in your dashboard as read-only. You can browse their conversations, see tool usage, and learn from their approach — but you can't modify their data.
+
+## Syncthing Backend
+
+Uses Syncthing for automatic, encrypted, peer-to-peer file sync. Sessions are packaged locally and synced directly between machines.
+
+**Why Syncthing?**
+- No servers to manage — your data never touches a third party
+- Real-time sync — sessions appear within seconds on the same network
+- Works anywhere — LAN, VPN, or across the internet via encrypted relays
+- End-to-end encrypted — even relay servers can't read your data
+- Simple setup — the `/sync` page walks you through everything

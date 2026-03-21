@@ -375,6 +375,7 @@ def resolve_manifest_dirs(
         List of existing directory Paths to scan
     """
     resolved_cache = cache_path.resolve()
+    plugins_base = (settings.claude_base / "plugins").resolve()
     dirs: list[Path] = []
     seen: set[Path] = set()
 

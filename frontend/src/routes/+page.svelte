@@ -14,13 +14,19 @@
 		Puzzle,
 		Cable,
 		Webhook,
-		Terminal
+		Terminal,
+		Users,
+		RefreshCw,
+		BookOpen
 	} from 'lucide-svelte';
 </script>
 
-<div
-	class="max-w-[560px] mx-auto flex flex-col items-center justify-center scale-120 origin-top w-full px-4"
->
+<div class="home-container">
+	<!-- Terminal Stats Display -->
+	<div class="mb-4 w-full">
+		<TerminalDisplay />
+	</div>
+
 	<div class="grid grid-cols-2 sm:grid-cols-3 gap-3 w-full">
 		<NavigationCard title="Projects" href="/projects" icon={FolderOpen} color="blue" />
 		<NavigationCard title="Sessions" href="/sessions" icon={MessageSquare} color="teal" />
@@ -29,9 +35,12 @@
 		<NavigationCard title="Skills" href="/skills" icon={Wrench} color="orange" />
 		<NavigationCard title="Agents" href="/agents" icon={Bot} color="purple" />
 		<NavigationCard title="Tools" href="/tools" icon={Cable} color="teal" />
-		<NavigationCard title="Hooks" href="/hooks" icon={Webhook} color="amber" />
-		<NavigationCard title="Commands" href="/commands" icon={Terminal} color="red" />
 		<NavigationCard title="Plugins" href="/plugins" icon={Puzzle} color="violet" />
+		<NavigationCard title="Commands" href="/commands" icon={Terminal} color="red" />
+		<NavigationCard title="Teams" href="/team" icon={Users} color="indigo" />
+		<NavigationCard title="Sync" href="/sync" icon={RefreshCw} color="green" />
+		<NavigationCard title="Hooks" href="/hooks" icon={Webhook} color="amber" />
+		<NavigationCard title="About" href="/about" icon={BookOpen} color="teal" />
 		<NavigationCard title="Archived" href="/archived" icon={History} color="gray" />
 		<NavigationCard title="Settings" href="/settings" icon={Settings} color="indigo" />
 	</div>
@@ -40,9 +49,23 @@
 	<div class="mt-6 w-full">
 		<LiveSessionsTerminal />
 	</div>
-
-	<!-- Terminal Stats Display -->
-	<div class="mt-4 w-full">
-		<TerminalDisplay />
-	</div>
 </div>
+
+<style>
+	.home-container {
+		width: 100%;
+		max-width: clamp(20rem, 90vw, 35rem);
+		margin-inline: auto;
+		margin-top: -1.25rem;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		padding-inline: 1rem;
+	}
+
+	@media (min-width: 1440px) {
+		.home-container {
+			max-width: clamp(35rem, 40vw, 45rem);
+		}
+	}
+</style>

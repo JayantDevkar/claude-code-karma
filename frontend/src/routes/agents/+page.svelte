@@ -13,6 +13,7 @@
 		ExternalLink
 	} from 'lucide-svelte';
 	import { navigating } from '$app/stores';
+	import { createUrlViewState } from '$lib/utils/url-view-state';
 	import { listNavigation } from '$lib/actions/listNavigation';
 	import PageHeader from '$lib/components/layout/PageHeader.svelte';
 	import SkeletonBox from '$lib/components/skeleton/SkeletonBox.svelte';
@@ -25,6 +26,7 @@
 	import AgentUsageCard from '$lib/components/agents/AgentUsageCard.svelte';
 	import AgentUsageTable from '$lib/components/agents/AgentUsageTable.svelte';
 	import UsageAnalytics from '$lib/components/charts/UsageAnalytics.svelte';
+	import MemberUsageGrid from '$lib/components/members/MemberUsageGrid.svelte';
 	import type { AgentCategory, AgentUsageSummary, StatItem } from '$lib/api-types';
 	import {
 		formatTokens,
@@ -41,12 +43,25 @@
 	// Pure client-side filter state (no goto, no navigation, no flicker)
 	let searchQuery = $state('');
 	let selectedCategory = $state<AgentCategory>('all');
-	let viewMode = $state<'agents' | 'table' | 'analytics'>('agents');
+	let viewMode = $state<'agents' | 'table' | 'analytics' | 'members'>('agents');
+	const validViews = ['agents', 'table', 'analytics', 'members'] as const;
+
+	// URL state persistence for view mode
+	const { initFromUrl, syncToUrl } = createUrlViewState(
+		'agents', validViews,
+		() => viewMode, (v) => viewMode = v
+	);
+	$effect(initFromUrl);
+	$effect(syncToUrl);
+
+	// Reset sub-filter when entering members view
+	$effect(() => { if (viewMode === 'members') selectedCategory = 'all'; });
 
 	const viewOptions = [
 		{ label: 'By Category', value: 'agents' },
 		{ label: 'All Agents', value: 'table' },
-		{ label: 'Usage Analytics', value: 'analytics' }
+		{ label: 'Usage Analytics', value: 'analytics' },
+		{ label: 'By Member', value: 'members' }
 	];
 
 	// Category filter options — dynamically built from actual data so empty categories are hidden
@@ -340,7 +355,7 @@
 						</div>
 						{#if groupIndex === 0}
 							<div class="border-t border-[var(--border)] p-4">
-								<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+								<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
 									{#each Array(3) as _}
 										<SkeletonAgentCard />
 									{/each}
@@ -386,10 +401,12 @@
 	>
 		<div class="flex items-center gap-3 flex-wrap">
 			<SegmentedControl options={viewOptions} bind:value={viewMode} />
-			<SegmentedControl options={categoryOptions} bind:value={selectedCategory} size="sm" />
+			{#if viewMode !== 'members'}
+				<SegmentedControl options={categoryOptions} bind:value={selectedCategory} size="sm" />
+			{/if}
 		</div>
 
-		{#if viewMode !== 'analytics'}
+		{#if viewMode !== 'analytics' && viewMode !== 'members'}
 			<div class="flex items-center gap-3 w-full sm:w-auto">
 				<div class="relative flex-1 sm:flex-initial">
 					<Search
@@ -446,7 +463,25 @@
 	</div>
 
 	<!-- Content Area -->
-	{#if !hasAgents}
+	{#if viewMode === 'members'}
+		<!-- By Member View -->
+		<MemberUsageGrid
+			endpoint="/agents/usage/trend"
+			domainLabel="Agents"
+			domainIcon={Bot}
+			excludeItemFn={excludeFn}
+		/>
+	{:else if viewMode === 'analytics'}
+		<!-- Usage Analytics View -->
+		<UsageAnalytics
+			endpoint="/agents/usage/trend"
+			itemLabel="Agents"
+			colorFn={getSubagentChartHex}
+			excludeItemFn={excludeFn}
+			itemLinkPrefix="/agents/"
+			itemDisplayFn={getSubagentTypeDisplayName}
+		/>
+	{:else if !hasAgents}
 		<div
 			class="text-center py-20 bg-[var(--bg-subtle)] rounded-2xl border border-dashed border-[var(--border)]"
 		>
@@ -466,16 +501,6 @@
 				Try adjusting your search or category filter
 			</p>
 		</div>
-	{:else if viewMode === 'analytics'}
-		<!-- Usage Analytics View -->
-		<UsageAnalytics
-			endpoint="/agents/usage/trend"
-			itemLabel="Agents"
-			colorFn={getSubagentChartHex}
-			excludeItemFn={excludeFn}
-			itemLinkPrefix="/agents/"
-			itemDisplayFn={getSubagentTypeDisplayName}
-		/>
 	{:else if viewMode === 'table'}
 		<!-- Flat Table View -->
 		<AgentUsageTable agents={filteredAgents} />
@@ -533,7 +558,7 @@
 					{/snippet}
 
 					<div
-						class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 stagger-children"
+						class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 stagger-children"
 					>
 						{#each group.agents as agent (agent.subagent_type)}
 							<AgentUsageCard {agent} {maxRuns} />
@@ -562,7 +587,7 @@
 					</span>
 				{/snippet}
 
-				<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 stagger-children">
+				<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 stagger-children">
 					{#each unusedDefinitions as def (def.name)}
 						{@const colorVars = getSubagentColorVars(def.name)}
 						<a
