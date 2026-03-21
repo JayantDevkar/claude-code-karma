@@ -175,11 +175,31 @@
 				}
 			}
 
-			if (acceptedTeams.length > 0) {
-				// Trigger reconciliation so team record gets created from metadata
-				// before we navigate to the team page
-				await fetch(`${API_BASE}/sync/reconcile`, { method: 'POST' }).catch(() => {});
-				onaccepted?.(acceptedTeams);
+			// Poll for team to appear — reconciliation may need multiple cycles
+			// to accept the pending metadata folder and bootstrap the team record
+			const teamName = acceptedTeams[0] ?? inv.team_name;
+			if (teamName) {
+				let teamFound = false;
+				for (let attempt = 0; attempt < 4; attempt++) {
+					// Trigger reconciliation (accepts pending folders + bootstraps team)
+					await fetch(`${API_BASE}/sync/reconcile`, { method: 'POST' }).catch(() => {});
+
+					// Check if team exists now
+					const teamRes = await fetch(`${API_BASE}/sync/teams/${encodeURIComponent(teamName)}`).catch(() => null);
+					if (teamRes?.ok) {
+						teamFound = true;
+						break;
+					}
+
+					// Wait 3s before next attempt
+					if (attempt < 3) {
+						await new Promise(r => setTimeout(r, 3000));
+					}
+				}
+
+				if (teamFound) {
+					onaccepted?.([teamName]);
+				}
 			}
 
 			await fetchPending();
