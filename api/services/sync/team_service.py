@@ -68,6 +68,7 @@ class TeamService:
         self.teams.save(conn, team)
         self.members.save(conn, leader)
         self.metadata.write_team_state(team, [leader])
+        self.metadata.purge_stale_removals(name)
         await self.folders.ensure_metadata_folder(name)
         self.events.log(conn, SyncEvent(
             event_type=SyncEventType.team_created,

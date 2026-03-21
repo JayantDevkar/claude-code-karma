@@ -111,6 +111,22 @@ class MetadataService:
         }
         (team_dir / "team.json").write_text(json.dumps(team_data, indent=2))
 
+    def purge_stale_removals(self, team_name: str) -> None:
+        """Delete all removal signal files from a team's metadata folder.
+
+        Called during team creation to prevent stale signals from a previous
+        team incarnation with the same name from triggering auto-leave.
+        """
+        _validate_path_component(team_name, "team_name")
+        removed_dir = self._team_dir(team_name) / "removed"
+        if not removed_dir.exists():
+            return
+        for f in removed_dir.glob("*.json"):
+            try:
+                f.unlink()
+            except OSError:
+                pass
+
     # ------------------------------------------------------------------
     # Write — unified member state (read-merge-write)
     # ------------------------------------------------------------------
