@@ -158,6 +158,66 @@ class ReconciliationService:
                     exc,
                 )
 
+        # Also scan PENDING folders for karma-meta--* that haven't been accepted yet.
+        # This closes the timing race where Accept & Pair fires before Syncthing
+        # propagates the folder offer.
+        try:
+            client = self.folders._client
+            pending_raw = await client.get_pending_folders()
+        except Exception as exc:
+            logger.debug("phase_team_discovery: cannot query pending folders: %s", exc)
+            return
+
+        configured_ids = {f.get("id", "") for f in configured_folders}
+
+        for folder_id, folder_data in pending_raw.items():
+            m = _META_FOLDER_RE.match(folder_id)
+            if not m:
+                continue
+
+            # Skip if already configured (handled above)
+            if folder_id in configured_ids:
+                continue
+
+            # Auto-accept the pending metadata folder
+            offered_by = folder_data.get("offeredBy", folder_data)
+            device_ids = list(offered_by.keys())
+            if not device_ids:
+                continue
+
+            try:
+                from config import settings as app_settings
+                from services.syncthing.folder_manager import resolve_folder_path
+
+                devices = [{"deviceID": did, "encryptionPassword": ""} for did in device_ids]
+                if self.my_device_id:
+                    devices.append({"deviceID": self.my_device_id, "encryptionPassword": ""})
+
+                folder_config = {
+                    "id": folder_id,
+                    "label": folder_id,
+                    "path": str(resolve_folder_path(app_settings.karma_base, folder_id)),
+                    "type": "sendreceive",
+                    "devices": devices,
+                    "rescanIntervalS": 3600,
+                    "fsWatcherEnabled": True,
+                    "fsWatcherDelayS": 10,
+                    "ignorePerms": False,
+                    "autoNormalize": True,
+                }
+                await client.put_config_folder(folder_config)
+                for did in device_ids:
+                    await client.dismiss_pending_folder(folder_id, did)
+                logger.info(
+                    "phase_team_discovery: auto-accepted pending metadata folder '%s'",
+                    folder_id,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "phase_team_discovery: failed to auto-accept pending folder '%s': %s",
+                    folder_id, exc,
+                )
+
     async def phase_metadata(self, conn: sqlite3.Connection, team) -> None:
         """Phase 1: Read metadata, detect removals, discover members/projects."""
         states = self.metadata.read_team_metadata(team.name)
