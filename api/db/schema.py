@@ -10,7 +10,7 @@ import sqlite3
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 11
 
 SCHEMA_SQL = """
 -- Schema versioning
@@ -214,6 +214,8 @@ CREATE TABLE IF NOT EXISTS projects (
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_slug ON projects(slug);
+
+-- Workflow tables moved to workflow.db (schema version 10)
 """
 
 
@@ -425,6 +427,42 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             conn.execute("DELETE FROM subagent_commands")
             # Nudge mtime to force re-index of all sessions
             conn.execute("UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1")
+
+        if current_version < 11:
+            logger.info("Migrating → v11: dropping workflow tables (moved to workflow.db)")
+            from config import settings
+
+            # Only drop if workflow.db migration was confirmed successful
+            should_drop = False
+            wf_path = settings.workflow_db_path
+            if wf_path.exists():
+                try:
+                    import sqlite3 as _sqlite3
+
+                    wf_check = _sqlite3.connect(str(wf_path), timeout=5.0)
+                    migrated = wf_check.execute(
+                        "SELECT 1 FROM wf_migration_log WHERE source = 'metadata_db'"
+                    ).fetchone()
+                    wf_check.close()
+                    should_drop = migrated is not None
+                except Exception:
+                    logger.warning(
+                        "Could not verify workflow.db migration; "
+                        "keeping workflow tables in metadata.db"
+                    )
+
+            if should_drop:
+                conn.executescript("""
+                    DROP TABLE IF EXISTS workflow_run_steps;
+                    DROP TABLE IF EXISTS workflow_runs;
+                    DROP TABLE IF EXISTS workflows;
+                """)
+                logger.info("Dropped workflow tables from metadata.db")
+            else:
+                logger.info(
+                    "Workflow migration not confirmed; "
+                    "keeping workflow tables in metadata.db until next restart"
+                )
 
     # Record version
     conn.execute(

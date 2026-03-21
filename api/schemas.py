@@ -6,7 +6,8 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pathlib import Path
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 # =============================================================================
 # Error Response Models
@@ -1525,3 +1526,101 @@ class AllSessionsResponse(PaginationMeta):
         default_factory=list, description="Status filter options with counts"
     )
     applied_filters: dict = Field(default_factory=dict, description="Echo of applied filter values")
+
+
+# =============================================================================
+# Workflow Schemas
+# =============================================================================
+
+
+ALLOWED_TOOL_NAMES = {"Read", "Edit", "Write", "Bash", "Glob", "Grep", "WebFetch", "WebSearch"}
+
+
+class WorkflowStepSchema(BaseModel):
+    id: str
+    label: Optional[str] = None
+    prompt_template: str = Field(..., max_length=50000)
+    model: str = "sonnet"
+    tools: list[str] = []
+    max_turns: int = Field(default=10, ge=1, le=50)
+
+    @field_validator("tools")
+    @classmethod
+    def validate_tools(cls, v):
+        invalid = set(v) - ALLOWED_TOOL_NAMES
+        if invalid:
+            raise ValueError(f"Invalid tool names: {invalid}. Allowed: {ALLOWED_TOOL_NAMES}")
+        return v
+
+
+class WorkflowInputSchema(BaseModel):
+    name: str
+    type: str = "string"
+    required: bool = True
+    default: Optional[str] = None
+    description: Optional[str] = None
+
+
+class WorkflowCreateRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=200)
+    description: Optional[str] = Field(default=None, max_length=5000)
+    project_path: Optional[str] = None
+    graph: dict
+    steps: list[WorkflowStepSchema] = Field(..., min_length=1, max_length=20)
+    inputs: list[WorkflowInputSchema] = Field(default_factory=list, max_length=20)
+
+    @field_validator("project_path")
+    @classmethod
+    def validate_project_path(cls, v):
+        if v is None:
+            return v
+        resolved = Path(v).resolve()
+        if not resolved.is_dir():
+            raise ValueError(f"project_path does not exist or is not a directory: {v}")
+        home = Path.home()
+        if not (resolved == home or home in resolved.parents):
+            raise ValueError("project_path must be under the user's home directory")
+        sensitive = [home / ".ssh", home / ".aws", home / ".claude", Path("/etc"), Path("/var")]
+        for s in sensitive:
+            if resolved == s or s in resolved.parents:
+                raise ValueError(f"project_path cannot be within sensitive directory: {s}")
+        return str(resolved)
+
+
+class WorkflowResponse(BaseModel):
+    id: str
+    name: str
+    description: Optional[str] = None
+    project_path: Optional[str] = None
+    graph: dict
+    steps: list[WorkflowStepSchema]
+    inputs: list[WorkflowInputSchema] = []
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
+class WorkflowRunStepResponse(BaseModel):
+    id: str
+    step_id: str
+    status: str
+    session_id: Optional[str] = None
+    prompt: Optional[str] = None
+    output: Optional[str] = None
+    started_at: Optional[str] = None
+    completed_at: Optional[str] = None
+    error: Optional[str] = None
+
+
+class WorkflowRunResponse(BaseModel):
+    id: str
+    workflow_id: str
+    status: str
+    input_values: Optional[dict] = None
+    started_at: Optional[str] = None
+    completed_at: Optional[str] = None
+    error: Optional[str] = None
+    steps: list[WorkflowRunStepResponse] = []
+
+
+class WorkflowRunRequest(BaseModel):
+    input_values: Optional[dict] = None
