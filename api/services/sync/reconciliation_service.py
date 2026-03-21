@@ -165,10 +165,27 @@ class ReconciliationService:
             return
 
         # Check removal signals — auto-leave if own tag is in removals
+        # BUT skip stale signals from a previous team incarnation
         removals = states.pop("__removals", {})
         if self.my_member_tag in removals:
-            await self._auto_leave(conn, team)
-            return
+            removal = removals[self.my_member_tag]
+            removed_at_str = removal.get("removed_at", "")
+            try:
+                from datetime import datetime, timezone
+                removed_at = datetime.fromisoformat(removed_at_str)
+                if team.created_at and removed_at < team.created_at:
+                    logger.info(
+                        "phase_metadata: ignoring stale removal signal for '%s' in team '%s' "
+                        "(removed_at=%s < created_at=%s)",
+                        self.my_member_tag, team.name, removed_at_str, team.created_at.isoformat(),
+                    )
+                else:
+                    await self._auto_leave(conn, team)
+                    return
+            except (ValueError, TypeError):
+                # Can't parse date — treat as valid removal to be safe
+                await self._auto_leave(conn, team)
+                return
 
         # Discover new members from peer state files
         for tag, state in states.items():

@@ -103,3 +103,81 @@ async def test_create_team_purges_stale_removal_signals(team_service, meta_base,
     )
 
     assert not list(removed_dir.glob("*.json")), "Stale signals should be purged after create_team"
+
+
+# ------------------------------------------------------------------
+# Reconciliation staleness check tests
+# ------------------------------------------------------------------
+
+from services.sync.reconciliation_service import ReconciliationService
+from domain.team import Team
+
+
+@pytest.fixture
+def reconciliation(metadata):
+    return ReconciliationService(
+        teams=MagicMock(),
+        members=MagicMock(),
+        projects=MagicMock(),
+        subs=MagicMock(),
+        events=MagicMock(),
+        devices=AsyncMock(),
+        folders=AsyncMock(),
+        metadata=metadata,
+        my_member_tag="alice.mac-mini",
+        my_device_id="DEVICE-ALICE",
+    )
+
+
+@pytest.mark.asyncio
+async def test_phase_metadata_ignores_stale_removal_signal(reconciliation, meta_base):
+    """phase_metadata should skip removal signals older than team.created_at."""
+    team_dir = meta_base / "karma-meta--test-team"
+    removed_dir = team_dir / "removed"
+    removed_dir.mkdir(parents=True)
+    (team_dir / "members").mkdir(parents=True)
+
+    # Stale removal signal from March 1
+    (removed_dir / "alice.mac-mini.json").write_text(json.dumps({
+        "member_tag": "alice.mac-mini",
+        "removed_by": "bob.macbook",
+        "removed_at": "2026-03-01T00:00:00+00:00",
+    }))
+
+    # Team was created on March 20 (newer than removal)
+    team = Team(name="test-team", leader_member_tag="bob.macbook", leader_device_id="DEVICE-BOB",
+                created_at=datetime(2026, 3, 20, tzinfo=timezone.utc))
+
+    conn = MagicMock()
+    reconciliation._auto_leave = AsyncMock()
+
+    await reconciliation.phase_metadata(conn, team)
+
+    reconciliation._auto_leave.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_phase_metadata_honors_fresh_removal_signal(reconciliation, meta_base):
+    """phase_metadata should auto-leave when removal signal is newer than team.created_at."""
+    team_dir = meta_base / "karma-meta--test-team"
+    removed_dir = team_dir / "removed"
+    removed_dir.mkdir(parents=True)
+    (team_dir / "members").mkdir(parents=True)
+
+    # Fresh removal signal from March 20
+    (removed_dir / "alice.mac-mini.json").write_text(json.dumps({
+        "member_tag": "alice.mac-mini",
+        "removed_by": "bob.macbook",
+        "removed_at": "2026-03-20T12:00:00+00:00",
+    }))
+
+    # Team was created on March 15 (older than removal)
+    team = Team(name="test-team", leader_member_tag="bob.macbook", leader_device_id="DEVICE-BOB",
+                created_at=datetime(2026, 3, 15, tzinfo=timezone.utc))
+
+    conn = MagicMock()
+    reconciliation._auto_leave = AsyncMock()
+
+    await reconciliation.phase_metadata(conn, team)
+
+    reconciliation._auto_leave.assert_called_once()
