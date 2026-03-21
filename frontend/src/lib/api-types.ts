@@ -1838,6 +1838,8 @@ export interface SyncTeamMember {
 	user_id: string;
 	machine_tag: string;
 	status: 'added' | 'active' | 'removed';
+	/** True when status is 'removed' but the device is offline — removal signal not yet delivered. */
+	delivery_pending?: boolean;
 	/** @deprecated v3 compat */
 	name?: string;
 	/** @deprecated v3 compat */

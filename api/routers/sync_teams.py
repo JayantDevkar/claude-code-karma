@@ -15,6 +15,7 @@ from routers.sync_deps import (
     get_conn,
     get_optional_config,
     get_read_conn,
+    make_managers,
     make_repos,
     make_team_service,
     require_config,
@@ -229,18 +230,56 @@ async def remove_member(
         raise HTTPException(409, str(e))
     except ValueError as e:
         raise HTTPException(404, str(e))
-    return _member_dict(member)
+
+    # Check if the removed member's device is connected — if not,
+    # the removal signal can't propagate via Syncthing metadata sync.
+    delivery_pending = True
+    try:
+        devices, _, _ = make_managers(config)
+        connected = await devices.is_connected(member.device_id)
+        delivery_pending = not connected
+    except Exception:
+        pass  # Assume pending if we can't check
+
+    result = _member_dict(member)
+    result["delivery_pending"] = delivery_pending
+    return result
 
 
 @router.get("/teams/{name}/members")
-async def list_members(name: str, conn: sqlite3.Connection = Depends(get_read_conn)):
-    """List team members."""
+async def list_members(
+    name: str,
+    conn: sqlite3.Connection = Depends(get_read_conn),
+    config=Depends(get_optional_config),
+):
+    """List team members with delivery status for removed members."""
     repos = make_repos()
     team = repos["teams"].get(conn, name)
     if team is None:
         raise HTTPException(404, f"Team '{name}' not found")
     members = repos["members"].list_for_team(conn, name)
-    return {"members": [_member_dict(m) for m in members]}
+
+    # Check connectivity for removed members to surface delivery_pending
+    connections: dict | None = None
+    removed = [m for m in members if m.status.value == "removed"]
+    if removed and config and config.syncthing:
+        try:
+            devices, _, _ = make_managers(config)
+            connections = await devices._client.get_connections()
+        except Exception:
+            pass
+
+    result = []
+    for m in members:
+        d = _member_dict(m)
+        if m.status.value == "removed":
+            connected = False
+            if connections and m.device_id in connections:
+                connected = connections[m.device_id].get("connected", False)
+            d["delivery_pending"] = not connected
+        result.append(d)
+
+    return {"members": result}
 
 
 # --- Join code endpoint ----------------------------------------------------

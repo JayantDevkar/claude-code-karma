@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 logger = logging.getLogger(__name__)
 
 from domain.project import SharedProject, derive_folder_suffix
-from domain.subscription import Subscription, SyncDirection
+from domain.subscription import Subscription, SubscriptionStatus, SyncDirection
 from domain.events import SyncEvent, SyncEventType
 from domain.team import AuthorizationError
 
@@ -71,7 +71,6 @@ class ProjectService:
 
         # Create ACCEPTED subscription for the leader (direction=BOTH) so they
         # participate in Phase 3 device lists and get inbox folders for members.
-        from domain.subscription import SubscriptionStatus
         leader_sub = Subscription(
             member_tag=team.leader_member_tag,
             team_name=team_name,
@@ -169,6 +168,12 @@ class ProjectService:
                 f"Subscription not found for member '{member_tag}' "
                 f"on project '{git_identity}' in team '{team_name}'"
             )
+
+        # Auto-reopen declined subscriptions so the frontend can call
+        # accept directly without needing to know the state machine.
+        if sub.status == SubscriptionStatus.DECLINED:
+            sub = sub.reopen()
+            self.subs.save(conn, sub)
 
         accepted = sub.accept(direction)
         self.subs.save(conn, accepted)

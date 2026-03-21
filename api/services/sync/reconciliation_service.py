@@ -288,10 +288,11 @@ class ReconciliationService:
                             tag, proj.git_identity,
                         )
 
-        # Sync subscription status from peer metadata to local DB.
-        # When a member accepts/declines on their machine, they publish the status
-        # to their metadata state file. We read it and update our local record so
-        # Phase 3 device lists reflect the actual subscription state.
+        # Sync subscription status + direction from peer metadata to local DB.
+        # When a member changes state on their machine (accept, pause, resume,
+        # decline, reopen, direction change), they publish to their metadata
+        # state file. We read it and update our local record so Phase 3 device
+        # lists reflect the actual subscription state.
         for tag, state in states.items():
             if tag == self.my_member_tag:
                 continue
@@ -304,25 +305,18 @@ class ReconciliationService:
                 local_sub = self.subs.get(conn, tag, team.name, git_id)
                 if local_sub is None:
                     continue
-                # Only sync if the peer has progressed beyond our local record
-                if local_sub.status.value != peer_status:
-                    try:
-                        if peer_status == "accepted" and local_sub.status.value == "offered":
-                            direction = SyncDirection(peer_direction) if peer_direction else SyncDirection.BOTH
-                            updated = local_sub.accept(direction)
-                            self.subs.save(conn, updated)
-                            logger.info(
-                                "phase_metadata: synced subscription %s/%s → accepted/%s (from peer metadata)",
-                                tag, git_id, direction.value,
-                            )
-                        elif peer_status == "declined" and local_sub.status.value in ("offered", "accepted", "paused"):
-                            self.subs.save(conn, local_sub.decline())
-                            logger.info(
-                                "phase_metadata: synced subscription %s/%s → declined (from peer metadata)",
-                                tag, git_id,
-                            )
-                    except Exception as e:
-                        logger.debug("phase_metadata: subscription sync skip %s/%s: %s", tag, git_id, e)
+                try:
+                    updated = self._sync_peer_subscription(
+                        local_sub, peer_status, peer_direction,
+                    )
+                    if updated is not None:
+                        self.subs.save(conn, updated)
+                        logger.info(
+                            "phase_metadata: synced subscription %s/%s → %s/%s (from peer metadata)",
+                            tag, git_id, updated.status.value, updated.direction.value,
+                        )
+                except Exception as e:
+                    logger.debug("phase_metadata: subscription sync skip %s/%s: %s", tag, git_id, e)
 
         # Discover/remove projects from leader's metadata state
         leader_state = states.get(team.leader_member_tag, {})
@@ -381,6 +375,55 @@ class ReconciliationService:
                 "phase_metadata: discovered project '%s' in team '%s' — created OFFERED subscription",
                 git_id, team.name,
             )
+
+    @staticmethod
+    def _sync_peer_subscription(
+        local_sub, peer_status: str, peer_direction: str | None,
+    ):
+        """Compute the updated subscription by mirroring peer state, or None if no change needed.
+
+        Handles all state transitions:
+          offered  → accepted  (accept)
+          accepted → paused    (pause)
+          paused   → accepted  (resume)
+          *        → declined  (decline)
+          declined → offered   (reopen)
+          accepted == accepted  with different direction (direction change)
+        """
+        local_status = local_sub.status.value
+
+        # --- Status differs: apply the appropriate transition ---
+        if local_status != peer_status:
+            if peer_status == "accepted" and local_status == "offered":
+                direction = SyncDirection(peer_direction) if peer_direction else SyncDirection.BOTH
+                return local_sub.accept(direction)
+
+            if peer_status == "accepted" and local_status == "paused":
+                # Resume: paused → accepted
+                return local_sub.resume()
+
+            if peer_status == "paused" and local_status == "accepted":
+                return local_sub.pause()
+
+            if peer_status == "declined" and local_status in ("offered", "accepted", "paused"):
+                return local_sub.decline()
+
+            if peer_status == "offered" and local_status == "declined":
+                return local_sub.reopen()
+
+            # Unknown transition — skip
+            return None
+
+        # --- Status matches: check direction drift ---
+        if (
+            local_status == "accepted"
+            and peer_direction
+            and local_sub.direction.value != peer_direction
+        ):
+            return local_sub.change_direction(SyncDirection(peer_direction))
+
+        # Nothing to sync
+        return None
 
     async def phase_mesh_pair(self, conn: sqlite3.Connection, team) -> None:
         """Phase 2: Pair with undiscovered active team members."""

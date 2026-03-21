@@ -130,15 +130,28 @@
 	// ── Fetching ───────────────────────────────────────────────────────────
 	async function fetchPending() {
 		try {
-			const [devicesRes, foldersRes] = await Promise.all([
+			const [devicesRes, foldersRes, teamsRes] = await Promise.all([
 				fetch(`${API_BASE}/sync/pending-devices`).catch(() => null),
-				fetch(`${API_BASE}/sync/pending`).catch(() => null)
+				fetch(`${API_BASE}/sync/pending`).catch(() => null),
+				fetch(`${API_BASE}/sync/teams`).catch(() => null)
 			]);
 
 			const devices = devicesRes?.ok ? (await devicesRes.json()).devices ?? [] : [];
 			const folders = foldersRes?.ok ? (await foldersRes.json()).folders ?? [] : [];
 
-			invitations = buildInvitations(devices, folders);
+			// Filter out invitations for teams we already know about locally.
+			// After device acceptance, karma-out-- folders stay pending in Syncthing
+			// and would otherwise appear as ghost invitations.
+			const knownTeams = new Set<string>();
+			if (teamsRes?.ok) {
+				const teams = (await teamsRes.json()).teams ?? [];
+				for (const t of teams) {
+					knownTeams.add(t.name);
+				}
+			}
+
+			invitations = buildInvitations(devices, folders)
+				.filter(inv => !inv.team_name || !knownTeams.has(inv.team_name));
 		} catch {
 			// Non-critical — silently ignore
 		} finally {

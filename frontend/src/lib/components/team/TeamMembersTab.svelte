@@ -204,6 +204,14 @@
 								>
 									{member.status}
 								</span>
+								{#if member.status === 'removed' && member.delivery_pending}
+									<span
+										class="shrink-0 px-1.5 py-0.5 text-[10px] font-medium rounded-full border bg-[var(--warning)]/10 text-[var(--warning)] border-[var(--warning)]/20"
+										title="Removal signal has not been delivered — device is offline"
+									>
+										delivery pending
+									</span>
+								{/if}
 							</div>
 							<div class="flex items-center gap-2 mt-0.5">
 								<span class="text-[11px] text-[var(--text-muted)] font-mono truncate">
