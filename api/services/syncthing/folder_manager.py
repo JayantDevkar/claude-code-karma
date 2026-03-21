@@ -40,6 +40,27 @@ def build_metadata_folder_id(team_name: str) -> str:
     return f"karma-meta--{team_name}"
 
 
+def resolve_folder_path(karma_base: Path, folder_id: str) -> Path:
+    """Return the filesystem path for a Syncthing folder.
+
+    Metadata folders (karma-meta--*) live under metadata-folders/ subdirectory.
+    All other folders (karma-out--*) live flat under karma_base.
+    """
+    if folder_id.startswith("karma-meta--"):
+        return karma_base / "metadata-folders" / folder_id
+    return karma_base / folder_id
+
+
+def resolve_folder_type(folder_id: str) -> str:
+    """Return the Syncthing folder type for a given folder ID.
+
+    Metadata folders are sendreceive; outbox folders are sendonly by default.
+    """
+    if folder_id.startswith("karma-meta--"):
+        return "sendreceive"
+    return "receiveonly"
+
+
 def parse_outbox_id(folder_id: str) -> Optional[tuple[str, str]]:
     """Parse ``karma-out--{username}--{suffix}`` into ``(username, suffix)``.
 
@@ -98,7 +119,7 @@ class FolderManager:
         return {f["id"] for f in folders}
 
     def _folder_path(self, folder_id: str) -> str:
-        return str(self._karma_base / folder_id)
+        return str(resolve_folder_path(self._karma_base, folder_id))
 
     def _make_folder_config(
         self,
@@ -130,8 +151,6 @@ class FolderManager:
         if folder_id in existing_ids:
             return
         folder = self._make_folder_config(folder_id, "sendreceive")
-        # Metadata folders live under metadata-folders/ subdirectory
-        folder["path"] = str(self._karma_base / "metadata-folders" / folder_id)
         await self._client.put_config_folder(folder)
 
     async def ensure_outbox_folder(self, member_tag: str, folder_suffix: str) -> None:

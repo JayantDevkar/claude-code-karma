@@ -43,6 +43,12 @@ class TeamRepository:
         rows = conn.execute("SELECT * FROM sync_teams").fetchall()
         return [self._row_to_team(r) for r in rows]
 
+    def list_active(self, conn: sqlite3.Connection) -> list[Team]:
+        rows = conn.execute(
+            "SELECT * FROM sync_teams WHERE status = ?", (TeamStatus.ACTIVE.value,)
+        ).fetchall()
+        return [self._row_to_team(r) for r in rows]
+
     @staticmethod
     def _row_to_team(row: sqlite3.Row) -> Team:
         return Team(

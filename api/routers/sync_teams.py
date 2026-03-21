@@ -73,10 +73,13 @@ async def create_team(
 
 
 @router.get("/teams")
-async def list_teams(conn: sqlite3.Connection = Depends(get_read_conn)):
+async def list_teams(
+    conn: sqlite3.Connection = Depends(get_read_conn),
+    include_dissolved: bool = Query(False, description="Include dissolved teams"),
+):
     """List all teams with member/project counts."""
     repos = make_repos()
-    teams = repos["teams"].list_all(conn)
+    teams = repos["teams"].list_all(conn) if include_dissolved else repos["teams"].list_active(conn)
     result = []
     for t in teams:
         members = repos["members"].list_for_team(conn, t.name)

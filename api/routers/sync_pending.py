@@ -86,6 +86,7 @@ async def accept_pending_device(
     discovered_teams: list[str] = []
     try:
         from config import settings as app_settings
+        from services.syncthing.folder_manager import resolve_folder_path
 
         karma_base = app_settings.karma_base
         raw = await client.get_pending_folders()
@@ -113,7 +114,7 @@ async def accept_pending_device(
                 folder_config = {
                     "id": folder_id,
                     "label": folder_id,
-                    "path": str(karma_base / "metadata-folders" / folder_id),
+                    "path": str(resolve_folder_path(karma_base, folder_id)),
                     "type": "sendreceive",
                     "devices": devices,
                     "rescanIntervalS": 3600,
@@ -223,12 +224,13 @@ async def accept_pending_folder(
     devices = [{"deviceID": did, "encryptionPassword": ""} for did in device_ids]
 
     from config import settings as app_settings
+    from services.syncthing.folder_manager import resolve_folder_path, resolve_folder_type
 
     folder_config = {
         "id": folder_id,
         "label": folder_id,
-        "path": str(app_settings.karma_base / folder_id),
-        "type": "receiveonly",
+        "path": str(resolve_folder_path(app_settings.karma_base, folder_id)),
+        "type": resolve_folder_type(folder_id),
         "devices": devices,
         "rescanIntervalS": 3600,
         "fsWatcherEnabled": True,

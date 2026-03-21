@@ -290,12 +290,11 @@ class TeamService:
         tags = [m.member_tag for m in members]
         await self.folders.cleanup_team_folders(suffixes, tags, team_name, conn=conn)
 
-        # Log event BEFORE delete so it survives even if an FK is later added
+        # Soft-delete: persist dissolved status for audit trail
+        self.teams.save(conn, dissolved)
+
         self.events.log(conn, SyncEvent(
             event_type=SyncEventType.team_dissolved,
             team_name=team_name,
         ))
-
-        # Delete team — CASCADE handles members, projects, subs
-        self.teams.delete(conn, team_name)
         return dissolved
