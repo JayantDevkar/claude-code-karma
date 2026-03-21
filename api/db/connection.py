@@ -67,6 +67,7 @@ def get_writer_db() -> sqlite3.Connection:
         conn = sqlite3.connect(
             str(db_path),
             timeout=10.0,
+            check_same_thread=False,
         )
         conn.row_factory = sqlite3.Row
 
@@ -97,6 +98,7 @@ def create_writer_connection() -> sqlite3.Connection:
     conn = sqlite3.connect(
         str(db_path),
         timeout=10.0,
+        check_same_thread=False,
     )
     conn.row_factory = sqlite3.Row
     _apply_pragmas(conn, readonly=False)
@@ -119,6 +121,7 @@ def create_read_connection() -> sqlite3.Connection:
         f"file:{db_path}?mode=ro",
         uri=True,
         timeout=5.0,
+        check_same_thread=False,
     )
     conn.row_factory = sqlite3.Row
     _apply_pragmas(conn, readonly=True)
