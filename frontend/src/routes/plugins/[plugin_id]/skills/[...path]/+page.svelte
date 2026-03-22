@@ -11,6 +11,7 @@
 		ChevronRight
 	} from 'lucide-svelte';
 	import { marked } from 'marked';
+	import { markdownCopyButtons } from '$lib/actions/markdownCopyButtons';
 	import DOMPurify from 'isomorphic-dompurify';
 	import { formatDistanceToNow } from 'date-fns';
 	import PageHeader from '$lib/components/layout/PageHeader.svelte';
@@ -168,6 +169,7 @@
 					</div>
 					<div
 						class="p-8 markdown-preview max-w-none prose prose-slate dark:prose-invert"
+						use:markdownCopyButtons={renderedContent}
 					>
 						{@html renderedContent}
 					</div>

@@ -7,6 +7,7 @@
 	import Modal from '$lib/components/ui/Modal.svelte';
 	import { cleanSkillName, getCommandColorVars, getCommandCategoryColorVars, getCommandCategoryLabel } from '$lib/utils';
 	import { API_BASE } from '$lib/config';
+	import { markdownCopyButtons } from '$lib/actions/markdownCopyButtons';
 
 	interface Props {
 		commands: CommandUsage[];
@@ -241,7 +242,7 @@
 				{modalError}
 			</div>
 		{:else}
-			<div class="markdown-preview max-h-[70vh] overflow-y-auto pr-2 custom-scrollbar">
+			<div class="markdown-preview max-h-[70vh] overflow-y-auto pr-2 custom-scrollbar" use:markdownCopyButtons={renderedContent}>
 				{@html renderedContent}
 			</div>
 		{/if}

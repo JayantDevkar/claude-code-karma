@@ -21,6 +21,7 @@
 		Search
 	} from 'lucide-svelte';
 	import { marked } from 'marked';
+	import { markdownCopyButtons } from '$lib/actions/markdownCopyButtons';
 	import DOMPurify from 'isomorphic-dompurify';
 	import type { TimelineEvent } from '$lib/api-types';
 	import { formatDisplayPath } from '$lib/utils';
@@ -55,7 +56,9 @@
 			'spawned_agent_id',
 			'spawned_agent_slug',
 			'is_spawn_task',
-			'subagent_type'
+			'subagent_type',
+			'content',
+			'task_subject'
 		];
 
 		const result: Record<string, unknown> = {};
@@ -317,15 +320,21 @@
 				</div>
 				{#if hasValue(input.content)}
 					{@const content = String(input.content)}
+					{@const lineCount = content.split('\n').length}
 					<div
 						class="rounded-[var(--radius-md)] border border-[var(--border)] p-3 relative"
 					>
 						<div class="flex items-center justify-between gap-2 mb-2">
-							<h5
-								class="text-[10px] font-medium text-[var(--text-muted)] uppercase tracking-wide"
-							>
-								Content
-							</h5>
+							<div class="flex items-center gap-2">
+								<h5
+									class="text-[10px] font-medium text-[var(--text-muted)] uppercase tracking-wide"
+								>
+									Content
+								</h5>
+								<span class="text-[10px] text-[var(--text-muted)]/60 tabular-nums">
+									{lineCount} line{lineCount === 1 ? '' : 's'}
+								</span>
+							</div>
 							<button
 								onclick={(e) => {
 									e.stopPropagation();
@@ -341,8 +350,10 @@
 								{/if}
 							</button>
 						</div>
-						<pre
-							class="font-mono text-xs whitespace-pre-wrap break-words text-[var(--text-secondary)]">{content}</pre>
+						<div class="max-h-80 overflow-y-auto">
+							<pre
+								class="font-mono text-xs whitespace-pre-wrap break-words text-[var(--text-secondary)]">{content}</pre>
+						</div>
 					</div>
 				{/if}
 			</div>
@@ -599,7 +610,7 @@
 				<div
 					class="rounded-b-[var(--radius-md)] border border-t-0 border-[var(--event-plan)]/10 bg-[var(--bg-muted)]/40 px-5 py-4"
 				>
-					<div class="markdown-preview text-sm leading-relaxed">
+					<div class="markdown-preview text-sm leading-relaxed" use:markdownCopyButtons={renderedPlanHtml}>
 						{@html renderedPlanHtml}
 					</div>
 				</div>
@@ -687,13 +698,14 @@
 				{@const taskId = String(input.taskId || '')}
 				{@const status = String(input.status || '')}
 				{@const subject = String(input.subject || '')}
+				{@const taskSubject = String(event.metadata?.task_subject || '')}
 				{@const description = String(input.description || '')}
 				{@const owner = String(input.owner || '')}
 				{@const activeForm = String(input.activeForm || '')}
 				{@const addBlocks = (input.addBlocks as string[]) || []}
 				{@const addBlockedBy = (input.addBlockedBy as string[]) || []}
 				{@const hasChanges =
-					status || subject || description || owner || activeForm || addBlocks.length > 0 || addBlockedBy.length > 0}
+					description || owner || activeForm || addBlocks.length > 0 || addBlockedBy.length > 0}
 				<div
 					class="rounded-[var(--radius-md)] border border-sky-500/20 bg-sky-500/5 overflow-hidden"
 				>
@@ -701,25 +713,32 @@
 					<div
 						class="flex items-center justify-between gap-2.5 px-4 py-2.5 bg-sky-500/10 border-b border-sky-500/15"
 					>
-						<div class="flex items-center gap-2.5">
-							<RefreshCw size={15} class="text-sky-500 shrink-0" />
-							<span
-								class="text-xs font-semibold uppercase tracking-wider text-sky-500"
-							>
-								Update Task
-							</span>
-							{#if taskId}
+						<div class="flex flex-col gap-0.5 min-w-0">
+							<div class="flex items-center gap-2.5">
+								<RefreshCw size={15} class="text-sky-500 shrink-0" />
 								<span
-									class="font-mono text-[10px] rounded bg-sky-500/15 px-1.5 py-0.5 text-sky-400"
+									class="text-xs font-semibold uppercase tracking-wider text-sky-500"
 								>
-									#{taskId}
+									Update Task
+								</span>
+								{#if taskId}
+									<span
+										class="font-mono text-[10px] rounded bg-sky-500/15 px-1.5 py-0.5 text-sky-400"
+									>
+										#{taskId}
+									</span>
+								{/if}
+							</div>
+							{#if subject || taskSubject}
+								<span class="text-xs text-[var(--text-secondary)] pl-6 truncate">
+									{subject || taskSubject}
 								</span>
 							{/if}
 						</div>
 						{#if status}
 							{@const StatusIcon = getTaskStatusIcon(status)}
 							<span
-								class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold {getTaskStatusColor(
+								class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold shrink-0 {getTaskStatusColor(
 									status
 								)}"
 							>
@@ -731,18 +750,6 @@
 					<!-- Changes -->
 					{#if hasChanges}
 						<div class="p-4 space-y-2">
-							{#if subject}
-								<div class="flex items-start gap-2">
-									<span
-										class="shrink-0 text-[10px] font-medium uppercase tracking-wide text-[var(--text-muted)] w-16"
-									>
-										Subject
-									</span>
-									<span class="text-sm text-[var(--text-primary)]"
-										>{subject}</span
-									>
-								</div>
-							{/if}
 							{#if description}
 								<div class="flex items-start gap-2">
 									<span

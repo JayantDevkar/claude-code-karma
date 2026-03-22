@@ -360,16 +360,22 @@ class TestMessageCount:
         agent_path = temp_project_dir / "agent-with-empty.jsonl"
 
         with open(agent_path, "w") as f:
-            msg = {
+            msg1 = {
                 "type": "user",
                 "message": {"role": "user", "content": "test"},
                 "uuid": "uuid-1",
                 "timestamp": "2026-01-08T13:00:00.000Z",
             }
-            f.write(json.dumps(msg) + "\n")
+            msg2 = {
+                "type": "user",
+                "message": {"role": "user", "content": "test2"},
+                "uuid": "uuid-2",
+                "timestamp": "2026-01-08T13:01:00.000Z",
+            }
+            f.write(json.dumps(msg1) + "\n")
             f.write("\n")  # Empty line
             f.write("   \n")  # Whitespace only line
-            f.write(json.dumps(msg) + "\n")
+            f.write(json.dumps(msg2) + "\n")
 
         agent = Agent.from_path(agent_path)
 
