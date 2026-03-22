@@ -23,6 +23,15 @@
 
 	let { projectEncodedName, currentPath = '' }: Props = $props();
 
+	// When embedded in project tab, we manage path locally (no URL changes).
+	// When on the global /skills page, currentPath is driven by the URL prop.
+	let internalPath = $state(currentPath);
+
+	// Keep in sync with prop for global-skills-page usage (currentPath changes via URL)
+	$effect(() => {
+		if (!projectEncodedName) internalPath = currentPath;
+	});
+
 	let items = $state<SkillItem[]>([]);
 	let loading = $state(true);
 	let error = $state<string | null>(null);
@@ -32,7 +41,7 @@
 	let newSkillName = $state('');
 
 	$effect(() => {
-		fetchSkills(currentPath);
+		fetchSkills(internalPath);
 	});
 
 	async function fetchSkills(path: string) {
@@ -63,7 +72,7 @@
 	function createSkill() {
 		if (!newSkillName.trim()) return;
 
-		let fullPath = currentPath ? `${currentPath}/${newSkillName}` : newSkillName;
+		let fullPath = internalPath ? `${internalPath}/${newSkillName}` : newSkillName;
 
 		if (!fullPath.endsWith('.md') && !fullPath.endsWith('.txt')) {
 			fullPath += '.md';
@@ -90,16 +99,18 @@
 			? `project=${encodeURIComponent(projectEncodedName)}`
 			: '';
 		if (item.type === 'directory') {
-			const base = `/skills?path=${item.path}`;
-			return projectParam ? `${base}&${projectParam}` : base;
+			// In project context, directories are handled via local state (onclick).
+			// For global /skills page, build a real URL.
+			if (projectEncodedName) return '#';
+			return `/skills?path=${item.path}`;
 		}
 		const base = `/skills/${item.path}`;
 		return projectParam ? `${base}?${projectParam}` : base;
 	}
 
 	function getBackHref(): string {
-		const parentPath = currentPath.includes('/')
-			? currentPath.split('/').slice(0, -1).join('/')
+		const parentPath = internalPath.includes('/')
+			? internalPath.split('/').slice(0, -1).join('/')
 			: '';
 		const projectParam = projectEncodedName
 			? `project=${encodeURIComponent(projectEncodedName)}`
@@ -155,7 +166,7 @@
 					/>
 					<p id="skill-name-hint" class="text-xs text-[var(--text-muted)] mt-1">
 						Will be created in <span class="font-mono text-[var(--text-secondary)]"
-							>/{currentPath}</span
+							>/{internalPath}</span
 						>
 					</p>
 				</div>
@@ -181,9 +192,17 @@
 
 <div class="space-y-6" use:listNavigation>
 	<div class="flex items-center justify-between gap-4">
-		{#if currentPath}
+		{#if internalPath}
 			<a
 				href={getBackHref()}
+				onclick={(e) => {
+					if (projectEncodedName) {
+						e.preventDefault();
+						internalPath = internalPath.includes('/')
+							? internalPath.split('/').slice(0, -1).join('/')
+							: '';
+					}
+				}}
 				class="p-2 hover:bg-[var(--bg-subtle)] rounded-lg text-[var(--text-muted)] transition-colors"
 				aria-label="Go back to parent folder"
 			>
@@ -222,6 +241,12 @@
 				{#if item.type === 'directory'}
 					<a
 						href={getSkillHref(item)}
+						onclick={(e) => {
+							if (projectEncodedName) {
+								e.preventDefault();
+								internalPath = item.path;
+							}
+						}}
 						class="group flex items-center gap-4 p-4 bg-[var(--bg-base)] border border-[var(--border)] rounded-xl hover:border-[var(--accent)]/50 hover:shadow-sm transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2"
 						data-list-item
 					>
@@ -278,14 +303,17 @@
 	{/if}
 
 	<!-- Skill Usage Trend Chart (only at root level) -->
-	{#if !currentPath}
+	{#if !internalPath}
 		<div class="mt-8">
 			<UsageAnalytics
 				endpoint="/skills/usage/trend"
 				{projectEncodedName}
 				itemLabel="Skills"
 				colorFn={getSkillChartHex}
-				itemLinkPrefix="/skills/"
+				itemLinkFn={(name) =>
+					projectEncodedName
+						? `/skills/${name}?project=${encodeURIComponent(projectEncodedName)}`
+						: `/skills/${name}`}
 			/>
 		</div>
 	{/if}

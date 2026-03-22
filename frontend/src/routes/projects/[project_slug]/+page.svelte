@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { browser } from '$app/environment';
-	import { goto, replaceState } from '$app/navigation';
+	import { goto, replaceState, beforeNavigate } from '$app/navigation';
 	import { page } from '$app/stores';
 	import { Tabs } from 'bits-ui';
 	import {
@@ -391,6 +391,26 @@
 		}
 	}
 
+	// Scroll save/restore + last-opened highlight
+	// Keys are project-specific to avoid cross-project stale restores
+	const LAST_OPENED_KEY_PREFIX = 'project_last_opened_';
+	let lastOpenedSessionId = $state<string | null>(null);
+
+	beforeNavigate(({ to }) => {
+		if (!browser) return;
+		const slug = window.location.pathname.split('/')[2];
+		const scrollKey = `project_scroll_${slug}`;
+		const lastKey = `${LAST_OPENED_KEY_PREFIX}${slug}`;
+		if (to?.route.id === '/projects/[project_slug]/[session_slug]') {
+			sessionStorage.setItem(scrollKey, String(window.scrollY));
+			const id = to.url.pathname.split('/').pop() ?? '';
+			if (id) sessionStorage.setItem(lastKey, id);
+		} else {
+			sessionStorage.removeItem(scrollKey);
+			sessionStorage.removeItem(lastKey);
+		}
+	});
+
 	// Initialize tab and all filters from URL, add popstate handler for browser back/forward
 	onMount(() => {
 		const params = new URLSearchParams(window.location.search);
@@ -420,6 +440,25 @@
 		};
 
 		window.addEventListener('popstate', handlePopState);
+
+		// Restore scroll position and last-opened highlight when returning from a session detail
+		const slug = window.location.pathname.split('/')[2];
+		const scrollKey = `project_scroll_${slug}`;
+		const lastKey = `${LAST_OPENED_KEY_PREFIX}${slug}`;
+
+		const savedScroll = sessionStorage.getItem(scrollKey);
+		if (savedScroll !== null) {
+			sessionStorage.removeItem(scrollKey);
+			requestAnimationFrame(() => window.scrollTo({ top: Number(savedScroll), behavior: 'instant' }));
+		}
+
+		const savedId = sessionStorage.getItem(lastKey);
+		if (savedId) {
+			sessionStorage.removeItem(lastKey);
+			lastOpenedSessionId = savedId;
+			setTimeout(() => { lastOpenedSessionId = null; }, 2000);
+		}
+
 		return () => window.removeEventListener('popstate', handlePopState);
 	});
 
@@ -562,7 +601,8 @@
 			tab: activeTab,
 			defaultTab: 'overview',
 			// Clear analytics-specific params when not on analytics tab
-			clearKeys: activeTab !== 'analytics' ? ['filter', 'start_ts', 'end_ts'] : undefined
+			clearKeys: activeTab !== 'analytics' ? ['filter', 'start_ts', 'end_ts'] : undefined,
+			page: currentPage
 		});
 
 		// Single replaceState call for all URL state — synchronous to avoid UI/URL lag
@@ -1263,6 +1303,7 @@
 											showBranch={selectedBranchFilters.size === 0}
 											compact={viewMode === 'grid'}
 											{liveSession}
+											highlighted={session.uuid.slice(0, 8) === lastOpenedSessionId || session.slug === lastOpenedSessionId}
 										/>
 									{/each}
 								</div>
@@ -1302,6 +1343,7 @@
 															liveSession={getLiveSession(
 																session
 															)}
+															highlighted={session.uuid.slice(0, 8) === lastOpenedSessionId || session.slug === lastOpenedSessionId}
 														/>
 													{/each}
 												</div>
@@ -1339,6 +1381,7 @@
 															liveSession={getLiveSession(
 																session
 															)}
+															highlighted={session.uuid.slice(0, 8) === lastOpenedSessionId || session.slug === lastOpenedSessionId}
 														/>
 													{/each}
 												</div>

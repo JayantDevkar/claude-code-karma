@@ -3,6 +3,7 @@
 	import { FileText, Loader2, Copy, Check, Eye, Code, Clock, HardDrive } from 'lucide-svelte';
 	import { marked } from 'marked';
 	import DOMPurify from 'isomorphic-dompurify';
+	import { markdownCopyButtons } from '$lib/actions/markdownCopyButtons';
 	import { formatDistanceToNow } from 'date-fns';
 	import { API_BASE } from '$lib/config';
 	import { formatFileSize } from '$lib/utils';
@@ -177,7 +178,7 @@
 						>Preview</span
 					>
 				</div>
-				<div class="p-8 markdown-preview max-w-none prose prose-slate dark:prose-invert">
+				<div class="p-8 markdown-preview max-w-none prose prose-slate dark:prose-invert" use:markdownCopyButtons={renderedContent}>
 					{@html renderedContent}
 				</div>
 			{/if}

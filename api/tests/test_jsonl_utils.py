@@ -108,7 +108,8 @@ class TestIterMessagesFromJsonl:
             for i in range(5):
                 msg = sample_user_message_data.copy()
                 msg["uuid"] = f"uuid-{i}"
-                msg["message"]["content"] = f"message {i}"
+                msg["timestamp"] = f"2026-01-08T13:0{i}:00.000Z"
+                msg["message"] = {"role": "user", "content": f"message {i}"}
                 f.write(json.dumps(msg) + "\n")
 
         messages = list(iter_messages_from_jsonl(jsonl_path))

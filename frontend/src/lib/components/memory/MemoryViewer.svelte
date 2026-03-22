@@ -3,6 +3,7 @@
 	import DOMPurify from 'isomorphic-dompurify';
 	import { formatDistanceToNow } from 'date-fns';
 	import { Brain, BookOpen, Terminal, Loader2 } from 'lucide-svelte';
+	import { markdownCopyButtons } from '$lib/actions/markdownCopyButtons';
 	import { API_BASE } from '$lib/config';
 	import type { ProjectMemory } from '$lib/api-types';
 	import Card from '$lib/components/ui/Card.svelte';
@@ -150,7 +151,7 @@
 
 		<!-- Markdown content -->
 		<Card variant="default" padding="none">
-			<div class="p-6 md:p-8 markdown-preview max-w-none prose prose-slate dark:prose-invert">
+			<div class="p-6 md:p-8 markdown-preview max-w-none prose prose-slate dark:prose-invert" use:markdownCopyButtons={renderedContent}>
 				{@html renderedContent}
 			</div>
 		</Card>

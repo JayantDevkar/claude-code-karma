@@ -10,6 +10,7 @@
 		Check,
 		Maximize2
 	} from 'lucide-svelte';
+	import { markdownCopyButtons } from '$lib/actions/markdownCopyButtons';
 	import Modal from '$lib/components/ui/Modal.svelte';
 	import ImageAttachments from '$lib/components/ImageAttachments.svelte';
 	import type { ImageAttachment } from '$lib/api-types';
@@ -222,6 +223,7 @@
 				class="markdown-preview text-sm prompt-content {!isExpanded && needsExpansion
 					? 'prompt-preview'
 					: ''}"
+				use:markdownCopyButtons={renderedContent}
 			>
 				{@html renderedContent}
 			</div>
@@ -288,6 +290,7 @@
 			{/if}
 			<div
 				class="markdown-preview max-h-[70vh] overflow-y-auto pr-2 custom-scrollbar break-words"
+				use:markdownCopyButtons={renderedContent}
 			>
 				{@html renderedContent}
 			</div>

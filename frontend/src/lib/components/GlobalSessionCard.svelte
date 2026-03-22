@@ -31,6 +31,7 @@
 		liveSession?: LiveSessionSummary | null;
 		toolSource?: 'main' | 'subagent' | 'both';
 		subagentHref?: string;
+		highlighted?: boolean;
 	}
 
 	let {
@@ -38,7 +39,8 @@
 		compact = false,
 		liveSession = null,
 		toolSource,
-		subagentHref
+		subagentHref,
+		highlighted = false
 	}: Props = $props();
 
 	const showSubagentBadge = $derived(toolSource === 'subagent' || toolSource === 'both');
@@ -136,6 +138,7 @@
 		group
 		focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-base)]
 		{hasLiveStatus && !isRecentlyEnded ? 'ring-1 ring-opacity-50' : ''}
+		{highlighted ? 'session-highlight' : ''}
 		overflow-hidden
 	"
 	style="

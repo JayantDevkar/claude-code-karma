@@ -777,10 +777,12 @@ class TestGitBranchesAndWorkingDirs:
 
         msg2 = sample_user_message_data.copy()
         msg2["uuid"] = "user-msg-002"
+        msg2["timestamp"] = "2026-01-08T13:01:00.000Z"
         msg2["gitBranch"] = "feature/new-stuff"
 
         msg3 = sample_user_message_data.copy()
         msg3["uuid"] = "user-msg-003"
+        msg3["timestamp"] = "2026-01-08T13:02:00.000Z"
         msg3["gitBranch"] = "main"  # Duplicate
 
         with open(jsonl_path, "w") as f:
@@ -827,6 +829,7 @@ class TestGitBranchesAndWorkingDirs:
 
         msg2 = sample_user_message_data.copy()
         msg2["uuid"] = "user-msg-002"
+        msg2["timestamp"] = "2026-01-08T13:01:00.000Z"
         msg2["cwd"] = "/Users/test/project2"
 
         with open(jsonl_path, "w") as f:

@@ -18,6 +18,7 @@
 		Layers
 	} from 'lucide-svelte';
 	import { formatDistanceToNow, isToday, isYesterday, isThisWeek, isThisMonth } from 'date-fns';
+	import { markdownCopyButtons } from '$lib/actions/markdownCopyButtons';
 	import { onMount, tick } from 'svelte';
 	import PageHeader from '$lib/components/layout/PageHeader.svelte';
 	import StatsGrid from '$lib/components/StatsGrid.svelte';
@@ -62,7 +63,7 @@
 	let detail = $derived(data.detail);
 
 	// Check if navigating to a different skill
-	let isLoading = $derived(!!$navigating && $navigating.to?.route.id === '/skills/[skill_name]');
+	let isLoading = $derived(!!$navigating && $navigating.to?.route.id === '/skills/[skill_name=skill_name]');
 
 	// Tab state
 	let activeTab = $state<'overview' | 'history'>('overview');
@@ -646,7 +647,7 @@
 				{/snippet}
 
 				{#snippet children()}
-					<div class="markdown-preview max-w-none prose prose-slate dark:prose-invert">
+					<div class="markdown-preview max-w-none prose prose-slate dark:prose-invert" use:markdownCopyButtons={renderedContent}>
 						{@html renderedContent}
 					</div>
 				{/snippet}

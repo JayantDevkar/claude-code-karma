@@ -188,6 +188,8 @@ export interface FilterUrlOptions {
 	extraParams?: Record<string, string>;
 	/** Param keys to clear when not on a specific tab (e.g., analytics params). Runs before extraParams. */
 	clearKeys?: string[];
+	/** Current page number. Written to URL when > 1, deleted when 1 or unset. */
+	page?: number;
 }
 
 /**
@@ -274,6 +276,11 @@ export function buildFilterUrlParams(currentUrl: string, options: FilterUrlOptio
 	if (options.project) {
 		// Use slug for cleaner URLs when available
 		url.searchParams.set('project', options.projectSlug || options.project);
+	}
+
+	// ---- Page number (omit when page 1 — that's the default) ----
+	if (options.page && options.page > 1) {
+		url.searchParams.set('page', options.page.toString());
 	}
 
 	// ---- Extra params (analytics etc.) ----
