@@ -63,7 +63,7 @@
 	let detail = $derived(data.detail);
 
 	// Check if navigating to a different skill
-	let isLoading = $derived(!!$navigating && $navigating.to?.route.id === '/skills/[skill_name]');
+	let isLoading = $derived(!!$navigating && $navigating.to?.route.id === '/skills/[skill_name=skill_name]');
 
 	// Tab state
 	let activeTab = $state<'overview' | 'history'>('overview');
