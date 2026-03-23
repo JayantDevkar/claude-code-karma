@@ -1,0 +1,22 @@
+{
+  "scenario_name": "Sync v4 Team Detail + Members List + Sync Overview",
+  "step_states": {
+    "1": "passed",
+    "2": "executing"
+  },
+  "step_iterations": {},
+  "step_results": {
+    "1": {
+      "status": 200,
+      "body": {
+        "configured": true,
+        "member_tag": "jayant.jayants-macbook-pro-local",
+        "device_id": "WB2LOHL-O4LZOIG-ZLF75IN-3SBKWJI-YMAHDLA-X4ZJCGY-MHQTDRH-P2C4LQE",
+        "user_id": "jayant",
+        "machine_tag": "jayants-macbook-pro-local"
+      }
+    }
+  },
+  "seen_filenames": [],
+  "saved_at": "2026-03-23T22:20:23.141488+00:00"
+}

@@ -1,0 +1,21 @@
+{
+  "id": "000001",
+  "from": "commander",
+  "timestamp": "2026-03-23T22:20:23.140717+00:00",
+  "type": "action",
+  "step_id": 2,
+  "step_name": "Get responder identity + pairing code",
+  "category": "api",
+  "instruction": "Get responder identity + pairing code",
+  "context": {
+    "method": "GET",
+    "path": "/sync/status"
+  },
+  "expect": {
+    "status": 200,
+    "body_contains": {
+      "configured": true
+    }
+  },
+  "step_timeout": 60
+}
