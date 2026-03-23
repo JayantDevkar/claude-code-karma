@@ -1,0 +1,27 @@
+{
+  "id": "000011",
+  "from": "responder",
+  "timestamp": "2026-03-23T22:49:40.704504+00:00",
+  "type": "response",
+  "in_reply_to": "000011",
+  "step_id": 34,
+  "result": {
+    "body": {
+      "members_visible": 2,
+      "you_badge_on_self": true,
+      "commander_online": true,
+      "stats": {
+        "members": 2,
+        "online": 2,
+        "offline": 0,
+        "teams": 1
+      },
+      "self_card_link": "/members/jayant.jayants-mac-mini-local",
+      "commander_card_link": "/members/jayant.jayants-macbook-pro-local"
+    },
+    "status": 200
+  },
+  "passed": true,
+  "notes": "Members page responder perspective verified. 2 members visible (dedup works). Self card: You badge + Wifi icon (online). Commander card: Wifi icon (online). Stats: Members 2, Online 2, Offline 0, Teams 1. Self listed first. Both cards are links to detail pages.",
+  "duration_ms": 3000
+}
