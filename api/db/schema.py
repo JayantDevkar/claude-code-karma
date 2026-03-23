@@ -551,6 +551,7 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
                     name              TEXT PRIMARY KEY,
                     leader_device_id  TEXT NOT NULL,
                     leader_member_tag TEXT NOT NULL,
+                    team_id           TEXT NOT NULL DEFAULT '',
                     status            TEXT NOT NULL DEFAULT 'active'
                                       CHECK(status IN ('active', 'dissolved')),
                     created_at        TEXT NOT NULL DEFAULT (datetime('now'))
