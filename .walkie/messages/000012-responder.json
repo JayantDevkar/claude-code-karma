@@ -1,0 +1,35 @@
+{
+  "id": "000012",
+  "from": "responder",
+  "timestamp": "2026-03-23T22:52:54.237154+00:00",
+  "type": "response",
+  "in_reply_to": "000012",
+  "step_id": 43,
+  "result": {
+    "body": {
+      "syncthing_connected": true,
+      "stats": {
+        "teammates_online": "0/1",
+        "projects": 1,
+        "sessions_shared": 0,
+        "sessions_received": 0
+      },
+      "project_sync_status": {
+        "name": "claude-code-karma",
+        "packaged": 0,
+        "local": 54,
+        "badge": "53 behind"
+      },
+      "recent_activity": [
+        "subscription_accepted"
+      ],
+      "pairing_code_visible": true,
+      "machine_details_accordion": true,
+      "pending_device_request": "self-pairing artifact visible"
+    },
+    "status": 200
+  },
+  "passed": true,
+  "notes": "Sync overview verified from responder. Syncthing: Connected banner visible with \"53 sessions not yet synced\". Stats: 0/1 Teammates Online, 1 Project, 0 Sessions Shared, 0 Sessions Received. Project Sync Status: claude-code-karma 0/54 packaged, 53 behind. Recent Activity shows subscription_accepted event. Pairing Code card and Machine Details accordion present. Note: pending device pairing request card also visible (self-pairing artifact from commander device WB2LOHL). Sessions Received is 0 (consistent with step 17 \u2014 Syncthing connected but no packaged sessions transferred yet).",
+  "duration_ms": 5000
+}
