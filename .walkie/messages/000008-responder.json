@@ -1,0 +1,22 @@
+{
+  "id": "000008",
+  "from": "responder",
+  "timestamp": "2026-03-23T22:40:43.144484+00:00",
+  "type": "response",
+  "in_reply_to": "000008",
+  "step_id": 19,
+  "result": {
+    "body": {
+      "overview_visible": true,
+      "leader_shows": "jayant.jayants-macbook-pro-local",
+      "members_stat": "1/1 active",
+      "projects_stat": "1",
+      "getting_started_banner": false,
+      "offered_subscription_banner": false
+    },
+    "status": 200
+  },
+  "passed": true,
+  "notes": "Overview tab verified from member perspective. Leader correctly shows jayant.jayants-macbook-pro-local (commander). Stats: Members 1/1 active, Projects 1. No GettingStartedBanner (non-leader). No offered subscription banner. Screenshot taken.",
+  "duration_ms": 3000
+}
