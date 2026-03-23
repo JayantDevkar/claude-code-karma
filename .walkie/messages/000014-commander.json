@@ -1,0 +1,18 @@
+{
+  "id": "000014",
+  "from": "commander",
+  "timestamp": "2026-03-23T22:54:40.172446+00:00",
+  "type": "action",
+  "step_id": 47,
+  "step_name": "Reconcile to process removal",
+  "category": "api",
+  "instruction": "Reconcile to process removal",
+  "context": {
+    "method": "POST",
+    "path": "/sync/reconcile"
+  },
+  "expect": {
+    "status": 200
+  },
+  "step_timeout": 60
+}

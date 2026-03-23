@@ -45,7 +45,9 @@
     "42": "passed",
     "43": "passed",
     "44": "passed",
-    "45": "executing"
+    "45": "passed",
+    "46": "passed",
+    "47": "executing"
   },
   "step_iterations": {},
   "step_results": {
@@ -179,16 +181,17 @@
       "passed": true
     },
     "44": {
+      "passed": true
+    },
+    "45": {
+      "passed": true
+    },
+    "46": {
       "body": {
-        "total_events": 3,
-        "types": [
-          "team_created",
-          "project_shared",
-          "member_added"
-        ]
+        "status": "removed"
       }
     }
   },
   "seen_filenames": [],
-  "saved_at": "2026-03-23T22:53:35.541493+00:00"
+  "saved_at": "2026-03-23T22:54:40.172915+00:00"
 }
