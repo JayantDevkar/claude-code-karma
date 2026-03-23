@@ -682,7 +682,7 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
                 pass  # Column already exists
             # Backfill existing teams with a UUID so they participate in incarnation checks
             import uuid as _uuid
-            for row in conn.execute("SELECT name FROM sync_teams WHERE team_id = ''").fetchall():
+            for row in conn.execute("SELECT name FROM sync_teams WHERE team_id = '' OR team_id IS NULL").fetchall():
                 conn.execute(
                     "UPDATE sync_teams SET team_id = ? WHERE name = ?",
                     (str(_uuid.uuid4()), row[0]),

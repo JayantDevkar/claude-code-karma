@@ -52,11 +52,16 @@ class TeamRepository:
 
     @staticmethod
     def _row_to_team(row: sqlite3.Row) -> Team:
+        # Deterministic fallback: uuid5 from team name so reads are stable
+        team_id = row["team_id"]
+        if not team_id:
+            import uuid
+            team_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"karma-team:{row['name']}"))
         return Team(
             name=row["name"],
             leader_device_id=row["leader_device_id"],
             leader_member_tag=row["leader_member_tag"],
-            team_id=row["team_id"] if row["team_id"] else str(__import__("uuid").uuid4()),
+            team_id=team_id,
             status=TeamStatus(row["status"]),
             created_at=datetime.fromisoformat(row["created_at"]),
         )
