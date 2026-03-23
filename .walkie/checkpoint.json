@@ -16,7 +16,8 @@
     "13": "passed",
     "14": "passed",
     "15": "passed",
-    "16": "executing"
+    "16": "passed",
+    "17": "executing"
   },
   "step_iterations": {},
   "step_results": {
@@ -57,33 +58,29 @@
       "passed": true
     },
     "13": {
-      "body": {
-        "member_tag": "jayant.jayants-mac-mini-local",
-        "team_name": "page-test",
-        "project_git_identity": "jayantdevkar/claude-code-karma",
-        "status": "accepted",
-        "direction": "both"
-      },
-      "status": 200
+      "passed": true
     },
     "14": {
-      "status": 200,
-      "body": {
-        "ok": true
-      }
+      "passed": true
     },
     "15": {
-      "status": 200,
+      "passed": true
+    },
+    "16": {
       "body": {
         "ok": true,
         "packaged": [
           {
-            "sessions_packaged": 1047
+            "team_name": "page-test",
+            "git_identity": "jayantdevkar/claude-code-karma",
+            "sessions_packaged": 0,
+            "error": "Project dir not found: -Users-jayantdevkar-Documents-GitHub-claude-karma"
           }
         ]
-      }
+      },
+      "status": 200
     }
   },
   "seen_filenames": [],
-  "saved_at": "2026-03-23T22:31:52.747243+00:00"
+  "saved_at": "2026-03-23T22:32:49.848476+00:00"
 }

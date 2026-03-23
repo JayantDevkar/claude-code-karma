@@ -1,0 +1,15 @@
+{
+  "id": "000007",
+  "from": "commander",
+  "timestamp": "2026-03-23T22:32:49.848002+00:00",
+  "type": "action",
+  "step_id": 17,
+  "step_name": "Wait for sessions from commander",
+  "category": "wait",
+  "instruction": "Wait for sessions from commander",
+  "context": {},
+  "expect": {
+    "condition_met": true
+  },
+  "step_timeout": 150
+}
