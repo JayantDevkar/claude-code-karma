@@ -264,19 +264,29 @@ async def sync_reset(options: Optional[ResetOptions] = None):
     except Exception:
         steps["syncthing_cleanup"] = "skipped"
 
-    # 2. Delete filesystem dirs
-    for dir_name in ["remote-sessions", "handshakes", "metadata-folders"]:
+    # 2. Delete filesystem dirs (named subdirectories)
+    for dir_name in ["remote-sessions", "handshakes", "metadata-folders", "quarantine"]:
         d = KARMA_BASE / dir_name
         if d.exists():
             shutil.rmtree(d, ignore_errors=True)
             steps[f"{dir_name.replace('-', '_')}_deleted"] = True
+
+    # 2b. Delete karma-out--* outbox/inbox directories (live flat under KARMA_BASE)
+    outbox_removed = []
+    if KARMA_BASE.exists():
+        for entry in KARMA_BASE.iterdir():
+            if entry.is_dir() and entry.name.startswith("karma-out--"):
+                shutil.rmtree(entry, ignore_errors=True)
+                outbox_removed.append(entry.name)
+    if outbox_removed:
+        steps["outbox_dirs_removed"] = outbox_removed
 
     # 3. Delete sync config
     if SYNC_CONFIG_PATH.exists():
         SYNC_CONFIG_PATH.unlink()
         steps["config_deleted"] = True
 
-    # 4. Clear v4 sync tables
+    # 4. Clear v4 sync tables + related sync data
     from db.connection import get_writer_db
 
     conn = get_writer_db()
@@ -288,14 +298,25 @@ async def sync_reset(options: Optional[ResetOptions] = None):
         "sync_events",
         "sync_members",
         "sync_teams",
+        "skill_definitions",
     ]:
         try:
             conn.execute(f"DELETE FROM {table}")  # noqa: S608
             tables_cleared.append(table)
         except sqlite3.OperationalError:
             pass
+
+    # 4b. Remove remote session rows from sessions table
+    remote_deleted = 0
+    try:
+        cur = conn.execute("DELETE FROM sessions WHERE source = 'remote'")
+        remote_deleted = cur.rowcount
+    except sqlite3.OperationalError:
+        pass
     conn.commit()
     steps["tables_cleared"] = tables_cleared
+    if remote_deleted:
+        steps["remote_sessions_deleted"] = remote_deleted
 
     # 5. Stop Syncthing service (best-effort)
     try:
@@ -320,5 +341,17 @@ async def sync_reset(options: Optional[ResetOptions] = None):
             steps["brew_uninstalled"] = r.returncode == 0
         except Exception:
             steps["brew_uninstalled"] = False
+
+        # 6b. Clean Syncthing's own data directory (certs, config, index DB)
+        from pathlib import Path
+        import platform
+
+        if platform.system() == "Darwin":
+            st_data = Path.home() / "Library" / "Application Support" / "Syncthing"
+        else:
+            st_data = Path.home() / ".local" / "share" / "syncthing"
+        if st_data.exists():
+            shutil.rmtree(st_data, ignore_errors=True)
+            steps["syncthing_data_cleaned"] = True
 
     return {"ok": True, "steps": steps}
