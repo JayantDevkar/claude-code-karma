@@ -5,6 +5,51 @@
 
 ---
 
+## Timeline for PM
+
+### Completed
+
+| Date | Milestone | Detail |
+|------|-----------|--------|
+| Mar 7-10 | **v4 Architecture Built** | Domain models, repositories, services, 4-phase reconciliation pipeline, 6 routers, Syncthing integration. ~30K lines of new code. |
+| Mar 11-13 | **Timer Reconciliation + Metadata Sync** | 60s automatic reconciliation, metadata-based project/subscription discovery, cross-team safety guards. 51 integration bugs found and fixed via unit tests. |
+| Mar 14-19 | **Frontend Pages Built** | Sync overview, team detail (5 tabs), member detail (5 tabs), members list, setup wizard, pending invitations. ~15 Svelte components. |
+| Mar 19 | **Feature Definition Written** | `docs/features/2026-03-19-sync-v4.md` — 10 sub-features, state machines, workflows, data contracts. |
+| Mar 20 | **Cross-Machine Testing Begins (git-radio)** | Browser Lifecycle scenario (25 steps) executed across 2 machines. **2 critical bugs found** (timing race on Accept & Pair, stale removal signals). Fixed same day. |
+| Mar 21 | **Subscription Lifecycle Verified** | 39-step scenario testing all 6 subscription state transitions (accept/pause/resume/decline/reopen/direction change). **5 bugs found and fixed.** |
+| Mar 22 | **Member Page + Reset Verified** | 55-step member page walkthrough + reset/cleanup + project sharing. **8 bugs found and fixed** (6 member page, 2 encoded_name resolution). |
+| Mar 23 | **Architectural Review + Hardening** | Code review of all 81 fixes. 4 architectural improvements shipped: incarnation UUID, folder config builder, identity resolver, reconciler bug fix. **0 new bugs.** Status report written. |
+
+### In Progress
+
+| Item | Status | What's Left |
+|------|--------|-------------|
+| Team Detail Page tabs | 2 of 5 tabs untested | TeamOverviewTab, TeamActivityTab need cross-machine walkthrough |
+| Members List page (`/members`) | Not tested | Entire page needs cross-machine verification |
+| Sync Overview accuracy | Partially tested | Stats (unsynced count, teammates online) need accuracy verification |
+
+### Remaining to Ship
+
+| # | Scenario | Est. Effort | Blocking? |
+|---|----------|-------------|-----------|
+| 1 | Team Detail Full Walkthrough (all tabs) | 1 git-radio session (~2 hrs) | **Yes** — core page |
+| 2 | Members List Page | 1 git-radio session (~1 hr) | **Yes** — new page |
+| 3 | Sync Overview Stats Accuracy | 1 git-radio session (~1 hr) | **Yes** — landing page |
+| 4 | 3-Member Mesh Team | 1 git-radio session (~2 hrs) | No — hardening |
+| 5 | Offline Recovery | 1 git-radio session (~1 hr) | No — hardening |
+| 6 | Full Reset → Rejoin | 1 git-radio session (~1 hr) | No — hardening |
+
+### Summary
+
+- **81 bugs found and fixed** across 16 days of development
+- **153 steps** of cross-machine testing executed via git-radio (3 scenarios)
+- **1991 automated tests** passing (302 sync-specific)
+- **Bug rate converged to 0** — last 2 days produced no new bugs
+- **3 blocking test sessions remain** before merge (~4-5 hours of testing)
+- **3 optional hardening sessions** for edge cases (post-merge OK)
+
+---
+
 ## Part 1: Unaddressed Known Issues
 
 These are observations from review and testing. They are documented here for tracking, not yet prioritized for implementation.
