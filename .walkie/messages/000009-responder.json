@@ -1,0 +1,21 @@
+{
+  "id": "000009",
+  "from": "responder",
+  "timestamp": "2026-03-23T22:42:30.646231+00:00",
+  "type": "response",
+  "in_reply_to": "000009",
+  "step_id": 21,
+  "result": {
+    "body": {
+      "member_cards": 2,
+      "you_badge_on_self": true,
+      "add_member_button": false,
+      "remove_button_visible": false,
+      "commander_card_link": "/members/jayant.jayants-macbook-pro-local"
+    },
+    "status": 200
+  },
+  "passed": true,
+  "notes": "Members tab non-leader view verified. 2 cards visible. Self card has You badge + active status. Commander card has active status, links to /members/jayant.jayants-macbook-pro-local. No Add Member button, no Remove button \u2014 leader controls correctly hidden for non-leader.",
+  "duration_ms": 2500
+}
