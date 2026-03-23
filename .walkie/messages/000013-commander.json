@@ -1,0 +1,19 @@
+{
+  "id": "000013",
+  "from": "commander",
+  "timestamp": "2026-03-23T22:53:35.540975+00:00",
+  "type": "action",
+  "step_id": 45,
+  "step_name": "API: Final cross-check \u2014 members list dedup",
+  "category": "api",
+  "instruction": "API: Final cross-check \u2014 members list dedup",
+  "context": {
+    "method": "GET",
+    "path": "/sync/members"
+  },
+  "expect": {
+    "status": 200,
+    "description": "Verify dedup: each member_tag appears exactly once. responder.is_you should be true for responder.member_tag. commander should show is_you=false. Total should be 2 (or more if other teams exist).\n"
+  },
+  "step_timeout": 60
+}
