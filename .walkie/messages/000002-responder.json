@@ -1,0 +1,18 @@
+{
+  "id": "000002",
+  "from": "responder",
+  "timestamp": "2026-03-23T22:22:08.471759+00:00",
+  "type": "response",
+  "in_reply_to": "000002",
+  "step_id": 3,
+  "result": {
+    "body": {
+      "code": "amF5YW-50Lmph-eWFudH-MtbWFj-LW1pbm-ktbG9j-YWw6V1-lFUE9D-Qi1LRj-JQSUhR-LU81Vk-I2UVkt-VjJYN0-RBUS1I-T09JNj-RTLVBU-QTI1SE-otUUZa-RExVSi-1ISzVZ-SFFC",
+      "member_tag": "jayant.jayants-mac-mini-local"
+    },
+    "status": 200
+  },
+  "passed": true,
+  "notes": "GET /sync/pairing/code returned 200 with pairing code.",
+  "duration_ms": 30
+}
