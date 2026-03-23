@@ -1,0 +1,19 @@
+{
+  "id": "000006",
+  "from": "commander",
+  "timestamp": "2026-03-23T22:31:52.746777+00:00",
+  "type": "action",
+  "step_id": 16,
+  "step_name": "Package sessions",
+  "category": "api",
+  "instruction": "Package sessions",
+  "context": {
+    "method": "POST",
+    "path": "/sync/package",
+    "body": {}
+  },
+  "expect": {
+    "status": 200
+  },
+  "step_timeout": 60
+}

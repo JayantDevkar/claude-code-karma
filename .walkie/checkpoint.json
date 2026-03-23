@@ -13,7 +13,10 @@
     "10": "passed",
     "11": "passed",
     "12": "passed",
-    "13": "executing"
+    "13": "passed",
+    "14": "passed",
+    "15": "passed",
+    "16": "executing"
   },
   "step_iterations": {},
   "step_results": {
@@ -51,12 +54,36 @@
       "passed": true
     },
     "12": {
+      "passed": true
+    },
+    "13": {
       "body": {
-        "ok": true
+        "member_tag": "jayant.jayants-mac-mini-local",
+        "team_name": "page-test",
+        "project_git_identity": "jayantdevkar/claude-code-karma",
+        "status": "accepted",
+        "direction": "both"
       },
       "status": 200
+    },
+    "14": {
+      "status": 200,
+      "body": {
+        "ok": true
+      }
+    },
+    "15": {
+      "status": 200,
+      "body": {
+        "ok": true,
+        "packaged": [
+          {
+            "sessions_packaged": 1047
+          }
+        ]
+      }
     }
   },
   "seen_filenames": [],
-  "saved_at": "2026-03-23T22:30:01.974356+00:00"
+  "saved_at": "2026-03-23T22:31:52.747243+00:00"
 }
