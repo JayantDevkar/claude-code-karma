@@ -1,0 +1,19 @@
+{
+  "id": "000011",
+  "from": "commander",
+  "timestamp": "2026-03-23T22:48:51.456966+00:00",
+  "type": "action",
+  "step_id": 34,
+  "step_name": "Browser: Verify /members page \u2014 responder perspective",
+  "category": "browser",
+  "instruction": "Navigate to /members on RESPONDER machine. Verify: 1. Same members visible (cross-team dedup works) 2. RESPONDER sees \"You\" badge on their own card (not commander's) 3. Commander's card shows online status (should be connected via Syncthing) 4. Stats match: same total member count as commander sees Take a screenshot.\n",
+  "context": {
+    "url": "http://localhost:5173/members",
+    "wait_for": "Members",
+    "screenshot": true
+  },
+  "expect": {
+    "description": "Responder sees same members, 'You' badge on self, commander online"
+  },
+  "step_timeout": 60
+}
