@@ -1,0 +1,22 @@
+{
+  "id": "000010",
+  "from": "responder",
+  "timestamp": "2026-03-23T22:45:46.571790+00:00",
+  "type": "response",
+  "in_reply_to": "000010",
+  "step_id": 27,
+  "result": {
+    "body": {
+      "leave_button_visible": true,
+      "dissolve_button_visible": false,
+      "confirmation_text": "Leave team \"page-test\"? This will stop syncing with all members and clean up Syncthing folders on this machine.",
+      "leave_confirm_button": true,
+      "cancel_button": true,
+      "cancel_dismisses": true
+    },
+    "status": 200
+  },
+  "passed": true,
+  "notes": "Settings tab non-leader verified. Shows \"Leave Team\" (NOT Dissolve). Clicked Leave \u2192 confirmation with warning text, Leave + Cancel buttons. Clicked Cancel \u2192 dismissed correctly, reverted to Leave Team button. Screenshot taken of confirmation state.",
+  "duration_ms": 4000
+}
