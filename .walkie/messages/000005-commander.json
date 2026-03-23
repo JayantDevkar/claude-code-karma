@@ -1,0 +1,24 @@
+{
+  "id": "000005",
+  "from": "commander",
+  "timestamp": "2026-03-23T22:30:01.973825+00:00",
+  "type": "action",
+  "step_id": 13,
+  "step_name": "Accept subscription with direction BOTH",
+  "category": "api",
+  "instruction": "Accept subscription with direction BOTH",
+  "context": {
+    "method": "POST",
+    "path": "/sync/subscriptions/page-test/jayantdevkar%2Fclaude-code-karma/accept",
+    "body": {
+      "direction": "both"
+    }
+  },
+  "expect": {
+    "status": [
+      200,
+      409
+    ]
+  },
+  "step_timeout": 60
+}

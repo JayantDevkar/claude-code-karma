@@ -12,7 +12,8 @@
     "9": "passed",
     "10": "passed",
     "11": "passed",
-    "12": "executing"
+    "12": "passed",
+    "13": "executing"
   },
   "step_iterations": {},
   "step_results": {
@@ -47,14 +48,15 @@
       "passed": true
     },
     "11": {
+      "passed": true
+    },
+    "12": {
       "body": {
-        "ok": true,
-        "device_id": "WB2LOHL-O4LZOIG-ZLF75IN-3SBKWJI-YMAHDLA-X4ZJCGY-MHQTDRH-P2C4LQE",
-        "teams": []
+        "ok": true
       },
       "status": 200
     }
   },
   "seen_filenames": [],
-  "saved_at": "2026-03-23T22:29:04.182691+00:00"
+  "saved_at": "2026-03-23T22:30:01.974356+00:00"
 }
