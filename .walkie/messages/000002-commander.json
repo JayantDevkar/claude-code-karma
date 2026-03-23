@@ -1,0 +1,18 @@
+{
+  "id": "000002",
+  "from": "commander",
+  "timestamp": "2026-03-23T22:21:40.060012+00:00",
+  "type": "action",
+  "step_id": 3,
+  "step_name": "Generate responder pairing code",
+  "category": "api",
+  "instruction": "Generate responder pairing code",
+  "context": {
+    "method": "GET",
+    "path": "/sync/pairing/code"
+  },
+  "expect": {
+    "status": 200
+  },
+  "step_timeout": 60
+}
