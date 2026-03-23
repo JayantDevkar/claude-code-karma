@@ -1,0 +1,18 @@
+{
+  "name": "page-test-001",
+  "created_at": "2026-03-23T22:11:55.835188+00:00",
+  "base_branch": "worktree-syncthing-sync-design",
+  "state": "created",
+  "scenario": "git-radio/scenarios/sync-v4-team-members-overview.yaml",
+  "current_step": 0,
+  "steps_total": 0,
+  "steps_passed": 0,
+  "steps_failed": 0,
+  "stall_timeout": 0,
+  "last_activity_at": "",
+  "commander": {
+    "member_tag": "jayant.jayants-macbook-pro",
+    "machine": "Jayants-MacBook-Pro.local",
+    "joined_at": "2026-03-23T22:11:55.835024+00:00"
+  }
+}

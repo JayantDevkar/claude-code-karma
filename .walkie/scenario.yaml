@@ -1,0 +1,1007 @@
+# Sync v4 Team Detail + Members List + Sync Overview — Full Page Verification
+#
+# UNIFIED SCENARIO covering all 3 remaining blocking test sessions:
+#   1. Team Detail Full Walkthrough (all 5 tabs from both perspectives)
+#   2. Members List Page (/members) — cross-team dedup, search, online/offline
+#   3. Sync Overview Stats Accuracy (/sync) — numbers match API reality
+#
+# What this verifies:
+#   TEAM LIST PAGE (/team):
+#     1. StatsGrid: Teams / Members / Active / Projects Synced — correct aggregation
+#     2. TeamCard: renders team name, member_count badge, project_count, pending badge
+#     3. Create Team Dialog: opens, validates name, creates team, redirects
+#     4. No-teams state: dual-path layout (Create vs Join), PairingCodeCard inline
+#
+#   TEAM DETAIL — OVERVIEW TAB (/team/{name}?tab=overview):
+#     5. Team Info Card: name, status pill (active), leader badge, created date
+#     6. StatsGrid: "Members X/Y active", "Projects N"
+#     7. GettingStartedBanner: shows for leader with 0 members/projects, hides after add
+#     8. Offered subscription banner: shows count, links to projects tab
+#
+#   TEAM DETAIL — MEMBERS TAB (/team/{name}?tab=members):
+#     9. Add Member button (leader only): opens paste form, validates pairing code
+#    10. Member cards: avatar, name, "You" badge, status pill, machine_tag, device_id
+#    11. Remove member: confirm dialog, delivery_pending badge for offline devices
+#    12. "Waiting for members?" diagnostic hint (shows when ≤1 member)
+#
+#   TEAM DETAIL — ACTIVITY TAB (/team/{name}?tab=activity):
+#    13. Activity Log: event list with status dots, descriptions, timestamps
+#    14. Type filter pills: All / Joins / Shares / Sessions / Syncs / Rejections / Settings
+#    15. Member filter pills: colored pills per member, toggle filtering
+#    16. Load More: pagination (if > 20 events)
+#
+#   TEAM DETAIL — SETTINGS TAB (/team/{name}?tab=settings):
+#    17. Dissolve/Leave button: leader sees "Dissolve", member sees "Leave"
+#    18. Confirmation dialog: shows consequences, requires second click
+#
+#   MEMBERS LIST PAGE (/members):
+#    19. StatsGrid: Members / Online / Offline / Teams — correct counts
+#    20. Member cards: avatar, name, "You" badge, online/offline icon, team count
+#    21. Search: filters by name, device_id, team name
+#    22. Cross-team dedup: same member in 2 teams appears once
+#    23. Links: clicking member card navigates to /members/{member_tag}
+#
+#   SYNC OVERVIEW PAGE (/sync):
+#    24. Syncthing status banner: "Connected" (green) vs "Not Running" (yellow)
+#    25. Stats row: Teammates Online X/Y, Projects N, Sessions Shared N, Sessions Received N
+#    26. Project Sync Status: per-project rows with packaged/local counts, "In Sync" / "N behind"
+#    27. Recent Activity: latest 8 events rendered correctly
+#    28. Sync Now button: triggers package + reconcile, refreshes project status
+#    29. Pairing Code card: code visible and copyable
+#    30. Machine Details accordion: expands to show name, machine, version, device ID
+#
+# Mixed-mode: Both machines use API + browser
+#
+# Prerequisites:
+#   - Both machines: API server running on port 8000
+#   - Both machines: Frontend dev server running on port 5173
+#   - Both machines: Syncthing installed and running
+#   - Both machines: sync initialized (POST /sync/init already called)
+#   - Responder: Playwright MCP tools available
+#   - Commander: Playwright MCP tools available
+#
+# Variables resolved from channel.json:
+#   ${{commander.member_tag}}   → e.g., "jayant.macbook-pro"
+#   ${{commander.device_id}}    → e.g., "XXXXXXX-XXXXXXX-..."
+#   ${{commander.user_id}}      → e.g., "jayant"
+#   ${{commander.machine_tag}}  → e.g., "macbook-pro"
+#   ${{responder.member_tag}}   → e.g., "jayant.mac-mini"
+#   ${{responder.device_id}}    → e.g., "YYYYYYY-YYYYYYY-..."
+#   ${{responder.user_id}}      → e.g., "jayant"
+#   ${{responder.machine_tag}}  → e.g., "mac-mini"
+#   ${{responder.pairing_code}} → e.g., "amF5YW50Lm1hYy1taW5pOkRFVi1NSU5JLUFCQw"
+
+name: "Sync v4 Team Detail + Members List + Sync Overview"
+description: >
+  Unified cross-machine verification of all 3 remaining blocking test areas:
+  (1) Team detail page — all 5 tabs from leader and member perspectives,
+  (2) Members list page — cross-team dedup, search, online status,
+  (3) Sync overview — stats accuracy, project sync status, activity feed.
+  Both machines use API + browser to verify data consistency.
+timeout: 2400
+step_timeout: 60
+
+setup:
+  commander:
+    require:
+      - "API server running on port 8000"
+      - "Frontend dev server running on port 5173"
+      - "Syncthing installed and running"
+      - "Sync initialized (POST /sync/init already called)"
+      - "Playwright MCP tools available"
+  responder:
+    require:
+      - "API server running on port 8000"
+      - "Frontend dev server running on port 5173"
+      - "Syncthing installed and running"
+      - "Sync initialized (POST /sync/init already called)"
+      - "Playwright MCP tools available"
+
+steps:
+  # ============================================================
+  # PHASE 1: Setup — Establish team, project, handshake, sessions
+  # ============================================================
+
+  - id: 1
+    actor: commander
+    name: "Get commander identity"
+    action:
+      type: api
+      method: GET
+      path: /sync/status
+    expect:
+      status: 200
+      body_contains:
+        configured: true
+      capture:
+        commander.member_tag: "member_tag"
+        commander.device_id: "device_id"
+        commander.user_id: "user_id"
+        commander.machine_tag: "machine_tag"
+
+  - id: 2
+    actor: responder
+    name: "Get responder identity + pairing code"
+    action:
+      type: api
+      method: GET
+      path: /sync/status
+    expect:
+      status: 200
+      body_contains:
+        configured: true
+      capture:
+        responder.member_tag: "member_tag"
+        responder.device_id: "device_id"
+        responder.user_id: "user_id"
+        responder.machine_tag: "machine_tag"
+
+  - id: 3
+    actor: responder
+    name: "Generate responder pairing code"
+    action:
+      type: api
+      method: GET
+      path: /sync/pairing/code
+    expect:
+      status: 200
+      capture:
+        responder.pairing_code: "code"
+
+  # ============================================================
+  # PHASE 2: Team List — Before any teams (empty state)
+  # ============================================================
+
+  - id: 4
+    actor: commander
+    name: "Browser: Verify /team empty state — dual-path layout"
+    action:
+      type: browser
+      url: "http://localhost:5173/team"
+      wait_for: "No teams yet"
+      screenshot: true
+      instruction: >
+        Navigate to /team. If commander already has teams, skip to step 6.
+        If no teams exist, verify the empty state shows:
+        - "No teams yet" heading
+        - Two cards side by side: "Create a Team" (leader path) and "Join a Team" (member path)
+        - Create a Team card: Crown icon, "Create Team" button
+        - Join a Team card: UserPlus icon, PairingCodeCard (inline variant showing your code)
+        If teams already exist (from prior runs), note this and proceed.
+        Take a screenshot.
+    expect:
+      description: "Empty state with Create/Join dual-path, OR existing team list"
+
+  # ============================================================
+  # PHASE 3: Create team via browser (commander)
+  # ============================================================
+
+  - id: 5
+    actor: commander
+    name: "Browser: Create team 'page-test' via dialog"
+    action:
+      type: browser
+      url: "http://localhost:5173/team"
+      screenshot: true
+      instruction: >
+        Click "Create Team" button (either in empty state card or header button).
+        A CreateTeamDialog modal should appear.
+        Type "page-test" as the team name and submit.
+        Wait for redirect to /team/page-test.
+        Take a screenshot of the team page after redirect.
+    expect:
+      url_contains: "/team/page-test"
+      description: "CreateTeamDialog worked, redirected to team page"
+    step_timeout: 30
+
+  # ============================================================
+  # PHASE 4: Team Overview Tab — Leader, 0 members, 0 projects
+  # ============================================================
+
+  - id: 6
+    actor: commander
+    name: "Browser: Verify TeamOverviewTab — new team state"
+    action:
+      type: browser
+      url: "http://localhost:5173/team/page-test"
+      wait_for: "Overview"
+      screenshot: true
+      instruction: >
+        On /team/page-test, verify the Overview tab shows:
+        1. Team Info Card:
+           - Team name "page-test"
+           - Status pill: "active" (green)
+           - Leader line: Crown icon + "Leader: ${{commander.member_tag}}"
+           - Created date (today's date)
+        2. StatsGrid (2 columns):
+           - "Members: 0/0 active" (no other members yet)
+           - "Projects: 0" (nothing shared yet)
+        3. GettingStartedBanner should be VISIBLE (leader with 0 members + 0 projects):
+           - Step 1: "Share a project" action
+           - Step 2: "Add a member" action
+        4. NO offered subscription banner (you are the leader)
+        Take a screenshot of the full overview.
+    expect:
+      element_visible: "Overview"
+      description: "Overview tab with team info, 0/0 stats, GettingStartedBanner visible"
+
+  # ============================================================
+  # PHASE 5: Share project (API) — verify GettingStartedBanner update
+  # ============================================================
+
+  - id: 7
+    actor: commander
+    name: "Share project with team via API"
+    action:
+      type: api
+      method: POST
+      path: /sync/teams/page-test/projects
+      body:
+        git_identity: "jayantdevkar/claude-code-karma"
+    expect:
+      status: [201, 409]
+      description: "Project shared (or already shared)"
+
+  - id: 8
+    actor: commander
+    name: "Browser: Verify Overview after project shared"
+    action:
+      type: browser
+      url: "http://localhost:5173/team/page-test"
+      wait_for: "Overview"
+      screenshot: true
+      instruction: >
+        After sharing project, refresh the overview and verify:
+        1. StatsGrid: Projects count is now 1
+        2. GettingStartedBanner: "Share a project" step should show as complete
+           (but "Add a member" still shows as pending)
+        Take a screenshot.
+    expect:
+      description: "Projects stat updated to 1, GettingStartedBanner partially complete"
+
+  # ============================================================
+  # PHASE 6: Members Tab — Add member via browser (leader action)
+  # ============================================================
+
+  - id: 9
+    actor: commander
+    name: "Browser: Navigate to Members tab — empty state"
+    action:
+      type: browser
+      url: "http://localhost:5173/team/page-test?tab=members"
+      wait_for: "Members"
+      screenshot: true
+      instruction: >
+        Switch to Members tab. Verify:
+        1. "Add Member" button visible (dashed border, UserPlus icon) — leader only
+        2. Only 1 member visible (self) — or empty with "Waiting for members?" hint
+        3. Self member card shows: avatar, name, "You" badge, "active" status pill
+        4. "Waiting for members?" diagnostic section at bottom:
+           - 3 tips about pairing codes, Syncthing, and relay discovery
+        Take a screenshot.
+    expect:
+      url_contains: "tab=members"
+      description: "Members tab with self only, Add Member button visible, diagnostic hints"
+
+  - id: 10
+    actor: commander
+    name: "Browser: Add responder via pairing code in browser"
+    action:
+      type: browser
+      screenshot: true
+      instruction: >
+        On the Members tab:
+        1. Click "Add Member" button
+        2. A form should appear with a textarea for pasting the pairing code
+        3. Paste the responder's pairing code: "${{responder.pairing_code}}"
+        4. Click "Add Member" submit button
+        5. Verify: form disappears, new member card appears
+        6. New member card should show:
+           - Responder's user_id
+           - Status: "added" (yellow pill) — not yet "active" until handshake
+           - machine_tag displayed below name
+           - Avatar links to /members/{responder.member_tag}
+        Take a screenshot showing the new member card.
+    expect:
+      description: "Member added via browser, card shows 'added' status"
+    step_timeout: 30
+
+  # ============================================================
+  # PHASE 7: Responder accepts & joins — handshake
+  # ============================================================
+
+  - id: 11
+    actor: responder
+    name: "Accept commander device and discover team"
+    action:
+      type: api
+      method: POST
+      path: "/sync/pending-devices/${{commander.device_id}}/accept"
+      body:
+        name: "commander"
+    expect:
+      status: [200, 404]
+      description: "200 if pending, 404 if already accepted"
+
+  - id: 12
+    actor: responder
+    name: "Reconcile to discover team"
+    action:
+      type: api
+      method: POST
+      path: /sync/reconcile
+    expect:
+      status: 200
+
+  - id: 13
+    actor: responder
+    name: "Accept subscription with direction BOTH"
+    action:
+      type: api
+      method: POST
+      path: "/sync/subscriptions/page-test/jayantdevkar%2Fclaude-code-karma/accept"
+      body:
+        direction: "both"
+    expect:
+      status: [200, 409]
+
+  - id: 14
+    actor: commander
+    name: "Reconcile to pick up responder's acceptance"
+    action:
+      type: api
+      method: POST
+      path: /sync/reconcile
+    expect:
+      status: 200
+
+  # Package sessions on both sides
+  - id: 15
+    actor: commander
+    name: "Package sessions"
+    action:
+      type: api
+      method: POST
+      path: /sync/package
+      body: {}
+    expect:
+      status: 200
+
+  - id: 16
+    actor: responder
+    name: "Package sessions"
+    action:
+      type: api
+      method: POST
+      path: /sync/package
+      body: {}
+    expect:
+      status: 200
+
+  - id: 17
+    actor: responder
+    name: "Wait for sessions from commander"
+    action:
+      type: wait
+      condition: "GET /sync/teams/page-test/project-status shows received_count > 0"
+      timeout: 120
+      poll_interval: 15
+    expect:
+      condition_met: true
+    step_timeout: 150
+
+  # ============================================================
+  # PHASE 8: Team Overview Tab — After member joined
+  # ============================================================
+
+  - id: 18
+    actor: commander
+    name: "Browser: Verify Overview tab — after member joined"
+    action:
+      type: browser
+      url: "http://localhost:5173/team/page-test"
+      wait_for: "Overview"
+      screenshot: true
+      instruction: >
+        Refresh team overview. Verify:
+        1. StatsGrid:
+           - "Members: 1/1 active" (1 other member, 1 active)
+           - "Projects: 1"
+        2. GettingStartedBanner should be HIDDEN (both steps complete:
+           has 1+ members AND 1+ projects)
+        3. Team Info Card still shows leader, status, created date
+        Take a screenshot.
+    expect:
+      description: "Stats show 1/1 active member, 1 project, GettingStartedBanner hidden"
+
+  - id: 19
+    actor: responder
+    name: "Browser: Verify Overview tab — member perspective"
+    action:
+      type: browser
+      url: "http://localhost:5173/team/page-test"
+      wait_for: "Overview"
+      screenshot: true
+      instruction: >
+        Navigate to /team/page-test as the non-leader member. Verify:
+        1. Team Info Card: leader shows as ${{commander.member_tag}} (NOT responder)
+        2. StatsGrid: "Members: 1/1 active", "Projects: 1"
+        3. GettingStartedBanner should NOT appear (non-leader members don't see it)
+        4. NO offered subscription banner (already accepted)
+        Take a screenshot.
+    expect:
+      element_visible: "Overview"
+      description: "Member sees correct leader, stats, no GettingStartedBanner"
+
+  # ============================================================
+  # PHASE 9: Team Members Tab — Both perspectives
+  # ============================================================
+
+  - id: 20
+    actor: commander
+    name: "Browser: Verify Members tab — leader view with 2 members"
+    action:
+      type: browser
+      url: "http://localhost:5173/team/page-test?tab=members"
+      wait_for: "Members"
+      screenshot: true
+      instruction: >
+        On Members tab, verify:
+        1. Two member cards in a 2-column grid
+        2. Commander's card: avatar, name, "You" badge, "active" status
+        3. Responder's card:
+           - Avatar (letter initial), name, "active" status (green)
+           - machine_tag displayed
+           - device_id snippet
+           - Avatar is a link to /members/{responder.member_tag}
+        4. "Add Member" button still visible (leader can add more)
+        5. Remove button (trash icon) visible on responder's card (leader only)
+        6. "Waiting for members?" hint should be HIDDEN (>1 member)
+        Take a screenshot.
+    expect:
+      url_contains: "tab=members"
+      description: "2 member cards, leader controls visible, diagnostic hint hidden"
+
+  - id: 21
+    actor: responder
+    name: "Browser: Verify Members tab — non-leader view"
+    action:
+      type: browser
+      url: "http://localhost:5173/team/page-test?tab=members"
+      wait_for: "Members"
+      screenshot: true
+      instruction: >
+        On Members tab as non-leader, verify:
+        1. Same 2 member cards visible
+        2. Responder's own card shows "You" badge
+        3. NO "Add Member" button (non-leader cannot add members)
+        4. NO remove button on commander's card (non-leader cannot remove)
+        5. Commander's card links to /members/{commander.member_tag}
+        Take a screenshot noting absence of leader controls.
+    expect:
+      description: "Non-leader sees members but no Add/Remove controls"
+
+  # ============================================================
+  # PHASE 10: Team Activity Tab — Full verification
+  # ============================================================
+
+  - id: 22
+    actor: commander
+    name: "Browser: Verify Activity tab — event feed"
+    action:
+      type: browser
+      url: "http://localhost:5173/team/page-test?tab=activity"
+      wait_for: "Activity"
+      screenshot: true
+      instruction: >
+        Switch to Activity tab. Verify:
+        1. "Activity Log" header visible
+        2. Type filter pills row: All, Joins, Shares, Sessions, Syncs, Rejections, Settings
+           - "All" should be highlighted (default)
+        3. Member filter pills row: colored pills for each member
+           - Commander pill with letter avatar dot
+           - Responder pill with letter avatar dot
+        4. Event list shows at least these events (most recent first):
+           - session_packaged or session_received events
+           - subscription_accepted event
+           - member_joined event
+           - project_shared event
+           - team_created event
+        5. Each event shows: status dot, description text, relative time, member_tag
+        Take a screenshot of the full activity feed.
+    expect:
+      url_contains: "tab=activity"
+      element_visible: "Activity Log"
+      description: "Activity feed with filter pills and chronological events"
+
+  - id: 23
+    actor: commander
+    name: "Browser: Test activity type filter — 'Joins' pill"
+    action:
+      type: browser
+      screenshot: true
+      instruction: >
+        On the Activity tab:
+        1. Click the "Joins" filter pill
+        2. Verify: "Joins" pill becomes highlighted (accent color), "All" unhighlights
+        3. Event list filters to show only member_joined events
+        4. At least 1 event visible (responder joining)
+        5. Other event types (project_shared, team_created) should NOT appear
+        Take a screenshot of filtered state.
+    expect:
+      description: "Joins filter active, only join events visible"
+
+  - id: 24
+    actor: commander
+    name: "Browser: Test activity type filter — 'Sessions' pill"
+    action:
+      type: browser
+      screenshot: true
+      instruction: >
+        Click the "Sessions" filter pill:
+        1. Verify: list shows only session_packaged and session_received events
+        2. If no session events exist yet, "No activity yet" empty state is OK
+        3. Click "All" to reset filter
+        Take a screenshot.
+    expect:
+      description: "Sessions filter tested, then reset to All"
+
+  - id: 25
+    actor: commander
+    name: "Browser: Test member filter pills"
+    action:
+      type: browser
+      screenshot: true
+      instruction: >
+        Test member filter pills:
+        1. Click the responder's member pill (should have colored dot)
+        2. Verify: events filter to only show events where member_tag matches responder
+        3. Commander's events should NOT appear
+        4. Click the responder pill again to deselect (toggle off)
+        5. All events should reappear
+        Take a screenshot showing filtered-by-member state.
+    expect:
+      description: "Member filter pill toggles filtering by member_tag"
+
+  # ============================================================
+  # PHASE 11: Team Settings Tab — Leader vs Member
+  # ============================================================
+
+  - id: 26
+    actor: commander
+    name: "Browser: Verify Settings tab — leader sees Dissolve"
+    action:
+      type: browser
+      url: "http://localhost:5173/team/page-test?tab=settings"
+      wait_for: "Team Actions"
+      screenshot: true
+      instruction: >
+        On Settings tab as LEADER, verify:
+        1. "Team Actions" section header
+        2. "Dissolve Team" button (red text, border) — NOT "Leave Team"
+        3. Click "Dissolve Team" — a confirmation card appears with:
+           - Warning icon
+           - Text: 'Dissolve team "page-test"? This will remove all members...'
+           - "Dissolve" button (red bg)
+           - "Cancel" button
+        4. Click "Cancel" — confirmation dismisses
+        5. Button reverts to "Dissolve Team"
+        DO NOT actually dissolve. Take a screenshot of confirmation state.
+    expect:
+      url_contains: "tab=settings"
+      description: "Leader sees Dissolve, confirmation dialog works, Cancel dismissed"
+
+  - id: 27
+    actor: responder
+    name: "Browser: Verify Settings tab — member sees Leave"
+    action:
+      type: browser
+      url: "http://localhost:5173/team/page-test?tab=settings"
+      wait_for: "Team Actions"
+      screenshot: true
+      instruction: >
+        On Settings tab as NON-LEADER, verify:
+        1. "Leave Team" button visible — NOT "Dissolve Team"
+        2. Click "Leave Team" — confirmation shows:
+           - 'Leave team "page-test"? This will stop syncing...'
+           - "Leave" button + "Cancel" button
+        3. Click "Cancel" — dismisses
+        DO NOT actually leave. Take a screenshot.
+    expect:
+      description: "Non-leader sees Leave (not Dissolve), confirmation works"
+
+  # ============================================================
+  # PHASE 12: Team List Page — With active team
+  # ============================================================
+
+  - id: 28
+    actor: commander
+    name: "Browser: Verify /team list page — with team"
+    action:
+      type: browser
+      url: "http://localhost:5173/team"
+      wait_for: "Teams"
+      screenshot: true
+      instruction: >
+        Navigate to /team (team listing). Verify:
+        1. PageHeader: "Teams" title, Users icon
+        2. "Create Team" button in header (top right, since teams exist)
+        3. StatsGrid (4 columns):
+           - "Teams: 1" (or more if prior teams exist)
+           - "Members: 1" (excluding self, so just responder)
+           - "Active: 1" (responder is active)
+           - "Projects Synced: 1"
+        4. Quick links row: "Sync status →" link
+        5. TeamCard for "page-test":
+           - Team name as clickable heading
+           - member_count, project_count, pending badge (if any)
+        Take a screenshot of the full team list.
+    expect:
+      element_visible: "Teams"
+      description: "Team list with stats, TeamCard for page-test visible"
+
+  - id: 29
+    actor: commander
+    name: "API: Capture team list data for cross-check"
+    action:
+      type: api
+      method: GET
+      path: /sync/teams
+    expect:
+      status: 200
+      capture:
+        commander.team_count: "teams.length"
+      description: "Capture team count to verify browser stats match"
+
+  # ============================================================
+  # PHASE 13: Members List Page (/members) — Full verification
+  # ============================================================
+
+  - id: 30
+    actor: commander
+    name: "API: Get members list for baseline"
+    action:
+      type: api
+      method: GET
+      path: /sync/members
+    expect:
+      status: 200
+      capture:
+        commander.member_total: "total"
+      description: >
+        Capture total member count, online counts for cross-checking browser.
+        Verify response has: members array with member_tag, name, connected, is_you,
+        team_count, teams, device_id for each member.
+
+  - id: 31
+    actor: commander
+    name: "Browser: Verify /members page — full layout"
+    action:
+      type: browser
+      url: "http://localhost:5173/members"
+      wait_for: "Members"
+      screenshot: true
+      instruction: >
+        Navigate to /members. Verify:
+        1. PageHeader: "Members" title, Contact icon, subtitle "N member(s) across all teams"
+        2. StatsGrid (4 columns):
+           - "Members: N" — total unique members (at least 2: self + responder)
+           - "Online: N" — connected members (self is always online)
+           - "Offline: N" — not connected
+           - "Teams: N" — unique team count
+        3. Quick links: "View all teams →", "Sync status →"
+        4. Search bar: placeholder "Search members..."
+        5. Members grid (1-3 columns responsive):
+           - Self card: avatar (initial letter), name, "You" badge, green Wifi icon, "N teams · DEVICE..."
+           - Responder card: avatar, name, Wifi/WifiOff icon based on Syncthing state, team count
+           - Each card is a link (clickable to /members/{member_tag})
+        6. Self should be listed FIRST (sorted: is_you first, then alphabetical)
+        Take a screenshot of the full members page.
+    expect:
+      element_visible: "Members"
+      description: "Members grid with stats, cards, online indicators"
+
+  - id: 32
+    actor: commander
+    name: "Browser: Test members search"
+    action:
+      type: browser
+      screenshot: true
+      instruction: >
+        Test the search functionality:
+        1. Type "${{responder.user_id}}" in the search bar
+        2. Verify: only the responder's card is visible (commander's card filtered out)
+        3. Clear the search (click X button or clear text)
+        4. Verify: all members reappear
+        5. Type "page-test" (team name) in search
+        6. Verify: members belonging to page-test team are shown
+        7. Type "zzz_nonexistent" — verify empty state: "No members matching 'zzz_nonexistent'"
+        8. Clear search
+        Take screenshots of filtered and empty states.
+    expect:
+      description: "Search filters by name and team name, shows empty state for no match"
+
+  - id: 33
+    actor: commander
+    name: "Browser: Click member card → navigates to detail"
+    action:
+      type: browser
+      screenshot: true
+      instruction: >
+        On /members page, click the responder's member card.
+        Verify:
+        1. Navigation occurs to /members/{responder.member_tag}
+        2. Member detail page loads with Overview tab
+        3. Page shows responder's name, NO "You" badge (this is not self)
+        4. Press browser back to return to /members
+        Take a screenshot of the member detail page.
+    expect:
+      description: "Member card click navigates to detail page correctly"
+
+  - id: 34
+    actor: responder
+    name: "Browser: Verify /members page — responder perspective"
+    action:
+      type: browser
+      url: "http://localhost:5173/members"
+      wait_for: "Members"
+      screenshot: true
+      instruction: >
+        Navigate to /members on RESPONDER machine. Verify:
+        1. Same members visible (cross-team dedup works)
+        2. RESPONDER sees "You" badge on their own card (not commander's)
+        3. Commander's card shows online status (should be connected via Syncthing)
+        4. Stats match: same total member count as commander sees
+        Take a screenshot.
+    expect:
+      description: "Responder sees same members, 'You' badge on self, commander online"
+
+  # ============================================================
+  # PHASE 14: Sync Overview (/sync) — Stats accuracy
+  # ============================================================
+
+  - id: 35
+    actor: commander
+    name: "API: Get project-status for stats baseline"
+    action:
+      type: api
+      method: GET
+      path: /sync/teams/page-test/project-status
+    expect:
+      status: 200
+      capture:
+        commander.packaged_count: "projects[0].packaged_count"
+        commander.local_count: "projects[0].local_count"
+        commander.gap: "projects[0].gap"
+      description: >
+        Capture packaged_count, local_count, gap for the project.
+        These numbers must match what the browser displays.
+
+  - id: 36
+    actor: commander
+    name: "Browser: Verify /sync overview — status banner"
+    action:
+      type: browser
+      url: "http://localhost:5173/sync"
+      wait_for: "Syncthing"
+      screenshot: true
+      instruction: >
+        Navigate to /sync. Verify the Syncthing status banner:
+        1. Green banner with dot: "Syncthing: Connected"
+        2. Below the status text, either:
+           - "N sessions not yet synced" (yellow text, if gap > 0)
+           - "All sessions in sync" (green text, if gap == 0)
+        3. "Sync Now" button on the right (purple accent)
+        Take a screenshot.
+    expect:
+      element_visible: "Syncthing: Connected"
+      description: "Status banner shows Connected with sync state indicator"
+
+  - id: 37
+    actor: commander
+    name: "Browser: Verify /sync overview — Pairing Code card"
+    action:
+      type: browser
+      screenshot: true
+      instruction: >
+        Below the status banner, verify the Pairing Code card:
+        1. Shows your pairing code (base64 string)
+        2. Copy button is functional
+        Take a screenshot of the pairing code card.
+    expect:
+      description: "Pairing Code card with copyable code"
+
+  - id: 38
+    actor: commander
+    name: "Browser: Verify /sync overview — stats row"
+    action:
+      type: browser
+      screenshot: true
+      instruction: >
+        Verify the 4-column stats row:
+        1. "Teammates Online: X/Y" — X = connected, Y = total (excl self)
+           - Should be 1/1 if responder is connected (link to team page)
+        2. "Projects: N" — count of shared projects (should be 1, link to team page)
+        3. "Sessions Shared: N" — total packaged_count across all projects
+           - Cross-check: note the number and compare with step 35's API response
+        4. "Sessions Received: N" — total received from all members
+        Take a screenshot of the stats row.
+    expect:
+      description: "Stats row numbers verified against API baseline"
+
+  - id: 39
+    actor: commander
+    name: "Browser: Verify /sync overview — Project Sync Status table"
+    action:
+      type: browser
+      wait_for: "Project Sync Status"
+      screenshot: true
+      instruction: >
+        Verify the "Project Sync Status" card:
+        1. Header: folder icon + "Project Sync Status" + badge with count
+        2. At least 1 project row for claude-code-karma:
+           - Folder icon + project name (linked to /projects/{encoded_name})
+           - "X/Y sessions packaged" (X = packaged, Y = local)
+           - Badge: "In Sync" (green, if gap=0) OR "N behind" (yellow, if gap>0)
+        3. Cross-check: compare the packaged/local/gap values displayed here
+           against what step 35's API response returned for the same project.
+           They must match exactly.
+        Take a screenshot of the project sync status card.
+    expect:
+      element_visible: "Project Sync Status"
+      description: "Per-project row with packaged/local counts matching API"
+
+  - id: 40
+    actor: commander
+    name: "Browser: Verify /sync overview — Recent Activity"
+    action:
+      type: browser
+      screenshot: true
+      instruction: >
+        Scroll to the "Recent Activity" card:
+        1. Header: clock icon + "Recent Activity"
+        2. Up to 8 most recent events
+        3. Each event: description text + relative time (right-aligned)
+        4. Events should include recent actions (team_created, member_joined,
+           project_shared, subscription_accepted, session_packaged, etc.)
+        Take a screenshot.
+    expect:
+      description: "Recent Activity card with up to 8 events"
+
+  - id: 41
+    actor: commander
+    name: "Browser: Test Sync Now button"
+    action:
+      type: browser
+      screenshot: true
+      instruction: >
+        Click the "Sync Now" button in the status banner:
+        1. Button should show spinner + "Syncing..." text
+        2. After completion (2-10 seconds), button reverts to "Sync Now"
+        3. Project Sync Status should refresh (packaged count may increase)
+        4. "Last updated: Xs ago" in header should reset to 0s
+        Take a screenshot during syncing and after completion.
+    expect:
+      description: "Sync Now triggers packaging + reconciliation, refreshes UI"
+
+  - id: 42
+    actor: commander
+    name: "Browser: Verify Machine Details accordion"
+    action:
+      type: browser
+      screenshot: true
+      instruction: >
+        Scroll to "Machine Details" card (collapsed by default):
+        1. Click to expand the accordion
+        2. Verify fields:
+           - "Your Name": should show ${{commander.user_id}}
+           - "Machine": should show machine identifier
+           - "Syncthing Version": should show version (e.g., v1.x.x)
+           - "Device ID": should show device ID with copy button
+        3. Click the copy button next to Device ID — verify checkmark appears
+        4. "Reset Sync Setup" link at bottom (do NOT click)
+        Take a screenshot of expanded Machine Details.
+    expect:
+      description: "Machine Details accordion expands with correct identity info"
+
+  # ============================================================
+  # PHASE 15: Responder's /sync overview — cross-check
+  # ============================================================
+
+  - id: 43
+    actor: responder
+    name: "Browser: Verify /sync overview — responder perspective"
+    action:
+      type: browser
+      url: "http://localhost:5173/sync"
+      wait_for: "Syncthing: Connected"
+      screenshot: true
+      instruction: >
+        Navigate to /sync on responder. Verify:
+        1. "Syncthing: Connected" banner
+        2. Stats row:
+           - Teammates Online: 1/1 (commander is connected)
+           - Projects: 1
+           - Sessions Shared: N (responder's packaged sessions)
+           - Sessions Received: N (received from commander — should be > 0)
+        3. Project Sync Status: claude-code-karma row with packaged/local counts
+        4. Recent Activity: events from responder's perspective
+        Take a screenshot.
+    expect:
+      element_visible: "Syncthing: Connected"
+      description: "Responder's sync overview with accurate stats and received sessions"
+
+  # ============================================================
+  # PHASE 16: Cross-check API data vs Browser display
+  # ============================================================
+
+  - id: 44
+    actor: commander
+    name: "API: Final cross-check — team activity events"
+    action:
+      type: api
+      method: GET
+      path: /sync/teams/page-test/activity?limit=50
+    expect:
+      status: 200
+      description: >
+        Verify the activity endpoint returns events for all actions taken:
+        - team_created (step 5)
+        - project_shared (step 7)
+        - member_joined (step 10/12)
+        - subscription_accepted (step 13)
+        - session_packaged (steps 15-16)
+        Count total events and verify it matches what the browser showed.
+
+  - id: 45
+    actor: responder
+    name: "API: Final cross-check — members list dedup"
+    action:
+      type: api
+      method: GET
+      path: /sync/members
+    expect:
+      status: 200
+      description: >
+        Verify dedup: each member_tag appears exactly once.
+        responder.is_you should be true for responder.member_tag.
+        commander should show is_you=false.
+        Total should be 2 (or more if other teams exist).
+
+  # ============================================================
+  # PHASE 17: Cleanup
+  # ============================================================
+
+  - id: 46
+    actor: commander
+    name: "Remove responder from team"
+    action:
+      type: api
+      method: DELETE
+      path: "/sync/teams/page-test/members/${{responder.member_tag}}"
+    expect:
+      status: 200
+
+  - id: 47
+    actor: responder
+    name: "Reconcile to process removal"
+    action:
+      type: api
+      method: POST
+      path: /sync/reconcile
+    expect:
+      status: 200
+
+  - id: 48
+    actor: commander
+    name: "Dissolve team"
+    action:
+      type: api
+      method: DELETE
+      path: /sync/teams/page-test
+    expect:
+      status: 200
+      body_contains:
+        status: "dissolved"
+
+on_fail: stop
