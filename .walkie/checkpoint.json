@@ -17,7 +17,9 @@
     "14": "passed",
     "15": "passed",
     "16": "passed",
-    "17": "executing"
+    "17": "passed",
+    "18": "passed",
+    "19": "executing"
   },
   "step_iterations": {},
   "step_results": {
@@ -67,20 +69,15 @@
       "passed": true
     },
     "16": {
-      "body": {
-        "ok": true,
-        "packaged": [
-          {
-            "team_name": "page-test",
-            "git_identity": "jayantdevkar/claude-code-karma",
-            "sessions_packaged": 0,
-            "error": "Project dir not found: -Users-jayantdevkar-Documents-GitHub-claude-karma"
-          }
-        ]
-      },
-      "status": 200
+      "passed": true
+    },
+    "17": {
+      "passed": true
+    },
+    "18": {
+      "description": "Overview: Members(1), Projects(1), GettingStartedBanner hidden, team info card correct"
     }
   },
   "seen_filenames": [],
-  "saved_at": "2026-03-23T22:32:49.848476+00:00"
+  "saved_at": "2026-03-23T22:39:44.934838+00:00"
 }

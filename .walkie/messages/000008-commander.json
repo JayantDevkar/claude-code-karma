@@ -1,0 +1,20 @@
+{
+  "id": "000008",
+  "from": "commander",
+  "timestamp": "2026-03-23T22:39:44.934270+00:00",
+  "type": "action",
+  "step_id": 19,
+  "step_name": "Browser: Verify Overview tab \u2014 member perspective",
+  "category": "browser",
+  "instruction": "Navigate to /team/page-test as the non-leader member. Verify: 1. Team Info Card: leader shows as jayant.jayants-macbook-pro (NOT responder) 2. StatsGrid: \"Members: 1/1 active\", \"Projects: 1\" 3. GettingStartedBanner should NOT appear (non-leader members don't see it) 4. NO offered subscription banner (already accepted) Take a screenshot.\n",
+  "context": {
+    "url": "http://localhost:5173/team/page-test",
+    "wait_for": "Overview",
+    "screenshot": true
+  },
+  "expect": {
+    "description": "Member sees correct leader, stats, no GettingStartedBanner",
+    "element_visible": "Overview"
+  },
+  "step_timeout": 60
+}
