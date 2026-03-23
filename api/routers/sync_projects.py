@@ -57,13 +57,25 @@ async def share_project(
 ):
     """Share a project with the team. Leader only."""
     device_id = config.syncthing.device_id if config.syncthing else ""
+
+    # Auto-resolve encoded_name from git_identity if not provided
+    encoded_name = req.encoded_name
+    if not encoded_name:
+        row = conn.execute(
+            "SELECT DISTINCT project_encoded_name FROM sessions "
+            "WHERE project_encoded_name LIKE ? LIMIT 1",
+            (f"%-{req.git_identity.split('/')[-1]}",),
+        ).fetchone()
+        if row:
+            encoded_name = row[0]
+
     try:
         project = await svc.share_project(
             conn,
             team_name=name,
             by_device=device_id,
             git_identity=req.git_identity,
-            encoded_name=req.encoded_name,
+            encoded_name=encoded_name,
         )
     except AuthorizationError:
         raise HTTPException(403, "Only the team leader can share projects")
