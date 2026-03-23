@@ -61,6 +61,32 @@ def resolve_folder_type(folder_id: str) -> str:
     return "receiveonly"
 
 
+def build_folder_config(
+    karma_base: Path,
+    folder_id: str,
+    folder_type: str,
+    devices: List[dict] | None = None,
+) -> dict:
+    """Build a Syncthing folder configuration dict.
+
+    Single source of truth for the 10-key config dict used when creating
+    or accepting Syncthing folders.  All call sites (FolderManager, reconciler,
+    pending-folder router) should use this instead of constructing dicts inline.
+    """
+    return {
+        "id": folder_id,
+        "label": folder_id,
+        "path": str(resolve_folder_path(karma_base, folder_id)),
+        "type": folder_type,
+        "devices": devices or [],
+        "rescanIntervalS": 3600,
+        "fsWatcherEnabled": True,
+        "fsWatcherDelayS": 10,
+        "ignorePerms": False,
+        "autoNormalize": True,
+    }
+
+
 def parse_outbox_id(folder_id: str) -> Optional[tuple[str, str]]:
     """Parse ``karma-out--{username}--{suffix}`` into ``(username, suffix)``.
 
@@ -127,18 +153,7 @@ class FolderManager:
         folder_type: str,
         devices: List[dict] = None,
     ) -> dict:
-        return {
-            "id": folder_id,
-            "label": folder_id,
-            "path": self._folder_path(folder_id),
-            "type": folder_type,
-            "devices": devices or [],
-            "rescanIntervalS": 3600,
-            "fsWatcherEnabled": True,
-            "fsWatcherDelayS": 10,
-            "ignorePerms": False,
-            "autoNormalize": True,
-        }
+        return build_folder_config(self._karma_base, folder_id, folder_type, devices)
 
     # ------------------------------------------------------------------
     # Outbox / Inbox

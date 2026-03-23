@@ -10,7 +10,7 @@ import sqlite3
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 21
+SCHEMA_VERSION = 22
 
 SCHEMA_SQL = """
 -- Schema versioning
@@ -227,6 +227,7 @@ CREATE TABLE IF NOT EXISTS sync_teams (
     name              TEXT PRIMARY KEY,
     leader_device_id  TEXT NOT NULL,
     leader_member_tag TEXT NOT NULL,
+    team_id           TEXT NOT NULL DEFAULT '',
     status            TEXT NOT NULL DEFAULT 'active'
                       CHECK(status IN ('active', 'dissolved')),
     created_at        TEXT NOT NULL DEFAULT (datetime('now'))
@@ -671,6 +672,20 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
                 conn.execute("ALTER TABLE projects ADD COLUMN git_identity TEXT")
             except sqlite3.OperationalError:
                 pass  # Column already exists
+
+        if current_version < 22:
+            logger.info("Migrating → v22: adding team_id (incarnation UUID) to sync_teams")
+            try:
+                conn.execute("ALTER TABLE sync_teams ADD COLUMN team_id TEXT NOT NULL DEFAULT ''")
+            except sqlite3.OperationalError:
+                pass  # Column already exists
+            # Backfill existing teams with a UUID so they participate in incarnation checks
+            import uuid as _uuid
+            for row in conn.execute("SELECT name FROM sync_teams WHERE team_id = ''").fetchall():
+                conn.execute(
+                    "UPDATE sync_teams SET team_id = ? WHERE name = ?",
+                    (str(_uuid.uuid4()), row[0]),
+                )
 
     # Record version
     conn.execute(

@@ -342,7 +342,8 @@ class TestBug3DissolutionNotification:
             new_member_tag="bob.linux", new_device_id="DEV-B",
         )
 
-        # Dissolve writes removal signals
+        # Dissolve writes removal signals (with team_id)
+        original_team = stack["teams"].get(conn, "t1")
         await team_svc.dissolve_team(conn, team_name="t1", by_device="DEV-A")
 
         # Now simulate bob's machine: recreate team in a fresh DB
@@ -352,8 +353,10 @@ class TestBug3DissolutionNotification:
         ensure_schema(bob_conn)
 
         # Bob's machine has the team (from earlier Phase 0 discovery)
+        # Uses the same team_id — in production, Phase 0 reads this from team.json
         stack["teams"].save(bob_conn, Team(
             name="t1", leader_device_id="DEV-A", leader_member_tag="alice.mac",
+            team_id=original_team.team_id,
         ))
         bob_member = Member.from_member_tag(
             member_tag="bob.linux", team_name="t1",

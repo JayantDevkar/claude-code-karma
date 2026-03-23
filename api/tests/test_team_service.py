@@ -255,8 +255,10 @@ class TestDissolveTeam:
         dissolved = await service.dissolve_team(conn, team_name="t", by_device="DEV-L")
         assert dissolved.status == TeamStatus.DISSOLVED
         mock_folders.cleanup_team_folders.assert_called_once()
-        # Team deleted from DB
-        assert service.teams.get(conn, "t") is None
+        # Team soft-deleted (status=DISSOLVED, still queryable)
+        team_after = service.teams.get(conn, "t")
+        assert team_after is not None
+        assert team_after.status == TeamStatus.DISSOLVED
 
     @pytest.mark.asyncio
     async def test_non_leader_cannot_dissolve(self, service, conn):

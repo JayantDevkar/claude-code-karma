@@ -24,14 +24,15 @@ class TeamRepository:
 
     def save(self, conn: sqlite3.Connection, team: Team) -> None:
         conn.execute(
-            """INSERT INTO sync_teams (name, leader_device_id, leader_member_tag, status, created_at)
-               VALUES (?, ?, ?, ?, ?)
+            """INSERT INTO sync_teams (name, leader_device_id, leader_member_tag, team_id, status, created_at)
+               VALUES (?, ?, ?, ?, ?, ?)
                ON CONFLICT(name) DO UPDATE SET
                    leader_device_id = excluded.leader_device_id,
                    leader_member_tag = excluded.leader_member_tag,
+                   team_id = excluded.team_id,
                    status = excluded.status""",
             (team.name, team.leader_device_id, team.leader_member_tag,
-             team.status.value, team.created_at.isoformat()),
+             team.team_id, team.status.value, team.created_at.isoformat()),
         )
         conn.commit()
 
@@ -55,6 +56,7 @@ class TeamRepository:
             name=row["name"],
             leader_device_id=row["leader_device_id"],
             leader_member_tag=row["leader_member_tag"],
+            team_id=row["team_id"] if row["team_id"] else str(__import__("uuid").uuid4()),
             status=TeamStatus(row["status"]),
             created_at=datetime.fromisoformat(row["created_at"]),
         )

@@ -5,6 +5,7 @@ All state transitions return new immutable instances.
 """
 from __future__ import annotations
 
+import uuid
 from datetime import datetime, timezone
 from enum import Enum
 from typing import TYPE_CHECKING
@@ -29,13 +30,20 @@ class InvalidTransitionError(ValueError):
 
 
 class Team(BaseModel):
-    """Immutable domain model representing a sync team."""
+    """Immutable domain model representing a sync team.
+
+    ``team_id`` is a UUID that uniquely identifies a team *incarnation*.
+    When a team is dissolved and re-created with the same name, the new
+    team gets a fresh ``team_id``, allowing stale metadata (removal signals,
+    folder offers) from the old incarnation to be detected and ignored.
+    """
 
     model_config = ConfigDict(frozen=True)
 
     name: str
     leader_device_id: str
     leader_member_tag: str
+    team_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     status: TeamStatus = TeamStatus.ACTIVE
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc)

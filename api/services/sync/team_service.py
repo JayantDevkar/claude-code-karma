@@ -180,8 +180,10 @@ class TeamService:
         self.members.save(conn, removed)
         self.members.record_removal(conn, team_name, removed.device_id, member_tag=member_tag)
 
-        # Write removal signal to metadata folder
-        self.metadata.write_removal_signal(team_name, member_tag, removed_by=team.leader_member_tag)
+        # Write removal signal to metadata folder (includes team_id for incarnation check)
+        self.metadata.write_removal_signal(
+            team_name, member_tag, removed_by=team.leader_member_tag, team_id=team.team_id,
+        )
 
         # Remove device from all team folder device lists
         projects = self.projects.list_for_team(conn, team_name)
@@ -277,7 +279,7 @@ class TeamService:
                 try:
                     self.metadata.write_removal_signal(
                         team_name, member.member_tag,
-                        removed_by=team.leader_member_tag,
+                        removed_by=team.leader_member_tag, team_id=team.team_id,
                     )
                 except Exception as e:
                     logger.warning(
@@ -293,6 +295,13 @@ class TeamService:
 
         # Soft-delete: persist dissolved status for audit trail
         self.teams.save(conn, dissolved)
+
+        # Explicitly clean up child records (CASCADE doesn't fire on UPDATE).
+        # Members, subscriptions, and projects are no longer relevant.
+        conn.execute("DELETE FROM sync_subscriptions WHERE team_name = ?", (team_name,))
+        conn.execute("DELETE FROM sync_projects WHERE team_name = ?", (team_name,))
+        conn.execute("DELETE FROM sync_members WHERE team_name = ?", (team_name,))
+        conn.commit()
 
         self.events.log(conn, SyncEvent(
             event_type=SyncEventType.team_dissolved,

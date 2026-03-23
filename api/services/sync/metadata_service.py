@@ -105,6 +105,7 @@ class MetadataService:
 
         team_data = {
             "name": team.name,
+            "team_id": team.team_id,
             "created_by": team.leader_member_tag,
             "leader_device_id": team.leader_device_id,
             "created_at": team.created_at.isoformat(),
@@ -192,9 +193,13 @@ class MetadataService:
     # ------------------------------------------------------------------
 
     def write_removal_signal(
-        self, team_name: str, member_tag: str, *, removed_by: str
+        self, team_name: str, member_tag: str, *, removed_by: str, team_id: str = ""
     ) -> None:
-        """Write removal signal to metadata folder."""
+        """Write removal signal to metadata folder.
+
+        Includes ``team_id`` so the reconciler can ignore stale signals
+        from a previous team incarnation with the same name.
+        """
         _validate_path_component(member_tag, "member_tag")
         team_dir = self._team_dir(team_name)
         (team_dir / "removed").mkdir(parents=True, exist_ok=True)
@@ -203,6 +208,7 @@ class MetadataService:
             "member_tag": member_tag,
             "removed_by": removed_by,
             "removed_at": datetime.now(timezone.utc).isoformat(),
+            "team_id": team_id,
         }
         removal_file = team_dir / "removed" / f"{member_tag}.json"
         removal_file.write_text(json.dumps(removal_data, indent=2))

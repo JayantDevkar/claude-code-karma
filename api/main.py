@@ -132,30 +132,7 @@ async def lifespan(app: FastAPI):
 
                 db = get_writer_db()
 
-                # Build local git_identity → encoded_name mapping
-                # so we can resolve cross-machine encoded paths
-                local_projects = db.execute(
-                    "SELECT encoded_name, git_identity FROM projects "
-                    "WHERE git_identity IS NOT NULL"
-                ).fetchall()
-
-                def _resolve_local_encoded(git_url: str, fallback: str) -> str:
-                    """Match a sync git URL to a local project encoded_name."""
-                    # Normalise for comparison: strip .git, lowercase
-                    norm = git_url.rstrip("/")
-                    if norm.endswith(".git"):
-                        norm = norm[:-4]
-                    norm = norm.lower()
-                    for (enc, local_git) in local_projects:
-                        lg = (local_git or "").rstrip("/").lower()
-                        if lg.endswith(".git"):
-                            lg = lg[:-4]
-                        # Match if one contains the other (handles
-                        # "user/repo" vs "https://github.com/user/repo")
-                        if lg and (lg in norm or norm in lg
-                                   or lg.endswith(norm) or norm.endswith(lg)):
-                            return enc
-                    return fallback
+                from db.queries import resolve_encoded_name
 
                 # Build config_data from sync DB tables
                 teams_rows = db.execute(
@@ -170,9 +147,7 @@ async def lifespan(app: FastAPI):
                     ).fetchall()
                     projects_dict = {}
                     for git_id, enc_name, _fsuffix in proj_rows:
-                        local_enc = _resolve_local_encoded(
-                            git_id, enc_name or git_id
-                        )
+                        local_enc = resolve_encoded_name(db, git_id) or enc_name or git_id
                         projects_dict[git_id] = {
                             "encoded_name": local_enc,
                             "path": "",

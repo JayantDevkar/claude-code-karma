@@ -79,7 +79,7 @@ class ReconciliationService:
         except Exception as exc:
             logger.warning("phase_team_discovery failed (non-fatal): %s", exc)
 
-        for team in self.teams.list_all(conn):
+        for team in self.teams.list_active(conn):
             await self.phase_metadata(conn, team)
             await self.phase_mesh_pair(conn, team)
             await self.phase_device_lists(conn, team)
@@ -129,12 +129,17 @@ class ReconciliationService:
                     )
                     continue
 
-                # Create team
-                team = Team(
+                # Create team (use team_id from metadata if available,
+                # otherwise generate a new one)
+                remote_team_id = team_data.get("team_id", "")
+                team_kwargs = dict(
                     name=team_name,
                     leader_device_id=leader_device_id,
                     leader_member_tag=leader_member_tag,
                 )
+                if remote_team_id:
+                    team_kwargs["team_id"] = remote_team_id
+                team = Team(**team_kwargs)
                 self.teams.save(conn, team)
 
                 # Create self as an ACTIVE member
@@ -187,24 +192,15 @@ class ReconciliationService:
 
             try:
                 from config import settings as app_settings
-                from services.syncthing.folder_manager import resolve_folder_path
+                from services.syncthing.folder_manager import build_folder_config
 
                 devices = [{"deviceID": did, "encryptionPassword": ""} for did in device_ids]
                 if self.my_device_id:
                     devices.append({"deviceID": self.my_device_id, "encryptionPassword": ""})
 
-                folder_config = {
-                    "id": folder_id,
-                    "label": folder_id,
-                    "path": str(resolve_folder_path(app_settings.karma_base, folder_id)),
-                    "type": "sendreceive",
-                    "devices": devices,
-                    "rescanIntervalS": 3600,
-                    "fsWatcherEnabled": True,
-                    "fsWatcherDelayS": 10,
-                    "ignorePerms": False,
-                    "autoNormalize": True,
-                }
+                folder_config = build_folder_config(
+                    app_settings.karma_base, folder_id, "sendreceive", devices,
+                )
                 await client.put_config_folder(folder_config)
                 for did in device_ids:
                     await client.dismiss_pending_folder(folder_id, did)
@@ -225,31 +221,43 @@ class ReconciliationService:
             return
 
         # Check removal signals — auto-leave if own tag is in removals
-        # BUT skip stale signals from a previous team incarnation
+        # BUT skip stale signals from a previous team incarnation.
+        # Uses team_id (incarnation UUID) for reliable detection.
+        # Falls back to timestamp comparison for legacy signals without team_id.
         removals = states.pop("__removals", {})
         if self.my_member_tag in removals:
             removal = removals[self.my_member_tag]
-            removed_at_str = removal.get("removed_at", "")
-            try:
-                from datetime import datetime, timezone
-                removed_at = datetime.fromisoformat(removed_at_str)
-                from datetime import timedelta
-                # Use a 60s grace period: signals within 60s of team creation
-                # are ambiguous (could be from rapid dissolve+recreate in tests).
-                # Only skip signals that are clearly from a prior incarnation.
-                if team.created_at and removed_at < (team.created_at - timedelta(seconds=60)):
-                    logger.info(
-                        "phase_metadata: ignoring stale removal signal for '%s' in team '%s' "
-                        "(removed_at=%s < created_at=%s)",
-                        self.my_member_tag, team.name, removed_at_str, team.created_at.isoformat(),
-                    )
-                else:
-                    await self._auto_leave(conn, team)
-                    return
-            except (ValueError, TypeError):
-                # Can't parse date — treat as valid removal to be safe
+            signal_team_id = removal.get("team_id", "")
+
+            if signal_team_id and team.team_id and signal_team_id != team.team_id:
+                # Signal is from a different incarnation — ignore it
+                logger.info(
+                    "phase_metadata: ignoring stale removal signal for '%s' in team '%s' "
+                    "(signal team_id=%s != current team_id=%s)",
+                    self.my_member_tag, team.name, signal_team_id, team.team_id,
+                )
+            elif signal_team_id and team.team_id and signal_team_id == team.team_id:
+                # Signal matches current incarnation — definitely valid
                 await self._auto_leave(conn, team)
                 return
+            else:
+                # Legacy signal without team_id — fall back to timestamp check
+                removed_at_str = removal.get("removed_at", "")
+                try:
+                    from datetime import datetime, timezone, timedelta
+                    removed_at = datetime.fromisoformat(removed_at_str)
+                    if team.created_at and removed_at < (team.created_at - timedelta(seconds=60)):
+                        logger.info(
+                            "phase_metadata: ignoring stale removal signal for '%s' in team '%s' "
+                            "(removed_at=%s < created_at=%s, no team_id)",
+                            self.my_member_tag, team.name, removed_at_str, team.created_at.isoformat(),
+                        )
+                    else:
+                        await self._auto_leave(conn, team)
+                        return
+                except (ValueError, TypeError):
+                    await self._auto_leave(conn, team)
+                    return
 
         # Discover new members from peer state files
         for tag, state in states.items():

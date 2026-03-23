@@ -314,8 +314,10 @@ class TestMultiTeamOverlapE2E:
         )
         assert dissolved.status == TeamStatus.DISSOLVED
 
-        # Team 1 is gone
-        assert teams_repo.get(conn, "team-1") is None
+        # Team 1 is soft-deleted (DISSOLVED status, still queryable)
+        t1_after = teams_repo.get(conn, "team-1")
+        assert t1_after is not None
+        assert t1_after.status == TeamStatus.DISSOLVED
 
         # Team 2 is alive and ACTIVE
         t2 = teams_repo.get(conn, "team-2")

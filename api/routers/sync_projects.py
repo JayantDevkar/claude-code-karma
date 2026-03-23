@@ -59,20 +59,10 @@ async def share_project(
     device_id = config.syncthing.device_id if config.syncthing else ""
 
     # Auto-resolve encoded_name from git_identity if not provided.
-    # Uses exact suffix match on repo name, picks shortest candidate
-    # to avoid matching subdirectories or worktrees.
     encoded_name = req.encoded_name
     if not encoded_name:
-        repo_name = req.git_identity.split("/")[-1]
-        suffix = f"-{repo_name}"
-        rows = conn.execute(
-            "SELECT DISTINCT project_encoded_name FROM sessions "
-            "WHERE project_encoded_name LIKE ?",
-            (f"%{suffix}",),
-        ).fetchall()
-        candidates = [r[0] for r in rows if r[0].endswith(suffix)]
-        if candidates:
-            encoded_name = min(candidates, key=len)
+        from db.queries import resolve_encoded_name
+        encoded_name = resolve_encoded_name(conn, req.git_identity)
 
     try:
         project = await svc.share_project(

@@ -4374,27 +4374,73 @@ def query_last_packaged_timestamp(conn: sqlite3.Connection) -> str | None:
     return row[0] if row and row[0] else None
 
 
+def _normalize_git_identity(raw: str) -> str:
+    """Normalize a git identity for comparison: strip .git suffix, lowercase."""
+    norm = (raw or "").rstrip("/").lower()
+    if norm.endswith(".git"):
+        norm = norm[:-4]
+    return norm
+
+
+def resolve_encoded_name(conn: sqlite3.Connection, git_identity: str) -> str | None:
+    """Resolve a git_identity to a local encoded_name.
+
+    Single source of truth for mapping machine-independent git_identity
+    (e.g. ``owner/repo``) to machine-specific encoded_name
+    (e.g. ``-Users-me-Documents-repo``).
+
+    Strategy:
+      1. Check the ``projects`` table (indexed projects with git_identity).
+      2. Fallback: check the ``sessions`` table using exact suffix match
+         on the repo name portion, picking the shortest candidate to avoid
+         matching subdirectories or worktrees.
+
+    Returns None if no match is found.
+    """
+    norm = _normalize_git_identity(git_identity)
+    if not norm:
+        return None
+
+    # Strategy 1: Match against the projects table (fastest, most reliable)
+    rows = conn.execute(
+        "SELECT encoded_name, git_identity FROM projects "
+        "WHERE git_identity IS NOT NULL"
+    ).fetchall()
+    for enc, local_git in rows:
+        lg = _normalize_git_identity(local_git)
+        if lg and (lg in norm or norm in lg or lg.endswith(norm) or norm.endswith(lg)):
+            return enc
+
+    # Strategy 2: Fallback to sessions table with exact suffix match.
+    # Extract repo name from git_identity (e.g. "owner/repo" → "repo")
+    # and match against project_encoded_name endings.
+    repo_name = norm.split("/")[-1]
+    suffix = f"-{repo_name}"
+    session_rows = conn.execute(
+        "SELECT DISTINCT project_encoded_name FROM sessions "
+        "WHERE project_encoded_name LIKE ?",
+        (f"%{suffix}",),
+    ).fetchall()
+    candidates = [r[0] for r in session_rows if r[0] and r[0].endswith(suffix)]
+    if candidates:
+        return min(candidates, key=len)
+
+    return None
+
+
 def query_resolve_project(
     conn: sqlite3.Connection, git_identity: str
 ) -> tuple[str | None, str | None]:
     """Resolve a sync project's git_identity to (encoded_name, display_name).
 
-    Performs fuzzy matching against the projects table, normalising
-    trailing slashes and ``.git`` suffixes.
+    Uses ``resolve_encoded_name`` for the encoded_name lookup, then fetches
+    display_name from the projects table if found.
     """
-    norm = (git_identity or "").rstrip("/").lower()
-    if norm.endswith(".git"):
-        norm = norm[:-4]
-    if not norm:
+    enc = resolve_encoded_name(conn, git_identity)
+    if enc is None:
         return None, None
-    rows = conn.execute(
-        "SELECT encoded_name, git_identity, display_name FROM projects "
-        "WHERE git_identity IS NOT NULL"
-    ).fetchall()
-    for enc, local_git, display in rows:
-        lg = (local_git or "").rstrip("/").lower()
-        if lg.endswith(".git"):
-            lg = lg[:-4]
-        if lg and (lg in norm or norm in lg or lg.endswith(norm) or norm.endswith(lg)):
-            return enc, display
-    return None, None
+    row = conn.execute(
+        "SELECT display_name FROM projects WHERE encoded_name = ?", (enc,)
+    ).fetchone()
+    display = row[0] if row else None
+    return enc, display

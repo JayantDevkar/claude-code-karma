@@ -86,8 +86,6 @@ async def accept_pending_device(
     discovered_teams: list[str] = []
     try:
         from config import settings as app_settings
-        from services.syncthing.folder_manager import resolve_folder_path
-
         karma_base = app_settings.karma_base
         raw = await client.get_pending_folders()
 
@@ -106,23 +104,16 @@ async def accept_pending_device(
             team_name = m.group(1)
 
             try:
+                from services.syncthing.folder_manager import build_folder_config
+
                 devices = [{"deviceID": device_id, "encryptionPassword": ""}]
                 local_id = config.syncthing.device_id if config.syncthing else None
                 if local_id:
                     devices.append({"deviceID": local_id, "encryptionPassword": ""})
 
-                folder_config = {
-                    "id": folder_id,
-                    "label": folder_id,
-                    "path": str(resolve_folder_path(karma_base, folder_id)),
-                    "type": "sendreceive",
-                    "devices": devices,
-                    "rescanIntervalS": 3600,
-                    "fsWatcherEnabled": True,
-                    "fsWatcherDelayS": 10,
-                    "ignorePerms": False,
-                    "autoNormalize": True,
-                }
+                folder_config = build_folder_config(
+                    karma_base, folder_id, "sendreceive", devices,
+                )
                 await client.put_config_folder(folder_config)
                 await client.dismiss_pending_folder(folder_id, device_id)
                 discovered_teams.append(team_name)
@@ -224,20 +215,11 @@ async def accept_pending_folder(
     devices = [{"deviceID": did, "encryptionPassword": ""} for did in device_ids]
 
     from config import settings as app_settings
-    from services.syncthing.folder_manager import resolve_folder_path, resolve_folder_type
+    from services.syncthing.folder_manager import build_folder_config, resolve_folder_type
 
-    folder_config = {
-        "id": folder_id,
-        "label": folder_id,
-        "path": str(resolve_folder_path(app_settings.karma_base, folder_id)),
-        "type": resolve_folder_type(folder_id),
-        "devices": devices,
-        "rescanIntervalS": 3600,
-        "fsWatcherEnabled": True,
-        "fsWatcherDelayS": 10,
-        "ignorePerms": False,
-        "autoNormalize": True,
-    }
+    folder_config = build_folder_config(
+        app_settings.karma_base, folder_id, resolve_folder_type(folder_id), devices,
+    )
     try:
         await client.put_config_folder(folder_config)
     except Exception as e:
