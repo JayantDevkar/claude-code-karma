@@ -1,0 +1,19 @@
+{
+  "id": "000003",
+  "from": "responder",
+  "timestamp": "2026-03-23T22:28:40.520262+00:00",
+  "type": "response",
+  "in_reply_to": "000003",
+  "step_id": 11,
+  "result": {
+    "body": {
+      "ok": true,
+      "device_id": "WB2LOHL-O4LZOIG-ZLF75IN-3SBKWJI-YMAHDLA-X4ZJCGY-MHQTDRH-P2C4LQE",
+      "teams": []
+    },
+    "status": 200
+  },
+  "passed": true,
+  "notes": "Accepted commander device. Status 200.",
+  "duration_ms": 50
+}
