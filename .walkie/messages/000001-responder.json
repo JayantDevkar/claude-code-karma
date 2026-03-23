@@ -1,0 +1,22 @@
+{
+  "id": "000001",
+  "from": "responder",
+  "timestamp": "2026-03-23T22:21:16.963774+00:00",
+  "type": "response",
+  "in_reply_to": "000001",
+  "step_id": 2,
+  "result": {
+    "body": {
+      "configured": true,
+      "user_id": "jayant",
+      "machine_id": "Jayants-Mac-mini.local",
+      "member_tag": "jayant.jayants-mac-mini-local",
+      "device_id": "WYEPOCB-KF2PIHQ-O5VB6QY-V2X7DAQ-HOOI64S-PTA25HJ-QFZDLUJ-HK5YHQB",
+      "teams": []
+    },
+    "status": 200
+  },
+  "passed": true,
+  "notes": "GET /sync/status returned 200 with configured=true. Identity: jayant.jayants-mac-mini-local",
+  "duration_ms": 40
+}
