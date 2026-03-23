@@ -1,0 +1,19 @@
+{
+  "id": "000010",
+  "from": "commander",
+  "timestamp": "2026-03-23T22:44:44.738703+00:00",
+  "type": "action",
+  "step_id": 27,
+  "step_name": "Browser: Verify Settings tab \u2014 member sees Leave",
+  "category": "browser",
+  "instruction": "On Settings tab as NON-LEADER, verify: 1. \"Leave Team\" button visible \u2014 NOT \"Dissolve Team\" 2. Click \"Leave Team\" \u2014 confirmation shows:\n   - 'Leave team \"page-test\"? This will stop syncing...'\n   - \"Leave\" button + \"Cancel\" button\n3. Click \"Cancel\" \u2014 dismisses DO NOT actually leave. Take a screenshot.\n",
+  "context": {
+    "url": "http://localhost:5173/team/page-test?tab=settings",
+    "wait_for": "Team Actions",
+    "screenshot": true
+  },
+  "expect": {
+    "description": "Non-leader sees Leave (not Dissolve), confirmation works"
+  },
+  "step_timeout": 60
+}

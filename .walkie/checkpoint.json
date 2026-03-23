@@ -21,7 +21,13 @@
     "18": "passed",
     "19": "passed",
     "20": "passed",
-    "21": "executing"
+    "21": "passed",
+    "22": "passed",
+    "23": "passed",
+    "24": "passed",
+    "25": "passed",
+    "26": "passed",
+    "27": "executing"
   },
   "step_iterations": {},
   "step_results": {
@@ -83,9 +89,27 @@
       "passed": true
     },
     "20": {
-      "description": "2 member cards, self with You badge, responder with active+remove button, Add Member visible"
+      "passed": true
+    },
+    "21": {
+      "passed": true
+    },
+    "22": {
+      "passed": true
+    },
+    "23": {
+      "passed": true
+    },
+    "24": {
+      "passed": true
+    },
+    "25": {
+      "passed": true
+    },
+    "26": {
+      "passed": true
     }
   },
   "seen_filenames": [],
-  "saved_at": "2026-03-23T22:41:38.518162+00:00"
+  "saved_at": "2026-03-23T22:44:44.739288+00:00"
 }
