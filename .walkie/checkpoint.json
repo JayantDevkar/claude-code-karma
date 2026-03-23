@@ -1,24 +1,51 @@
 {
   "scenario_name": "Sync v4 Team Detail + Members List + Sync Overview",
   "step_states": {
-    "1": "executing",
+    "1": "passed",
     "2": "passed",
-    "3": "executing"
+    "3": "passed",
+    "4": "passed",
+    "5": "passed",
+    "6": "passed",
+    "7": "passed",
+    "8": "passed",
+    "9": "passed",
+    "10": "passed",
+    "11": "executing"
   },
   "step_iterations": {},
   "step_results": {
+    "1": {
+      "passed": true
+    },
     "2": {
-      "body": {
-        "configured": true,
-        "user_id": "jayant",
-        "machine_id": "Jayants-Mac-mini.local",
-        "member_tag": "jayant.jayants-mac-mini-local",
-        "device_id": "WYEPOCB-KF2PIHQ-O5VB6QY-V2X7DAQ-HOOI64S-PTA25HJ-QFZDLUJ-HK5YHQB",
-        "teams": []
-      },
-      "status": 200
+      "passed": true
+    },
+    "3": {
+      "passed": true
+    },
+    "4": {
+      "passed": true
+    },
+    "5": {
+      "passed": true
+    },
+    "6": {
+      "passed": true
+    },
+    "7": {
+      "passed": true
+    },
+    "8": {
+      "passed": true
+    },
+    "9": {
+      "passed": true
+    },
+    "10": {
+      "passed": true
     }
   },
   "seen_filenames": [],
-  "saved_at": "2026-03-23T22:21:40.060552+00:00"
+  "saved_at": "2026-03-23T22:28:07.232560+00:00"
 }

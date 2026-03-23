@@ -1,0 +1,25 @@
+{
+  "id": "000003",
+  "from": "commander",
+  "timestamp": "2026-03-23T22:28:07.232034+00:00",
+  "type": "action",
+  "step_id": 11,
+  "step_name": "Accept commander device and discover team",
+  "category": "api",
+  "instruction": "Accept commander device and discover team",
+  "context": {
+    "method": "POST",
+    "path": "/sync/pending-devices/WB2LOHL-O4LZOIG-ZLF75IN-3SBKWJI-YMAHDLA-X4ZJCGY-MHQTDRH-P2C4LQE/accept",
+    "body": {
+      "name": "commander"
+    }
+  },
+  "expect": {
+    "status": [
+      200,
+      404
+    ],
+    "description": "200 if pending, 404 if already accepted"
+  },
+  "step_timeout": 60
+}

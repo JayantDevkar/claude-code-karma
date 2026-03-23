@@ -4,22 +4,27 @@
   "base_branch": "worktree-syncthing-sync-design",
   "state": "active",
   "scenario": "git-radio/scenarios/sync-v4-team-members-overview.yaml",
-  "current_step": 3,
+  "current_step": 11,
   "steps_total": 48,
-  "steps_passed": 1,
+  "steps_passed": 2,
   "steps_failed": 0,
   "stall_timeout": 0,
-  "last_activity_at": "2026-03-23T22:21:40.060267+00:00",
+  "last_activity_at": "2026-03-23T22:28:07.232278+00:00",
   "commander": {
     "member_tag": "jayant.jayants-macbook-pro",
     "machine": "Jayants-MacBook-Pro.local",
-    "joined_at": "2026-03-23T22:11:55.835024+00:00"
+    "joined_at": "2026-03-23T22:11:55.835024+00:00",
+    "device_id": "WB2LOHL-O4LZOIG-ZLF75IN-3SBKWJI-YMAHDLA-X4ZJCGY-MHQTDRH-P2C4LQE",
+    "user_id": "jayant",
+    "machine_tag": "jayants-macbook-pro-local"
   },
   "responder": {
     "member_tag": "jayant.jayants-mac-mini-local",
     "machine": "Jayants-Mac-mini.local",
     "joined_at": "2026-03-23T22:14:59.723526+00:00",
     "pairing_code": "amF5YW-50Lmph-eWFudH-MtbWFj-LW1pbm-ktbG9j-YWw6V1-lFUE9D-Qi1LRj-JQSUhR-LU81Vk-I2UVkt-VjJYN0-RBUS1I-T09JNj-RTLVBU-QTI1SE-otUUZa-RExVSi1ISzVZ-SFFC",
-    "device_id": "WYEPOCB-KF2PIHQ-O5VB6QY-V2X7DAQ-HOOI64S-PTA25HJ-QFZDLUJ-HK5YHQB"
+    "device_id": "WYEPOCB-KF2PIHQ-O5VB6QY-V2X7DAQ-HOOI64S-PTA25HJ-QFZDLUJ-HK5YHQB",
+    "user_id": "jayant",
+    "machine_tag": "jayants-mac-mini-local"
   }
 }
