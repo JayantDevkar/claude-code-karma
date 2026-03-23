@@ -1,0 +1,18 @@
+{
+  "id": "000004",
+  "from": "commander",
+  "timestamp": "2026-03-23T22:29:04.182155+00:00",
+  "type": "action",
+  "step_id": 12,
+  "step_name": "Reconcile to discover team",
+  "category": "api",
+  "instruction": "Reconcile to discover team",
+  "context": {
+    "method": "POST",
+    "path": "/sync/reconcile"
+  },
+  "expect": {
+    "status": 200
+  },
+  "step_timeout": 60
+}
