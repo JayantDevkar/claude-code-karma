@@ -1,0 +1,31 @@
+{
+  "id": "000013",
+  "from": "responder",
+  "timestamp": "2026-03-23T22:54:13.542815+00:00",
+  "type": "response",
+  "in_reply_to": "000013",
+  "step_id": 45,
+  "result": {
+    "body": {
+      "total": 2,
+      "members": [
+        {
+          "member_tag": "jayant.jayants-mac-mini-local",
+          "is_you": true,
+          "connected": true,
+          "team_count": 1
+        },
+        {
+          "member_tag": "jayant.jayants-macbook-pro-local",
+          "is_you": false,
+          "connected": true,
+          "team_count": 1
+        }
+      ]
+    },
+    "status": 200
+  },
+  "passed": true,
+  "notes": "Members dedup verified. Total=2. Each member_tag unique. Responder (jayant.jayants-mac-mini-local) is_you=true. Commander (jayant.jayants-macbook-pro-local) is_you=false. Both connected=true. Both in 1 team (page-test).",
+  "duration_ms": 35
+}
