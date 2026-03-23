@@ -1,0 +1,21 @@
+{
+  "id": "000007",
+  "from": "responder",
+  "timestamp": "2026-03-23T22:38:26.849922+00:00",
+  "type": "response",
+  "in_reply_to": "000007",
+  "step_id": 17,
+  "result": {
+    "body": {
+      "local_count": 54,
+      "packaged_count": 0,
+      "received_counts": {},
+      "gap": 53,
+      "syncthing_connected": true
+    },
+    "status": 200
+  },
+  "passed": false,
+  "notes": "Wait condition timed out. Syncthing IS connected to commander (WB2LOHL..., 4.5GB received) but received_counts remains empty after 4+ minutes of polling with reconcile. Possible cause: commander also packaged 0 sessions (project dir mismatch) so there is nothing to receive. Proceeding should be safe \u2014 both machines are connected.",
+  "duration_ms": 240000
+}
