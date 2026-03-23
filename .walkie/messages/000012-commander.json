@@ -1,0 +1,20 @@
+{
+  "id": "000012",
+  "from": "commander",
+  "timestamp": "2026-03-23T22:51:42.274890+00:00",
+  "type": "action",
+  "step_id": 43,
+  "step_name": "Browser: Verify /sync overview \u2014 responder perspective",
+  "category": "browser",
+  "instruction": "Navigate to /sync on responder. Verify: 1. \"Syncthing: Connected\" banner 2. Stats row:\n   - Teammates Online: 1/1 (commander is connected)\n   - Projects: 1\n   - Sessions Shared: N (responder's packaged sessions)\n   - Sessions Received: N (received from commander \u2014 should be > 0)\n3. Project Sync Status: claude-code-karma row with packaged/local counts 4. Recent Activity: events from responder's perspective Take a screenshot.\n",
+  "context": {
+    "url": "http://localhost:5173/sync",
+    "wait_for": "Syncthing: Connected",
+    "screenshot": true
+  },
+  "expect": {
+    "description": "Responder's sync overview with accurate stats and received sessions",
+    "element_visible": "Syncthing: Connected"
+  },
+  "step_timeout": 60
+}
