@@ -151,7 +151,7 @@
 	<Tabs.Root bind:value={activeTab} class="space-y-5">
 		<Tabs.List class="flex gap-1 p-1 bg-[var(--bg-subtle)] border border-[var(--border)] rounded-lg w-fit mx-auto max-w-full overflow-x-auto">
 			<TabsTrigger value="overview" icon={LayoutDashboard}>Overview</TabsTrigger>
-			<TabsTrigger value="sessions" icon={FolderGit2}>Sessions ({profile.stats.sessions_sent})</TabsTrigger>
+			<TabsTrigger value="sessions" icon={FolderGit2}>Sessions</TabsTrigger>
 			<TabsTrigger value="teams" icon={Users}>Teams ({profile.teams.length})</TabsTrigger>
 			<TabsTrigger value="activity" icon={Activity}>Activity</TabsTrigger>
 			<TabsTrigger value="settings" icon={Settings}>Settings</TabsTrigger>

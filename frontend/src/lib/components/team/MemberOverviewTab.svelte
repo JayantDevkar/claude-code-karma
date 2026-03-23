@@ -256,7 +256,7 @@
 				</button>
 			</div>
 			<div class="px-5 divide-y divide-[var(--border-subtle)]">
-				{#each profile.project_sync as ps (ps.git_identity)}
+				{#each profile.project_sync as ps (ps.team_name + ':' + ps.git_identity)}
 					<div class="flex items-center gap-3 py-3">
 						<span class="text-sm text-[var(--text-primary)] flex-1 truncate">{ps.name}</span>
 						<span class="text-xs text-[var(--text-muted)]">{ps.packaged_count}/{ps.local_count} packaged</span>
@@ -278,14 +278,13 @@
 
 	<!-- ── 0c. Sessions from {name} (remote only) ──────────────────────── -->
 	{#if !profile.is_you}
-		{@const allProjects = profile.teams.flatMap(t => t.projects)}
-		{#if allProjects.length > 0}
+		{#if projectList.length > 0}
 			<div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-subtle)]">
 				<div class="px-5 py-3.5 border-b border-[var(--border-subtle)]">
 					<h3 class="text-sm font-semibold text-[var(--text-primary)]">Sessions from {profile.user_id}</h3>
 				</div>
 				<div class="px-5 divide-y divide-[var(--border-subtle)]">
-					{#each allProjects as proj (proj.encoded_name)}
+					{#each projectList as proj (proj.encoded_name)}
 						<div class="flex items-center justify-between py-3">
 							<span class="text-sm text-[var(--text-primary)]">{proj.name}</span>
 							<span class="text-xs text-[var(--text-muted)]">{proj.session_count} sessions</span>

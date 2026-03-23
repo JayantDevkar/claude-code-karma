@@ -243,15 +243,20 @@ async def get_member_profile(
     # Fallback: if no packaged events logged yet, count outbox files on disk
     if sent_count == 0 and is_you:
         from config import settings as app_settings
-        from services.syncthing.folder_manager import build_outbox_folder_id
-        for m in memberships:
-            for p in repos["projects"].list_for_team(conn, m.team_name):
-                if p.status.value != "shared":
+        # Count across ALL outbox folders matching this member's tag pattern,
+        # regardless of folder naming convention (handles legacy folder names)
+        outbox_prefix = f"karma-out--{member_tag}--"
+        seen_files: set[str] = set()
+        if app_settings.karma_base.is_dir():
+            for folder in app_settings.karma_base.iterdir():
+                if not folder.is_dir() or not folder.name.startswith(outbox_prefix):
                     continue
-                folder_id = build_outbox_folder_id(member_tag, p.folder_suffix)
-                sessions_dir = app_settings.karma_base / folder_id / "sessions"
+                sessions_dir = folder / "sessions"
                 if sessions_dir.is_dir():
-                    sent_count += sum(1 for _ in sessions_dir.glob("*.jsonl"))
+                    for f in sessions_dir.glob("*.jsonl"):
+                        if f.name not in seen_files:
+                            seen_files.add(f.name)
+                            sent_count += 1
 
     received_count = query_member_received_count(conn, member_tag)
 

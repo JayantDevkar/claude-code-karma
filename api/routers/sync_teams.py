@@ -572,3 +572,107 @@ def _get_active_counts(live_sessions_dir: Path | None = None) -> dict[str, int]:
         except (ValueError, OSError):
             continue
     return counts
+
+
+# --- Member settings endpoint ------------------------------------------------
+
+@router.get("/teams/{name}/members/{device_id}/settings")
+async def get_member_settings(
+    name: str,
+    device_id: str,
+    conn: sqlite3.Connection = Depends(get_read_conn),
+):
+    """Get sync direction settings for a member in a team."""
+    repos = make_repos()
+    team = repos["teams"].get(conn, name)
+    if team is None:
+        raise HTTPException(404, f"Team '{name}' not found")
+
+    # Find member by device_id in this team
+    members = repos["members"].get_by_device(conn, device_id)
+    member = next((m for m in members if m.team_name == name), None)
+    if member is None:
+        raise HTTPException(404, f"No member with device '{device_id}' in team '{name}'")
+
+    # Get accepted subscriptions for this member in this team
+    subs = repos["subs"].list_for_member(conn, member.member_tag)
+    team_subs = [s for s in subs if s.team_name == name and s.status.value == "accepted"]
+
+    # Determine effective direction from subscriptions
+    # Map API values to frontend format: send→send_only, receive→receive_only
+    api_to_frontend = {"send": "send_only", "receive": "receive_only", "both": "both"}
+
+    if team_subs:
+        directions = {s.direction.value for s in team_subs}
+        if len(directions) == 1:
+            raw = directions.pop()
+            direction_value = api_to_frontend.get(raw, raw)
+        else:
+            direction_value = "mixed"
+        # Source: "default" if direction is "both" (the default), "member" otherwise
+        source = "default" if direction_value == "both" else "member"
+    else:
+        direction_value = "both"
+        source = "default"
+
+    return {
+        "settings": {
+            "sync_direction": {
+                "value": direction_value,
+                "source": source,
+            }
+        }
+    }
+
+
+@router.patch("/teams/{name}/members/{device_id}/settings")
+async def update_member_settings(
+    name: str,
+    device_id: str,
+    body: dict,
+    conn: sqlite3.Connection = Depends(get_conn),
+):
+    """Update sync direction for a member in a team."""
+    repos = make_repos()
+    team = repos["teams"].get(conn, name)
+    if team is None:
+        raise HTTPException(404, f"Team '{name}' not found")
+
+    members = repos["members"].get_by_device(conn, device_id)
+    member = next((m for m in members if m.team_name == name), None)
+    if member is None:
+        raise HTTPException(404, f"No member with device '{device_id}' in team '{name}'")
+
+    new_direction = body.get("sync_direction")
+
+    # Accept frontend aliases: send_only→send, receive_only→receive, none→both
+    # null means "reset to default (both)"
+    from domain.subscription import SyncDirection
+    if new_direction is None:
+        new_direction = "both"
+    direction_aliases = {"send_only": "send", "receive_only": "receive", "none": "both"}
+    normalized = direction_aliases.get(new_direction, new_direction)
+    try:
+        direction_enum = SyncDirection(normalized)
+    except ValueError:
+        raise HTTPException(400, f"Invalid direction: {new_direction}. Use: both, send, receive")
+
+    # Update all accepted subscriptions for this member in this team
+    subs = repos["subs"].list_for_member(conn, member.member_tag)
+    team_subs = [s for s in subs if s.team_name == name and s.status.value == "accepted"]
+
+    for sub in team_subs:
+        updated = sub.change_direction(direction_enum)
+        repos["subs"].save(conn, updated)
+
+    source = "default" if normalized == "both" else "member"
+    # Return frontend-compatible value
+    api_to_frontend = {"send": "send_only", "receive": "receive_only", "both": "both"}
+    return {
+        "settings": {
+            "sync_direction": {
+                "value": api_to_frontend.get(normalized, new_direction),
+                "source": source,
+            }
+        }
+    }
