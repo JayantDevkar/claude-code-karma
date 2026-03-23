@@ -19,7 +19,9 @@
     "16": "passed",
     "17": "passed",
     "18": "passed",
-    "19": "executing"
+    "19": "passed",
+    "20": "passed",
+    "21": "executing"
   },
   "step_iterations": {},
   "step_results": {
@@ -75,9 +77,15 @@
       "passed": true
     },
     "18": {
-      "description": "Overview: Members(1), Projects(1), GettingStartedBanner hidden, team info card correct"
+      "passed": true
+    },
+    "19": {
+      "passed": true
+    },
+    "20": {
+      "description": "2 member cards, self with You badge, responder with active+remove button, Add Member visible"
     }
   },
   "seen_filenames": [],
-  "saved_at": "2026-03-23T22:39:44.934838+00:00"
+  "saved_at": "2026-03-23T22:41:38.518162+00:00"
 }

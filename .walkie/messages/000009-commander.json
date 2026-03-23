@@ -1,0 +1,19 @@
+{
+  "id": "000009",
+  "from": "commander",
+  "timestamp": "2026-03-23T22:41:38.517643+00:00",
+  "type": "action",
+  "step_id": 21,
+  "step_name": "Browser: Verify Members tab \u2014 non-leader view",
+  "category": "browser",
+  "instruction": "On Members tab as non-leader, verify: 1. Same 2 member cards visible 2. Responder's own card shows \"You\" badge 3. NO \"Add Member\" button (non-leader cannot add members) 4. NO remove button on commander's card (non-leader cannot remove) 5. Commander's card links to /members/{commander.member_tag} Take a screenshot noting absence of leader controls.\n",
+  "context": {
+    "url": "http://localhost:5173/team/page-test?tab=members",
+    "wait_for": "Members",
+    "screenshot": true
+  },
+  "expect": {
+    "description": "Non-leader sees members but no Add/Remove controls"
+  },
+  "step_timeout": 60
+}
