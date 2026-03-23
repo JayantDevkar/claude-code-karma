@@ -58,16 +58,21 @@ async def share_project(
     """Share a project with the team. Leader only."""
     device_id = config.syncthing.device_id if config.syncthing else ""
 
-    # Auto-resolve encoded_name from git_identity if not provided
+    # Auto-resolve encoded_name from git_identity if not provided.
+    # Uses exact suffix match on repo name, picks shortest candidate
+    # to avoid matching subdirectories or worktrees.
     encoded_name = req.encoded_name
     if not encoded_name:
-        row = conn.execute(
+        repo_name = req.git_identity.split("/")[-1]
+        suffix = f"-{repo_name}"
+        rows = conn.execute(
             "SELECT DISTINCT project_encoded_name FROM sessions "
-            "WHERE project_encoded_name LIKE ? LIMIT 1",
-            (f"%-{req.git_identity.split('/')[-1]}",),
-        ).fetchone()
-        if row:
-            encoded_name = row[0]
+            "WHERE project_encoded_name LIKE ?",
+            (f"%{suffix}",),
+        ).fetchall()
+        candidates = [r[0] for r in rows if r[0].endswith(suffix)]
+        if candidates:
+            encoded_name = min(candidates, key=len)
 
     try:
         project = await svc.share_project(
