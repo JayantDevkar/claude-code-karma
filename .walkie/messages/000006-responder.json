@@ -1,0 +1,25 @@
+{
+  "id": "000006",
+  "from": "responder",
+  "timestamp": "2026-03-23T22:32:26.575172+00:00",
+  "type": "response",
+  "in_reply_to": "000006",
+  "step_id": 16,
+  "result": {
+    "body": {
+      "ok": true,
+      "packaged": [
+        {
+          "team_name": "page-test",
+          "git_identity": "jayantdevkar/claude-code-karma",
+          "sessions_packaged": 0,
+          "error": "Project dir not found: -Users-jayantdevkar-Documents-GitHub-claude-karma"
+        }
+      ]
+    },
+    "status": 200
+  },
+  "passed": true,
+  "notes": "POST /sync/package returned 200. 0 sessions packaged (project dir mismatch on this machine \u2014 encoded_name differs).",
+  "duration_ms": 80
+}
