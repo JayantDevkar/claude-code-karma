@@ -2,7 +2,7 @@
   "name": "page-test-001",
   "created_at": "2026-03-23T22:11:55.835188+00:00",
   "base_branch": "worktree-syncthing-sync-design",
-  "state": "created",
+  "state": "active",
   "scenario": "git-radio/scenarios/sync-v4-team-members-overview.yaml",
   "current_step": 0,
   "steps_total": 0,
@@ -14,5 +14,12 @@
     "member_tag": "jayant.jayants-macbook-pro",
     "machine": "Jayants-MacBook-Pro.local",
     "joined_at": "2026-03-23T22:11:55.835024+00:00"
+  },
+  "responder": {
+    "member_tag": "jayant.jayants-mac-mini-local",
+    "machine": "Jayants-Mac-mini.local",
+    "joined_at": "2026-03-23T22:14:59.723526+00:00",
+    "pairing_code": "amF5YW-50Lmph-eWFudH-MtbWFj-LW1pbm-ktbG9j-YWw6V1-lFUE9D-Qi1LRj-JQSUhR-LU81Vk-I2UVkt-VjJYN0-RBUS1I-T09JNj-RTLVBU-QTI1SE-otUUZa-RExVSi1ISzVZ-SFFC",
+    "device_id": "WYEPOCB-KF2PIHQ-O5VB6QY-V2X7DAQ-HOOI64S-PTA25HJ-QFZDLUJ-HK5YHQB"
   }
 }
