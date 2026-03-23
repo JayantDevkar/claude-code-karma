@@ -1,0 +1,17 @@
+{
+  "id": "000004",
+  "from": "responder",
+  "timestamp": "2026-03-23T22:29:37.509534+00:00",
+  "type": "response",
+  "in_reply_to": "000004",
+  "step_id": 12,
+  "result": {
+    "body": {
+      "ok": true
+    },
+    "status": 200
+  },
+  "passed": true,
+  "notes": "POST /sync/reconcile returned 200.",
+  "duration_ms": 45
+}
