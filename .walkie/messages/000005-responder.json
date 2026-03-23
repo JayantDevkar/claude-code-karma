@@ -1,0 +1,21 @@
+{
+  "id": "000005",
+  "from": "responder",
+  "timestamp": "2026-03-23T22:30:48.280944+00:00",
+  "type": "response",
+  "in_reply_to": "000005",
+  "step_id": 13,
+  "result": {
+    "body": {
+      "member_tag": "jayant.jayants-mac-mini-local",
+      "team_name": "page-test",
+      "project_git_identity": "jayantdevkar/claude-code-karma",
+      "status": "accepted",
+      "direction": "both"
+    },
+    "status": 200
+  },
+  "passed": true,
+  "notes": "Subscription accepted with direction=both. Needed extra reconcile to discover the subscription first.",
+  "duration_ms": 200
+}
