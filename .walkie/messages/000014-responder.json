@@ -1,0 +1,17 @@
+{
+  "id": "000014",
+  "from": "responder",
+  "timestamp": "2026-03-23T22:55:14.377490+00:00",
+  "type": "response",
+  "in_reply_to": "000014",
+  "step_id": 47,
+  "result": {
+    "body": {
+      "ok": true
+    },
+    "status": 200
+  },
+  "passed": true,
+  "notes": "POST /sync/reconcile returned 200. Removal processed.",
+  "duration_ms": 40
+}
