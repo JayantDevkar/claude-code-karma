@@ -244,6 +244,7 @@ class TeamService:
             if len([o for o in others if o.team_name != team_name]) == 0:
                 await self.devices.unpair(member.device_id)
 
+        conn.execute("DELETE FROM sync_events WHERE team_name = ?", (team_name,))
         self.teams.delete(conn, team_name)
         self.events.log(conn, SyncEvent(
             event_type=SyncEventType.member_left,
@@ -292,6 +293,13 @@ class TeamService:
         suffixes = [p.folder_suffix for p in projects]
         tags = [m.member_tag for m in members]
         await self.folders.cleanup_team_folders(suffixes, tags, team_name, conn=conn)
+
+        # Unpair devices for non-leader members not shared with other teams
+        for member in members:
+            if member.member_tag != team.leader_member_tag:
+                others = self.members.get_by_device(conn, member.device_id)
+                if len([o for o in others if o.team_name != team_name]) == 0:
+                    await self.devices.unpair(member.device_id)
 
         # Soft-delete: persist dissolved status for audit trail
         self.teams.save(conn, dissolved)

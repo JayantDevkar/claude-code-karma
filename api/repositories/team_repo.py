@@ -30,7 +30,8 @@ class TeamRepository:
                    leader_device_id = excluded.leader_device_id,
                    leader_member_tag = excluded.leader_member_tag,
                    team_id = excluded.team_id,
-                   status = excluded.status""",
+                   status = excluded.status,
+                   created_at = excluded.created_at""",
             (team.name, team.leader_device_id, team.leader_member_tag,
              team.team_id, team.status.value, team.created_at.isoformat()),
         )

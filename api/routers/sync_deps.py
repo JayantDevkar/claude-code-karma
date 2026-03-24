@@ -35,14 +35,18 @@ def get_conn() -> sqlite3.Connection:
     """Return the SQLite writer connection."""
     from db.connection import get_writer_db
 
-    return get_writer_db()
+    conn = get_writer_db()
+    conn.execute("PRAGMA foreign_keys = ON")
+    return conn
 
 
 def get_read_conn() -> sqlite3.Connection:
     """Read-only connection for sync GET endpoints."""
     from db.connection import create_read_connection
 
-    return create_read_connection()
+    conn = create_read_connection()
+    conn.execute("PRAGMA foreign_keys = ON")
+    return conn
 
 
 async def require_config() -> Any:

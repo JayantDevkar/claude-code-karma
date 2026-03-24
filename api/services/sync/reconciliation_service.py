@@ -500,6 +500,7 @@ class ReconciliationService:
             if len([o for o in others if o.team_name != team.name]) == 0:
                 await self.devices.unpair(member.device_id)
 
+        conn.execute("DELETE FROM sync_events WHERE team_name = ?", (team.name,))
         self.teams.delete(conn, team.name)
         self.events.log(
             conn,
