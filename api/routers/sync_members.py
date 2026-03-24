@@ -75,9 +75,9 @@ async def list_members(
 ):
     """List all members across all teams, deduplicated by device_id."""
     repos = make_repos()
-    teams = repos["teams"].list_all(conn)
+    teams = [t for t in repos["teams"].list_all(conn) if t.status.value != "dissolved"]
 
-    # Aggregate members across teams, dedup by member_tag (device_id may be empty)
+    # Aggregate members across teams, dedup by device_id (fallback to member_tag when empty)
     my_device_id = (
         config.syncthing.device_id
         if config and getattr(config, "syncthing", None)
@@ -85,29 +85,33 @@ async def list_members(
     )
     my_member_tag = config.member_tag if config else None
 
-    members_by_tag: dict[str, dict] = {}
+    members_by_device: dict[str, dict] = {}
     for t in teams:
         for m in repos["members"].list_for_team(conn, t.name):
-            tag = m.member_tag
-            if tag in members_by_tag:
-                entry = members_by_tag[tag]
+            # Use device_id as dedup key; fall back to member_tag when device_id is empty
+            did = m.device_id or ""
+            dedup_key = did if did else f"tag:{m.member_tag}"
+            if dedup_key in members_by_device:
+                entry = members_by_device[dedup_key]
                 if t.name not in entry["teams"]:
                     entry["teams"].append(t.name)
-                if m.added_at < entry["_added_at"]:
+                # Use the most recent member_tag (latest added_at)
+                if m.added_at > entry["_added_at"]:
                     entry["_added_at"] = m.added_at
+                    entry["_member_tag"] = m.member_tag
                 # Prefer non-empty device_id
                 if not entry["device_id"] and m.device_id:
                     entry["device_id"] = m.device_id
                 # Fallback to config device_id for self
-                if not entry["device_id"] and tag == my_member_tag and my_device_id:
+                if not entry["device_id"] and m.member_tag == my_member_tag and my_device_id:
                     entry["device_id"] = my_device_id
             else:
-                members_by_tag[tag] = {
+                members_by_device[dedup_key] = {
                     "name": m.user_id,
-                    "device_id": m.device_id or my_device_id if tag == my_member_tag else m.device_id,
+                    "device_id": m.device_id or my_device_id if m.member_tag == my_member_tag else m.device_id,
                     "teams": [t.name],
                     "_added_at": m.added_at,
-                    "_member_tag": tag,
+                    "_member_tag": m.member_tag,
                     "_machine_tag": m.machine_tag,
                 }
 
@@ -115,7 +119,7 @@ async def list_members(
     connections = await asyncio.to_thread(_get_connections, config)
 
     result = []
-    for entry in members_by_tag.values():
+    for entry in members_by_device.values():
         tag = entry["_member_tag"]
         did = entry["device_id"]
         is_you = tag == my_member_tag

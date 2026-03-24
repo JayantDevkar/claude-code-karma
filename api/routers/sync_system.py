@@ -60,6 +60,7 @@ async def sync_status(
         "configured": True,
         "user_id": config.user_id,
         "machine_id": config.machine_id,
+        "machine_tag": config.machine_tag,
         "member_tag": config.member_tag,
         "device_id": config.syncthing.device_id if config.syncthing else None,
         "teams": [
