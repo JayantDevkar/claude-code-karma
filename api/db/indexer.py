@@ -709,6 +709,19 @@ def index_remote_sessions(conn: sqlite3.Connection) -> dict:
                 (inbox_member_tag, inbox_suffix), inbox_suffix
             )
 
+        # Fallback: try sync_projects.encoded_name directly (stored at share time)
+        if local_encoded == inbox_suffix:
+            try:
+                enc_row = conn.execute(
+                    "SELECT encoded_name FROM sync_projects "
+                    "WHERE folder_suffix = ? LIMIT 1",
+                    (inbox_suffix,),
+                ).fetchone()
+                if enc_row and enc_row[0]:
+                    local_encoded = enc_row[0]
+            except Exception:
+                pass
+
         classification_overrides = _load_manifest_classifications(inbox_dir)
         titles_map = _load_remote_titles(inbox_member_tag, local_encoded)
 

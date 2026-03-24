@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 logger = logging.getLogger(__name__)
 
+from domain.member import MemberStatus
 from domain.project import SharedProject, derive_folder_suffix
 from domain.subscription import Subscription, SubscriptionStatus, SyncDirection
 from domain.events import SyncEvent, SyncEventType
@@ -52,7 +53,8 @@ class ProjectService:
     ) -> SharedProject:
         """Share a project with the team. Only the leader may share.
 
-        Creates OFFERED subscriptions for each active non-leader member.
+        Creates OFFERED subscriptions for each non-removed, non-leader member
+        (including ADDED members so subscriptions are ready when they activate).
         If `encoded_name` is provided, creates the leader's outbox folder.
         """
         team = self.teams.get(conn, team_name)
@@ -80,9 +82,10 @@ class ProjectService:
         )
         self.subs.save(conn, leader_sub)
 
-        # Create OFFERED subscription for each active non-leader member
+        # Create OFFERED subscription for each non-removed, non-leader member.
+        # Include ADDED members so subscriptions are waiting when they activate.
         for member in self.members.list_for_team(conn, team_name):
-            if member.is_active and not team.is_leader(member.device_id):
+            if member.status != MemberStatus.REMOVED and not team.is_leader(member.device_id):
                 sub = Subscription(
                     member_tag=member.member_tag,
                     team_name=team_name,

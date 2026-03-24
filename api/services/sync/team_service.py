@@ -297,14 +297,17 @@ class TeamService:
         self.teams.save(conn, dissolved)
 
         # Explicitly clean up child records (CASCADE doesn't fire on UPDATE).
-        # Members, subscriptions, and projects are no longer relevant.
+        # Members, subscriptions, projects, events, and removal records
+        # are no longer relevant — clean slate for potential team name reuse.
         conn.execute("DELETE FROM sync_subscriptions WHERE team_name = ?", (team_name,))
         conn.execute("DELETE FROM sync_projects WHERE team_name = ?", (team_name,))
         conn.execute("DELETE FROM sync_members WHERE team_name = ?", (team_name,))
-        conn.commit()
+        conn.execute("DELETE FROM sync_events WHERE team_name = ?", (team_name,))
+        conn.execute("DELETE FROM sync_removed_members WHERE team_name = ?", (team_name,))
 
         self.events.log(conn, SyncEvent(
             event_type=SyncEventType.team_dissolved,
             team_name=team_name,
         ))
+        conn.commit()
         return dissolved

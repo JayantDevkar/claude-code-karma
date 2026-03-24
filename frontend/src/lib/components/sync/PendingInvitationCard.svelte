@@ -133,7 +133,7 @@
 			const [devicesRes, foldersRes, teamsRes] = await Promise.all([
 				fetch(`${API_BASE}/sync/pending-devices`).catch(() => null),
 				fetch(`${API_BASE}/sync/pending`).catch(() => null),
-				fetch(`${API_BASE}/sync/teams`).catch(() => null)
+				fetch(`${API_BASE}/sync/teams?include_dissolved=true`).catch(() => null)
 			]);
 
 			const devices = devicesRes?.ok ? (await devicesRes.json()).devices ?? [] : [];
