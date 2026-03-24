@@ -78,6 +78,45 @@ def _query_per_item_trend(
     return result
 
 
+def _resolve_user_names(conn: sqlite3.Connection, user_ids: list[str]) -> dict[str, str]:
+    """Resolve user_ids to display names from sync_members table."""
+    if not user_ids:
+        return {}
+    placeholders = ",".join("?" * len(user_ids))
+    rows = conn.execute(
+        f"SELECT DISTINCT device_id, member_tag as name FROM sync_members WHERE device_id IN ({placeholders})",
+        user_ids,
+    ).fetchall()
+    return {row["device_id"]: row["name"] for row in rows}
+
+
+def _query_per_user_trend(
+    conn: sqlite3.Connection,
+    from_clause: str,
+    where: str,
+    params: dict,
+    count_expr: str = "COUNT(*)",
+) -> dict[str, list[dict]]:
+    """Per-user daily trend. Returns {user_id: [{date, count}, ...]}."""
+    and_or_where = "AND" if where else "WHERE"
+    rows = conn.execute(
+        f"""SELECT COALESCE(s.remote_user_id, '_local') as user_id,
+            {_tz_date()} as date, {count_expr} as count
+        {from_clause}
+        {where}
+        {and_or_where} s.start_time IS NOT NULL
+        GROUP BY user_id, {_tz_date()}
+        ORDER BY user_id, date""",
+        params,
+    ).fetchall()
+    result: dict[str, list[dict]] = {}
+    for row in rows:
+        result.setdefault(row["user_id"], []).append(
+            {"date": row["date"], "count": row["count"]}
+        )
+    return result
+
+
 def query_all_sessions(
     conn: sqlite3.Connection,
     search: Optional[str] = None,
@@ -85,10 +124,12 @@ def query_all_sessions(
     branch: Optional[str] = None,
     scope: str = "both",
     status: str = "all",
+    source: str = "all",
     start_dt: Optional[datetime] = None,
     end_dt: Optional[datetime] = None,
     limit: int = 200,
     offset: int = 0,
+    user: Optional[str] = None,
 ) -> dict:
     """
     Query sessions from SQLite with filtering, sorting, and pagination.
@@ -118,6 +159,14 @@ def query_all_sessions(
     if end_dt:
         conditions.append("s.end_time <= :end_dt")
         params["end_dt"] = end_dt.isoformat()
+
+    if source and source != "all":
+        conditions.append("s.source = :source")
+        params["source"] = source
+
+    if user:
+        conditions.append("s.remote_user_id = :user")
+        params["user"] = user
 
     # Search via FTS5
     fts_join = ""
@@ -209,7 +258,8 @@ def query_all_sessions(
             s.input_tokens, s.output_tokens, s.total_cost,
             s.initial_prompt, s.git_branch, s.models_used,
             s.session_titles, s.is_continuation_marker, s.was_compacted,
-            s.subagent_count, s.session_source
+            s.subagent_count, s.session_source,
+            s.source, s.remote_user_id, s.remote_machine_id
         FROM sessions s
         {fts_join}
         {where}
@@ -479,11 +529,29 @@ def query_analytics(
     time_rows = conn.execute(f"SELECT start_time FROM sessions s {time_where}", params).fetchall()
     start_times = [row["start_time"] for row in time_rows]
 
+    # 4b. Start times with user_id for per-user breakdowns
+    time_user_rows = conn.execute(
+        f"""SELECT COALESCE(s.remote_user_id, '_local') as user_id, s.start_time
+        FROM sessions s
+        {time_where}""",
+        params,
+    ).fetchall()
+    start_times_with_user = [
+        {"user_id": row["user_id"], "start_time": row["start_time"]}
+        for row in time_user_rows
+    ]
+
+    # 5. Resolve user display names from sync_members
+    user_ids = list({e["user_id"] for e in start_times_with_user if e["user_id"] != "_local"})
+    user_names = _resolve_user_names(conn, user_ids) if user_ids else {}
+
     return {
         "totals": totals,
         "tools": tools,
         "models_used_list": models_used_list,
         "start_times": start_times,
+        "start_times_with_user": start_times_with_user,
+        "user_names": user_names,
     }
 
 
@@ -531,7 +599,10 @@ def _query_item_usage(
             {count_expr}
             COUNT(DISTINCT {alias}.session_uuid) as session_count,
             MAX(s.end_time) as last_used,
-            GROUP_CONCAT(DISTINCT {alias}.invocation_source) as invocation_sources
+            GROUP_CONCAT(DISTINCT {alias}.invocation_source) as invocation_sources,
+            SUM(CASE WHEN s.source = 'remote' THEN {alias}.count ELSE 0 END) as remote_count,
+            SUM(CASE WHEN s.source != 'remote' THEN {alias}.count ELSE 0 END) as local_count,
+            GROUP_CONCAT(DISTINCT CASE WHEN s.source = 'remote' THEN s.remote_user_id END) as remote_user_ids
         FROM {table} {alias}
         JOIN sessions s ON {alias}.session_uuid = s.uuid
         {_where}
@@ -587,7 +658,8 @@ def query_sessions_by_skill(
             s.uuid, s.slug, s.project_encoded_name, s.project_path,
             s.message_count, s.start_time, s.end_time, s.duration_seconds,
             s.models_used, s.subagent_count, s.initial_prompt,
-            s.git_branch, s.session_titles
+            s.git_branch, s.session_titles,
+            s.session_source, s.source, s.remote_user_id, s.remote_machine_id
         FROM sessions s
         JOIN session_skills sk ON s.uuid = sk.session_uuid
         WHERE sk.skill_name = :skill AND sk.invocation_source != 'text_detection'
@@ -639,7 +711,9 @@ def _query_item_detail(
     param_name = "item"
     item_param = {param_name: item_value}
 
-    mention_exclusion = f"AND {alias}.invocation_source != 'text_detection'" if track_mentions else ""
+    mention_exclusion = (
+        f"AND {alias}.invocation_source != 'text_detection'" if track_mentions else ""
+    )
 
     # Main session stats
     main_row = conn.execute(
@@ -695,7 +769,12 @@ def _query_item_detail(
             item_param,
         ).fetchone()[0]
 
-        if main_calls == 0 and sub_calls == 0 and mentioned_calls == 0 and command_triggered_calls == 0:
+        if (
+            main_calls == 0
+            and sub_calls == 0
+            and mentioned_calls == 0
+            and command_triggered_calls == 0
+        ):
             return None
     else:
         if main_calls == 0 and sub_calls == 0:
@@ -764,6 +843,7 @@ def _query_item_detail(
             s.message_count, s.start_time, s.end_time, s.duration_seconds,
             s.models_used, s.subagent_count, s.initial_prompt,
             s.git_branch, s.session_titles,
+            s.session_source, s.source, s.remote_user_id, s.remote_machine_id,
             agg.has_main, agg.has_sub, agg.agent_ids,
             ss.invocation_sources
         FROM sessions s
@@ -1037,11 +1117,25 @@ def _query_item_usage_trend(
     first_used = time_row["first_used"] if time_row else None
     last_used = time_row["last_used"] if time_row else None
 
+    # Per-user trend
+    trend_by_user = _query_per_user_trend(
+        conn,
+        from_clause=from_clause,
+        where=where_items,
+        params=params,
+        count_expr=f"SUM({table}.count)",
+    )
+    # Resolve user names
+    trend_user_ids = [uid for uid in trend_by_user if uid != "_local"]
+    user_names = _resolve_user_names(conn, trend_user_ids) if trend_user_ids else {}
+
     return {
         "total": total,
         "by_item": by_item,
         "trend": trend,
         "trend_by_item": trend_by_item,
+        "trend_by_user": trend_by_user,
+        "user_names": user_names,
         "first_used": first_used,
         "last_used": last_used,
     }
@@ -1126,7 +1220,8 @@ def query_project_sessions(
             s.initial_prompt, s.git_branch, s.session_titles,
             s.is_continuation_marker, s.was_compacted, s.input_tokens,
             s.output_tokens, s.total_cost, s.compaction_count,
-            s.session_source
+            s.session_source,
+            s.source, s.remote_user_id, s.remote_machine_id
         FROM sessions s
         {fts_join}
         WHERE {where}
@@ -1366,7 +1461,7 @@ def query_continuation_session(
 def query_session_by_message_uuid(conn: sqlite3.Connection, message_uuid: str) -> dict | None:
     """Look up a session by a message UUID it contains."""
     row = conn.execute(
-        """SELECT mu.session_uuid, s.slug, s.project_encoded_name
+        """SELECT mu.session_uuid, s.slug, s.project_encoded_name, s.source_encoded_name
         FROM message_uuids mu
         JOIN sessions s ON mu.session_uuid = s.uuid
         WHERE mu.message_uuid = :msg_uuid""",
@@ -1820,6 +1915,15 @@ def query_agent_usage_trend(
         count_expr="COUNT(*)",
     )
 
+    trend_by_user = _query_per_user_trend(
+        conn,
+        from_clause="FROM subagent_invocations si JOIN sessions s ON si.session_uuid = s.uuid",
+        where=where,
+        params=params,
+        count_expr="COUNT(*)",
+    )
+    user_names = _resolve_user_names(conn, [u for u in trend_by_user if u != "_local"])
+
     # First/last used
     time_row = conn.execute(
         f"""SELECT MIN(s.start_time) as first_used, MAX(s.start_time) as last_used
@@ -1837,6 +1941,8 @@ def query_agent_usage_trend(
         "by_item": by_item,
         "trend": trend,
         "trend_by_item": trend_by_item,
+        "trend_by_user": trend_by_user,
+        "user_names": user_names,
         "first_used": first_used,
         "last_used": last_used,
     }
@@ -2021,7 +2127,8 @@ def query_agent_history(
             si.duration_seconds,
             si.input_tokens,
             si.output_tokens,
-            si.cost_usd
+            si.cost_usd,
+            si.agent_display_name
         FROM subagent_invocations si
         JOIN sessions s ON si.session_uuid = s.uuid
         WHERE si.subagent_type = :type
@@ -2055,7 +2162,8 @@ def query_sessions_by_agent(
             s.uuid, s.slug, s.project_encoded_name, s.project_path,
             s.message_count, s.start_time, s.end_time, s.duration_seconds,
             s.models_used, s.subagent_count, s.initial_prompt,
-            s.git_branch, s.session_titles
+            s.git_branch, s.session_titles,
+            s.session_source, s.source, s.remote_user_id, s.remote_machine_id
         FROM sessions s
         JOIN (SELECT DISTINCT session_uuid FROM subagent_invocations WHERE subagent_type = :type) si
             ON s.uuid = si.session_uuid
@@ -2830,6 +2938,7 @@ def query_sessions_by_mcp_server(
             s.message_count, s.start_time, s.end_time, s.duration_seconds,
             s.models_used, s.subagent_count, s.initial_prompt,
             s.git_branch, s.session_titles,
+            s.session_source, s.source, s.remote_user_id, s.remote_machine_id,
             agg.has_main, agg.has_sub, agg.agent_ids
         FROM sessions s
         JOIN aggregated_sessions agg ON s.uuid = agg.session_uuid
@@ -2964,6 +3073,15 @@ def query_mcp_tool_usage_trend(
         count_expr="SUM(st.count)",
     )
 
+    trend_by_user = _query_per_user_trend(
+        conn,
+        from_clause="FROM session_tools st JOIN sessions s ON st.session_uuid = s.uuid",
+        where=where,
+        params=params,
+        count_expr="SUM(st.count)",
+    )
+    user_names = _resolve_user_names(conn, [u for u in trend_by_user if u != "_local"])
+
     # First/last used
     time_row = conn.execute(
         f"""SELECT MIN(s.start_time) as first_used, MAX(s.start_time) as last_used
@@ -2981,6 +3099,8 @@ def query_mcp_tool_usage_trend(
         "by_item": by_item,
         "trend": trend,
         "trend_by_item": trend_by_item,
+        "trend_by_user": trend_by_user,
+        "user_names": user_names,
         "first_used": first_used,
         "last_used": last_used,
     }
@@ -3079,6 +3199,15 @@ def query_builtin_tool_usage_trend(
         count_expr="SUM(st.count)",
     )
 
+    trend_by_user = _query_per_user_trend(
+        conn,
+        from_clause="FROM session_tools st JOIN sessions s ON st.session_uuid = s.uuid",
+        where=where,
+        params=params,
+        count_expr="SUM(st.count)",
+    )
+    user_names = _resolve_user_names(conn, [u for u in trend_by_user if u != "_local"])
+
     # First/last used
     time_row = conn.execute(
         f"""SELECT MIN(s.start_time) as first_used, MAX(s.start_time) as last_used
@@ -3093,6 +3222,8 @@ def query_builtin_tool_usage_trend(
         "by_item": by_item,
         "trend": trend,
         "trend_by_item": trend_by_item,
+        "trend_by_user": trend_by_user,
+        "user_names": user_names,
         "first_used": time_row["first_used"] if time_row else None,
         "last_used": time_row["last_used"] if time_row else None,
     }
@@ -3315,6 +3446,7 @@ def query_sessions_by_mcp_tool(
             s.message_count, s.start_time, s.end_time, s.duration_seconds,
             s.models_used, s.subagent_count, s.initial_prompt,
             s.git_branch, s.session_titles,
+            s.session_source, s.source, s.remote_user_id, s.remote_machine_id,
             agg.has_main, agg.has_sub, agg.agent_ids
         FROM sessions s
         JOIN aggregated_sessions agg ON s.uuid = agg.session_uuid
@@ -3793,6 +3925,7 @@ def query_sessions_by_builtin_server(
             s.message_count, s.start_time, s.end_time, s.duration_seconds,
             s.models_used, s.subagent_count, s.initial_prompt,
             s.git_branch, s.session_titles,
+            s.session_source, s.source, s.remote_user_id, s.remote_machine_id,
             agg.has_main, agg.has_sub, agg.agent_ids
         FROM sessions s
         JOIN aggregated_sessions agg ON s.uuid = agg.session_uuid
@@ -3868,6 +4001,7 @@ def query_sessions_by_builtin_tool(
             s.message_count, s.start_time, s.end_time, s.duration_seconds,
             s.models_used, s.subagent_count, s.initial_prompt,
             s.git_branch, s.session_titles,
+            s.session_source, s.source, s.remote_user_id, s.remote_machine_id,
             agg.has_main, agg.has_sub, agg.agent_ids
         FROM sessions s
         JOIN aggregated_sessions agg ON s.uuid = agg.session_uuid
@@ -3954,3 +4088,359 @@ def query_subagent_command_usage(
         params,
     ).fetchall()
     return [dict(row) for row in rows]
+
+
+# ---------------------------------------------------------------------------
+# Parse-once: Session detail & tool breakdown queries
+# ---------------------------------------------------------------------------
+
+
+def query_session_detail(conn: sqlite3.Connection, uuid: str) -> dict | None:
+    """
+    Fetch all SessionDetail fields available in the DB for a single session.
+
+    Returns a dict ready to be mapped to the SessionDetail schema, or None
+    if the session is not in the DB.
+    """
+    # 1. Core session row
+    row = conn.execute(
+        """SELECT uuid, slug, project_encoded_name, project_path,
+                  message_count, start_time, end_time, duration_seconds,
+                  input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens,
+                  total_cost, initial_prompt, git_branch, models_used,
+                  session_titles, is_continuation_marker, was_compacted,
+                  compaction_count, file_snapshot_count, subagent_count,
+                  session_source, source, remote_user_id, remote_machine_id,
+                  jsonl_mtime
+        FROM sessions WHERE uuid = ?""",
+        (uuid,),
+    ).fetchone()
+    if not row:
+        return None
+
+    session = dict(row)
+
+    # Parse JSON columns
+    session["models_used"] = _parse_json_list(session.get("models_used"))
+    session["session_titles"] = _parse_json_list(session.get("session_titles"))
+
+    # Compute derived fields
+    input_tokens = session.get("input_tokens") or 0
+    cache_read = session.get("cache_read_tokens") or 0
+    denom = input_tokens + cache_read
+    session["cache_hit_rate"] = cache_read / denom if denom > 0 else 0.0
+
+    git_branch = session.get("git_branch")
+    session["git_branches"] = [git_branch] if git_branch else []
+
+    project_path = session.get("project_path") or ""
+    session["working_directories"] = [project_path] if project_path else []
+    session["project_display_name"] = Path(project_path).name if project_path else None
+
+    # 2. Tool counts
+    tool_rows = conn.execute(
+        "SELECT tool_name, count FROM session_tools WHERE session_uuid = ?",
+        (uuid,),
+    ).fetchall()
+    session["tools_used"] = {r["tool_name"]: r["count"] for r in tool_rows}
+
+    # 3. Skill usage (with invocation_source)
+    skill_rows = conn.execute(
+        "SELECT skill_name, invocation_source, count FROM session_skills WHERE session_uuid = ?",
+        (uuid,),
+    ).fetchall()
+    session["skills_used_raw"] = [
+        (r["skill_name"], r["invocation_source"], r["count"]) for r in skill_rows
+    ]
+
+    # 4. Command usage (with invocation_source)
+    cmd_rows = conn.execute(
+        "SELECT command_name, invocation_source, count FROM session_commands WHERE session_uuid = ?",
+        (uuid,),
+    ).fetchall()
+    session["commands_used_raw"] = [
+        (r["command_name"], r["invocation_source"], r["count"]) for r in cmd_rows
+    ]
+
+    # 5. Leaf UUIDs (for project_context_leaf_uuids display)
+    leaf_rows = conn.execute(
+        "SELECT leaf_uuid FROM session_leaf_refs WHERE session_uuid = ?",
+        (uuid,),
+    ).fetchall()
+    session["project_context_leaf_uuids"] = [r["leaf_uuid"] for r in leaf_rows]
+
+    # 6. Chain detection
+    session["has_chain"] = query_session_has_chain(conn, uuid)
+
+    return session
+
+
+def query_session_tool_breakdown(
+    conn: sqlite3.Connection, uuid: str
+) -> tuple[dict[str, int] | None, dict[str, int]]:
+    """
+    Fetch session + subagent tool counts from DB.
+
+    Returns (session_tool_counts, subagent_tool_counts).
+    Returns (None, {}) if session not found.
+    """
+    # Session tools
+    session_rows = conn.execute(
+        "SELECT tool_name, count FROM session_tools WHERE session_uuid = ?",
+        (uuid,),
+    ).fetchall()
+    session_counts = {r["tool_name"]: r["count"] for r in session_rows}
+
+    # Subagent tools (aggregated across all invocations)
+    subagent_rows = conn.execute(
+        """SELECT sat.tool_name, SUM(sat.count) as count
+        FROM subagent_tools sat
+        JOIN subagent_invocations si ON sat.invocation_id = si.id
+        WHERE si.session_uuid = ?
+        GROUP BY sat.tool_name""",
+        (uuid,),
+    ).fetchall()
+    subagent_counts = {r["tool_name"]: r["count"] for r in subagent_rows}
+
+    # Only check existence when both are empty (distinguish "no tools" from "no session")
+    if not session_counts and not subagent_counts:
+        exists = conn.execute(
+            "SELECT 1 FROM sessions WHERE uuid = ?", (uuid,)
+        ).fetchone()
+        if not exists:
+            return None, {}
+
+    return session_counts, subagent_counts
+
+
+# ---------------------------------------------------------------------------
+# Sync member query helpers
+# ---------------------------------------------------------------------------
+
+
+def _batched_in_query(
+    conn: sqlite3.Connection,
+    sql_template: str,
+    items: list,
+    extra_params: list | None = None,
+    batch_size: int = 500,
+) -> list:
+    """Execute query with IN clause in batches to avoid SQLITE_MAX_VARIABLE_NUMBER.
+
+    ``sql_template`` must contain a ``{placeholders}`` token that will be
+    replaced with the comma-separated ``?`` markers for each batch.
+    ``extra_params``, if given, are prepended to each batch's parameter list.
+    """
+    if not items:
+        return []
+    results: list = []
+    prefix = extra_params or []
+    for i in range(0, len(items), batch_size):
+        batch = items[i : i + batch_size]
+        placeholders = ",".join("?" * len(batch))
+        sql = sql_template.format(placeholders=placeholders)
+        results.extend(conn.execute(sql, prefix + batch).fetchall())
+    return results
+
+
+def query_member_session_count(
+    conn: sqlite3.Connection, encoded_name: str
+) -> int:
+    """Count sessions for a given project encoded_name."""
+    row = conn.execute(
+        "SELECT COUNT(*) FROM sessions WHERE project_encoded_name = ?",
+        (encoded_name,),
+    ).fetchone()
+    return row[0] if row else 0
+
+
+def query_member_local_session_count(
+    conn: sqlite3.Connection, encoded_name: str
+) -> int:
+    """Count local (non-remote) sessions for a given project encoded_name."""
+    row = conn.execute(
+        "SELECT COUNT(*) FROM sessions WHERE project_encoded_name = ? "
+        "AND (source IS NULL OR source != 'remote')",
+        (encoded_name,),
+    ).fetchone()
+    return row[0] if row else 0
+
+
+def query_member_sent_count(
+    conn: sqlite3.Connection, member_tag: str
+) -> int:
+    """Count 'session_packaged' sync events for a member."""
+    row = conn.execute(
+        "SELECT COUNT(*) FROM sync_events "
+        "WHERE event_type = 'session_packaged' AND member_tag = ?",
+        (member_tag,),
+    ).fetchone()
+    return row[0] if row else 0
+
+
+def query_member_received_count(
+    conn: sqlite3.Connection, member_tag: str
+) -> int:
+    """Count 'session_received' sync events for a member."""
+    row = conn.execute(
+        "SELECT COUNT(*) FROM sync_events "
+        "WHERE event_type = 'session_received' AND member_tag = ?",
+        (member_tag,),
+    ).fetchone()
+    return row[0] if row else 0
+
+
+def query_member_remote_sessions_count(
+    conn: sqlite3.Connection, member_tag: str, project_encoded_names: list[str]
+) -> int:
+    """Count remote sessions attributed to a member across projects.
+
+    Uses batched IN clause to handle large project lists safely.
+    """
+    if not project_encoded_names:
+        return 0
+    rows = _batched_in_query(
+        conn,
+        "SELECT COUNT(*) FROM sessions WHERE source = 'remote' "
+        "AND remote_user_id = ? AND project_encoded_name IN ({placeholders})",
+        list(project_encoded_names),
+        extra_params=[member_tag],
+    )
+    return rows[0][0] if rows else 0
+
+
+def query_member_total_sessions(
+    conn: sqlite3.Connection, project_encoded_names: list[str]
+) -> int:
+    """Count total sessions across a set of projects.
+
+    Uses batched IN clause to handle large project lists safely.
+    """
+    if not project_encoded_names:
+        return 0
+    rows = _batched_in_query(
+        conn,
+        "SELECT COUNT(*) FROM sessions WHERE project_encoded_name IN ({placeholders})",
+        list(project_encoded_names),
+    )
+    # Sum across batches (each batch returns its own COUNT)
+    return sum(r[0] for r in rows) if rows else 0
+
+
+def query_member_subscription_count(
+    conn: sqlite3.Connection, member_tag: str
+) -> int:
+    """Count distinct project subscriptions for a member."""
+    row = conn.execute(
+        "SELECT COUNT(DISTINCT project_git_identity) FROM sync_subscriptions "
+        "WHERE member_tag = ?",
+        (member_tag,),
+    ).fetchone()
+    return row[0] if row else 0
+
+
+def query_member_last_active(
+    conn: sqlite3.Connection, member_tag: str
+) -> str | None:
+    """Get the most recent sync event timestamp for a member."""
+    row = conn.execute(
+        "SELECT MAX(created_at) FROM sync_events WHERE member_tag = ?",
+        (member_tag,),
+    ).fetchone()
+    return row[0] if row and row[0] else None
+
+
+def query_member_daily_sync_stats(
+    conn: sqlite3.Connection, member_tag: str
+) -> list:
+    """Get daily sent/received event counts for a member.
+
+    Returns rows of (date_str, event_type, count).
+    """
+    return conn.execute(
+        "SELECT date(created_at) as d, event_type, COUNT(*) "
+        "FROM sync_events "
+        "WHERE member_tag = ? AND event_type IN ('session_packaged', 'session_received') "
+        "GROUP BY d, event_type ORDER BY d",
+        (member_tag,),
+    ).fetchall()
+
+
+def query_last_packaged_timestamp(conn: sqlite3.Connection) -> str | None:
+    """Get the most recent 'session_packaged' event timestamp (global)."""
+    row = conn.execute(
+        "SELECT MAX(created_at) FROM sync_events WHERE event_type = 'session_packaged'"
+    ).fetchone()
+    return row[0] if row and row[0] else None
+
+
+def _normalize_git_identity(raw: str) -> str:
+    """Normalize a git identity for comparison: strip .git suffix, lowercase."""
+    norm = (raw or "").rstrip("/").lower()
+    if norm.endswith(".git"):
+        norm = norm[:-4]
+    return norm
+
+
+def resolve_encoded_name(conn: sqlite3.Connection, git_identity: str) -> str | None:
+    """Resolve a git_identity to a local encoded_name.
+
+    Single source of truth for mapping machine-independent git_identity
+    (e.g. ``owner/repo``) to machine-specific encoded_name
+    (e.g. ``-Users-me-Documents-repo``).
+
+    Strategy:
+      1. Check the ``projects`` table (indexed projects with git_identity).
+      2. Fallback: check the ``sessions`` table using exact suffix match
+         on the repo name portion, picking the shortest candidate to avoid
+         matching subdirectories or worktrees.
+
+    Returns None if no match is found.
+    """
+    norm = _normalize_git_identity(git_identity)
+    if not norm:
+        return None
+
+    # Strategy 1: Match against the projects table (fastest, most reliable)
+    rows = conn.execute(
+        "SELECT encoded_name, git_identity FROM projects "
+        "WHERE git_identity IS NOT NULL"
+    ).fetchall()
+    for enc, local_git in rows:
+        lg = _normalize_git_identity(local_git)
+        if lg and (lg in norm or norm in lg or lg.endswith(norm) or norm.endswith(lg)):
+            return enc
+
+    # Strategy 2: Fallback to sessions table with exact suffix match.
+    # Extract repo name from git_identity (e.g. "owner/repo" → "repo")
+    # and match against project_encoded_name endings.
+    repo_name = norm.split("/")[-1]
+    suffix = f"-{repo_name}"
+    session_rows = conn.execute(
+        "SELECT DISTINCT project_encoded_name FROM sessions "
+        "WHERE project_encoded_name LIKE ?",
+        (f"%{suffix}",),
+    ).fetchall()
+    candidates = [r[0] for r in session_rows if r[0] and r[0].endswith(suffix)]
+    if candidates:
+        return min(candidates, key=len)
+
+    return None
+
+
+def query_resolve_project(
+    conn: sqlite3.Connection, git_identity: str
+) -> tuple[str | None, str | None]:
+    """Resolve a sync project's git_identity to (encoded_name, display_name).
+
+    Uses ``resolve_encoded_name`` for the encoded_name lookup, then fetches
+    display_name from the projects table if found.
+    """
+    enc = resolve_encoded_name(conn, git_identity)
+    if enc is None:
+        return None, None
+    row = conn.execute(
+        "SELECT display_name FROM projects WHERE encoded_name = ?", (enc,)
+    ).fetchone()
+    display = row[0] if row else None
+    return enc, display

@@ -364,8 +364,12 @@ class SessionRelationshipResolver:
             # Get initial prompt from first user message
             initial_prompt = None
             for msg in session.iter_user_messages():
-                initial_prompt = msg.content[:200] if msg.content else None
-                break
+                if msg.content:
+                    from utils import extract_prompt_from_content
+                    prompt = extract_prompt_from_content(msg.content)
+                    if prompt:
+                        initial_prompt = prompt[:200]
+                        break
 
             node = SessionChainNode(
                 uuid=session.uuid,

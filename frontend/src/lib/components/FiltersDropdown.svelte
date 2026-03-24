@@ -4,6 +4,7 @@
 	import { browser } from '$app/environment';
 	import type {
 		SessionStatusFilter,
+		SessionSourceFilter,
 		SearchDateRange,
 		LiveSubStatus,
 		LiveStatusCounts,
@@ -31,6 +32,10 @@
 		completedCount?: number;
 		/** Whether data is currently loading/updating */
 		isLoading?: boolean;
+		/** Current source filter */
+		source?: SessionSourceFilter;
+		/** Callback when source filter changes */
+		onSourceChange?: (source: SessionSourceFilter) => void;
 		class?: string;
 	}
 
@@ -48,6 +53,8 @@
 		liveStatusCounts,
 		completedCount,
 		isLoading = false,
+		source = 'all',
+		onSourceChange,
 		class: className = ''
 	}: Props = $props();
 
@@ -115,6 +122,8 @@
 		{onLiveSubStatusChange}
 		{liveStatusCounts}
 		{completedCount}
+		{source}
+		{onSourceChange}
 		variant="desktop"
 	/>
 

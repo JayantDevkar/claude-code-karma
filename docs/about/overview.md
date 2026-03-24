@@ -1,67 +1,70 @@
-# Claude Code Karma — Overview
+# Claude Code Karma
 
-## What is Claude Code Karma?
+Claude Code Karma is a dashboard for understanding what Claude Code has done on your machine. It reads the session files Claude Code stores locally and shows you everything in a web dashboard.
 
-Claude Code Karma is a full-stack monitoring and analytics dashboard for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) sessions. It parses Claude Code's local storage (`~/.claude/`), extracts structured data from raw JSONL session files, and presents it through an interactive web dashboard.
+## The problem
 
-## The Problem
+Claude Code creates JSONL files with all your session data in `~/.claude/projects/`. These files contain everything — conversations, tool calls, files modified, tokens used — but Claude Code itself doesn't show them to you.
 
-Claude Code stores all session data locally as raw JSONL files scattered across `~/.claude/projects/`. These files contain rich information — conversations, tool calls, token usage, subagent activity, file operations — but are effectively invisible to the user. There is no built-in way to:
+Karma makes this visible. You can browse sessions, see token usage, watch tools being called, replay conversations, and more. If you work in a team, you can also share sessions with freelancers across machines.
 
-- Browse past sessions across projects
+## What you can do
+
+**Browse your work:**
+- See all sessions across all projects
+- Search and filter by project, date, or keywords
+- Understand how long sessions took and how many tokens they used
+
+**Analyze patterns:**
 - Track token usage and costs over time
-- Monitor live sessions in real time
-- Analyze tool usage patterns or agent behavior
-- Replay conversations or inspect timelines
+- See which tools Claude Code uses most
+- Find which files change most frequently
 
-Claude Code Karma makes all of this accessible through a single dashboard.
+**Watch sessions happen:**
+- With hooks installed, see live session state (waiting, processing, done)
+- Get automatic titles for sessions based on git commits or AI generation
 
-## Who Is It For?
+**Share with your team:**
+- Add freelancers to teams
+- They sync their sessions via Syncthing (peer-to-peer)
+- You see everything in one unified dashboard
+- Leave feedback on work that syncs back to them
 
-- **Claude Code power users** who run dozens of sessions daily and want visibility into their usage
-- **Developers** who want to understand how Claude Code interacts with their codebase
-- **Teams** evaluating Claude Code adoption and needing usage analytics
-- **Hook developers** building on Claude Code's extensibility layer
+## Who is this for
 
-## Key Capabilities
+- Power users who run Claude Code every day and want visibility into what happened
+- Teams evaluating Claude Code and needing usage metrics
+- Project owners managing freelancers on multiple machines
+- Anyone building custom Claude Code hooks
 
-- **Session Browser** — Browse, search, and filter all sessions across every project
-- **Timeline View** — Chronological event stream with messages, tool calls, and subagent activity
-- **Conversation Playback** — Full conversation viewer with user and assistant messages
-- **Token and Cost Tracking** — Per-session and aggregate token usage with cost estimates
-- **File Activity Tracking** — See which files were read, written, or modified
-- **Live Session Monitoring** — Real-time session state via Claude Code hooks
-- **Analytics Dashboards** — Project-level and global analytics with charts
-- **Agent and Skill Analytics** — Track subagent spawning patterns and skill usage
-- **MCP Tool Tracking** — Monitor MCP tool discovery and invocation
-- **Session Chains** — Detect and link related or resumed sessions
-- **Command Palette** — Quick navigation with Ctrl+K
+## Tech stack
 
-## Tech Stack
+| Component | Tech |
+|-----------|------|
+| Backend | Python 3.9+, FastAPI, Pydantic |
+| Frontend | SvelteKit, Svelte 5, Tailwind CSS, Chart.js |
+| CLI | Python with Click |
+| Hooks | Python scripts |
+| Sync | Syncthing (peer-to-peer file sync) |
 
-| Layer | Technology |
-|-------|-----------|
-| Backend | Python 3.9+, FastAPI, Pydantic 2.x, aiofiles |
-| Frontend | SvelteKit 2, Svelte 5 (runes), Tailwind CSS 4, Chart.js 4, bits-ui |
-| Hooks | captain-hook (Pydantic models for Claude Code's 10 hook types) |
-| Tooling | ruff (Python), eslint/prettier (JS), pytest, vitest |
+## Architecture at a glance
 
-## Architecture
+This is one repository with four parts:
 
-Claude Code Karma is a monorepo with all components in a single repository:
+| Part | Purpose | Port |
+|------|---------|------|
+| `api/` | Reads JSONL files and serves REST API | 8000 |
+| `frontend/` | Web dashboard | 5173 |
+| `cli/karma/` | Command-line tool for managing sync | — |
+| `hooks/` | Scripts for real-time tracking | — |
 
-| Directory | Description | Port |
-|-----------|-------------|------|
-| `api/` | FastAPI backend — parses JSONL, serves REST endpoints | 8000 |
-| `frontend/` | SvelteKit dashboard — visualizes session data | 5173 |
-| `captain-hook/` | Pydantic library — type-safe models for Claude Code hooks | — |
+Claude Code writes sessions to `~/.claude/projects/`. The API reads them and serves JSON. The frontend fetches from the API and displays everything. If you enable sync, the CLI watches for new sessions and packages them for Syncthing.
 
-A `hooks/` directory contains production hook scripts that integrate with Claude Code for live tracking and automation.
+## Quick navigation
 
-## Learn More
-
-- [Quick Start](quick-start.md) — Get up and running in 5 minutes
-- [Features](features.md) — Full feature showcase
-- [Architecture](architecture.md) — Technical deep dive
-- [Hooks Guide](hooks-guide.md) — Claude Code hooks and how Claude Code Karma uses them
-- [API Reference](api-reference.md) — Complete endpoint documentation
+- **[Quick Start](quick-start.md)** — Get running in 5 minutes
+- **[Features](features.md)** — See all the capabilities
+- **[Architecture](architecture.md)** — How it works internally
+- **[Hooks Guide](hooks-guide.md)** — Enable real-time tracking
+- **[Syncing Sessions](syncing-sessions.md)** — Share sessions with your team
+- **[API Reference](api-reference.md)** — For developers

@@ -97,7 +97,7 @@ class Settings(BaseSettings):
     )
     cors_allow_credentials: bool = Field(default=True, description="Allow credentials in CORS")
     cors_allow_methods: List[str] = Field(
-        default=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        default=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         description="Allowed HTTP methods for CORS",
     )
     cors_allow_headers: List[str] = Field(

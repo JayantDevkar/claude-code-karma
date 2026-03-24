@@ -6,6 +6,7 @@
 	import type {
 		SearchScopeSelection,
 		SessionStatusFilter,
+		SessionSourceFilter,
 		SearchDateRange,
 		LiveSubStatus,
 		LiveStatusCounts
@@ -31,6 +32,10 @@
 		liveStatusCounts?: LiveStatusCounts;
 		/** Count of completed sessions */
 		completedCount?: number;
+		/** Current source filter */
+		source?: SessionSourceFilter;
+		/** Callback when source filter changes */
+		onSourceChange?: (source: SessionSourceFilter) => void;
 	}
 
 	let {
@@ -46,7 +51,9 @@
 		liveSubStatuses = ALL_LIVE_SUB_STATUSES,
 		onLiveSubStatusChange,
 		liveStatusCounts,
-		completedCount
+		completedCount,
+		source = 'all',
+		onSourceChange
 	}: Props = $props();
 
 	// Prevent body scroll when sheet is open
@@ -135,6 +142,8 @@
 				{onLiveSubStatusChange}
 				{liveStatusCounts}
 				{completedCount}
+				{source}
+				{onSourceChange}
 				variant="mobile"
 			/>
 		</div>

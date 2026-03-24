@@ -32,9 +32,16 @@ from routers import (  # noqa: E402
     plans,
     plugins,
     projects,
+    remote_sessions,
     sessions,
     skills,
     subagent_sessions,
+    sync_members,
+    sync_pairing,
+    sync_pending,
+    sync_projects,
+    sync_system,
+    sync_teams,
     tools,
 )
 from routers import settings as settings_router  # noqa: E402
@@ -93,6 +100,82 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning(f"SQLite indexing failed to start (non-critical): {e}")
 
+    # Start remote session watcher (monitors incoming Syncthing files).
+    # Watches the karma base dir to catch files in both legacy remote-sessions/
+    # and v4 karma-out--* inbox folders.
+    remote_watcher = None
+    if settings.use_sqlite:
+        try:
+            from services.watcher_manager import RemoteSessionWatcher
+
+            remote_watcher = RemoteSessionWatcher(
+                watch_dir=settings.karma_base,
+            )
+            remote_watcher.start()
+            logger.info(
+                "Remote session watcher started: %s", settings.karma_base
+            )
+        except Exception as e:
+            logger.warning(
+                "Remote session watcher failed to start (non-critical): %s", e
+            )
+
+    # Start session packager (packages local sessions into Syncthing outbox)
+    session_watcher_mgr = None
+    if settings.use_sqlite:
+        try:
+            from models.sync_config import SyncConfig
+            config = SyncConfig.load()
+            if config and config.member_tag:
+                from db.connection import get_writer_db
+                from services.watcher_manager import WatcherManager
+
+                db = get_writer_db()
+
+                from db.queries import resolve_encoded_name
+
+                # Build config_data from sync DB tables
+                teams_rows = db.execute(
+                    "SELECT name FROM sync_teams WHERE status = 'active'"
+                ).fetchall()
+                teams_dict = {}
+                for (tname,) in teams_rows:
+                    proj_rows = db.execute(
+                        "SELECT git_identity, encoded_name, folder_suffix "
+                        "FROM sync_projects WHERE team_name = ? AND status = 'shared'",
+                        (tname,),
+                    ).fetchall()
+                    projects_dict = {}
+                    for git_id, enc_name, _fsuffix in proj_rows:
+                        local_enc = resolve_encoded_name(db, git_id) or enc_name or git_id
+                        projects_dict[git_id] = {
+                            "encoded_name": local_enc,
+                            "path": "",
+                        }
+                    if projects_dict:
+                        teams_dict[tname] = {"projects": projects_dict}
+
+                if teams_dict:
+                    config_data = {
+                        "teams": teams_dict,
+                        "user_id": config.user_id,
+                        "machine_id": config.machine_id,
+                        "device_id": (
+                            config.syncthing.device_id if config.syncthing else ""
+                        ),
+                        "member_tag": config.member_tag,
+                    }
+                    session_watcher_mgr = WatcherManager()
+                    session_watcher_mgr.start_all(config_data)
+                    logger.info(
+                        "Session packager started for %d team(s)",
+                        len(teams_dict),
+                    )
+        except Exception as e:
+            logger.warning(
+                "Session packager failed to start (non-critical): %s", e
+            )
+
     # Start live session reconciler
     reconciler_task = None
     if settings.reconciler_enabled:
@@ -113,6 +196,14 @@ async def lifespan(app: FastAPI):
     yield
 
     # Shutdown
+    if remote_watcher is not None:
+        remote_watcher.stop()
+        logger.info("Remote session watcher stopped")
+
+    if session_watcher_mgr is not None:
+        session_watcher_mgr.stop()
+        logger.info("Session packager stopped")
+
     if reconciler_task is not None:
         reconciler_task.cancel()
         logger.info("Session reconciler cancelled")
@@ -171,6 +262,13 @@ app.include_router(
     prefix="/agents",
     tags=["subagent-sessions"],
 )
+app.include_router(remote_sessions.router, prefix="/remote", tags=["remote"])
+app.include_router(sync_system.router)
+app.include_router(sync_members.router)
+app.include_router(sync_teams.router)
+app.include_router(sync_projects.router)
+app.include_router(sync_pairing.router)
+app.include_router(sync_pending.router)
 app.include_router(admin.router)
 
 

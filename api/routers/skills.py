@@ -13,7 +13,7 @@ import sqlite3
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
@@ -27,6 +27,8 @@ from command_helpers import (
     classify_invocation,
     get_bundled_skill_prompt,
     get_command_description,
+    is_custom_skill_local,
+    is_plugin_installed_locally,
     is_plugin_skill,
 )
 from config import Settings, settings
@@ -421,6 +423,34 @@ def get_skill_usage(
                         if ":" in skill_name
                         else (skill_name if is_plugin else None)
                     )
+                    remote_count = row.get("remote_count") or 0
+                    local_count = row.get("local_count") or 0
+                    raw_remote_ids = row.get("remote_user_ids") or ""
+                    remote_user_ids = (
+                        [uid for uid in raw_remote_ids.split(",") if uid]
+                        if raw_remote_ids
+                        else []
+                    )
+                    category = classify_invocation(skill_name)
+                    # Check if the skill exists locally to avoid tagging
+                    # locally-available skills as "remote-only" when all
+                    # usage happens to come from remote sessions.
+                    #   - Plugin skills: check if plugin directory exists
+                    #   - Bundled skills/commands: always available locally
+                    #   - Custom skills: check if SKILL.md exists on disk
+                    #   - User commands: check if .md exists in commands dir
+                    if ":" in skill_name:
+                        exists_locally = is_plugin_installed_locally(skill_name.split(":")[0])
+                    elif is_plugin:
+                        exists_locally = is_plugin_installed_locally(skill_name)
+                    elif category in ("bundled_skill", "bundled_command"):
+                        exists_locally = True
+                    elif category == "custom_skill":
+                        exists_locally = is_custom_skill_local(skill_name)
+                    elif category == "user_command":
+                        exists_locally = (settings.commands_dir / f"{skill_name}.md").is_file()
+                    else:
+                        exists_locally = False
                     results.append(
                         {
                             "name": skill_name,
@@ -429,8 +459,12 @@ def get_skill_usage(
                             "plugin": plugin_name,
                             "last_used": row.get("last_used"),
                             "session_count": row.get("session_count", 0),
-                            "category": classify_invocation(skill_name),
+                            "category": category,
                             "description": get_command_description(skill_name),
+                            "remote_count": remote_count,
+                            "local_count": local_count,
+                            "remote_user_ids": remote_user_ids,
+                            "is_remote_only": local_count == 0 and remote_count > 0 and not exists_locally,
                         }
                     )
                 return results
@@ -535,6 +569,11 @@ def get_skill_usage_trend(
                         item: [UsageTrendItem(date=t["date"], count=t["count"]) for t in points]
                         for item, points in data.get("trend_by_item", {}).items()
                     },
+                    trend_by_user={
+                        user: [UsageTrendItem(date=t["date"], count=t["count"]) for t in points]
+                        for user, points in data.get("trend_by_user", {}).items()
+                    },
+                    user_names=data.get("user_names", {}),
                     first_used=data["first_used"],
                     last_used=data["last_used"],
                 )
@@ -600,7 +639,64 @@ async def get_skill_detail(
             detail=f"Skill '{skill_name}' not found",
         )
 
-    # 3. Build sessions list with title enrichment
+    # 3. Compute remote/local split and optionally fetch remote_definition
+    remote_count = 0
+    local_count = 0
+    remote_user_ids: list[str] = []
+    is_remote_only = False
+    remote_definition = None
+
+    if usage_data:
+        # query_skill_detail does not return these fields directly, so query usage for them
+        try:
+            from db.connection import sqlite_read
+            from db.queries import query_skill_usage
+
+            with sqlite_read() as conn:
+                if conn is not None:
+                    usage_rows = query_skill_usage(conn, limit=9999)
+                    for urow in usage_rows:
+                        if urow.get("skill_name") == skill_name:
+                            remote_count = urow.get("remote_count") or 0
+                            local_count = urow.get("local_count") or 0
+                            raw_ids = urow.get("remote_user_ids") or ""
+                            remote_user_ids = [uid for uid in raw_ids.split(",") if uid] if raw_ids else []
+                            break
+        except Exception as e:
+            logger.warning("Failed to fetch remote/local split for skill %s: %s", skill_name, e)
+
+        # Only mark as remote-only if the skill file doesn't exist locally.
+        # Without this, locally-installed skills (e.g. superpowers:executing-plans)
+        # get incorrectly tagged as remote when all usage happens to be from remote sessions.
+        # Note: `skill_info is None` is used as proxy for "not locally available" —
+        # _resolve_skill_info succeeds for all locally-present skills (bundled,
+        # custom, plugin, user commands) and only raises HTTPException (caught
+        # above) when no local file is found.
+        is_remote_only = local_count == 0 and remote_count > 0 and skill_info is None
+
+        if is_remote_only:
+            try:
+                from db.connection import sqlite_read
+
+                with sqlite_read() as conn:
+                    if conn is not None:
+                        row = conn.execute(
+                            "SELECT content, category, source_user_id, base_directory, description"
+                            " FROM skill_definitions WHERE skill_name = ? AND source_user_id IS NOT NULL LIMIT 1",
+                            (skill_name,),
+                        ).fetchone()
+                        if row:
+                            remote_definition = {
+                                "content": row["content"],
+                                "category": row["category"],
+                                "source_user_id": row["source_user_id"],
+                                "base_directory": row["base_directory"],
+                                "description": row["description"],
+                            }
+            except Exception as e:
+                logger.warning("Failed to fetch remote_definition for skill %s: %s", skill_name, e)
+
+    # 4. Build sessions list with title enrichment
     sessions = []
     if usage_data:
         for row in usage_data["sessions"]:
@@ -632,6 +728,10 @@ async def get_skill_detail(
                     tool_source=row.get("tool_source"),
                     subagent_agent_ids=row.get("subagent_agent_ids", []),
                     invocation_sources=row.get("invocation_sources", []),
+                    session_source=row.get("session_source"),
+                    source=row.get("source"),
+                    remote_user_id=row.get("remote_user_id"),
+                    remote_machine_id=row.get("remote_machine_id"),
                 )
             )
 
@@ -641,7 +741,7 @@ async def get_skill_detail(
         description=skill_info.description if skill_info else None,
         content=skill_info.content if skill_info else None,
         is_plugin=skill_info.is_plugin if skill_info else is_plugin_skill(skill_name),
-        plugin=skill_info.plugin if skill_info else None,
+        plugin=skill_info.plugin if skill_info else (skill_name.split(":")[0] if ":" in skill_name else None),
         file_path=skill_info.file_path if skill_info else None,
         category=classify_invocation(skill_name),
         calls=usage_data["total_calls"] if usage_data else 0,
@@ -661,6 +761,12 @@ async def get_skill_detail(
         ],
         sessions=sessions,
         sessions_total=usage_data["total"] if usage_data else 0,
+        remote_count=remote_count,
+        local_count=local_count,
+        remote_user_ids=remote_user_ids,
+        is_remote_only=is_remote_only,
+        remote_definition=remote_definition,
+        inherited_from=skill_info.inherited_from if skill_info else None,
     )
 
 
@@ -723,6 +829,10 @@ def get_skill_sessions(
                             session_titles=row.get("session_titles", [])
                             or title_cache.get_titles(project_encoded_name, row["uuid"])
                             or [],
+                            session_source=row.get("session_source"),
+                            source=row.get("source"),
+                            remote_user_id=row.get("remote_user_id"),
+                            remote_machine_id=row.get("remote_machine_id"),
                         )
                     )
                 return SkillSessionsResponse(
@@ -873,6 +983,35 @@ async def _resolve_skill_info(skill_name: str, config: Settings) -> SkillInfo:
 
     skill_file = None
 
+    def _find_skill_in_version_dir(version_dir: Path, target_skill: str) -> Path | None:
+        """Search for a skill file in a plugin version directory.
+
+        Checks default locations (commands/, skills/) and custom paths
+        from .claude-plugin/plugin.json manifest.
+        """
+        from models.plugin import read_plugin_manifest, _resolve_manifest_dirs
+
+        # Check default locations first
+        commands_file = version_dir / "commands" / f"{target_skill}.md"
+        if commands_file.is_file():
+            return commands_file
+        skills_file = version_dir / "skills" / target_skill / "SKILL.md"
+        if skills_file.is_file():
+            return skills_file
+
+        # Check manifest custom paths
+        manifest = read_plugin_manifest(version_dir)
+        for skills_dir in _resolve_manifest_dirs(version_dir, manifest, "skills", []):
+            candidate = skills_dir / target_skill / "SKILL.md"
+            if candidate.is_file():
+                return candidate
+        for commands_dir in _resolve_manifest_dirs(version_dir, manifest, "commands", []):
+            candidate = commands_dir / f"{target_skill}.md"
+            if candidate.is_file():
+                return candidate
+
+        return None
+
     if is_plugin:
         actual_skill_name = skill_name.split(":", 1)[1] if ":" in skill_name else skill_name
 
@@ -897,6 +1036,15 @@ async def _resolve_skill_info(skill_name: str, config: Settings) -> SkillInfo:
                     if skill_file:
                         break
                 if skill_file:
+                    break
+
+        # Fallback: check if this plugin skill was inherited locally
+        # Check both colon-form (legacy) and dash-form (new convention)
+        if not skill_file:
+            for candidate_name in (skill_name, skill_name.replace(":", "-")):
+                inherited_skill = config.claude_base / "skills" / candidate_name / "SKILL.md"
+                if inherited_skill.is_file():
+                    skill_file = inherited_skill
                     break
     else:
         # For skills without plugin prefix (e.g., "commit" instead of "commit-commands:commit"),
@@ -966,6 +1114,7 @@ async def _resolve_skill_info(skill_name: str, config: Settings) -> SkillInfo:
     # Parse YAML frontmatter
     description = None
     frontmatter_name = skill_name
+    inherited_from = None
 
     if content.startswith("---"):
         # Split frontmatter from content
@@ -977,6 +1126,7 @@ async def _resolve_skill_info(skill_name: str, config: Settings) -> SkillInfo:
                 if isinstance(frontmatter, dict):
                     description = frontmatter.get("description")
                     frontmatter_name = frontmatter.get("name", skill_name)
+                    inherited_from = frontmatter.get("inherited_from")
             except yaml.YAMLError as e:
                 logger.warning(f"Failed to parse YAML frontmatter for {skill_name}: {e}")
 
@@ -987,6 +1137,7 @@ async def _resolve_skill_info(skill_name: str, config: Settings) -> SkillInfo:
         is_plugin=is_plugin,
         plugin=plugin_full_name,
         file_path=str(skill_file),
+        inherited_from=inherited_from,
     )
 
 
@@ -999,3 +1150,134 @@ async def get_skill_info(
 ) -> SkillInfo:
     """Get detailed information about a skill (cached endpoint wrapper)."""
     return await _resolve_skill_info(skill_name, config)
+
+
+def _validate_skill_name(skill_name: str) -> None:
+    """Validate skill_name to prevent path traversal and injection."""
+    import re
+
+    if not skill_name or not re.match(r"^[a-zA-Z0-9_\-.:]+$", skill_name):
+        raise HTTPException(status_code=400, detail="Invalid skill name")
+    if ".." in skill_name:
+        raise HTTPException(status_code=400, detail="Path traversal not allowed")
+
+
+@router.post("/skills/{skill_name}/inherit")
+async def inherit_skill(
+    skill_name: str,
+    scope: Annotated[str, Query(..., pattern="^(user|project)$")],
+    project_encoded_name: Annotated[Optional[str], Query()] = None,
+) -> dict:
+    """
+    Inherit a remote skill by creating the SKILL.md file locally.
+
+    Plugin skill names (with ``:``) are converted to dash-form for the
+    directory name so Claude Code discovers them as custom skills:
+      ``oh-my-claudecode:deepsearch`` → ``oh-my-claudecode-deepsearch``
+
+    scope: "user"    -> ~/.claude/skills/{inherited_name}/SKILL.md
+    scope: "project" -> {project_path}/.claude/skills/{inherited_name}/SKILL.md
+    """
+    _validate_skill_name(skill_name)
+
+    import yaml
+
+    # Convert colon-form to dash-form for filesystem-safe directory name
+    inherited_name = skill_name.replace(":", "-")
+
+    from db.connection import sqlite_read
+
+    # 1. Get the skill content from skill_definitions
+    with sqlite_read() as conn:
+        if conn is None:
+            raise HTTPException(status_code=503, detail="Database unavailable")
+        row = conn.execute(
+            "SELECT content, category, description, source_user_id FROM skill_definitions"
+            " WHERE skill_name = ? AND source_user_id IS NOT NULL"
+            " ORDER BY updated_at DESC LIMIT 1",
+            (skill_name,),
+        ).fetchone()
+
+    if not row or not row["content"]:
+        raise HTTPException(status_code=404, detail="No remote skill definition found for this skill")
+
+    content = row["content"]
+    source_user_id = row["source_user_id"]
+    description = row["description"]
+
+    # 2. Build frontmatter with provenance tracking
+    inherit_meta: dict[str, str] = {"inherited_from": skill_name}
+    if source_user_id:
+        inherit_meta["source_user_id"] = source_user_id
+    if description:
+        inherit_meta["description"] = description
+
+    # Parse existing frontmatter (if any) and merge with inherit metadata
+    existing_fm: dict = {}
+    body = content
+    if content.startswith("---"):
+        parts = content.split("---", 2)
+        if len(parts) >= 3:
+            try:
+                existing_fm = yaml.safe_load(parts[1]) or {}
+            except yaml.YAMLError:
+                existing_fm = {}
+            body = parts[2].lstrip("\n")
+
+    merged = {**existing_fm, **inherit_meta}
+    fm_str = yaml.dump(merged, default_flow_style=False, sort_keys=False).strip()
+    content = f"---\n{fm_str}\n---\n{body}"
+
+    # 3. Determine target path using the dash-form name
+    if scope == "user":
+        target_dir = settings.claude_base / "skills" / inherited_name
+    else:  # project
+        if not project_encoded_name:
+            raise HTTPException(status_code=400, detail="project_encoded_name required for project scope")
+        from models.project import Project
+
+        project_path = Project.decode_path(project_encoded_name)
+        target_dir = Path(project_path) / ".claude" / "skills" / inherited_name
+
+    # 4. Verify resolved path stays under intended base (defense-in-depth)
+    target_dir = target_dir.resolve()
+    target_file = target_dir / "SKILL.md"
+
+    # 5. Handle collisions
+    if target_file.exists():
+        # Check if this is an idempotent re-inherit
+        try:
+            head = target_file.read_text(encoding="utf-8", errors="ignore")[:512]
+            if f"inherited_from: {skill_name}" in head:
+                return {
+                    "status": "already_exists",
+                    "path": str(target_file),
+                    "skill_name": skill_name,
+                    "inherited_name": inherited_name,
+                    "scope": scope,
+                }
+        except OSError:
+            pass
+        raise HTTPException(
+            status_code=409,
+            detail=f"Skill '{inherited_name}' already exists at {target_file}. "
+            "Delete it first or choose a different name.",
+        )
+
+    target_dir.mkdir(parents=True, exist_ok=True)
+    target_file.write_text(content)
+
+    # Evict classification caches so the new skill is recognized immediately
+    from command_helpers.plugins import _inherited_skill_cache, _custom_skill_cache
+
+    _inherited_skill_cache.pop(inherited_name, None)
+    _custom_skill_cache.pop(inherited_name, None)
+
+    logger.info("Inherited remote skill %r as %r to %s", skill_name, inherited_name, target_file)
+    return {
+        "status": "created",
+        "path": str(target_file),
+        "skill_name": skill_name,
+        "inherited_name": inherited_name,
+        "scope": scope,
+    }

@@ -82,8 +82,39 @@ from utils import (
     list_all_projects,
     normalize_timezone,
     parse_timestamp_range,
+    resolve_git_remote_url,
     resolve_git_root,
 )
+
+# TTL cache for remote session filesystem scans (avoids walking disk every request).
+# Uses cachetools.TTLCache (bounded, auto-evicts) + threading.Lock to prevent
+# thundering herd under concurrent FastAPI threadpool requests.
+import threading as _threading
+
+from cachetools import TTLCache as _TTLCache
+
+_remote_sessions_cache = _TTLCache(maxsize=128, ttl=30.0)
+_remote_cache_lock = _threading.Lock()
+
+
+def _get_cached_remote_sessions(encoded_name: str) -> list:
+    """Return remote sessions for a project, cached for 30s to avoid repeated filesystem walks."""
+    cached = _remote_sessions_cache.get(encoded_name)
+    if cached is not None:
+        return cached
+
+    with _remote_cache_lock:
+        # Double-check after acquiring lock (another thread may have populated it)
+        cached = _remote_sessions_cache.get(encoded_name)
+        if cached is not None:
+            return cached
+
+        from services.remote_sessions import list_remote_sessions_for_project
+
+        result = list_remote_sessions_for_project(encoded_name)
+        _remote_sessions_cache[encoded_name] = result
+        return result
+
 
 router = APIRouter()
 
@@ -255,6 +286,9 @@ def session_to_summary(
     session: Session,
     chain_info: Optional[SessionChainInfoSummary] = None,
     session_source: Optional[str] = None,
+    source: Optional[str] = None,
+    remote_user_id: Optional[str] = None,
+    remote_machine_id: Optional[str] = None,
 ) -> SessionSummary:
     """Convert a Session to SessionSummary."""
     initial_prompt = get_initial_prompt(session, max_length=500)
@@ -275,6 +309,9 @@ def session_to_summary(
         chain_info=chain_info,
         session_titles=list(session.session_titles or []),
         session_source=session_source,
+        source=source,
+        remote_user_id=remote_user_id,
+        remote_machine_id=remote_machine_id,
     )
 
 
@@ -372,6 +409,7 @@ def list_projects(request: Request):
                         encoded_name = row["encoded_name"]
                         is_git = False
                         git_root = None
+                        git_remote = None
                         is_nested = False
                         exists = False
                         if path:
@@ -382,6 +420,8 @@ def list_projects(request: Request):
                                 git_root = resolve_git_root(path)
                                 if git_root is not None:
                                     is_nested = p.resolve() != Path(git_root).resolve()
+                                if is_git:
+                                    git_remote = resolve_git_remote_url(path)
                         summaries.append(
                             ProjectSummary(
                                 path=path,
@@ -394,6 +434,7 @@ def list_projects(request: Request):
                                 is_git_repository=is_git,
                                 git_root_path=git_root,
                                 is_nested_project=is_nested,
+                                git_remote_url=git_remote,
                                 latest_session_time=row.get("last_activity"),
                             )
                         )
@@ -415,6 +456,7 @@ def list_projects(request: Request):
             is_git_repository=p.is_git_repository,
             git_root_path=p.git_root_path,
             is_nested_project=p.is_nested_project,
+            git_remote_url=resolve_git_remote_url(p.path) if p.is_git_repository and p.exists else None,
             latest_session_time=get_latest_session_time(p),
         )
         for p in projects
@@ -453,68 +495,188 @@ def get_project(
     except Exception as e:
         raise HTTPException(status_code=404, detail=f"Project not found: {e}") from e
 
+    # For remote-only projects, check for synced sessions before returning 404
+    # and fetch the display_name already populated by upsert_team_project/indexer.
+    _remote_display_name: Optional[str] = None
     if not project.exists:
-        raise HTTPException(status_code=404, detail="Project directory not found")
+        has_remote = False
+        try:
+            from db.connection import sqlite_read
+
+            with sqlite_read() as conn:
+                if conn is not None:
+                    row = conn.execute(
+                        "SELECT COUNT(*) FROM sessions WHERE project_encoded_name = ?",
+                        (encoded_name,),
+                    ).fetchone()
+                    if row and row[0] > 0:
+                        has_remote = True
+                    # Fetch display_name from projects table (populated by
+                    # upsert_team_project and the indexer from git_identity).
+                    dn_row = conn.execute(
+                        "SELECT display_name FROM projects"
+                        " WHERE encoded_name = ? AND display_name IS NOT NULL"
+                        " LIMIT 1",
+                        (encoded_name,),
+                    ).fetchone()
+                    if dn_row and dn_row[0]:
+                        _remote_display_name = dn_row[0]
+        except Exception:
+            pass
+        if not has_remote:
+            try:
+                remote_metas = _get_cached_remote_sessions(encoded_name)
+                if remote_metas:
+                    has_remote = True
+            except Exception:
+                pass
+        if not has_remote:
+            raise HTTPException(status_code=404, detail="Project directory not found")
 
     # Compute offset from page/per_page
     per_page = max(1, min(per_page, 200))
     offset = (page - 1) * per_page
     limit = per_page
 
-    # SQLite fast path
+    # SQLite fast path — isolated try/excepts so enrichment failures
+    # never trigger the expensive JSONL fallback.
+    # One connection is reused for both queries; chain info failure is non-fatal.
+    db_data = None
+    db_chain_info: dict = {}
+    all_indexed_uuids: set[str] = set()
     try:
         from db.connection import sqlite_read
         from db.queries import query_chain_info_for_project, query_project_sessions
 
         with sqlite_read() as conn:
             if conn is not None:
-                # DB now includes worktree sessions under real project,
-                # so we can paginate directly without post-merge re-sorting.
-                data = query_project_sessions(
+                db_data = query_project_sessions(
                     conn, encoded_name, limit=limit, offset=offset, search=search
                 )
+                # Chain info — optional enrichment, degrade gracefully
+                try:
+                    db_chain_info = query_chain_info_for_project(conn, encoded_name)
+                except Exception as e:
+                    logger.debug("Chain info query failed (non-fatal): %s", e)
+                # Fetch ALL indexed UUIDs for accurate remote-session dedup
+                try:
+                    all_indexed_uuids = {
+                        row[0]
+                        for row in conn.execute(
+                            "SELECT uuid FROM sessions WHERE project_encoded_name = ?",
+                            (encoded_name,),
+                        ).fetchall()
+                    }
+                except Exception as e:
+                    logger.debug("All-UUIDs query failed (non-fatal): %s", e)
+    except Exception as e:
+        logger.warning("SQLite project sessions query failed, falling back: %s", e)
 
-                # Build chain info from DB (uses leaf_uuid + slug with overlap filtering)
-                db_chain_info = query_chain_info_for_project(conn, encoded_name)
+    if db_data is not None:
 
-                # Build session summaries from SQL rows
-                # (DB now includes worktree sessions under the real project)
-                session_summaries = []
-                for row in data["sessions"]:
-                    chain_info = None
-                    uuid = row["uuid"]
-                    if uuid in db_chain_info:
-                        ci = db_chain_info[uuid]
-                        chain_info = SessionChainInfoSummary(
-                            chain_id=ci["chain_id"],
-                            position=ci["position"],
-                            total=ci["total"],
-                            is_root=ci["is_root"],
-                            is_latest=ci["is_latest"],
-                        )
-                    titles = row.get("session_titles", [])
-                    if not titles:
-                        titles = title_cache.get_titles(encoded_name, uuid) or []
+        # Build session summaries from SQL rows
+        session_summaries = []
+        for row in db_data["sessions"]:
+            chain_info = None
+            uuid = row["uuid"]
+            if uuid in db_chain_info:
+                ci = db_chain_info[uuid]
+                chain_info = SessionChainInfoSummary(
+                    chain_id=ci["chain_id"],
+                    position=ci["position"],
+                    total=ci["total"],
+                    is_root=ci["is_root"],
+                    is_latest=ci["is_latest"],
+                )
+            titles = row.get("session_titles", [])
+            if not titles:
+                titles = title_cache.get_titles(encoded_name, uuid) or []
+            session_summaries.append(
+                SessionSummary(
+                    uuid=uuid,
+                    slug=row.get("slug"),
+                    message_count=row["message_count"],
+                    start_time=row.get("start_time"),
+                    end_time=row.get("end_time"),
+                    duration_seconds=row.get("duration_seconds"),
+                    models_used=row.get("models_used", []),
+                    subagent_count=row.get("subagent_count", 0),
+                    has_todos=False,
+                    initial_prompt=row.get("initial_prompt"),
+                    git_branches=row.get("git_branches", []),
+                    session_titles=titles,
+                    chain_info=chain_info,
+                    session_source=row.get("session_source"),
+                    source=row.get("source"),
+                    remote_user_id=row.get("remote_user_id"),
+                    remote_machine_id=row.get("remote_machine_id"),
+                )
+            )
+
+        total_count = db_data["total"]
+
+        # Merge unindexed remote sessions — optional enrichment
+        # IMPORTANT: Only add remote sessions on the first page (offset==0)
+        # to avoid duplicating them across every paginated response.
+        # Check against ALL indexed UUIDs for this project (not just the
+        # current page), since a remote session's UUID may exist on a
+        # different page of DB results.
+        remote_session_count = 0
+        try:
+            remote_metas = _get_cached_remote_sessions(encoded_name)
+            remote_session_count = len(remote_metas)
+
+            if remote_metas and offset == 0:
+                unindexed = [
+                    m
+                    for m in remote_metas
+                    if m.uuid not in all_indexed_uuids
+                ]
+
+                for rmeta in unindexed:
+                    titles = rmeta.session_titles or []
+                    duration = None
+                    if rmeta.start_time and rmeta.end_time:
+                        duration = (
+                            rmeta.end_time - rmeta.start_time
+                        ).total_seconds()
                     session_summaries.append(
                         SessionSummary(
-                            uuid=uuid,
-                            slug=row.get("slug"),
-                            message_count=row["message_count"],
-                            start_time=row.get("start_time"),
-                            end_time=row.get("end_time"),
-                            duration_seconds=row.get("duration_seconds"),
-                            models_used=row.get("models_used", []),
-                            subagent_count=row.get("subagent_count", 0),
+                            uuid=rmeta.uuid,
+                            slug=rmeta.slug,
+                            message_count=rmeta.message_count,
+                            start_time=rmeta.start_time,
+                            end_time=rmeta.end_time,
+                            duration_seconds=duration,
+                            models_used=[],
+                            subagent_count=0,
                             has_todos=False,
-                            initial_prompt=row.get("initial_prompt"),
-                            git_branches=row.get("git_branches", []),
+                            initial_prompt=rmeta.initial_prompt,
+                            git_branches=(
+                                [rmeta.git_branch]
+                                if rmeta.git_branch
+                                else []
+                            ),
                             session_titles=titles,
-                            chain_info=chain_info,
-                            session_source=row.get("session_source"),
+                            source=rmeta.source,
+                            remote_user_id=rmeta.remote_user_id,
+                            remote_machine_id=rmeta.remote_machine_id,
                         )
                     )
 
-                total_count = data["total"]
+                total_count += len(unindexed)
+
+                # Trigger background reindex so next request
+                # won't need this disk check
+                if unindexed:
+                    import threading
+
+                    from db.indexer import trigger_remote_reindex
+
+                    threading.Thread(
+                        target=trigger_remote_reindex,
+                        daemon=True,
+                    ).start()
 
                 # Bug fix: If SQLite returns 0 sessions but files exist on disk, fall back to filesystem
                 if total_count == 0:
@@ -528,24 +690,25 @@ def get_project(
                         # Fall through to filesystem scan below
                         raise _FallbackToFilesystem()
 
-                _enrich_chain_titles(session_summaries)
-                return ProjectDetail(
-                    path=project.path,
-                    encoded_name=project.encoded_name,
-                    slug=project.slug,
-                    display_name=project.display_name,
-                    session_count=total_count,
-                    agent_count=project.agent_count,
-                    exists=project.exists,
-                    is_git_repository=project.is_git_repository,
-                    git_root_path=project.git_root_path,
-                    is_nested_project=project.is_nested_project,
-                    sessions=session_summaries,
-                )
-    except _FallbackToFilesystem:
-        logger.info("SQLite/filesystem mismatch, falling back to filesystem scan")
-    except Exception as e:
-        logger.warning("SQLite project sessions query failed, falling back: %s", e)
+            _enrich_chain_titles(session_summaries)
+            return ProjectDetail(
+                path=project.path,
+                encoded_name=project.encoded_name,
+                slug=project.slug,
+                display_name=_remote_display_name or project.display_name,
+                session_count=total_count,
+                agent_count=project.agent_count,
+                exists=project.exists,
+                is_git_repository=project.is_git_repository,
+                git_root_path=project.git_root_path,
+                is_nested_project=project.is_nested_project,
+                sessions=session_summaries,
+                remote_session_count=remote_session_count,
+            )
+        except _FallbackToFilesystem:
+            logger.info("SQLite/filesystem mismatch, falling back to filesystem scan")
+        except Exception as e:
+            logger.warning("SQLite project sessions query failed, falling back: %s", e)
 
     sessions = project.list_sessions()
     # Filter out empty sessions (no messages = no valid start_time)
@@ -560,6 +723,21 @@ def get_project(
         if get_session_source(s.uuid):
             desktop_uuids.add(s.uuid)
     sessions.extend(wt_sessions)
+
+    # Merge remote sessions from Syncthing sync
+    remote_metas = _get_cached_remote_sessions(encoded_name)
+    remote_uuid_map: dict = {}
+    existing_uuids = {s.uuid for s in sessions}
+    for rmeta in remote_metas:
+        remote_uuid_map[rmeta.uuid] = rmeta
+        if rmeta.uuid in existing_uuids:
+            continue
+        try:
+            remote_session = rmeta.get_session()
+            sessions.append(remote_session)
+            existing_uuids.add(rmeta.uuid)
+        except Exception:
+            pass
 
     # Apply search filter (JSONL fallback path)
     if search:
@@ -616,20 +794,25 @@ def get_project(
         end_idx = offset + limit if limit else None
         sessions = sessions[offset:end_idx]
 
-    fallback_summaries = [
-        session_to_summary(
-            s,
-            chain_info_map.get(s.uuid),
-            session_source="desktop" if s.uuid in desktop_uuids else None,
+    fallback_summaries = []
+    for s in sessions:
+        rmeta = remote_uuid_map.get(s.uuid)
+        fallback_summaries.append(
+            session_to_summary(
+                s,
+                chain_info_map.get(s.uuid),
+                session_source="desktop" if s.uuid in desktop_uuids else None,
+                source=rmeta.source if rmeta else None,
+                remote_user_id=rmeta.remote_user_id if rmeta else None,
+                remote_machine_id=rmeta.remote_machine_id if rmeta else None,
+            )
         )
-        for s in sessions
-    ]
     _enrich_chain_titles(fallback_summaries)
     return ProjectDetail(
         path=project.path,
         encoded_name=project.encoded_name,
         slug=project.slug,
-        display_name=project.display_name,
+        display_name=_remote_display_name or project.display_name,
         session_count=total_session_count,
         agent_count=project.agent_count,
         exists=project.exists,
@@ -637,6 +820,7 @@ def get_project(
         git_root_path=project.git_root_path,
         is_nested_project=project.is_nested_project,
         sessions=fallback_summaries,
+        remote_session_count=len(remote_uuid_map),
     )
 
 
@@ -1051,8 +1235,8 @@ def get_project_branches(encoded_name: str, request: Request):
     except Exception as e:
         raise HTTPException(status_code=404, detail=f"Project not found: {e}") from e
 
-    if not project.exists:
-        raise HTTPException(status_code=404, detail="Project directory not found")
+    # No exists check — remote-only projects serve branches from the DB
+    # (remote sessions are indexed with git_branch metadata).
 
     # SQLite fast path
     try:
@@ -1411,3 +1595,125 @@ async def get_project_memory(encoded_name: str, request: Request):
     except OSError as e:
         logger.error(f"Error reading memory file for {encoded_name}: {e}")
         raise HTTPException(status_code=500, detail="Failed to read memory file") from e
+
+
+# ============================================================================
+# Remote Sessions (Team sync)
+# ============================================================================
+
+
+@router.get("/{encoded_name}/remote-sessions")
+async def project_remote_sessions(encoded_name: str):
+    """Get remote sessions for a project, grouped by remote user.
+
+    Returns full SessionSummary data (including cost, duration, models, tools)
+    from SQLite for each remote session, grouped by user.
+    """
+    import json
+    import re
+    from collections import defaultdict
+
+    ALLOWED_NAME = re.compile(r"^[a-zA-Z0-9_\-]+$")
+    if not ALLOWED_NAME.match(encoded_name) or len(encoded_name) > 512:
+        raise HTTPException(400, "Invalid project name")
+
+    # Query SQLite for rich remote session data (cost, duration, models, tools).
+    try:
+        from db.connection import sqlite_read
+        from db.queries import _parse_json_list
+
+        with sqlite_read() as conn:
+            if conn is None:
+                return {"users": []}
+
+            rows = conn.execute(
+                """SELECT
+                    s.uuid, s.slug, s.message_count, s.start_time, s.end_time,
+                    s.duration_seconds, s.models_used, s.subagent_count,
+                    s.initial_prompt, s.git_branch, s.session_titles,
+                    s.input_tokens, s.output_tokens, s.total_cost,
+                    s.session_source,
+                    s.source, s.remote_user_id, s.remote_machine_id
+                FROM sessions s
+                WHERE s.project_encoded_name = :project
+                    AND s.source = 'remote'
+                    AND s.message_count > 0
+                ORDER BY s.start_time DESC""",
+                {"project": encoded_name},
+            ).fetchall()
+
+            if not rows:
+                return {"users": []}
+
+            # Bulk-fetch tools_used for all remote sessions in one query
+            uuids = [r["uuid"] for r in rows]
+            placeholders = ",".join("?" * len(uuids))
+            tool_rows = conn.execute(
+                f"SELECT session_uuid, tool_name, count FROM session_tools WHERE session_uuid IN ({placeholders})",
+                uuids,
+            ).fetchall()
+            tools_by_session: dict[str, dict[str, int]] = defaultdict(dict)
+            for tr in tool_rows:
+                tools_by_session[tr["session_uuid"]][tr["tool_name"]] = tr["count"]
+
+            # Build SessionSummary objects grouped by user
+            user_sessions: dict[str, list[SessionSummary]] = defaultdict(list)
+            user_machine: dict[str, str | None] = {}
+
+            for row in rows:
+                user_id = row["remote_user_id"] or "unknown"
+                if user_id not in user_machine:
+                    user_machine[user_id] = row["remote_machine_id"]
+
+                uuid = row["uuid"]
+                user_sessions[user_id].append(
+                    SessionSummary(
+                        uuid=uuid,
+                        slug=row["slug"],
+                        message_count=row["message_count"],
+                        start_time=row["start_time"],
+                        end_time=row["end_time"],
+                        duration_seconds=row["duration_seconds"],
+                        models_used=_parse_json_list(row["models_used"]),
+                        subagent_count=row["subagent_count"] or 0,
+                        has_todos=False,  # Remote sessions don't sync todo data
+                        initial_prompt=row["initial_prompt"],
+                        git_branches=[row["git_branch"]] if row["git_branch"] else [],
+                        session_titles=_parse_json_list(row["session_titles"]),
+                        total_input_tokens=row["input_tokens"],
+                        total_output_tokens=row["output_tokens"],
+                        total_cost=row["total_cost"],
+                        tools_used=tools_by_session.get(uuid, {}),
+                        session_source=row["session_source"],
+                        source="remote",
+                        remote_user_id=row["remote_user_id"],
+                        remote_machine_id=row["remote_machine_id"],
+                    )
+                )
+
+    except Exception as e:
+        logger.warning("SQLite remote sessions query failed: %s", e)
+        return {"users": []}
+
+    # Load manifest data for synced_at timestamps and build response
+    remote_base = Path.home() / ".claude_karma" / "remote-sessions"
+    users = []
+    for user_id, sessions in user_sessions.items():
+        synced_at = None
+        manifest_path = remote_base / user_id / encoded_name / "manifest.json"
+        if manifest_path.exists():
+            try:
+                manifest = json.loads(manifest_path.read_text())
+                synced_at = manifest.get("synced_at")
+            except (json.JSONDecodeError, OSError):
+                pass
+
+        users.append({
+            "user_id": user_id,
+            "machine_id": user_machine.get(user_id),
+            "synced_at": synced_at,
+            "session_count": len(sessions),
+            "sessions": sessions,
+        })
+
+    return {"users": users}

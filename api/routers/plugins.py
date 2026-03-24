@@ -16,6 +16,8 @@ from threading import Lock
 from typing import Annotated, Optional
 from urllib.parse import unquote
 
+from utils import utc_to_local_date
+
 from fastapi import APIRouter, HTTPException, Query, Request
 
 from command_helpers import is_plugin_skill
@@ -45,7 +47,6 @@ from schemas import (
     SkillContent,
     SkillItem,
 )
-from utils import utc_to_local_date
 
 logger = logging.getLogger(__name__)
 
@@ -1234,9 +1235,7 @@ def list_plugin_skills(plugin_name: str, request: Request) -> list[SkillItem]:
     # Scan skills directories for SKILL.md files
     for skills_dir in resolve_manifest_dirs(install_path, manifest, "skills", ["skills"]):
         try:
-            for skill_md in sorted(
-                skills_dir.rglob("SKILL.md"), key=lambda p: p.parent.name.lower()
-            ):
+            for skill_md in sorted(skills_dir.rglob("SKILL.md"), key=lambda p: p.parent.name.lower()):
                 name = skill_md.parent.name
                 if name in seen_names:
                     continue
@@ -1282,9 +1281,7 @@ def list_plugin_skills(plugin_name: str, request: Request) -> list[SkillItem]:
                     logger.warning(f"Failed to process skill entry {entry}: {e}")
         except OSError as e:
             logger.error(f"Failed to list commands directory {commands_dir}: {e}")
-            raise HTTPException(
-                status_code=500, detail="Failed to list plugin skills directory"
-            ) from e
+            raise HTTPException(status_code=500, detail="Failed to list plugin skills directory") from e
 
     # Sort alphabetically by name
     return sorted(items, key=lambda x: x.name.lower())
@@ -1395,45 +1392,6 @@ def get_plugin_skill_content(
     except OSError as e:
         logger.error(f"Failed to read skill file {target_file}: {e}")
         raise HTTPException(status_code=500, detail="Failed to read skill file") from e
-
-
-@router.get("/installed-skills")
-@cacheable(max_age=120, stale_while_revalidate=300, private=True)
-def list_installed_skills(request: Request) -> list[dict]:
-    """
-    List all skills across all installed plugins.
-
-    Returns a flat list of skill entries with prefixed names (e.g. "superpowers:brainstorming"),
-    suitable for merging with usage data to show 0-use plugin skills on the skills page.
-
-    Cache: 2 minutes
-    """
-    installed = load_installed_plugins()
-
-    if not installed:
-        return []
-
-    seen: set[str] = set()
-    result: list[dict] = []
-
-    for plugin_name in installed.plugins:
-        full_name = installed.get_plugin_full_name(plugin_name) or plugin_name
-        short_name = _get_plugin_short_name(full_name)
-        capabilities = scan_plugin_capabilities(plugin_name)
-        for skill_name in capabilities.get("skills", []):
-            prefixed = f"{short_name}:{skill_name}"
-            if prefixed in seen:
-                continue
-            seen.add(prefixed)
-            result.append(
-                {
-                    "name": prefixed,
-                    "plugin": full_name,
-                    "category": "plugin_skill",
-                }
-            )
-
-    return result
 
 
 @router.get("/{plugin_name:path}", response_model=PluginDetail)

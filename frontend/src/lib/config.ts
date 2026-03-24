@@ -32,5 +32,7 @@ export const POLLING_INTERVALS = {
 	/** Live sessions polling interval (ms) */
 	LIVE_SESSIONS: 2_000,
 	/** Historical data polling interval (ms) */
-	HISTORICAL_DATA: 30_000
+	HISTORICAL_DATA: 30_000,
+	/** Sync status polling interval (ms) */
+	SYNC_STATUS: 10_000
 } as const;

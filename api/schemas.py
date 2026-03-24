@@ -78,6 +78,9 @@ class SubagentSummary(BaseModel):
     subagent_type: Optional[str] = Field(
         None, description="Type of subagent: Explore, Plan, Bash, or custom agent name"
     )
+    display_name: Optional[str] = Field(
+        None, description="Human-readable display name from Agent tool input (e.g., 'security-fixes')"
+    )
     tools_used: dict[str, int] = Field(default_factory=dict, description="Tool name -> usage count")
     message_count: int = Field(0, description="Total messages in subagent conversation")
     initial_prompt: Optional[str] = Field(None, description="First user message to subagent")
@@ -178,6 +181,13 @@ class SessionSummary(BaseModel):
     git_branches: list[str] = Field(
         default_factory=list, description="Git branches touched during this session"
     )
+    # Token and cost fields
+    total_input_tokens: Optional[int] = Field(None, description="Total input tokens")
+    total_output_tokens: Optional[int] = Field(None, description="Total output tokens")
+    total_cost: Optional[float] = Field(None, description="Total estimated cost in USD")
+    tools_used: Optional[dict[str, int]] = Field(
+        None, description="Tool name → invocation count map"
+    )
     # Chain info for list view badges
     chain_info: Optional[SessionChainInfoSummary] = Field(
         None, description="Chain context if session is part of a resumed chain"
@@ -206,6 +216,19 @@ class SessionSummary(BaseModel):
     session_source: Optional[str] = Field(
         None,
         description="Session origin: 'desktop' for Claude Desktop, None for CLI",
+    )
+    # Remote sync fields
+    source: Optional[str] = Field(
+        None,
+        description="Session source: 'local' or 'remote' (None defaults to local)",
+    )
+    remote_user_id: Optional[str] = Field(
+        None,
+        description="User ID of the remote machine that produced this session",
+    )
+    remote_machine_id: Optional[str] = Field(
+        None,
+        description="Machine ID of the remote machine that produced this session",
     )
 
 
@@ -349,6 +372,9 @@ class ProjectSummary(BaseModel):
     is_nested_project: bool = Field(
         default=False, description="True if project is inside a git repo but not at the root"
     )
+    git_remote_url: Optional[str] = Field(
+        default=None, description="Git remote 'origin' URL — machine-independent project identity"
+    )
     latest_session_time: Optional[datetime] = Field(
         default=None, description="Start time of the most recent session"
     )
@@ -358,6 +384,9 @@ class ProjectDetail(ProjectSummary):
     """Detailed project info with sessions list."""
 
     sessions: list[SessionSummary] = Field(default_factory=list)
+    remote_session_count: int = Field(
+        0, description="Number of remote sessions from team members"
+    )
 
 
 class TimeDistribution(BaseModel):
@@ -418,6 +447,14 @@ class ProjectAnalytics(BaseModel):
     work_mode_distribution: WorkModeDistribution = Field(
         default_factory=WorkModeDistribution,
         description="Work mode distribution based on tool usage",
+    )
+    sessions_by_date_by_user: dict[str, dict[str, int]] = Field(
+        default_factory=dict,
+        description="Per-user session counts: user_id -> {date -> count}. '_local' = local user.",
+    )
+    user_names: dict[str, str] = Field(
+        default_factory=dict,
+        description="user_id -> display name from sync_members",
     )
 
 
@@ -557,8 +594,19 @@ class SubagentSessionDetail(BaseModel):
     subagent_type: Optional[str] = Field(
         None, description="Type of subagent: Explore, Plan, Bash, or custom"
     )
+    display_name: Optional[str] = Field(
+        None, description="Human-readable name given when spawning the agent (e.g., 'security-fixes')"
+    )
     initial_prompt: Optional[str] = Field(
         None, description="First user message to subagent (truncated)"
+    )
+    initial_prompt_images: list[dict[str, str]] = Field(
+        default_factory=list, description="Image attachments from subagent's first user message"
+    )
+
+    # Remote session metadata
+    remote_user_id: Optional[str] = Field(
+        None, description="User ID of the remote machine that produced the parent session"
     )
 
 
@@ -683,6 +731,7 @@ class SkillInfo(BaseModel):
     is_plugin: bool = Field(..., description="True if this is a plugin skill")
     plugin: Optional[str] = Field(None, description="Plugin name if is_plugin")
     file_path: Optional[str] = Field(None, description="Path to the skill file")
+    inherited_from: Optional[str] = Field(None, description="Original plugin skill name this was inherited from")
 
 
 class SkillSessionsResponse(BaseModel):
@@ -712,7 +761,10 @@ class SkillDetailResponse(BaseModel):
     is_plugin: bool = Field(False, description="True if this is a plugin skill")
     plugin: Optional[str] = Field(None, description="Plugin name if is_plugin")
     file_path: Optional[str] = Field(None, description="Path to the skill file")
-    category: Optional[str] = Field(None, description="Invocation category (builtin_command, bundled_skill, plugin_skill, user_skill, unknown)")
+    category: Optional[str] = Field(
+        None,
+        description="Invocation category (builtin_command, bundled_skill, plugin_skill, user_skill, unknown)",
+    )
     calls: int = Field(0, description="Total invocations")
     main_calls: int = Field(0, description="Calls from main sessions")
     subagent_calls: int = Field(0, description="Calls from subagents")
@@ -731,6 +783,22 @@ class SkillDetailResponse(BaseModel):
         default_factory=list, description="Sessions using this skill"
     )
     sessions_total: int = Field(0, description="Total session count (before pagination)")
+    remote_count: int = Field(0, description="Invocations from remote sessions")
+    local_count: int = Field(0, description="Invocations from local sessions")
+    remote_user_ids: list[str] = Field(
+        default_factory=list, description="Distinct remote user IDs that used this skill"
+    )
+    is_remote_only: bool = Field(
+        False, description="True when skill has only been used in remote sessions"
+    )
+    remote_definition: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Skill definition from skill_definitions table (populated for remote-only skills)",
+    )
+    inherited_from: Optional[str] = Field(
+        None,
+        description="Original plugin skill name this was inherited from (e.g. 'oh-my-claudecode:deepsearch')",
+    )
 
 
 class AgentSessionsResponse(BaseModel):
@@ -867,6 +935,12 @@ class PlanWithContext(PlanSummary):
 
     session_context: Optional[PlanSessionContext] = Field(
         None, description="Session context if plan can be linked to a session"
+    )
+    remote_user_id: Optional[str] = Field(
+        None, description="Remote user ID if this plan was synced from another user"
+    )
+    linked_sessions: Optional[list[dict]] = Field(
+        None, description="Sessions linked to this plan via plans-index.json (remote plans)"
     )
 
 
@@ -1179,6 +1253,9 @@ class AgentInvocation(BaseModel):
     project_encoded_name: str = Field(..., description="Project where invocation occurred")
     project_slug: Optional[str] = Field(None, description="URL-friendly project slug")
     project_display_name: Optional[str] = Field(None, description="Human-readable project name")
+    display_name: Optional[str] = Field(
+        None, description="Human-readable display name from Agent tool input (e.g., 'security-fixes')"
+    )
     invoked_at: Optional[datetime] = Field(None, description="When the agent was invoked")
     duration_seconds: Optional[float] = Field(None, description="Invocation duration")
     input_tokens: int = Field(0, description="Input tokens used")
@@ -1453,6 +1530,14 @@ class UsageTrendResponse(BaseModel):
         default_factory=dict,
         description="Per-item daily trend for top items (item name -> daily counts)",
     )
+    trend_by_user: dict[str, list[UsageTrendItem]] = Field(
+        default_factory=dict,
+        description="Per-user daily trend (user_id -> daily counts)",
+    )
+    user_names: dict[str, str] = Field(
+        default_factory=dict,
+        description="user_id -> display name mapping for sync members",
+    )
     first_used: Optional[datetime] = Field(None, description="First usage timestamp")
     last_used: Optional[datetime] = Field(None, description="Most recent usage timestamp")
 
@@ -1525,3 +1610,57 @@ class AllSessionsResponse(PaginationMeta):
         default_factory=list, description="Status filter options with counts"
     )
     applied_filters: dict = Field(default_factory=dict, description="Echo of applied filter values")
+
+# =============================================================================
+# Sync Request Models (used by routers/sync_status.py)
+# =============================================================================
+
+
+class AddDeviceRequest(BaseModel):
+    device_id: str
+    name: str
+
+
+class InitRequest(BaseModel):
+    user_id: str
+    backend: str = "syncthing"
+
+
+class CreateTeamRequest(BaseModel):
+    name: str
+    backend: str = "syncthing"
+
+
+class AddMemberRequest(BaseModel):
+    name: str
+    device_id: str
+
+
+class AddTeamProjectRequest(BaseModel):
+    name: str
+    path: str
+
+
+class JoinTeamRequest(BaseModel):
+    join_code: str
+    team_name: Optional[str] = None
+
+
+class UpdateTeamSettingsRequest(BaseModel):
+    sync_session_limit: Optional[str] = None  # 'all', 'recent_100', 'recent_10'
+    auto_accept_members: Optional[str] = None  # 'true', 'false'
+    sync_direction: Optional[str] = None  # 'both', 'send_only', 'receive_only', 'none'
+
+
+class UpdateMemberSettingsRequest(BaseModel):
+    sync_direction: Optional[str] = None  # 'both', 'send_only', 'receive_only', 'none', or null to clear
+
+
+class ResetOptions(BaseModel):
+    """Options for sync reset."""
+    uninstall_syncthing: bool = False  # Remove Syncthing config directory
+
+
+class AcceptPendingDeviceRequest(BaseModel):
+    team_name: str
+    member_name: Optional[str] = None  # Optional — falls back to device hostname

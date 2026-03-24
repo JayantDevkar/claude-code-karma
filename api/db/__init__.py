@@ -8,16 +8,18 @@ without parsing JSONL on every request.
 The JSONL files remain the source of truth. SQLite is a rebuildable cache.
 """
 
-from .connection import close_db, create_read_connection, get_read_db, get_writer_db
-from .indexer import is_db_ready, run_periodic_sync, sync_all_projects, sync_project
+from .connection import close_db, create_read_connection, create_writer_connection, get_read_db, get_writer_db
+from .indexer import is_db_ready, run_periodic_sync, sync_all_projects, sync_project, trigger_remote_reindex
 
 __all__ = [
     "get_writer_db",
     "get_read_db",
     "create_read_connection",
+    "create_writer_connection",
     "close_db",
     "sync_all_projects",
     "sync_project",
     "is_db_ready",
     "run_periodic_sync",
+    "trigger_remote_reindex",
 ]

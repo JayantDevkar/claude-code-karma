@@ -66,8 +66,8 @@ def get_writer_db() -> sqlite3.Connection:
 
         conn = sqlite3.connect(
             str(db_path),
-            check_same_thread=False,
             timeout=10.0,
+            check_same_thread=False,
         )
         conn.row_factory = sqlite3.Row
 
@@ -81,6 +81,28 @@ def get_writer_db() -> sqlite3.Connection:
         _writer = conn
         logger.info("SQLite writer connection ready (WAL mode)")
         return _writer
+
+
+def create_writer_connection() -> sqlite3.Connection:
+    """
+    Create a fresh read-write connection (NOT singleton).
+
+    Used by background threads (indexer, periodic sync) that need their own
+    isolated writer connection. Caller is responsible for closing.
+
+    Unlike get_writer_db(), this does NOT call ensure_schema() — the schema
+    is guaranteed to exist from startup.
+    """
+    db_path = get_db_path()
+
+    conn = sqlite3.connect(
+        str(db_path),
+        timeout=10.0,
+        check_same_thread=False,
+    )
+    conn.row_factory = sqlite3.Row
+    _apply_pragmas(conn, readonly=False)
+    return conn
 
 
 def create_read_connection() -> sqlite3.Connection:
@@ -99,6 +121,7 @@ def create_read_connection() -> sqlite3.Connection:
         f"file:{db_path}?mode=ro",
         uri=True,
         timeout=5.0,
+        check_same_thread=False,
     )
     conn.row_factory = sqlite3.Row
     _apply_pragmas(conn, readonly=True)
