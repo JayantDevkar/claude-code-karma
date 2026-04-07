@@ -1,12 +1,13 @@
 <script lang="ts">
-	import { marked } from 'marked';
-	import DOMPurify from 'isomorphic-dompurify';
 	import { formatDistanceToNow } from 'date-fns';
 	import { Brain, BookOpen, Terminal, Loader2 } from 'lucide-svelte';
-	import { markdownCopyButtons } from '$lib/actions/markdownCopyButtons';
 	import { API_BASE } from '$lib/config';
-	import type { ProjectMemory } from '$lib/api-types';
+	import type { ProjectMemory, MemoryFileMeta } from '$lib/api-types';
 	import Card from '$lib/components/ui/Card.svelte';
+	import MemoryIndex from './MemoryIndex.svelte';
+	import MemoryOrphanList from './MemoryOrphanList.svelte';
+	import MemoryHoverCard from './MemoryHoverCard.svelte';
+	import MemoryFilePanel from './MemoryFilePanel.svelte';
 
 	interface Props {
 		projectEncodedName: string;
@@ -14,10 +15,29 @@
 
 	let { projectEncodedName }: Props = $props();
 
-	let memory: ProjectMemory | null = $state(null);
+	let memory = $state<ProjectMemory | null>(null);
 	let loading = $state(true);
 	let error = $state(false);
-	let renderedContent = $state('');
+
+	// Hover/select state
+	let selectedFilename = $state<string | null>(null);
+	let hoveredFilename = $state<string | null>(null);
+	let hoverAnchorRect = $state<DOMRect | null>(null);
+	let hoverTimer: ReturnType<typeof setTimeout> | null = null;
+
+	const HOVER_DELAY_MS = 150;
+
+	// Derived: lookup table for hovered file
+	const hoveredFile = $derived.by<MemoryFileMeta | null>(() => {
+		if (!hoveredFilename || !memory) return null;
+		return memory.files.find((f) => f.filename === hoveredFilename) ?? null;
+	});
+
+	// Derived: orphan files (those not linked from the index)
+	const orphanFiles = $derived.by<MemoryFileMeta[]>(() => {
+		if (!memory) return [];
+		return memory.files.filter((f) => !f.linked_from_index);
+	});
 
 	async function fetchMemory() {
 		loading = true;
@@ -33,28 +53,44 @@
 		}
 	}
 
-	// Fetch on mount and when project changes
 	$effect(() => {
 		if (projectEncodedName) {
 			fetchMemory();
 		}
 	});
 
-	// Render markdown when memory content changes
-	$effect(() => {
-		if (!memory?.content) {
-			renderedContent = '';
-			return;
+	function handleLinkHover(filename: string, rect: DOMRect) {
+		// Always update the anchor rect immediately so the popover follows the
+		// element if the user re-hovers a different link.
+		hoverAnchorRect = rect;
+		if (hoverTimer) clearTimeout(hoverTimer);
+		hoverTimer = setTimeout(() => {
+			hoveredFilename = filename;
+		}, HOVER_DELAY_MS);
+	}
+
+	function handleLinkLeave() {
+		if (hoverTimer) {
+			clearTimeout(hoverTimer);
+			hoverTimer = null;
 		}
-		const parsed = marked.parse(memory.content);
-		if (parsed instanceof Promise) {
-			parsed.then((html) => {
-				renderedContent = DOMPurify.sanitize(html);
-			});
-		} else {
-			renderedContent = DOMPurify.sanitize(parsed);
+		hoveredFilename = null;
+		hoverAnchorRect = null;
+	}
+
+	function handleLinkSelect(filename: string) {
+		// Opening the panel implicitly clears the hover popover
+		if (hoverTimer) {
+			clearTimeout(hoverTimer);
+			hoverTimer = null;
 		}
-	});
+		hoveredFilename = null;
+		selectedFilename = filename;
+	}
+
+	function handlePanelClose() {
+		selectedFilename = null;
+	}
 
 	function formatDate(dateStr: string): string {
 		try {
@@ -76,9 +112,9 @@
 			<p class="text-sm text-[var(--text-muted)]">Failed to load project memory.</p>
 		</div>
 	</Card>
-{:else if !memory?.exists}
-	<!-- Empty state: no memory file yet -->
-	<div class="space-y-6">
+{:else if memory && !memory.index.exists && memory.files.length === 0}
+	<!-- Empty state: no MEMORY.md and no children -->
+	<div class="space-y-6" data-testid="memory-empty-state">
 		<Card variant="default" padding="none">
 			<div class="px-6 py-12 text-center">
 				<div
@@ -129,9 +165,34 @@
 			</div>
 		</Card>
 	</div>
-{:else}
-	<!-- Memory content -->
-	<div class="space-y-4">
+{:else if memory && !memory.index.exists && memory.files.length > 0}
+	<!-- Children present but no index — render orphan-only layout -->
+	<div class="space-y-4" data-testid="memory-orphans-only">
+		<Card variant="default" padding="none">
+			<div class="px-6 py-4 flex items-center gap-3">
+				<div class="p-2 rounded-lg bg-[var(--accent-subtle)]">
+					<Brain size={18} class="text-[var(--accent)]" />
+				</div>
+				<div>
+					<h3 class="text-sm font-semibold text-[var(--text-primary)]">
+						Orphan memory files
+					</h3>
+					<p class="text-xs text-[var(--text-muted)]">
+						{memory.files.length} file{memory.files.length === 1 ? '' : 's'} present, no MEMORY.md index
+					</p>
+				</div>
+			</div>
+		</Card>
+		<MemoryOrphanList
+			files={memory.files}
+			onLinkHover={handleLinkHover}
+			onLinkLeave={handleLinkLeave}
+			onLinkSelect={handleLinkSelect}
+		/>
+	</div>
+{:else if memory && memory.index.exists}
+	<!-- Index + (optional) orphans layout -->
+	<div class="space-y-4" data-testid="memory-loaded">
 		<!-- Header card with metadata -->
 		<Card variant="default" padding="none">
 			<div class="px-6 py-4 flex items-center justify-between">
@@ -142,7 +203,12 @@
 					<div>
 						<h3 class="text-sm font-semibold text-[var(--text-primary)]">MEMORY.md</h3>
 						<p class="text-xs text-[var(--text-muted)]">
-							{memory.word_count.toLocaleString()} words · Updated {formatDate(memory.modified)}
+							{memory.index.word_count.toLocaleString()} words · Updated {formatDate(
+								memory.index.modified
+							)}
+							{#if memory.files.length > 0}
+								· {memory.files.length} linked file{memory.files.length === 1 ? '' : 's'}
+							{/if}
 						</p>
 					</div>
 				</div>
@@ -151,10 +217,22 @@
 
 		<!-- Markdown content -->
 		<Card variant="default" padding="none">
-			<div class="p-6 md:p-8 markdown-preview max-w-none prose prose-slate dark:prose-invert" use:markdownCopyButtons={renderedContent}>
-				{@html renderedContent}
-			</div>
+			<MemoryIndex
+				content={memory.index.content}
+				files={memory.files}
+				onLinkHover={handleLinkHover}
+				onLinkLeave={handleLinkLeave}
+				onLinkSelect={handleLinkSelect}
+			/>
 		</Card>
+
+		<!-- Orphan files (collapsed by default) -->
+		<MemoryOrphanList
+			files={orphanFiles}
+			onLinkHover={handleLinkHover}
+			onLinkLeave={handleLinkLeave}
+			onLinkSelect={handleLinkSelect}
+		/>
 
 		<!-- How to update hint -->
 		<div
@@ -171,3 +249,13 @@
 		</div>
 	</div>
 {/if}
+
+<!-- Hover popover (overlays) -->
+<MemoryHoverCard file={hoveredFile} anchorRect={hoverAnchorRect} />
+
+<!-- Side panel (overlays) -->
+<MemoryFilePanel
+	filename={selectedFilename}
+	{projectEncodedName}
+	onClose={handlePanelClose}
+/>

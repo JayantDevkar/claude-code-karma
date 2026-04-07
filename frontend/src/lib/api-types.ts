@@ -984,15 +984,60 @@ export interface PlanStats {
 }
 
 /**
- * Response from /projects/{encoded_name}/memory endpoint.
- * Contains the project's MEMORY.md content.
+ * Type classification for a memory file (from YAML frontmatter).
  */
-export interface ProjectMemory {
+export type MemoryFileType = 'user' | 'feedback' | 'project' | 'reference';
+
+/**
+ * Per-file metadata for one entry in the memory directory.
+ * Returned in the `files` array of a ProjectMemory response.
+ */
+export interface MemoryFileMeta {
+	filename: string;
+	name: string;
+	description: string;
+	type: MemoryFileType | null;
+	word_count: number;
+	size_bytes: number;
+	modified: string;
+	linked_from_index: boolean;
+}
+
+/**
+ * The MEMORY.md index entry returned alongside files[].
+ * Contains the full content (no frontmatter expected) plus stats.
+ */
+export interface ProjectMemoryIndexEntry {
 	content: string;
 	word_count: number;
 	size_bytes: number;
 	modified: string;
 	exists: boolean;
+}
+
+/**
+ * Response from /projects/{encoded_name}/memory endpoint.
+ * Wraps the index entry plus metadata for every other *.md file
+ * in the project's memory/ directory.
+ */
+export interface ProjectMemory {
+	index: ProjectMemoryIndexEntry;
+	files: MemoryFileMeta[];
+}
+
+/**
+ * Response from /projects/{encoded_name}/memory/files/{filename} endpoint.
+ * Returns the full body content of one child memory file (frontmatter stripped).
+ */
+export interface ProjectMemoryFile {
+	filename: string;
+	name: string;
+	description: string;
+	type: MemoryFileType | null;
+	content: string;
+	word_count: number;
+	size_bytes: number;
+	modified: string;
 }
 
 // ============================================================================
