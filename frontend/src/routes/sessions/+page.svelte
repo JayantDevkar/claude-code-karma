@@ -614,8 +614,9 @@
 			setTimeout(() => { lastOpenedSessionId = null; }, 2000);
 		}
 
-		const restoreScroll = () => {
+		const restoreScroll = async () => {
 			if (savedScroll !== null) {
+				await tick();
 				requestAnimationFrame(() => window.scrollTo({ top: Number(savedScroll), behavior: 'instant' }));
 			}
 		};

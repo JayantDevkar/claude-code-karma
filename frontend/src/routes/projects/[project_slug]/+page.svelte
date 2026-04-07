@@ -34,6 +34,7 @@
 	import Card from '$lib/components/ui/Card.svelte';
 	import PageHeader from '$lib/components/layout/PageHeader.svelte';
 	import SessionCard from '$lib/components/SessionCard.svelte';
+	import { getSessionUrlIdentifier } from '$lib/utils/sessionIdentifier';
 	import ArchivedSessionCard from '$lib/components/ArchivedSessionCard.svelte';
 	import AgentList from '$lib/components/agents/AgentList.svelte';
 	import SkillList from '$lib/components/skills/SkillList.svelte';
@@ -1303,7 +1304,7 @@
 											showBranch={selectedBranchFilters.size === 0}
 											compact={viewMode === 'grid'}
 											{liveSession}
-											highlighted={session.uuid.slice(0, 8) === lastOpenedSessionId || session.slug === lastOpenedSessionId}
+											highlighted={getSessionUrlIdentifier(session, liveSession) === lastOpenedSessionId}
 										/>
 									{/each}
 								</div>
@@ -1343,7 +1344,7 @@
 															liveSession={getLiveSession(
 																session
 															)}
-															highlighted={session.uuid.slice(0, 8) === lastOpenedSessionId || session.slug === lastOpenedSessionId}
+															highlighted={getSessionUrlIdentifier(session, getLiveSession(session)) === lastOpenedSessionId}
 														/>
 													{/each}
 												</div>
@@ -1381,7 +1382,7 @@
 															liveSession={getLiveSession(
 																session
 															)}
-															highlighted={session.uuid.slice(0, 8) === lastOpenedSessionId || session.slug === lastOpenedSessionId}
+															highlighted={getSessionUrlIdentifier(session, getLiveSession(session)) === lastOpenedSessionId}
 														/>
 													{/each}
 												</div>

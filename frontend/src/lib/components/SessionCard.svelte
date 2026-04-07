@@ -13,6 +13,7 @@
 		sessionHasTitle,
 		getSessionDisplayPrompt
 	} from '$lib/utils';
+	import { getSessionUrlIdentifier } from '$lib/utils/sessionIdentifier';
 
 	interface Props {
 		session: SessionSummary;
@@ -107,12 +108,8 @@
 	// Determine URL identifier:
 	// - If session is part of a chain (chain_info exists), use UUID to disambiguate
 	// - Otherwise, use slug for human-readable URLs, or UUID prefix as fallback
-	const isPartOfChain = $derived(session.chain_info !== undefined && session.chain_info !== null);
-	const urlIdentifier = $derived(
-		isPartOfChain
-			? session.uuid.slice(0, 8) // Use UUID for chain sessions to avoid ambiguity
-			: displaySlug || session.uuid.slice(0, 8)
-	);
+	// Shared with last-opened-highlight comparisons via sessionIdentifier helper.
+	const urlIdentifier = $derived(getSessionUrlIdentifier(session, liveSession));
 
 	// Build live status text for accessibility
 	const liveStatusText = $derived(

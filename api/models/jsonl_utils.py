@@ -8,7 +8,6 @@ and Agent models to avoid code duplication.
 
 from __future__ import annotations
 
-import copy
 import json
 from pathlib import Path
 from typing import Iterator
@@ -31,7 +30,7 @@ def _merge_user_message_dicts(base: dict, extra: dict) -> dict:
     already present in the base message's image content block.  Any other
     real text in the extra message is preserved.
     """
-    merged = copy.deepcopy(base)
+    merged = {**base}
 
     def _get_content(d: dict) -> list:
         c = d.get("message", {}).get("content") or d.get("content", [])

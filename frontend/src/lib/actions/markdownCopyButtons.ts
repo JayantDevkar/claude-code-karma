@@ -122,7 +122,6 @@ function collectSection(startEl: Element): { text: string; charCount: number } {
 // ─── Action ──────────────────────────────────────────────────────────────────
 
 export function markdownCopyButtons(node: HTMLElement, _content?: string) {
-	const cleanupFns: Array<() => void> = [];
 	let setupPending = false;
 
 	function attachButton(
@@ -144,18 +143,11 @@ export function markdownCopyButtons(node: HTMLElement, _content?: string) {
 
 		btn.addEventListener('click', onClick);
 		anchorEl.appendChild(btn);
-
-		cleanupFns.push(() => {
-			btn.removeEventListener('click', onClick);
-			clearTimeout(timer);
-			btn.remove();
-		});
 	}
 
 	function setup() {
-		// Remove any previously injected buttons and reset cleanup list
+		// Remove any previously injected buttons
 		node.querySelectorAll('.md-copy-btn').forEach((el) => el.remove());
-		cleanupFns.length = 0;
 
 		// ── Code blocks — always injected, no length gate ────────────────────
 		// Code is the most-copied thing; length is irrelevant.
@@ -166,22 +158,23 @@ export function markdownCopyButtons(node: HTMLElement, _content?: string) {
 			});
 		});
 
-		// ── Headings (h2 and h3) — gated by MIN_SECTION_CHARS ────────────────
+		// ── Headings (h1, h2, h3) ────────────────────────────────────────────
 		//
-		// h2 sections include all h3 content beneath them in their char count
-		// (collectSection walks past h3 boundaries for h2 starts).
-		// Each h3 is independently evaluated on its own sub-content only.
+		// h1 and h2 ALWAYS get a button (top-level sections — matches the
+		// "every H1 and H2 gets a copy option" promise in the PR description).
+		// h3 is gated by MIN_SECTION_CHARS so trivial subheadings don't clutter
+		// the UI.
 		//
-		// Visual style distinction:
-		//   h2 → always-visible button (major section)
-		//   h3 → hover-reveal button (subsection, less prominent)
-		node.querySelectorAll<HTMLHeadingElement>('h2, h3').forEach((heading) => {
+		// h2 sections walk past h3 boundaries in collectSection(), so the h2
+		// button copies the entire h2 subtree including its h3 children.
+		node.querySelectorAll<HTMLHeadingElement>('h1, h2, h3').forEach((heading) => {
 			const { text, charCount } = collectSection(heading);
-			if (charCount < MIN_SECTION_CHARS) return;
 
-			const extraClass = 'md-copy-btn--section';
+			// H1 and H2 are always treated as top-level sections and get a button unconditionally.
+			// H3 only gets a button when its prose meets the minimum length.
+			if (heading.tagName === 'H3' && charCount < MIN_SECTION_CHARS) return;
 
-			attachButton(heading, extraClass, 'Copy section', () => text);
+			attachButton(heading, 'md-copy-btn--section', 'Copy section', () => text);
 		});
 
 		// ── Bold-paragraph headings (Claude's **Title** + --- style) ─────────
@@ -240,12 +233,12 @@ export function markdownCopyButtons(node: HTMLElement, _content?: string) {
 
 	return {
 		update(_newContent?: string) {
-			// MutationObserver handles re-scanning — no-op kept for Svelte API compat.
+			// No-op: MutationObserver re-runs setup() whenever {@html} replaces
+			// the container's children, so we don't need to do anything here.
 		},
 		destroy() {
 			observer.disconnect();
 			node.querySelectorAll('.md-copy-btn').forEach((el) => el.remove());
-			cleanupFns.length = 0;
 		}
 	};
 }

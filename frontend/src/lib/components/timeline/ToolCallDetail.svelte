@@ -57,7 +57,6 @@
 			'spawned_agent_slug',
 			'is_spawn_task',
 			'subagent_type',
-			'content',
 			'task_subject'
 		];
 
@@ -320,7 +319,7 @@
 				</div>
 				{#if hasValue(input.content)}
 					{@const content = String(input.content)}
-					{@const lineCount = content.split('\n').length}
+					{@const lineCount = content.replace(/\n$/, '').split('\n').length || 1}
 					<div
 						class="rounded-[var(--radius-md)] border border-[var(--border)] p-3 relative"
 					>
@@ -705,7 +704,7 @@
 				{@const addBlocks = (input.addBlocks as string[]) || []}
 				{@const addBlockedBy = (input.addBlockedBy as string[]) || []}
 				{@const hasChanges =
-					description || owner || activeForm || addBlocks.length > 0 || addBlockedBy.length > 0}
+					subject || description || owner || activeForm || addBlocks.length > 0 || addBlockedBy.length > 0}
 				<div
 					class="rounded-[var(--radius-md)] border border-sky-500/20 bg-sky-500/5 overflow-hidden"
 				>
@@ -750,6 +749,16 @@
 					<!-- Changes -->
 					{#if hasChanges}
 						<div class="p-4 space-y-2">
+							{#if subject}
+								<div class="flex items-start gap-2">
+									<span
+										class="shrink-0 text-[10px] font-medium uppercase tracking-wide text-[var(--text-muted)] w-16"
+									>
+										Rename to
+									</span>
+									<span class="text-sm text-[var(--text-primary)]">{subject}</span>
+								</div>
+							{/if}
 							{#if description}
 								<div class="flex items-start gap-2">
 									<span

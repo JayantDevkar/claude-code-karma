@@ -9,6 +9,7 @@ These functions work with any ConversationEntity (Session or Agent) via
 the protocol in models/conversation.py.
 """
 
+import re
 from collections import Counter
 from typing import Optional
 
@@ -70,8 +71,6 @@ def build_conversation_timeline(
     # TaskCreate input has 'subject' but NO 'taskId' — the ID is assigned by the
     # task runtime and returned in the result as "Task #N created successfully: ...".
     # We parse it from the result content and map it to the input subject.
-    import re as _re
-
     task_subjects: dict[str, str] = {}
     for msg in conversation.iter_messages():
         if isinstance(msg, AssistantMessage):
@@ -82,7 +81,7 @@ def build_conversation_timeline(
                         continue
                     result = tool_results.get(block.id)
                     if result:
-                        m = _re.search(r"Task #(\w+)", result.content)
+                        m = re.search(r"Task #(\d+)", result.content)
                         if m:
                             task_subjects[m.group(1)] = subject
 
