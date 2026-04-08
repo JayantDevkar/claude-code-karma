@@ -22,9 +22,16 @@
 	let renderedContent = $state('');
 	let bodyFading = $state(false);
 
+	// Generation counter for fetch lifecycle: each fetchFile invocation captures
+	// `++fetchGen` and only writes state if its captured value still matches the
+	// latest. This blocks stale fetches (out-of-order resolution, supersession,
+	// or close-during-fetch) from clobbering current panel state.
+	let fetchGen = 0;
+
 	const open = $derived(filename !== null);
 
 	async function fetchFile(name: string) {
+		const myGen = ++fetchGen;
 		loading = true;
 		error = null;
 		bodyFading = true;
@@ -32,6 +39,7 @@
 			const res = await fetch(
 				`${API_BASE}/projects/${projectEncodedName}/memory/files/${encodeURIComponent(name)}`
 			);
+			if (myGen !== fetchGen) return;
 			if (res.status === 404) {
 				error = 'This memory file no longer exists.';
 				fileData = null;
@@ -51,17 +59,22 @@
 				throw new Error(`HTTP ${res.status}`);
 			}
 			const data: ProjectMemoryFile = await res.json();
+			if (myGen !== fetchGen) return;
 			fileData = data;
 		} catch (e) {
+			if (myGen !== fetchGen) return;
 			console.error('Failed to fetch memory file', e);
 			error = 'Failed to load this memory file.';
 			fileData = null;
 		} finally {
-			loading = false;
-			// Brief fade-out → fade-in to signal content has swapped
-			setTimeout(() => {
-				bodyFading = false;
-			}, 80);
+			// Only the current invocation should manage loading/bodyFading.
+			if (myGen === fetchGen) {
+				loading = false;
+				// Brief fade-out → fade-in to signal content has swapped
+				setTimeout(() => {
+					if (myGen === fetchGen) bodyFading = false;
+				}, 80);
+			}
 		}
 	}
 
@@ -70,10 +83,14 @@
 		if (filename) {
 			fetchFile(filename);
 		} else {
-			// Clear state when panel closes
+			// Clear state when panel closes; bumping fetchGen invalidates any
+			// in-flight fetch so its late state writes are dropped.
+			fetchGen++;
 			fileData = null;
 			error = null;
 			renderedContent = '';
+			loading = false;
+			bodyFading = false;
 		}
 	});
 

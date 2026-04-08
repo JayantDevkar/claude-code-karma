@@ -186,4 +186,73 @@ describe('MemoryFilePanel', () => {
 		await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
 		expect((fetchMock.mock.calls[1]?.[0] ?? '') as string).toContain('second.md');
 	});
+
+	// Regression test for the fetch lifecycle race documented in the systematic
+	// debugging session 2026-04-07. Without lifecycle management, a stale fetch
+	// that resolves after a newer one was triggered will overwrite fileData
+	// with the older content — the user sees the wrong file permanently.
+	it('does not clobber current content when an older fetch resolves later', async () => {
+		// Manually-controlled promise for the FIRST fetch — we resolve it later.
+		let resolveFirst: (value: unknown) => void = () => {};
+		const firstPromise = new Promise<unknown>((resolve) => {
+			resolveFirst = resolve;
+		});
+
+		const secondResponse = {
+			ok: true,
+			status: 200,
+			json: async () =>
+				makeFile({
+					filename: 'second.md',
+					name: 'SECOND TITLE',
+					content: '# Second body'
+				})
+		};
+
+		const fetchMock = vi.fn().mockImplementation((url: string) => {
+			if (url.includes('first.md')) return firstPromise;
+			if (url.includes('second.md')) return Promise.resolve(secondResponse);
+			return Promise.reject(new Error(`unexpected url: ${url}`));
+		});
+		vi.stubGlobal('fetch', fetchMock);
+
+		const { rerender, queryByText } = render(MemoryFilePanel, {
+			props: {
+				filename: 'first.md',
+				projectEncodedName: ENCODED,
+				onClose: () => {}
+			}
+		});
+
+		// User immediately clicks the second link before the first fetch returns.
+		await rerender({
+			filename: 'second.md',
+			projectEncodedName: ENCODED,
+			onClose: () => {}
+		});
+
+		// Second fetch resolves immediately → panel should display SECOND TITLE.
+		await waitFor(() => {
+			expect(queryByText('SECOND TITLE')).not.toBeNull();
+		});
+
+		// Now the older first.md fetch finally resolves (out-of-order).
+		resolveFirst({
+			ok: true,
+			status: 200,
+			json: async () =>
+				makeFile({
+					filename: 'first.md',
+					name: 'FIRST TITLE',
+					content: '# First body'
+				})
+		});
+
+		// Give microtasks + the 80ms bodyFading timer time to settle.
+		await new Promise((r) => setTimeout(r, 150));
+
+		// CRITICAL: panel must still show SECOND, not FIRST.
+		expect(queryByText('SECOND TITLE')).not.toBeNull();
+		expect(queryByText('FIRST TITLE')).toBeNull();
+	});
 });
