@@ -1,8 +1,7 @@
 <script lang="ts">
-	import { marked } from 'marked';
-	import DOMPurify from 'isomorphic-dompurify';
 	import { markdownCopyButtons } from '$lib/actions/markdownCopyButtons';
 	import { rewriteMemoryLinks } from '$lib/actions/rewriteMemoryLinks';
+	import { renderMarkdownEffect } from '$lib/utils';
 	import type { MemoryFileMeta } from '$lib/api-types';
 
 	interface Props {
@@ -17,19 +16,15 @@
 
 	let renderedContent = $state('');
 
+	// Uses the shared helper so the marked + DOMPurify pipeline lives in one place.
 	$effect(() => {
 		if (!content) {
 			renderedContent = '';
 			return;
 		}
-		const parsed = marked.parse(content);
-		if (parsed instanceof Promise) {
-			parsed.then((html) => {
-				renderedContent = DOMPurify.sanitize(html);
-			});
-		} else {
-			renderedContent = DOMPurify.sanitize(parsed);
-		}
+		renderMarkdownEffect(content, {}, (html) => {
+			renderedContent = html;
+		});
 	});
 </script>
 

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { formatDistanceToNow } from 'date-fns';
-	import type { MemoryFileMeta, MemoryFileType } from '$lib/api-types';
+	import type { MemoryFileMeta } from '$lib/api-types';
+	import { badgeClass, badgeLabel } from './memoryTypeBadge';
 
 	interface Props {
 		file: MemoryFileMeta | null;
@@ -51,34 +52,6 @@
 		} catch {
 			return dateStr;
 		}
-	}
-
-	// Tailwind classes per type — chosen to work in both light and dark themes
-	// without adding new design tokens.
-	const TYPE_BADGE_CLASSES: Record<MemoryFileType, string> = {
-		user: 'bg-blue-500/15 text-blue-600 dark:text-blue-400 ring-blue-500/20',
-		feedback: 'bg-amber-500/15 text-amber-600 dark:text-amber-400 ring-amber-500/20',
-		project: 'bg-violet-500/15 text-violet-600 dark:text-violet-400 ring-violet-500/20',
-		reference: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 ring-emerald-500/20'
-	};
-
-	const TYPE_LABELS: Record<MemoryFileType, string> = {
-		user: 'User',
-		feedback: 'Feedback',
-		project: 'Project',
-		reference: 'Reference'
-	};
-
-	function badgeClass(type: MemoryFileType | null): string {
-		const base = 'inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide ring-1';
-		if (type === null) {
-			return `${base} bg-[var(--bg-muted)] text-[var(--text-muted)] ring-[var(--border)]`;
-		}
-		return `${base} ${TYPE_BADGE_CLASSES[type]}`;
-	}
-
-	function badgeLabel(type: MemoryFileType | null): string {
-		return type === null ? '—' : TYPE_LABELS[type];
 	}
 </script>
 

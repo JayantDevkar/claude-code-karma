@@ -1,12 +1,12 @@
 <script lang="ts">
 	import { Dialog } from 'bits-ui';
 	import { X, Loader2, AlertCircle } from 'lucide-svelte';
-	import { marked } from 'marked';
-	import DOMPurify from 'isomorphic-dompurify';
 	import { formatDistanceToNow } from 'date-fns';
 	import { markdownCopyButtons } from '$lib/actions/markdownCopyButtons';
 	import { API_BASE } from '$lib/config';
-	import type { ProjectMemoryFile, MemoryFileType } from '$lib/api-types';
+	import { renderMarkdownEffect } from '$lib/utils';
+	import type { ProjectMemoryFile } from '$lib/api-types';
+	import { badgeClass, badgeLabel } from './memoryTypeBadge';
 
 	interface Props {
 		filename: string | null;
@@ -94,20 +94,16 @@
 		}
 	});
 
-	// Render markdown when fileData changes
+	// Render markdown when fileData changes — uses the shared helper so the
+	// marked + DOMPurify pipeline lives in one place.
 	$effect(() => {
 		if (!fileData?.content) {
 			renderedContent = '';
 			return;
 		}
-		const parsed = marked.parse(fileData.content);
-		if (parsed instanceof Promise) {
-			parsed.then((html) => {
-				renderedContent = DOMPurify.sanitize(html);
-			});
-		} else {
-			renderedContent = DOMPurify.sanitize(parsed);
-		}
+		renderMarkdownEffect(fileData.content, {}, (html) => {
+			renderedContent = html;
+		});
 	});
 
 	function formatRelative(dateStr: string): string {
@@ -124,33 +120,6 @@
 
 	function handleRetry() {
 		if (filename) fetchFile(filename);
-	}
-
-	const TYPE_BADGE_CLASSES: Record<MemoryFileType, string> = {
-		user: 'bg-blue-500/15 text-blue-600 dark:text-blue-400 ring-blue-500/20',
-		feedback: 'bg-amber-500/15 text-amber-600 dark:text-amber-400 ring-amber-500/20',
-		project: 'bg-violet-500/15 text-violet-600 dark:text-violet-400 ring-violet-500/20',
-		reference: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 ring-emerald-500/20'
-	};
-
-	const TYPE_LABELS: Record<MemoryFileType, string> = {
-		user: 'User',
-		feedback: 'Feedback',
-		project: 'Project',
-		reference: 'Reference'
-	};
-
-	function badgeClass(type: MemoryFileType | null): string {
-		const base =
-			'inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide ring-1';
-		if (type === null) {
-			return `${base} bg-[var(--bg-muted)] text-[var(--text-muted)] ring-[var(--border)]`;
-		}
-		return `${base} ${TYPE_BADGE_CLASSES[type]}`;
-	}
-
-	function badgeLabel(type: MemoryFileType | null): string {
-		return type === null ? '—' : TYPE_LABELS[type];
 	}
 </script>
 
