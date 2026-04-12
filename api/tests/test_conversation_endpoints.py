@@ -28,7 +28,9 @@ _TS = datetime(2026, 1, 8, 12, 0, 0, tzinfo=timezone.utc)
 _TOOL_RESULT_TS = datetime(2026, 1, 8, 12, 0, 5, tzinfo=timezone.utc)
 
 
-def _user_msg(uuid: str, content: str, *, is_tool_result: bool = False, tool_result_id: str | None = None) -> UserMessage:
+def _user_msg(
+    uuid: str, content: str, *, is_tool_result: bool = False, tool_result_id: str | None = None
+) -> UserMessage:
     """Build a UserMessage directly without going through JSONL parsing."""
     return UserMessage(
         uuid=uuid,
@@ -51,11 +53,18 @@ def _assistant_msg_with_blocks(uuid: str, blocks: list) -> AssistantMessage:
 
 
 def _task_create_block(block_id: str, subject: str) -> ToolUseBlock:
-    return ToolUseBlock(type="tool_use", id=block_id, name="TaskCreate", input={"subject": subject, "description": "desc"})
+    return ToolUseBlock(
+        type="tool_use",
+        id=block_id,
+        name="TaskCreate",
+        input={"subject": subject, "description": "desc"},
+    )
 
 
 def _task_update_block(block_id: str, task_id: str, status: str = "in_progress") -> ToolUseBlock:
-    return ToolUseBlock(type="tool_use", id=block_id, name="TaskUpdate", input={"taskId": task_id, "status": status})
+    return ToolUseBlock(
+        type="tool_use", id=block_id, name="TaskUpdate", input={"taskId": task_id, "status": status}
+    )
 
 
 class FakeConversation:

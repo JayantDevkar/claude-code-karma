@@ -161,7 +161,10 @@ class TestMessageMerging:
                 "role": "user",
                 "content": [
                     {"type": "text", "text": "look at this"},
-                    {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "abc"}},
+                    {
+                        "type": "image",
+                        "source": {"type": "base64", "media_type": "image/png", "data": "abc"},
+                    },
                 ],
             },
         }
@@ -202,8 +205,14 @@ class TestMessageMerging:
                 "role": "user",
                 "content": [
                     {"type": "text", "text": "explain this screenshot"},
-                    {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "abc"}},
-                    {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "def"}},
+                    {
+                        "type": "image",
+                        "source": {"type": "base64", "media_type": "image/png", "data": "abc"},
+                    },
+                    {
+                        "type": "image",
+                        "source": {"type": "base64", "media_type": "image/png", "data": "def"},
+                    },
                 ],
             },
         }
@@ -339,13 +348,24 @@ class TestMessageMerging:
     def test_iter_merges_same_timestamp_user_messages(self, temp_project_dir: Path) -> None:
         """Two user messages at the same timestamp are merged into one UserMessage."""
         ts = "2026-01-08T13:00:00.000Z"
-        msg1 = self._make_user_msg("u1", ts, [
-            {"type": "text", "text": "look at this"},
-            {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "abc"}},
-        ])
-        msg2 = self._make_user_msg("u2", ts, [
-            {"type": "text", "text": "[Image: source: /var/folders/abc.png]"},
-        ])
+        msg1 = self._make_user_msg(
+            "u1",
+            ts,
+            [
+                {"type": "text", "text": "look at this"},
+                {
+                    "type": "image",
+                    "source": {"type": "base64", "media_type": "image/png", "data": "abc"},
+                },
+            ],
+        )
+        msg2 = self._make_user_msg(
+            "u2",
+            ts,
+            [
+                {"type": "text", "text": "[Image: source: /var/folders/abc.png]"},
+            ],
+        )
 
         jsonl_path = temp_project_dir / "merge_test.jsonl"
         with open(jsonl_path, "w") as f:
@@ -361,12 +381,20 @@ class TestMessageMerging:
 
     def test_iter_does_not_merge_different_timestamps(self, temp_project_dir: Path) -> None:
         """User messages with different timestamps yield two separate messages."""
-        msg1 = self._make_user_msg("u1", "2026-01-08T13:00:00.000Z", [
-            {"type": "text", "text": "first message"},
-        ])
-        msg2 = self._make_user_msg("u2", "2026-01-08T13:00:01.000Z", [
-            {"type": "text", "text": "second message"},
-        ])
+        msg1 = self._make_user_msg(
+            "u1",
+            "2026-01-08T13:00:00.000Z",
+            [
+                {"type": "text", "text": "first message"},
+            ],
+        )
+        msg2 = self._make_user_msg(
+            "u2",
+            "2026-01-08T13:00:01.000Z",
+            [
+                {"type": "text", "text": "second message"},
+            ],
+        )
 
         jsonl_path = temp_project_dir / "no_merge_test.jsonl"
         with open(jsonl_path, "w") as f:
