@@ -16,6 +16,7 @@
 	import ToolCallDetail from './ToolCallDetail.svelte';
 	import TodoUpdateDetail from './TodoUpdateDetail.svelte';
 	import ImageAttachments from '$lib/components/ImageAttachments.svelte';
+	import { markdownCopyButtons } from '$lib/actions/markdownCopyButtons';
 
 	interface Props {
 		event: TimelineEvent;
@@ -356,6 +357,29 @@
 						/>
 					</div>
 				{/if}
+
+				<!-- Mini image thumbnails — visible on collapsed card; hidden when inline-expanded -->
+				{#if !isExpanded && event.metadata?.image_attachments?.length}
+					<div class="mt-2 flex items-center gap-1.5">
+						{#each (event.metadata.image_attachments as import('$lib/api-types').ImageAttachment[]).slice(0, 5) as attachment, i}
+							<div
+								class="relative h-8 w-8 shrink-0 overflow-hidden rounded border border-[var(--border)] opacity-80 transition-opacity hover:opacity-100"
+								title="Image attachment {i + 1}"
+							>
+								<img
+									src="data:{attachment.media_type};base64,{attachment.data}"
+									alt="Attached image {i + 1}"
+									class="h-full w-full object-cover"
+								/>
+							</div>
+						{/each}
+						{#if (event.metadata.image_attachments as import('$lib/api-types').ImageAttachment[]).length > 5}
+							<span class="text-[10px] text-[var(--text-muted)]">
+								+{(event.metadata.image_attachments as import('$lib/api-types').ImageAttachment[]).length - 5} more
+							</span>
+						{/if}
+					</div>
+				{/if}
 			</div>
 
 			<!-- Timestamp and expand -->
@@ -393,7 +417,8 @@
 					<div class="rounded bg-[var(--bg-muted)]/50 p-3 relative">
 						<button
 							class="
-								sticky top-2 float-right
+								md-global-copy
+								float-right
 								ml-2 mb-2
 								p-1.5
 								rounded-md
@@ -403,8 +428,9 @@
 								shadow-sm
 								hover:text-[var(--text-primary)] hover:border-[var(--accent)]
 								transition-colors
-								z-10
 							"
+							data-tooltip={isCopied ? 'Copied!' : 'Copy entire response'}
+							aria-label={isCopied ? 'Copied!' : 'Copy entire response'}
 							onclick={(e) => {
 								e.stopPropagation();
 								const content =
@@ -418,7 +444,6 @@
 								isCopied = true;
 								setTimeout(() => (isCopied = false), 2000);
 							}}
-							title="Copy content"
 						>
 							{#if isCopied}
 								<Check size={14} class="text-[var(--success)]" />
@@ -429,7 +454,7 @@
 						{#if event.metadata?.image_attachments?.length}
 							<ImageAttachments attachments={event.metadata.image_attachments} />
 						{/if}
-						<div class="markdown-preview text-sm">
+						<div class="markdown-preview text-sm" use:markdownCopyButtons={renderedExpandedContent}>
 							{@html renderedExpandedContent}
 						</div>
 					</div>

@@ -20,10 +20,14 @@ class PreToolUseOutput(HookOutput):
     class HookSpecificOutput(BaseModel):
         model_config = ConfigDict(extra="allow")
 
-        permission_decision: Optional[Literal["allow", "deny"]] = Field(
+        permission_decision: Optional[Literal["allow", "deny", "ask", "defer"]] = Field(
             default=None,
             alias="permissionDecision",
-            description="Auto-approve or deny the tool execution"
+            description=(
+                "Auto-approve, deny, ask the user, or defer the tool execution. "
+                "'defer' is used by the headless `-p --resume` pause/resume flow "
+                "to postpone a decision until the session is resumed."
+            )
         )
         permission_decision_reason: Optional[str] = Field(
             default=None,
@@ -83,6 +87,27 @@ class PermissionRequestOutput(HookOutput):
             default=None,
             alias="permissionDecisionReason",
             description="Reason shown to user for the decision"
+        )
+
+    hook_specific_output: Optional[HookSpecificOutput] = Field(
+        default=None,
+        alias="hookSpecificOutput"
+    )
+
+
+class PermissionDeniedOutput(HookOutput):
+    """Output schema for PermissionDenied hooks.
+
+    A PermissionDenied hook can request that Claude retry the tool call
+    (e.g., after fixing some external state) by returning ``{"retry": true}``.
+    """
+
+    class HookSpecificOutput(BaseModel):
+        model_config = ConfigDict(extra="allow")
+
+        retry: bool = Field(
+            default=False,
+            description="If True, request that Claude retry the previously denied tool call"
         )
 
     hook_specific_output: Optional[HookSpecificOutput] = Field(

@@ -776,7 +776,8 @@ def get_tool_summary(block, working_dirs: list[str] | None = None) -> tuple[str,
         return "Read file", to_relative(path), {"path": path}
     elif tool_name == "Write":
         path = tool_input.get("path") or tool_input.get("file_path", "")
-        return "Write file", to_relative(path), {"path": path}
+        content = tool_input.get("content", "")
+        return "Write file", to_relative(path), {"path": path, "content": content}
     elif tool_name == "Edit" or tool_name == "StrReplace":
         path = tool_input.get("path") or tool_input.get("file_path", "")
         return "Edit file", to_relative(path), {"path": path}

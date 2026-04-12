@@ -40,10 +40,13 @@ from routers.analytics import _calculate_analytics_from_sessions
 from schemas import (
     AgentSummary,
     BranchSummary,
+    MemoryFileMeta,
+    MemoryIndexEntry,
     ProjectAnalytics,
     ProjectBranchesResponse,
     ProjectChainsResponse,
     ProjectDetail,
+    ProjectMemoryFileResponse,
     ProjectMemoryResponse,
     ProjectSummary,
     SessionChainInfo,
@@ -1371,15 +1374,167 @@ def get_project_skills(
 # Project Memory Endpoint
 # ============================================================================
 
+import re as _re
+
+# Strict basename validator: alphanumerics, dots, underscores, dashes, must end in .md.
+_MEMORY_FILENAME_RE = _re.compile(r"^[a-zA-Z0-9._-]+\.md$")
+
+# Match markdown link targets ending in .md (group 1 = target, with optional #frag or ?query stripped).
+_MEMORY_LINK_RE = _re.compile(r"\[[^\]]*\]\(([^)\s]+?\.md)(?:[#?][^)]*)?\)")
+
+
+def _parse_memory_frontmatter(text: str) -> tuple[dict, str]:
+    """Parse YAML frontmatter from a memory file.
+
+    Accepts a leading ``---\\n...\\n---\\n`` block. On any parse error, returns
+    ``({}, text)`` and logs a warning. Only ``name``, ``description``, and ``type``
+    keys are honored; other keys are ignored.
+
+    Returns ``(frontmatter_dict, body_without_frontmatter)``.
+    """
+    if not text.startswith("---"):
+        return {}, text
+
+    # Find the closing --- on its own line after the opening one.
+    # Split off the first line (the opening ---).
+    lines = text.split("\n")
+    if not lines or lines[0].strip() != "---":
+        return {}, text
+
+    closing_idx = None
+    for i in range(1, len(lines)):
+        if lines[i].strip() == "---":
+            closing_idx = i
+            break
+
+    if closing_idx is None:
+        # No closing fence — not a valid frontmatter block.
+        return {}, text
+
+    fm_lines = lines[1:closing_idx]
+    body_lines = lines[closing_idx + 1 :]
+    body = "\n".join(body_lines)
+    # Strip a single leading newline so body doesn't start with extra blank line.
+    if body.startswith("\n"):
+        body = body[1:]
+
+    fm: dict = {}
+    try:
+        for raw_line in fm_lines:
+            # Allow blank lines and comments.
+            line = raw_line.rstrip()
+            if not line.strip() or line.lstrip().startswith("#"):
+                continue
+            if ":" not in line:
+                # Malformed entry — skip it but don't fail the whole block.
+                continue
+            key, _, value = line.partition(":")
+            key = key.strip()
+            value = value.strip()
+            # Strip surrounding quotes if any.
+            if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
+                value = value[1:-1]
+            if key in ("name", "description", "type"):
+                fm[key] = value
+    except Exception as e:  # pragma: no cover - defensive
+        logger.warning("Failed to parse memory frontmatter: %s", e)
+        return {}, text
+
+    return fm, body
+
+
+def _filename_to_name(filename: str) -> str:
+    """Derive a fallback display name from a filename: strip .md, replace _ with space."""
+    stem = filename[:-3] if filename.endswith(".md") else filename
+    return stem.replace("_", " ")
+
+
+def _extract_index_link_targets(content: str) -> set[str]:
+    """Extract the basenames of all markdown links pointing to *.md files."""
+    targets: set[str] = set()
+    for match in _MEMORY_LINK_RE.finditer(content):
+        raw = match.group(1)
+        # Strip fragment and query (defensive — regex already excludes them but be safe).
+        for sep in ("#", "?"):
+            if sep in raw:
+                raw = raw.split(sep, 1)[0]
+        if not raw:
+            continue
+        # Take the basename (handle relative-style paths like "./file.md" or "subdir/file.md").
+        basename = raw.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
+        if basename.endswith(".md"):
+            targets.add(basename)
+    return targets
+
+
+def _read_child_meta(
+    file_path: Path, linked: bool, *, encoded_name: str
+) -> Optional[MemoryFileMeta]:
+    """Build a MemoryFileMeta for a single child file. Returns None on unreadable file."""
+    try:
+        stat = file_path.stat()
+        raw = file_path.read_text(encoding="utf-8", errors="replace")
+    except OSError as e:
+        logger.warning(
+            "Skipping unreadable memory file %s in %s: %s", file_path.name, encoded_name, e
+        )
+        return None
+
+    fm, body = _parse_memory_frontmatter(raw)
+    name = fm.get("name") or _filename_to_name(file_path.name)
+    description = fm.get("description") or ""
+    type_ = fm.get("type") or None
+
+    return MemoryFileMeta(
+        filename=file_path.name,
+        name=name,
+        description=description,
+        type=type_,
+        word_count=len(body.split()),
+        size_bytes=stat.st_size,
+        modified=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc),
+        linked_from_index=linked,
+    )
+
+
+def _build_files_list(memory_dir: Path, encoded_name: str, index_content: str) -> list:
+    """Enumerate all non-index *.md files in memory_dir and build their metadata."""
+    files: list = []
+    if not memory_dir.is_dir():
+        return files
+
+    link_targets = _extract_index_link_targets(index_content) if index_content else set()
+
+    try:
+        entries = sorted(memory_dir.iterdir(), key=lambda p: p.name.lower())
+    except OSError as e:
+        logger.warning("Failed to list memory directory for %s: %s", encoded_name, e)
+        return files
+
+    for entry in entries:
+        # Skip non-files, MEMORY.md (the index), non-.md files.
+        if not entry.is_file():
+            continue
+        if entry.name == "MEMORY.md":
+            continue
+        if not entry.name.endswith(".md"):
+            continue
+
+        meta = _read_child_meta(entry, linked=entry.name in link_targets, encoded_name=encoded_name)
+        if meta is not None:
+            files.append(meta)
+
+    return files
+
 
 @router.get("/{encoded_name}/memory", response_model=ProjectMemoryResponse)
 @cacheable(max_age=30, stale_while_revalidate=60)
 async def get_project_memory(encoded_name: str, request: Request):
     """
-    Get the MEMORY.md file for a project.
+    Get the project's memory directory contents.
 
-    Returns the markdown content of the project's memory file stored at
-    ~/.claude/projects/{encoded_name}/memory/MEMORY.md
+    Returns the MEMORY.md index plus metadata (no content) for every other ``*.md``
+    file in ``~/.claude/projects/{encoded_name}/memory/``.
     """
     encoded_name = resolve_project_identifier(encoded_name)
     from config import settings
@@ -1387,8 +1542,24 @@ async def get_project_memory(encoded_name: str, request: Request):
     memory_dir = settings.projects_dir / encoded_name / "memory"
     memory_file = memory_dir / "MEMORY.md"
 
-    if not memory_file.exists():
-        return ProjectMemoryResponse(
+    # Compute index entry.
+    if memory_file.exists():
+        try:
+            stat = memory_file.stat()
+            index_content = memory_file.read_text(encoding="utf-8")
+            index_entry = MemoryIndexEntry(
+                content=index_content,
+                word_count=len(index_content.split()),
+                size_bytes=stat.st_size,
+                modified=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc),
+                exists=True,
+            )
+        except OSError as e:
+            logger.error("Error reading MEMORY.md for %s: %s", encoded_name, e)
+            raise HTTPException(status_code=500, detail="Failed to read memory file") from e
+    else:
+        index_content = ""
+        index_entry = MemoryIndexEntry(
             content="",
             word_count=0,
             size_bytes=0,
@@ -1396,18 +1567,97 @@ async def get_project_memory(encoded_name: str, request: Request):
             exists=False,
         )
 
-    try:
-        stat = memory_file.stat()
-        content = memory_file.read_text(encoding="utf-8")
-        word_count = len(content.split())
+    files = _build_files_list(memory_dir, encoded_name, index_content)
 
-        return ProjectMemoryResponse(
-            content=content,
-            word_count=word_count,
-            size_bytes=stat.st_size,
-            modified=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc),
-            exists=True,
-        )
+    return ProjectMemoryResponse(index=index_entry, files=files)
+
+
+@router.get(
+    "/{encoded_name}/memory/files/{filename}",
+    response_model=ProjectMemoryFileResponse,
+)
+@cacheable(max_age=30, stale_while_revalidate=60)
+async def get_project_memory_file(encoded_name: str, filename: str, request: Request):
+    """
+    Get the full content of a single child memory file.
+
+    Path component ``files/`` disambiguates this from the index endpoint and
+    avoids collisions with other route segments.
+    """
+    encoded_name = resolve_project_identifier(encoded_name)
+    from config import settings
+
+    # ----- Path validation (security-critical) -----
+    if not filename:
+        raise HTTPException(status_code=400, detail="Memory filename is required")
+
+    # Reject path-traversal markers and separators outright before regex match.
+    if (
+        "/" in filename
+        or "\\" in filename
+        or ".." in filename
+        or "\x00" in filename
+        or filename.startswith(".")
+    ):
+        raise HTTPException(status_code=400, detail="Invalid memory filename")
+
+    if not filename.endswith(".md"):
+        raise HTTPException(status_code=400, detail="Memory filename must end in .md")
+
+    if not _MEMORY_FILENAME_RE.match(filename):
+        raise HTTPException(status_code=400, detail="Invalid memory filename format")
+
+    memory_dir = settings.projects_dir / encoded_name / "memory"
+    candidate = memory_dir / filename
+
+    # Defense in depth: resolve and assert containment within memory_dir.
+    try:
+        resolved_candidate = candidate.resolve()
+        resolved_memory_dir = memory_dir.resolve()
     except OSError as e:
-        logger.error(f"Error reading memory file for {encoded_name}: {e}")
+        logger.error("Path resolution failed for %s/%s: %s", encoded_name, filename, e)
+        raise HTTPException(status_code=400, detail="Invalid memory file path") from e
+
+    try:
+        is_inside = resolved_candidate.is_relative_to(resolved_memory_dir)
+    except AttributeError:  # pragma: no cover - Python <3.9 compat
+        try:
+            resolved_candidate.relative_to(resolved_memory_dir)
+            is_inside = True
+        except ValueError:
+            is_inside = False
+
+    if not is_inside:
+        logger.warning(
+            "Memory file path escape attempt: %s -> %s (memory_dir=%s)",
+            filename,
+            resolved_candidate,
+            resolved_memory_dir,
+        )
+        raise HTTPException(status_code=403, detail="Path escape detected")
+
+    if not candidate.is_file():
+        raise HTTPException(status_code=404, detail=f"Memory file not found: {filename}")
+
+    try:
+        stat = candidate.stat()
+        raw = candidate.read_text(encoding="utf-8")
+    except OSError as e:
+        logger.error("Failed to read memory file %s/%s: %s", encoded_name, filename, e)
         raise HTTPException(status_code=500, detail="Failed to read memory file") from e
+
+    fm, body = _parse_memory_frontmatter(raw)
+    name = fm.get("name") or _filename_to_name(filename)
+    description = fm.get("description") or ""
+    type_ = fm.get("type") or None
+
+    return ProjectMemoryFileResponse(
+        filename=filename,
+        name=name,
+        description=description,
+        type=type_,
+        content=body,
+        word_count=len(body.split()),
+        size_bytes=stat.st_size,
+        modified=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc),
+    )

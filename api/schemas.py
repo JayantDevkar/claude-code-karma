@@ -712,7 +712,10 @@ class SkillDetailResponse(BaseModel):
     is_plugin: bool = Field(False, description="True if this is a plugin skill")
     plugin: Optional[str] = Field(None, description="Plugin name if is_plugin")
     file_path: Optional[str] = Field(None, description="Path to the skill file")
-    category: Optional[str] = Field(None, description="Invocation category (builtin_command, bundled_skill, plugin_skill, user_skill, unknown)")
+    category: Optional[str] = Field(
+        None,
+        description="Invocation category (builtin_command, bundled_skill, plugin_skill, user_skill, unknown)",
+    )
     calls: int = Field(0, description="Total invocations")
     main_calls: int = Field(0, description="Calls from main sessions")
     subagent_calls: int = Field(0, description="Calls from subagents")
@@ -893,14 +896,66 @@ class PlanRelatedSession(BaseModel):
 # =============================================================================
 
 
-class ProjectMemoryResponse(BaseModel):
-    """Response for a project's MEMORY.md file."""
+class MemoryIndexEntry(BaseModel):
+    """The index (MEMORY.md) entry in a project's memory response."""
 
     content: str = Field(..., description="Full markdown content of MEMORY.md")
     word_count: int = Field(0, description="Total word count")
     size_bytes: int = Field(0, description="File size in bytes")
     modified: datetime = Field(..., description="Last modification time")
     exists: bool = Field(True, description="Whether the memory file exists")
+
+
+class MemoryFileMeta(BaseModel):
+    """Metadata for a single child memory file (no content)."""
+
+    filename: str = Field(..., description="Basename of the memory file (e.g. foo.md)")
+    name: str = Field(
+        ...,
+        description="Human-readable title from frontmatter, or filename-derived fallback",
+    )
+    description: str = Field(
+        "", description="One-line description from frontmatter (empty string fallback)"
+    )
+    type: Optional[str] = Field(
+        None,
+        description="Memory type from frontmatter: user | feedback | project | reference",
+    )
+    word_count: int = Field(0, description="Word count of the body (frontmatter excluded)")
+    size_bytes: int = Field(0, description="File size in bytes")
+    modified: datetime = Field(..., description="Last modification time")
+    linked_from_index: bool = Field(
+        False, description="Whether MEMORY.md references this file via a markdown link"
+    )
+
+
+class ProjectMemoryResponse(BaseModel):
+    """Response for a project's memory directory.
+
+    Contains the MEMORY.md index and metadata for all other *.md child files.
+    """
+
+    index: MemoryIndexEntry = Field(..., description="The MEMORY.md index entry")
+    files: List[MemoryFileMeta] = Field(
+        default_factory=list,
+        description="Metadata for each non-index *.md child file in memory/",
+    )
+
+
+class ProjectMemoryFileResponse(BaseModel):
+    """Full content of one child memory file."""
+
+    filename: str = Field(..., description="Basename of the memory file")
+    name: str = Field(
+        ...,
+        description="Human-readable title from frontmatter, or filename-derived fallback",
+    )
+    description: str = Field("", description="One-line description from frontmatter")
+    type: Optional[str] = Field(None, description="Memory type from frontmatter")
+    content: str = Field(..., description="Body content with YAML frontmatter stripped")
+    word_count: int = Field(0, description="Word count of the stripped body")
+    size_bytes: int = Field(0, description="File size in bytes (raw, includes frontmatter)")
+    modified: datetime = Field(..., description="Last modification time")
 
 
 # =============================================================================

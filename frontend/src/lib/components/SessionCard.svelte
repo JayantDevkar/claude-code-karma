@@ -13,6 +13,7 @@
 		sessionHasTitle,
 		getSessionDisplayPrompt
 	} from '$lib/utils';
+	import { getSessionUrlIdentifier } from '$lib/utils/sessionIdentifier';
 
 	interface Props {
 		session: SessionSummary;
@@ -20,6 +21,7 @@
 		showBranch?: boolean; // Hide branch when inside branch accordion
 		compact?: boolean; // Compact mode for grid view
 		liveSession?: LiveSessionSummary | null; // Live session data for real-time status
+		highlighted?: boolean;
 	}
 
 	let {
@@ -27,7 +29,8 @@
 		projectEncodedName,
 		showBranch = true,
 		compact = false,
-		liveSession = null
+		liveSession = null,
+		highlighted = false
 	}: Props = $props();
 
 	// Determine status (default to completed if not specified)
@@ -105,12 +108,8 @@
 	// Determine URL identifier:
 	// - If session is part of a chain (chain_info exists), use UUID to disambiguate
 	// - Otherwise, use slug for human-readable URLs, or UUID prefix as fallback
-	const isPartOfChain = $derived(session.chain_info !== undefined && session.chain_info !== null);
-	const urlIdentifier = $derived(
-		isPartOfChain
-			? session.uuid.slice(0, 8) // Use UUID for chain sessions to avoid ambiguity
-			: displaySlug || session.uuid.slice(0, 8)
-	);
+	// Shared with last-opened-highlight comparisons via sessionIdentifier helper.
+	const urlIdentifier = $derived(getSessionUrlIdentifier(session, liveSession));
 
 	// Build live status text for accessibility
 	const liveStatusText = $derived(
@@ -131,6 +130,7 @@
 		group
 		focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-base)]
 		{hasLiveStatus && !isRecentlyEnded ? 'ring-1 ring-opacity-50' : ''}
+		{highlighted ? 'session-highlight' : ''}
 		overflow-hidden
 	"
 	style="

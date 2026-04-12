@@ -29,19 +29,39 @@ from pydantic import BaseModel, ConfigDict, Field
 PermissionMode = Literal["default", "plan", "acceptEdits", "dontAsk", "bypassPermissions"]
 
 HookEventName = Literal[
+    # Tool lifecycle
     "PreToolUse",
     "PostToolUse",
     "PostToolUseFailure",
+    # User interaction
     "UserPromptSubmit",
+    "PermissionRequest",
+    "PermissionDenied",
+    "Notification",
+    "Elicitation",
+    "ElicitationResult",
+    # Session lifecycle
     "SessionStart",
     "SessionEnd",
+    # Agent control
     "Stop",
     "SubagentStart",
     "SubagentStop",
+    # Context
     "PreCompact",
-    "PermissionRequest",
-    "Notification",
+    "InstructionsLoaded",
+    # Setup
     "Setup",
+    # Filesystem
+    "CwdChanged",
+    "FileChanged",
+    # Agent teams (experimental)
+    "TaskCreated",
+    "TaskCompleted",
+    "TeammateIdle",
+    # Worktree lifecycle
+    "WorktreeCreate",
+    "WorktreeRemove",
 ]
 
 SetupTrigger = Literal["init", "maintenance"]
