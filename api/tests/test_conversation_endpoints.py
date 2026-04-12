@@ -16,8 +16,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from datetime import datetime, timezone
 from typing import Iterator, List
 
-import pytest
-
 from models.content import ToolUseBlock
 from models.message import AssistantMessage, UserMessage
 from services.conversation_endpoints import build_conversation_timeline
