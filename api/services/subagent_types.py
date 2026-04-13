@@ -56,6 +56,21 @@ def get_all_subagent_types(jsonl_path: Path, subagents_dir: Path | None = None) 
     for agent_file in agent_files:
         result.update(_extract_types_from_raw_jsonl(agent_file))
 
+    # Phase 2.5: Match unmatched agents by prompt content
+    # Fallback for running agents where no tool_result exists yet.
+    # Compares each unmatched agent's initial prompt against Task input prompts.
+    unmatched_agent_files = [f for f in agent_files if f.stem.removeprefix("agent-") not in result]
+    if unmatched_agent_files:
+        prompt_to_type = _extract_task_prompt_types(jsonl_path)
+        if prompt_to_type:
+            for agent_file in unmatched_agent_files:
+                agent_id = agent_file.stem.removeprefix("agent-")
+                agent_prompt = _get_agent_initial_prompt(agent_file)
+                if agent_prompt:
+                    key = _normalize_key(agent_prompt)
+                    if key in prompt_to_type:
+                        result[agent_id] = prompt_to_type[key]
+
     # Phase 3: Classify remaining by ID prefix
     for agent_file in agent_files:
         agent_id = agent_file.stem.removeprefix("agent-")
@@ -243,4 +258,83 @@ def _classify_by_first_message(agent_file: Path) -> str | None:
     except (OSError, json.JSONDecodeError):
         pass
 
+    return None
+
+
+def _normalize_key(text: str) -> str:
+    """Normalize text for matching: lowercase, strip, collapse whitespace."""
+    return " ".join(text.lower().strip().split())
+
+
+def _extract_task_prompt_types(path: Path) -> dict[str, str]:
+    """
+    Extract normalized_prompt -> subagent_type from Task/Agent tool_use blocks.
+
+    Used as a fallback for matching running agents where no tool_result exists yet.
+    Stores both prompt and description inputs for matching flexibility.
+
+    Returns:
+        Dict mapping normalized prompt prefix -> subagent_type
+    """
+    prompt_to_type: dict[str, str] = {}
+
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    msg = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if msg.get("type") != "assistant":
+                    continue
+                content = msg.get("message", {}).get("content", [])
+                if isinstance(content, str):
+                    continue
+                for block in content:
+                    if not isinstance(block, dict):
+                        continue
+                    if block.get("type") == "tool_use" and block.get("name") in ("Task", "Agent"):
+                        inp = block.get("input") or {}
+                        subagent_type = inp.get("subagent_type")
+                        if not subagent_type:
+                            continue
+                        prompt = inp.get("prompt", "")[:100]
+                        if prompt:
+                            prompt_to_type[_normalize_key(prompt)] = subagent_type
+                        desc = inp.get("description", "")[:100]
+                        if desc:
+                            prompt_to_type[_normalize_key(desc)] = subagent_type
+    except (OSError, IOError) as e:
+        logger.debug("Error reading JSONL for prompt extraction %s: %s", path, e)
+
+    return prompt_to_type
+
+
+def _get_agent_initial_prompt(agent_file: Path) -> str | None:
+    """
+    Read the first message from an agent JSONL and return its prompt text (first 100 chars).
+
+    Returns:
+        The first 100 chars of the agent's initial prompt, or None if unreadable.
+    """
+    try:
+        with open(agent_file, "r", encoding="utf-8", errors="replace") as f:
+            first_line = f.readline().strip()
+            if not first_line:
+                return None
+            msg = json.loads(first_line)
+            content = msg.get("message", {}).get("content", "")
+
+            if isinstance(content, str):
+                return content[:100] if content.strip() else None
+            if isinstance(content, list):
+                for block in content:
+                    if isinstance(block, dict) and block.get("type") == "text":
+                        text = block.get("text", "")
+                        return text[:100] if text.strip() else None
+    except (OSError, json.JSONDecodeError):
+        pass
     return None

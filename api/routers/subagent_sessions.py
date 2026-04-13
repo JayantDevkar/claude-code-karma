@@ -167,7 +167,11 @@ def _determine_subagent_type(parent_session: Session, agent_id: str) -> Optional
     jsonl_path = parent_session.jsonl_path
     subagents_dir = jsonl_path.parent / jsonl_path.stem / "subagents"
     types = get_all_subagent_types(jsonl_path, subagents_dir)
-    return types.get(agent_id)
+    result = types.get(agent_id)
+    # Convert internal classification markers to None for the API response
+    if result and result.startswith("_"):
+        return None
+    return result
 
 
 @router.get("/{encoded_name}/{session_uuid}/agents/{agent_id}/timeline")
