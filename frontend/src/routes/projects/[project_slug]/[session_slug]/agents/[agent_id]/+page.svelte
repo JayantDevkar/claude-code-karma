@@ -5,7 +5,8 @@
 		TimelineEvent,
 		FileActivity,
 		ToolUsage,
-		Task
+		Task,
+		LiveSessionSummary
 	} from '$lib/api-types';
 	import { AlertTriangle, ArrowLeft } from 'lucide-svelte';
 	import { navigating } from '$app/stores';
@@ -53,6 +54,7 @@
 		parentSessionSlug={data.parent_session_slug ?? undefined}
 		projectPath={data.project_path ?? undefined}
 		sessionUuid={data.session_uuid ?? undefined}
+		liveSession={data.liveSession as LiveSessionSummary | null}
 		timeline={data.timeline as TimelineEvent[]}
 		fileActivity={data.fileActivity as FileActivity[]}
 		tools={data.tools as ToolUsage[]}

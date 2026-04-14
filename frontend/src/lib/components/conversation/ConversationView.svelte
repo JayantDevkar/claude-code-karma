@@ -252,6 +252,13 @@
 
 	const isCurrentlyLive = $derived(liveStatus !== null && liveStatus.status !== 'ended');
 
+	// Track whether this specific subagent has completed (while parent may still be live)
+	const isSubagentCompleted = $derived.by(() => {
+		if (!entity || !isSubagentSession(entity) || !liveStatus) return false;
+		const agentState = liveStatus.subagents?.[entity.agent_id];
+		return agentState?.status === 'completed' || agentState?.status === 'error';
+	});
+
 	// Timeline tailing state
 	let isTailing = $state(false);
 	let hasAutoEnabledTailing = $state(false);
@@ -523,7 +530,7 @@
 		const now = Date.now();
 		const timeSinceLastChange = now - lastChangeTime;
 
-		if (timeSinceLastChange >= IDLE_THRESHOLD) {
+		if (isSubagentCompleted || timeSinceLastChange >= IDLE_THRESHOLD) {
 			return POLL_INTERVAL_IDLE;
 		}
 		return POLL_INTERVAL_ACTIVE;
@@ -551,11 +558,15 @@
 			try {
 				await pollLiveStatus(signal);
 				if (isCurrentlyLive && !signal.aborted) {
-					await refreshData(signal);
+					// Skip data refresh if this specific subagent has completed
+					// (parent session is still live, but this agent is done)
+					if (!isSubagentCompleted) {
+						await refreshData(signal);
 
-					// Check for changes and update lastChangeTime (only if not aborted)
-					if (!signal.aborted && detectChanges()) {
-						lastChangeTime = Date.now();
+						// Check for changes and update lastChangeTime (only if not aborted)
+						if (!signal.aborted && detectChanges()) {
+							lastChangeTime = Date.now();
+						}
 					}
 
 					// Mark that we should continue polling if still live and not aborted

@@ -3,7 +3,8 @@ import type {
 	TimelineEvent,
 	FileActivity,
 	ToolUsage,
-	Task
+	Task,
+	LiveSessionSummary
 } from '$lib/api-types';
 import { API_BASE } from '$lib/config';
 import { safeFetch, fetchWithFallback } from '$lib/utils/api-fetch';
@@ -51,6 +52,12 @@ export async function load({ params, fetch }) {
 	const encodedName = sessionLookup.project_encoded_name;
 	const agentBaseUrl = `${API_BASE}/agents/${encodedName}/${sessionUuid}/agents/${agent_id}`;
 
+	// Fetch live session status for immediate badge rendering (non-blocking)
+	const liveSessionResult = await safeFetch<LiveSessionSummary>(
+		fetch,
+		`${API_BASE}/live-sessions/${sessionUuid}`
+	);
+
 	// Step 3: Fetch all agent data in parallel
 	const [agentResult, timelineData, fileActivityData, toolsData, tasksData] = await Promise.all([
 		safeFetch<SubagentSessionDetail>(fetch, agentBaseUrl),
@@ -72,6 +79,7 @@ export async function load({ params, fetch }) {
 			fileActivity: [],
 			tools: [],
 			tasks: [],
+			liveSession: null,
 			project_slug,
 			session_slug,
 			session_uuid: sessionUuid,
@@ -93,6 +101,7 @@ export async function load({ params, fetch }) {
 		fileActivity: fileActivityData,
 		tools: tools_used,
 		tasks: tasksData,
+		liveSession: liveSessionResult.ok ? liveSessionResult.data : null,
 		project_slug,
 		session_slug,
 		session_uuid: sessionUuid,
