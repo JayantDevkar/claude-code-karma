@@ -121,6 +121,28 @@
 		return agentState || null;
 	});
 
+	// Enhanced subagent status: derive active/idle from running state + entity timestamps
+	let enhancedSubagentStatus = $derived.by(() => {
+		if (!subagentLiveStatus) return null;
+
+		// If not running, use the raw status as-is
+		if (subagentLiveStatus.status !== 'running') {
+			return subagentLiveStatus.status as string;
+		}
+
+		// For running agents, derive active vs idle from entity end_time
+		if (isSubagentSession(entity) && entity.end_time) {
+			const lastActivity = new Date(entity.end_time).getTime();
+			const now = Date.now();
+			const idleMs = now - lastActivity;
+			// 15 second threshold for idle detection
+			if (idleMs > 15000) {
+				return 'idle';
+			}
+		}
+		return 'active';
+	});
+
 	// Derive values based on entity type
 	// Title: prioritize session_titles[0] → slug → uuid
 	// For subagents, clean the agent ID for display (removes system prefixes)
@@ -274,11 +296,14 @@
 						{/if}
 						<!-- Show subagent's own status (running/completed/error), not parent session's -->
 						{#if subagentLiveStatus}
-							{@const config = subagentStatusConfig[subagentLiveStatus.status]}
+							{@const displayStatus = enhancedSubagentStatus || subagentLiveStatus.status}
+							{@const config = displayStatus === 'active' ? statusConfig['active'] :
+                     displayStatus === 'idle' ? statusConfig['idle'] :
+                     subagentStatusConfig[subagentLiveStatus.status]}
 							<div
 								class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full"
 								style="background: color-mix(in srgb, {config.color} 10%, transparent); border: 1px solid color-mix(in srgb, {config.color} 30%, transparent);"
-								title="Agent status (independent from parent session)"
+								title="Agent status: {subagentLiveStatus.status}"
 							>
 								<span
 									class="w-2 h-2 rounded-full"

@@ -3,7 +3,8 @@ import type {
 	TimelineEvent,
 	FileActivity,
 	ToolUsage,
-	Task
+	Task,
+	LiveSessionSummary
 } from '$lib/api-types';
 import { API_BASE } from '$lib/config';
 import { safeFetch, fetchWithFallback } from '$lib/utils/api-fetch';
@@ -51,18 +52,20 @@ export async function load({ params, fetch }) {
 	const encodedName = sessionLookup.project_encoded_name;
 	const agentBaseUrl = `${API_BASE}/agents/${encodedName}/${sessionUuid}/agents/${agent_id}`;
 
-	// Step 3: Fetch all agent data in parallel
-	const [agentResult, timelineData, fileActivityData, toolsData, tasksData] = await Promise.all([
-		safeFetch<SubagentSessionDetail>(fetch, agentBaseUrl),
-		fetchWithFallback<TimelineEvent[]>(fetch, `${agentBaseUrl}/timeline`, []),
-		fetchWithFallback<FileActivity[]>(fetch, `${agentBaseUrl}/file-activity`, []),
-		fetchWithFallback<Array<{ tool_name: string; count: number }>>(
-			fetch,
-			`${agentBaseUrl}/tools`,
-			[]
-		),
-		fetchWithFallback<Task[]>(fetch, `${agentBaseUrl}/tasks`, [])
-	]);
+	// Step 2: Fetch all agent data and live session status in parallel
+	const [liveSessionResult, agentResult, timelineData, fileActivityData, toolsData, tasksData] =
+		await Promise.all([
+			safeFetch<LiveSessionSummary>(fetch, `${API_BASE}/live-sessions/${sessionUuid}`),
+			safeFetch<SubagentSessionDetail>(fetch, agentBaseUrl),
+			fetchWithFallback<TimelineEvent[]>(fetch, `${agentBaseUrl}/timeline`, []),
+			fetchWithFallback<FileActivity[]>(fetch, `${agentBaseUrl}/file-activity`, []),
+			fetchWithFallback<Array<{ tool_name: string; count: number }>>(
+				fetch,
+				`${agentBaseUrl}/tools`,
+				[]
+			),
+			fetchWithFallback<Task[]>(fetch, `${agentBaseUrl}/tasks`, [])
+		]);
 
 	if (!agentResult.ok) {
 		console.error('Failed to fetch agent:', agentResult.message);
@@ -72,6 +75,7 @@ export async function load({ params, fetch }) {
 			fileActivity: [],
 			tools: [],
 			tasks: [],
+			liveSession: null,
 			project_slug,
 			session_slug,
 			session_uuid: sessionUuid,
@@ -93,6 +97,7 @@ export async function load({ params, fetch }) {
 		fileActivity: fileActivityData,
 		tools: tools_used,
 		tasks: tasksData,
+		liveSession: liveSessionResult.ok ? liveSessionResult.data : null,
 		project_slug,
 		session_slug,
 		session_uuid: sessionUuid,

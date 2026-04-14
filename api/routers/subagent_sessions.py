@@ -29,6 +29,8 @@ from http_caching import (
     get_file_cache_info,
 )
 from models import AssistantMessage, Session
+from models.live_session import load_live_session
+from routers.live_sessions import determine_status
 from schemas import (
     ConversationContext,
     SubagentSessionDetail,
@@ -167,7 +169,11 @@ def _determine_subagent_type(parent_session: Session, agent_id: str) -> Optional
     jsonl_path = parent_session.jsonl_path
     subagents_dir = jsonl_path.parent / jsonl_path.stem / "subagents"
     types = get_all_subagent_types(jsonl_path, subagents_dir)
-    return types.get(agent_id)
+    result = types.get(agent_id)
+    # Convert internal classification markers to None for the API response
+    if result and result.startswith("_"):
+        return None
+    return result
 
 
 @router.get("/{encoded_name}/{session_uuid}/agents/{agent_id}/timeline")
@@ -373,3 +379,55 @@ def get_subagent_tasks(
     except Exception as e:
         logger.warning(f"Failed to load tasks for subagent {agent_id}: {e}")
         return JSONResponse(content=[], headers=headers)
+
+
+@router.get("/{encoded_name}/{session_uuid}/agents/{agent_id}/live-status")
+def get_subagent_live_status(encoded_name: str, session_uuid: str, agent_id: str, request: Request):
+    """
+    Get live status for a specific subagent.
+
+    Reads the parent session's live state file and extracts the subagent's
+    status entry.
+
+    Returns:
+        - 404 if the parent session is not being tracked (no live state file).
+        - 200 with subagent=null if the parent session is tracked but this
+          agent_id has not been registered yet (e.g., agent is still spawning).
+        - 200 with subagent={...} when the agent is found in the live state.
+    """
+    state = load_live_session(session_uuid)
+    if state is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Live session not found for parent: {session_uuid}",
+        )
+
+    subagent_state = state.subagents.get(agent_id)
+
+    # Build response with parent session status context
+    parent_status = determine_status(state).value
+
+    response = {
+        "parent_session_id": state.session_id,
+        "parent_status": parent_status,
+        "agent_id": agent_id,
+        "subagent": None,
+    }
+
+    if subagent_state:
+        response["subagent"] = {
+            "agent_id": subagent_state.agent_id,
+            "agent_type": subagent_state.agent_type,
+            "status": subagent_state.status.value
+            if hasattr(subagent_state.status, "value")
+            else str(subagent_state.status),
+            "started_at": subagent_state.started_at.isoformat()
+            if subagent_state.started_at
+            else None,
+            "completed_at": subagent_state.completed_at.isoformat()
+            if subagent_state.completed_at
+            else None,
+        }
+
+    headers = {"Cache-Control": "private, max-age=1, stale-while-revalidate=2"}
+    return JSONResponse(content=response, headers=headers)
