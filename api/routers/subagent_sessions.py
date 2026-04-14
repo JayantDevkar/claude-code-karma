@@ -382,9 +382,7 @@ def get_subagent_tasks(
 
 
 @router.get("/{encoded_name}/{session_uuid}/agents/{agent_id}/live-status")
-def get_subagent_live_status(
-    encoded_name: str, session_uuid: str, agent_id: str, request: Request
-):
+def get_subagent_live_status(encoded_name: str, session_uuid: str, agent_id: str, request: Request):
     """
     Get live status for a specific subagent.
 
@@ -415,12 +413,16 @@ def get_subagent_live_status(
         response["subagent"] = {
             "agent_id": subagent_state.agent_id,
             "agent_type": subagent_state.agent_type,
-            "status": subagent_state.status.value if hasattr(subagent_state.status, "value") else str(subagent_state.status),
-            "started_at": subagent_state.started_at.isoformat() if subagent_state.started_at else None,
-            "completed_at": subagent_state.completed_at.isoformat() if subagent_state.completed_at else None,
+            "status": subagent_state.status.value
+            if hasattr(subagent_state.status, "value")
+            else str(subagent_state.status),
+            "started_at": subagent_state.started_at.isoformat()
+            if subagent_state.started_at
+            else None,
+            "completed_at": subagent_state.completed_at.isoformat()
+            if subagent_state.completed_at
+            else None,
         }
 
-    headers = {
-        "Cache-Control": "private, max-age=1, stale-while-revalidate=2"
-    }
+    headers = {"Cache-Control": "private, max-age=1, stale-while-revalidate=2"}
     return JSONResponse(content=response, headers=headers)
