@@ -387,8 +387,13 @@ def get_subagent_live_status(encoded_name: str, session_uuid: str, agent_id: str
     Get live status for a specific subagent.
 
     Reads the parent session's live state file and extracts the subagent's
-    status entry. Returns 404 if the parent session is not being tracked
-    or the subagent is not found in the live state.
+    status entry.
+
+    Returns:
+        - 404 if the parent session is not being tracked (no live state file).
+        - 200 with subagent=null if the parent session is tracked but this
+          agent_id has not been registered yet (e.g., agent is still spawning).
+        - 200 with subagent={...} when the agent is found in the live state.
     """
     state = load_live_session(session_uuid)
     if state is None:
