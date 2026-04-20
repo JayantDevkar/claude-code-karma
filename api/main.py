@@ -36,6 +36,7 @@ from routers import (  # noqa: E402
     skills,
     subagent_sessions,
     tools,
+    workflows,
 )
 from routers import settings as settings_router  # noqa: E402
 
@@ -71,6 +72,13 @@ async def lifespan(app: FastAPI):
 
             # Ensure DB file + schema exist before readers can connect
             get_writer_db()
+
+            # Initialize workflow DB (separate from metadata.db)
+            from db.workflow_db import get_wf_writer
+
+            get_wf_writer()
+            logger.info("Workflow database initialized")
+
             from db.indexer import run_background_sync, run_periodic_sync
 
             index_thread = threading.Thread(
@@ -127,6 +135,11 @@ async def lifespan(app: FastAPI):
 
             close_db()
             logger.info("SQLite connection closed")
+
+            from db.workflow_db import close_wf_db
+
+            close_wf_db()
+            logger.info("Workflow DB connection closed")
         except Exception as e:
             logger.warning(f"SQLite shutdown error: {e}")
 
@@ -171,6 +184,7 @@ app.include_router(
     prefix="/agents",
     tags=["subagent-sessions"],
 )
+app.include_router(workflows.router, prefix="/workflows", tags=["workflows"])
 app.include_router(admin.router)
 
 

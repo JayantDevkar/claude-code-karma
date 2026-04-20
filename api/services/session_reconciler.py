@@ -75,7 +75,7 @@ def _reconcile_once(idle_threshold: int) -> int:
                 state_data = json.load(f)
 
             state = state_data.get("state", "")
-            if state not in ("LIVE", "STOPPED", "STALE", "STARTING"):
+            if state not in ("LIVE", "STALE", "STARTING"):
                 continue
 
             # Check idle time
