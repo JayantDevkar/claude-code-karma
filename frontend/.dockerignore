@@ -1,0 +1,14 @@
+.git
+.gitignore
+.claude
+.playwright-mcp
+node_modules
+build
+.svelte-kit
+.vite
+docs/
+*.md
+.env
+.env.*
+coverage/
+*.tsbuildinfo
