@@ -581,7 +581,7 @@
 		transform: translateX(-50%);
 		background: var(--bg-base);
 		border: 1px solid var(--border);
-		border-radius: 1rem;
+		border-radius: 0.5rem;
 		overflow: hidden;
 		box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.4);
 		animation: scaleIn 150ms cubic-bezier(0.16, 1, 0.3, 1);
@@ -666,13 +666,14 @@
 		color: var(--text-muted);
 	}
 
-	/* Heading */
+	/* Heading — mono caps eyebrow to match masthead */
 	:global(.cmd-heading) {
 		padding: 0.75rem 0.75rem 0.5rem;
-		font-size: 0.6875rem;
-		font-weight: 600;
+		font-family: var(--font-mono);
+		font-size: 10px;
+		font-weight: 500;
 		text-transform: uppercase;
-		letter-spacing: 0.1em;
+		letter-spacing: 0.18em;
 		color: var(--accent);
 	}
 

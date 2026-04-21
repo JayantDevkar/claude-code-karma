@@ -10,7 +10,6 @@
 		icon?: any;
 		class?: string;
 		color?: StatColor;
-		// Token breakdown visualization
 		tokenIn?: number;
 		tokenOut?: number;
 	}
@@ -26,44 +25,30 @@
 		tokenOut
 	}: Props = $props();
 
-	// Color map matching NavigationCard pattern for icon backgrounds
-	const colorClasses: Record<StatColor, { bg: string; text: string }> = {
-		blue: {
-			bg: 'bg-[var(--nav-blue-subtle)] border-[var(--nav-blue)]/20',
-			text: 'text-[var(--nav-blue)]'
-		},
-		green: {
-			bg: 'bg-[var(--nav-green-subtle)] border-[var(--nav-green)]/20',
-			text: 'text-[var(--nav-green)]'
-		},
-		orange: {
-			bg: 'bg-[var(--nav-orange-subtle)] border-[var(--nav-orange)]/20',
-			text: 'text-[var(--nav-orange)]'
-		},
-		purple: {
-			bg: 'bg-[var(--nav-purple-subtle)] border-[var(--nav-purple)]/20',
-			text: 'text-[var(--nav-purple)]'
-		},
-		teal: {
-			bg: 'bg-[var(--nav-teal-subtle)] border-[var(--nav-teal)]/20',
-			text: 'text-[var(--nav-teal)]'
-		},
-		gray: {
-			bg: 'bg-[var(--bg-base)] border-[var(--border)]',
-			text: 'text-[var(--text-muted)]'
-		},
-		accent: {
-			bg: 'bg-[var(--accent-subtle)] border-[var(--accent)]/20',
-			text: 'text-[var(--accent)]'
-		}
+	// Ink palette per color key. Tokens already retuned in app.css.
+	const inkColor: Record<StatColor, string> = {
+		blue: 'var(--nav-blue)',
+		green: 'var(--nav-green)',
+		orange: 'var(--nav-orange)',
+		purple: 'var(--nav-purple)',
+		teal: 'var(--nav-teal)',
+		gray: 'var(--text-muted)',
+		accent: 'var(--accent)'
 	};
 
-	// Derive icon container and text classes based on color prop
-	let iconBgClass = $derived(color ? colorClasses[color].bg : colorClasses.gray.bg);
-	let iconTextClass = $derived(color ? colorClasses[color].text : colorClasses.gray.text);
+	const inkTint: Record<StatColor, string> = {
+		blue: 'var(--nav-blue-subtle)',
+		green: 'var(--nav-green-subtle)',
+		orange: 'var(--nav-orange-subtle)',
+		purple: 'var(--nav-purple-subtle)',
+		teal: 'var(--nav-teal-subtle)',
+		gray: 'var(--bg-muted)',
+		accent: 'var(--accent-subtle)'
+	};
 
-	// Calculate token percentages for visualization
-	// Only show breakdown if at least one token value is greater than 0
+	const ink = $derived(color ? inkColor[color] : 'var(--text-muted)');
+	const tint = $derived(color ? inkTint[color] : 'var(--bg-muted)');
+
 	let hasTokenBreakdown = $derived(
 		tokenIn !== undefined && tokenOut !== undefined && (tokenIn > 0 || tokenOut > 0)
 	);
@@ -72,75 +57,174 @@
 	let outPercent = $derived(totalTokens > 0 ? ((tokenOut || 0) / totalTokens) * 100 : 0);
 </script>
 
-<div
-	class="
-		p-5
-		bg-[var(--bg-base)]
-		border border-[var(--border)]
-		rounded-xl
-		shadow-sm hover:shadow-md
-		transition-all duration-300
-		{className}
-	"
->
-	<!-- Label at top with optional description in brackets -->
-	<div class="text-xs uppercase tracking-wider font-semibold text-[var(--text-muted)] mb-3">
-		{title}{#if description}<span class="normal-case tracking-normal font-normal">
-				({description})</span
-			>{/if}
+<div class="stat {className}" style="--ink: {ink}; --tint: {tint};">
+	<div class="stat__label">
+		<span class="stat__dot"></span>
+		<span class="stat__title">{title}</span>
+		{#if description}
+			<span class="stat__desc">({description})</span>
+		{/if}
 	</div>
 
-	<!-- Icon + Value aligned -->
-	<div class="flex items-center gap-3">
+	<div class="stat__row">
 		{#if Icon}
-			<div
-				class="
-					flex items-center justify-center
-					w-11 h-11
-					border
-					rounded-xl
-					shrink-0
-					transition-transform duration-300 hover:scale-105
-					{iconBgClass}
-				"
-			>
-				<Icon size={20} strokeWidth={2.5} class={iconTextClass} />
+			<div class="stat__icon">
+				<Icon size={16} strokeWidth={1.75} />
 			</div>
 		{/if}
-		<div class="flex-1 min-w-0">
-			<div class="text-2xl font-bold metric-value text-[var(--text-primary)] tracking-tight">
-				{value}
-			</div>
-		</div>
+		<div class="stat__value">{value}</div>
 	</div>
 
-	<!-- Token breakdown visualization -->
 	{#if hasTokenBreakdown}
-		<div class="mt-3 space-y-1.5">
-			<!-- Visual bar -->
-			<div class="flex h-2 rounded-full overflow-hidden bg-[var(--bg-muted)]">
-				<div
-					class="bg-[var(--accent)] transition-all duration-300"
-					style="width: {inPercent}%"
-					title="Input: {formatTokens(tokenIn)}"
-				></div>
-				<div
-					class="bg-[var(--nav-teal)] transition-all duration-300"
-					style="width: {outPercent}%"
-					title="Output: {formatTokens(tokenOut)}"
-				></div>
+		<div class="stat__breakdown">
+			<div class="stat__bar">
+				<span class="stat__bar-in" style="width: {inPercent}%" title="Input"></span>
+				<span class="stat__bar-out" style="width: {outPercent}%" title="Output"></span>
 			</div>
-			<!-- Labels -->
-			<div class="flex justify-between text-[10px] text-[var(--text-muted)]">
-				<span class="flex items-center gap-1">
-					<span class="w-2 h-2 rounded-full bg-[var(--accent)]"></span>
-					In: {formatTokens(tokenIn)}
+			<div class="stat__legend">
+				<span class="stat__leg">
+					<span class="stat__leg-dot stat__leg-dot--in"></span>
+					In · {formatTokens(tokenIn)}
 				</span>
-				<span class="flex items-center gap-1">
-					<span class="w-2 h-2 rounded-full bg-[var(--nav-teal)]"></span>
-					Out: {formatTokens(tokenOut)}
+				<span class="stat__leg">
+					<span class="stat__leg-dot stat__leg-dot--out"></span>
+					Out · {formatTokens(tokenOut)}
 				</span>
 			</div>
 		</div>
 	{/if}
 </div>
+
+<style>
+	.stat {
+		position: relative;
+		padding: 18px 18px 20px;
+		background: var(--bg-base);
+		border: 1px solid var(--border);
+		border-radius: var(--radius-md);
+		transition: border-color var(--duration-fast) var(--ease);
+	}
+
+	.stat:hover {
+		border-color: var(--border-hover);
+	}
+
+	.stat__label {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		margin-bottom: 14px;
+		font-family: var(--font-mono);
+		font-size: 10px;
+		letter-spacing: 0.16em;
+		text-transform: uppercase;
+		color: var(--text-muted);
+		font-weight: 500;
+	}
+
+	.stat__dot {
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		background: var(--ink);
+		flex-shrink: 0;
+	}
+
+	.stat__title {
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	.stat__desc {
+		letter-spacing: 0;
+		text-transform: none;
+		font-weight: 400;
+		color: var(--text-faint);
+	}
+
+	.stat__row {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+	}
+
+	.stat__icon {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 32px;
+		height: 32px;
+		border-radius: var(--radius-sm);
+		color: var(--ink);
+		background: var(--tint);
+		flex-shrink: 0;
+	}
+
+	.stat__value {
+		font-size: 28px;
+		font-weight: 600;
+		letter-spacing: -0.02em;
+		line-height: 1.1;
+		color: var(--text-primary);
+		font-variant-numeric: tabular-nums;
+		min-width: 0;
+		flex: 1;
+	}
+
+	.stat__breakdown {
+		margin-top: 14px;
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+
+	.stat__bar {
+		display: flex;
+		height: 4px;
+		border-radius: 2px;
+		overflow: hidden;
+		background: var(--bg-muted);
+	}
+
+	.stat__bar-in {
+		background: var(--accent);
+		transition: width var(--duration-base) var(--ease);
+	}
+
+	.stat__bar-out {
+		background: var(--nav-teal);
+		transition: width var(--duration-base) var(--ease);
+	}
+
+	.stat__legend {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		font-family: var(--font-mono);
+		font-size: 10px;
+		letter-spacing: 0.05em;
+		color: var(--text-muted);
+		font-variant-numeric: tabular-nums;
+	}
+
+	.stat__leg {
+		display: inline-flex;
+		align-items: center;
+		gap: 5px;
+	}
+
+	.stat__leg-dot {
+		width: 5px;
+		height: 5px;
+		border-radius: 50%;
+	}
+
+	.stat__leg-dot--in {
+		background: var(--accent);
+	}
+
+	.stat__leg-dot--out {
+		background: var(--nav-teal);
+	}
+</style>

@@ -32,6 +32,18 @@
 	}
 </script>
 
+<style>
+	.cg-title {
+		font-family: var(--font-mono);
+		font-size: 11px;
+		letter-spacing: 0.14em;
+		text-transform: uppercase;
+		font-weight: 500;
+		color: var(--text-primary);
+		margin: 0;
+	}
+</style>
+
 <div class="group {className}">
 	<div
 		class="
@@ -84,7 +96,7 @@
 			{/if}
 
 			<!-- Title -->
-			<h3 class="flex-1 text-sm font-medium text-[var(--text-primary)]">
+			<h3 class="flex-1 cg-title">
 				{title}
 			</h3>
 
