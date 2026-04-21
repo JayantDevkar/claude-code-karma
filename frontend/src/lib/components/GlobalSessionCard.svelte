@@ -168,8 +168,7 @@
 
 				<!-- Session Name (title → slug → uuid) -->
 				<span
-					class="text-xs font-medium truncate flex-1"
-					class:text-[var(--accent)]={hasTitle}
+					class="text-xs font-medium truncate flex-1 text-[var(--text-primary)] group-hover:text-[var(--accent)] transition-colors"
 					class:text-[var(--text-secondary)]={!hasTitle}
 					class:italic={!hasTitle}
 					class:font-mono={!hasTitle && !displaySlug}
@@ -249,8 +248,7 @@
 					<div class="flex items-center justify-between gap-2 mb-0.5">
 						<div class="flex items-center gap-2 min-w-0">
 							<span
-								class="text-sm font-medium truncate"
-								class:text-[var(--accent)]={hasTitle}
+								class="text-sm font-medium truncate text-[var(--text-primary)] group-hover:text-[var(--accent)] transition-colors"
 								class:text-[var(--text-secondary)]={!hasTitle}
 								class:italic={!hasTitle}
 								class:font-mono={!hasTitle && !displaySlug}

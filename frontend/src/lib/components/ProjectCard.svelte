@@ -109,7 +109,7 @@
 			<div class="min-w-0 flex-1">
 				<div class="flex items-start justify-between gap-2 mb-1">
 					<h4
-						class="text-sm font-mono font-medium text-[var(--accent)] leading-tight truncate"
+						class="text-sm font-medium text-[var(--text-primary)] leading-tight truncate group-hover:text-[var(--accent)] transition-colors"
 					>
 						{relativePath || getProjectName(project.path)}
 					</h4>
@@ -211,7 +211,7 @@
 
 			<div class="min-w-0 flex-1">
 				<h3
-					class="text-sm font-mono font-medium text-[var(--accent)] leading-tight truncate mb-0.5"
+					class="text-sm font-medium text-[var(--text-primary)] leading-tight truncate mb-0.5 group-hover:text-[var(--accent)] transition-colors"
 				>
 					{getProjectName(project.path)}
 				</h3>

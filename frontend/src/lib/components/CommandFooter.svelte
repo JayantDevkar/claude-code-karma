@@ -93,20 +93,23 @@
 		align-items: center;
 		gap: 0.5rem;
 		padding: 0.375rem 0.75rem;
-		font-size: 0.75rem;
+		font-family: var(--font-mono);
+		font-size: 10px;
+		letter-spacing: 0.12em;
+		text-transform: uppercase;
 		font-weight: 500;
 		color: var(--text-muted);
 		background: transparent;
 		border: 1px solid var(--border);
-		border-radius: 0.5rem;
+		border-radius: var(--radius-sm);
 		cursor: pointer;
-		transition: all 150ms ease;
+		transition: all 150ms var(--ease);
 	}
 
 	.command-btn:hover {
 		color: var(--text-primary);
-		background: var(--bg-muted);
-		border-color: var(--border-strong);
+		background: var(--bg-subtle);
+		border-color: var(--border-hover);
 	}
 
 	.label {
