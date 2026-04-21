@@ -204,11 +204,6 @@
 	// Plans from current response
 	let filteredPlans = $derived(plansResponse.plans);
 
-	// Pagination handler
-	function goToPage(page: number) {
-		currentPage = page;
-	}
-
 	// Day-based grouping (operates on current page's plans)
 	type DateGroup = {
 		key: string;

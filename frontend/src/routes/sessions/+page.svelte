@@ -1057,31 +1057,7 @@
 		return getProjectNameFromEncoded(encodedName) || encodedName;
 	}
 
-	// Check if client-side filters are active (filters applied in browser)
-	// All filters are now client-side: project, branch, search tokens, scope, status
-	// When client-side filters are active, we show filtered count instead of pagination
-	const hasClientSideFilters = $derived(
-		false // All filtering is now server-side
-	);
-
-	// Pagination calculations - use filtered count when client-side filters are active
-	const effectiveTotal = $derived(
-		hasClientSideFilters ? dedupedFilteredSessions.length : contextualTotal
-	);
-	const totalPages = $derived(
-		hasClientSideFilters ? 1 : Math.ceil(contextualTotal / data.filters.perPage)
-	);
-	const currentPage = $derived(data.filters.page);
-	const hasNextPage = $derived(!hasClientSideFilters && currentPage < totalPages);
-	const hasPrevPage = $derived(!hasClientSideFilters && currentPage > 1);
 	const hasActiveFilters = $derived(activeFiltersCount > 0);
-
-	// Navigate to a specific page (only works when no client-side filters)
-	function goToPage(newPage: number) {
-		if (hasClientSideFilters) return;
-		if (newPage < 1 || newPage > totalPages) return;
-		reloadSessions({ page: newPage });
-	}
 
 	// Determine if live sessions should be visible based on date filter
 	// Live sessions are "happening now" so only show when date range includes today
@@ -1520,7 +1496,7 @@
 						/>
 					{/if}
 
-					{#if group.key === 'older' && effectiveTotal > dedupedFilteredSessions.length}
+					{#if group.key === 'older' && contextualTotal > dedupedFilteredSessions.length}
 						<p class="mt-6 text-xs text-[var(--text-muted)] tabular-nums">
 							Showing the {dedupedFilteredSessions.length.toLocaleString()} most recent;
 							older entries not displayed.

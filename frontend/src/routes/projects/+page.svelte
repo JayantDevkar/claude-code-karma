@@ -308,7 +308,6 @@
 			<button
 				onclick={() => {
 					showSortDropdown = !showSortDropdown;
-					showFilterDropdown = false;
 				}}
 				class="inline-flex items-center gap-2 px-3 h-9 text-xs font-medium bg-[var(--bg-base)] border border-[var(--border)] rounded-[6px] hover:bg-[var(--bg-subtle)] hover:border-[var(--border-hover)] transition-all whitespace-nowrap text-[var(--text-secondary)]"
 			>
@@ -480,10 +479,10 @@
 				<FolderOpen size={28} class="text-[var(--text-faint)]" />
 			</div>
 			<h3 class="text-base font-semibold text-[var(--text-primary)] mb-2">
-				{searchQuery || filterType !== 'all' ? 'No matching projects' : 'No projects found'}
+				{searchQuery ? 'No matching projects' : 'No projects found'}
 			</h3>
 			<p class="text-sm font-medium text-[var(--text-muted)]">
-				{searchQuery || filterType !== 'all'
+				{searchQuery
 					? 'Try adjusting your filters'
 					: 'Start using Claude Code to see your projects here'}
 			</p>
