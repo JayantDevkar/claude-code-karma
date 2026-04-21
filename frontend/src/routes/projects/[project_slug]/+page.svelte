@@ -1100,9 +1100,7 @@
 					<div class="space-y-4">
 						<!-- Header row: title + count + view toggle -->
 						<div class="flex items-center justify-between">
-							<h2 class="text-sm font-semibold text-[var(--text-primary)]">
-								Recent Sessions
-							</h2>
+							<h2 class="sessions-section-title">Recent Sessions</h2>
 							<div class="flex items-center gap-3">
 								<span
 									class="text-xs text-[var(--text-muted)] font-mono tabular-nums flex items-center gap-2"
@@ -1172,7 +1170,7 @@
 									<span>Filters</span>
 									{#if activeFilterCount > 0}
 										<span
-											class="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 bg-[var(--accent)] text-white rounded-full text-[10px] font-bold tabular-nums"
+											class="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 bg-[var(--accent)] text-[var(--bg-base)] rounded-full text-[10px] font-semibold tabular-nums"
 										>
 											{activeFilterCount}
 										</span>
@@ -1492,10 +1490,8 @@
 							class="flex flex-col sm:flex-row sm:items-center justify-between gap-3"
 						>
 							<div>
-								<h2 class="text-lg font-semibold text-[var(--text-primary)]">
-									Project Analytics
-								</h2>
-								<p class="text-sm text-[var(--text-muted)]">
+								<h2 class="tab-section-title">Project Analytics</h2>
+								<p class="tab-section-sub">
 									Insights into your coding patterns and project health
 								</p>
 							</div>
@@ -1548,31 +1544,25 @@
 										<div
 											class="flex items-center gap-2 text-[var(--text-muted)]"
 										>
-											<Clock size={16} />
-											<h3
-												class="text-xs font-semibold uppercase tracking-wider"
-											>
-												Time Investment
-											</h3>
+											<Clock size={14} strokeWidth={1.75} />
+											<h3 class="summary-card-label">Time Investment</h3>
 										</div>
 									</div>
 
 									<div class="mb-4 flex flex-col justify-center">
 										<div class="flex items-center gap-3">
 											<div
-												class="p-2 rounded-full bg-[var(--bg-active)] text-[var(--accent)]"
+												class="inline-flex items-center justify-center w-9 h-9 rounded-[var(--radius-sm)] bg-[var(--accent-subtle)] text-[var(--accent)]"
 											>
-												<PieChart size={24} />
+												<PieChart size={18} strokeWidth={1.75} />
 											</div>
 											<div>
-												<div
-													class="text-2xl font-bold text-[var(--text-primary)]"
-												>
+												<div class="summary-card-value">
 													{formatDuration(
 														analytics.total_duration_seconds
 													)}
 												</div>
-												<div class="text-xs text-[var(--text-muted)]">
+												<div class="text-xs text-[var(--text-muted)] mt-0.5">
 													Total Time
 												</div>
 											</div>
@@ -1605,15 +1595,11 @@
 											<div
 												class="flex items-center gap-2 text-[var(--text-muted)]"
 											>
-												<Briefcase size={16} />
-												<h3
-													class="text-xs font-semibold uppercase tracking-wider"
-												>
-													Work Mode
-												</h3>
+												<Briefcase size={14} strokeWidth={1.75} />
+												<h3 class="summary-card-label">Work Mode</h3>
 											</div>
 											<span
-												class="text-[10px] font-medium px-2 py-0.5 rounded-full bg-[var(--bg-muted)] text-[var(--text-primary)] border border-[var(--border)]"
+												class="font-mono text-[10px] uppercase tracking-widest px-2 py-0.5 rounded-[var(--radius-xs)] bg-[var(--bg-muted)] text-[var(--text-secondary)] border border-[var(--border-subtle)]"
 											>
 												{analytics.work_mode_distribution.primary_mode}
 											</span>
@@ -1625,17 +1611,17 @@
 												class="h-3 w-full flex rounded-full overflow-hidden bg-[var(--bg-muted)]"
 											>
 												<div
-													class="bg-blue-500/80 h-full first:rounded-l-full last:rounded-r-full"
+													class="workmode-bar workmode-explore h-full first:rounded-l-full last:rounded-r-full"
 													style="width: {analytics.work_mode_distribution
 														.exploration_pct}%"
 												></div>
 												<div
-													class="bg-purple-500/80 h-full first:rounded-l-full last:rounded-r-full"
+													class="workmode-bar workmode-build h-full first:rounded-l-full last:rounded-r-full"
 													style="width: {analytics.work_mode_distribution
 														.building_pct}%"
 												></div>
 												<div
-													class="bg-orange-500/80 h-full first:rounded-l-full last:rounded-r-full"
+													class="workmode-bar workmode-test h-full first:rounded-l-full last:rounded-r-full"
 													style="width: {analytics.work_mode_distribution
 														.testing_pct}%"
 												></div>
@@ -1646,7 +1632,7 @@
 											<div class="flex justify-between items-center">
 												<div class="flex items-center gap-2">
 													<div
-														class="w-2 h-2 rounded-full bg-blue-500/80"
+														class="w-2 h-2 rounded-full workmode-bar workmode-explore"
 													></div>
 													<span class="text-[var(--text-secondary)]"
 														>Exploration</span
@@ -1660,7 +1646,7 @@
 											<div class="flex justify-between items-center">
 												<div class="flex items-center gap-2">
 													<div
-														class="w-2 h-2 rounded-full bg-purple-500/80"
+														class="w-2 h-2 rounded-full workmode-bar workmode-build"
 													></div>
 													<span class="text-[var(--text-secondary)]"
 														>Building</span
@@ -1674,7 +1660,7 @@
 											<div class="flex justify-between items-center">
 												<div class="flex items-center gap-2">
 													<div
-														class="w-2 h-2 rounded-full bg-orange-500/80"
+														class="w-2 h-2 rounded-full workmode-bar workmode-test"
 													></div>
 													<span class="text-[var(--text-secondary)]"
 														>Testing</span
@@ -1731,10 +1717,8 @@
 						<div class="space-y-6">
 							<!-- Header -->
 							<div>
-								<h2 class="text-lg font-semibold text-[var(--text-primary)]">
-									Archived Sessions
-								</h2>
-								<p class="text-sm text-[var(--text-muted)]">
+								<h2 class="tab-section-title">Archived Sessions</h2>
+								<p class="tab-section-sub">
 									{archived.total_sessions}
 									{archived.total_sessions === 1 ? 'session' : 'sessions'} with {archived.total_prompts}
 									prompts cleaned up by retention policy
@@ -1756,3 +1740,68 @@
 		{/if}
 	</div>
 {/if}
+
+<style>
+	/* Work-mode distribution — themed ink palette (no more raw Tailwind 500s) */
+	.workmode-bar {
+		height: 100%;
+		transition: width var(--duration-base) var(--ease);
+	}
+	.workmode-explore {
+		background: var(--nav-blue);
+	}
+	.workmode-build {
+		background: var(--nav-purple);
+	}
+	.workmode-test {
+		background: var(--nav-orange);
+	}
+
+	/* Section headings inside tab content — editorial eyebrow style */
+	.tab-section-title {
+		font-family: var(--font-serif);
+		font-style: italic;
+		font-weight: 400;
+		font-size: 26px;
+		line-height: 1;
+		letter-spacing: -0.02em;
+		color: var(--text-primary);
+		margin: 0;
+	}
+
+	.tab-section-sub {
+		margin: 6px 0 0;
+		font-size: 13px;
+		color: var(--text-muted);
+	}
+
+	/* Summary card labels (Time Investment, Work Mode) */
+	.summary-card-label {
+		font-family: var(--font-mono);
+		font-size: 10px;
+		letter-spacing: 0.16em;
+		text-transform: uppercase;
+		font-weight: 500;
+		color: var(--text-muted);
+	}
+
+	/* Big numerical value inside summary cards */
+	.summary-card-value {
+		font-size: 26px;
+		font-weight: 600;
+		letter-spacing: -0.02em;
+		line-height: 1.1;
+		color: var(--text-primary);
+		font-variant-numeric: tabular-nums;
+	}
+
+	/* Sessions section header */
+	.sessions-section-title {
+		font-family: var(--font-mono);
+		font-size: 11px;
+		letter-spacing: 0.14em;
+		text-transform: uppercase;
+		font-weight: 500;
+		color: var(--text-primary);
+	}
+</style>

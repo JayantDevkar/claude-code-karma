@@ -30,20 +30,25 @@
 	</div>
 {:else if error}
 	<div class="flex flex-col items-center justify-center min-h-[60vh] p-8">
-		<div class="flex flex-col items-center gap-4 max-w-md text-center">
+		<div class="flex flex-col items-center gap-5 max-w-md text-center">
 			<div
-				class="flex h-16 w-16 items-center justify-center rounded-full bg-[var(--error-subtle)]"
+				class="flex h-14 w-14 items-center justify-center rounded-[var(--radius-md)] bg-[var(--error-subtle)] text-[var(--error)]"
 			>
-				<AlertTriangle size={32} class="text-[var(--error)]" />
+				<AlertTriangle size={26} strokeWidth={1.75} />
 			</div>
-			<h1 class="text-xl font-semibold text-[var(--text-primary)]">Failed to Load Session</h1>
-			<p class="text-[var(--text-secondary)]">{error}</p>
+			<h1
+				class="text-3xl italic text-[var(--text-primary)]"
+				style="font-family: var(--font-serif); font-weight: 400; letter-spacing: -0.02em; line-height: 1;"
+			>
+				Failed to load session
+			</h1>
+			<p class="text-sm text-[var(--text-secondary)] max-w-sm">{error}</p>
 			<a
 				href="/projects/{data.project_slug}"
-				class="inline-flex items-center gap-2 mt-4 px-4 py-2 rounded-lg bg-[var(--accent)] text-white hover:opacity-90 transition-opacity"
+				class="inline-flex items-center gap-2 mt-2 px-4 py-2 rounded-[var(--radius-sm)] bg-[var(--accent)] text-[var(--bg-base)] hover:bg-[var(--accent-hover)] transition-colors font-medium text-sm"
 			>
-				<ArrowLeft size={16} />
-				Back to Project
+				<ArrowLeft size={15} strokeWidth={1.75} />
+				Back to project
 			</a>
 		</div>
 	</div>
