@@ -15,7 +15,7 @@ export async function load({ params, fetch, url }) {
 
 	// Extract pagination params
 	const page = parseInt(url.searchParams.get('page') || '1', 10);
-	const perPage = parseInt(url.searchParams.get('per_page') || '50', 10);
+	const perPage = parseInt(url.searchParams.get('per_page') || '500', 10);
 
 	// Build analytics URL with timestamp params
 	const analyticsParams = new URLSearchParams();

@@ -28,6 +28,9 @@
 	} from 'lucide-svelte';
 	import { isToday, isYesterday, isThisWeek, isThisMonth } from 'date-fns';
 	import TabsTrigger from '$lib/components/ui/TabsTrigger.svelte';
+	import InnerTabs from '$lib/components/ui/Tabs.svelte';
+	import InnerTabsList from '$lib/components/ui/TabsList.svelte';
+	import InnerTabsContent from '$lib/components/ui/TabsContent.svelte';
 	import { API_BASE } from '$lib/config';
 	import { ProjectDetailSkeleton, SkeletonSessionCard } from '$lib/components/skeleton';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
@@ -997,6 +1000,7 @@
 
 	// Time-based grouping for list view
 	type DateGroup = {
+		key: string;
 		label: string;
 		sessions: SessionSummary[];
 	};
@@ -1025,13 +1029,32 @@
 		}
 
 		const groups: DateGroup[] = [];
-		if (today.length > 0) groups.push({ label: 'Today', sessions: today });
-		if (yesterday.length > 0) groups.push({ label: 'Yesterday', sessions: yesterday });
-		if (thisWeek.length > 0) groups.push({ label: 'This Week', sessions: thisWeek });
-		if (thisMonth.length > 0) groups.push({ label: 'This Month', sessions: thisMonth });
-		if (older.length > 0) groups.push({ label: 'Older', sessions: older });
+		if (today.length > 0) groups.push({ key: 'today', label: 'Today', sessions: today });
+		if (yesterday.length > 0)
+			groups.push({ key: 'yesterday', label: 'Yesterday', sessions: yesterday });
+		if (thisWeek.length > 0)
+			groups.push({ key: 'thisWeek', label: 'This Week', sessions: thisWeek });
+		if (thisMonth.length > 0)
+			groups.push({ key: 'thisMonth', label: 'This Month', sessions: thisMonth });
+		if (older.length > 0) groups.push({ key: 'older', label: 'Older', sessions: older });
 
 		return groups;
+	});
+
+	// Time-based tab state for the Recent Sessions list (mirrors /sessions).
+	let activeDateTab = $state<string>('today');
+	$effect(() => {
+		if (groupedByDate.length === 0) return;
+		const current = groupedByDate.find((g) => g.key === activeDateTab);
+		if (!current) activeDateTab = groupedByDate[0].key;
+	});
+
+	// Per-tab client-side pagination within Recent Sessions.
+	const SESSIONS_TAB_PAGE_SIZE = 30;
+	let sessionsTabPage = $state(1);
+	$effect(() => {
+		void activeDateTab;
+		sessionsTabPage = 1;
 	});
 </script>
 
@@ -1312,82 +1335,68 @@
 						<!-- Session Cards -->
 						{#if filteredSessions.length > 0}
 							{#key resultsAnimationKey}
-								{#if viewMode === 'list'}
-									<!-- List View: Time-Based Grouping -->
-									<div class="space-y-8 animate-results-update">
-										{#each groupedByDate as group (group.label)}
-											<div>
-												<!-- Section Header -->
-												<h2
-													class="text-sm font-semibold uppercase tracking-wide text-[var(--text-secondary)] mb-4"
-												>
-													{group.label}
-													<span
-														class="text-[var(--text-faint)] font-medium ml-1.5"
-													>
-														({group.sessions.length})
-													</span>
-												</h2>
+								<InnerTabs bind:value={activeDateTab} class="animate-results-update">
+									<InnerTabsList class="mb-4">
+										{#each groupedByDate as group (group.key)}
+											<TabsTrigger value={group.key}>
+												<span>{group.label}</span>
+												<span class="tab-count">{group.sessions.length}</span>
+											</TabsTrigger>
+										{/each}
+									</InnerTabsList>
 
-												<!-- Session Cards Grid -->
+									{#each groupedByDate as group (group.key)}
+										<InnerTabsContent value={group.key}>
+											{@const visible = group.sessions.slice(
+												(sessionsTabPage - 1) * SESSIONS_TAB_PAGE_SIZE,
+												sessionsTabPage * SESSIONS_TAB_PAGE_SIZE
+											)}
+											{#if viewMode === 'list'}
 												<div
 													class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3"
 												>
-													{#each group.sessions as session (session.uuid)}
+													{#each visible as session (session.uuid)}
 														<SessionCard
 															{session}
 															projectEncodedName={project.encoded_name}
-															showBranch={selectedBranchFilters.size ===
-																0}
-															liveSession={getLiveSession(
-																session
-															)}
+															showBranch={selectedBranchFilters.size === 0}
+															liveSession={getLiveSession(session)}
 															highlighted={getSessionUrlIdentifier(session, getLiveSession(session)) === lastOpenedSessionId}
 														/>
 													{/each}
 												</div>
-											</div>
-										{/each}
-									</div>
-								{:else}
-									<!-- Grid View: Compact with Time-Based Grouping -->
-									<div class="space-y-6 animate-results-update">
-										{#each groupedByDate as group (group.label)}
-											<div>
-												<!-- Section Header -->
-												<h2
-													class="text-sm font-semibold uppercase tracking-wide text-[var(--text-secondary)] mb-3"
-												>
-													{group.label}
-													<span
-														class="text-[var(--text-faint)] font-medium ml-1.5"
-													>
-														({group.sessions.length})
-													</span>
-												</h2>
-
-												<!-- Session Cards Grid (Compact) -->
+											{:else}
 												<div
 													class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2"
 												>
-													{#each group.sessions as session (session.uuid)}
+													{#each visible as session (session.uuid)}
 														<SessionCard
 															{session}
 															projectEncodedName={project.encoded_name}
-															showBranch={selectedBranchFilters.size ===
-																0}
+															showBranch={selectedBranchFilters.size === 0}
 															compact
-															liveSession={getLiveSession(
-																session
-															)}
+															liveSession={getLiveSession(session)}
 															highlighted={getSessionUrlIdentifier(session, getLiveSession(session)) === lastOpenedSessionId}
 														/>
 													{/each}
 												</div>
-											</div>
-										{/each}
-									</div>
-								{/if}
+											{/if}
+
+											{#if group.sessions.length > SESSIONS_TAB_PAGE_SIZE}
+												<Pagination
+													total={group.sessions.length}
+													page={sessionsTabPage}
+													perPage={SESSIONS_TAB_PAGE_SIZE}
+													totalPages={Math.ceil(
+														group.sessions.length / SESSIONS_TAB_PAGE_SIZE
+													)}
+													onPageChange={(p) => (sessionsTabPage = p)}
+													itemLabel="sessions"
+												/>
+											{/if}
+										</InnerTabsContent>
+									{/each}
+								</InnerTabs>
 							{/key}
 						{:else if isListLoading}
 							<!-- Loading State - Skeleton Cards -->
@@ -1462,23 +1471,6 @@
 							/>
 						{/if}
 
-						<!-- Pagination / Results Info -->
-						{#if !hasClientSideFilters && project && (project.sessions?.length ?? 0) > 0}
-							<Pagination
-								total={totalSessionCount}
-								page={currentPage}
-								perPage={paginationPerPage}
-								{totalPages}
-								onPageChange={goToPage}
-								itemLabel="sessions"
-							/>
-						{:else if hasClientSideFilters && project && (project.sessions?.length ?? 0) > 0}
-							<div class="mt-8 text-xs text-[var(--text-muted)] tabular-nums">
-								Showing <span class="font-medium text-[var(--text-secondary)]"
-									>{filteredSessionsCount.toLocaleString()}</span
-								> filtered sessions
-							</div>
-						{/if}
 					</div>
 				</Tabs.Content>
 
