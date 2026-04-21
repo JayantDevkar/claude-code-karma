@@ -307,6 +307,8 @@
 		const style = getComputedStyle(document.documentElement);
 		const textMuted = style.getPropertyValue('--text-muted').trim() || '#94a3b8';
 		const textPrimary = style.getPropertyValue('--text-primary').trim() || '#0f172a';
+		const textSecondary = style.getPropertyValue('--text-secondary').trim() || '#475569';
+		const bgMuted = style.getPropertyValue('--bg-muted').trim() || '#f1f5f9';
 		const border = style.getPropertyValue('--border').trim() || 'rgba(0,0,0,0.08)';
 
 		const sessionCounts = sortedDates.map((date) => analytics.sessions_by_date[date]);
@@ -333,7 +335,11 @@
 				plugins: {
 					legend: { display: false },
 					tooltip: {
-						backgroundColor: textPrimary,
+						backgroundColor: bgMuted,
+						titleColor: textPrimary,
+						bodyColor: textSecondary,
+						borderColor: border,
+						borderWidth: 1,
 						padding: 10,
 						cornerRadius: 6,
 						displayColors: false

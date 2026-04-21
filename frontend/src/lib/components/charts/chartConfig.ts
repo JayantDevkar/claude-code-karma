@@ -1,48 +1,85 @@
 import { Chart } from 'chart.js';
 
+const MONO_STACK = "'Geist Mono', 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace";
+const SANS_STACK = "'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif";
+
 /**
- * Register global Chart.js defaults for consistent styling across all charts
- * Should be called once during app initialization or in each chart component's onMount
+ * Resolve theme colors from CSS custom properties. Chart.js cannot accept
+ * raw `var(--x)` strings — it needs concrete color values at option time.
+ * Read fresh on every config call so theme toggles pick up the new palette
+ * when the consumer rebuilds the chart.
  */
-export function registerChartDefaults() {
-	Chart.defaults.font.family = 'JetBrains Mono, monospace';
-	Chart.defaults.color = 'var(--text-secondary)';
+export function getThemeColors() {
+	if (typeof window === 'undefined') {
+		return {
+			primary: '#a87c1e',
+			text: '#1b1712',
+			textSecondary: '#47403a',
+			textMuted: '#766d60',
+			border: 'rgba(27,23,18,0.11)',
+			bgBase: '#f3ede1',
+			bgMuted: '#dfd4bd',
+			bgSubtle: '#ebe3d2'
+		};
+	}
+	const style = getComputedStyle(document.documentElement);
+	const read = (name: string, fallback: string) =>
+		style.getPropertyValue(name).trim() || fallback;
+	return {
+		primary: read('--accent', '#a87c1e'),
+		text: read('--text-primary', '#1b1712'),
+		textSecondary: read('--text-secondary', '#47403a'),
+		textMuted: read('--text-muted', '#766d60'),
+		border: read('--border', 'rgba(27,23,18,0.11)'),
+		bgBase: read('--bg-base', '#f3ede1'),
+		bgMuted: read('--bg-muted', '#dfd4bd'),
+		bgSubtle: read('--bg-subtle', '#ebe3d2')
+	};
 }
 
 /**
- * Create a responsive chart configuration with common options
- * @param maintainAspectRatio - Whether to maintain aspect ratio (default: false for better container fitting)
- * @returns Base configuration object that can be spread into chart options
+ * Register global Chart.js defaults. Call once on app init.
+ */
+export function registerChartDefaults() {
+	const c = getThemeColors();
+	Chart.defaults.font.family = MONO_STACK;
+	Chart.defaults.color = c.textSecondary;
+}
+
+/**
+ * Base chart config with tooltip + legend styling resolved to concrete
+ * theme colors. Rebuild the chart to respond to a theme toggle.
  */
 export function createResponsiveConfig(maintainAspectRatio = false) {
+	const c = getThemeColors();
 	return {
 		responsive: true,
 		maintainAspectRatio,
 		plugins: {
 			legend: {
 				labels: {
-					color: 'var(--text-secondary)',
+					color: c.textSecondary,
 					font: {
-						family: 'JetBrains Mono, monospace',
+						family: MONO_STACK,
 						size: 11
 					}
 				}
 			},
 			tooltip: {
-				backgroundColor: 'var(--bg-base)', // High contrast background
-				titleColor: 'var(--text-primary)',
-				bodyColor: 'var(--text-secondary)',
-				borderColor: 'var(--border)',
+				backgroundColor: c.bgBase,
+				titleColor: c.text,
+				bodyColor: c.textSecondary,
+				borderColor: c.border,
 				borderWidth: 1,
 				padding: 10,
-				cornerRadius: 8,
-				displayColors: false, // Cleaner look without color box
+				cornerRadius: 6,
+				displayColors: false,
 				titleFont: {
-					family: 'Inter, sans-serif',
+					family: SANS_STACK,
 					weight: 600
 				},
 				bodyFont: {
-					family: 'JetBrains Mono, monospace'
+					family: MONO_STACK
 				}
 			}
 		}
@@ -50,39 +87,20 @@ export function createResponsiveConfig(maintainAspectRatio = false) {
 }
 
 /**
- * Get theme colors from CSS custom properties
- * Useful for dynamic color assignment based on current theme
- * @returns Object containing commonly used theme colors
- */
-export function getThemeColors() {
-	const style = getComputedStyle(document.documentElement);
-	return {
-		primary: style.getPropertyValue('--accent').trim(),
-		text: style.getPropertyValue('--text-primary').trim(),
-		textSecondary: style.getPropertyValue('--text-secondary').trim(),
-		textMuted: style.getPropertyValue('--text-muted').trim(),
-		border: style.getPropertyValue('--border').trim(),
-		bgBase: style.getPropertyValue('--bg-base').trim(),
-		bgMuted: style.getPropertyValue('--bg-muted').trim(),
-		bgSubtle: style.getPropertyValue('--bg-subtle').trim()
-	};
-}
-
-/**
- * Create common scale configuration for line charts
- * @returns Scale configuration object for x and y axes
+ * Common scale config for axis-style charts, with resolved colors.
  */
 export function createCommonScaleConfig() {
+	const c = getThemeColors();
 	return {
 		x: {
 			grid: {
-				color: 'rgba(128, 128, 128, 0.1)', // Subtle grid lines works in light and dark
+				color: 'rgba(128, 128, 128, 0.1)',
 				drawOnChartArea: false
 			},
 			ticks: {
-				color: 'var(--text-muted)',
+				color: c.textMuted,
 				font: {
-					family: 'JetBrains Mono, monospace',
+					family: MONO_STACK,
 					size: 10
 				},
 				maxRotation: 0
@@ -92,12 +110,12 @@ export function createCommonScaleConfig() {
 			beginAtZero: true,
 			grace: '20%',
 			grid: {
-				color: 'rgba(128, 128, 128, 0.1)' // Subtle grid lines
+				color: 'rgba(128, 128, 128, 0.1)'
 			},
 			ticks: {
-				color: 'var(--text-muted)',
+				color: c.textMuted,
 				font: {
-					family: 'JetBrains Mono, monospace',
+					family: MONO_STACK,
 					size: 10
 				},
 				precision: 0
@@ -107,52 +125,47 @@ export function createCommonScaleConfig() {
 }
 
 /**
- * Get chart colors from CSS variables (for dynamic theme support)
- * Call this in onMount or use getComputedStyle for live values
+ * Data palette for series colors. Pulled from --data-* tokens when available.
  */
 export function getChartColorPalette(): string[] {
 	if (typeof window === 'undefined') {
-		// SSR fallback
-		return ['#7c3aed', '#3b82f6', '#10b981', '#f59e0b', '#ef4444'];
+		return ['#a87c1e', '#3a5578', '#5a7140', '#a06030', '#8a3a3a'];
 	}
-
 	const style = getComputedStyle(document.documentElement);
+	const read = (name: string, fallback: string) =>
+		style.getPropertyValue(name).trim() || fallback;
 	return [
-		style.getPropertyValue('--data-primary').trim() || '#7c3aed',
-		style.getPropertyValue('--data-secondary').trim() || '#3b82f6',
-		style.getPropertyValue('--data-tertiary').trim() || '#10b981',
-		style.getPropertyValue('--data-quaternary').trim() || '#f59e0b',
-		style.getPropertyValue('--data-quinary').trim() || '#ef4444'
+		read('--data-primary', '#a87c1e'),
+		read('--data-secondary', '#3a5578'),
+		read('--data-tertiary', '#5a7140'),
+		read('--data-quaternary', '#a06030'),
+		read('--data-quinary', '#8a3a3a')
 	];
 }
 
 /**
- * Color palette for charts (legacy export for backwards compatibility)
- * Note: These CSS variables may not work directly with Chart.js
- * Use getChartColorPalette() in onMount for computed values
+ * Larger palette for charts needing many distinct colors.
+ * Kept in sync with the editorial ink palette.
  */
 export const chartColorPalette = [
-	'#7c3aed', // accent (purple)
-	'#3b82f6', // blue
-	'#10b981', // green
-	'#f59e0b', // amber
-	'#ef4444', // red
-	'#ec4899', // pink
-	'#8b5cf6', // violet
-	'#06b6d4', // cyan
-	'#84cc16', // lime
-	'#f97316', // orange
-	'#6366f1', // indigo
-	'#14b8a6', // teal
-	'#a855f7', // purple
-	'#eab308', // yellow
-	'#0ea5e9', // sky
-	'#d946ef' // fuchsia
+	'#a87c1e', // accent amber
+	'#3a5578', // ink blue
+	'#5a7140', // moss
+	'#a06030', // terracotta
+	'#8a3a3a', // oxblood
+	'#63557b', // iris
+	'#3a6868', // verdigris
+	'#7a4868', // aubergine
+	'#475088', // woad
+	'#8a7230', // ochre
+	'#956a30', // burnt amber
+	'#5a5750', // graphite
+	'#d69260', // warm orange (dark-mode dual)
+	'#b19ad1', // pale iris
+	'#7ab5a8', // teal
+	'#d1b76a' // saffron
 ];
 
-/**
- * Get a color from the palette, cycling if index exceeds palette length
- */
 export function getChartColor(index: number): string {
 	return chartColorPalette[index % chartColorPalette.length];
 }

@@ -7,7 +7,7 @@ export async function load({ fetch, url }) {
 	const project = url.searchParams.get('project') || '';
 	const branch = url.searchParams.get('branch') || '';
 	const page = parseInt(url.searchParams.get('page') || '1', 10);
-	const perPage = parseInt(url.searchParams.get('per_page') || '24', 10);
+	const perPage = parseInt(url.searchParams.get('per_page') || '100', 10);
 
 	// Build query params for API
 	const params = new URLSearchParams();

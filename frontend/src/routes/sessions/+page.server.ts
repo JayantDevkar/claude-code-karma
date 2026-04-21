@@ -14,7 +14,7 @@ export async function load({ fetch, url }) {
 	const branch = url.searchParams.get('branch') || undefined;
 
 	const page = parseInt(url.searchParams.get('page') || '1', 10);
-	const perPage = parseInt(url.searchParams.get('per_page') || '50', 10);
+	const perPage = parseInt(url.searchParams.get('per_page') || '500', 10);
 
 	// Additional filter params (kept in URL for shareability)
 	// Search and scope are forwarded to API; status/date/live filters are applied client-side

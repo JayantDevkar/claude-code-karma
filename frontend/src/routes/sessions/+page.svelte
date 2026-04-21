@@ -25,6 +25,10 @@
 	import ActiveFilterChips from '$lib/components/ActiveFilterChips.svelte';
 	import ActiveBranches from '$lib/components/ActiveBranches.svelte';
 	import Pagination from '$lib/components/Pagination.svelte';
+	import Tabs from '$lib/components/ui/Tabs.svelte';
+	import TabsList from '$lib/components/ui/TabsList.svelte';
+	import TabsTrigger from '$lib/components/ui/TabsTrigger.svelte';
+	import TabsContent from '$lib/components/ui/TabsContent.svelte';
 	import { listNavigation } from '$lib/actions/listNavigation';
 	import { keyboardOverrides } from '$lib/stores/keyboardOverrides';
 	import { dropdownNavigation } from '$lib/actions/dropdownNavigation';
@@ -743,6 +747,7 @@
 
 	// Time-based grouping (uses filteredSessions with all client-side filters applied)
 	type DateGroup = {
+		key: string;
 		label: string;
 		sessions: SessionWithContext[];
 	};
@@ -771,14 +776,48 @@
 		}
 
 		const groups: DateGroup[] = [];
-		if (today.length > 0) groups.push({ label: 'Today', sessions: today });
-		if (yesterday.length > 0) groups.push({ label: 'Yesterday', sessions: yesterday });
-		if (thisWeek.length > 0) groups.push({ label: 'This Week', sessions: thisWeek });
-		if (thisMonth.length > 0) groups.push({ label: 'This Month', sessions: thisMonth });
-		if (older.length > 0) groups.push({ label: 'Older', sessions: older });
+		if (today.length > 0) groups.push({ key: 'today', label: 'Today', sessions: today });
+		if (yesterday.length > 0)
+			groups.push({ key: 'yesterday', label: 'Yesterday', sessions: yesterday });
+		if (thisWeek.length > 0)
+			groups.push({ key: 'thisWeek', label: 'This Week', sessions: thisWeek });
+		if (thisMonth.length > 0)
+			groups.push({ key: 'thisMonth', label: 'This Month', sessions: thisMonth });
+		if (older.length > 0) groups.push({ key: 'older', label: 'Older', sessions: older });
 
 		return groups;
 	});
+
+	// Active date tab; defaults to first non-empty bucket, updates when
+	// the current tab becomes empty (e.g., after a search narrows results).
+	let activeDateTab = $state<string>('today');
+
+	$effect(() => {
+		if (groupedByDate.length === 0) return;
+		const current = groupedByDate.find((g) => g.key === activeDateTab);
+		if (!current) {
+			activeDateTab = groupedByDate[0].key;
+		}
+	});
+
+	const activeDateGroup = $derived(
+		groupedByDate.find((g) => g.key === activeDateTab) ?? null
+	);
+
+	// Per-tab client-side pagination. Resets to 1 on tab switch so users
+	// always land on the freshest slice of the new bucket.
+	const TAB_PAGE_SIZE = 30;
+	let activePage = $state(1);
+
+	$effect(() => {
+		// read activeDateTab so the effect re-runs on tab change
+		void activeDateTab;
+		activePage = 1;
+	});
+
+	const activeTotalPages = $derived(
+		activeDateGroup ? Math.ceil(activeDateGroup.sessions.length / TAB_PAGE_SIZE) : 0
+	);
 
 	// Direct API fetch to update session data without goto() + invalidate()
 	// This avoids full SvelteKit page navigation which causes double-rendering
@@ -1423,100 +1462,73 @@
 		</div>
 	{:else if dedupedFilteredSessions.length === 0}
 		<!-- No filtered sessions but have recently ended - don't show message (cards are above) -->
-	{:else if viewMode === 'list'}
-		<!-- List View: Time-Based Grouping -->
-		<div class="space-y-8">
-			{#each groupedByDate as group, index (group.label)}
-				<div>
-					<!-- Section Header -->
-					<div class="flex items-center gap-2 mb-4">
-						<h2
-							class="text-sm font-semibold uppercase tracking-wide text-[var(--text-secondary)]"
-						>
-							{group.label}
-							<span class="text-[var(--text-faint)] font-medium ml-1.5">
-								({group.sessions.length})
-							</span>
-						</h2>
-						<!-- Session count - shown only on first group if Recently Ended is not visible -->
-						{#if index === 0 && !showRecentlyEnded}
-							<span
-								class="ml-auto text-xs text-[var(--text-muted)] font-mono tabular-nums"
-							>
-								{displayFilteredCount} of {displayTotalCount} sessions
-							</span>
-						{/if}
-					</div>
-
-					<!-- Session Cards Grid -->
-					<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-						{#each group.sessions as session (session.uuid)}
-							<GlobalSessionCard {session} highlighted={session.uuid.slice(0, 8) === lastOpenedSessionId} />
-						{/each}
-					</div>
-				</div>
-			{/each}
-		</div>
 	{:else}
-		<!-- Grid View: Compact with Time-Based Grouping -->
-		<div class="space-y-6">
-			{#each groupedByDate as group, index (group.label)}
-				<div>
-					<!-- Section Header -->
-					<div class="flex items-center gap-2 mb-3">
-						<h2
-							class="text-sm font-semibold uppercase tracking-wide text-[var(--text-secondary)]"
-						>
-							{group.label}
-							<span class="text-[var(--text-faint)] font-medium ml-1.5">
-								({group.sessions.length})
-							</span>
-						</h2>
-						<!-- Session count - shown only on first group if Recently Ended is not visible -->
-						{#if index === 0 && !showRecentlyEnded}
-							<span
-								class="ml-auto text-xs text-[var(--text-muted)] font-mono tabular-nums"
-							>
-								{displayFilteredCount} of {displayTotalCount} sessions
-							</span>
-						{/if}
-					</div>
+		<!-- Time-based tabs with list/grid view mode inside -->
+		<Tabs bind:value={activeDateTab}>
+			<div class="flex items-center justify-between mb-4 gap-3 flex-wrap">
+				<TabsList>
+					{#each groupedByDate as group (group.key)}
+						<TabsTrigger value={group.key}>
+							<span>{group.label}</span>
+							<span class="tab-count">{group.sessions.length}</span>
+						</TabsTrigger>
+					{/each}
+				</TabsList>
 
-					<!-- Session Cards Grid (Compact) -->
-					<div
-						class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2"
-					>
-						{#each group.sessions as session (session.uuid)}
-							<GlobalSessionCard
-								{session}
-								compact
-								highlighted={session.uuid.slice(0, 8) === lastOpenedSessionId}
-							/>
-						{/each}
-					</div>
-				</div>
+				{#if !showRecentlyEnded}
+					<span class="text-xs text-[var(--text-muted)] font-mono tabular-nums">
+						{displayFilteredCount} of {displayTotalCount} sessions
+					</span>
+				{/if}
+			</div>
+
+			{#each groupedByDate as group (group.key)}
+				<TabsContent value={group.key}>
+					{@const visible = group.sessions.slice(
+						(activePage - 1) * TAB_PAGE_SIZE,
+						activePage * TAB_PAGE_SIZE
+					)}
+					{#if viewMode === 'list'}
+						<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+							{#each visible as session (session.uuid)}
+								<GlobalSessionCard
+									{session}
+									highlighted={session.uuid.slice(0, 8) === lastOpenedSessionId}
+								/>
+							{/each}
+						</div>
+					{:else}
+						<div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+							{#each visible as session (session.uuid)}
+								<GlobalSessionCard
+									{session}
+									compact
+									highlighted={session.uuid.slice(0, 8) === lastOpenedSessionId}
+								/>
+							{/each}
+						</div>
+					{/if}
+
+					{#if group.sessions.length > TAB_PAGE_SIZE}
+						<Pagination
+							total={group.sessions.length}
+							page={activePage}
+							perPage={TAB_PAGE_SIZE}
+							totalPages={Math.ceil(group.sessions.length / TAB_PAGE_SIZE)}
+							onPageChange={(p) => (activePage = p)}
+							itemLabel="sessions"
+						/>
+					{/if}
+
+					{#if group.key === 'older' && effectiveTotal > dedupedFilteredSessions.length}
+						<p class="mt-6 text-xs text-[var(--text-muted)] tabular-nums">
+							Showing the {dedupedFilteredSessions.length.toLocaleString()} most recent;
+							older entries not displayed.
+						</p>
+					{/if}
+				</TabsContent>
 			{/each}
-		</div>
-	{/if}
-
-	<!-- Pagination / Results Info -->
-	{#if !hasClientSideFilters && !data.error && !isLoading && dedupedFilteredSessions.length > 0}
-		<div class="mt-8">
-			<Pagination
-				total={effectiveTotal}
-				page={currentPage}
-				perPage={data.filters.perPage}
-				{totalPages}
-				onPageChange={goToPage}
-				itemLabel="sessions"
-			/>
-		</div>
-	{:else if hasClientSideFilters && !data.error && !isLoading && dedupedFilteredSessions.length > 0}
-		<div class="mt-8 text-xs text-[var(--text-muted)] tabular-nums">
-			Showing <span class="font-medium text-[var(--text-secondary)]"
-				>{effectiveTotal.toLocaleString()}</span
-			> filtered sessions
-		</div>
+		</Tabs>
 	{/if}
 </div>
 

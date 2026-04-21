@@ -8,6 +8,10 @@
 	import { PlanCard } from '$lib/components/plan';
 	import Pagination from '$lib/components/Pagination.svelte';
 	import TokenSearchInput from '$lib/components/TokenSearchInput.svelte';
+	import Tabs from '$lib/components/ui/Tabs.svelte';
+	import TabsList from '$lib/components/ui/TabsList.svelte';
+	import TabsTrigger from '$lib/components/ui/TabsTrigger.svelte';
+	import TabsContent from '$lib/components/ui/TabsContent.svelte';
 	import { paramToTokens, tokensToParam } from '$lib/search';
 	import { keyboardOverrides } from '$lib/stores/keyboardOverrides';
 	import { API_BASE } from '$lib/config';
@@ -104,7 +108,7 @@
 		if (selectedProject) params.set('project', selectedProject);
 		if (selectedBranch) params.set('branch', selectedBranch);
 		if (currentPage > 1) params.set('page', currentPage.toString());
-		if (perPage !== 24) params.set('per_page', perPage.toString());
+		if (perPage !== 100) params.set('per_page', perPage.toString());
 
 		const newUrl = params.toString() ? `?${params}` : window.location.pathname;
 		try {
@@ -207,6 +211,7 @@
 
 	// Day-based grouping (operates on current page's plans)
 	type DateGroup = {
+		key: string;
 		label: string;
 		plans: PlanWithContext[];
 	};
@@ -235,13 +240,37 @@
 		}
 
 		const groups: DateGroup[] = [];
-		if (today.length > 0) groups.push({ label: 'Today', plans: today });
-		if (yesterday.length > 0) groups.push({ label: 'Yesterday', plans: yesterday });
-		if (thisWeek.length > 0) groups.push({ label: 'This Week', plans: thisWeek });
-		if (thisMonth.length > 0) groups.push({ label: 'This Month', plans: thisMonth });
-		if (older.length > 0) groups.push({ label: 'Older', plans: older });
+		if (today.length > 0) groups.push({ key: 'today', label: 'Today', plans: today });
+		if (yesterday.length > 0)
+			groups.push({ key: 'yesterday', label: 'Yesterday', plans: yesterday });
+		if (thisWeek.length > 0)
+			groups.push({ key: 'thisWeek', label: 'This Week', plans: thisWeek });
+		if (thisMonth.length > 0)
+			groups.push({ key: 'thisMonth', label: 'This Month', plans: thisMonth });
+		if (older.length > 0) groups.push({ key: 'older', label: 'Older', plans: older });
 
 		return groups;
+	});
+
+	// Active date tab; defaults to first non-empty bucket, updates when
+	// the current tab becomes empty (e.g., after a filter narrows results).
+	let activeDateTab = $state<string>('today');
+
+	$effect(() => {
+		if (groupedByDate.length === 0) return;
+		const current = groupedByDate.find((g) => g.key === activeDateTab);
+		if (!current) {
+			activeDateTab = groupedByDate[0].key;
+		}
+	});
+
+	// Per-tab client-side pagination. Resets on tab switch.
+	const TAB_PAGE_SIZE = 30;
+	let activePage = $state(1);
+
+	$effect(() => {
+		void activeDateTab;
+		activePage = 1;
 	});
 
 	// Check if we have any plans
@@ -519,39 +548,51 @@
 				</button>
 			</div>
 		{:else}
-			<!-- Day-based Grouped View -->
-			<div class="space-y-8">
-				{#each groupedByDate as group (group.label)}
-					<div>
-						<!-- Section Header -->
-						<h2
-							class="text-sm font-semibold uppercase tracking-wide text-[var(--text-secondary)] mb-4"
-						>
-							{group.label}
-							<span class="text-[var(--text-faint)] font-medium ml-1.5">
-								({group.plans.length})
-							</span>
-						</h2>
+			<!-- Time-based tabs -->
+			<Tabs bind:value={activeDateTab}>
+				<div class="mb-4">
+					<TabsList>
+						{#each groupedByDate as group (group.key)}
+							<TabsTrigger value={group.key}>
+								<span>{group.label}</span>
+								<span class="tab-count">{group.plans.length}</span>
+							</TabsTrigger>
+						{/each}
+					</TabsList>
+				</div>
 
-						<!-- Plan Cards Grid -->
+				{#each groupedByDate as group (group.key)}
+					<TabsContent value={group.key}>
+						{@const visible = group.plans.slice(
+							(activePage - 1) * TAB_PAGE_SIZE,
+							activePage * TAB_PAGE_SIZE
+						)}
 						<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-							{#each group.plans as plan (plan.slug)}
+							{#each visible as plan (plan.slug)}
 								<PlanCard {plan} />
 							{/each}
 						</div>
-					</div>
-				{/each}
-			</div>
 
-			<!-- Pagination Controls -->
-			<Pagination
-				total={plansResponse.total}
-				page={currentPage}
-				{perPage}
-				totalPages={plansResponse.total_pages}
-				onPageChange={goToPage}
-				itemLabel="plans"
-			/>
+						{#if group.plans.length > TAB_PAGE_SIZE}
+							<Pagination
+								total={group.plans.length}
+								page={activePage}
+								perPage={TAB_PAGE_SIZE}
+								totalPages={Math.ceil(group.plans.length / TAB_PAGE_SIZE)}
+								onPageChange={(p) => (activePage = p)}
+								itemLabel="plans"
+							/>
+						{/if}
+
+						{#if group.key === 'older' && plansResponse.total > plansResponse.plans.length}
+							<p class="mt-6 text-xs text-[var(--text-muted)] tabular-nums">
+								Showing the {plansResponse.plans.length.toLocaleString()} most recent;
+								older entries not displayed.
+							</p>
+						{/if}
+					</TabsContent>
+				{/each}
+			</Tabs>
 		{/if}
 	</div>
 </div>

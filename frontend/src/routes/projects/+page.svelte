@@ -10,6 +10,10 @@
 	import { listNavigation } from '$lib/actions/listNavigation';
 	import SkeletonBox from '$lib/components/skeleton/SkeletonBox.svelte';
 	import SkeletonText from '$lib/components/skeleton/SkeletonText.svelte';
+	import Tabs from '$lib/components/ui/Tabs.svelte';
+	import TabsList from '$lib/components/ui/TabsList.svelte';
+	import TabsTrigger from '$lib/components/ui/TabsTrigger.svelte';
+	import TabsContent from '$lib/components/ui/TabsContent.svelte';
 
 	let { data } = $props();
 	const allProjects = $derived(data.projects as Project[]);
@@ -31,9 +35,24 @@
 		| 'agents-most'
 		| 'agents-least'
 	>('recent');
-	let filterType = $state<'all' | 'git' | 'non-git'>('all');
+	let filterType = $state<'git' | 'non-git'>('git');
 	let showSortDropdown = $state(false);
-	let showFilterDropdown = $state(false);
+
+	// Counts per tab, reflecting the search query but not the active tab —
+	// so the tab labels stay informative while switching.
+	const tabCounts = $derived.by(() => {
+		let pool = allProjects;
+		if (searchQuery.trim()) {
+			const q = searchQuery.toLowerCase();
+			pool = pool.filter(
+				(p) =>
+					getProjectName(p.path).toLowerCase().includes(q) ||
+					p.path.toLowerCase().includes(q)
+			);
+		}
+		const git = pool.filter((p) => !!p.git_root_path).length;
+		return { git, nonGit: pool.length - git };
+	});
 
 	// Group projects by git root
 	const grouped = $derived(groupProjects(allProjects));
@@ -184,14 +203,6 @@
 		return labels[sort];
 	}
 
-	function getFilterLabel(filter: typeof filterType) {
-		const labels = {
-			all: 'All Projects',
-			git: 'Git Only',
-			'non-git': 'Non-Git Only'
-		};
-		return labels[filter];
-	}
 </script>
 
 <div use:listNavigation>
@@ -387,106 +398,51 @@
 			{/if}
 		</div>
 
-		<!-- Filter Dropdown -->
-		<div class="relative">
-			<button
-				onclick={() => {
-					showFilterDropdown = !showFilterDropdown;
-					showSortDropdown = false;
-				}}
-				class="inline-flex items-center gap-2 px-3 h-9 text-xs font-medium bg-[var(--bg-base)] border border-[var(--border)] rounded-[6px] hover:bg-[var(--bg-subtle)] hover:border-[var(--border-hover)] transition-all whitespace-nowrap text-[var(--text-secondary)]"
-			>
-				<span>Filter:</span>
-				<span class="text-[var(--text-primary)]">{getFilterLabel(filterType)}</span>
-				<ChevronDown size={12} strokeWidth={2} class="text-[var(--text-faint)]" />
-			</button>
-			{#if showFilterDropdown}
-				<div
-					class="absolute right-0 mt-1 w-40 bg-[var(--bg-base)] border border-[var(--border)] rounded-lg shadow-[var(--shadow-md)] z-10 py-1"
-				>
-					<button
-						onclick={() => {
-							filterType = 'all';
-							showFilterDropdown = false;
-						}}
-						class="w-full px-4 py-1.5 text-left text-xs font-medium hover:bg-[var(--bg-subtle)] transition-colors {filterType ===
-						'all'
-							? 'text-[var(--text-primary)]'
-							: 'text-[var(--text-secondary)]'}"
-					>
-						All Projects
-					</button>
-					<button
-						onclick={() => {
-							filterType = 'git';
-							showFilterDropdown = false;
-						}}
-						class="w-full px-4 py-1.5 text-left text-xs font-medium hover:bg-[var(--bg-subtle)] transition-colors {filterType ===
-						'git'
-							? 'text-[var(--text-primary)]'
-							: 'text-[var(--text-secondary)]'}"
-					>
-						Git Only
-					</button>
-					<button
-						onclick={() => {
-							filterType = 'non-git';
-							showFilterDropdown = false;
-						}}
-						class="w-full px-4 py-1.5 text-left text-xs font-medium hover:bg-[var(--bg-subtle)] transition-colors {filterType ===
-						'non-git'
-							? 'text-[var(--text-primary)]'
-							: 'text-[var(--text-secondary)]'}"
-					>
-						Non-Git Only
-					</button>
-				</div>
-			{/if}
-		</div>
 	</div>
 
-	<!-- Git Repositories Section -->
-	{#if filteredGrouped.gitRoots.length > 0 || filteredGrouped.singleGitProjects.length > 0}
-		<div class="mb-8">
-			<!-- Section Header -->
-			<div class="flex items-center justify-between mb-4">
-				<h2
-					class="text-sm font-semibold uppercase tracking-wide text-[var(--text-secondary)]"
+	<!-- Tabs: Git / Non-Git -->
+	<Tabs bind:value={filterType} class="mb-4">
+		<div class="flex items-center justify-between mb-4 gap-3 flex-wrap">
+			<TabsList>
+				<TabsTrigger value="git" icon={GitBranch}>
+					<span>Git Repositories</span>
+					<span class="tab-count">{tabCounts.git}</span>
+				</TabsTrigger>
+				<TabsTrigger value="non-git" icon={FolderOpen}>
+					<span>Non-Git</span>
+					<span class="tab-count">{tabCounts.nonGit}</span>
+				</TabsTrigger>
+			</TabsList>
+
+			{#if filterType === 'git' && filteredGrouped.gitRoots.length > 0}
+				<button
+					onclick={toggleExpandAll}
+					class="
+						inline-flex items-center gap-1.5
+						px-3 py-1.5
+						text-xs font-medium
+						text-[var(--text-secondary)]
+						hover:text-[var(--text-primary)]
+						bg-[var(--bg-subtle)]
+						hover:bg-[var(--bg-muted)]
+						border border-[var(--border)]
+						rounded-[6px]
+						transition-colors
+					"
 				>
-					Git Repositories
-					<span class="text-[var(--text-faint)] font-medium ml-1.5">
-						({stats.gitRepoCount})
-					</span>
-				</h2>
+					{#if allExpanded}
+						<ChevronUp size={14} strokeWidth={2} />
+						<span>Collapse All</span>
+					{:else}
+						<ChevronDown size={14} strokeWidth={2} />
+						<span>Expand All</span>
+					{/if}
+				</button>
+			{/if}
+		</div>
 
-				{#if filteredGrouped.gitRoots.length > 0}
-					<button
-						onclick={toggleExpandAll}
-						class="
-							inline-flex items-center gap-1.5
-							px-3 py-1.5
-							text-xs font-medium
-							text-[var(--text-secondary)]
-							hover:text-[var(--text-primary)]
-							bg-[var(--bg-subtle)]
-							hover:bg-[var(--bg-muted)]
-							border border-[var(--border)]
-							rounded-[6px]
-							transition-colors
-						"
-					>
-						{#if allExpanded}
-							<ChevronUp size={14} strokeWidth={2} />
-							<span>Collapse All</span>
-						{:else}
-							<ChevronDown size={14} strokeWidth={2} />
-							<span>Expand All</span>
-						{/if}
-					</button>
-				{/if}
-			</div>
-
-			<!-- Collapsible Git Root Groups -->
+		<!-- Git -->
+		<TabsContent value="git">
 			{#if filteredGrouped.gitRoots.length > 0}
 				<div class="space-y-3 mb-4">
 					{#each filteredGrouped.gitRoots as group (group.rootPath)}
@@ -494,8 +450,6 @@
 					{/each}
 				</div>
 			{/if}
-
-			<!-- Single Git Projects (Flat Grid) -->
 			{#if filteredGrouped.singleGitProjects.length > 0}
 				<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
 					{#each filteredGrouped.singleGitProjects as project (project.encoded_name)}
@@ -503,28 +457,19 @@
 					{/each}
 				</div>
 			{/if}
-		</div>
-	{/if}
+		</TabsContent>
 
-	<!-- Non-Git Projects Section -->
-	{#if filteredGrouped.otherProjects.length > 0}
-		<div>
-			<h2
-				class="text-sm font-semibold uppercase tracking-wide text-[var(--text-secondary)] mb-4"
-			>
-				Non-Git Projects
-				<span class="text-[var(--text-faint)] font-medium ml-1.5">
-					({filteredGrouped.otherProjects.length})
-				</span>
-			</h2>
-
-			<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-				{#each filteredGrouped.otherProjects as project (project.encoded_name)}
-					<ProjectCard {project} variant="default" />
-				{/each}
-			</div>
-		</div>
-	{/if}
+		<!-- Non-Git -->
+		<TabsContent value="non-git">
+			{#if filteredGrouped.otherProjects.length > 0}
+				<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+					{#each filteredGrouped.otherProjects as project (project.encoded_name)}
+						<ProjectCard {project} variant="default" />
+					{/each}
+				</div>
+			{/if}
+		</TabsContent>
+	</Tabs>
 
 	<!-- Empty State -->
 	{#if totalFilteredCount === 0}
@@ -553,7 +498,7 @@
 		const target = e.target as HTMLElement;
 		if (!target.closest('button')) {
 			showSortDropdown = false;
-			showFilterDropdown = false;
 		}
 	}}
 />
+

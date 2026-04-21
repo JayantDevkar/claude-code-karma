@@ -893,3 +893,29 @@ select:focus {
 	color: var(--bg-base);
 	border-color: var(--accent);
 }
+
+/* ============================================
+   TAB COUNT BADGE (shared across tabbed lists)
+   ============================================ */
+
+.tab-count {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 22px;
+	padding: 0 6px;
+	margin-left: 6px;
+	font-family: var(--font-mono);
+	font-size: 10px;
+	font-weight: 500;
+	font-variant-numeric: tabular-nums;
+	color: var(--text-muted);
+	background: var(--bg-muted);
+	border-radius: 999px;
+	line-height: 1.6;
+}
+
+[data-state='active'] .tab-count {
+	color: var(--accent);
+	background: var(--accent-subtle);
+}
