@@ -556,6 +556,12 @@ class SessionTitleCache:
                     if isinstance(summary_text, str) and summary_text:
                         titles.append(summary_text)
 
+                # Capture user-set titles from /title command (newer Claude Code format)
+                if msg_type == "custom-title":
+                    custom_title = data.get("customTitle")
+                    if isinstance(custom_title, str) and custom_title:
+                        titles.append(custom_title)
+
         return titles, slug
 
     # -------------------------------------------------------------------------

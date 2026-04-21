@@ -73,6 +73,7 @@ class CompactionDetector:
         from .message import (
             AssistantMessage,
             CompactBoundaryMessage,
+            CustomTitleMessage,
             SessionTitleMessage,
             UserMessage,
         )
@@ -104,6 +105,11 @@ class CompactionDetector:
                     self.project_context_summaries.append(msg.summary)
                 if msg.leaf_uuid:
                     self.project_context_leaf_uuids.append(msg.leaf_uuid)
+
+        # Handle CustomTitleMessage - user-set titles via /title command
+        if isinstance(msg, CustomTitleMessage):
+            if msg.custom_title:
+                self.session_titles.append(msg.custom_title)
 
         self.message_index += 1
         self.total_message_count += 1

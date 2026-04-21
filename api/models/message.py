@@ -273,6 +273,31 @@ class SessionTitleMessage(BaseModel):
     )
 
 
+class CustomTitleMessage(BaseModel):
+    """
+    User-set session title via Claude Code's /title command.
+
+    Newer JSONL format for user-driven session renames (distinct from the
+    auto-generated SessionTitleMessage `summary` type). These represent user
+    intent — worth surfacing in title search.
+
+    Structure:
+    {
+      "type": "custom-title",
+      "customTitle": "Title text",
+      "sessionId": "uuid"
+    }
+    """
+
+    model_config = ConfigDict(frozen=True, populate_by_name=True)
+
+    type: Literal["custom-title"] = "custom-title"
+    custom_title: str = Field(..., alias="customTitle", description="User-set title text")
+    session_id: Optional[str] = Field(
+        default=None, alias="sessionId", description="Session UUID this title applies to"
+    )
+
+
 class CompactBoundaryMessage(BaseModel):
     """
     Compact boundary message indicating true context compaction.
@@ -450,6 +475,7 @@ Message = Union[
     AssistantMessage,
     FileHistorySnapshot,
     SessionTitleMessage,
+    CustomTitleMessage,
     CompactBoundaryMessage,
     QueueOperationMessage,
     ProgressMessage,
@@ -462,6 +488,7 @@ _MESSAGE_PARSERS: Dict[str, Callable[[Dict[str, Any]], Message]] = {
     "assistant": AssistantMessage.model_validate,
     "file-history-snapshot": FileHistorySnapshot.model_validate,
     "summary": SessionTitleMessage.model_validate,
+    "custom-title": CustomTitleMessage.model_validate,
     "queue-operation": QueueOperationMessage.model_validate,
     "progress": ProgressMessage.model_validate,
 }
