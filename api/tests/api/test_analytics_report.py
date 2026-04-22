@@ -14,9 +14,7 @@ Run from api/:
     pytest tests/api/test_analytics_report.py -v
 """
 
-import json
 import os
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -29,7 +27,6 @@ from routers.analytics_report import (
     _find_report_file,
     _load_all_reports,
     _prune_old_reports,
-    _reports_dir,
     _save_report,
 )
 
