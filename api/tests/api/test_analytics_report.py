@@ -86,9 +86,9 @@ class TestBuildPrompt:
 
     def test_contains_key_stats(self):
         prompt = _build_prompt(SAMPLE_ANALYTICS, "All time")
-        assert "10" in prompt           # total_sessions
-        assert "1.23" in prompt         # estimated_cost_usd
-        assert "45.0%" in prompt        # cache hit rate formatted
+        assert "10" in prompt  # total_sessions
+        assert "1.23" in prompt  # estimated_cost_usd
+        assert "45.0%" in prompt  # cache hit rate formatted
 
     def test_contains_top_tools(self):
         prompt = _build_prompt(SAMPLE_ANALYTICS, "All time")
@@ -122,7 +122,9 @@ class TestBuildPrompt:
 
 class TestDiskHelpers:
     def test_save_and_load_report(self, reports_in_tmp):
-        _save_report("abc12345", "2025-01-15T10:00:00+00:00", "Last week", "Report body.", SAMPLE_ANALYTICS)
+        _save_report(
+            "abc12345", "2025-01-15T10:00:00+00:00", "Last week", "Report body.", SAMPLE_ANALYTICS
+        )
 
         reports = _load_all_reports()
         assert len(reports) == 1
@@ -141,8 +143,12 @@ class TestDiskHelpers:
         assert len(reports[0].preview) == 150
 
     def test_load_returns_most_recent_first(self, reports_in_tmp):
-        _save_report("old00001", "2025-01-10T10:00:00+00:00", "Old", "Old report.", SAMPLE_ANALYTICS)
-        _save_report("new00001", "2025-01-15T10:00:00+00:00", "New", "New report.", SAMPLE_ANALYTICS)
+        _save_report(
+            "old00001", "2025-01-10T10:00:00+00:00", "Old", "Old report.", SAMPLE_ANALYTICS
+        )
+        _save_report(
+            "new00001", "2025-01-15T10:00:00+00:00", "New", "New report.", SAMPLE_ANALYTICS
+        )
 
         # Set explicit mtimes so ordering is deterministic on all filesystems
         old_path = _find_report_file("old00001")
@@ -188,7 +194,9 @@ class TestDiskHelpers:
 
 
 class TestGenerateReportEndpoint:
-    def _mock_claude_success(self, text="## Summary\n\nYou've been productive.\n\n## Suggestions\n- Keep it up."):
+    def _mock_claude_success(
+        self, text="## Summary\n\nYou've been productive.\n\n## Suggestions\n- Keep it up."
+    ):
         mock = MagicMock()
         mock.returncode = 0
         mock.stdout = text
@@ -196,7 +204,9 @@ class TestGenerateReportEndpoint:
         return mock
 
     def test_generate_report_happy_path(self, client, reports_in_tmp):
-        with patch("routers.analytics_report.subprocess.run", return_value=self._mock_claude_success()):
+        with patch(
+            "routers.analytics_report.subprocess.run", return_value=self._mock_claude_success()
+        ):
             resp = client.post(
                 "/analytics/report",
                 json={"filter_label": "Last 7 days", "analytics": SAMPLE_ANALYTICS},
@@ -214,7 +224,9 @@ class TestGenerateReportEndpoint:
         assert _find_report_file(data["id"]) is not None
 
     def test_generate_report_saved_and_listable(self, client, reports_in_tmp):
-        with patch("routers.analytics_report.subprocess.run", return_value=self._mock_claude_success()):
+        with patch(
+            "routers.analytics_report.subprocess.run", return_value=self._mock_claude_success()
+        ):
             gen_resp = client.post(
                 "/analytics/report",
                 json={"filter_label": "All time", "analytics": SAMPLE_ANALYTICS},
@@ -235,7 +247,10 @@ class TestGenerateReportEndpoint:
         assert resp.json()["detail"] == "no_data"
 
     def test_generate_report_claude_not_found_returns_503(self, client, reports_in_tmp):
-        with patch("routers.analytics_report.subprocess.run", side_effect=FileNotFoundError("claude not found")):
+        with patch(
+            "routers.analytics_report.subprocess.run",
+            side_effect=FileNotFoundError("claude not found"),
+        ):
             resp = client.post(
                 "/analytics/report",
                 json={"filter_label": "All time", "analytics": SAMPLE_ANALYTICS},
@@ -245,7 +260,11 @@ class TestGenerateReportEndpoint:
 
     def test_generate_report_timeout_returns_504(self, client, reports_in_tmp):
         import subprocess
-        with patch("routers.analytics_report.subprocess.run", side_effect=subprocess.TimeoutExpired("claude", 45)):
+
+        with patch(
+            "routers.analytics_report.subprocess.run",
+            side_effect=subprocess.TimeoutExpired("claude", 45),
+        ):
             resp = client.post(
                 "/analytics/report",
                 json={"filter_label": "All time", "analytics": SAMPLE_ANALYTICS},

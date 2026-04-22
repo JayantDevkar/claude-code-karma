@@ -167,11 +167,11 @@ Write a concise 3–4 paragraph analytical report in second person ("You've been
 Use **bold** for key numbers. End with a "## Suggestions" section with 2–3 bullet points.
 
 PERIOD: {filter_label}
-Sessions: {analytics.get('total_sessions', 0)} | Cost: ${analytics.get('estimated_cost_usd', 0):.2f} | Cache hit: {analytics.get('cache_hit_rate', 0) * 100:.1f}%
-Tokens: {analytics.get('total_tokens', 0):,} total (in: {analytics.get('total_input_tokens', 0):,} / out: {analytics.get('total_output_tokens', 0):,})
-Duration: {analytics.get('total_duration_seconds', 0) / 3600:.1f}h | Active projects: {analytics.get('projects_active', 0)}
-Peak hours: {peak_str} | Dominant period: {td.get('dominant_period', 'Unknown')}
-Time split: morning {td.get('morning_pct', 0):.0f}% / afternoon {td.get('afternoon_pct', 0):.0f}% / evening {td.get('evening_pct', 0):.0f}% / night {td.get('night_pct', 0):.0f}%
+Sessions: {analytics.get("total_sessions", 0)} | Cost: ${analytics.get("estimated_cost_usd", 0):.2f} | Cache hit: {analytics.get("cache_hit_rate", 0) * 100:.1f}%
+Tokens: {analytics.get("total_tokens", 0):,} total (in: {analytics.get("total_input_tokens", 0):,} / out: {analytics.get("total_output_tokens", 0):,})
+Duration: {analytics.get("total_duration_seconds", 0) / 3600:.1f}h | Active projects: {analytics.get("projects_active", 0)}
+Peak hours: {peak_str} | Dominant period: {td.get("dominant_period", "Unknown")}
+Time split: morning {td.get("morning_pct", 0):.0f}% / afternoon {td.get("afternoon_pct", 0):.0f}% / evening {td.get("evening_pct", 0):.0f}% / night {td.get("night_pct", 0):.0f}%
 Models: {models_str}
 Top tools: {tools_str}
 
@@ -230,7 +230,9 @@ def generate_report(req: GenerateReportRequest) -> ReportFull:
             raise HTTPException(status_code=429, detail="rate_limit")
         if any(kw in stderr_lower for kw in ("auth", "api key", "unauthorized", "credential")):
             raise HTTPException(status_code=503, detail="auth_error")
-        logger.warning("claude subprocess failed (rc=%d): %s", result.returncode, result.stderr[:200])
+        logger.warning(
+            "claude subprocess failed (rc=%d): %s", result.returncode, result.stderr[:200]
+        )
         raise HTTPException(status_code=503, detail="generation_failed")
 
     report_text = result.stdout.strip()
