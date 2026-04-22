@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
 	import { browser } from '$app/environment';
-	import { Activity, Zap, Database, Cpu, FolderOpen, Clock, BarChart3 } from 'lucide-svelte';
+	import { Activity, Zap, Database, Cpu, FolderOpen, Clock, BarChart3, Download, ChevronDown, Sparkles, Trash2, FileText, ChevronRight } from 'lucide-svelte';
 	import { goto } from '$app/navigation';
 	import { page, navigating } from '$app/stores';
 	import SkeletonBox from '$lib/components/skeleton/SkeletonBox.svelte';
@@ -17,8 +17,15 @@
 		analyticsFilterOptions,
 		getTimestampRangeForFilter,
 		isHourBasedFilter,
-		getAnalyticsFilterLabel
+		getAnalyticsFilterLabel,
+		renderMarkdown
 	} from '$lib/utils';
+	import {
+		buildAnalyticsCSV,
+		buildAnalyticsJSON,
+		getExportFilename
+	} from '$lib/utils/analytics-export';
+	import { API_BASE } from '$lib/config';
 
 	// Read filter directly from URL
 	let selectedFilter = $derived.by((): AnalyticsFilterPeriod => {
@@ -78,6 +85,19 @@
 			evening_pct: number;
 			night_pct: number;
 			dominant_period: string;
+		};
+	}
+
+	interface ReportMeta {
+		id: string;
+		created_at: string;
+		filter_label: string;
+		preview: string;
+		stats_snapshot: {
+			total_sessions: number;
+			estimated_cost_usd: number;
+			cache_hit_rate: number;
+			total_tokens: number;
 		};
 	}
 
@@ -285,6 +305,135 @@
 		expandedGroups = new Set(expandedGroups);
 	}
 
+	// --- Export ---
+	let exportMenuOpen = $state(false);
+	let exportDropdownRef = $state<HTMLDivElement | undefined>(undefined);
+
+	// Click-outside to close export menu
+	$effect(() => {
+		if (!exportMenuOpen) return;
+		const handler = (e: MouseEvent) => {
+			if (exportDropdownRef && !exportDropdownRef.contains(e.target as Node)) {
+				exportMenuOpen = false;
+			}
+		};
+		document.addEventListener('click', handler);
+		return () => document.removeEventListener('click', handler);
+	});
+
+	function triggerDownload(content: string, filename: string, mimeType: string) {
+		const blob = new Blob([content], { type: mimeType });
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement('a');
+		a.href = url;
+		a.download = filename;
+		a.click();
+		URL.revokeObjectURL(url);
+	}
+
+	function exportCSV() {
+		const label = getAnalyticsFilterLabel(selectedFilter);
+		triggerDownload(
+			buildAnalyticsCSV(analytics, label),
+			getExportFilename(label, 'csv'),
+			'text/csv;charset=utf-8;'
+		);
+		exportMenuOpen = false;
+	}
+
+	function exportJSON() {
+		const label = getAnalyticsFilterLabel(selectedFilter);
+		triggerDownload(
+			buildAnalyticsJSON(analytics, label),
+			getExportFilename(label, 'json'),
+			'application/json'
+		);
+		exportMenuOpen = false;
+	}
+
+	// --- Reports ---
+	// svelte-ignore state_referenced_locally
+	let reports = $state<ReportMeta[]>((data.reports as ReportMeta[]) ?? []);
+	let generating = $state(false);
+	let generateError = $state<string | null>(null);
+	let openReportId = $state<string | null>(null);
+	let reportHtml = $state<Record<string, string>>({});
+	let reportsGroupOpen = $state(false);
+	let visibleReportCount = $state(5);
+
+	const REPORT_ERRORS: Record<string, string> = {
+		no_data: 'No analytics data available for this period.',
+		claude_not_found: 'Claude CLI not found — make sure Claude Code is installed.',
+		rate_limit: 'Usage limit reached — try again later.',
+		timeout: 'Report timed out — try again.',
+		auth_error: 'Claude authentication failed — check your Claude login.',
+		generation_failed: 'Report generation failed.'
+	};
+
+	async function generateReport() {
+		generating = true;
+		generateError = null;
+		try {
+			const res = await fetch(`${API_BASE}/analytics/report`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ filter_label: getAnalyticsFilterLabel(selectedFilter), analytics })
+			});
+			const json = await res.json();
+			if (!res.ok) {
+				generateError = REPORT_ERRORS[json.detail] ?? REPORT_ERRORS.generation_failed;
+				return;
+			}
+			reportHtml[json.id] = await renderMarkdown(json.report);
+			reports = [json, ...reports];
+			openReportId = json.id;
+			reportsGroupOpen = true;
+			await tick();
+			document.getElementById('reports-section')?.scrollIntoView({ behavior: 'smooth' });
+		} catch {
+			generateError = 'Network error — is the API running?';
+		} finally {
+			generating = false;
+		}
+	}
+
+	async function toggleReport(id: string) {
+		if (openReportId === id) {
+			openReportId = null;
+			return;
+		}
+		openReportId = id;
+		if (reportHtml[id]) return;
+		try {
+			const res = await fetch(`${API_BASE}/analytics/report/${id}`);
+			if (res.ok) {
+				const full = await res.json();
+				reportHtml[id] = await renderMarkdown(full.report);
+			}
+		} catch {
+			// show preview as fallback
+		}
+	}
+
+	async function deleteReport(id: string) {
+		await fetch(`${API_BASE}/analytics/report/${id}`, { method: 'DELETE' }).catch(() => {});
+		reports = reports.filter((r) => r.id !== id);
+		if (openReportId === id) openReportId = null;
+	}
+
+	// Reactive img src for print — Svelte renders the <img> before window.print() fires
+	let printChartSrc = $state('');
+
+	async function printPage() {
+		exportMenuOpen = false;
+		if (chartInstance) {
+			printChartSrc = chartInstance.toBase64Image('image/png', 1);
+			await tick(); // flush DOM so <img> is painted before print snapshot
+		}
+		window.print();
+		window.addEventListener('afterprint', () => { printChartSrc = ''; }, { once: true });
+	}
+
 	// Chart
 	// svelte-ignore non_reactive_update: chartCanvas is only bound once during mount
 	let chartCanvas: HTMLCanvasElement;
@@ -444,7 +593,73 @@
 		subtitle="Your coding patterns and AI collaboration"
 	>
 		{#snippet headerRight()}
-			<TimeFilterDropdown {selectedFilter} onFilterChange={handleFilterChange} />
+			<div class="flex items-center gap-2">
+				<TimeFilterDropdown {selectedFilter} onFilterChange={handleFilterChange} />
+
+				<!-- Generate Report button -->
+				<button
+					type="button"
+					class="flex items-center gap-2 px-3 py-2 bg-[var(--bg-muted)] hover:bg-[var(--bg-base)] rounded-lg border border-[var(--border)] text-sm font-medium text-[var(--text-primary)] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+					onclick={generateReport}
+					disabled={generating || analytics.total_sessions === 0}
+					title="Generate an AI-powered analytics report using Claude Haiku"
+				>
+					{#if generating}
+						<div class="w-3.5 h-3.5 border-2 border-[var(--text-muted)] border-t-transparent rounded-full animate-spin"></div>
+						<span>Generating…</span>
+					{:else}
+						<Sparkles size={14} class="text-[var(--text-muted)]" />
+						<span>Report</span>
+					{/if}
+				</button>
+
+				<!-- Export dropdown -->
+				<div class="relative" bind:this={exportDropdownRef}>
+					<button
+						type="button"
+						class="flex items-center gap-2 px-3 py-2 bg-[var(--bg-muted)] hover:bg-[var(--bg-base)] rounded-lg border border-[var(--border)] text-sm font-medium text-[var(--text-primary)] transition-all"
+						onclick={() => (exportMenuOpen = !exportMenuOpen)}
+					>
+						<Download size={14} class="text-[var(--text-muted)]" />
+						<span>Export</span>
+						<ChevronDown
+							size={14}
+							class="text-[var(--text-muted)] transition-transform {exportMenuOpen ? 'rotate-180' : ''}"
+						/>
+					</button>
+
+					{#if exportMenuOpen}
+						<div
+							class="absolute right-0 top-full mt-1 w-48 bg-[var(--bg-base)] border border-[var(--border)] rounded-lg shadow-lg z-50 py-1 overflow-hidden"
+						>
+							<button
+								type="button"
+								class="w-full flex items-center justify-between px-3 py-2 text-sm text-left hover:bg-[var(--bg-muted)] transition-colors text-[var(--text-secondary)]"
+								onclick={exportCSV}
+							>
+								<span>CSV</span>
+								<span class="text-[11px] text-[var(--text-muted)]">spreadsheet</span>
+							</button>
+							<button
+								type="button"
+								class="w-full flex items-center justify-between px-3 py-2 text-sm text-left hover:bg-[var(--bg-muted)] transition-colors text-[var(--text-secondary)]"
+								onclick={exportJSON}
+							>
+								<span>JSON</span>
+								<span class="text-[11px] text-[var(--text-muted)]">raw data</span>
+							</button>
+							<button
+								type="button"
+								class="w-full flex items-center justify-between px-3 py-2 text-sm text-left hover:bg-[var(--bg-muted)] transition-colors text-[var(--text-secondary)]"
+								onclick={printPage}
+							>
+								<span>Print / PDF</span>
+								<span class="text-[11px] text-[var(--text-muted)]">full page</span>
+							</button>
+						</div>
+					{/if}
+				</div>
+			</div>
 		{/snippet}
 	</PageHeader>
 
@@ -508,7 +723,10 @@
 
 			<!-- Bar chart -->
 			<div class="h-40 w-full">
-				<canvas bind:this={chartCanvas}></canvas>
+				<canvas bind:this={chartCanvas} class="print:hidden"></canvas>
+				{#if printChartSrc}
+					<img src={printChartSrc} alt="Sessions chart" class="hidden print:block w-full h-full object-fill" />
+				{/if}
 			</div>
 		</div>
 	</CollapsibleGroup>
@@ -733,5 +951,118 @@
 			</div>
 		</div>
 	</CollapsibleGroup>
+
+	<!-- Group 4: Reports History -->
+	<div id="reports-section">
+		<CollapsibleGroup
+			title="Reports"
+			open={reportsGroupOpen}
+			onOpenChange={(v) => (reportsGroupOpen = v)}
+		>
+			{#snippet icon()}
+				<div class="p-1.5 bg-[var(--bg-subtle)] rounded-md">
+					<FileText size={14} class="text-[var(--text-muted)]" />
+				</div>
+			{/snippet}
+			{#snippet metadata()}
+				<span class="text-xs text-[var(--text-muted)]">{reports.length} saved</span>
+			{/snippet}
+
+			{#if generateError}
+				<div class="mb-3 px-3 py-2 bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900 rounded-md text-xs text-red-600 dark:text-red-400">
+					{generateError}
+				</div>
+			{/if}
+
+			{#if reports.length === 0}
+				<div class="py-8 text-center text-sm text-[var(--text-muted)]">
+					No reports yet — click <strong class="text-[var(--text-secondary)]">Report</strong> above to generate one.
+				</div>
+			{:else}
+				<div class="space-y-2">
+					{#each reports.slice(0, visibleReportCount) as report (report.id)}
+						<div class="border border-[var(--border)] rounded-lg overflow-hidden">
+							<!-- Header row -->
+							<button
+								type="button"
+								class="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-[var(--bg-subtle)] transition-colors"
+								onclick={() => toggleReport(report.id)}
+							>
+								<ChevronRight
+									size={14}
+									class="text-[var(--text-muted)] transition-transform shrink-0 {openReportId === report.id ? 'rotate-90' : ''}"
+								/>
+								<div class="flex-1 min-w-0">
+									<div class="flex items-center gap-2 mb-0.5">
+										<span class="text-xs font-medium text-[var(--text-primary)]">{report.filter_label}</span>
+										<span class="text-[10px] text-[var(--text-muted)]">·</span>
+										<span class="text-[10px] text-[var(--text-muted)]">
+											{new Date(report.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+										</span>
+									</div>
+									<div class="flex items-center gap-3 text-[10px] text-[var(--text-muted)] font-mono">
+										<span>{report.stats_snapshot.total_sessions} sessions</span>
+										<span>·</span>
+										<span>${report.stats_snapshot.estimated_cost_usd.toFixed(2)}</span>
+										<span>·</span>
+										<span>{(report.stats_snapshot.cache_hit_rate * 100).toFixed(0)}% cache</span>
+									</div>
+								</div>
+								<div
+									class="p-1.5 rounded hover:bg-[var(--bg-muted)] text-[var(--text-muted)] hover:text-red-500 transition-colors shrink-0"
+									onclick={(e) => { e.stopPropagation(); deleteReport(report.id); }}
+									onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); deleteReport(report.id); } }}
+									title="Delete report"
+									role="button"
+									tabindex="0"
+								>
+									<Trash2 size={13} />
+								</div>
+							</button>
+
+							<!-- Expanded body -->
+							{#if openReportId === report.id}
+								<div class="border-t border-[var(--border)] px-5 py-4">
+									{#if reportHtml[report.id]}
+										<div class="text-sm text-[var(--text-secondary)] leading-relaxed
+											[&_h2]:text-[var(--text-primary)] [&_h2]:text-sm [&_h2]:font-semibold [&_h2]:mt-4 [&_h2]:mb-2 [&_h2]:first:mt-0
+											[&_strong]:text-[var(--text-primary)]
+											[&_ul]:mt-2 [&_ul]:space-y-1 [&_li]:text-sm
+											[&_p]:mb-3 [&_p:last-child]:mb-0">
+											{@html reportHtml[report.id]}
+										</div>
+									{:else}
+										<div class="flex items-center gap-2 text-xs text-[var(--text-muted)]">
+											<div class="w-3 h-3 border-2 border-[var(--text-muted)] border-t-transparent rounded-full animate-spin"></div>
+											Loading…
+										</div>
+									{/if}
+								</div>
+							{/if}
+						</div>
+					{/each}
+				{#if reports.length > visibleReportCount}
+					<button
+						type="button"
+						class="w-full mt-2 py-2 text-xs text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors"
+						onclick={() => (visibleReportCount += 10)}
+					>
+						Show {Math.min(10, reports.length - visibleReportCount)} more…
+					</button>
+				{/if}
+			</div>
+		{/if}
+		</CollapsibleGroup>
+	</div>
 	{/if}
 </div>
+
+<style>
+	/* Force background colors to print — Chrome omits them by default */
+	@media print {
+		* {
+			-webkit-print-color-adjust: exact !important;
+			print-color-adjust: exact !important;
+		}
+	}
+</style>

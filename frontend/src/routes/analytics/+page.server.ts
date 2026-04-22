@@ -16,12 +16,20 @@ export const load: PageServerLoad = async ({ fetch, url }) => {
 
 	const apiUrl = params.toString() ? `${API_BASE}/analytics?${params}` : `${API_BASE}/analytics`;
 
-	const result = await safeFetch<Record<string, unknown>>(fetch, apiUrl);
+	// Fetch analytics and reports in parallel
+	const [analyticsResult, reportsResult] = await Promise.all([
+		safeFetch<Record<string, unknown>>(fetch, apiUrl),
+		safeFetch<unknown[]>(fetch, `${API_BASE}/analytics/report`),
+	]);
 
-	if (!result.ok) {
-		console.error('Failed to fetch analytics:', result.message);
-		return { analytics: null, error: result.message };
+	if (!analyticsResult.ok) {
+		console.error('Failed to fetch analytics:', analyticsResult.message);
+		return { analytics: null, reports: [], error: analyticsResult.message };
 	}
 
-	return { analytics: result.data, error: null };
+	return {
+		analytics: analyticsResult.data,
+		reports: reportsResult.ok ? (reportsResult.data ?? []) : [],
+		error: null
+	};
 };
