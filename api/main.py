@@ -93,6 +93,23 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning(f"SQLite indexing failed to start (non-critical): {e}")
 
+    # Start agent-coord rooms periodic sync (safety net; primary trigger
+    # is claude-communicate's UserPromptSubmit hook calling sync_rooms())
+    room_sync_task = None
+    if settings.use_sqlite and settings.reindex_interval_seconds > 0:
+        try:
+            from db.sync_rooms import run_periodic_room_sync
+
+            room_sync_task = asyncio.create_task(
+                run_periodic_room_sync(settings.reindex_interval_seconds)
+            )
+            logger.info(
+                "Periodic room sync scheduled every %ds",
+                settings.reindex_interval_seconds,
+            )
+        except Exception as e:
+            logger.warning(f"Room sync failed to start (non-critical): {e}")
+
     # Start live session reconciler
     reconciler_task = None
     if settings.reconciler_enabled:
@@ -120,6 +137,10 @@ async def lifespan(app: FastAPI):
     if periodic_task is not None:
         periodic_task.cancel()
         logger.info("Periodic reindex task cancelled")
+
+    if room_sync_task is not None:
+        room_sync_task.cancel()
+        logger.info("Periodic room sync task cancelled")
 
     if settings.use_sqlite:
         try:
