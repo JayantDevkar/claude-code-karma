@@ -560,6 +560,11 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             # Nudge mtime to force re-index of all sessions
             conn.execute("UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1")
 
+        # TODO(post-sync-merge): renumber this migration block if sync v2/v3/v4
+        # land on main first. Current main is v10; sync branches reach v22;
+        # this block is v11 against main. When sync merges, whoever merges
+        # second renumbers to the next available version and updates
+        # SCHEMA_VERSION accordingly. See PR #67 / #65 for context.
         if current_version < 11:
             logger.info(
                 "Migrating → v11: agent-coord substrate "
