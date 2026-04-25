@@ -10,7 +10,7 @@ import sqlite3
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 11
 
 SCHEMA_SQL = """
 -- Schema versioning
@@ -214,6 +214,140 @@ CREATE TABLE IF NOT EXISTS projects (
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_slug ON projects(slug);
+
+-- ============================================================================
+-- agent-coord (v11): rooms, presence, messages, citations, decisions
+-- ============================================================================
+-- A room is a per-ticket coordination space. id is the external ticket id
+-- (e.g. Linear "LIN-4821" or GitHub "owner/repo#N").
+CREATE TABLE IF NOT EXISTS room (
+    id TEXT PRIMARY KEY,
+    title TEXT,
+    status TEXT NOT NULL DEFAULT 'active',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    closed_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_room_status ON room(status, created_at DESC);
+
+-- Roster of agents present in a room.
+-- agent_id format: "{repo}:{branch}" for Claude sessions; literal "human"
+-- for the director (synthetic row inserted by the trigger below).
+-- repo / branch / session_uuid are NULL for the human row.
+CREATE TABLE IF NOT EXISTS agent_presence (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    room_id TEXT NOT NULL,
+    agent_id TEXT NOT NULL,
+    repo TEXT,
+    branch TEXT,
+    session_uuid TEXT,
+    is_human INTEGER NOT NULL DEFAULT 0,
+    joined_at TEXT NOT NULL DEFAULT (datetime('now')),
+    joined_at_commit TEXT,
+    last_seen_at_commit TEXT,
+    left_at TEXT,
+    UNIQUE(room_id, agent_id),
+    FOREIGN KEY (room_id) REFERENCES room(id) ON DELETE CASCADE,
+    FOREIGN KEY (session_uuid) REFERENCES sessions(uuid) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_agent_presence_session ON agent_presence(session_uuid);
+
+-- Synthesize the @human roster row on every room creation so consumers
+-- can `SELECT * FROM agent_presence WHERE room_id = ?` without a UNION.
+-- INSERT OR IGNORE makes it crash-safe (re-running on existing rooms is a no-op).
+CREATE TRIGGER IF NOT EXISTS room_insert_human_presence
+AFTER INSERT ON room
+BEGIN
+    INSERT OR IGNORE INTO agent_presence (
+        room_id, agent_id, repo, branch, session_uuid,
+        is_human, joined_at
+    ) VALUES (
+        NEW.id, 'human', NULL, NULL, NULL,
+        1, datetime('now')
+    );
+END;
+
+-- Append-only message log within a room.
+-- id is a UUID v7 minted at JSONL append; doubles as the idempotency key
+-- for INSERT OR IGNORE replay (sync_rooms()).
+-- body is plain prose for type IN ('question','answer','handoff','skip')
+-- and JSON-encoded for type IN ('decision','status') — readers can use
+-- json_extract() as needed.
+CREATE TABLE IF NOT EXISTS message (
+    id TEXT PRIMARY KEY,
+    room_id TEXT NOT NULL,
+    thread_id TEXT,
+    in_reply_to TEXT,
+    from_agent_id TEXT NOT NULL,
+    to_agents TEXT NOT NULL DEFAULT '[]',
+    mentions_attempted TEXT,
+    type TEXT NOT NULL,
+    body TEXT NOT NULL,
+    confidence TEXT,
+    schema_version INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (room_id) REFERENCES room(id) ON DELETE CASCADE,
+    FOREIGN KEY (in_reply_to) REFERENCES message(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_message_room_time ON message(room_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_message_in_reply_to ON message(in_reply_to);
+CREATE INDEX IF NOT EXISTS idx_message_thread ON message(thread_id);
+
+-- Citations attached to messages. urn is a coderoots URN.
+-- UNIQUE(message_id, urn) makes re-ingest idempotent.
+CREATE TABLE IF NOT EXISTS citation (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    message_id TEXT NOT NULL,
+    urn TEXT NOT NULL,
+    node_kind TEXT,
+    resolved_at_commit TEXT,
+    retrieved_via TEXT,
+    UNIQUE(message_id, urn),
+    FOREIGN KEY (message_id) REFERENCES message(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_citation_urn ON citation(urn);
+
+-- A pinned answer ("decision") within a room.
+-- id == the originating decision message's UUID v7 (FK to message.id).
+-- Atomic message+decision INSERT in sync_rooms() relies on this 1:1.
+-- mirror_state drives the external-system reconciler:
+--   pending → reconciler picks up; synced → external_ref_* populated;
+--   failed → mirror_last_error explains.
+-- external_system is enum-ish (linear/github/jira/...); MVP ships linear.
+-- MVP has no DELETE path (messages are append-only; decisions invalidate
+-- via status='invalidated' + superseded_by, never via row deletion). FK
+-- behaviors below are defensive — they encode the right semantics if
+-- anyone ever adds a delete path.
+CREATE TABLE IF NOT EXISTS decision (
+    id TEXT PRIMARY KEY,
+    room_id TEXT NOT NULL,
+    question_id TEXT NOT NULL,
+    answer_id TEXT NOT NULL,
+    body TEXT,
+    made_by TEXT,
+    confidence TEXT,
+    valid_from TEXT NOT NULL DEFAULT (datetime('now')),
+    valid_until TEXT,
+    superseded_by TEXT,
+    status TEXT NOT NULL DEFAULT 'active',
+    mirror_state TEXT NOT NULL DEFAULT 'pending',
+    mirror_attempts INTEGER NOT NULL DEFAULT 0,
+    mirror_last_error TEXT,
+    external_system TEXT NOT NULL DEFAULT 'linear',
+    external_ref_id TEXT,
+    external_ref_url TEXT,
+    FOREIGN KEY (id) REFERENCES message(id) ON DELETE CASCADE,
+    FOREIGN KEY (room_id) REFERENCES room(id) ON DELETE CASCADE,
+    FOREIGN KEY (question_id) REFERENCES message(id) ON DELETE RESTRICT,
+    FOREIGN KEY (answer_id) REFERENCES message(id) ON DELETE RESTRICT,
+    FOREIGN KEY (superseded_by) REFERENCES decision(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_decision_room_status ON decision(room_id, status);
+CREATE INDEX IF NOT EXISTS idx_decision_mirror_state ON decision(mirror_state);
 """
 
 
@@ -425,6 +559,121 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             conn.execute("DELETE FROM subagent_commands")
             # Nudge mtime to force re-index of all sessions
             conn.execute("UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1")
+
+        # TODO(post-sync-merge): renumber this migration block if sync v2/v3/v4
+        # land on main first. Current main is v10; sync branches reach v22;
+        # this block is v11 against main. When sync merges, whoever merges
+        # second renumbers to the next available version and updates
+        # SCHEMA_VERSION accordingly. See PR #67 / #65 for context.
+        if current_version < 11:
+            logger.info(
+                "Migrating → v11: agent-coord substrate "
+                "(room, agent_presence, message, citation, decision)"
+            )
+            conn.executescript("""
+                CREATE TABLE IF NOT EXISTS room (
+                    id TEXT PRIMARY KEY,
+                    title TEXT,
+                    status TEXT NOT NULL DEFAULT 'active',
+                    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    closed_at TEXT
+                );
+                CREATE INDEX IF NOT EXISTS idx_room_status ON room(status, created_at DESC);
+
+                CREATE TABLE IF NOT EXISTS agent_presence (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    room_id TEXT NOT NULL,
+                    agent_id TEXT NOT NULL,
+                    repo TEXT,
+                    branch TEXT,
+                    session_uuid TEXT,
+                    is_human INTEGER NOT NULL DEFAULT 0,
+                    joined_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    joined_at_commit TEXT,
+                    last_seen_at_commit TEXT,
+                    left_at TEXT,
+                    UNIQUE(room_id, agent_id),
+                    FOREIGN KEY (room_id) REFERENCES room(id) ON DELETE CASCADE,
+                    FOREIGN KEY (session_uuid) REFERENCES sessions(uuid) ON DELETE SET NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_agent_presence_session
+                    ON agent_presence(session_uuid);
+
+                CREATE TRIGGER IF NOT EXISTS room_insert_human_presence
+                AFTER INSERT ON room
+                BEGIN
+                    INSERT OR IGNORE INTO agent_presence (
+                        room_id, agent_id, repo, branch, session_uuid,
+                        is_human, joined_at
+                    ) VALUES (
+                        NEW.id, 'human', NULL, NULL, NULL,
+                        1, datetime('now')
+                    );
+                END;
+
+                CREATE TABLE IF NOT EXISTS message (
+                    id TEXT PRIMARY KEY,
+                    room_id TEXT NOT NULL,
+                    thread_id TEXT,
+                    in_reply_to TEXT,
+                    from_agent_id TEXT NOT NULL,
+                    to_agents TEXT NOT NULL DEFAULT '[]',
+                    mentions_attempted TEXT,
+                    type TEXT NOT NULL,
+                    body TEXT NOT NULL,
+                    confidence TEXT,
+                    schema_version INTEGER NOT NULL DEFAULT 1,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY (room_id) REFERENCES room(id) ON DELETE CASCADE,
+                    FOREIGN KEY (in_reply_to) REFERENCES message(id) ON DELETE SET NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_message_room_time
+                    ON message(room_id, created_at);
+                CREATE INDEX IF NOT EXISTS idx_message_in_reply_to
+                    ON message(in_reply_to);
+                CREATE INDEX IF NOT EXISTS idx_message_thread ON message(thread_id);
+
+                CREATE TABLE IF NOT EXISTS citation (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    message_id TEXT NOT NULL,
+                    urn TEXT NOT NULL,
+                    node_kind TEXT,
+                    resolved_at_commit TEXT,
+                    retrieved_via TEXT,
+                    UNIQUE(message_id, urn),
+                    FOREIGN KEY (message_id) REFERENCES message(id) ON DELETE CASCADE
+                );
+                CREATE INDEX IF NOT EXISTS idx_citation_urn ON citation(urn);
+
+                CREATE TABLE IF NOT EXISTS decision (
+                    id TEXT PRIMARY KEY,
+                    room_id TEXT NOT NULL,
+                    question_id TEXT NOT NULL,
+                    answer_id TEXT NOT NULL,
+                    body TEXT,
+                    made_by TEXT,
+                    confidence TEXT,
+                    valid_from TEXT NOT NULL DEFAULT (datetime('now')),
+                    valid_until TEXT,
+                    superseded_by TEXT,
+                    status TEXT NOT NULL DEFAULT 'active',
+                    mirror_state TEXT NOT NULL DEFAULT 'pending',
+                    mirror_attempts INTEGER NOT NULL DEFAULT 0,
+                    mirror_last_error TEXT,
+                    external_system TEXT NOT NULL DEFAULT 'linear',
+                    external_ref_id TEXT,
+                    external_ref_url TEXT,
+                    FOREIGN KEY (id) REFERENCES message(id) ON DELETE CASCADE,
+                    FOREIGN KEY (room_id) REFERENCES room(id) ON DELETE CASCADE,
+                    FOREIGN KEY (question_id) REFERENCES message(id) ON DELETE RESTRICT,
+                    FOREIGN KEY (answer_id) REFERENCES message(id) ON DELETE RESTRICT,
+                    FOREIGN KEY (superseded_by) REFERENCES decision(id) ON DELETE SET NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_decision_room_status
+                    ON decision(room_id, status);
+                CREATE INDEX IF NOT EXISTS idx_decision_mirror_state
+                    ON decision(mirror_state);
+            """)
 
     # Record version
     conn.execute(
