@@ -1719,3 +1719,108 @@ export interface HookScriptDetail {
 	line_count: number | null;
 	error: string | null;
 }
+
+// ============================================
+// Agent-coord Rooms (v11 schema; #65 / PR #67–#69)
+// ============================================
+
+export type RoomStatus = 'active' | 'archived';
+export type RoomMessageType =
+	| 'question'
+	| 'answer'
+	| 'decision'
+	| 'status'
+	| 'handoff'
+	| 'skip';
+export type Confidence = 'high' | 'medium' | 'low' | 'unsure';
+export type DecisionStatus = 'active' | 'needs_reverify' | 'invalidated';
+export type MirrorState = 'pending' | 'synced' | 'failed';
+
+export interface RoomSummary {
+	id: string;
+	title: string | null;
+	status: RoomStatus;
+	created_at: string;
+	closed_at: string | null;
+	last_activity: string;
+	agent_count: number;
+	message_count: number;
+	decision_count: number;
+}
+
+export interface RoomListResponse {
+	rooms: RoomSummary[];
+	total: number;
+}
+
+export interface AgentPresence {
+	agent_id: string;
+	repo: string | null;
+	branch: string | null;
+	session_uuid: string | null;
+	is_human: boolean;
+	joined_at: string;
+	joined_at_commit: string | null;
+	last_seen_at_commit: string | null;
+	left_at: string | null;
+}
+
+export interface RoomCitation {
+	urn: string;
+	node_kind: string | null;
+	resolved_at_commit: string | null;
+	retrieved_via: string | null;
+}
+
+export interface RoomMessage {
+	id: string;
+	room_id: string;
+	thread_id: string | null;
+	in_reply_to: string | null;
+	from_agent_id: string;
+	to_agents: string[];
+	mentions_attempted: string[] | null;
+	type: RoomMessageType;
+	body: string;
+	confidence: Confidence | null;
+	schema_version: number;
+	created_at: string;
+	citations: RoomCitation[];
+}
+
+export interface Decision {
+	id: string;
+	room_id: string;
+	question_id: string;
+	answer_id: string;
+	body: string | null;
+	made_by: string | null;
+	confidence: Confidence | null;
+	valid_from: string;
+	valid_until: string | null;
+	superseded_by: string | null;
+	status: DecisionStatus;
+	mirror_state: MirrorState;
+	mirror_attempts: number;
+	mirror_last_error: string | null;
+	external_system: string;
+	external_ref_id: string | null;
+	external_ref_url: string | null;
+}
+
+export interface RoomDetail {
+	room: RoomSummary;
+	presence: AgentPresence[];
+	decisions: Decision[];
+	messages: RoomMessage[];
+	messages_total: number;
+	messages_inlined: number;
+}
+
+export interface RoomMessagesResponse {
+	messages: RoomMessage[];
+	total: number;
+	page: number;
+	per_page: number;
+	order: 'asc' | 'desc';
+}

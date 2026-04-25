@@ -2188,3 +2188,313 @@ class TestMessageUuidQuery:
             result = query_session_by_message_uuid(mem_db, f"msg-{i}")
             assert result is not None
             assert result["session_uuid"] == "session-1"
+
+
+class TestRoomsSchemaV11:
+    """v10 → v11: agent-coord substrate (room, agent_presence, message, citation, decision)."""
+
+    V11_TABLES = {"room", "agent_presence", "message", "citation", "decision"}
+
+    def test_schema_version_is_11(self, mem_db):
+        version = mem_db.execute("SELECT MAX(version) FROM schema_version").fetchone()[0]
+        assert version == 11
+        assert SCHEMA_VERSION == 11
+
+    def test_all_v11_tables_exist(self, mem_db):
+        tables = {
+            r[0]
+            for r in mem_db.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            ).fetchall()
+        }
+        assert self.V11_TABLES.issubset(tables), (
+            f"missing v11 tables: {self.V11_TABLES - tables}"
+        )
+
+    def test_v11_indexes_exist(self, mem_db):
+        indexes = {
+            r[0]
+            for r in mem_db.execute(
+                "SELECT name FROM sqlite_master WHERE type='index' AND name LIKE 'idx_%'"
+            ).fetchall()
+        }
+        for idx in (
+            "idx_room_status",
+            "idx_agent_presence_session",
+            "idx_message_room_time",
+            "idx_message_in_reply_to",
+            "idx_message_thread",
+            "idx_citation_urn",
+            "idx_decision_room_status",
+            "idx_decision_mirror_state",
+        ):
+            assert idx in indexes, f"missing index {idx}"
+
+    def test_room_insert_synthesizes_human_presence(self, mem_db):
+        """The trigger must insert an @human row on every new room."""
+        mem_db.execute(
+            "INSERT INTO room (id, title) VALUES ('LIN-4821', 'Daily user metrics DAG')"
+        )
+        mem_db.commit()
+
+        rows = mem_db.execute(
+            "SELECT agent_id, repo, branch, session_uuid, is_human "
+            "FROM agent_presence WHERE room_id = ?",
+            ("LIN-4821",),
+        ).fetchall()
+        assert len(rows) == 1
+        row = rows[0]
+        assert row["agent_id"] == "human"
+        assert row["repo"] is None
+        assert row["branch"] is None
+        assert row["session_uuid"] is None
+        assert row["is_human"] == 1
+
+    def test_human_presence_is_idempotent(self, mem_db):
+        """Inserting the same room twice must not duplicate the @human row."""
+        mem_db.execute("INSERT INTO room (id) VALUES ('LIN-1')")
+        mem_db.execute("INSERT OR IGNORE INTO room (id) VALUES ('LIN-1')")
+        mem_db.commit()
+        count = mem_db.execute(
+            "SELECT COUNT(*) FROM agent_presence WHERE room_id = 'LIN-1'"
+        ).fetchone()[0]
+        assert count == 1
+
+    def test_agent_presence_unique_room_agent(self, mem_db):
+        mem_db.execute("INSERT INTO room (id) VALUES ('LIN-2')")
+        mem_db.execute(
+            "INSERT INTO agent_presence (room_id, agent_id, repo, branch) "
+            "VALUES ('LIN-2', 'airflow:main', 'airflow', 'main')"
+        )
+        mem_db.commit()
+        with pytest.raises(sqlite3.IntegrityError):
+            mem_db.execute(
+                "INSERT INTO agent_presence (room_id, agent_id, repo, branch) "
+                "VALUES ('LIN-2', 'airflow:main', 'airflow', 'main')"
+            )
+            mem_db.commit()
+
+    def test_message_insert_or_ignore_idempotent(self, mem_db):
+        """UUID v7 PK + INSERT OR IGNORE = idempotent JSONL replay."""
+        mem_db.execute("INSERT INTO room (id) VALUES ('LIN-3')")
+        msg_id = "01912a00-0001-7000-a000-000000000001"
+        for _ in range(3):
+            mem_db.execute(
+                "INSERT OR IGNORE INTO message "
+                "(id, room_id, from_agent_id, type, body, created_at) "
+                "VALUES (?, 'LIN-3', 'airflow:main', 'question', 'hi', '2026-04-24T00:00:00Z')",
+                (msg_id,),
+            )
+        mem_db.commit()
+        count = mem_db.execute(
+            "SELECT COUNT(*) FROM message WHERE id = ?", (msg_id,)
+        ).fetchone()[0]
+        assert count == 1
+
+    def test_citation_unique_message_urn(self, mem_db):
+        mem_db.execute("INSERT INTO room (id) VALUES ('LIN-4')")
+        mem_db.execute(
+            "INSERT INTO message "
+            "(id, room_id, from_agent_id, type, body, created_at) "
+            "VALUES ('m1', 'LIN-4', 'a:b', 'answer', 'x', '2026-04-24T00:00:00Z')"
+        )
+        mem_db.execute(
+            "INSERT INTO citation (message_id, urn, node_kind) "
+            "VALUES ('m1', 'urn:infra:snowflake_role:writer', 'InfraResource')"
+        )
+        mem_db.commit()
+        with pytest.raises(sqlite3.IntegrityError):
+            mem_db.execute(
+                "INSERT INTO citation (message_id, urn, node_kind) "
+                "VALUES ('m1', 'urn:infra:snowflake_role:writer', 'InfraResource')"
+            )
+            mem_db.commit()
+
+    def test_decision_atomic_with_message(self, mem_db):
+        """decision.id == message.id; INSERT both in one transaction."""
+        mem_db.execute("INSERT INTO room (id) VALUES ('LIN-5')")
+        # Question + answer first (referenced by FKs)
+        mem_db.execute(
+            "INSERT INTO message (id, room_id, from_agent_id, type, body, created_at) "
+            "VALUES ('q1', 'LIN-5', 'airflow:main', 'question', 'q?', '2026-04-24T00:00:00Z')"
+        )
+        mem_db.execute(
+            "INSERT INTO message (id, room_id, from_agent_id, type, body, created_at) "
+            "VALUES ('a1', 'LIN-5', 'infra:main', 'answer', 'a.', '2026-04-24T00:01:00Z')"
+        )
+        # Now the decision message + decision row in one atomic step
+        decision_id = "01912a00-0004-7000-a000-000000000004"
+        mem_db.execute(
+            "INSERT INTO message (id, room_id, from_agent_id, type, body, created_at) "
+            "VALUES (?, 'LIN-5', 'airflow:main', 'decision', '{\"pins\":\"a1\"}', '2026-04-24T00:02:00Z')",
+            (decision_id,),
+        )
+        mem_db.execute(
+            "INSERT INTO decision "
+            "(id, room_id, question_id, answer_id, body, made_by, confidence) "
+            "VALUES (?, 'LIN-5', 'q1', 'a1', 'pinned answer', 'airflow:main', 'high')",
+            (decision_id,),
+        )
+        mem_db.commit()
+
+        row = mem_db.execute(
+            "SELECT mirror_state, mirror_attempts, external_system, status "
+            "FROM decision WHERE id = ?",
+            (decision_id,),
+        ).fetchone()
+        assert row["mirror_state"] == "pending"
+        assert row["mirror_attempts"] == 0
+        assert row["external_system"] == "linear"
+        assert row["status"] == "active"
+
+    def test_decision_id_must_match_a_message(self, mem_db):
+        """decision.id has FK → message(id); orphan decisions are rejected."""
+        mem_db.execute("INSERT INTO room (id) VALUES ('LIN-6')")
+        mem_db.execute(
+            "INSERT INTO message (id, room_id, from_agent_id, type, body, created_at) "
+            "VALUES ('q1', 'LIN-6', 'a:b', 'question', 'q?', '2026-04-24T00:00:00Z')"
+        )
+        mem_db.execute(
+            "INSERT INTO message (id, room_id, from_agent_id, type, body, created_at) "
+            "VALUES ('a1', 'LIN-6', 'a:b', 'answer', 'a.', '2026-04-24T00:01:00Z')"
+        )
+        mem_db.commit()
+        with pytest.raises(sqlite3.IntegrityError):
+            mem_db.execute(
+                "INSERT INTO decision "
+                "(id, room_id, question_id, answer_id, body, made_by, confidence) "
+                "VALUES ('orphan-id', 'LIN-6', 'q1', 'a1', 'x', 'a:b', 'high')"
+            )
+            mem_db.commit()
+
+    def test_decision_blocks_question_delete(self, mem_db):
+        """question_id FK uses ON DELETE RESTRICT; can't delete pinned question."""
+        mem_db.execute("INSERT INTO room (id) VALUES ('LIN-7')")
+        for mid, mtype in (("q1", "question"), ("a1", "answer"), ("d1", "decision")):
+            mem_db.execute(
+                "INSERT INTO message (id, room_id, from_agent_id, type, body, created_at) "
+                "VALUES (?, 'LIN-7', 'a:b', ?, 'x', '2026-04-24T00:00:00Z')",
+                (mid, mtype),
+            )
+        mem_db.execute(
+            "INSERT INTO decision "
+            "(id, room_id, question_id, answer_id, body, made_by, confidence) "
+            "VALUES ('d1', 'LIN-7', 'q1', 'a1', 'x', 'a:b', 'high')"
+        )
+        mem_db.commit()
+        with pytest.raises(sqlite3.IntegrityError):
+            mem_db.execute("DELETE FROM message WHERE id = 'q1'")
+            mem_db.commit()
+
+    def test_room_cascade_deletes_presence_messages(self, mem_db):
+        """Deleting a room cascades to presence and messages."""
+        mem_db.execute("INSERT INTO room (id) VALUES ('LIN-8')")
+        mem_db.execute(
+            "INSERT INTO message (id, room_id, from_agent_id, type, body, created_at) "
+            "VALUES ('m1', 'LIN-8', 'a:b', 'question', 'x', '2026-04-24T00:00:00Z')"
+        )
+        mem_db.commit()
+
+        # Trigger inserted @human row + we have one message
+        assert mem_db.execute(
+            "SELECT COUNT(*) FROM agent_presence WHERE room_id = 'LIN-8'"
+        ).fetchone()[0] == 1
+        assert mem_db.execute(
+            "SELECT COUNT(*) FROM message WHERE room_id = 'LIN-8'"
+        ).fetchone()[0] == 1
+
+        mem_db.execute("DELETE FROM room WHERE id = 'LIN-8'")
+        mem_db.commit()
+
+        assert mem_db.execute(
+            "SELECT COUNT(*) FROM agent_presence WHERE room_id = 'LIN-8'"
+        ).fetchone()[0] == 0
+        assert mem_db.execute(
+            "SELECT COUNT(*) FROM message WHERE room_id = 'LIN-8'"
+        ).fetchone()[0] == 0
+
+    def test_message_cascades_to_citations_and_decision(self, mem_db):
+        mem_db.execute("INSERT INTO room (id) VALUES ('LIN-9')")
+        mem_db.execute(
+            "INSERT INTO message (id, room_id, from_agent_id, type, body, created_at) "
+            "VALUES ('q1', 'LIN-9', 'a:b', 'question', 'q?', '2026-04-24T00:00:00Z')"
+        )
+        mem_db.execute(
+            "INSERT INTO message (id, room_id, from_agent_id, type, body, created_at) "
+            "VALUES ('a1', 'LIN-9', 'a:b', 'answer', 'a.', '2026-04-24T00:01:00Z')"
+        )
+        mem_db.execute(
+            "INSERT INTO citation (message_id, urn) VALUES ('a1', 'urn:infra:role:x')"
+        )
+        mem_db.execute(
+            "INSERT INTO message (id, room_id, from_agent_id, type, body, created_at) "
+            "VALUES ('d1', 'LIN-9', 'a:b', 'decision', '{}', '2026-04-24T00:02:00Z')"
+        )
+        mem_db.execute(
+            "INSERT INTO decision "
+            "(id, room_id, question_id, answer_id, body, made_by, confidence) "
+            "VALUES ('d1', 'LIN-9', 'q1', 'a1', 'x', 'a:b', 'high')"
+        )
+        mem_db.commit()
+
+        # Deleting the decision message cascades to the decision row
+        mem_db.execute("DELETE FROM message WHERE id = 'd1'")
+        mem_db.commit()
+        assert mem_db.execute("SELECT COUNT(*) FROM decision WHERE id = 'd1'").fetchone()[0] == 0
+
+        # Deleting the answer message (now unpinned) cascades to its citations
+        mem_db.execute("DELETE FROM message WHERE id = 'a1'")
+        mem_db.commit()
+        assert mem_db.execute(
+            "SELECT COUNT(*) FROM citation WHERE message_id = 'a1'"
+        ).fetchone()[0] == 0
+
+    def test_idempotent_ensure_schema(self, mem_db):
+        """Re-running ensure_schema on a v11 DB is a no-op."""
+        ensure_schema(mem_db)
+        ensure_schema(mem_db)
+        version = mem_db.execute("SELECT MAX(version) FROM schema_version").fetchone()[0]
+        assert version == 11
+
+    def test_migration_v10_to_v11(self):
+        """Seed a v10 DB (no v11 tables), run ensure_schema, verify upgrade."""
+        from db.schema import SCHEMA_SQL
+
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys=ON")
+        conn.executescript(SCHEMA_SQL)
+        # Drop the v11 additions to simulate a v10 install
+        for tbl in ("decision", "citation", "message", "agent_presence", "room"):
+            conn.execute(f"DROP TABLE IF EXISTS {tbl}")
+        conn.execute("DROP TRIGGER IF EXISTS room_insert_human_presence")
+        conn.execute("INSERT OR REPLACE INTO schema_version (version) VALUES (10)")
+        conn.commit()
+
+        tables = {
+            r[0]
+            for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+        }
+        assert not self.V11_TABLES.intersection(tables)
+
+        ensure_schema(conn)
+
+        tables = {
+            r[0]
+            for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+        }
+        assert self.V11_TABLES.issubset(tables)
+        assert (
+            conn.execute("SELECT MAX(version) FROM schema_version").fetchone()[0]
+            == SCHEMA_VERSION
+        )
+
+        # Trigger works after upgrade
+        conn.execute("INSERT INTO room (id) VALUES ('LIN-after-upgrade')")
+        conn.commit()
+        row = conn.execute(
+            "SELECT agent_id, is_human FROM agent_presence WHERE room_id = 'LIN-after-upgrade'"
+        ).fetchone()
+        assert row["agent_id"] == "human"
+        assert row["is_human"] == 1
+        conn.close()
