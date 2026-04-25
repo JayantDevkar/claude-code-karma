@@ -144,6 +144,13 @@ export default [
 		}
 	},
 	prettier,
+	// Server-side files and universal modules that use process.env
+	{
+		files: ['**/*.server.ts', 'src/lib/config.ts'],
+		languageOptions: {
+			globals: { process: 'readonly' }
+		}
+	},
 	// Test files: relax strict typing rules for mocks and test helpers
 	{
 		files: ['src/tests/**/*.ts', 'src/**/*.test.ts', 'src/**/*.spec.ts'],
