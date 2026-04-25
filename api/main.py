@@ -32,6 +32,7 @@ from routers import (  # noqa: E402
     plans,
     plugins,
     projects,
+    rooms,
     sessions,
     skills,
     subagent_sessions,
@@ -193,6 +194,7 @@ app.include_router(
     tags=["subagent-sessions"],
 )
 app.include_router(admin.router)
+app.include_router(rooms.router, tags=["rooms"])
 
 
 @app.get("/")
