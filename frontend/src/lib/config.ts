@@ -18,7 +18,17 @@
  * const response = await fetch(`${API_BASE}/projects`);
  * ```
  */
-export const API_BASE = import.meta.env.PUBLIC_API_URL || 'http://localhost:8000';
+// Server-side (SSR): KARMA_API_URL is injected into process.env by bin/start.js at launch.
+// Client-side: __KARMA_API_BASE__ is injected into HTML by hooks.server.ts at request time.
+// Dev mode fallback: Vite's PUBLIC_API_URL env var or localhost default.
+type KarmaWindow = Window & { __KARMA_API_BASE__?: string };
+export const API_BASE: string =
+	typeof window === 'undefined'
+		? (process.env.KARMA_API_URL ?? 'http://localhost:8000')
+		: (window as KarmaWindow).__KARMA_API_BASE__ &&
+			  (window as KarmaWindow).__KARMA_API_BASE__ !== '%karma_api_base%'
+			? (window as KarmaWindow).__KARMA_API_BASE__!
+			: import.meta.env.PUBLIC_API_URL ?? 'http://localhost:8000';
 
 /**
  * API request timeout in milliseconds (default: 30 seconds)

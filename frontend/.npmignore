@@ -1,0 +1,4 @@
+# Overrides frontend/.gitignore for npm packaging.
+# build/ is intentionally NOT excluded here — it's the pre-built app needed at runtime.
+node_modules/
+src/

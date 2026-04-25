@@ -1,0 +1,16 @@
+# Python build artifacts (within any included directory)
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.egg-info/
+
+# Venv created by start.js at runtime
+.karma-venv/
+
+# Frontend test files inside frontend/src/
+frontend/src/tests/
+frontend/src/lib/components/**/__tests__/
+
+# Explicitly include pre-built frontend (overrides build/ in .gitignore)
+!frontend/build
+!frontend/build/**
