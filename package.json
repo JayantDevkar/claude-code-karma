@@ -1,0 +1,42 @@
+{
+  "name": "claude-code-karma",
+  "version": "0.1.0",
+  "description": "One-command dashboard for your Claude Code sessions",
+  "bin": {
+    "claude-code-karma": "bin/start.js"
+  },
+  "scripts": {
+    "prepack": "cd frontend && npm install && npm run build"
+  },
+  "files": [
+    "bin/",
+    "api/__init__.py",
+    "api/main.py",
+    "api/config.py",
+    "api/schemas.py",
+    "api/utils.py",
+    "api/utils_io.py",
+    "api/collectors.py",
+    "api/parallel.py",
+    "api/http_caching.py",
+    "api/requirements.txt",
+    "api/pyproject.toml",
+    "api/models/",
+    "api/routers/",
+    "api/services/",
+    "api/middleware/",
+    "api/db/",
+    "api/command_helpers/",
+    "frontend/build/",
+    "frontend/static/"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "Apache-2.0",
+  "keywords": ["claude", "claude-code", "dashboard", "analytics", "monitoring"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/JayantDevkar/claude-code-karma.git"
+  }
+}

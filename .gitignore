@@ -7,10 +7,14 @@
 # Dependencies
 node_modules/
 
+# Runtime venv created by bin/start.js
+.karma-venv/
+
 # Build outputs
 dist/
 build/
 out/
+*.tgz
 
 # Vite cache
 .vite/
