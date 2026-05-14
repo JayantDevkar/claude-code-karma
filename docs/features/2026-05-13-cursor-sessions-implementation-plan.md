@@ -9,8 +9,19 @@
 > **Decisions locked** (via 2026-05-13 design review):
 > 1. **Full indexer** — materialize Cursor sessions + bubbles + tool calls into `metadata.db`. All endpoints read from our SQLite cache.
 > 2. **List subfolder workspaces separately** (faithful to Cursor's workspace-hash model).
-> 3. **v1 scope: 10 endpoints** — projects (×2), session detail, timeline, tools, file-activity, analytics, plans, MCP, agents.
+> 3. **v1 scope: 10 endpoints** — projects (×2), session detail, timeline, tools, file-activity, analytics, plans, MCP, agents, **skills (listing only with `tracking_unavailable` flag)**.
 > 4. **Auto-detect**: if `state.vscdb` exists at the expected path, the indexer runs. No env var, no toggle.
+>
+> **Additional decisions (2026-05-13 Phase 3 design review):**
+> 5. **Skills posture**: List definitions from `~/.cursor/skills-cursor/` + `~/.cursor/skills/`; surface `tracking_unavailable: true` flag. **No usage tracking** — Cursor 2.5.26 emits zero skill-invocation telemetry to disk (10 signals exhaustively checked).
+> 6. **`session_tools.invocation_source` column added in v12** — PK becomes 3-tuple `(session_uuid, tool_name, invocation_source)`. Existing rows backfilled with `'main'`.
+> 7. **Architecture: Option C — Pragmatic balanced** — self-contained `api/cursor/` package, ~8 `if source == 'cursor':` dispatch branches across 5 routers, MCP re-prefix trick (`mcp__{server}__{tool}`) reuses existing aggregation, 23 existing files untouched.
+> 8. **Delivery: One big PR** — single ~1,800-line PR with full feature.
+> 9. **v11 dependency**: blocks on `agent-coord-integration` (v11 substrate) merging to main. Our migration is **v12** (not v13 — sequence-strict).
+
+## ⚠️ Status: PAUSED pending v11 merge to main
+
+As of 2026-05-13, `origin/main` is at `SCHEMA_VERSION = 10`. v11 (agent-coord substrate, PR #67) merged into `agent-coord-integration` but has not yet propagated to main (Pieces 2 #68 and 3 #69 also queued). Implementation of this feature waits for that propagation. See §13 for unpause options.
 
 ---
 
@@ -729,6 +740,14 @@ def detect_cursor_install() -> bool:
 4. **Cursor 2.5.26 model name normalization.** `composerData.modelConfig.modelName` returns strings like `claude-4.5-opus-high-thinking`, `claude-opus-4-7-thinking-xhigh`, `gpt-5.3-codex`, `default`. These don't match claude-karma's canonical model names. **Decision needed:** ingest as-is, or normalize to a canonical taxonomy? Recommend: ingest as-is for v1; build a translation map in v2 once analytics consumers complain.
 
 ---
+
+## 12.5 Unpause options (added 2026-05-13)
+
+`agent-coord-integration` carries v11 + sync_rooms() indexer + /rooms dashboard (PRs #67, #68, #69). These haven't merged to main yet. Three ways forward:
+
+1. **Wait (cleanest).** Let `agent-coord-integration` merge to main naturally. Resume this work when `origin/main` shows `SCHEMA_VERSION = 11`. Zero rebase risk; v12 migration block lands cleanly after v11.
+2. **Rebase to `agent-coord-integration`.** Branch off `agent-coord-integration` instead of main. Lets implementation start immediately but creates an indirect dependency — our PR is conceptually downstream of three other PRs and shouldn't merge to main until they do.
+3. **Number our migration v13.** Skip v11 in our own block. Lets us land regardless of merge order — but wastes one version number and makes the schema history non-contiguous if v11 stalls. Not recommended unless v11 is at risk of being abandoned.
 
 ## 13. Estimated Timeline (≈2.5 weeks, 1 engineer)
 
