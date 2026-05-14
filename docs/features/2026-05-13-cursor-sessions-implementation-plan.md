@@ -19,9 +19,24 @@
 > 8. **Delivery: One big PR** — single ~1,800-line PR with full feature.
 > 9. **v11 dependency**: blocks on `agent-coord-integration` (v11 substrate) merging to main. Our migration is **v12** (not v13 — sequence-strict).
 
-## ⚠️ Status: PAUSED pending v11 merge to main
+## Status: implementation in progress (2026-05-13)
 
-As of 2026-05-13, `origin/main` is at `SCHEMA_VERSION = 10`. v11 (agent-coord substrate, PR #67) merged into `agent-coord-integration` but has not yet propagated to main (Pieces 2 #68 and 3 #69 also queued). Implementation of this feature waits for that propagation. See §13 for unpause options.
+**Unblocked**: agent-coord-integration work is dropped, so we own the v11 slot.
+
+**Done** (4 commits on this branch):
+- ✅ `eacaf56` — v11 schema migration: 3-tuple `session_tools` PK + 6 new Cursor tables + `cursor_workspace_hash` column. 119 db tests pass.
+- ✅ Cursor parser package `api/cursor/{paths,state_db,workspace,composer,bubble,tools,plans,mcp,skills,agents}.py`. End-to-end verified on real Cursor 2.5.26 data (1,098 sessions / 66k bubbles / 30k tool calls / 124 plans / 103 MCP servers / 1,988 MCP tools / 0 errors / 13.6s cold scan / 1.2s incremental).
+- ✅ Cursor indexer `api/cursor/indexer.py` + `api/services/cursor_indexer_service.py` wired into FastAPI lifespan. Auto-detect: no-op if Cursor not installed.
+- ✅ `9a051e8` — Router dispatch for `/projects` + `/projects/{cursor:<hash>}` + `/sessions/{uuid}` + `/sessions/{uuid}/{timeline,tools,file-activity}`. 1087 model+db tests still pass.
+
+**Deferred to a follow-up commit on this same branch/PR**:
+- `/analytics/projects/{cursor:<hash>}` — Cursor analytics rollup
+- `/plans` — union with `cursor_plan` rows
+- `/tools` (MCP overview) — append `cursor_mcp_*` descriptors
+- `/agents` — append Cursor built-in agents (constant list)
+- `/skills` — append Cursor skill definitions with `tracking_unavailable=True`
+- Schema: `SkillItem.source` + `SkillItem.tracking_unavailable` + `McpToolDetail.arguments_schema` (additive Pydantic fields)
+- Unit + integration tests for `api/cursor/` (target: ≥80% coverage)
 
 ---
 
