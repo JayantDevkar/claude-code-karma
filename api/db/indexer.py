@@ -393,19 +393,28 @@ def _index_session(
     )
 
     # Upsert tool usage (INSERT OR REPLACE + cleanup to avoid DELETE gap)
+    # invocation_source='main' for Claude Code session tool calls (vs 'cursor' for Cursor)
     if tools_used:
         for tool_name, count in tools_used.items():
             conn.execute(
-                "INSERT OR REPLACE INTO session_tools VALUES (?, ?, ?)", (uuid, tool_name, count)
+                "INSERT OR REPLACE INTO session_tools "
+                "(session_uuid, tool_name, invocation_source, count) "
+                "VALUES (?, ?, 'main', ?)",
+                (uuid, tool_name, count),
             )
-        # Remove tools no longer present
+        # Remove tools no longer present (only delete 'main' rows; preserve cursor rows)
         placeholders = ",".join("?" * len(tools_used))
         conn.execute(
-            f"DELETE FROM session_tools WHERE session_uuid = ? AND tool_name NOT IN ({placeholders})",
+            f"DELETE FROM session_tools "
+            f"WHERE session_uuid = ? AND invocation_source = 'main' "
+            f"AND tool_name NOT IN ({placeholders})",
             (uuid, *tools_used.keys()),
         )
     else:
-        conn.execute("DELETE FROM session_tools WHERE session_uuid = ?", (uuid,))
+        conn.execute(
+            "DELETE FROM session_tools WHERE session_uuid = ? AND invocation_source = 'main'",
+            (uuid,),
+        )
 
     # Upsert skill usage with invocation_source
     # Keys are (skill_name, invocation_source) tuples

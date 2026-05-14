@@ -733,12 +733,27 @@ class TestAnalyticsQuery:
             models_used=json.dumps(["claude-haiku-3-5-20250514"]),
             start_time="2026-01-17T08:00:00+00:00",
         )
-        # Tools
-        conn.execute("INSERT INTO session_tools VALUES ('a1', 'Read', 10)")
-        conn.execute("INSERT INTO session_tools VALUES ('a1', 'Edit', 3)")
-        conn.execute("INSERT INTO session_tools VALUES ('a2', 'Read', 20)")
-        conn.execute("INSERT INTO session_tools VALUES ('a2', 'Bash', 5)")
-        conn.execute("INSERT INTO session_tools VALUES ('a3', 'Read', 2)")
+        # Tools — v11 schema requires invocation_source
+        conn.execute(
+            "INSERT INTO session_tools (session_uuid, tool_name, invocation_source, count) "
+            "VALUES ('a1', 'Read', 'main', 10)"
+        )
+        conn.execute(
+            "INSERT INTO session_tools (session_uuid, tool_name, invocation_source, count) "
+            "VALUES ('a1', 'Edit', 'main', 3)"
+        )
+        conn.execute(
+            "INSERT INTO session_tools (session_uuid, tool_name, invocation_source, count) "
+            "VALUES ('a2', 'Read', 'main', 20)"
+        )
+        conn.execute(
+            "INSERT INTO session_tools (session_uuid, tool_name, invocation_source, count) "
+            "VALUES ('a2', 'Bash', 'main', 5)"
+        )
+        conn.execute(
+            "INSERT INTO session_tools (session_uuid, tool_name, invocation_source, count) "
+            "VALUES ('a3', 'Read', 'main', 2)"
+        )
         conn.commit()
 
     def test_global_totals(self, mem_db):
