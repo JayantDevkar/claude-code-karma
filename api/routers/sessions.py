@@ -946,6 +946,20 @@ def get_session(uuid: str, request: Request, fresh: bool = False):
         fresh: If true, use minimal cache (1s) for live session polling
                and clear in-memory session cache to get fresh values
     """
+    # Cursor source dispatch — Cursor sessions live in metadata.db, not in
+    # ~/.claude/projects/*.jsonl. find_session_with_project() can't see them.
+    from db.connection import sqlite_read
+
+    with sqlite_read() as cdb:
+        if cdb is not None:
+            from cursor.api import get_cursor_session_detail, get_session_source
+
+            if get_session_source(cdb, uuid) == "cursor":
+                detail = get_cursor_session_detail(cdb, uuid)
+                if detail is None:
+                    raise HTTPException(status_code=404, detail="Session not found")
+                return detail
+
     result = find_session_with_project(uuid)
     if not result:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -1275,6 +1289,26 @@ def get_file_activity(uuid: str, request: Request, fresh: bool = False):
     """
     from services.conversation_endpoints import build_file_activities
 
+    # Cursor source dispatch
+    from db.connection import sqlite_read
+
+    with sqlite_read() as cdb:
+        if cdb is not None:
+            from cursor.api import (
+                get_cursor_session_file_activity,
+                get_session_source,
+            )
+
+            if get_session_source(cdb, uuid) == "cursor":
+                activities = get_cursor_session_file_activity(cdb, uuid)
+                headers = {
+                    "Cache-Control": (
+                        f"private, max-age={1 if fresh else 300}, "
+                        f"stale-while-revalidate={2 if fresh else 600}"
+                    )
+                }
+                return JSONResponse(content=activities, headers=headers)
+
     session = find_session(uuid)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -1428,6 +1462,23 @@ def get_tools(uuid: str, request: Request, fresh: bool = False):
     """
     from services.conversation_endpoints import build_tool_usage_summaries
 
+    # Cursor source dispatch
+    from db.connection import sqlite_read
+
+    with sqlite_read() as cdb:
+        if cdb is not None:
+            from cursor.api import get_cursor_session_tools, get_session_source
+
+            if get_session_source(cdb, uuid) == "cursor":
+                summaries = get_cursor_session_tools(cdb, uuid)
+                headers = {
+                    "Cache-Control": (
+                        f"private, max-age={1 if fresh else 300}, "
+                        f"stale-while-revalidate={2 if fresh else 600}"
+                    )
+                }
+                return JSONResponse(content=summaries, headers=headers)
+
     session = find_session(uuid)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -1490,6 +1541,31 @@ def get_timeline(uuid: str, request: Request, fresh: bool = False):
         fresh: If true, use minimal cache (1s) for live session polling
     """
     from services.conversation_endpoints import build_conversation_timeline
+
+    # Cursor source dispatch
+    from db.connection import sqlite_read
+
+    with sqlite_read() as cdb:
+        if cdb is not None:
+            from cursor.api import (
+                get_cursor_session_timeline,
+                get_session_source,
+            )
+
+            if get_session_source(cdb, uuid) == "cursor":
+                events = get_cursor_session_timeline(cdb, uuid)
+                headers = {
+                    "Cache-Control": (
+                        f"private, max-age={1 if fresh else 60}, "
+                        f"stale-while-revalidate={2 if fresh else 300}"
+                    )
+                }
+                # Convert datetime objects to ISO strings for JSON encoding
+                serializable = [
+                    {**e, "timestamp": e["timestamp"].isoformat() if e.get("timestamp") else None}
+                    for e in events
+                ]
+                return JSONResponse(content=serializable, headers=headers)
 
     session = find_session(uuid)
     if not session:

@@ -109,6 +109,11 @@ def resolve_project_identifier(identifier: str) -> str:
         is_worktree_project,
     )
 
+    # Cursor projects use `cursor:<workspace_hash>` as the encoded_name —
+    # pass through unchanged (no slug lookup, no worktree redirect).
+    if identifier.startswith("cursor:"):
+        return identifier
+
     if is_encoded_project_dir(identifier):
         # Safety net: redirect worktree encoded names to real project
         if is_worktree_project(identifier):
@@ -451,6 +456,22 @@ def get_project(
     allowing frontends to calculate total pages.
     """
     encoded_name = resolve_project_identifier(encoded_name)
+
+    # Cursor source dispatch — Cursor projects use `cursor:<workspace_hash>` as
+    # encoded_name and are NOT representable as Claude Code Project objects.
+    if encoded_name.startswith("cursor:"):
+        from db.connection import sqlite_read
+
+        from cursor.api import get_cursor_project_detail
+
+        with sqlite_read() as cdb:
+            if cdb is None:
+                raise HTTPException(status_code=503, detail="Index not ready")
+            detail = get_cursor_project_detail(cdb, encoded_name)
+            if not detail:
+                raise HTTPException(status_code=404, detail="Cursor project not found")
+            return detail
+
     try:
         project = Project.from_encoded_name(encoded_name)
     except Exception as e:
