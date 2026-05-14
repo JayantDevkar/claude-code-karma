@@ -197,6 +197,15 @@ def list_agents(
         logger.error(f"Failed to list agents directory: {e}")
         raise HTTPException(status_code=500, detail="Failed to list agents") from e
 
+    # Append Cursor built-in agent modes (no on-disk file; hardcoded inventory)
+    try:
+        from cursor.api import list_cursor_builtin_agent_summaries
+
+        for cdict in list_cursor_builtin_agent_summaries():
+            agents.append(AgentSummary(**cdict))
+    except Exception as e:
+        logger.debug("Skipping Cursor built-in agents: %s", e)
+
     return agents
 
 

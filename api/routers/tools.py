@@ -207,6 +207,16 @@ def get_mcp_tools_overview(
                 ).fetchone()
                 combined_sessions = combined_sessions_row["cnt"] if combined_sessions_row else 0
 
+                # Append Cursor MCP servers (from cursor_mcp_server/cursor_mcp_tool)
+                try:
+                    from cursor.api import list_cursor_mcp_servers_with_tools
+
+                    cursor_mcp = list_cursor_mcp_servers_with_tools(conn)
+                    for server_dict in cursor_mcp:
+                        all_servers.append(_build_server_schema(server_dict))
+                except Exception as e:
+                    logger.debug("Skipping Cursor MCP in overview: %s", e)
+
                 return McpToolsOverview(
                     total_servers=mcp_data["total_servers"] + builtin_data["total_servers"],
                     total_tools=mcp_data["total_tools"] + builtin_data["total_tools"],

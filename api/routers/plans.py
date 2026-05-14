@@ -194,27 +194,34 @@ def build_slug_session_index() -> dict[str, PlanSessionContext]:
 @cacheable(max_age=300, stale_while_revalidate=600, private=True)
 def list_plans(request: Request) -> list[PlanSummary]:
     """
-    List all plans from ~/.claude/plans directory.
+    List all plans from ~/.claude/plans and ~/.cursor/plans (when Cursor present).
 
     Plans are sorted by modification time (newest first).
-    Each plan summary includes:
-    - slug: Plan identifier
-    - title: First h1 header from markdown
-    - preview: First 500 characters
-    - word_count: Total words in plan
-    - created/modified: File timestamps
-    - size_bytes: File size
-
-    Cache: 5 minutes (plans change infrequently)
+    Cache: 5 minutes (plans change infrequently).
     """
     plans_dir = get_plans_dir()
 
-    if not plans_dir.exists():
+    summaries: list[PlanSummary] = []
+    if plans_dir.exists():
+        summaries = [plan_to_summary(p) for p in load_all_plans()]
+    else:
         logger.debug(f"Plans directory does not exist: {plans_dir}")
-        return []
 
-    plans = load_all_plans()
-    return [plan_to_summary(p) for p in plans]
+    # Append Cursor plans (from the cursor_plan table)
+    try:
+        from db.connection import sqlite_read
+
+        from cursor.api import list_cursor_plan_summaries
+
+        with sqlite_read() as cdb:
+            if cdb is not None:
+                for cp in list_cursor_plan_summaries(cdb):
+                    summaries.append(PlanSummary(**cp))
+    except Exception as e:
+        logger.debug("Skipping Cursor plans in /plans: %s", e)
+
+    summaries.sort(key=lambda p: p.modified, reverse=True)
+    return summaries
 
 
 @router.get("/stats")
@@ -383,10 +390,10 @@ def list_plans_with_context(
 @cacheable(max_age=300, stale_while_revalidate=600, private=True)
 def get_plan(slug: str, request: Request) -> PlanDetail:
     """
-    Get a specific plan by slug.
+    Get a specific plan by slug (Claude Code or Cursor source).
 
     Args:
-        slug: Plan identifier (filename without .md)
+        slug: Plan identifier (filename without .md / .plan.md)
 
     Returns:
         Full plan content and metadata
@@ -395,14 +402,27 @@ def get_plan(slug: str, request: Request) -> PlanDetail:
         404: Plan not found
     """
     plan = load_plan(slug)
+    if plan:
+        return plan_to_detail(plan)
 
-    if not plan:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Plan '{slug}' not found in ~/.claude/plans/",
-        )
+    # Fall through to Cursor plans
+    try:
+        from db.connection import sqlite_read
 
-    return plan_to_detail(plan)
+        from cursor.api import get_cursor_plan_detail
+
+        with sqlite_read() as cdb:
+            if cdb is not None:
+                detail = get_cursor_plan_detail(cdb, slug)
+                if detail:
+                    return PlanDetail(**detail)
+    except Exception as e:
+        logger.debug("Cursor plan lookup failed for %s: %s", slug, e)
+
+    raise HTTPException(
+        status_code=404,
+        detail=f"Plan '{slug}' not found in ~/.claude/plans/ or ~/.cursor/plans/",
+    )
 
 
 @router.get("/{slug}/context", response_model=PlanSessionContext | None)

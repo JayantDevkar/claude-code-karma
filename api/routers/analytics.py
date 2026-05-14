@@ -227,6 +227,21 @@ def get_project_analytics(
     from routers.projects import resolve_project_identifier
 
     encoded_name = resolve_project_identifier(encoded_name)
+
+    # Cursor source dispatch — cursor: prefix denotes a Cursor workspace
+    if encoded_name.startswith("cursor:"):
+        from db.connection import sqlite_read
+
+        from cursor.api import get_cursor_project_analytics
+
+        with sqlite_read() as cdb:
+            if cdb is None:
+                raise HTTPException(status_code=503, detail="Index not ready")
+            result = get_cursor_project_analytics(cdb, encoded_name)
+            if result is None:
+                raise HTTPException(status_code=404, detail="Cursor project not found")
+            return result
+
     try:
         project = Project.from_encoded_name(encoded_name)
     except Exception as e:

@@ -302,6 +302,275 @@ def get_cursor_session_initial_prompt(
 
 
 # =============================================================================
+# Plans surface
+# =============================================================================
+
+
+def list_cursor_plan_summaries(conn: sqlite3.Connection) -> list[dict]:
+    """Return PlanSummary-shaped dicts for all Cursor plans in metadata.db."""
+    rows = conn.execute(
+        """
+        SELECT slug, name, overview, body_md, file_mtime_ms
+        FROM cursor_plan
+        ORDER BY file_mtime_ms DESC
+        """
+    ).fetchall()
+    return [_plan_row_to_summary(r) for r in rows]
+
+
+def get_cursor_plan_detail(conn: sqlite3.Connection, slug: str) -> dict | None:
+    """Return PlanDetail-shaped dict for a single Cursor plan, or None."""
+    row = conn.execute(
+        """
+        SELECT slug, name, overview, body_md, file_mtime_ms
+        FROM cursor_plan WHERE slug = ?
+        """,
+        (slug,),
+    ).fetchone()
+    if not row:
+        return None
+    base = _plan_row_to_summary(row)
+    body_md = row[3] or ""
+    return {**base, "content": body_md}
+
+
+def _plan_row_to_summary(row) -> dict:
+    if isinstance(row, sqlite3.Row):
+        row = tuple(row)
+    slug, name, overview, body_md, file_mtime_ms = row
+    body_md = body_md or ""
+    preview = (overview or body_md)[:500] if (overview or body_md) else ""
+    word_count = len((body_md or "").split())
+    mtime_dt = _ms_to_dt(file_mtime_ms) or datetime.utcfromtimestamp(0)
+    return {
+        "slug": slug,
+        "title": name,
+        "preview": preview,
+        "word_count": word_count,
+        "created": mtime_dt,
+        "modified": mtime_dt,
+        "size_bytes": len((body_md or "").encode("utf-8")),
+    }
+
+
+# =============================================================================
+# MCP overview surface
+# =============================================================================
+
+
+def list_cursor_mcp_servers_with_tools(conn: sqlite3.Connection) -> list[dict]:
+    """
+    Build MCP server summaries for the /tools overview.
+
+    Aggregates unique server identifiers across workspaces, joining tool
+    descriptors and tool call counts from `session_tools`.
+    """
+    server_rows = conn.execute(
+        """
+        SELECT server_identifier, MIN(server_name) AS server_name, MIN(source) AS source
+        FROM cursor_mcp_server
+        GROUP BY server_identifier
+        """
+    ).fetchall()
+    servers: list[dict] = []
+    for row in server_rows:
+        server_id = row[0]
+        server_name = row[1] or server_id
+        source = row[2] or "user"
+        tool_rows = conn.execute(
+            """
+            SELECT tool_name, MIN(description) AS description, MIN(arguments_json) AS arguments_json
+            FROM cursor_mcp_tool
+            WHERE server_identifier = ?
+            GROUP BY tool_name
+            """,
+            (server_id,),
+        ).fetchall()
+        tools = []
+        for tr in tool_rows:
+            tool_name = tr[0]
+            full_name = f"mcp__{server_id}__{tool_name}"
+            call_count_row = conn.execute(
+                "SELECT COALESCE(SUM(count), 0), COUNT(DISTINCT session_uuid) "
+                "FROM session_tools WHERE tool_name = ? AND invocation_source = 'cursor'",
+                (full_name,),
+            ).fetchone()
+            calls = call_count_row[0] or 0
+            session_count = call_count_row[1] or 0
+            arguments_schema = None
+            if tr[2]:
+                try:
+                    arguments_schema = json.loads(tr[2])
+                except (json.JSONDecodeError, TypeError):
+                    arguments_schema = None
+            tools.append(
+                {
+                    "name": tool_name,
+                    "full_name": full_name,
+                    "server_name": server_id,
+                    "server_display_name": server_name,
+                    "description": tr[1],
+                    "calls": calls,
+                    "session_count": session_count,
+                    "main_calls": 0,
+                    "subagent_calls": 0,
+                    "arguments_schema": arguments_schema,
+                }
+            )
+        servers.append(
+            {
+                "name": server_id,
+                "display_name": server_name,
+                "source": source,
+                "tools": tools,
+                "tool_count": len(tools),
+                "total_calls": sum(t["calls"] for t in tools),
+            }
+        )
+    return servers
+
+
+# =============================================================================
+# Skills surface (listing only — Cursor has no invocation telemetry)
+# =============================================================================
+
+
+def list_cursor_skill_items() -> list[dict]:
+    """Return SkillItem-shaped dicts for every Cursor skill on disk."""
+    from cursor.skills import iter_cursor_skills
+
+    out: list[dict] = []
+    for skill in iter_cursor_skills():
+        out.append(
+            {
+                "name": skill.name,
+                "path": f"cursor:{skill.name}",
+                "type": "file",
+                "size_bytes": None,
+                "modified_at": skill.modified_at,
+                "source": "cursor",
+                "description": skill.description,
+                "tracking_unavailable": True,
+            }
+        )
+    return out
+
+
+# =============================================================================
+# Agents surface (built-in inventory only — Cursor has no custom-agent system)
+# =============================================================================
+
+
+def list_cursor_builtin_agent_summaries() -> list[dict]:
+    """Return AgentSummary-shaped dicts for Cursor's built-in agent modes."""
+    from datetime import timezone
+
+    from cursor.agents import list_cursor_builtin_agents
+
+    now = datetime.now(tz=timezone.utc)
+    return [
+        {
+            "name": a.name,
+            "size_bytes": 0,
+            "modified_at": now,
+        }
+        for a in list_cursor_builtin_agents()
+    ]
+
+
+# =============================================================================
+# Analytics surface (per-project, basic rollup)
+# =============================================================================
+
+
+def get_cursor_project_analytics(
+    conn: sqlite3.Connection, encoded_name: str
+) -> dict | None:
+    """
+    Build a minimal analytics blob for one Cursor workspace.
+
+    Compatible with the existing ProjectAnalytics shape — populates totals
+    + sessions_by_date + model_usage + tool_usage. Cost/cache_hit stay 0
+    (Cursor doesn't expose per-bubble token costs).
+    """
+    if not is_cursor_project_encoded_name(encoded_name):
+        return None
+
+    totals = conn.execute(
+        """
+        SELECT
+            COUNT(*) AS session_count,
+            COALESCE(SUM(message_count), 0) AS total_messages,
+            COALESCE(SUM(input_tokens), 0) AS total_input_tokens,
+            COALESCE(SUM(output_tokens), 0) AS total_output_tokens,
+            COALESCE(SUM(duration_seconds), 0) AS total_duration_seconds,
+            COALESCE(SUM(subagent_count), 0) AS subagent_count
+        FROM sessions
+        WHERE project_encoded_name = ?
+        """,
+        (encoded_name,),
+    ).fetchone()
+
+    sessions_by_date_rows = conn.execute(
+        """
+        SELECT DATE(start_time) AS day, COUNT(*) AS n
+        FROM sessions
+        WHERE project_encoded_name = ? AND start_time IS NOT NULL
+        GROUP BY day
+        ORDER BY day
+        """,
+        (encoded_name,),
+    ).fetchall()
+
+    model_usage_rows = conn.execute(
+        """
+        SELECT csm.model_name, COUNT(*) AS sessions
+        FROM cursor_session_meta csm
+        JOIN sessions s ON s.uuid = csm.session_uuid
+        WHERE s.project_encoded_name = ? AND csm.model_name IS NOT NULL
+        GROUP BY csm.model_name
+        """,
+        (encoded_name,),
+    ).fetchall()
+
+    tool_usage_rows = conn.execute(
+        """
+        SELECT st.tool_name, COALESCE(SUM(st.count), 0) AS calls
+        FROM session_tools st
+        JOIN sessions s ON s.uuid = st.session_uuid
+        WHERE s.project_encoded_name = ? AND st.invocation_source = 'cursor'
+        GROUP BY st.tool_name
+        ORDER BY calls DESC
+        """,
+        (encoded_name,),
+    ).fetchall()
+
+    return {
+        "encoded_name": encoded_name,
+        "session_source": "cursor",
+        "totals": {
+            "session_count": totals[0] or 0,
+            "total_messages": totals[1] or 0,
+            "total_input_tokens": totals[2] or 0,
+            "total_output_tokens": totals[3] or 0,
+            "total_duration_seconds": totals[4] or 0,
+            "subagent_count": totals[5] or 0,
+            "total_cost": 0.0,
+            "cache_hit_rate": 0.0,
+        },
+        "sessions_by_date": [
+            {"date": r[0], "count": r[1]} for r in sessions_by_date_rows
+        ],
+        "model_usage": [
+            {"model": r[0], "sessions": r[1]} for r in model_usage_rows
+        ],
+        "tool_usage": [
+            {"tool_name": r[0], "calls": r[1]} for r in tool_usage_rows
+        ],
+    }
+
+
+# =============================================================================
 # Internal helpers
 # =============================================================================
 

@@ -249,6 +249,16 @@ def list_skills(
         logger.error(f"Failed to list skills directory {target_dir}: {e}")
         raise HTTPException(status_code=500, detail="Failed to list skills directory") from e
 
+    # Append Cursor skill definitions at the root listing only (no usage tracking)
+    if not path:
+        try:
+            from cursor.api import list_cursor_skill_items
+
+            for cdict in list_cursor_skill_items():
+                items.append(SkillItem(**cdict))
+        except Exception as e:
+            logger.debug("Skipping Cursor skills in /skills listing: %s", e)
+
     # Sort: directories first, then files, alphabetically within each group
     return sorted(items, key=lambda x: (x.type == "file", x.name.lower()))
 

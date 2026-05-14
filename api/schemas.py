@@ -756,6 +756,20 @@ class SkillItem(BaseModel):
     )
     size_bytes: Optional[int] = Field(None, description="File size in bytes (null for directories)")
     modified_at: Optional[datetime] = Field(None, description="Last modification time")
+    source: str = Field(
+        "claude_code",
+        description="Source IDE that owns this skill: 'claude_code', 'cursor', etc.",
+    )
+    description: Optional[str] = Field(
+        None, description="Skill description from YAML frontmatter (when known)"
+    )
+    tracking_unavailable: bool = Field(
+        False,
+        description=(
+            "True when usage tracking (calls, trends, sessions) is not available for "
+            "this skill source. Cursor 2.5.26 emits no skill-invocation telemetry."
+        ),
+    )
 
 
 class SkillContent(BaseModel):
@@ -1359,6 +1373,13 @@ class McpToolDetail(BaseModel):
         default_factory=list, description="Sessions using this tool (paginated)"
     )
     sessions_total: int = Field(0, description="Total session count (before pagination)")
+    arguments_schema: Optional[dict] = Field(
+        None,
+        description=(
+            "JSON Schema for this tool's arguments, when known. Cursor populates "
+            "this from its per-project MCP tool descriptors; Claude Code leaves it null."
+        ),
+    )
 
 
 class PluginInstallationSchema(BaseModel):

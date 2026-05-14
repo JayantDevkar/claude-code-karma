@@ -19,24 +19,29 @@
 > 8. **Delivery: One big PR** — single ~1,800-line PR with full feature.
 > 9. **v11 dependency**: blocks on `agent-coord-integration` (v11 substrate) merging to main. Our migration is **v12** (not v13 — sequence-strict).
 
-## Status: implementation in progress (2026-05-13)
+## Status: ✅ Phase 5 (backend) COMPLETE (2026-05-13)
 
-**Unblocked**: agent-coord-integration work is dropped, so we own the v11 slot.
+All 10 v1 endpoints wired. 1,135 tests pass (48 new + 1,087 pre-existing, +4 skipped).
 
-**Done** (4 commits on this branch):
-- ✅ `eacaf56` — v11 schema migration: 3-tuple `session_tools` PK + 6 new Cursor tables + `cursor_workspace_hash` column. 119 db tests pass.
-- ✅ Cursor parser package `api/cursor/{paths,state_db,workspace,composer,bubble,tools,plans,mcp,skills,agents}.py`. End-to-end verified on real Cursor 2.5.26 data (1,098 sessions / 66k bubbles / 30k tool calls / 124 plans / 103 MCP servers / 1,988 MCP tools / 0 errors / 13.6s cold scan / 1.2s incremental).
-- ✅ Cursor indexer `api/cursor/indexer.py` + `api/services/cursor_indexer_service.py` wired into FastAPI lifespan. Auto-detect: no-op if Cursor not installed.
-- ✅ `9a051e8` — Router dispatch for `/projects` + `/projects/{cursor:<hash>}` + `/sessions/{uuid}` + `/sessions/{uuid}/{timeline,tools,file-activity}`. 1087 model+db tests still pass.
+**Commits on `worktree-71-cursor-sessions-research`:**
+- `eacaf56` — v11 schema migration: 3-tuple `session_tools` PK + 6 Cursor tables + `cursor_workspace_hash` column. Backfill NULL → `claude_code`.
+- (parsers) — `api/cursor/{paths,state_db,workspace,composer,bubble,tools,plans,mcp,skills,agents}.py` — POC-validated parsers + indexer + FastAPI lifespan hook.
+- `9a051e8` — Core router dispatch: `/projects`, `/projects/{cursor:<hash>}`, `/sessions/{uuid}`, `/sessions/{uuid}/{timeline,tools,file-activity}`.
+- (this commit) — Remaining 5 endpoints + 48 unit/integration tests:
+  - `/analytics/projects/{cursor:<hash>}` — totals, sessions_by_date, model_usage, tool_usage rollup
+  - `/plans` — union with `cursor_plan` rows (115 Cursor plans + Claude Code plans)
+  - `/plans/{slug}` — falls through to Cursor plans when slug not found in Claude Code
+  - `/tools` (MCP overview) — appends Cursor MCP servers with rich `arguments_schema` JSON Schema
+  - `/agents` — appends Cursor built-in modes (agent/chat/plan/debug/edit)
+  - `/skills` — appends Cursor skill definitions with `tracking_unavailable: true` flag
+  - Schema additions (all backwards-compat): `SkillItem.source` + `SkillItem.description` + `SkillItem.tracking_unavailable`, `McpToolDetail.arguments_schema`.
 
-**Deferred to a follow-up commit on this same branch/PR**:
-- `/analytics/projects/{cursor:<hash>}` — Cursor analytics rollup
-- `/plans` — union with `cursor_plan` rows
-- `/tools` (MCP overview) — append `cursor_mcp_*` descriptors
-- `/agents` — append Cursor built-in agents (constant list)
-- `/skills` — append Cursor skill definitions with `tracking_unavailable=True`
-- Schema: `SkillItem.source` + `SkillItem.tracking_unavailable` + `McpToolDetail.arguments_schema` (additive Pydantic fields)
-- Unit + integration tests for `api/cursor/` (target: ≥80% coverage)
+**End-to-end verified on real Cursor 2.5.26 data (this machine):**
+- 76 workspaces detected → 43 with sessions
+- 1,098 sessions / 66,316 bubbles / 30,677 tool calls / 115 plans / 103 MCP servers / 1,988 MCP tools
+- claude-karma workspace analytics: 24 sessions, 1,633 messages, 2.1M context tokens, top model `claude-4.5-opus-high-thinking`, top tools `read_file_v2 (162)` / `run_terminal_command_v2 (150)` / `edit_file_v2 (108)`
+- 13.6s cold-start indexer; 1.2s incremental; **0 errors**
+- All 10 v1 endpoints respond with correctly-shaped data when queried with Cursor UUIDs / `cursor:<hash>` encoded names
 
 ---
 
