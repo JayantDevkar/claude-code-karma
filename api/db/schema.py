@@ -547,163 +547,190 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             logger.info(
                 "Migrating → v11: Cursor session support + session_tools 3-tuple PK"
             )
-            # Rebuild session_tools to include invocation_source in PK.
-            # SQLite can't ALTER PK, so drop+recreate (same pattern as v9 for skills/commands).
-            conn.executescript("""
-                DROP TABLE IF EXISTS session_tools;
-                CREATE TABLE session_tools (
-                    session_uuid TEXT NOT NULL,
-                    tool_name TEXT NOT NULL,
-                    invocation_source TEXT NOT NULL DEFAULT 'main',
-                    count INTEGER DEFAULT 1,
-                    PRIMARY KEY (session_uuid, tool_name, invocation_source),
-                    FOREIGN KEY (session_uuid) REFERENCES sessions(uuid) ON DELETE CASCADE
-                );
-                CREATE INDEX IF NOT EXISTS idx_tools_name ON session_tools(tool_name);
-                CREATE INDEX IF NOT EXISTS idx_tools_source ON session_tools(invocation_source);
-            """)
+            # Run all v11 statements as one atomic transaction so that power loss
+            # mid-migration leaves the schema in a recoverable state: either fully
+            # at v11 (schema_version row written) or fully back to its prior state
+            # (rollback applied). Without this, the `jsonl_mtime = jsonl_mtime - 1`
+            # nudge at the end could re-run on the next startup and double-decrement
+            # all Claude Code session mtimes, forcing an unnecessary full re-scan.
+            #
+            # Individual conn.execute() calls (not executescript) participate in
+            # the explicit transaction. executescript would issue an implicit
+            # COMMIT before running, breaking atomicity.
+            _apply_v11_migration(conn, schema_version_target=SCHEMA_VERSION)
 
-            # Add cursor_workspace_hash to sessions
-            existing_cols = {
-                r[1] for r in conn.execute("PRAGMA table_info(sessions)").fetchall()
-            }
-            if "cursor_workspace_hash" not in existing_cols:
-                conn.execute("ALTER TABLE sessions ADD COLUMN cursor_workspace_hash TEXT")
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_sessions_cursor_ws "
-                "ON sessions(cursor_workspace_hash) "
-                "WHERE cursor_workspace_hash IS NOT NULL"
-            )
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_sessions_source ON sessions(session_source)"
-            )
-
-            # Backfill session_source = 'claude_code' for cleaner JOINs
-            conn.execute(
-                "UPDATE sessions SET session_source = 'claude_code' "
-                "WHERE session_source IS NULL"
-            )
-
-            # New Cursor-specific tables
-            conn.executescript("""
-                CREATE TABLE IF NOT EXISTS cursor_session_meta (
-                    session_uuid              TEXT PRIMARY KEY,
-                    unified_mode              TEXT,
-                    force_mode                TEXT,
-                    agent_backend             TEXT,
-                    model_name                TEXT,
-                    context_usage_percent     REAL,
-                    context_tokens_used       INTEGER,
-                    context_token_limit       INTEGER,
-                    is_agentic                INTEGER DEFAULT 0,
-                    is_archived               INTEGER DEFAULT 0,
-                    is_draft                  INTEGER DEFAULT 0,
-                    parent_composer_id        TEXT,
-                    created_on_branch         TEXT,
-                    referenced_plans_json     TEXT,
-                    todos_json                TEXT,
-                    sub_composer_ids_json     TEXT,
-                    name                      TEXT,
-                    subtitle                  TEXT,
-                    status                    TEXT,
-                    total_lines_added         INTEGER DEFAULT 0,
-                    total_lines_removed       INTEGER DEFAULT 0,
-                    files_changed_count       INTEGER DEFAULT 0,
-                    indexed_at                INTEGER NOT NULL,
-                    FOREIGN KEY (session_uuid) REFERENCES sessions(uuid) ON DELETE CASCADE
-                );
-                CREATE INDEX IF NOT EXISTS idx_cursor_meta_mode
-                    ON cursor_session_meta(unified_mode);
-                CREATE INDEX IF NOT EXISTS idx_cursor_meta_parent
-                    ON cursor_session_meta(parent_composer_id);
-
-                CREATE TABLE IF NOT EXISTS cursor_bubble (
-                    session_uuid         TEXT NOT NULL,
-                    bubble_id            TEXT NOT NULL,
-                    seq                  INTEGER NOT NULL,
-                    bubble_type          INTEGER NOT NULL,
-                    capability_type      INTEGER,
-                    created_at_ms        INTEGER,
-                    has_thinking         INTEGER DEFAULT 0,
-                    thinking_duration_ms INTEGER,
-                    has_tool_call        INTEGER DEFAULT 0,
-                    text_preview         TEXT,
-                    text_full            TEXT,
-                    raw_json             TEXT,
-                    PRIMARY KEY (session_uuid, bubble_id),
-                    FOREIGN KEY (session_uuid) REFERENCES sessions(uuid) ON DELETE CASCADE
-                );
-                CREATE INDEX IF NOT EXISTS idx_cursor_bubble_seq
-                    ON cursor_bubble(session_uuid, seq);
-                CREATE INDEX IF NOT EXISTS idx_cursor_bubble_type
-                    ON cursor_bubble(session_uuid, bubble_type);
-
-                CREATE TABLE IF NOT EXISTS cursor_tool_call (
-                    session_uuid     TEXT NOT NULL,
-                    bubble_id        TEXT NOT NULL,
-                    tool_call_id     TEXT,
-                    tool_name        TEXT NOT NULL,
-                    tool_int         INTEGER,
-                    status           TEXT,
-                    args_json        TEXT,
-                    result_text      TEXT,
-                    file_path        TEXT,
-                    created_at_ms    INTEGER,
-                    PRIMARY KEY (session_uuid, bubble_id, tool_name),
-                    FOREIGN KEY (session_uuid) REFERENCES sessions(uuid) ON DELETE CASCADE
-                );
-                CREATE INDEX IF NOT EXISTS idx_cursor_toolcall_name
-                    ON cursor_tool_call(tool_name);
-                CREATE INDEX IF NOT EXISTS idx_cursor_toolcall_file
-                    ON cursor_tool_call(file_path) WHERE file_path IS NOT NULL;
-
-                CREATE TABLE IF NOT EXISTS cursor_plan (
-                    slug           TEXT PRIMARY KEY,
-                    plan_id        TEXT,
-                    name           TEXT,
-                    overview       TEXT,
-                    todos_json     TEXT,
-                    body_md        TEXT,
-                    file_path      TEXT NOT NULL,
-                    file_mtime_ms  INTEGER NOT NULL,
-                    indexed_at     INTEGER NOT NULL
-                );
-                CREATE INDEX IF NOT EXISTS idx_cursor_plan_id ON cursor_plan(plan_id);
-
-                CREATE TABLE IF NOT EXISTS cursor_mcp_server (
-                    server_identifier TEXT NOT NULL,
-                    workspace_hash    TEXT NOT NULL,
-                    server_name       TEXT,
-                    source            TEXT,
-                    file_path         TEXT NOT NULL,
-                    indexed_at        INTEGER NOT NULL,
-                    PRIMARY KEY (server_identifier, workspace_hash)
-                );
-
-                CREATE TABLE IF NOT EXISTS cursor_mcp_tool (
-                    server_identifier TEXT NOT NULL,
-                    workspace_hash    TEXT NOT NULL,
-                    tool_name         TEXT NOT NULL,
-                    description       TEXT,
-                    arguments_json    TEXT,
-                    file_path         TEXT NOT NULL,
-                    indexed_at        INTEGER NOT NULL,
-                    PRIMARY KEY (server_identifier, workspace_hash, tool_name),
-                    FOREIGN KEY (server_identifier, workspace_hash)
-                        REFERENCES cursor_mcp_server(server_identifier, workspace_hash) ON DELETE CASCADE
-                );
-                CREATE INDEX IF NOT EXISTS idx_cursor_mcp_tool_name
-                    ON cursor_mcp_tool(tool_name);
-            """)
-
-            # Force re-index so Claude Code tool counts repopulate under new PK
-            conn.execute("UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1")
-
-    # Record version
-    conn.execute(
-        "INSERT OR REPLACE INTO schema_version (version) VALUES (?)",
-        (SCHEMA_VERSION,),
-    )
-    conn.commit()
+    if current_version < SCHEMA_VERSION:
+        # Versions <11 still use the legacy commit-after-all-migrations pattern
+        # for pre-existing migration blocks (v2-v10). The v11 block above commits
+        # itself and writes schema_version internally, so re-stamping here is
+        # cheap and keeps behavior consistent for v1-v10 startup paths.
+        conn.execute(
+            "INSERT OR REPLACE INTO schema_version (version) VALUES (?)",
+            (SCHEMA_VERSION,),
+        )
+        conn.commit()
 
     logger.info("Schema version %d applied successfully", SCHEMA_VERSION)
+
+
+def _apply_v11_migration(conn: sqlite3.Connection, schema_version_target: int) -> None:
+    """
+    Apply v11 schema changes atomically.
+
+    All DDL + data changes + the schema_version stamp run in one transaction.
+    If anything fails, ROLLBACK restores the prior state so a retry runs a
+    clean migration rather than re-applying partial state.
+    """
+    # Pre-check (before opening the transaction) whether cursor_workspace_hash
+    # already exists, since SQLite's ALTER TABLE does not support IF NOT EXISTS
+    # on columns and would error on a repeated apply.
+    existing_session_cols = {
+        r[1] for r in conn.execute("PRAGMA table_info(sessions)").fetchall()
+    }
+    add_cursor_workspace_hash = "cursor_workspace_hash" not in existing_session_cols
+
+    statements: list[str] = [
+        # session_tools rebuild with 3-tuple PK
+        "DROP TABLE IF EXISTS session_tools",
+        """CREATE TABLE session_tools (
+            session_uuid TEXT NOT NULL,
+            tool_name TEXT NOT NULL,
+            invocation_source TEXT NOT NULL DEFAULT 'main',
+            count INTEGER DEFAULT 1,
+            PRIMARY KEY (session_uuid, tool_name, invocation_source),
+            FOREIGN KEY (session_uuid) REFERENCES sessions(uuid) ON DELETE CASCADE
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_tools_name ON session_tools(tool_name)",
+        "CREATE INDEX IF NOT EXISTS idx_tools_source ON session_tools(invocation_source)",
+    ]
+    if add_cursor_workspace_hash:
+        statements.append("ALTER TABLE sessions ADD COLUMN cursor_workspace_hash TEXT")
+    statements.extend(
+        [
+            "CREATE INDEX IF NOT EXISTS idx_sessions_cursor_ws "
+            "ON sessions(cursor_workspace_hash) "
+            "WHERE cursor_workspace_hash IS NOT NULL",
+            "CREATE INDEX IF NOT EXISTS idx_sessions_source ON sessions(session_source)",
+            "UPDATE sessions SET session_source = 'claude_code' WHERE session_source IS NULL",
+            # Cursor-specific tables
+            """CREATE TABLE IF NOT EXISTS cursor_session_meta (
+                session_uuid              TEXT PRIMARY KEY,
+                unified_mode              TEXT,
+                force_mode                TEXT,
+                agent_backend             TEXT,
+                model_name                TEXT,
+                context_usage_percent     REAL,
+                context_tokens_used       INTEGER,
+                context_token_limit       INTEGER,
+                is_agentic                INTEGER DEFAULT 0,
+                is_archived               INTEGER DEFAULT 0,
+                is_draft                  INTEGER DEFAULT 0,
+                parent_composer_id        TEXT,
+                created_on_branch         TEXT,
+                referenced_plans_json     TEXT,
+                todos_json                TEXT,
+                sub_composer_ids_json     TEXT,
+                name                      TEXT,
+                subtitle                  TEXT,
+                status                    TEXT,
+                total_lines_added         INTEGER DEFAULT 0,
+                total_lines_removed       INTEGER DEFAULT 0,
+                files_changed_count       INTEGER DEFAULT 0,
+                indexed_at                INTEGER NOT NULL,
+                FOREIGN KEY (session_uuid) REFERENCES sessions(uuid) ON DELETE CASCADE
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_cursor_meta_mode ON cursor_session_meta(unified_mode)",
+            "CREATE INDEX IF NOT EXISTS idx_cursor_meta_parent ON cursor_session_meta(parent_composer_id)",
+            """CREATE TABLE IF NOT EXISTS cursor_bubble (
+                session_uuid         TEXT NOT NULL,
+                bubble_id            TEXT NOT NULL,
+                seq                  INTEGER NOT NULL,
+                bubble_type          INTEGER NOT NULL,
+                capability_type      INTEGER,
+                created_at_ms        INTEGER,
+                has_thinking         INTEGER DEFAULT 0,
+                thinking_duration_ms INTEGER,
+                has_tool_call        INTEGER DEFAULT 0,
+                text_preview         TEXT,
+                text_full            TEXT,
+                raw_json             TEXT,
+                PRIMARY KEY (session_uuid, bubble_id),
+                FOREIGN KEY (session_uuid) REFERENCES sessions(uuid) ON DELETE CASCADE
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_cursor_bubble_seq ON cursor_bubble(session_uuid, seq)",
+            "CREATE INDEX IF NOT EXISTS idx_cursor_bubble_type ON cursor_bubble(session_uuid, bubble_type)",
+            """CREATE TABLE IF NOT EXISTS cursor_tool_call (
+                session_uuid     TEXT NOT NULL,
+                bubble_id        TEXT NOT NULL,
+                tool_call_id     TEXT,
+                tool_name        TEXT NOT NULL,
+                tool_int         INTEGER,
+                status           TEXT,
+                args_json        TEXT,
+                result_text      TEXT,
+                file_path        TEXT,
+                created_at_ms    INTEGER,
+                PRIMARY KEY (session_uuid, bubble_id, tool_name),
+                FOREIGN KEY (session_uuid) REFERENCES sessions(uuid) ON DELETE CASCADE
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_cursor_toolcall_name ON cursor_tool_call(tool_name)",
+            "CREATE INDEX IF NOT EXISTS idx_cursor_toolcall_file "
+            "ON cursor_tool_call(file_path) WHERE file_path IS NOT NULL",
+            """CREATE TABLE IF NOT EXISTS cursor_plan (
+                slug           TEXT PRIMARY KEY,
+                plan_id        TEXT,
+                name           TEXT,
+                overview       TEXT,
+                todos_json     TEXT,
+                body_md        TEXT,
+                file_path      TEXT NOT NULL,
+                file_mtime_ms  INTEGER NOT NULL,
+                indexed_at     INTEGER NOT NULL
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_cursor_plan_id ON cursor_plan(plan_id)",
+            """CREATE TABLE IF NOT EXISTS cursor_mcp_server (
+                server_identifier TEXT NOT NULL,
+                workspace_hash    TEXT NOT NULL,
+                server_name       TEXT,
+                source            TEXT,
+                file_path         TEXT NOT NULL,
+                indexed_at        INTEGER NOT NULL,
+                PRIMARY KEY (server_identifier, workspace_hash)
+            )""",
+            """CREATE TABLE IF NOT EXISTS cursor_mcp_tool (
+                server_identifier TEXT NOT NULL,
+                workspace_hash    TEXT NOT NULL,
+                tool_name         TEXT NOT NULL,
+                description       TEXT,
+                arguments_json    TEXT,
+                file_path         TEXT NOT NULL,
+                indexed_at        INTEGER NOT NULL,
+                PRIMARY KEY (server_identifier, workspace_hash, tool_name),
+                FOREIGN KEY (server_identifier, workspace_hash)
+                    REFERENCES cursor_mcp_server(server_identifier, workspace_hash) ON DELETE CASCADE
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_cursor_mcp_tool_name ON cursor_mcp_tool(tool_name)",
+            # jsonl_mtime nudge is the one non-idempotent statement — keep it
+            # inside the transaction so a retry runs against the rolled-back
+            # state rather than double-decrementing.
+            "UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1",
+        ]
+    )
+
+    # Some sqlite3 connections inherit Python's implicit transaction handling;
+    # commit any prior open implicit transaction before opening our explicit one.
+    if conn.in_transaction:
+        conn.commit()
+
+    conn.execute("BEGIN")
+    try:
+        for stmt in statements:
+            conn.execute(stmt)
+        conn.execute(
+            "INSERT OR REPLACE INTO schema_version (version) VALUES (?)",
+            (schema_version_target,),
+        )
+        conn.execute("COMMIT")
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise

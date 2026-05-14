@@ -28,7 +28,7 @@ from cursor.composer import (
     read_composer,
 )
 from cursor.mcp import iter_mcp_descriptors_for_workspace
-from cursor.paths import cursor_global_db_path, detect_cursor_install
+from cursor.paths import cursor_global_db_path, cursor_plans_dir, detect_cursor_install
 from cursor.plans import iter_plans
 from cursor.state_db import open_state_db_readonly
 from cursor.tools import extract_tool_call_row
@@ -413,6 +413,14 @@ def _write_tool_call_row(writer_conn: sqlite3.Connection, row: dict) -> None:
 
 def _index_plans(writer_conn: sqlite3.Connection) -> int:
     """Refresh cursor_plan from ~/.cursor/plans/. Returns count written."""
+    # Skip the entire pass if the plans directory isn't reachable. This guards
+    # against wiping all indexed plans when the filesystem is transiently
+    # unavailable (network-mounted home, permission flip, drive unmount).
+    # Returning 0 here preserves whatever's already in cursor_plan.
+    plans_dir = cursor_plans_dir()
+    if not plans_dir.is_dir():
+        return 0
+
     count = 0
     seen: set[str] = set()
     now_ms = int(time.time() * 1000)
@@ -438,16 +446,31 @@ def _index_plans(writer_conn: sqlite3.Connection) -> int:
             ),
         )
         count += 1
-    # Remove plans whose source file disappeared
+    # Remove plans whose source file disappeared. Only run the bulk DELETE when
+    # we actually saw plans on disk — an empty `seen` after a successful scan
+    # of a non-empty directory means every plan was filtered or deleted, which
+    # is a legitimate wipe. Empty seen with an empty directory above already
+    # returned early.
     if seen:
         placeholders = ",".join("?" * len(seen))
         writer_conn.execute(
             f"DELETE FROM cursor_plan WHERE slug NOT IN ({placeholders})",
             list(seen),
         )
-    else:
+    elif _plans_dir_is_empty(plans_dir):
+        # Directory exists but has no .plan.md files — legitimately empty.
         writer_conn.execute("DELETE FROM cursor_plan")
+    # else: scan returned 0 plans even though directory exists and has files —
+    # likely a transient read error; keep existing rows untouched.
     return count
+
+
+def _plans_dir_is_empty(plans_dir) -> bool:
+    """True if the plans directory contains zero .plan.md files."""
+    try:
+        return not any(p.name.endswith(".plan.md") for p in plans_dir.iterdir())
+    except OSError:
+        return False
 
 
 def _write_mcp_servers(writer_conn: sqlite3.Connection, servers: list) -> None:

@@ -790,3 +790,137 @@ def test_is_cursor_project_encoded_name():
     assert is_cursor_project_encoded_name("cursor:abc123")
     assert not is_cursor_project_encoded_name("-Users-me-repo")
     assert not is_cursor_project_encoded_name("")
+
+
+# =============================================================================
+# Code review follow-up: regression tests for the 3 fixes (C1 / H1 / M1)
+# =============================================================================
+
+
+def test_v11_migration_rolls_back_on_partial_failure(monkeypatch):
+    """
+    C1 regression: a failure mid-v11 must leave the DB at v10 (not partially
+    migrated) and must not double-decrement jsonl_mtime on the retry.
+    """
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    _v10_seed_schema(conn)
+    conn.execute(
+        "INSERT INTO sessions (uuid, project_encoded_name, jsonl_mtime) "
+        "VALUES ('u1', '-Users-me', 1000.0)"
+    )
+
+    from db import schema
+
+    # Patch the helper so it raises partway through, after the executescript
+    # commits would have flushed under the old design.
+    real_apply = schema._apply_v11_migration
+
+    def boom(c, schema_version_target):
+        # Match the real helper's pre-flight: close any sqlite3-auto-opened
+        # transaction left over from prior migration blocks (v6-v10 do bare
+        # conn.execute() ALTERs which Python's sqlite3 wrapper auto-begins).
+        if c.in_transaction:
+            c.commit()
+        c.execute("BEGIN")
+        try:
+            c.execute("DROP TABLE IF EXISTS session_tools")
+            c.execute(
+                "CREATE TABLE session_tools (session_uuid TEXT, tool_name TEXT, "
+                "invocation_source TEXT NOT NULL DEFAULT 'main', count INTEGER, "
+                "PRIMARY KEY (session_uuid, tool_name, invocation_source))"
+            )
+            c.execute("UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1")
+            raise RuntimeError("simulated mid-migration crash")
+        except Exception:
+            c.execute("ROLLBACK")
+            raise
+
+    monkeypatch.setattr(schema, "_apply_v11_migration", boom)
+    with pytest.raises(RuntimeError, match="simulated mid-migration crash"):
+        schema.ensure_schema(conn)
+
+    # After rollback: still v10, mtime unchanged
+    version = conn.execute("SELECT MAX(version) FROM schema_version").fetchone()[0]
+    assert version == 10
+    mtime = conn.execute("SELECT jsonl_mtime FROM sessions WHERE uuid='u1'").fetchone()[0]
+    assert mtime == 1000.0
+
+    # Now run the real migration — should succeed and decrement exactly once
+    monkeypatch.setattr(schema, "_apply_v11_migration", real_apply)
+    schema.ensure_schema(conn)
+    version = conn.execute("SELECT MAX(version) FROM schema_version").fetchone()[0]
+    assert version == 11
+    mtime = conn.execute("SELECT jsonl_mtime FROM sessions WHERE uuid='u1'").fetchone()[0]
+    assert mtime == 999.0  # decremented exactly once, not twice
+
+
+def test_plan_summary_uses_tz_aware_epoch_fallback():
+    """
+    H1 regression: when file_mtime_ms is NULL/zero, the fallback must be a
+    timezone-aware datetime (not the deprecated naive datetime.utcfromtimestamp).
+    """
+    from cursor.api import _plan_row_to_summary
+
+    row = ("slug-x", None, None, None, 0)
+    summary = _plan_row_to_summary(row)
+    assert summary["created"].tzinfo is not None
+    assert summary["modified"].tzinfo is not None
+
+
+def test_index_plans_preserves_rows_when_directory_missing(synthetic_cursor_dbs, tmp_path):
+    """
+    M1 regression: if cursor_plans_dir() doesn't exist (transient FS error,
+    network mount issue), the indexer must NOT wipe cursor_plan rows.
+    """
+    from unittest.mock import patch
+
+    conn, _ = _run_indexer_with_fixture(synthetic_cursor_dbs, tmp_path)
+    conn.execute(
+        "INSERT INTO cursor_plan "
+        "(slug, plan_id, name, overview, todos_json, body_md, file_path, file_mtime_ms, indexed_at) "
+        "VALUES ('protected', 'aabbccdd', 'Protected Plan', 'should survive', NULL, "
+        "'# body', '/tmp/protected.plan.md', 1000, 1000)"
+    )
+    conn.commit()
+    assert conn.execute("SELECT COUNT(*) FROM cursor_plan WHERE slug='protected'").fetchone()[0] == 1
+
+    from cursor import indexer
+
+    missing_dir = tmp_path / "does-not-exist"
+    # Patch BOTH call sites: the early-return check in _index_plans (indexer module)
+    # AND iter_plans()'s own reference (plans module).
+    with (
+        patch("cursor.indexer.cursor_plans_dir", return_value=missing_dir),
+        patch("cursor.plans.cursor_plans_dir", return_value=missing_dir),
+    ):
+        wrote = indexer._index_plans(conn)
+    assert wrote == 0
+    # Row still present — not wiped
+    assert conn.execute("SELECT COUNT(*) FROM cursor_plan WHERE slug='protected'").fetchone()[0] == 1
+
+
+def test_index_plans_wipes_when_directory_is_empty(synthetic_cursor_dbs, tmp_path):
+    """M1 follow-up: directory exists but holds no .plan.md files → legitimate wipe."""
+    from unittest.mock import patch
+
+    conn, _ = _run_indexer_with_fixture(synthetic_cursor_dbs, tmp_path)
+    conn.execute(
+        "INSERT INTO cursor_plan "
+        "(slug, plan_id, name, overview, todos_json, body_md, file_path, file_mtime_ms, indexed_at) "
+        "VALUES ('stale', 'aabbccdd', 'Stale Plan', NULL, NULL, '# body', '/tmp/x.plan.md', 1000, 1000)"
+    )
+    conn.commit()
+
+    from cursor import indexer
+
+    empty_dir = tmp_path / "empty-plans"
+    empty_dir.mkdir()
+    with (
+        patch("cursor.indexer.cursor_plans_dir", return_value=empty_dir),
+        patch("cursor.plans.cursor_plans_dir", return_value=empty_dir),
+    ):
+        wrote = indexer._index_plans(conn)
+    assert wrote == 0
+    # Directory existed but was empty — stale rows removed
+    assert conn.execute("SELECT COUNT(*) FROM cursor_plan").fetchone()[0] == 0

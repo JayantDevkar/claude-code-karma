@@ -10,9 +10,11 @@ helpers when `sessions.session_source = 'cursor'` is detected.
 import json
 import logging
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+_EPOCH_UTC = datetime.fromtimestamp(0, tz=timezone.utc)
 
 logger = logging.getLogger(__name__)
 
@@ -341,7 +343,7 @@ def _plan_row_to_summary(row) -> dict:
     body_md = body_md or ""
     preview = (overview or body_md)[:500] if (overview or body_md) else ""
     word_count = len((body_md or "").split())
-    mtime_dt = _ms_to_dt(file_mtime_ms) or datetime.utcfromtimestamp(0)
+    mtime_dt = _ms_to_dt(file_mtime_ms) or _EPOCH_UTC
     return {
         "slug": slug,
         "title": name,
@@ -463,8 +465,6 @@ def list_cursor_skill_items() -> list[dict]:
 
 def list_cursor_builtin_agent_summaries() -> list[dict]:
     """Return AgentSummary-shaped dicts for Cursor's built-in agent modes."""
-    from datetime import timezone
-
     from cursor.agents import list_cursor_builtin_agents
 
     now = datetime.now(tz=timezone.utc)
@@ -668,8 +668,6 @@ def _ms_to_dt(ms: int | None) -> datetime | None:
     if ms is None or ms <= 0:
         return None
     try:
-        from datetime import timezone
-
         return datetime.fromtimestamp(ms / 1000, tz=timezone.utc)
     except (ValueError, OverflowError, OSError):
         return None
