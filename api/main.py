@@ -93,6 +93,20 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning(f"SQLite indexing failed to start (non-critical): {e}")
 
+    # Start Cursor indexer (auto-detects; no-op if Cursor not installed)
+    cursor_periodic_task = None
+    if settings.use_sqlite:
+        try:
+            from services.cursor_indexer_service import (
+                run_periodic_cursor_sync,
+                start_cursor_background_index,
+            )
+
+            start_cursor_background_index()
+            cursor_periodic_task = asyncio.create_task(run_periodic_cursor_sync(60))
+        except Exception as e:
+            logger.warning(f"Cursor indexer failed to start (non-critical): {e}")
+
     # Start live session reconciler
     reconciler_task = None
     if settings.reconciler_enabled:
@@ -120,6 +134,10 @@ async def lifespan(app: FastAPI):
     if periodic_task is not None:
         periodic_task.cancel()
         logger.info("Periodic reindex task cancelled")
+
+    if cursor_periodic_task is not None:
+        cursor_periodic_task.cancel()
+        logger.info("Cursor periodic reindex task cancelled")
 
     if settings.use_sqlite:
         try:
