@@ -900,6 +900,134 @@ def test_index_plans_preserves_rows_when_directory_missing(synthetic_cursor_dbs,
     assert conn.execute("SELECT COUNT(*) FROM cursor_plan WHERE slug='protected'").fetchone()[0] == 1
 
 
+def test_list_cursor_mcp_servers_with_tools_aggregates_calls(tmp_path):
+    """
+    MCP overview aggregation gap (review §6 test gap #4): joins
+    cursor_mcp_server/cursor_mcp_tool with session_tools via the
+    mcp__{server}__{tool} prefix to surface call counts + session_count.
+    """
+    import sqlite3
+
+    from db.schema import ensure_schema
+
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys=ON")
+    ensure_schema(conn)
+
+    # Seed a Cursor session with two MCP tool calls + one native call
+    conn.execute(
+        "INSERT INTO sessions (uuid, project_encoded_name, jsonl_mtime, session_source) "
+        "VALUES ('s1', 'cursor:abc', 100.0, 'cursor')"
+    )
+    conn.execute(
+        "INSERT INTO sessions (uuid, project_encoded_name, jsonl_mtime, session_source) "
+        "VALUES ('s2', 'cursor:abc', 200.0, 'cursor')"
+    )
+    # MCP servers + tools (static descriptors)
+    conn.execute(
+        "INSERT INTO cursor_mcp_server (server_identifier, workspace_hash, server_name, source, file_path, indexed_at) "
+        "VALUES ('coderoots', 'abc', 'coderoots', 'user', '/path/SERVER_METADATA.json', 100)"
+    )
+    conn.execute(
+        "INSERT INTO cursor_mcp_tool (server_identifier, workspace_hash, tool_name, description, arguments_json, file_path, indexed_at) "
+        "VALUES ('coderoots', 'abc', 'query', 'Run a query', "
+        "'{\"type\":\"object\",\"properties\":{\"q\":{\"type\":\"string\"}}}', "
+        "'/path/tool.json', 100)"
+    )
+    # session_tools rows using the mcp__{server}__{tool} prefix the indexer produces
+    conn.execute(
+        "INSERT INTO session_tools (session_uuid, tool_name, invocation_source, count) "
+        "VALUES ('s1', 'mcp__coderoots__query', 'cursor', 3)"
+    )
+    conn.execute(
+        "INSERT INTO session_tools (session_uuid, tool_name, invocation_source, count) "
+        "VALUES ('s2', 'mcp__coderoots__query', 'cursor', 2)"
+    )
+    conn.commit()
+
+    from cursor.api import list_cursor_mcp_servers_with_tools
+
+    servers = list_cursor_mcp_servers_with_tools(conn)
+    assert len(servers) == 1
+    server = servers[0]
+    assert server["name"] == "coderoots"
+    assert server["source"] == "user"
+    assert server["tool_count"] == 1
+
+    tool = server["tools"][0]
+    assert tool["name"] == "query"
+    assert tool["full_name"] == "mcp__coderoots__query"
+    assert tool["calls"] == 5  # 3 + 2
+    assert tool["session_count"] == 2  # s1 and s2
+    # arguments_schema parsed from JSON, not left as a string
+    assert tool["arguments_schema"]["type"] == "object"
+    assert tool["arguments_schema"]["properties"]["q"]["type"] == "string"
+
+
+def test_list_cursor_mcp_servers_handles_no_call_data(tmp_path):
+    """An MCP server with descriptors but zero tool calls returns calls=0/session_count=0."""
+    import sqlite3
+
+    from db.schema import ensure_schema
+
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys=ON")
+    ensure_schema(conn)
+    conn.execute(
+        "INSERT INTO cursor_mcp_server (server_identifier, workspace_hash, server_name, source, file_path, indexed_at) "
+        "VALUES ('unused', 'ws1', 'Unused', 'plugin', '/x', 100)"
+    )
+    conn.execute(
+        "INSERT INTO cursor_mcp_tool (server_identifier, workspace_hash, tool_name, description, arguments_json, file_path, indexed_at) "
+        "VALUES ('unused', 'ws1', 'noop', 'Never called', NULL, '/x', 100)"
+    )
+    conn.commit()
+
+    from cursor.api import list_cursor_mcp_servers_with_tools
+
+    servers = list_cursor_mcp_servers_with_tools(conn)
+    assert len(servers) == 1
+    assert servers[0]["total_calls"] == 0
+    assert servers[0]["tools"][0]["calls"] == 0
+    assert servers[0]["tools"][0]["session_count"] == 0
+    assert servers[0]["tools"][0]["arguments_schema"] is None
+
+
+def test_list_cursor_mcp_servers_groups_across_workspaces(tmp_path):
+    """A server declared in 2 workspaces aggregates into one row (review §C2)."""
+    import sqlite3
+
+    from db.schema import ensure_schema
+
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys=ON")
+    ensure_schema(conn)
+    for ws in ("ws1", "ws2"):
+        conn.execute(
+            "INSERT INTO cursor_mcp_server (server_identifier, workspace_hash, server_name, source, file_path, indexed_at) "
+            "VALUES ('shared', ?, 'Shared MCP', 'user', '/x', 100)",
+            (ws,),
+        )
+        conn.execute(
+            "INSERT INTO cursor_mcp_tool (server_identifier, workspace_hash, tool_name, description, arguments_json, file_path, indexed_at) "
+            "VALUES ('shared', ?, 'do_thing', NULL, NULL, '/x', 100)",
+            (ws,),
+        )
+    conn.commit()
+
+    from cursor.api import list_cursor_mcp_servers_with_tools
+
+    servers = list_cursor_mcp_servers_with_tools(conn)
+    # Despite 2 (server, workspace) rows, the overview groups to 1 logical server
+    assert len(servers) == 1
+    assert servers[0]["name"] == "shared"
+    # And likewise 1 distinct tool (not 2)
+    assert servers[0]["tool_count"] == 1
+
+
 def test_index_plans_wipes_when_directory_is_empty(synthetic_cursor_dbs, tmp_path):
     """M1 follow-up: directory exists but holds no .plan.md files → legitimate wipe."""
     from unittest.mock import patch

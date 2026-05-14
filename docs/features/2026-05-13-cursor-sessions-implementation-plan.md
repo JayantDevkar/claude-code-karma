@@ -19,7 +19,15 @@
 > 8. **Delivery: One big PR** — single ~1,800-line PR with full feature.
 > 9. **v11 dependency**: blocks on `agent-coord-integration` (v11 substrate) merging to main. Our migration is **v12** (not v13 — sequence-strict).
 
-## Status: ✅ Phase 5 (backend) COMPLETE (2026-05-13)
+## Status: ✅ Backend v1 COMPLETE — ready for PR (2026-05-14)
+
+**Phase 5 (implementation):** ✅ done
+**Phase 6 (code review + fixes):** ✅ done via feature-dev:code-reviewer agent; 3 high-confidence findings addressed (migration atomicity, deprecated `datetime.utcfromtimestamp`, plans-wipe FS-error guard)
+**Phase 7 (handoff):** ready — PR can be opened against `main`
+
+Total: **9 commits**, ≈5,300 lines added, **1,142 tests passing** (1,087 pre-existing + 55 new cursor tests, +4 skipped).
+
+
 
 All 10 v1 endpoints wired. 1,135 tests pass (48 new + 1,087 pre-existing, +4 skipped).
 
