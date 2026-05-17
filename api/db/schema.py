@@ -10,7 +10,7 @@ import sqlite3
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 11
 
 SCHEMA_SQL = """
 -- Schema versioning
@@ -214,6 +214,50 @@ CREATE TABLE IF NOT EXISTS projects (
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_slug ON projects(slug);
+
+-- Ticket registry: de-duped per (provider, external_key).
+-- Populated by the agent (via MCP) at slash-command link time, or empty
+-- (URL-only) when the link comes from the branch-detect hook or dashboard.
+CREATE TABLE IF NOT EXISTS tickets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    provider TEXT NOT NULL CHECK (provider IN ('linear','jira','github')),
+    external_key TEXT NOT NULL,
+    url TEXT NOT NULL,
+    title TEXT,
+    status TEXT,
+    metadata_json TEXT CHECK (metadata_json IS NULL OR length(metadata_json) <= 65536),
+    metadata_updated_at TEXT,
+    first_seen_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(provider, external_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_tickets_provider ON tickets(provider);
+
+-- Many-to-many: a session can link to many tickets; a ticket can be linked
+-- from many sessions. No FK on session_uuid because the branch-detect hook
+-- writes at SessionStart, possibly before the JSONL indexer has created the
+-- sessions row. Orphans are reaped periodically (see api/main.py lifespan).
+CREATE TABLE IF NOT EXISTS session_tickets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_uuid TEXT NOT NULL,
+    session_slug TEXT,
+    ticket_id INTEGER NOT NULL,
+    link_source TEXT NOT NULL CHECK (link_source IN ('branch','slash_command','dashboard')),
+    linked_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (ticket_id) REFERENCES tickets(id) ON DELETE CASCADE,
+    UNIQUE(session_uuid, ticket_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_session_tickets_session ON session_tickets(session_uuid);
+CREATE INDEX IF NOT EXISTS idx_session_tickets_slug    ON session_tickets(session_slug);
+CREATE INDEX IF NOT EXISTS idx_session_tickets_ticket  ON session_tickets(ticket_id);
+
+-- Partial unique index dedupes links across resumed sessions (resumes share
+-- a slug but get fresh UUIDs). Skipped when slug isn't known at write time;
+-- per-UUID UNIQUE above is the fallback.
+CREATE UNIQUE INDEX IF NOT EXISTS uniq_session_tickets_slug_ticket
+    ON session_tickets(session_slug, ticket_id)
+    WHERE session_slug IS NOT NULL;
 """
 
 
@@ -425,6 +469,44 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             conn.execute("DELETE FROM subagent_commands")
             # Nudge mtime to force re-index of all sessions
             conn.execute("UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1")
+
+        if current_version < 11:
+            logger.info("Migrating → v11: adding tickets + session_tickets tables")
+            conn.executescript("""
+                CREATE TABLE IF NOT EXISTS tickets (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    provider TEXT NOT NULL CHECK (provider IN ('linear','jira','github')),
+                    external_key TEXT NOT NULL,
+                    url TEXT NOT NULL,
+                    title TEXT,
+                    status TEXT,
+                    metadata_json TEXT CHECK (metadata_json IS NULL OR length(metadata_json) <= 65536),
+                    metadata_updated_at TEXT,
+                    first_seen_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    UNIQUE(provider, external_key)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_tickets_provider ON tickets(provider);
+
+                CREATE TABLE IF NOT EXISTS session_tickets (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    session_uuid TEXT NOT NULL,
+                    session_slug TEXT,
+                    ticket_id INTEGER NOT NULL,
+                    link_source TEXT NOT NULL CHECK (link_source IN ('branch','slash_command','dashboard')),
+                    linked_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    FOREIGN KEY (ticket_id) REFERENCES tickets(id) ON DELETE CASCADE,
+                    UNIQUE(session_uuid, ticket_id)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_session_tickets_session ON session_tickets(session_uuid);
+                CREATE INDEX IF NOT EXISTS idx_session_tickets_slug    ON session_tickets(session_slug);
+                CREATE INDEX IF NOT EXISTS idx_session_tickets_ticket  ON session_tickets(ticket_id);
+
+                CREATE UNIQUE INDEX IF NOT EXISTS uniq_session_tickets_slug_ticket
+                    ON session_tickets(session_slug, ticket_id)
+                    WHERE session_slug IS NOT NULL;
+            """)
 
     # Record version
     conn.execute(
