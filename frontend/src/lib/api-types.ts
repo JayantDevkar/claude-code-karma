@@ -1719,3 +1719,66 @@ export interface HookScriptDetail {
 	line_count: number | null;
 	error: string | null;
 }
+
+// ============================================
+// Tickets (session ↔ ticket linking)
+// ============================================
+
+export type TicketProvider = 'linear' | 'jira' | 'github';
+export type TicketLinkSource = 'branch' | 'slash_command' | 'dashboard';
+
+export interface Ticket {
+	id: number;
+	provider: TicketProvider;
+	external_key: string;
+	url: string;
+	title: string | null;
+	status: string | null;
+	metadata_json: string | null;
+	metadata_updated_at: string | null;
+	first_seen_at: string;
+}
+
+export interface SessionTicketLink {
+	id: number;
+	session_uuid: string;
+	session_slug: string | null;
+	ticket_id: number;
+	link_source: TicketLinkSource;
+	linked_at: string;
+}
+
+/** Row returned from GET /sessions/{uuid}/tickets — ticket fields plus link metadata inline. */
+export interface SessionTicketRow extends Ticket {
+	link_id: number;
+	link_source: TicketLinkSource;
+	linked_at: string;
+	session_slug: string | null;
+}
+
+/** Row returned from GET /tickets — ticket fields plus aggregate counts. */
+export interface TicketListItem {
+	id: number;
+	provider: TicketProvider;
+	external_key: string;
+	url: string;
+	title: string | null;
+	status: string | null;
+	first_seen_at: string;
+	metadata_updated_at: string | null;
+	session_count: number;
+	last_linked_at: string | null;
+}
+
+export interface CreateLinkRequest {
+	ref: string;
+	provider?: TicketProvider;
+	url?: string;
+	session_slug?: string;
+	source: TicketLinkSource;
+}
+
+export interface CreateLinkResponse {
+	link: SessionTicketLink;
+	ticket: Ticket;
+}

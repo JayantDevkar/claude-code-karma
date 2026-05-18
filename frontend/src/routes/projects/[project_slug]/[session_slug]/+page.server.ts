@@ -1,4 +1,4 @@
-import type { LiveSessionSummary, PlanDetail } from '$lib/api-types';
+import type { LiveSessionSummary, PlanDetail, SessionTicketRow } from '$lib/api-types';
 import { API_BASE } from '$lib/config';
 import { safeFetch, fetchWithFallback } from '$lib/utils/api-fetch';
 
@@ -48,6 +48,7 @@ export async function load({ params, fetch }) {
 					isStarting: true,
 					project_slug,
 					session_slug,
+					tickets: [] as SessionTicketRow[],
 					error: null
 				};
 			}
@@ -63,6 +64,7 @@ export async function load({ params, fetch }) {
 			isStarting: false,
 			project_slug,
 			session_slug,
+			tickets: [] as SessionTicketRow[],
 			error: isNotFound
 				? `Session not found: ${session_slug}`
 				: `Failed to lookup session: ${lookupResult.message}`
@@ -83,7 +85,8 @@ export async function load({ params, fetch }) {
 		subagentsData,
 		toolsData,
 		tasksData,
-		planResult
+		planResult,
+		ticketsData
 	] = await Promise.all([
 		safeFetch<Record<string, unknown>>(fetch, `${API_BASE}/sessions/${sessionUuid}`),
 		fetchWithFallback(fetch, `${API_BASE}/sessions/${sessionUuid}/timeline`, []),
@@ -91,7 +94,12 @@ export async function load({ params, fetch }) {
 		fetchWithFallback(fetch, `${API_BASE}/sessions/${sessionUuid}/subagents`, []),
 		fetchWithFallback(fetch, `${API_BASE}/sessions/${sessionUuid}/tools`, []),
 		fetchWithFallback(fetch, `${API_BASE}/sessions/${sessionUuid}/tasks`, []),
-		safeFetch<PlanDetail>(fetch, `${API_BASE}/sessions/${sessionUuid}/plan`)
+		safeFetch<PlanDetail>(fetch, `${API_BASE}/sessions/${sessionUuid}/plan`),
+		fetchWithFallback<SessionTicketRow[]>(
+			fetch,
+			`${API_BASE}/sessions/${sessionUuid}/tickets`,
+			[]
+		)
 	]);
 
 	if (!sessionResult.ok) {
@@ -103,6 +111,7 @@ export async function load({ params, fetch }) {
 			isStarting: false,
 			project_slug,
 			session_slug,
+			tickets: [] as SessionTicketRow[],
 			error: `Failed to load session: ${sessionResult.message}`
 		};
 	}
@@ -187,6 +196,7 @@ export async function load({ params, fetch }) {
 		isStarting: false,
 		project_slug,
 		session_slug,
+		tickets: (ticketsData ?? []) as SessionTicketRow[],
 		error: null
 	};
 }

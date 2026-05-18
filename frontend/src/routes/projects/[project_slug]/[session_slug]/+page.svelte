@@ -1,8 +1,10 @@
 <script lang="ts">
 	import { ConversationView } from '$lib/components/conversation';
+	import { SessionTicketsSection } from '$lib/components/tickets';
 	import type {
 		SessionDetail,
 		LiveSessionSummary,
+		SessionTicketRow,
 		ToolUsage,
 		Task,
 		PlanDetail
@@ -17,6 +19,7 @@
 	let session = $derived(data.session as SessionDetail | null);
 	let plan = $derived(data.plan as PlanDetail | null);
 	let error = $derived(data.error as string | null);
+	let tickets = $derived((data.tickets ?? []) as SessionTicketRow[]);
 
 	let isLoading = $derived(
 		!!$navigating &&
@@ -48,6 +51,15 @@
 		</div>
 	</div>
 {:else}
+	{#if session?.uuid}
+		<div class="px-4 pt-4">
+			<SessionTicketsSection
+				sessionUuid={session.uuid}
+				sessionSlug={session.slug ?? data.session_slug}
+				initial={tickets}
+			/>
+		</div>
+	{/if}
 	<ConversationView
 		entity={session}
 		encodedName={data.project_slug}
