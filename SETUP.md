@@ -555,6 +555,91 @@ curl http://localhost:8000/projects/YOUR-PROJECT-NAME | python3 -m json.tool | g
 
 ---
 
+## Tier 4: Ticket Linking (Optional)
+
+Links Claude Code sessions to tickets in Linear / Jira / GitHub Issues, so the karma dashboard can show "what work was done for ticket X" across sessions.
+
+**What you'll get:**
+
+- A `Tickets` page in the dashboard with all linked tickets and their session counts
+- A `Tickets` section on every session page where you can paste a URL and link the session
+- An optional auto-link when a session starts on a `feat/LINEAR-123-…` style branch
+- A `/link-ticket-to-session` slash command that uses your existing Linear/Jira/GitHub MCP to fetch the ticket title at link time
+
+**Architecture:**
+
+- Karma is read-only — it never writes to Linear/Jira/GitHub.
+- Metadata (title, status) comes from the agent's MCP servers, not from karma's backend, so karma never needs provider credentials.
+
+### Step 11: Install the Slash Command (Recommended)
+
+**What:** Adds `/link-ticket-to-session <ref>` so you can link the current session in-conversation, and have the agent pull the ticket title via its MCP.
+
+**Symlink:**
+
+```bash
+mkdir -p ~/.claude/commands
+ln -sf "$(cd commands && pwd)/link-ticket-to-session.md" ~/.claude/commands/link-ticket-to-session.md
+```
+
+**Copy:**
+
+```bash
+mkdir -p ~/.claude/commands
+cp commands/link-ticket-to-session.md ~/.claude/commands/
+```
+
+**Verify** by starting any Claude Code session and typing `/link-ticket-to-session https://linear.app/.../issue/ABC-123`. The agent should fetch the title via your Linear MCP (if installed) and POST the link to karma.
+
+### Step 12: Enable Branch-Name Auto-Detection (Optional)
+
+**What:** A `SessionStart` hook that watches the git branch and auto-links the session when the branch name matches a configured pattern.
+
+**Why:** Zero-friction linking when your team's branch convention encodes ticket keys (e.g., `feat/LINEAR-123-fix-login`).
+
+**Install the script:**
+
+```bash
+ln -sf "$(cd hooks && pwd)/ticket_branch_detector.py" ~/.claude/hooks/ticket_branch_detector.py
+chmod +x hooks/ticket_branch_detector.py
+```
+
+**Configure the patterns** in `~/.claude_karma/config.json`:
+
+```json
+{
+  "branch_detect_enabled": true,
+  "ticket_branch_patterns": [
+    { "regex": "(?P<key>[A-Z][A-Z0-9_]+-\\d+)", "provider": "linear" }
+  ]
+}
+```
+
+- `branch_detect_enabled` is `false` by default — set it to `true` to opt in.
+- `regex` is a Python regex. If it has a `key` named group, that group's match is used as the ticket key; otherwise the entire match is used.
+- `provider` must be `linear`, `jira`, or `github`.
+
+**Register the hook** in `~/.claude/settings.json` under `hooks.SessionStart` (alongside `live_session_tracker.py` if you installed Tier 2):
+
+```json
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          { "type": "command", "command": "python3 ~/.claude/hooks/ticket_branch_detector.py" }
+        ]
+      }
+    ]
+  }
+}
+```
+
+The hook is silent on every failure (no git, no match, karma unreachable) — it never blocks `SessionStart`. Errors land in `~/.claude_karma/logs/ticket_branch_detector.log`.
+
+---
+
 ## Hook Configuration Reference
 
 ### Complete Configuration (All Tiers)

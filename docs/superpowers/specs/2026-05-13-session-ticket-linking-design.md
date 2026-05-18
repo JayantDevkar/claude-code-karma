@@ -218,7 +218,16 @@ operation in the HTTP sense (the original spec conflated "create link" with
 
 ### Path 1 — Slash command (richest payload, agent-driven)
 
-`~/.claude/commands/link-ticket-to-session.md`:
+The template lives at `commands/link-ticket-to-session.md` in this repo
+and is symlinked or copied into `~/.claude/commands/` at install time.
+Frontmatter uses `${CLAUDE_SESSION_ID}` directly — confirmed during
+planning to be a documented substitution available inside Claude Code
+custom commands — so there's no need to fish the UUID out of
+`~/.claude_karma/live-sessions/` files. The slug-based dedup that the
+live-sessions lookup was designed to support is handled at the API
+layer via the partial unique index on `(session_slug, ticket_id)`:
+the branch-detect hook fills slug in when known; the slash command
+leaves it out; resumed sessions still collapse to one row.
 
 ```markdown
 ---
@@ -226,63 +235,42 @@ description: Link the current Claude Code session to a ticket and cache its titl
 argument-hint: <ticket-ref-or-url>
 ---
 
-You are linking the current Claude Code session to ticket: **$ARGUMENTS**
+You are linking the current Claude Code session
+(`${CLAUDE_SESSION_ID}`) to ticket: **$ARGUMENTS**
 
 Steps:
 
-1. **Resolve the current session UUID and slug.** Read the directory
-   `~/.claude_karma/live-sessions/`. Pick the JSON entry whose `cwd` matches
-   the current working directory (`pwd`) and whose `last_updated` is the most
-   recent. From that entry, take `session_id` and `slug`. If no entry matches,
-   abort and tell the user "karma can't see this session — is the karma API
-   running and is the live-session tracker hook installed?"
-
-2. **Parse $ARGUMENTS.** It may be a URL or a short ref. Recognized forms:
+1. **Parse $ARGUMENTS.** It may be a URL or a short ref. Recognized forms:
    - Linear:  `LINEAR-123` or `https://linear.app/.../issue/ABC-123`
    - Jira:    `PROJ-45` or `https://*.atlassian.net/browse/PROJ-45`
    - GitHub:  `owner/repo#42` or `https://github.com/owner/repo/issues/42`.
               A bare `#N` is NOT accepted — always qualify with `owner/repo`.
 
-3. **Identify the provider** (`linear` | `jira` | `github`).
+2. **Identify the provider** (`linear` | `jira` | `github`).
 
-4. **Fetch ticket details via MCP.** Use the appropriate MCP server:
-   - linear → Linear MCP
-   - jira → Atlassian MCP
-   - github → GitHub MCP
-   Fetch at minimum: `title`, `status` (provider-native string), `url`.
-   **Strip large fields** (description, comments, labels arrays) — the karma
-   cache caps at 64 KB. If the MCP isn't available, skip this step and
-   proceed with title/status omitted.
+3. **Fetch ticket details via MCP** (linear / atlassian / github),
+   pulling at minimum `title`, `status`, `url`. Strip large fields
+   (description, comments, labels arrays) — the karma cache caps
+   `metadata_json` at 64 KB. If the MCP isn't available, proceed
+   without title/status.
 
-5. **POST the link** (idempotent — creates link, does NOT touch metadata):
-   ```
-   curl -s -X POST http://localhost:8000/sessions/<session_id>/tickets \
+4. **POST the link** (idempotent — creates link, does NOT touch metadata):
+   curl -s -X POST "http://localhost:8000/sessions/${CLAUDE_SESSION_ID}/tickets" \
         -H 'Content-Type: application/json' \
-        -d '{"ref":"<key>","provider":"<provider>","url":"<url>",
-             "session_slug":"<slug>","source":"slash_command"}'
-   ```
+        -d '{"ref":"<key>","provider":"<provider>","url":"<url>","source":"slash_command"}'
 
-6. **PUT the metadata** (only if MCP fetch succeeded):
-   ```
-   curl -s -X PUT http://localhost:8000/tickets/<provider>/<key> \
+5. **PUT the metadata** (only when MCP fetch succeeded):
+   curl -s -X PUT "http://localhost:8000/tickets/<provider>/<urlencoded-key>" \
         -H 'Content-Type: application/json' \
-        -d '{"title":"<title>","status":"<status>",
-             "metadata_json":"<stripped-json>"}'
-   ```
+        -d '{"title":"<title>","status":"<status>"}'
 
-7. **Confirm to the user** with a one-line summary.
+6. **Confirm to the user** with a one-line summary.
 ```
 
-The skill delegates the MCP lookup to the agent, so karma never needs creds.
-If MCP isn't installed for that provider, we still record the link with bare
-metadata; the user can backfill via the dashboard or another invocation.
-
-**Why look up the session UUID from live-sessions instead of an env var?**
-Claude Code custom commands don't expose a documented "current session UUID"
-interpolation token. The live-sessions file is the most reliable source we
-already maintain (see `hooks/live_session_tracker.py`). The `cwd` + recency
-filter handles the multi-session-per-repo case correctly (you'll only have
-one LIVE session per cwd at a time).
+The skill delegates the MCP lookup to the agent, so karma never needs
+creds. If MCP isn't installed for that provider, we still record the
+link with bare metadata; the user can backfill via the dashboard or
+another invocation.
 
 ### Path 2 — Branch auto-detect (silent, metadata-less)
 
