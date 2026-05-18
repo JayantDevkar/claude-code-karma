@@ -333,6 +333,52 @@ def test_list_tickets_search_by_key(client):
     assert any(row["external_key"] == "SRCH-77" for row in rows)
 
 
+def test_list_tickets_project_filter_requires_session_row(client):
+    """Project filter joins via sessions table; orphan links (no sessions
+    row yet) won't appear when filtered. We need a real session row for
+    this test — insert one directly via the writer connection."""
+    import db.connection as connection
+
+    conn = connection.get_writer_db()
+    conn.execute(
+        "INSERT INTO sessions (uuid, project_encoded_name, jsonl_mtime) "
+        "VALUES (?, ?, ?)",
+        ("real-uuid-1", "-Users-me-projA", 0.0),
+    )
+    conn.execute(
+        "INSERT INTO sessions (uuid, project_encoded_name, jsonl_mtime) "
+        "VALUES (?, ?, ?)",
+        ("real-uuid-2", "-Users-me-projB", 0.0),
+    )
+    conn.commit()
+
+    # Link two tickets to projA's session, one to projB's
+    client.post(
+        "/sessions/real-uuid-1/tickets",
+        json={"ref": "https://linear.app/acme/issue/PA-1", "source": "branch"},
+    )
+    client.post(
+        "/sessions/real-uuid-1/tickets",
+        json={"ref": "https://linear.app/acme/issue/PA-2", "source": "branch"},
+    )
+    client.post(
+        "/sessions/real-uuid-2/tickets",
+        json={"ref": "https://linear.app/acme/issue/PB-1", "source": "branch"},
+    )
+
+    r = client.get("/tickets?project=-Users-me-projA")
+    assert r.status_code == 200
+    keys = {row["external_key"] for row in r.json()}
+    assert "PA-1" in keys
+    assert "PA-2" in keys
+    assert "PB-1" not in keys
+
+    # And the inverse
+    r2 = client.get("/tickets?project=-Users-me-projB")
+    keys2 = {row["external_key"] for row in r2.json()}
+    assert keys2 == {"PB-1"}
+
+
 def test_get_ticket_detail_works_for_github_path_key(client):
     client.post(
         "/sessions/sess-Y/tickets",

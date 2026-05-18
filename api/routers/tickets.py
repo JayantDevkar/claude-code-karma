@@ -163,11 +163,16 @@ def unlink_session_ticket(uuid: str, ticket_id: int) -> dict:
 def list_all_tickets(
     provider: Annotated[Optional[Provider], Query()] = None,
     q: Annotated[Optional[str], Query(description="Substring of key or title")] = None,
+    project: Annotated[
+        Optional[str],
+        Query(description="Encoded project name — restrict to tickets touched by this project"),
+    ] = None,
 ) -> list[TicketListItem]:
-    """List tickets with session counts. Filterable by provider; search by key/title."""
+    """List tickets with session counts. Filterable by provider, project,
+    and substring search across key/title."""
     conn = create_read_connection()
     try:
-        rows = list_tickets(conn, provider=provider, q=q)
+        rows = list_tickets(conn, provider=provider, q=q, project=project)
     finally:
         conn.close()
     return [TicketListItem(**r) for r in rows]

@@ -314,9 +314,18 @@ def list_tickets(
     *,
     provider: Optional[str] = None,
     q: Optional[str] = None,
+    project: Optional[str] = None,
 ) -> list[dict]:
-    """List tickets with session counts. Supports provider filter and
-    case-insensitive substring search across key and title."""
+    """List tickets with session counts.
+
+    Filters:
+      provider — exact provider match.
+      q        — case-insensitive substring of external_key or title.
+      project  — encoded project name; restricts to tickets linked to at
+                 least one session in that project. When set, the join to
+                 sessions becomes effectively INNER (the WHERE excludes
+                 NULLs), so orphan links are excluded.
+    """
     where = []
     params: list = []
     if provider:
@@ -327,16 +336,24 @@ def list_tickets(
         like = f"%{q}%"
         params.extend([like, like])
 
+    extra_join = ""
+    if project:
+        # Force the link↔session join and constrain to this project.
+        extra_join = "LEFT JOIN sessions s ON s.uuid = st.session_uuid"
+        where.append("s.project_encoded_name = ?")
+        params.append(project)
+
     where_clause = ("WHERE " + " AND ".join(where)) if where else ""
 
     rows = conn.execute(
         f"""
         SELECT t.id, t.provider, t.external_key, t.url, t.title, t.status,
                t.first_seen_at, t.metadata_updated_at,
-               COUNT(st.id)        AS session_count,
-               MAX(st.linked_at)   AS last_linked_at
+               COUNT(DISTINCT st.id) AS session_count,
+               MAX(st.linked_at)     AS last_linked_at
           FROM tickets t
           LEFT JOIN session_tickets st ON st.ticket_id = t.id
+          {extra_join}
           {where_clause}
          GROUP BY t.id
          ORDER BY COALESCE(MAX(st.linked_at), t.first_seen_at) DESC

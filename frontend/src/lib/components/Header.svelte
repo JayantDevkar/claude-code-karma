@@ -95,6 +95,14 @@
 					Sessions
 				</a>
 				<a
+					href="/tickets"
+					class="text-sm font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+					class:text-[var(--text-primary)]={$page.url.pathname.startsWith('/tickets')}
+					aria-current={$page.url.pathname.startsWith('/tickets') ? 'page' : undefined}
+				>
+					Tickets
+				</a>
+				<a
 					href="/plans"
 					class="text-sm font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
 					class:text-[var(--text-primary)]={$page.url.pathname.startsWith('/plans')}
@@ -220,6 +228,16 @@
 					aria-current={$page.url.pathname.startsWith('/sessions') ? 'page' : undefined}
 				>
 					Sessions
+				</a>
+				<a
+					href="/tickets"
+					onclick={closeMobileMenu}
+					class="text-base font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-subtle)] py-3 px-4 rounded-lg transition-colors"
+					class:text-[var(--text-primary)]={$page.url.pathname.startsWith('/tickets')}
+					class:bg-[var(--bg-subtle)]={$page.url.pathname.startsWith('/tickets')}
+					aria-current={$page.url.pathname.startsWith('/tickets') ? 'page' : undefined}
+				>
+					Tickets
 				</a>
 				<a
 					href="/plans"
