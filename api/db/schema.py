@@ -214,7 +214,16 @@ CREATE TABLE IF NOT EXISTS projects (
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_slug ON projects(slug);
+"""
 
+# Ticket tables — extracted into a separate constant so they can be applied
+# UNCONDITIONALLY at ensure_schema() time, regardless of the recorded
+# SCHEMA_VERSION. This protects against cross-branch DB drift: if a karma
+# DB has been used on a parallel branch whose linear SCHEMA_VERSION ran
+# ahead of ours, the early-return version gate would otherwise skip our
+# v11 migration block and leave us with no ticket tables. CREATE TABLE IF
+# NOT EXISTS makes the unconditional run safe on every install path.
+_TICKETS_SCHEMA_SQL = """
 -- Ticket registry: de-duped per (provider, external_key).
 -- Populated by the agent (via MCP) at slash-command link time, or empty
 -- (URL-only) when the link comes from the branch-detect hook or dashboard.
@@ -260,6 +269,10 @@ CREATE UNIQUE INDEX IF NOT EXISTS uniq_session_tickets_slug_ticket
     WHERE session_slug IS NOT NULL;
 """
 
+# Keep ticket tables in the canonical fresh-install schema too, so a
+# brand-new DB still gets everything in one shot through SCHEMA_SQL.
+SCHEMA_SQL = SCHEMA_SQL + _TICKETS_SCHEMA_SQL
+
 
 def ensure_schema(conn: sqlite3.Connection) -> None:
     """
@@ -267,6 +280,14 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
 
     Idempotent — safe to call on every startup.
     """
+    # Cross-branch safety: always run the ticket-tables block. If a karma
+    # DB has a recorded SCHEMA_VERSION higher than ours (e.g., from a
+    # parallel branch with more migrations), the early-return below would
+    # otherwise skip our v11 work and leave ticket endpoints broken. The
+    # CREATE TABLE IF NOT EXISTS statements make this a no-op when the
+    # tables already exist.
+    conn.executescript(_TICKETS_SCHEMA_SQL)
+
     # Check current version
     try:
         row = conn.execute("SELECT MAX(version) FROM schema_version").fetchone()

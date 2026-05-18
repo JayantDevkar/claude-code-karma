@@ -139,6 +139,45 @@ def test_replay_is_idempotent():
     assert _table_exists(conn, "session_tickets")
 
 
+def test_ensure_schema_creates_ticket_tables_on_cross_branch_higher_version():
+    """Regression test for the live-meta-test bug.
+
+    A karma DB used on a parallel branch may have its schema_version
+    advanced past ours (e.g., 22 because that branch added different
+    tables). The version-gated early-return in ensure_schema() then
+    skips our v10 → v11 migration block, leaving the ticket tables
+    missing and every ticket endpoint 500'ing.
+
+    Fix: unconditional `executescript(_TICKETS_SCHEMA_SQL)` at the top
+    of ensure_schema() guarantees our tables exist regardless of
+    version-tracking drift across branches.
+    """
+    conn = _make_db()
+
+    # Simulate a karma DB at v99 from a parallel branch.
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS schema_version "
+        "(version INTEGER PRIMARY KEY, applied_at TEXT DEFAULT (datetime('now')))"
+    )
+    conn.execute("INSERT INTO schema_version (version) VALUES (99)")
+    conn.commit()
+
+    assert not _table_exists(conn, "tickets")
+    assert not _table_exists(conn, "session_tickets")
+
+    ensure_schema(conn)
+
+    # Tables must be present even though we never ran our v11 migration block.
+    assert _table_exists(conn, "tickets")
+    assert _table_exists(conn, "session_tickets")
+    assert _index_exists(conn, "uniq_session_tickets_slug_ticket")
+
+    # Version is NOT bumped — we never tried to migrate from v99 to v11.
+    # The recorded version stays at 99 because the unconditional path
+    # only creates missing tables; it doesn't pretend we ran a migration.
+    assert _get_version(conn) == 99
+
+
 def test_partial_unique_index_dedupes_by_slug_when_present():
     conn = _make_db()
     ensure_schema(conn)
