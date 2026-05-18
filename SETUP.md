@@ -571,25 +571,29 @@ Links Claude Code sessions to tickets in Linear / Jira / GitHub Issues, so the k
 - Karma is read-only — it never writes to Linear/Jira/GitHub.
 - Metadata (title, status) comes from the agent's MCP servers, not from karma's backend, so karma never needs provider credentials.
 
-### Step 11: Install the Slash Command (Recommended)
+### Step 11: Install the Skill (Recommended)
 
-**What:** Adds `/link-ticket-to-session <ref>` so you can link the current session in-conversation, and have the agent pull the ticket title via its MCP.
+**What:** Adds the `link-ticket-to-session` skill so you can link the current session — either by typing `/link-ticket-to-session <ref>` explicitly, or by asking the agent in natural language ("link this session to LINEAR-123"). The skill's instructions tell the agent to fetch the title via your installed MCP server (Linear/Jira/GitHub) and POST the link to karma.
+
+Skills are directory-shaped artifacts under `~/.claude/skills/<skill-name>/SKILL.md`.
 
 **Symlink:**
 
 ```bash
-mkdir -p ~/.claude/commands
-ln -sf "$(cd commands && pwd)/link-ticket-to-session.md" ~/.claude/commands/link-ticket-to-session.md
+mkdir -p ~/.claude/skills
+ln -sf "$(cd skills/link-ticket-to-session && pwd)" ~/.claude/skills/link-ticket-to-session
 ```
 
 **Copy:**
 
 ```bash
-mkdir -p ~/.claude/commands
-cp commands/link-ticket-to-session.md ~/.claude/commands/
+mkdir -p ~/.claude/skills
+cp -R skills/link-ticket-to-session ~/.claude/skills/
 ```
 
-**Verify** by starting any Claude Code session and typing `/link-ticket-to-session https://linear.app/.../issue/ABC-123`. The agent should fetch the title via your Linear MCP (if installed) and POST the link to karma.
+**Verify** by starting any Claude Code session and typing `/link-ticket-to-session https://linear.app/.../issue/ABC-123`. The agent should fetch the title via your Linear MCP (if installed) and POST the link to karma. You should also be able to phrase it naturally — e.g. "link this session to LINEAR-123" — and the agent should reach for the same skill.
+
+**Note:** The skill's `description` is intentionally narrow so it only fires on explicit linking requests. Casual mentions of a ticket key in conversation will NOT auto-trigger the skill.
 
 ### Step 12: Enable Branch-Name Auto-Detection (Optional)
 

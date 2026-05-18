@@ -1,9 +1,16 @@
 ---
-description: Link the current Claude Code session to a ticket and cache its title/status in karma
+name: link-ticket-to-session
+description: Link the current Claude Code session to a ticket (Linear, Jira, or GitHub Issues) and cache its title/status in karma. Use when the user explicitly asks to link, attach, associate, or connect this session to a ticket, issue, or PR — e.g. "/link-ticket-to-session ABC-123", "link this session to LINEAR-42", "associate this work with issue #15". Do NOT auto-invoke from passing ticket-key mentions in normal conversation.
 argument-hint: <ticket-ref-or-url>
+allowed-tools: Bash, mcp__linear, mcp__claude_ai_Linear, mcp__plugin_github_github, mcp__atlassian
 ---
 
 You are linking the current Claude Code session (`${CLAUDE_SESSION_ID}`) to ticket: **$ARGUMENTS**
+
+Karma is a read-only observer at `http://localhost:8000` — it stores the
+link and caches metadata, but never writes back to the ticket provider.
+You (the agent) supply the title/status via the user's already-configured
+MCP server.
 
 ## Steps
 
@@ -50,6 +57,6 @@ You are linking the current Claude Code session (`${CLAUDE_SESSION_ID}`) to tick
 
 - Karma is loopback-only — `http://localhost:8000` is the karma API.
 - POST is idempotent on (session, ticket); re-running upgrades the
-  link_source if previously set by branch-detect or dashboard.
+  `link_source` if previously set by branch-detect or dashboard.
 - If the API is unreachable, tell the user "karma not running" — don't
   silently succeed.

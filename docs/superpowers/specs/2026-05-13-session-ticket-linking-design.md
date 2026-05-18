@@ -110,7 +110,7 @@ input on /sessions/[uuid]                       │
    API following the same pattern as `hooks/session_title_generator.py:241`
    (`post_title()` uses `urllib.request` to POST to `localhost:8000`). Silent
    on any failure.
-7. `~/.claude/commands/link-ticket-to-session.md` — slash command. Agent
+7. `~/.claude/skills/link-ticket-to-session/SKILL.md` — agent skill. Agent
    resolves its own session UUID via `~/.claude_karma/live-sessions/`
    lookup (see *Path 1* below for the locked-down recipe).
 8. Frontend additions in `frontend/src/routes/`:
@@ -210,24 +210,31 @@ CREATE UNIQUE INDEX IF NOT EXISTS uniq_session_tickets_slug_ticket
 
 ## Link establishment
 
-All three paths converge on `POST /sessions/{uuid}/tickets`. The slash-command
+All three paths converge on `POST /sessions/{uuid}/tickets`. The skill
 path additionally calls `PUT /tickets/{provider}/{external_key}` to publish
 the MCP-fetched metadata. Split into two calls so each is a proper idempotent
 operation in the HTTP sense (the original spec conflated "create link" with
 "refresh metadata"; the critic flagged this and we fixed it).
 
-### Path 1 — Slash command (richest payload, agent-driven)
+### Path 1 — Agent skill (richest payload, agent-driven)
 
-The template lives at `commands/link-ticket-to-session.md` in this repo
-and is symlinked or copied into `~/.claude/commands/` at install time.
-Frontmatter uses `${CLAUDE_SESSION_ID}` directly — confirmed during
-planning to be a documented substitution available inside Claude Code
-custom commands — so there's no need to fish the UUID out of
+The skill lives at `skills/link-ticket-to-session/SKILL.md` in this
+repo and is symlinked or copied into `~/.claude/skills/link-ticket-to-session/`
+at install time. Body uses `${CLAUDE_SESSION_ID}` directly — confirmed
+during planning to be a documented substitution inside Claude Code
+skills — so there's no need to fish the UUID out of
 `~/.claude_karma/live-sessions/` files. The slug-based dedup that the
 live-sessions lookup was designed to support is handled at the API
 layer via the partial unique index on `(session_slug, ticket_id)`:
-the branch-detect hook fills slug in when known; the slash command
-leaves it out; resumed sessions still collapse to one row.
+the branch-detect hook fills slug in when known; the skill leaves
+it out; resumed sessions still collapse to one row.
+
+The skill's `description` is written to fire on explicit linking
+requests (the slash form `/link-ticket-to-session` OR natural
+language like "link this session to LINEAR-123") and explicitly NOT
+to auto-trigger on passing mentions of ticket keys in conversation.
+`allowed-tools` is constrained to Bash + the three ticket-provider
+MCP servers so the skill can't reach into unrelated tooling.
 
 ```markdown
 ---
@@ -407,7 +414,7 @@ half-state. `RETURNING id` is supported in SQLite 3.35+; the project already
 uses modern SQLite features.
 
 The `link_source` precedence rule means: a branch-detect link followed by a
-user-confirmed slash command upgrades to `slash_command`; the reverse never
+user-confirmed skill invocation upgrades to `slash_command`; the reverse never
 happens. Auditing "which links did the user explicitly confirm" works
 cleanly.
 
@@ -559,17 +566,16 @@ grows large (heavy branch-detect usage), add a materialized counter on
 
 | Failure | Behavior |
 |---|---|
-| Slash command, MCP unavailable | Agent posts the link, skips the PUT; karma stores bare link. Agent tells user "linked, but couldn't fetch title". |
-| Slash command, karma API down | Agent reports "couldn't reach karma at :8000". User can retry later via dashboard. |
-| Slash command, live-sessions lookup fails | Agent tells user "karma can't see this session — is the live-session tracker hook installed?" — does NOT silently link to a wrong session. |
+| Skill invoked, MCP unavailable | Agent posts the link, skips the PUT; karma stores bare link. Agent tells user "linked, but couldn't fetch title". |
+| Skill invoked, karma API down | Agent reports "couldn't reach karma at :8000". User can retry later via dashboard. |
 | Branch-detect hook, any error | Silent exit 0. Never blocks `SessionStart`. Errors logged to `~/.claude_karma/logs/ticket_branch_detector.log`. No retry queue — a 4-hour offline period during a feature branch means lost links. Acceptable for v1. |
 | Branch-detect hook, slug lookup empty | Proceeds without slug. Falls back to per-UUID linking. Slug gets populated later if a slash command runs. |
-| Parser can't recognize ref | API returns `400 {error, hint}`. Dashboard surfaces inline; slash-command agent reports it. |
+| Parser can't recognize ref | API returns `400 {error, hint}`. Dashboard surfaces inline; the skill agent reports it. |
 | Bare GitHub `#N` from dashboard | 400 with hint "include `owner/repo` prefix". |
 | Duplicate POST (same session + ticket) | Per upsert behavior: idempotent for link itself; `link_source` may upgrade per precedence rule. Returns 200. |
 | Concurrent POSTs racing on same `(provider, external_key)` | Wrapped in one transaction with `INSERT ... ON CONFLICT DO UPDATE RETURNING`. SQLite serializes writers via the writer connection — no torn writes. |
 | PUT with no prior POST | 404 — caller forgot to create the link first. |
-| `metadata_json` over 64 KB | DB CHECK constraint fails → 400 returned to caller. Slash command should never trigger this (instructions say strip large fields), but it's a safety net. |
+| `metadata_json` over 64 KB | DB CHECK constraint fails → 400 returned to caller. The skill instructs the agent to strip large fields before POSTing, but this is a safety net. |
 
 ## Testing
 
