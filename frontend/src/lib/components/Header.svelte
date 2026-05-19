@@ -46,8 +46,8 @@
 		{ href: '/agents', label: 'Agents', icon: Bot, color: 'purple' },
 		{ href: '/skills', label: 'Skills', icon: Wrench, color: 'orange' },
 		{ href: '/commands', label: 'Commands', icon: Terminal, color: 'red' },
-		{ href: '/tools', label: 'Tools', icon: Cable, color: 'teal' },
-		{ href: '/hooks', label: 'Hooks', icon: Webhook, color: 'amber' },
+		{ href: '/tools', label: 'Tools', icon: Cable, color: 'indigo' },
+		{ href: '/hooks', label: 'Hooks', icon: Webhook, color: 'cyan' },
 		{ href: '/plugins', label: 'Plugins', icon: Puzzle, color: 'violet' },
 		{ href: '/analytics', label: 'Analytics', icon: LineChart, color: 'green' },
 		{ href: '/archived', label: 'Archived', icon: History, color: 'gray' }

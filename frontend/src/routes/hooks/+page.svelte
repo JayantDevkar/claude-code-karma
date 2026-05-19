@@ -141,7 +141,7 @@
 	<PageHeader
 		title="Hooks"
 		icon={Webhook}
-		iconColor="--nav-amber"
+		iconColor="--nav-cyan"
 		breadcrumbs={[{ label: 'Dashboard', href: '/' }, { label: 'Hooks' }]}
 		subtitle="Hook scripts intercepting your Claude Code sessions"
 	/>
