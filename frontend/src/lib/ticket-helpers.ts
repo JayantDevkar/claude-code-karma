@@ -124,9 +124,22 @@ export type GithubKind = 'issue' | 'pull_request';
 
 export function githubKindFromUrl(url: string | null | undefined): GithubKind {
 	if (!url) return 'issue';
-	// Accept any github.com host (github.com proper; enterprise hosts
-	// would use a different domain that this UI doesn't claim to support).
-	return /\/pull\/\d+(?:[/?#]|$)/i.test(url) ? 'pull_request' : 'issue';
+	// Parse to URL so the `/pull/N` check only ever looks at the pathname.
+	// A regex over the raw string would false-positive on URLs that happen
+	// to contain `/pull/<digits>` inside a query string (e.g. an issue URL
+	// with `?file=/pull/9`). Backend canonical URLs are stripped of query
+	// strings today, so this is defensive — but the regex was wider than
+	// the test claimed, which is a class of patchy we shouldn't keep.
+	try {
+		const path = new URL(url).pathname;
+		return /^\/[^/]+\/[^/]+\/pull\/\d+(?:\/|$)/i.test(path)
+			? 'pull_request'
+			: 'issue';
+	} catch {
+		// Malformed URL — fall back to 'issue' (the safe default per the
+		// docstring above).
+		return 'issue';
+	}
 }
 
 /** Client-side parse so the link input can auto-detect provider as the user types. */

@@ -57,10 +57,6 @@
 
 <svelte:document onclick={handleDocClick} onkeydown={handleKey} />
 
-{#snippet providerChip()}
-	<ProviderChip {ticket} />
-{/snippet}
-
 {#snippet statusDot(size = 6)}
 	<span
 		aria-hidden="true"
@@ -73,7 +69,7 @@
 	<div class="flex flex-col gap-2 p-4 rounded-lg border border-[var(--border)] bg-[var(--bg-subtle)]">
 		<div class="flex items-center justify-between gap-3">
 			<div class="flex items-center gap-2 min-w-0">
-				{@render providerChip()}
+				<ProviderChip {ticket} />
 				<a
 					href={ticket.url}
 					target="_blank"
@@ -109,7 +105,7 @@
 
 {:else if variant === 'inline'}
 	<span class="inline-flex items-center gap-1.5 text-sm min-w-0">
-		{@render providerChip()}
+		<ProviderChip {ticket} />
 		<span class="font-mono text-[var(--text-primary)] whitespace-nowrap">
 			{ticket.external_key}
 		</span>
@@ -126,7 +122,7 @@
 		class="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-[3px] rounded-full text-xs border border-[var(--border)] bg-[var(--bg-base)]"
 		title={ticket.title ?? undefined}
 	>
-		{@render providerChip()}
+		<ProviderChip {ticket} />
 		<a
 			href={ticket.url}
 			target="_blank"

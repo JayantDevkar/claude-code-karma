@@ -64,6 +64,15 @@ the dashboard pivot around tickets the same way it pivots around projects.
   API matched `encoded_name` exactly. Fix: unified data flow with a
   clean "slug at the boundary, encoded_name inside" architecture across
   every project-by-identifier endpoint. Locked in by a regression test.
+- **GitHub PRs were stored with `/issues/N` URLs** instead of `/pull/N`.
+  Cause: the ticket parser hard-coded `/issues/` in the canonical URL
+  it built, throwing away which path segment the input URL had used.
+  Fix: parser now captures `(?P<kind>issues|pull)` and uses the
+  captured segment in the canonical URL. The frontend grew a small
+  `PR` pill (with GitHub's pull-request glyph) next to the GH provider
+  badge so issues and PRs are visually distinguishable everywhere.
+  Old rows self-heal on re-link; users wanting immediate repair can hit
+  the new `POST /admin/repair-github-urls` endpoint (see Upgrading).
 
 ### Internal
 
@@ -104,6 +113,20 @@ No manual steps required. On first start:
    `curl -X POST http://localhost:8000/admin/reindex`.
 3. The route rename `[project_slug]` → `[project_id]` is internal —
    existing URLs continue to work.
+
+**Optional: repair stale GitHub PR URLs.** If you linked GitHub PRs in
+0.1.x, their stored URLs point at `/issues/N` even though they were
+PRs. Links still work (GitHub redirects), but the new `PR` pill won't
+show. Rows self-heal on re-link, or you can repair them in one shot:
+
+```bash
+curl -X POST http://localhost:8000/admin/repair-github-urls
+# {"status":"ok","rewritten":N}
+```
+
+The repair is conservative — it only rewrites rows whose
+`status='MERGED'` (a state unique to PRs). Open or closed-unmerged PRs
+remain ambiguous from cached data alone and self-heal on next re-link.
 
 If you used the syncthing prototype in an earlier branch, the
 `sync_*` tables and any `jayantdevkar-claude-code-karma`-style project

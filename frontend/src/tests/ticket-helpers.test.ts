@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { githubKindFromUrl } from '$lib/ticket-helpers';
 
+// ============================================================
+// githubKindFromUrl
+// ============================================================
 describe('githubKindFromUrl', () => {
 	it('returns "pull_request" for /pull/N URLs', () => {
 		expect(
@@ -33,9 +36,25 @@ describe('githubKindFromUrl', () => {
 
 	it('does not false-match a literal "/pull/" elsewhere in the path', () => {
 		// Guards against /someuser/pull/request-repo/issues/1 nonsense.
-		// Our regex requires /pull/<digits> followed by end-or-delimiter.
+		// Path regex requires /pull/<digits> after owner/repo segments.
 		expect(
 			githubKindFromUrl('https://github.com/owner/repo/issues/1?file=/pull/x')
 		).toBe('issue');
+	});
+
+	it('does not false-match /pull/<digits> hidden in the query string', () => {
+		// Regression: an earlier implementation tested against the raw URL
+		// and would have returned 'pull_request' here. The fix narrows the
+		// check to URL.pathname so query strings can't lie about kind.
+		expect(
+			githubKindFromUrl('https://github.com/owner/repo/issues/1?file=/pull/9')
+		).toBe('issue');
+	});
+
+	it('returns "issue" for malformed URLs instead of throwing', () => {
+		// new URL() throws on garbage; the helper must catch and fall back
+		// to the safe default rather than crash the render path.
+		expect(githubKindFromUrl('not a url')).toBe('issue');
+		expect(githubKindFromUrl('://garbage')).toBe('issue');
 	});
 });
