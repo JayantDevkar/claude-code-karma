@@ -206,8 +206,33 @@ Then browse:
 - A ticket detail page listing every session linked to a given ticket
 - A **Tickets tab on every project page** that aggregates across all checkouts of the same git repo — so a ticket linked from `claude-karma/frontend/` also shows on the main `claude-karma` project
 
+**Tickets Index** — All linked tickets in a filterable table. Switch between All, Issues, and PRs on GitHub.
+
+<p align="center">
+  <img src="docs/screenshots/tickets-index.png" alt="Tickets Index" width="100%" />
+</p>
+
+**Filter by Provider** — GitHub shows sub-pill filtering ([All N] [Issues N] [PRs N]) to toggle between categories.
+
+<p align="center">
+  <img src="docs/screenshots/tickets-github-prs.png" alt="GitHub Issues and PRs Filter" width="100%" />
+</p>
+
+**Ticket Detail** — View a ticket with all linked sessions. Cross-project rollup shows "N sessions · M projects" with tabs per project.
+
+<p align="center">
+  <img src="docs/screenshots/ticket-detail.png" alt="Ticket Detail with Cross-Project Rollup" width="100%" />
+</p>
+
+**Project Tickets Tab** — Every project page has a Tickets tab that aggregates across all git identity checkouts, so the same ticket appears even if linked from different branch directories.
+
+<p align="center">
+  <img src="docs/screenshots/project-tickets-tab.png" alt="Project Tickets Tab" width="100%" />
+</p>
+
 ### And More
 
+- **Tickets across providers** — Link sessions to Linear, Jira, and GitHub Issues in a unified interface
 - **Plans Browser** — View implementation plans and their execution status
 - **Command Palette** — Quick navigation with `Ctrl+K` / `Cmd+K`
 - **Full-text Search** — Search across session titles, prompts, and slugs
@@ -324,6 +349,19 @@ Enable real-time session monitoring by installing Claude Code hooks. See [SETUP.
 | `GET /agents/{name}` | Agent details |
 | `GET /skills` | List all skills |
 | `GET /live-sessions` | Real-time session state |
+
+### Tickets
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/sessions/{uuid}/tickets` | Link a ticket to a session |
+| `GET` | `/sessions/{uuid}/tickets` | List tickets linked to a session |
+| `DELETE` | `/sessions/{uuid}/tickets/{id}` | Unlink a ticket from a session |
+| `GET` | `/tickets` | List all tickets (filters: provider, project, q) |
+| `GET` | `/tickets/{provider}/{key}` | Get ticket details |
+| `GET` | `/tickets/{provider}/{key}/sessions` | Sessions linked to a ticket |
+| `PUT` | `/tickets/{provider}/{key}` | Refresh metadata from MCP |
+| `POST` | `/admin/repair-github-urls` | Repair stale `/issues/` URLs to `/pull/` |
 
 </details>
 

@@ -27,10 +27,12 @@ out/
 Thumbs.db
 
 # Screenshots/images — ignored at the repo root (we accidentally collect a lot
-# of them there), but ALLOWED under docs/design-briefs/ so design iteration
-# artifacts (mockups, critique notes) stay versioned with the feature.
+# of them there), but ALLOWED under docs/design-briefs/ and docs/screenshots/
+# so design iteration artifacts (mockups, critique notes) and feature screenshots
+# stay versioned with the feature.
 *.png
 !docs/design-briefs/**/*.png
+!docs/screenshots/*.png
 
 # Python
 __pycache__/
