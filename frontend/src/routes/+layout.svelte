@@ -53,7 +53,7 @@
 		// /agents/[name] - agent detail (2 segments under /agents/)
 		if (path.startsWith('/agents/') && path.split('/').filter(Boolean).length === 2)
 			return 'agent-detail';
-		// /projects/[project_slug]/[session_slug]/agents/[agent_id] - agent session detail
+		// /projects/[project_id]/[session_slug]/agents/[agent_id] - agent session detail
 		// Must have 4+ segments: projects/slug/session/agents/id
 		if (
 			path.startsWith('/projects/') &&
@@ -62,11 +62,11 @@
 		) {
 			return 'agent-session';
 		}
-		// /projects/[project_slug]/[session_slug] - session detail (3+ segments)
+		// /projects/[project_id]/[session_slug] - session detail (3+ segments)
 		if (path.startsWith('/projects/') && path.split('/').filter(Boolean).length >= 3) {
 			return 'session-detail';
 		}
-		// /projects/[project_slug] - project detail (2 segments)
+		// /projects/[project_id] - project detail (2 segments)
 		if (path.startsWith('/projects/') && path.split('/').filter(Boolean).length === 2) {
 			return 'project-detail';
 		}

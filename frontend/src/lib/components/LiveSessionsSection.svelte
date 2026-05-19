@@ -7,6 +7,7 @@
 		LiveSubStatus,
 		SessionSummary
 	} from '$lib/api-types';
+	import { projectHrefFromSession } from '$lib/utils/project-url';
 	import { statusConfig } from '$lib/live-session-config';
 	import { API_BASE } from '$lib/config';
 
@@ -299,7 +300,7 @@
 			return '#';
 		}
 		const identifier = session.slug || session.session_id.slice(0, 8);
-		return `/projects/${session.project_slug || session.project_encoded_name}/${identifier}`;
+		return projectHrefFromSession(session, `/${identifier}`);
 	}
 
 	function canNavigate(session: LiveSessionSummary): boolean {

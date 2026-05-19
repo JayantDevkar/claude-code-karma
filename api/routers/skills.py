@@ -46,6 +46,7 @@ from schemas import (
     UsageTrendItem,
     UsageTrendResponse,
 )
+from routers.projects import safely_resolve_project
 from services.session_title_cache import title_cache
 
 logger = logging.getLogger(__name__)
@@ -75,7 +76,8 @@ def get_settings() -> Settings:
 def get_skills_dir(
     config: Annotated[Settings, Depends(get_settings)],
     project: Annotated[
-        str | None, Query(description="Project encoded name for project-specific skills")
+        str | None,
+        Query(description="Project identifier (slug or encoded_name) for project-specific skills"),
     ] = None,
 ) -> Path:
     """
@@ -83,13 +85,14 @@ def get_skills_dir(
 
     Args:
         config: Application settings (injected)
-        project: Optional project encoded name for project-specific skills
+        project: Optional project identifier (slug or encoded_name)
 
     Returns:
         Path to skills directory (global or project-specific)
     """
     if project:
-        proj = Project.from_encoded_name(project)
+        resolved = safely_resolve_project(project) or project
+        proj = Project.from_encoded_name(resolved)
         return Path(proj.path) / ".claude" / "skills"
     return config.skills_dir
 
@@ -411,7 +414,9 @@ def get_skill_usage(
 
         with sqlite_read() as conn:
             if conn is not None:
-                rows = query_skill_usage(conn, project=project, limit=limit)
+                rows = query_skill_usage(
+                    conn, project=safely_resolve_project(project), limit=limit
+                )
                 results = []
                 for row in rows:
                     skill_name = row["skill_name"]
@@ -453,8 +458,10 @@ def get_skill_usage(
     # Collect all sessions to process
     sessions_to_process = []
     if project:
-        # Get skill usage for a specific project
-        proj = Project.from_encoded_name(project)
+        # Resolve slug-or-encoded so this fallback path matches what the
+        # SQLite fast-path above does. Without this, a slug URL would
+        # crash here exactly like the original /projects→tickets bug.
+        proj = Project.from_encoded_name(safely_resolve_project(project) or project)
         sessions_to_process = list(proj.list_sessions())
     else:
         # Get skill usage across all projects
@@ -526,7 +533,9 @@ def get_skill_usage_trend(
 
         with sqlite_read() as conn:
             if conn is not None:
-                data = query_skill_usage_trend(conn, project=project, period=period)
+                data = query_skill_usage_trend(
+                    conn, project=safely_resolve_project(project), period=period
+                )
                 return UsageTrendResponse(
                     total=data["total"],
                     by_item=data["by_item"],

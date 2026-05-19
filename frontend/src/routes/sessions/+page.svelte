@@ -542,7 +542,7 @@
 
 	beforeNavigate(({ to }) => {
 		if (!browser) return;
-		if (to?.route.id === '/projects/[project_slug]/[session_slug]') {
+		if (to?.route.id === '/projects/[project_id]/[session_slug]') {
 			sessionStorage.setItem(SCROLL_KEY, String(window.scrollY));
 			sessionStorage.setItem(PAGE_KEY, String(data.filters.page));
 			const id = to.url.pathname.split('/').pop() ?? '';

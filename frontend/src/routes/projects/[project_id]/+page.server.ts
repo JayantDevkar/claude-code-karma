@@ -45,20 +45,20 @@ export async function load({ params, fetch, url }) {
 	// Fetch project (required) and supplementary data (optional) in parallel
 	// Analytics is excluded - will be fetched client-side on-demand for better initial load performance
 	const [projectResult, branches, archived, liveSessions] = await Promise.all([
-		safeFetch<Project>(fetch, `${API_BASE}/projects/${params.project_slug}?${projectParams}`),
+		safeFetch<Project>(fetch, `${API_BASE}/projects/${params.project_id}?${projectParams}`),
 		fetchWithFallback<BranchesData>(
 			fetch,
-			`${API_BASE}/projects/${params.project_slug}/branches`,
+			`${API_BASE}/projects/${params.project_id}/branches`,
 			emptyBranches
 		),
 		fetchWithFallback<ProjectArchivedResponse>(
 			fetch,
-			`${API_BASE}/history/archived/${params.project_slug}`,
+			`${API_BASE}/history/archived/${params.project_id}`,
 			emptyArchived
 		),
 		fetchWithFallback<LiveSessionSummary[]>(
 			fetch,
-			`${API_BASE}/live-sessions/project/${params.project_slug}`,
+			`${API_BASE}/live-sessions/project/${params.project_id}`,
 			[]
 		)
 	]);

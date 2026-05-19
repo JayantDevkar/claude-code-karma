@@ -23,6 +23,7 @@
 	import { commandPalette } from '$lib/stores/commandPalette';
 	import KeyIndicator from '$lib/components/ui/KeyIndicator.svelte';
 	import type { Project } from '$lib/api-types';
+	import { projectHref } from '$lib/utils/project-url';
 	import { API_BASE } from '$lib/config';
 
 	interface Props {
@@ -521,19 +522,18 @@
 									{#each sessions as session}
 										<Command.Item
 											value={`${getSessionLabel(session)} ${session.initial_prompt || ''} ${session.project_name}`}
-											onSelect={() =>
-												handleSelect(
-													() =>
-														goto(
-															`/projects/${session.project_slug}/${session.slug}`
-														),
-													{
-														id: `session-${session.slug}`,
-														label: getSessionLabel(session),
-														path: `/projects/${session.project_slug}/${session.slug}`,
-														icon: 'session'
-													}
-												)}
+											onSelect={() => {
+												const href = projectHref(
+													{ slug: session.project_slug },
+													`/${session.slug}`
+												);
+												handleSelect(() => goto(href), {
+													id: `session-${session.slug}`,
+													label: getSessionLabel(session),
+													path: href,
+													icon: 'session'
+												});
+											}}
 											class="cmd-item"
 										>
 											<MessageSquare size={18} class="cmd-icon" />

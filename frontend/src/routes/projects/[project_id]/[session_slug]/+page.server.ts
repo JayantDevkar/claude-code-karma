@@ -3,12 +3,16 @@ import { API_BASE } from '$lib/config';
 import { safeFetch, fetchWithFallback } from '$lib/utils/api-fetch';
 
 /**
- * Session lookup result from the fast lookup endpoint.
+ * Session lookup result from the fast lookup endpoint
+ * (see api/routers/projects.py:lookup_session). The `project_encoded_name`
+ * field is the API's canonical identifier — extract it from the load and
+ * pass it as `encodedName` to ConversationView; do NOT thread the URL
+ * param (which can be a slug) through as encodedName.
  */
 interface SessionLookupResult {
 	uuid: string;
 	slug: string | null;
-	project_project_slug: string;
+	project_encoded_name: string;
 	project_path: string;
 	message_count: number;
 	start_time: string | null;
@@ -18,13 +22,13 @@ interface SessionLookupResult {
 }
 
 export async function load({ params, fetch }) {
-	const { project_slug, session_slug } = params;
+	const { project_id, session_slug } = params;
 
 	// Step 1: Use fast lookup endpoint to resolve slug/UUID to session UUID
 	// This is ~100x faster than loading all sessions
 	const lookupResult = await safeFetch<SessionLookupResult>(
 		fetch,
-		`${API_BASE}/projects/${project_slug}/sessions/lookup?identifier=${encodeURIComponent(session_slug)}`
+		`${API_BASE}/projects/${project_id}/sessions/lookup?identifier=${encodeURIComponent(session_slug)}`
 	);
 
 	// If lookup fails, check for "starting" live session or return error
@@ -46,7 +50,7 @@ export async function load({ params, fetch }) {
 					plan: null,
 					liveSession: matchingLiveSession,
 					isStarting: true,
-					project_slug,
+					project_id,
 					session_slug,
 					tickets: [] as SessionTicketRow[],
 					error: null
@@ -62,7 +66,7 @@ export async function load({ params, fetch }) {
 			plan: null,
 			liveSession: null,
 			isStarting: false,
-			project_slug,
+			project_id,
 			session_slug,
 			tickets: [] as SessionTicketRow[],
 			error: isNotFound
@@ -74,6 +78,9 @@ export async function load({ params, fetch }) {
 	const sessionLookup = lookupResult.data;
 	const sessionUuid = sessionLookup.uuid;
 	const projectPath = sessionLookup.project_path;
+	// Canonical encoded_name from the API — pass to children that need
+	// the system identifier (e.g., ConversationView's encodedName prop).
+	const projectEncodedName = sessionLookup.project_encoded_name;
 
 	// Step 4: Fetch detailed session data using UUID
 	// Use safeFetch for the main session, fetchWithFallback for supplementary data
@@ -109,7 +116,7 @@ export async function load({ params, fetch }) {
 			plan: null,
 			liveSession: null,
 			isStarting: false,
-			project_slug,
+			project_id,
 			session_slug,
 			tickets: [] as SessionTicketRow[],
 			error: `Failed to load session: ${sessionResult.message}`
@@ -194,7 +201,8 @@ export async function load({ params, fetch }) {
 		plan,
 		liveSession: null,
 		isStarting: false,
-		project_slug,
+		project_id,
+		project_encoded_name: projectEncodedName,
 		session_slug,
 		tickets: (ticketsData ?? []) as SessionTicketRow[],
 		error: null

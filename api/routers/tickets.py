@@ -47,6 +47,7 @@ from models.ticket import (
     Ticket,
     TicketListItem,
 )
+from routers.projects import safely_resolve_project
 from services.ticket_parser import parse_ticket_ref
 from services.ticket_session_enrichment import enrich_sessions_with_live
 
@@ -166,14 +167,32 @@ def list_all_tickets(
     q: Annotated[Optional[str], Query(description="Substring of key or title")] = None,
     project: Annotated[
         Optional[str],
-        Query(description="Encoded project name — restrict to tickets touched by this project"),
+        Query(
+            description=(
+                "Project identifier — accepts either the URL slug "
+                "(e.g. 'myrepo-1044') or the raw encoded_name "
+                "(e.g. '-Users-me-myrepo'). Restricts to tickets that "
+                "touch this project, with cross-encoded aggregation when "
+                "the project has a populated git_identity."
+            )
+        ),
     ] = None,
 ) -> list[TicketListItem]:
     """List tickets with session counts. Filterable by provider, project,
-    and substring search across key/title."""
+    and substring search across key/title.
+
+    The `project` param accepts either form (slug or encoded_name) via
+    `safely_resolve_project`, which is essential because the user-facing
+    URL carries the slug while internal session APIs use encoded_names.
+    """
     conn = create_read_connection()
     try:
-        rows = list_tickets(conn, provider=provider, q=q, project=project)
+        rows = list_tickets(
+            conn,
+            provider=provider,
+            q=q,
+            project=safely_resolve_project(project),
+        )
     finally:
         conn.close()
     return [TicketListItem(**r) for r in rows]

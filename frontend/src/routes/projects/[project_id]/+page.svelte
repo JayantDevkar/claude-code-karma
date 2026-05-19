@@ -404,7 +404,7 @@
 		const slug = window.location.pathname.split('/')[2];
 		const scrollKey = `project_scroll_${slug}`;
 		const lastKey = `${LAST_OPENED_KEY_PREFIX}${slug}`;
-		if (to?.route.id === '/projects/[project_slug]/[session_slug]') {
+		if (to?.route.id === '/projects/[project_id]/[session_slug]') {
 			sessionStorage.setItem(scrollKey, String(window.scrollY));
 			const id = to.url.pathname.split('/').pop() ?? '';
 			if (id) sessionStorage.setItem(lastKey, id);
@@ -1730,8 +1730,8 @@
 
 				<!-- Tickets Tab (Q9a A — full Tickets tab) -->
 				<Tabs.Content value="tickets" class="animate-fade-in">
-					{#if $page.params.project_slug}
-						<ProjectTicketsTab projectEncodedName={$page.params.project_slug} />
+					{#if project?.encoded_name}
+						<ProjectTicketsTab projectEncodedName={project.encoded_name} />
 					{/if}
 				</Tabs.Content>
 

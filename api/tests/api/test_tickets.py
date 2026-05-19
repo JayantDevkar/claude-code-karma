@@ -412,14 +412,59 @@ def _seed_session(conn, *, uuid: str, project: str) -> None:
     )
 
 
-def _seed_project(conn, *, encoded_name: str, git_identity=None) -> None:
+def _seed_project(conn, *, encoded_name: str, git_identity=None, slug=None) -> None:
     conn.execute(
         "INSERT OR REPLACE INTO projects "
         "(encoded_name, project_path, slug, display_name, "
         " session_count, last_activity, git_identity) "
         "VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (encoded_name, None, encoded_name, encoded_name, 0, None, git_identity),
+        (
+            encoded_name,
+            None,
+            slug or encoded_name,
+            encoded_name,
+            0,
+            None,
+            git_identity,
+        ),
     )
+
+
+def test_project_filter_accepts_slug_or_encoded_name(client):
+    """The ?project= query param must accept either form: the slug shown
+    in user-facing URLs (e.g. 'claude-karma-1044') OR the raw encoded_name
+    (-Users-...). All other project-by-id endpoints already do this via
+    `resolve_project_identifier()`; the tickets endpoint must match.
+
+    Regression test for: navigating /projects → card → tickets tab landed
+    on /projects/{slug}, the tab fetched /tickets?project={slug}, the
+    backend matched on encoded_name → 0 tickets. Navigating via
+    /tickets → session → project landed on /projects/{encoded_name} which
+    happened to work."""
+    import db.connection as connection
+
+    conn = connection.get_writer_db()
+    _seed_project(
+        conn,
+        encoded_name="-Users-me-myrepo",
+        slug="myrepo-9999",
+        git_identity=None,
+    )
+    _seed_session(conn, uuid="ses-1", project="-Users-me-myrepo")
+    conn.commit()
+
+    client.post(
+        "/sessions/ses-1/tickets",
+        json={"ref": "https://linear.app/acme/issue/SLUG-1", "source": "branch"},
+    )
+
+    # Encoded form — works prior to fix.
+    r_enc = client.get("/tickets?project=-Users-me-myrepo")
+    assert {row["external_key"] for row in r_enc.json()} == {"SLUG-1"}
+
+    # Slug form — this is what ProjectCard.svelte sends. Must also work.
+    r_slug = client.get("/tickets?project=myrepo-9999")
+    assert {row["external_key"] for row in r_slug.json()} == {"SLUG-1"}
 
 
 def test_project_filter_aggregates_across_shared_git_identity(client):

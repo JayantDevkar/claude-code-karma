@@ -46,6 +46,7 @@ from models.live_session import (
     load_live_session,
 )
 from models.project import Project
+from routers.projects import safely_resolve_project
 from schemas import LiveSessionsResponse, LiveSessionSummary
 
 logger = logging.getLogger(__name__)
@@ -434,6 +435,12 @@ async def list_project_live_sessions(
     This endpoint includes session stats (message_count, subagent_count, slug)
     loaded from the session JSONL files for real-time updates on project page.
     """
+    # Accept either slug or encoded_name; resolve to canonical encoded_name
+    # so live-session filtering matches what the indexer wrote. Without this,
+    # a URL like /live-sessions/project/claude-karma-1044 (slug form, as
+    # the frontend sends it) would never match resolved_project_encoded_name.
+    project_encoded_name = safely_resolve_project(project_encoded_name) or project_encoded_name
+
     states = await load_all_live_sessions_async()
 
     # Filter by project using resolved name (handles submodule→parent mapping)
