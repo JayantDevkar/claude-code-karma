@@ -233,6 +233,40 @@ Please return 2–3 variants for each.
 8. **Mobile / narrow layout for `/tickets` index**
    The table overflows-x today. At what breakpoint should it switch to a card list? What does the mobile card look like — what fields stay, what go?
 
+9. **Project ↔ ticket relationship surfacing**
+   The truth is **many-to-many**: a ticket can touch many projects via its
+   linked sessions; a project can have many tickets via the same join. We
+   intentionally do NOT model project as a property of the ticket — that
+   would force-fit cross-project tickets (big refactors) into a single
+   project bucket and conflict with karma's "passive observer" stance.
+
+   Today the only surface for this m:n is the `?project=X` filter on
+   `/tickets`. We want the relationship to be **navigable from both
+   directions**:
+
+   - **(a) Project page → tickets touched.** On `/projects/[project_slug]`,
+     surface "Tickets touched by sessions in this project." Tab? Card?
+     Sidebar? In-flow? What weight relative to the other project content
+     (sessions, agents, skills)?
+
+   - **(b) Ticket detail → sessions grouped by project.** On
+     `/tickets/[provider]/[external_key]`, when a ticket has linked
+     sessions across multiple projects, show that breakdown clearly.
+     Do we group sessions under collapsible project headers? Show a
+     "Touched projects: claude-karma (3) · airflow (1)" summary line at
+     the top? Both?
+
+   Cross-cutting question for design: **what's the right hierarchy on
+   the ticket detail page** — does it lead with the ticket title and
+   status, with the project breakdown, or with the linked-sessions
+   list? Pick the visual order that best matches a developer asking
+   "what work was done on this thing, and where?"
+
+   **Data shape reminder:** the `/tickets/{provider}/{external_key}/sessions`
+   endpoint already returns `project_encoded_name` per row (see §5d).
+   No new API or data-model change is required for this question — it is
+   purely a surfacing/UX call.
+
 ## 8. Non-goals (don't redesign these)
 
 - The global header / navigation (Tickets link is already there)

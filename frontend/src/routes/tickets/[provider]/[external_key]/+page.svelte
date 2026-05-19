@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { TicketBadge } from '$lib/components/tickets';
-	import { ArrowLeft, AlertTriangle, ExternalLink } from 'lucide-svelte';
+	import { ArrowLeft, AlertTriangle, ExternalLink, FolderGit2 } from 'lucide-svelte';
 
 	let { data } = $props();
 
@@ -12,6 +12,46 @@
 	function sourceLabel(s: string): string {
 		return s === 'slash_command' ? 'slash command' : s;
 	}
+
+	/** project_encoded_name → human display (last path segment after the leading dashes). */
+	function projectDisplayName(encoded: string | null): string {
+		if (!encoded) return 'Not yet indexed';
+		const parts = encoded.split('-').filter(Boolean);
+		return parts.length > 0 ? parts[parts.length - 1] : encoded;
+	}
+
+	type SessionRow = (typeof data.sessions)[number];
+	type ProjectGroup = {
+		key: string;
+		project_encoded_name: string | null;
+		sessions: SessionRow[];
+	};
+
+	const ORPHAN_KEY = '__orphan__';
+
+	let groups = $derived.by<ProjectGroup[]>(() => {
+		const buckets = new Map<string, SessionRow[]>();
+		for (const s of data.sessions) {
+			const key = s.project_encoded_name ?? ORPHAN_KEY;
+			if (!buckets.has(key)) buckets.set(key, []);
+			buckets.get(key)!.push(s);
+		}
+		return [...buckets.entries()]
+			.map(([key, sessions]) => ({
+				key,
+				project_encoded_name: key === ORPHAN_KEY ? null : key,
+				sessions
+			}))
+			.sort((a, b) => {
+				// Orphan group always last
+				if (a.key === ORPHAN_KEY) return 1;
+				if (b.key === ORPHAN_KEY) return -1;
+				return b.sessions.length - a.sessions.length;
+			});
+	});
+
+	let realProjectGroups = $derived(groups.filter((g) => g.project_encoded_name));
+	let showProjectBreakdown = $derived(realProjectGroups.length > 1);
 </script>
 
 <svelte:head>
@@ -51,12 +91,33 @@
 		</header>
 
 		<section class="flex flex-col gap-3" aria-labelledby="sessions-heading">
-			<h2
-				id="sessions-heading"
-				class="text-sm font-semibold uppercase tracking-wide text-[var(--text-secondary)] m-0"
-			>
-				Linked sessions ({data.sessions.length})
-			</h2>
+			<div class="flex items-baseline justify-between gap-3">
+				<h2
+					id="sessions-heading"
+					class="text-sm font-semibold uppercase tracking-wide text-[var(--text-secondary)] m-0"
+				>
+					Linked sessions ({data.sessions.length})
+				</h2>
+				{#if showProjectBreakdown}
+					<p class="text-xs text-[var(--text-muted)] m-0 inline-flex items-center gap-1.5">
+						<FolderGit2 size={12} />
+						<span>
+							Touched
+							{#each realProjectGroups as g, i (g.key)}
+								<a
+									href="/projects/{g.project_encoded_name}"
+									class="hover:text-[var(--accent)] hover:underline"
+								>
+									{projectDisplayName(g.project_encoded_name)}
+								</a>
+								<span class="text-[var(--text-faint)]">({g.sessions.length})</span>{#if i < realProjectGroups.length - 1}
+									<span class="text-[var(--text-faint)]"> · </span>
+								{/if}
+							{/each}
+						</span>
+					</p>
+				{/if}
+			</div>
 
 			{#if data.sessions.length === 0}
 				<p class="text-sm text-[var(--text-muted)] m-0">
@@ -64,62 +125,92 @@
 					<code class="font-mono">{data.ticket.external_key}</code> to link one.
 				</p>
 			{:else}
-				<ul class="flex flex-col gap-2 m-0 p-0 list-none">
-					{#each data.sessions as s (s.link_id)}
-						<li
-							class="flex flex-col gap-1.5 p-3 rounded-lg border border-[var(--border)] bg-[var(--bg-subtle)]"
-						>
-							<div class="flex items-baseline justify-between gap-3">
-								<div class="flex items-baseline gap-2 min-w-0">
-									{#if s.project_encoded_name && s.sessions_slug}
+				<div class="flex flex-col gap-4">
+					{#each groups as group (group.key)}
+						<div class="flex flex-col gap-2">
+							<div
+								class="flex items-baseline justify-between gap-3 pb-1 border-b border-[var(--border-subtle)]"
+							>
+								<div class="flex items-center gap-2 text-xs">
+									<FolderGit2 size={12} class="text-[var(--text-muted)]" />
+									{#if group.project_encoded_name}
 										<a
-											href="/projects/{s.project_encoded_name}/{s.sessions_slug}"
-											class="font-mono text-sm text-[var(--accent)] hover:underline truncate"
+											href="/projects/{group.project_encoded_name}"
+											class="font-mono text-[var(--text-primary)] hover:text-[var(--accent)] hover:underline"
 										>
-											{s.sessions_slug}
+											{projectDisplayName(group.project_encoded_name)}
 										</a>
-									{:else if s.session_slug}
-										<span class="font-mono text-sm text-[var(--text-muted)] italic">
-											{s.session_slug} (orphan — not yet indexed)
-										</span>
 									{:else}
-										<span class="font-mono text-sm text-[var(--text-muted)] truncate">
-											{s.session_uuid}
+										<span class="italic text-[var(--text-muted)]">
+											Not yet indexed
 										</span>
 									{/if}
+									<span class="text-[var(--text-faint)]">
+										· {group.sessions.length}
+										{group.sessions.length === 1 ? 'session' : 'sessions'}
+									</span>
 								</div>
-								<span
-									class="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-[var(--bg-muted)] text-[var(--text-secondary)]"
-									title="how this link was created"
-								>
-									{sourceLabel(s.link_source)}
-								</span>
 							</div>
-							{#if s.initial_prompt}
-								<p
-									class="text-xs text-[var(--text-secondary)] m-0 line-clamp-2"
-									title={s.initial_prompt}
-								>
-									{s.initial_prompt}
-								</p>
-							{/if}
-							<div class="flex items-center gap-3 text-xs text-[var(--text-muted)]">
-								<span>Linked {formatDate(s.linked_at)}</span>
-								{#if s.start_time}
-									<span>· Started {formatDate(s.start_time)}</span>
-								{/if}
-								{#if s.project_encoded_name && !s.sessions_slug}
-									<a
-										href="/projects/{s.project_encoded_name}"
-										class="ml-auto inline-flex items-center gap-1 hover:text-[var(--accent)]"
+
+							<ul class="flex flex-col gap-2 m-0 p-0 list-none">
+								{#each group.sessions as s (s.link_id)}
+									<li
+										class="flex flex-col gap-1.5 p-3 rounded-lg border border-[var(--border)] bg-[var(--bg-subtle)]"
 									>
-										project <ExternalLink size={10} />
-									</a>
-								{/if}
-							</div>
-						</li>
+										<div class="flex items-baseline justify-between gap-3">
+											<div class="flex items-baseline gap-2 min-w-0">
+												{#if s.project_encoded_name && s.sessions_slug}
+													<a
+														href="/projects/{s.project_encoded_name}/{s.sessions_slug}"
+														class="font-mono text-sm text-[var(--accent)] hover:underline truncate"
+													>
+														{s.sessions_slug}
+													</a>
+												{:else if s.session_slug}
+													<span class="font-mono text-sm text-[var(--text-muted)] italic">
+														{s.session_slug} (orphan — not yet indexed)
+													</span>
+												{:else}
+													<span class="font-mono text-sm text-[var(--text-muted)] truncate">
+														{s.session_uuid}
+													</span>
+												{/if}
+											</div>
+											<span
+												class="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-[var(--bg-muted)] text-[var(--text-secondary)]"
+												title="how this link was created"
+											>
+												{sourceLabel(s.link_source)}
+											</span>
+										</div>
+										{#if s.initial_prompt}
+											<p
+												class="text-xs text-[var(--text-secondary)] m-0 line-clamp-2"
+												title={s.initial_prompt}
+											>
+												{s.initial_prompt}
+											</p>
+										{/if}
+										<div class="flex items-center gap-3 text-xs text-[var(--text-muted)]">
+											<span>Linked {formatDate(s.linked_at)}</span>
+											{#if s.start_time}
+												<span>· Started {formatDate(s.start_time)}</span>
+											{/if}
+											{#if s.project_encoded_name && !s.sessions_slug}
+												<a
+													href="/projects/{s.project_encoded_name}"
+													class="ml-auto inline-flex items-center gap-1 hover:text-[var(--accent)]"
+												>
+													project <ExternalLink size={10} />
+												</a>
+											{/if}
+										</div>
+									</li>
+								{/each}
+							</ul>
+						</div>
 					{/each}
-				</ul>
+				</div>
 			{/if}
 		</section>
 	{/if}

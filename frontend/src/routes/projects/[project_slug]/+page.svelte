@@ -50,6 +50,7 @@
 	import FiltersBottomSheet from '$lib/components/FiltersBottomSheet.svelte';
 	import ActiveFilterChips from '$lib/components/ActiveFilterChips.svelte';
 	import LiveSessionsSection from '$lib/components/LiveSessionsSection.svelte';
+	import { ProjectTicketsCard } from '$lib/components/tickets';
 	import type {
 		Project,
 		BranchesData,
@@ -1094,6 +1095,11 @@
 							onClearAll={handleClearAllBranches}
 							isLoading={isLoadingAllSessions}
 						/>
+					{/if}
+
+					<!-- Linked Tickets — derived through sessions in this project -->
+					{#if $page.params.project_slug}
+						<ProjectTicketsCard projectEncodedName={$page.params.project_slug} />
 					{/if}
 
 					<!-- Sessions Section -->
