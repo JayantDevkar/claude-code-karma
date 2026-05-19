@@ -7,7 +7,7 @@
 		statusColorVar,
 		formatRelative
 	} from '$lib/ticket-helpers';
-	import { ExternalLink, Search, Ticket as TicketIcon, Slash, GitBranch, Link as LinkIcon, Sparkles } from 'lucide-svelte';
+	import { ExternalLink, Search, Slash, GitBranch, Link as LinkIcon, Sparkles } from 'lucide-svelte';
 
 	interface Props {
 		projectEncodedName: string;
@@ -85,22 +85,19 @@
 
 <div class="flex flex-col gap-4">
 	<header class="flex items-baseline justify-between gap-3">
-		<div class="flex items-baseline gap-2.5">
-			<h2 class="text-sm font-semibold text-[var(--text-primary)] m-0 inline-flex items-center gap-2">
-				<TicketIcon size={14} class="text-[var(--text-muted)]" />
-				Tickets touched by this project
-			</h2>
+		<p class="text-xs text-[var(--text-muted)] m-0">
+			Tickets touched by any session in this project
 			{#if tickets}
-				<span class="font-mono text-xs text-[var(--text-muted)]">
-					[{filtered.length}{q && tickets.length !== filtered.length ? ` of ${tickets.length}` : ''}]
+				<span class="font-mono text-[var(--text-faint)]">
+					· {filtered.length}{q && tickets.length !== filtered.length ? ` of ${tickets.length}` : ''}
 				</span>
 			{/if}
-		</div>
+		</p>
 		<a
 			href="/tickets?project={encodeURIComponent(projectEncodedName)}"
 			class="text-xs text-[var(--text-secondary)] hover:text-[var(--accent)] inline-flex items-center gap-1"
 		>
-			Open in /tickets
+			View all
 			<ExternalLink size={11} />
 		</a>
 	</header>

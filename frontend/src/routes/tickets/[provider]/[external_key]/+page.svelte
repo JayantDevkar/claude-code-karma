@@ -79,6 +79,17 @@
 
 	let meta = $derived(data.ticket ? PROVIDER_META[data.ticket.provider] : null);
 	let norm = $derived(data.ticket ? normalizeStatus(data.ticket.status) : null);
+
+	/** Suppress the `synced X` chip when metadata was set within ~60s of
+	 * first_seen. Freshly-linked tickets report identical values; showing
+	 * `first seen just now · synced just now` reads as redundant. */
+	function isSyncedNearFirstSeen(firstSeen: string | null, synced: string | null): boolean {
+		if (!firstSeen || !synced) return false;
+		const f = Date.parse(firstSeen);
+		const s = Date.parse(synced);
+		if (Number.isNaN(f) || Number.isNaN(s)) return false;
+		return Math.abs(s - f) < 60_000;
+	}
 </script>
 
 <svelte:head>
@@ -176,7 +187,7 @@
 						</span>
 						<span class="text-[var(--text-faint)]">·</span>
 						<span>first seen {formatRelative(data.ticket.first_seen_at)}</span>
-						{#if data.ticket.metadata_updated_at}
+						{#if data.ticket.metadata_updated_at && !isSyncedNearFirstSeen(data.ticket.first_seen_at, data.ticket.metadata_updated_at)}
 							<span class="text-[var(--text-faint)]">·</span>
 							<span>synced {formatRelative(data.ticket.metadata_updated_at)}</span>
 						{/if}
@@ -190,7 +201,7 @@
 			<h2 class="text-sm font-semibold text-[var(--text-primary)] m-0">
 				Sessions
 			</h2>
-			<span class="text-[11px] text-[var(--text-muted)]">·  sorted by most recently linked</span>
+			<span class="text-[11px] text-[var(--text-muted)]">· sorted by most recently linked</span>
 		</div>
 
 		{#if showTabs}

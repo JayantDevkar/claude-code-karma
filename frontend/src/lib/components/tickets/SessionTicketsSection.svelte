@@ -135,7 +135,7 @@
 					<TicketBadge
 						{ticket}
 						variant="pill"
-						showStatus={false}
+						showStatus={true}
 						onRemove={() => requestUnlink(ticket)}
 					/>
 				</li>
