@@ -1,11 +1,14 @@
 """
-Schema migration tests for v11 (tickets + session_tickets).
+Schema migration tests for v11 (tickets + session_tickets) and forward.
 
 Verifies that:
  1. Fresh install (current_version == 0) applies SCHEMA_SQL and both
     ticket tables + indices + CHECK constraints exist.
  2. v10 → v11 upgrade applies the incremental migration block.
- 3. v11 → v11 replay is idempotent (no-op).
+ 3. Replay is idempotent (no-op).
+
+Version assertions use the live `SCHEMA_VERSION` constant rather than
+literals so future migrations (v12+) don't require touching this file.
 """
 
 import sqlite3
@@ -48,8 +51,10 @@ def _get_version(conn: sqlite3.Connection) -> int:
     return conn.execute("SELECT MAX(version) FROM schema_version").fetchone()[0]
 
 
-def test_schema_version_is_eleven():
-    assert SCHEMA_VERSION == 11, "spec calls for v11; bump tests if version changes"
+def test_schema_version_is_at_least_eleven():
+    # v11 introduced the ticket tables this test file covers.
+    # Higher versions are fine — they layer on top.
+    assert SCHEMA_VERSION >= 11
 
 
 def test_fresh_install_creates_both_ticket_tables():
@@ -63,7 +68,7 @@ def test_fresh_install_creates_both_ticket_tables():
     assert _index_exists(conn, "idx_session_tickets_slug")
     assert _index_exists(conn, "idx_session_tickets_ticket")
     assert _index_exists(conn, "uniq_session_tickets_slug_ticket")
-    assert _get_version(conn) == 11
+    assert _get_version(conn) == SCHEMA_VERSION
 
 
 def test_fresh_install_check_constraints_fire():
@@ -125,7 +130,7 @@ def test_migration_from_v10_creates_ticket_tables():
     assert _table_exists(conn, "tickets")
     assert _table_exists(conn, "session_tickets")
     assert _index_exists(conn, "uniq_session_tickets_slug_ticket")
-    assert _get_version(conn) == 11
+    assert _get_version(conn) == SCHEMA_VERSION
 
 
 def test_replay_is_idempotent():
@@ -133,7 +138,7 @@ def test_replay_is_idempotent():
     ensure_schema(conn)
     ensure_schema(conn)  # should not raise
 
-    assert _get_version(conn) == 11
+    assert _get_version(conn) == SCHEMA_VERSION
     # Tables still exist
     assert _table_exists(conn, "tickets")
     assert _table_exists(conn, "session_tickets")

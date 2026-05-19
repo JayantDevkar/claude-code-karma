@@ -7,10 +7,17 @@ allowed-tools: Bash, mcp__linear, mcp__claude_ai_Linear, mcp__plugin_github_gith
 
 You are linking the current Claude Code session (`${CLAUDE_SESSION_ID}`) to ticket: **$ARGUMENTS**
 
-Karma is a read-only observer at `http://localhost:8000` — it stores the
-link and caches metadata, but never writes back to the ticket provider.
-You (the agent) supply the title/status via the user's already-configured
-MCP server.
+Karma is a read-only observer running on the user's machine — it stores
+the link and caches metadata, but never writes back to the ticket
+provider. You (the agent) supply the title/status via the user's
+already-configured MCP server.
+
+Karma's API URL comes from the `KARMA_API_URL` env var (set by users who
+run on a non-default port or remote host) and falls back to
+`http://localhost:8000`. Inline `${KARMA_API_URL:-http://localhost:8000}`
+in **every** curl below — bash variables do not persist across separate
+Bash tool calls, so a top-of-script assignment would be empty by the
+time the next curl runs.
 
 ## Steps
 
@@ -34,7 +41,7 @@ MCP server.
 4. **POST the link** (creates the link; does not touch metadata):
 
    ```bash
-   curl -s -X POST "http://localhost:8000/sessions/${CLAUDE_SESSION_ID}/tickets" \
+   curl -s -X POST "${KARMA_API_URL:-http://localhost:8000}/sessions/${CLAUDE_SESSION_ID}/tickets" \
         -H 'Content-Type: application/json' \
         -d '{"ref":"<key>","provider":"<provider>","url":"<url>","source":"slash_command"}'
    ```
@@ -42,7 +49,7 @@ MCP server.
 5. **PUT the metadata** (only if you fetched title/status in step 3):
 
    ```bash
-   curl -s -X PUT "http://localhost:8000/tickets/<provider>/<key>" \
+   curl -s -X PUT "${KARMA_API_URL:-http://localhost:8000}/tickets/<provider>/<key>" \
         -H 'Content-Type: application/json' \
         -d '{"title":"<title>","status":"<status>"}'
    ```
@@ -55,8 +62,10 @@ MCP server.
 
 ## Notes
 
-- Karma is loopback-only — `http://localhost:8000` is the karma API.
+- Karma is loopback-only by default — `http://localhost:8000` is the
+  fallback. Set `KARMA_API_URL` to override (custom port, remote host).
 - POST is idempotent on (session, ticket); re-running upgrades the
   `link_source` if previously set by branch-detect or dashboard.
-- If the API is unreachable, tell the user "karma not running" — don't
-  silently succeed.
+- If the API is unreachable, tell the user "karma not running at
+  ${KARMA_API_URL:-http://localhost:8000}" so users on custom ports see
+  what was tried. Don't silently succeed.

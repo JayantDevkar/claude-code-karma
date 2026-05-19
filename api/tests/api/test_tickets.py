@@ -399,6 +399,155 @@ def test_get_ticket_404_when_unknown(client):
     assert r.status_code == 404
 
 
+# ---------------------------------------------------------------------------
+# GET /tickets?project=... — git_identity aggregation (v12)
+# ---------------------------------------------------------------------------
+
+
+def _seed_session(conn, *, uuid: str, project: str) -> None:
+    conn.execute(
+        "INSERT INTO sessions (uuid, project_encoded_name, jsonl_mtime) "
+        "VALUES (?, ?, ?)",
+        (uuid, project, 0.0),
+    )
+
+
+def _seed_project(conn, *, encoded_name: str, git_identity=None) -> None:
+    conn.execute(
+        "INSERT OR REPLACE INTO projects "
+        "(encoded_name, project_path, slug, display_name, "
+        " session_count, last_activity, git_identity) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (encoded_name, None, encoded_name, encoded_name, 0, None, git_identity),
+    )
+
+
+def test_project_filter_aggregates_across_shared_git_identity(client):
+    """Two encoded_names sharing a git_identity should pool their tickets.
+    A ticket linked from project A's session must appear under project B
+    when both projects have git_identity='org/repo'."""
+    import db.connection as connection
+
+    conn = connection.get_writer_db()
+    _seed_project(conn, encoded_name="-A-main", git_identity="org/repo")
+    _seed_project(conn, encoded_name="-A-frontend", git_identity="org/repo")
+    _seed_session(conn, uuid="s-main", project="-A-main")
+    _seed_session(conn, uuid="s-frontend", project="-A-frontend")
+    conn.commit()
+
+    # Link a ticket from a session that lives in -A-main.
+    client.post(
+        "/sessions/s-main/tickets",
+        json={"ref": "https://linear.app/acme/issue/SHARED-1", "source": "branch"},
+    )
+
+    # Both projects should see it.
+    r_main = client.get("/tickets?project=-A-main")
+    r_front = client.get("/tickets?project=-A-frontend")
+    assert {row["external_key"] for row in r_main.json()} == {"SHARED-1"}
+    assert {row["external_key"] for row in r_front.json()} == {"SHARED-1"}
+
+
+def test_project_filter_null_git_identity_falls_back_to_per_encoded(client):
+    """When the target project has no git_identity (sync-imported, never
+    indexed locally, etc.), the query must keep the legacy behavior:
+    only tickets from sessions whose project_encoded_name matches."""
+    import db.connection as connection
+
+    conn = connection.get_writer_db()
+    # Two NULL-git_identity projects — they must NOT pool.
+    _seed_project(conn, encoded_name="-N-a", git_identity=None)
+    _seed_project(conn, encoded_name="-N-b", git_identity=None)
+    _seed_session(conn, uuid="n-a", project="-N-a")
+    _seed_session(conn, uuid="n-b", project="-N-b")
+    conn.commit()
+
+    client.post(
+        "/sessions/n-a/tickets",
+        json={"ref": "https://linear.app/acme/issue/NA-1", "source": "branch"},
+    )
+    client.post(
+        "/sessions/n-b/tickets",
+        json={"ref": "https://linear.app/acme/issue/NB-1", "source": "branch"},
+    )
+
+    r_a = client.get("/tickets?project=-N-a")
+    r_b = client.get("/tickets?project=-N-b")
+    assert {row["external_key"] for row in r_a.json()} == {"NA-1"}
+    assert {row["external_key"] for row in r_b.json()} == {"NB-1"}
+
+
+def test_project_filter_github_external_key_match_without_local_link(client):
+    """GitHub heuristic: a ticket `org/repo#42` should appear under a
+    project whose git_identity='org/repo' EVEN IF no local session has
+    linked it. This handles the cross-machine sync case."""
+    import db.connection as connection
+
+    conn = connection.get_writer_db()
+    _seed_project(conn, encoded_name="-G-main", git_identity="acme/widget")
+    _seed_session(conn, uuid="g-main", project="-G-main")
+    # Also seed a totally unrelated project that links the ticket — this
+    # is how the ticket gets into the tickets table without -G-main ever
+    # touching it.
+    _seed_project(conn, encoded_name="-OTHER", git_identity="other/thing")
+    _seed_session(conn, uuid="other-s", project="-OTHER")
+    conn.commit()
+
+    # Link from -OTHER (no relation to acme/widget).
+    client.post(
+        "/sessions/other-s/tickets",
+        json={"ref": "acme/widget#42", "source": "branch"},
+    )
+
+    r = client.get("/tickets?project=-G-main")
+    keys = {row["external_key"] for row in r.json()}
+    assert "acme/widget#42" in keys
+
+    # Linear ticket with a coincidentally similar key should NOT match
+    # the GitHub heuristic — guard against provider confusion.
+    client.post(
+        "/sessions/other-s/tickets",
+        json={
+            "ref": "ACME-99",
+            "provider": "linear",
+            "url": "https://linear.app/acme/issue/ACME-99",
+            "source": "branch",
+        },
+    )
+    r2 = client.get("/tickets?project=-G-main")
+    keys2 = {row["external_key"] for row in r2.json()}
+    assert "ACME-99" not in keys2  # provider guard intact
+
+
+def test_project_filter_aggregates_link_count_across_siblings(client):
+    """When a ticket is linked from sessions in multiple sibling projects
+    sharing a git_identity, `session_count` reflects the total — proving
+    the cross-encoded aggregation reaches all linked sessions, not just
+    those under one encoded_name."""
+    import db.connection as connection
+
+    conn = connection.get_writer_db()
+    _seed_project(conn, encoded_name="-S-main", git_identity="team/proj")
+    _seed_project(conn, encoded_name="-S-frontend", git_identity="team/proj")
+    _seed_session(conn, uuid="sm-1", project="-S-main")
+    _seed_session(conn, uuid="sf-1", project="-S-frontend")
+    conn.commit()
+
+    # Same ticket linked from BOTH sibling projects.
+    client.post(
+        "/sessions/sm-1/tickets",
+        json={"ref": "team/proj#7", "source": "branch"},
+    )
+    client.post(
+        "/sessions/sf-1/tickets",
+        json={"ref": "team/proj#7", "source": "branch"},
+    )
+
+    r = client.get("/tickets?project=-S-main")
+    by_key = {row["external_key"]: row for row in r.json()}
+    assert by_key["team/proj#7"]["session_count"] == 2
+
+
 def test_get_ticket_sessions_for_orphan_link(client):
     """A link whose session_uuid isn't in the sessions index still appears,
     with sessions-fields NULL (LEFT JOIN behavior)."""

@@ -321,10 +321,41 @@ def list_tickets(
     Filters:
       provider — exact provider match.
       q        — case-insensitive substring of external_key or title.
-      project  — encoded project name; restricts to tickets linked to at
-                 least one session in that project. When set, the join to
-                 sessions becomes effectively INNER (the WHERE excludes
-                 NULLs), so orphan links are excluded.
+      project  — encoded project name; aggregates tickets across all
+                 encoded_names sharing the target project's `git_identity`,
+                 with two fallbacks.
+
+    `project` resolution path (in priority order):
+
+      A) git_identity match — if the target project has a non-NULL
+         git_identity, include tickets linked from any session in any
+         project sharing that git_identity. This is what makes worktrees,
+         subdir projects, and other local checkouts of the same repo
+         present a unified ticket view.
+
+      B) GitHub external_key heuristic — for `provider='github'` tickets
+         only, include tickets whose external_key (lowercased) starts
+         with `{git_identity}#`, even if no local session has linked
+         them yet. Catches the cross-machine sync case where the ticket
+         was linked on a peer's machine.
+
+         Note on `session_count` for path-B-only tickets: the count
+         reflects total links anywhere in the DB (this ticket's
+         popularity), not links within this project. A ticket surfaced
+         only via the heuristic — never linked locally — may show
+         session_count > 0 if a peer linked it elsewhere. That's the
+         signal we want; treating those tickets as "0 sessions" would
+         hide useful information.
+
+      C) Per-encoded fallback — when target git_identity is NULL (e.g.
+         a sync-imported project with no local checkout, or a project
+         predating the v12 backfill), revert to the legacy behavior:
+         match only sessions whose project_encoded_name equals `project`.
+
+    All three paths share one query — no Python post-filtering. Orphan
+    links (session_uuid not in sessions table) are excluded from path A
+    naturally because the join to sessions returns NULL p.git_identity;
+    they are included from path C via the LIKE-the-old-way clause.
     """
     where = []
     params: list = []
@@ -338,10 +369,39 @@ def list_tickets(
 
     extra_join = ""
     if project:
-        # Force the link↔session join and constrain to this project.
-        extra_join = "LEFT JOIN sessions s ON s.uuid = st.session_uuid"
-        where.append("s.project_encoded_name = ?")
-        params.append(project)
+        # Resolve the target's git_identity once and reuse via parameters.
+        # SQLite scalar subqueries would also work; binding explicitly
+        # keeps the query plan stable and makes the fallback semantics
+        # easier to reason about.
+        row = conn.execute(
+            "SELECT git_identity FROM projects WHERE encoded_name = ?",
+            (project,),
+        ).fetchone()
+        target_git_identity = row["git_identity"] if row else None
+
+        # Join sessions + projects so we can match on either path.
+        extra_join = (
+            "LEFT JOIN sessions s  ON s.uuid = st.session_uuid "
+            "LEFT JOIN projects p  ON p.encoded_name = s.project_encoded_name"
+        )
+
+        if target_git_identity:
+            # Path A (git_identity match) OR Path B (GitHub key heuristic).
+            # Path B doesn't require any link to exist locally — that's how
+            # tickets surface on a sync-imported view of the same repo.
+            where.append(
+                "("
+                "  p.git_identity = ?"
+                "  OR (t.provider = 'github' AND LOWER(t.external_key) LIKE ?)"
+                ")"
+            )
+            params.append(target_git_identity)
+            params.append(f"{target_git_identity}#%")
+        else:
+            # Path C — legacy per-encoded_name match. Mirrors pre-v12
+            # behavior for projects that have no git_identity yet.
+            where.append("s.project_encoded_name = ?")
+            params.append(project)
 
     where_clause = ("WHERE " + " AND ".join(where)) if where else ""
 

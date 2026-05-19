@@ -10,7 +10,7 @@ import sqlite3
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 11
+SCHEMA_VERSION = 12
 
 SCHEMA_SQL = """
 -- Schema versioning
@@ -210,8 +210,16 @@ CREATE TABLE IF NOT EXISTS projects (
     display_name TEXT,
     session_count INTEGER DEFAULT 0,
     last_activity TEXT,
+    -- git_identity: canonical `owner/repo` lowercase, derived from
+    -- `git -C project_path config --get remote.origin.url`. NULL when
+    -- the project has no local git remote (sync-imported, never inited).
+    -- Used by ticket queries to aggregate across encoded_names that
+    -- represent the same logical repo (worktrees, subdir projects, etc.).
+    git_identity TEXT,
     updated_at TEXT DEFAULT (datetime('now'))
 );
+
+CREATE INDEX IF NOT EXISTS idx_projects_git_identity ON projects(git_identity);
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_slug ON projects(slug);
 """
@@ -528,6 +536,34 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
                     ON session_tickets(session_slug, ticket_id)
                     WHERE session_slug IS NOT NULL;
             """)
+
+        if current_version < 12:
+            logger.info(
+                "Migrating → v12: adding projects.git_identity for cross-encoded "
+                "ticket aggregation"
+            )
+            # The minimum-fixture schema test (test_migration_from_v10) seeds
+            # only schema_version and skips SCHEMA_SQL, so projects/sessions
+            # may not exist. PRAGMA table_info returns 0 rows in that case
+            # and we'd ALTER a missing table. Production always has both
+            # tables — they're in SCHEMA_SQL since v1.
+            projects_cols = {r[1] for r in conn.execute("PRAGMA table_info(projects)").fetchall()}
+            if projects_cols:
+                # Idempotent: some DBs already have the column from an
+                # out-of-band ALTER on a parallel branch (e.g. the sync-v4
+                # prototype worktree).
+                if "git_identity" not in projects_cols:
+                    conn.execute("ALTER TABLE projects ADD COLUMN git_identity TEXT")
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_projects_git_identity "
+                    "ON projects(git_identity)"
+                )
+                # Nudge mtimes so the next periodic indexer pass re-runs
+                # _update_project_summaries for every project and populates
+                # the new column. Matches the v8/v9/v10 backfill pattern.
+                # Gated by the same projects-table guard because if projects
+                # doesn't exist, sessions doesn't either in the minimal fixture.
+                conn.execute("UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1")
 
     # Record version
     conn.execute(
