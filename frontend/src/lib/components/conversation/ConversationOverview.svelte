@@ -28,6 +28,7 @@
 		CompactionSummary
 	} from '$lib/api-types';
 	import { isSubagentSession, isMainSession } from '$lib/api-types';
+	import { projectHrefFromSession } from '$lib/utils/project-url';
 	import { formatDuration, formatTokens } from '$lib/utils';
 	import { API_BASE } from '$lib/config';
 
@@ -140,10 +141,10 @@
 			{:else if continuationSession}
 				<!-- Always use UUID for continuation links - they share slugs with parent session -->
 				<a
-					href="/projects/{continuationSession.project_encoded_name}/{continuationSession.session_uuid.slice(
-						0,
-						8
-					)}"
+					href={projectHrefFromSession(
+						continuationSession,
+						`/${continuationSession.session_uuid.slice(0, 8)}`
+					)}
 					class="
 						mt-3 inline-flex items-center gap-1.5
 						px-3 py-1.5

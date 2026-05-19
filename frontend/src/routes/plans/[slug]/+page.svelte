@@ -4,6 +4,7 @@
 	import PageHeader from '$lib/components/layout/PageHeader.svelte';
 	import Card from '$lib/components/ui/Card.svelte';
 	import { PlanViewer } from '$lib/components/plan';
+	import { projectHrefFromSession } from '$lib/utils/project-url';
 	import { navigating } from '$app/stores';
 	import { PlanDetailSkeleton } from '$lib/components/skeleton';
 
@@ -65,8 +66,10 @@
 		{#snippet headerRight()}
 			{#if data.sessionContext}
 				<a
-					href="/projects/{data.sessionContext.project_encoded_name}/{data.sessionContext
-						.session_slug}"
+					href={projectHrefFromSession(
+						data.sessionContext,
+						`/${data.sessionContext.session_slug}`
+					)}
 					class="inline-flex items-center gap-2 text-sm text-[var(--accent)] hover:underline"
 				>
 					<ExternalLink size={14} />
@@ -85,8 +88,10 @@
 			</div>
 			<div class="flex flex-wrap gap-2">
 				<a
-					href="/projects/{data.sessionContext.project_encoded_name}/{data.sessionContext
-						.session_slug}"
+					href={projectHrefFromSession(
+						data.sessionContext,
+						`/${data.sessionContext.session_slug}`
+					)}
 					class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg
 						   bg-[var(--accent-subtle)] text-[var(--accent)] hover:bg-[var(--accent)]/20 transition-colors"
 				>
@@ -103,7 +108,7 @@
 				{:then relatedSessions}
 					{#each relatedSessions as session}
 						<a
-							href="/projects/{session.project_encoded_name}/{session.session_slug}"
+							href={projectHrefFromSession(session, `/${session.session_slug}`)}
 							class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg
 								   bg-[var(--bg-subtle)] text-[var(--text-secondary)] hover:bg-[var(--bg-muted)] transition-colors"
 						>
@@ -134,7 +139,7 @@
 					<div class="flex flex-wrap gap-2">
 						{#each relatedSessions as session}
 							<a
-								href="/projects/{session.project_encoded_name}/{session.session_slug}"
+								href={projectHrefFromSession(session, `/${session.session_slug}`)}
 								class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg
 									   bg-[var(--bg-subtle)] text-[var(--text-secondary)] hover:bg-[var(--bg-muted)] transition-colors"
 							>
