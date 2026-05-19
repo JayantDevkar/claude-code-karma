@@ -22,6 +22,7 @@ from config import Settings, settings
 from http_caching import cacheable
 from models import Project
 from parallel import run_in_thread
+from routers.projects import safely_resolve_project
 from schemas import CommandContent, CommandDetailResponse, CommandInfo, CommandItem
 
 logger = logging.getLogger(__name__)
@@ -41,13 +42,17 @@ def get_settings() -> Settings:
 def get_commands_dir(
     config: Annotated[Settings, Depends(get_settings)],
     project: Annotated[
-        str | None, Query(description="Project encoded name for project-specific commands")
+        str | None,
+        Query(
+            description="Project identifier (slug or encoded_name) for project-specific commands"
+        ),
     ] = None,
 ) -> Path:
     """Get the commands directory (global or project-specific)."""
     if project:
+        resolved = safely_resolve_project(project) or project
         try:
-            proj = Project.from_encoded_name(project)
+            proj = Project.from_encoded_name(resolved)
             return Path(proj.path) / ".claude" / "commands"
         except Exception as err:
             raise HTTPException(status_code=400, detail="Invalid project name") from err
@@ -208,7 +213,7 @@ def get_command_usage(
         if conn is None:
             return []
 
-        rows = query_command_usage(conn, project=project, limit=100)
+        rows = query_command_usage(conn, project=safely_resolve_project(project), limit=100)
         results = []
         for row in rows:
             cmd_name = row["command_name"]
@@ -248,7 +253,9 @@ def get_command_usage_trend(
     try:
         with sqlite_read() as conn:
             if conn is not None:
-                return query_command_usage_trend(conn, project=project, period=period)
+                return query_command_usage_trend(
+                    conn, project=safely_resolve_project(project), period=period
+                )
     except sqlite3.Error as e:
         logger.warning("SQLite command trend query failed: %s", e)
 
@@ -317,7 +324,8 @@ async def get_command_detail(
         cmd_file = None
         if project:
             try:
-                proj = Project.from_encoded_name(project)
+                resolved = safely_resolve_project(project) or project
+                proj = Project.from_encoded_name(resolved)
                 project_cmd = Path(proj.path) / ".claude" / "commands" / f"{command_name}.md"
                 if project_cmd.is_file():
                     cmd_file = project_cmd
@@ -424,7 +432,8 @@ async def get_command_info(
     # 1. Project-level commands
     if project:
         try:
-            proj = Project.from_encoded_name(project)
+            resolved = safely_resolve_project(project) or project
+            proj = Project.from_encoded_name(resolved)
             project_cmd = Path(proj.path) / ".claude" / "commands" / f"{command_name}.md"
             if project_cmd.is_file():
                 command_file = project_cmd

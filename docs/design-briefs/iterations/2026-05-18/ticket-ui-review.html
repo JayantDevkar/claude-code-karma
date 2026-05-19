@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Claude Karma — Ticket UI Review</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap"
+    />
+    <link rel="stylesheet" href="canvas/tokens.css" />
+    <style>
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+      }
+      body {
+        background: #f0eee9;
+      }
+      #root {
+        height: 100%;
+      }
+      /* Reset link defaults inside artboards — designers control color/decoration */
+      a {
+        color: inherit;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+
+    <!-- React + Babel -->
+    <script
+      src="https://unpkg.com/react@18.3.1/umd/react.development.js"
+      integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L"
+      crossorigin="anonymous"
+    ></script>
+    <script
+      src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js"
+      integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm"
+      crossorigin="anonymous"
+    ></script>
+    <script
+      src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js"
+      integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y"
+      crossorigin="anonymous"
+    ></script>
+
+    <!-- Data + design-canvas wrapper -->
+    <script src="canvas/data.js"></script>
+    <script type="text/babel" src="canvas/design-canvas.jsx"></script>
+
+    <!-- Primitives (icons, badges, frame) -->
+    <script type="text/babel" src="canvas/primitives.jsx"></script>
+
+    <!-- Artboards -->
+    <script type="text/babel" src="canvas/critique.jsx"></script>
+    <script type="text/babel" src="canvas/q1-providers.jsx"></script>
+    <script type="text/babel" src="canvas/q4-input.jsx"></script>
+    <script type="text/babel" src="canvas/q6-unlink.jsx"></script>
+    <script type="text/babel" src="canvas/q2-empty.jsx"></script>
+    <script type="text/babel" src="canvas/q3-detail.jsx"></script>
+    <script type="text/babel" src="canvas/index-page.jsx"></script>
+    <script type="text/babel" src="canvas/q5-placement.jsx"></script>
+
+    <!-- App entry -->
+    <script type="text/babel" src="canvas/app.jsx"></script>
+  </body>
+</html>

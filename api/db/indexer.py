@@ -720,10 +720,14 @@ def _update_project_summaries(conn: sqlite3.Connection) -> None:
     """
     Update the projects summary table from aggregated session data.
     Uses INSERT OR REPLACE to avoid race condition between DELETE and INSERT.
-    Computes slug and display_name for URL beautification.
+    Computes slug and display_name for URL beautification, and reads
+    `git_identity` (canonical owner/repo) from each project_path so that
+    cross-cutting views can aggregate worktrees, subdir checkouts, and
+    other encoded_name variants that represent the same logical repo.
     """
     from pathlib import Path
 
+    from services.git_identity import read_git_identity
     from utils import compute_project_slug
 
     rows = conn.execute(
@@ -751,14 +755,24 @@ def _update_project_summaries(conn: sqlite3.Connection) -> None:
 
         slug = compute_project_slug(encoded_name, project_path)
         display_name = Path(project_path).name if project_path else encoded_name
+        git_identity = read_git_identity(project_path)
 
         conn.execute(
             """
             INSERT OR REPLACE INTO projects
-                (encoded_name, project_path, slug, display_name, session_count, last_activity)
-            VALUES (?, ?, ?, ?, ?, ?)
+                (encoded_name, project_path, slug, display_name,
+                 session_count, last_activity, git_identity)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            (encoded_name, project_path, slug, display_name, session_count, last_activity),
+            (
+                encoded_name,
+                project_path,
+                slug,
+                display_name,
+                session_count,
+                last_activity,
+                git_identity,
+            ),
         )
 
     conn.commit()

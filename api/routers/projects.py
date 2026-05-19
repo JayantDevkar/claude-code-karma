@@ -165,6 +165,28 @@ def resolve_project_identifier(identifier: str) -> str:
     raise HTTPException(status_code=404, detail=f"Project not found: {identifier}")
 
 
+def safely_resolve_project(identifier: Optional[str]) -> Optional[str]:
+    """Filter-param variant of `resolve_project_identifier`.
+
+    Unlike its strict cousin, this function NEVER raises:
+      - `None` in → `None` out (no filter applied downstream)
+      - Unknown identifier → returns the input verbatim, letting the
+        downstream query naturally return an empty list. Filter endpoints
+        should yield zero results for an unknown project, not 404.
+      - Known slug or encoded_name → returns canonical encoded_name.
+
+    Use this for any router that accepts `?project=...` as a filter
+    where the project may legitimately not exist (e.g. a saved query
+    against a deleted project) and 404 would be the wrong response.
+    """
+    if not identifier:
+        return None
+    try:
+        return resolve_project_identifier(identifier)
+    except HTTPException:
+        return identifier
+
+
 def _count_worktree_sessions(real_encoded: str) -> int:
     """Count sessions in worktree dirs mapped to a real project."""
     wt_encodeds = get_worktree_mappings_for_project(real_encoded)

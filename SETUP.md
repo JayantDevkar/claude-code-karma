@@ -6,15 +6,16 @@
 
 ## What You'll Get
 
-Claude Code Karma installs in **3 progressive tiers**. Start with the core dashboard, then add live monitoring and smart titles as needed.
+Claude Code Karma installs in **4 progressive tiers**. Start with the core dashboard, then add live monitoring, smart titles, and ticket-linking workflows as needed.
 
 | Tier | Components | Dashboard Features | Installation Time |
 |------|-----------|-------------------|-------------------|
-| **1: Core Dashboard** | API + Frontend | Browse projects, view sessions, analytics | ~5 min |
+| **1: Core Dashboard** | API + Frontend | Browse projects, view sessions, analytics, **`/tickets` page** (works empty) | ~5 min |
 | **2: Live Monitoring** | + Live Tracker Hook | Real-time session indicators, recently ended | +2 min |
 | **3: Smart Titles** | + Title Generator Hook | Human-readable session names | +2 min |
+| **4: Auto-Link Tickets** | + `link-ticket-to-session` skill, optional branch hook | Slash command + natural-language linking, optional auto-link from git branch name | +2 min |
 
-**You can stop after Tier 1.** Tiers 2 and 3 are optional enhancements installed independently.
+**You can stop after Tier 1.** Tiers 2–4 are optional enhancements installed independently. Tier 4 only adds *workflows* for creating links; the ticket pages themselves (`/tickets`, project Tickets tab, session Tickets section) all work in Tier 1 — you can paste a URL on any session page without any hooks or skills installed.
 
 ---
 
@@ -193,6 +194,8 @@ Open http://localhost:5173 in your browser. You should see the Claude Code Karma
 | Plugins browser | `/plugins` | Works |
 | Tools browser | `/tools` | Works |
 | Sessions browser | `/sessions` | Works |
+| Tickets index | `/tickets` | Works (empty until you link) |
+| Ticket detail | `/tickets/[provider]/[key]` | Works |
 | Archived sessions | `/archived` | Works |
 | About page | `/about` | Works |
 | Settings management | `/settings` | Works |
@@ -555,6 +558,120 @@ curl http://localhost:8000/projects/YOUR-PROJECT-NAME | python3 -m json.tool | g
 
 ---
 
+## Tier 4: Auto-Link Tickets (Optional)
+
+> Tier 4 adds **workflows** for linking sessions to tickets — a slash command/skill and an optional auto-detect hook. The Tickets page and related UI (`/tickets`, project Tickets tab, session Tickets section) are part of Tier 1 and work without any of Tier 4 installed. You can already paste a URL on a session page and link it. Tier 4 just makes it more ergonomic.
+
+Links Claude Code sessions to tickets in Linear / Jira / GitHub Issues, so the karma dashboard can show "what work was done for ticket X" across sessions.
+
+**What Tier 4 adds:**
+
+- A `/link-ticket-to-session` **slash command / skill** that uses your existing Linear / Atlassian / GitHub MCP server (if installed) to fetch the ticket title at link time
+- An **opt-in `SessionStart` hook** that auto-links when the current git branch matches a configured pattern (e.g. `feat/LINEAR-123-foo`)
+
+**Architecture:**
+
+- Karma is read-only — it never writes to Linear/Jira/GitHub.
+- Metadata (title, status) comes from the agent's MCP servers, not from karma's backend, so karma never needs provider credentials.
+- The skill works **without** any MCP — the link is created either way; without an MCP installed, the cached title/status is just blank until refreshed.
+- The skill honors a `KARMA_API_URL` env var for users running the API on a non-default port or remote host. Default fallback: `http://localhost:8000`.
+
+### Step 11: Install the Skill (Recommended)
+
+**What:** Adds the `link-ticket-to-session` skill so you can link the current session — either by typing `/link-ticket-to-session <ref>` explicitly, or by asking the agent in natural language ("link this session to LINEAR-123"). The skill's instructions tell the agent to fetch the title via your installed MCP server (Linear/Jira/GitHub) and POST the link to karma.
+
+Skills are directory-shaped artifacts under `~/.claude/skills/<skill-name>/SKILL.md`.
+
+**Symlink (recommended for development):**
+
+```bash
+mkdir -p ~/.claude/skills
+ln -sf "$(cd skills/link-ticket-to-session && pwd)" ~/.claude/skills/link-ticket-to-session
+```
+
+**Copy (for standalone installation):**
+
+```bash
+mkdir -p ~/.claude/skills
+cp -R skills/link-ticket-to-session ~/.claude/skills/
+```
+
+**Verify** by starting any Claude Code session and typing `/link-ticket-to-session https://linear.app/.../issue/ABC-123`. The agent should fetch the title via your Linear MCP (if installed) and POST the link to karma. You should also be able to phrase it naturally — e.g. "link this session to LINEAR-123" — and the agent should reach for the same skill.
+
+**No MCP installed?** That's fine. The skill posts the link to karma regardless. The cached title/status will just be empty — you can still see the linked session under the ticket on the dashboard, and you can refresh the metadata later via `PUT /tickets/{provider}/{key}`.
+
+**Custom karma URL?** If your API runs on a non-default port or a remote host, set `KARMA_API_URL` in your shell or in `~/.claude/settings.json` env (e.g. `KARMA_API_URL=http://karma.internal:9000`). The skill reads it on each invocation.
+
+**Note:** The skill's `description` is intentionally narrow so it only fires on explicit linking requests. Casual mentions of a ticket key in conversation will NOT auto-trigger the skill.
+
+### Step 12: Enable Branch-Name Auto-Detection (Optional)
+
+**What:** A `SessionStart` hook that watches the git branch and auto-links the session when the branch name matches a configured pattern.
+
+**Why:** Zero-friction linking when your team's branch convention encodes ticket keys (e.g., `feat/LINEAR-123-fix-login`).
+
+**Install the script:**
+
+```bash
+ln -sf "$(cd hooks && pwd)/ticket_branch_detector.py" ~/.claude/hooks/ticket_branch_detector.py
+chmod +x hooks/ticket_branch_detector.py
+```
+
+**Configure the patterns** in `~/.claude_karma/config.json`:
+
+```json
+{
+  "branch_detect_enabled": true,
+  "ticket_branch_patterns": [
+    { "regex": "(?P<key>[A-Z][A-Z0-9_]+-\\d+)", "provider": "linear" }
+  ]
+}
+```
+
+- `branch_detect_enabled` is `false` by default — set it to `true` to opt in.
+- `regex` is a Python regex. If it has a `key` named group, that group's match is used as the ticket key; otherwise the entire match is used.
+- `provider` must be `linear`, `jira`, or `github`.
+
+**Register the hook** in `~/.claude/settings.json` under `hooks.SessionStart` (alongside `live_session_tracker.py` if you installed Tier 2):
+
+```json
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          { "type": "command", "command": "python3 ~/.claude/hooks/ticket_branch_detector.py" }
+        ]
+      }
+    ]
+  }
+}
+```
+
+The hook is silent on every failure (no git, no match, karma unreachable) — it never blocks `SessionStart`. Errors land in `~/.claude_karma/logs/ticket_branch_detector.log`.
+
+### Step 13: Verify Tier 4
+
+**Skill verification:**
+
+1. Start any Claude Code session
+2. Type `/link-ticket-to-session https://linear.app/.../issue/ABC-123` (substitute a real ticket from your provider)
+3. The agent should respond with a one-line confirmation like
+   `Linked session to LINEAR-123 (Fix login bug) — open at https://linear.app/...`
+4. Refresh the karma dashboard → the session page should show the ticket in the Tickets section, and `/tickets` should list it
+
+**Branch-detect verification:**
+
+1. Create or check out a branch matching your pattern (e.g. `feat/LINEAR-123-test`)
+2. Start a new Claude Code session in that working directory
+3. After `SessionStart` fires, hit `curl http://localhost:8000/sessions/<session-uuid>/tickets` — you should see a link with `"link_source":"branch"`
+4. Errors during detection land in `~/.claude_karma/logs/ticket_branch_detector.log` (silent on success)
+
+> **Agent notes:** If the skill is installed but doesn't trigger, ensure `~/.claude/skills/link-ticket-to-session/SKILL.md` exists and is readable. If the branch hook doesn't link, check the log file and confirm `branch_detect_enabled: true` in the config.
+
+---
+
 ## Hook Configuration Reference
 
 ### Complete Configuration (All Tiers)
@@ -669,6 +786,30 @@ The full `~/.claude/settings.json` for Tier 2 + 3:
 
 If you only want live tracking without title generation, use the same configuration as [Step 6](#step-6-register-hook-events) — omit the `session_title_generator.py` entry from `SessionEnd`.
 
+### Tier 4 Addition (Branch Detector)
+
+If you installed the branch detector hook in Tier 4, add it to `SessionStart` alongside `live_session_tracker.py`:
+
+```json
+"SessionStart": [
+  {
+    "hooks": [
+      {
+        "type": "command",
+        "command": "python3 ~/.claude/hooks/live_session_tracker.py",
+        "timeout": 5000
+      },
+      {
+        "type": "command",
+        "command": "python3 ~/.claude/hooks/ticket_branch_detector.py"
+      }
+    ]
+  }
+]
+```
+
+The branch detector has no timeout entry because it self-times-out at 2 seconds and is silent on every failure.
+
 ### Removing a Hook
 
 To remove a hook after installation:
@@ -677,6 +818,7 @@ To remove a hook after installation:
 |------|--------|
 | Live tracker | Delete all `live_session_tracker.py` entries from `"hooks"` in settings.json |
 | Title generator | Delete the `session_title_generator.py` entry from `"SessionEnd"` |
+| Branch detector | Delete the `ticket_branch_detector.py` entry from `"SessionStart"`, or just set `"branch_detect_enabled": false` in `~/.claude_karma/config.json` to keep the hook installed but inert |
 
 Then optionally clean up the script:
 ```bash
@@ -847,6 +989,15 @@ Run through this after setup to confirm everything works.
 - [ ] Backfill complete: `cd api && python3 scripts/backfill_titles.py` ran without errors
 - [ ] Existing sessions titled: Old sessions now have titles instead of just slugs
 
+### Tier 4: Auto-Link Tickets
+
+- [ ] Skill installed: `ls ~/.claude/skills/link-ticket-to-session/SKILL.md`
+- [ ] Skill triggers: `/link-ticket-to-session <ref>` in a session posts a link visible at `http://localhost:8000/sessions/<uuid>/tickets`
+- [ ] Branch hook installed (optional): `ls ~/.claude/hooks/ticket_branch_detector.py`
+- [ ] Branch hook registered (optional): `grep "ticket_branch_detector" ~/.claude/settings.json`
+- [ ] Branch config exists (optional): `cat ~/.claude_karma/config.json | grep branch_detect_enabled`
+- [ ] Branch auto-link works (optional): check out `feat/LINEAR-123-test`, start a new session, verify a link with `"link_source":"branch"` is created
+
 ---
 
 ## Troubleshooting
@@ -1005,8 +1156,38 @@ git pull origin main
 cd api && pip install -r requirements.txt
 cd frontend && npm install
 
-# Reindex SQLite if schema changed
+# Reindex SQLite if schema changed (always safe — incremental + idempotent)
 curl -X POST http://localhost:8000/admin/reindex
+```
+
+### Schema Migrations
+
+Karma applies schema migrations automatically on first start after each
+update. Migrations are incremental (only the steps you haven't run yet)
+and idempotent (safe to re-run). The current schema is **v12** and adds:
+
+| Version | Adds |
+|--------:|------|
+| **v12** | `projects.git_identity` column (canonical `owner/repo` lowercase) for cross-checkout ticket aggregation. Backfilled by the periodic indexer within ~5 min, or immediately via `POST /admin/reindex`. |
+| **v11** | `tickets` + `session_tickets` tables for ticket linking. |
+| v10 | Skill/command linkage refresh. |
+| v9 | `invocation_source` columns + worktree session resolution. |
+| v8 | `subagent_skills`, `subagent_commands` tables. |
+| ≤ v7 | Earlier schema foundations. |
+
+If you ran an out-of-branch prototype (e.g. the syncthing sync v4
+branch) and have leftover `sync_*` tables or non-dash-prefixed project
+rows you want to clean up:
+
+```sql
+-- One-shot cleanup of syncthing prototype leftovers
+DROP TABLE IF EXISTS sync_subscriptions;
+DROP TABLE IF EXISTS sync_removed_members;
+DROP TABLE IF EXISTS sync_events;
+DROP TABLE IF EXISTS sync_projects;
+DROP TABLE IF EXISTS sync_members;
+DROP TABLE IF EXISTS sync_teams;
+DELETE FROM projects WHERE encoded_name NOT LIKE '-%';
 ```
 
 ---

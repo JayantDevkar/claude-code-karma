@@ -22,13 +22,13 @@ interface SessionLookupResult {
 }
 
 export async function load({ params, fetch }) {
-	const { project_slug, session_slug, agent_id } = params;
+	const { project_id, session_slug, agent_id } = params;
 
 	// Step 1: Use fast lookup endpoint to resolve slug/UUID to session UUID
-	// This is ~350x faster than loading all sessions via /projects/{project_slug}
+	// This is ~350x faster than loading all sessions via /projects/{project_id}
 	const lookupResult = await safeFetch<SessionLookupResult>(
 		fetch,
-		`${API_BASE}/projects/${project_slug}/sessions/lookup?identifier=${encodeURIComponent(session_slug)}`
+		`${API_BASE}/projects/${project_id}/sessions/lookup?identifier=${encodeURIComponent(session_slug)}`
 	);
 
 	if (!lookupResult.ok) {
@@ -38,7 +38,7 @@ export async function load({ params, fetch }) {
 			fileActivity: [],
 			tools: [],
 			tasks: [],
-			project_slug,
+			project_id,
 			session_slug,
 			session_uuid: null,
 			parent_session_slug: session_slug,
@@ -76,7 +76,7 @@ export async function load({ params, fetch }) {
 			tools: [],
 			tasks: [],
 			liveSession: null,
-			project_slug,
+			project_id,
 			session_slug,
 			session_uuid: sessionUuid,
 			parent_session_slug: sessionLookup.slug || sessionUuid.slice(0, 8),
@@ -98,7 +98,8 @@ export async function load({ params, fetch }) {
 		tools: tools_used,
 		tasks: tasksData,
 		liveSession: liveSessionResult.ok ? liveSessionResult.data : null,
-		project_slug,
+		project_id,
+		project_encoded_name: encodedName,
 		session_slug,
 		session_uuid: sessionUuid,
 		parent_session_slug: sessionLookup.slug || sessionUuid.slice(0, 8),

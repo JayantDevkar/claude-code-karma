@@ -79,3 +79,48 @@ def vacuum_db():
     except Exception as e:
         logger.error("VACUUM failed: %s", e)
         return {"status": "error", "detail": str(e)}
+
+
+@router.post("/repair-github-urls")
+def repair_github_urls():
+    """
+    Rewrite stale `/issues/N` URLs on GitHub tickets that are actually PRs.
+
+    Background: in versions prior to v0.2.0, the ticket parser collapsed
+    every GitHub URL — `/pull/N` included — to `/issues/N` when storing
+    the canonical URL. The fix in v0.2.0 preserves the kind segment, but
+    rows written by the old parser still point at `/issues/N` even when
+    they refer to pull requests. The URL still resolves (GitHub redirects
+    `/issues/N` to `/pull/N` when N is actually a PR), so links work —
+    but the frontend's `githubKindFromUrl` helper sees `/issues/` and
+    suppresses the PR badge.
+
+    Detection: we can identify which `/issues/N` rows are actually PRs by
+    looking at the cached `status` field. `MERGED` is unique to pull
+    requests; issues only have `open` or `closed`. PRs that are still
+    open or closed-unmerged can't be detected from status alone — those
+    will self-heal the next time the user re-links them (the parser
+    upserts with the corrected URL).
+
+    Safe and idempotent. Reports the number of rows rewritten.
+    """
+    from db.connection import get_writer_db
+
+    try:
+        conn = get_writer_db()
+        cur = conn.execute(
+            """
+            UPDATE tickets
+               SET url = REPLACE(url, '/issues/', '/pull/')
+             WHERE provider = 'github'
+               AND url LIKE '%/issues/%'
+               AND status = 'MERGED'
+            """
+        )
+        conn.commit()
+        rewritten = cur.rowcount
+        logger.info("Repaired %d GitHub PR URLs (status=MERGED)", rewritten)
+        return {"status": "ok", "rewritten": rewritten}
+    except Exception as e:
+        logger.error("repair-github-urls failed: %s", e)
+        return {"status": "error", "detail": str(e)}

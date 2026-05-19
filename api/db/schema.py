@@ -10,7 +10,7 @@ import sqlite3
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 12
 
 SCHEMA_SQL = """
 -- Schema versioning
@@ -210,11 +210,76 @@ CREATE TABLE IF NOT EXISTS projects (
     display_name TEXT,
     session_count INTEGER DEFAULT 0,
     last_activity TEXT,
+    -- git_identity: canonical `owner/repo` lowercase, derived from
+    -- `git -C project_path config --get remote.origin.url`. NULL when
+    -- the project has no local git remote (sync-imported, never inited).
+    -- Used by ticket queries to aggregate across encoded_names that
+    -- represent the same logical repo (worktrees, subdir projects, etc.).
+    git_identity TEXT,
     updated_at TEXT DEFAULT (datetime('now'))
 );
 
+CREATE INDEX IF NOT EXISTS idx_projects_git_identity ON projects(git_identity);
+
 CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_slug ON projects(slug);
 """
+
+# Ticket tables — extracted into a separate constant so they can be applied
+# UNCONDITIONALLY at ensure_schema() time, regardless of the recorded
+# SCHEMA_VERSION. This protects against cross-branch DB drift: if a karma
+# DB has been used on a parallel branch whose linear SCHEMA_VERSION ran
+# ahead of ours, the early-return version gate would otherwise skip our
+# v11 migration block and leave us with no ticket tables. CREATE TABLE IF
+# NOT EXISTS makes the unconditional run safe on every install path.
+_TICKETS_SCHEMA_SQL = """
+-- Ticket registry: de-duped per (provider, external_key).
+-- Populated by the agent (via MCP) at slash-command link time, or empty
+-- (URL-only) when the link comes from the branch-detect hook or dashboard.
+CREATE TABLE IF NOT EXISTS tickets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    provider TEXT NOT NULL CHECK (provider IN ('linear','jira','github')),
+    external_key TEXT NOT NULL,
+    url TEXT NOT NULL,
+    title TEXT,
+    status TEXT,
+    metadata_json TEXT CHECK (metadata_json IS NULL OR length(metadata_json) <= 65536),
+    metadata_updated_at TEXT,
+    first_seen_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(provider, external_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_tickets_provider ON tickets(provider);
+
+-- Many-to-many: a session can link to many tickets; a ticket can be linked
+-- from many sessions. No FK on session_uuid because the branch-detect hook
+-- writes at SessionStart, possibly before the JSONL indexer has created the
+-- sessions row. Orphans are reaped periodically (see api/main.py lifespan).
+CREATE TABLE IF NOT EXISTS session_tickets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_uuid TEXT NOT NULL,
+    session_slug TEXT,
+    ticket_id INTEGER NOT NULL,
+    link_source TEXT NOT NULL CHECK (link_source IN ('branch','slash_command','dashboard')),
+    linked_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (ticket_id) REFERENCES tickets(id) ON DELETE CASCADE,
+    UNIQUE(session_uuid, ticket_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_session_tickets_session ON session_tickets(session_uuid);
+CREATE INDEX IF NOT EXISTS idx_session_tickets_slug    ON session_tickets(session_slug);
+CREATE INDEX IF NOT EXISTS idx_session_tickets_ticket  ON session_tickets(ticket_id);
+
+-- Partial unique index dedupes links across resumed sessions (resumes share
+-- a slug but get fresh UUIDs). Skipped when slug isn't known at write time;
+-- per-UUID UNIQUE above is the fallback.
+CREATE UNIQUE INDEX IF NOT EXISTS uniq_session_tickets_slug_ticket
+    ON session_tickets(session_slug, ticket_id)
+    WHERE session_slug IS NOT NULL;
+"""
+
+# Keep ticket tables in the canonical fresh-install schema too, so a
+# brand-new DB still gets everything in one shot through SCHEMA_SQL.
+SCHEMA_SQL = SCHEMA_SQL + _TICKETS_SCHEMA_SQL
 
 
 def ensure_schema(conn: sqlite3.Connection) -> None:
@@ -223,6 +288,14 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
 
     Idempotent — safe to call on every startup.
     """
+    # Cross-branch safety: always run the ticket-tables block. If a karma
+    # DB has a recorded SCHEMA_VERSION higher than ours (e.g., from a
+    # parallel branch with more migrations), the early-return below would
+    # otherwise skip our v11 work and leave ticket endpoints broken. The
+    # CREATE TABLE IF NOT EXISTS statements make this a no-op when the
+    # tables already exist.
+    conn.executescript(_TICKETS_SCHEMA_SQL)
+
     # Check current version
     try:
         row = conn.execute("SELECT MAX(version) FROM schema_version").fetchone()
@@ -425,6 +498,72 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             conn.execute("DELETE FROM subagent_commands")
             # Nudge mtime to force re-index of all sessions
             conn.execute("UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1")
+
+        if current_version < 11:
+            logger.info("Migrating → v11: adding tickets + session_tickets tables")
+            conn.executescript("""
+                CREATE TABLE IF NOT EXISTS tickets (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    provider TEXT NOT NULL CHECK (provider IN ('linear','jira','github')),
+                    external_key TEXT NOT NULL,
+                    url TEXT NOT NULL,
+                    title TEXT,
+                    status TEXT,
+                    metadata_json TEXT CHECK (metadata_json IS NULL OR length(metadata_json) <= 65536),
+                    metadata_updated_at TEXT,
+                    first_seen_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    UNIQUE(provider, external_key)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_tickets_provider ON tickets(provider);
+
+                CREATE TABLE IF NOT EXISTS session_tickets (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    session_uuid TEXT NOT NULL,
+                    session_slug TEXT,
+                    ticket_id INTEGER NOT NULL,
+                    link_source TEXT NOT NULL CHECK (link_source IN ('branch','slash_command','dashboard')),
+                    linked_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    FOREIGN KEY (ticket_id) REFERENCES tickets(id) ON DELETE CASCADE,
+                    UNIQUE(session_uuid, ticket_id)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_session_tickets_session ON session_tickets(session_uuid);
+                CREATE INDEX IF NOT EXISTS idx_session_tickets_slug    ON session_tickets(session_slug);
+                CREATE INDEX IF NOT EXISTS idx_session_tickets_ticket  ON session_tickets(ticket_id);
+
+                CREATE UNIQUE INDEX IF NOT EXISTS uniq_session_tickets_slug_ticket
+                    ON session_tickets(session_slug, ticket_id)
+                    WHERE session_slug IS NOT NULL;
+            """)
+
+        if current_version < 12:
+            logger.info(
+                "Migrating → v12: adding projects.git_identity for cross-encoded "
+                "ticket aggregation"
+            )
+            # The minimum-fixture schema test (test_migration_from_v10) seeds
+            # only schema_version and skips SCHEMA_SQL, so projects/sessions
+            # may not exist. PRAGMA table_info returns 0 rows in that case
+            # and we'd ALTER a missing table. Production always has both
+            # tables — they're in SCHEMA_SQL since v1.
+            projects_cols = {r[1] for r in conn.execute("PRAGMA table_info(projects)").fetchall()}
+            if projects_cols:
+                # Idempotent: some DBs already have the column from an
+                # out-of-band ALTER on a parallel branch (e.g. the sync-v4
+                # prototype worktree).
+                if "git_identity" not in projects_cols:
+                    conn.execute("ALTER TABLE projects ADD COLUMN git_identity TEXT")
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_projects_git_identity "
+                    "ON projects(git_identity)"
+                )
+                # Nudge mtimes so the next periodic indexer pass re-runs
+                # _update_project_summaries for every project and populates
+                # the new column. Matches the v8/v9/v10 backfill pattern.
+                # Gated by the same projects-table guard because if projects
+                # doesn't exist, sessions doesn't either in the minimal fixture.
+                conn.execute("UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1")
 
     # Record version
     conn.execute(

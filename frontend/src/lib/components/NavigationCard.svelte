@@ -17,7 +17,8 @@
 			| 'teal'
 			| 'violet'
 			| 'indigo'
-			| 'amber';
+			| 'amber'
+			| 'cyan';
 		disabled?: boolean;
 	}
 
@@ -119,6 +120,14 @@
 			gradient:
 				'linear-gradient(135deg, var(--nav-amber-subtle) 0%, rgba(217, 119, 6, 0.15) 100%)',
 			glow: '0 4px 20px -2px rgba(217, 119, 6, 0.25)'
+		},
+		cyan: {
+			text: 'var(--nav-cyan)',
+			bg: 'var(--nav-cyan-subtle)',
+			border: 'var(--nav-cyan)',
+			gradient:
+				'linear-gradient(135deg, var(--nav-cyan-subtle) 0%, rgba(14, 116, 144, 0.15) 100%)',
+			glow: '0 4px 20px -2px rgba(14, 116, 144, 0.25)'
 		}
 	};
 

@@ -7,14 +7,14 @@
 		LineChart,
 		Bot,
 		Wrench,
-		History,
 		Settings,
 		FileText,
 		MessageSquare,
 		Puzzle,
 		Cable,
 		Webhook,
-		Terminal
+		Terminal,
+		Ticket
 	} from 'lucide-svelte';
 </script>
 
@@ -28,11 +28,11 @@
 		<NavigationCard title="Plans" href="/plans" icon={FileText} color="yellow" />
 		<NavigationCard title="Skills" href="/skills" icon={Wrench} color="orange" />
 		<NavigationCard title="Agents" href="/agents" icon={Bot} color="purple" />
-		<NavigationCard title="Tools" href="/tools" icon={Cable} color="teal" />
-		<NavigationCard title="Hooks" href="/hooks" icon={Webhook} color="amber" />
+		<NavigationCard title="Tools" href="/tools" icon={Cable} color="indigo" />
+		<NavigationCard title="Hooks" href="/hooks" icon={Webhook} color="cyan" />
 		<NavigationCard title="Commands" href="/commands" icon={Terminal} color="red" />
 		<NavigationCard title="Plugins" href="/plugins" icon={Puzzle} color="violet" />
-		<NavigationCard title="Archived" href="/archived" icon={History} color="gray" />
+		<NavigationCard title="Tickets" href="/tickets" icon={Ticket} color="amber" />
 		<NavigationCard title="Settings" href="/settings" icon={Settings} color="indigo" />
 	</div>
 

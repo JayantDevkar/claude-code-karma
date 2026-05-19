@@ -274,7 +274,7 @@
 	<PageHeader
 		title="Tools"
 		icon={Wrench}
-		iconColor="--nav-teal"
+		iconColor="--nav-indigo"
 		breadcrumbs={[{ label: 'Dashboard', href: '/' }, { label: 'Tools' }]}
 		subtitle="Built-in tools and external MCP integrations"
 	/>

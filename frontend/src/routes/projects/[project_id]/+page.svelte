@@ -50,6 +50,8 @@
 	import FiltersBottomSheet from '$lib/components/FiltersBottomSheet.svelte';
 	import ActiveFilterChips from '$lib/components/ActiveFilterChips.svelte';
 	import LiveSessionsSection from '$lib/components/LiveSessionsSection.svelte';
+	import { ProjectTicketsTab } from '$lib/components/tickets';
+	import { Ticket as TicketIcon } from 'lucide-svelte';
 	import type {
 		Project,
 		BranchesData,
@@ -306,7 +308,7 @@
 	});
 
 	// Tab state - initialize from URL immediately (not deferred to onMount)
-	const validTabs = ['overview', 'analytics', 'agents', 'skills', 'tools', 'memory', 'archived'];
+	const validTabs = ['overview', 'analytics', 'agents', 'skills', 'tools', 'memory', 'tickets', 'archived'];
 	const initialTab = $page.url.searchParams.get('tab');
 	let activeTab = $state(initialTab && validTabs.includes(initialTab) ? initialTab : 'overview');
 	let tabsReady = $state(false);
@@ -402,7 +404,7 @@
 		const slug = window.location.pathname.split('/')[2];
 		const scrollKey = `project_scroll_${slug}`;
 		const lastKey = `${LAST_OPENED_KEY_PREFIX}${slug}`;
-		if (to?.route.id === '/projects/[project_slug]/[session_slug]') {
+		if (to?.route.id === '/projects/[project_id]/[session_slug]') {
 			sessionStorage.setItem(scrollKey, String(window.scrollY));
 			const id = to.url.pathname.split('/').pop() ?? '';
 			if (id) sessionStorage.setItem(lastKey, id);
@@ -1074,6 +1076,7 @@
 					<TabsTrigger value="skills" icon={Wrench}>Project Skills</TabsTrigger>
 					<TabsTrigger value="tools" icon={Cable}>Project Tools</TabsTrigger>
 					<TabsTrigger value="memory" icon={Brain}>Project Memory</TabsTrigger>
+					<TabsTrigger value="tickets" icon={TicketIcon}>Tickets</TabsTrigger>
 					<TabsTrigger value="analytics" icon={BarChart3}>Analytics</TabsTrigger>
 					{#if archived.total_sessions > 0}
 						<TabsTrigger value="archived" icon={Archive}>
@@ -1723,6 +1726,13 @@
 				<!-- Memory Tab -->
 				<Tabs.Content value="memory" class="animate-fade-in">
 					<MemoryViewer projectEncodedName={project.encoded_name} />
+				</Tabs.Content>
+
+				<!-- Tickets Tab (Q9a A — full Tickets tab) -->
+				<Tabs.Content value="tickets" class="animate-fade-in">
+					{#if project?.encoded_name}
+						<ProjectTicketsTab projectEncodedName={project.encoded_name} />
+					{/if}
 				</Tabs.Content>
 
 				<!-- Archived Tab -->

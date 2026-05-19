@@ -432,7 +432,7 @@
 	<PageHeader
 		title="Commands"
 		icon={Terminal}
-		iconColor="--nav-blue"
+		iconColor="--nav-red"
 		breadcrumbs={[{ label: 'Dashboard', href: '/' }, { label: 'Commands' }]}
 		subtitle="Track command usage analytics across all sessions"
 	/>

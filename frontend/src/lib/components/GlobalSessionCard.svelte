@@ -11,6 +11,7 @@
 		Bot
 	} from 'lucide-svelte';
 	import type { SessionWithContext, LiveSessionSummary } from '$lib/api-types';
+	import { projectHrefFromSession } from '$lib/utils/project-url';
 	import { statusConfig } from '$lib/live-session-config';
 	import {
 		formatRelativeTime,
@@ -126,7 +127,7 @@
 </script>
 
 <a
-	href="/projects/{session.project_slug || session.project_encoded_name}/{urlIdentifier}"
+	href={projectHrefFromSession(session, `/${urlIdentifier}`)}
 	aria-label="Session {displayName}, {displayProjectName}, {displayMessageCount} messages{liveStatusText}"
 	class="
 		flex flex-col h-full
