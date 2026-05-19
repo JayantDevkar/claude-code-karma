@@ -6,8 +6,9 @@
 		statusColorVar,
 		formatRelative
 	} from '$lib/ticket-helpers';
-	import { ExternalLink, Search, Slash, GitBranch, Link as LinkIcon, Sparkles } from 'lucide-svelte';
+	import { ExternalLink, Search } from 'lucide-svelte';
 	import ProviderChip from './ProviderChip.svelte';
+	import TicketEmptyState from './TicketEmptyState.svelte';
 
 	interface Props {
 		projectEncodedName: string;
@@ -58,29 +59,6 @@
 		});
 	});
 
-	const LINK_PATHS = [
-		{
-			n: '01',
-			title: 'In a session — type a slash command',
-			cmd: '/link-ticket-to-session ABC-123',
-			sub: 'The link-ticket-to-session skill is installed by default.',
-			Icon: Slash
-		},
-		{
-			n: '02',
-			title: 'Push a branch that names the ticket',
-			cmd: 'git checkout -b feat/ABC-123-…',
-			sub: 'Karma auto-detects keys like ABC-123, PROJ-42, or owner/repo#42.',
-			Icon: GitBranch
-		},
-		{
-			n: '03',
-			title: 'Paste a URL on a session page',
-			cmd: 'https://linear.app/team/issue/ABC-123',
-			sub: 'Open any session in this project and use the Tickets section.',
-			Icon: LinkIcon
-		}
-	] as const;
 </script>
 
 <div class="flex flex-col gap-4">
@@ -107,47 +85,7 @@
 	{:else if tickets === null}
 		<p class="text-xs text-[var(--text-muted)] m-0">Loading…</p>
 	{:else if tickets.length === 0}
-		<!-- Reuse the terminal-flavored empty state from /tickets (Q2 A) -->
-		<div class="w-full p-6 rounded-lg border border-dashed border-[var(--border)] bg-[var(--bg-subtle)] flex flex-col gap-5">
-			<div class="flex items-center gap-2.5">
-				<span class="font-mono text-sm text-[var(--accent)]">$ tickets</span>
-				<span class="font-mono text-sm text-[var(--text-faint)]">[0 linked in this project]</span>
-			</div>
-			<div>
-				<h3 class="text-lg font-semibold text-[var(--text-primary)] m-0 leading-tight">
-					Nothing linked here yet. Three ways to start.
-				</h3>
-				<p class="text-sm text-[var(--text-muted)] mt-1 mb-0 max-w-[60ch]">
-					When a session in this project gets linked to a ticket, it shows up here.
-				</p>
-			</div>
-			<div class="flex flex-col rounded-md border border-[var(--border)] bg-[var(--bg-base)] overflow-hidden">
-				{#each LINK_PATHS as row, i (row.n)}
-					<div
-						class="grid items-center gap-4 px-4 py-3"
-						class:border-t={i > 0}
-						class:border-[var(--border-subtle)]={i > 0}
-						style="grid-template-columns: 28px 1fr auto"
-					>
-						<span class="font-mono text-xs text-[var(--text-faint)]">{row.n}</span>
-						<div>
-							<div class="text-sm font-medium text-[var(--text-primary)] flex items-center gap-2">
-								<row.Icon size={12} class="text-[var(--text-muted)]" />
-								{row.title}
-							</div>
-							<p class="text-xs text-[var(--text-muted)] mt-0.5 mb-0">{row.sub}</p>
-						</div>
-						<code class="font-mono text-[11.5px] px-2.5 py-1.5 rounded bg-[var(--bg-muted)] text-[var(--text-primary)] border border-[var(--border-subtle)] whitespace-nowrap">
-							{row.cmd}
-						</code>
-					</div>
-				{/each}
-			</div>
-			<div class="flex items-center gap-2 text-[11px] text-[var(--text-faint)]">
-				<Sparkles size={11} />
-				Karma is read-only — the ticket lives in its source of truth.
-			</div>
-		</div>
+		<TicketEmptyState scope="project" />
 	{:else}
 		<!-- Search + populated table -->
 		<form onsubmit={(e) => e.preventDefault()} class="flex items-center gap-2 max-w-[360px]">

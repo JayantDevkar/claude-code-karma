@@ -8,18 +8,10 @@
 		statusColorVar,
 		formatRelative
 	} from '$lib/ticket-helpers';
-	import {
-		Search,
-		ExternalLink,
-		Sparkles,
-		GitBranch,
-		Slash,
-		Link as LinkIcon,
-		ArrowRight,
-		Ticket as TicketIcon
-	} from 'lucide-svelte';
+	import { Search, ArrowRight, ExternalLink, Ticket as TicketIcon } from 'lucide-svelte';
 	import PageHeader from '$lib/components/layout/PageHeader.svelte';
 	import ProviderChip from '$lib/components/tickets/ProviderChip.svelte';
+	import TicketEmptyState from '$lib/components/tickets/TicketEmptyState.svelte';
 
 	let { data } = $props();
 
@@ -59,30 +51,6 @@
 		{ id: 'github', label: 'GitHub' }
 	];
 
-	const LINK_PATHS = [
-		{
-			n: '01',
-			title: 'In a session — type a slash command',
-			cmd: '/link-ticket-to-session ABC-123',
-			sub: 'Fastest. Works in any active session — the skill is installed by default.',
-			Icon: Slash
-		},
-		{
-			n: '02',
-			title: 'Push a branch that names the ticket',
-			cmd: 'git checkout -b feat/ABC-123-…',
-			sub: 'Karma auto-detects keys like ABC-123, PROJ-42, or owner/repo#42.',
-			Icon: GitBranch
-		},
-		{
-			n: '03',
-			title: 'Paste a URL from any session page',
-			cmd: 'https://linear.app/team/issue/ABC-123',
-			sub: 'Open the session, scroll to the Tickets section, paste the URL.',
-			Icon: LinkIcon
-		}
-	] as const;
-
 	const hasFilters = $derived(!!(data.filters.q || data.filters.provider || data.filters.project));
 </script>
 
@@ -100,49 +68,8 @@
 	/>
 
 	{#if data.tickets.length === 0 && !hasFilters}
-		<!-- Terminal-flavored empty state (Q2 A) -->
-		<div class="w-full max-w-[760px] mx-auto p-8 rounded-lg border border-dashed border-[var(--border)] bg-[var(--bg-subtle)] flex flex-col gap-6">
-			<div class="flex items-center gap-2.5">
-				<span class="font-mono text-sm text-[var(--accent)]">$ tickets</span>
-				<span class="font-mono text-sm text-[var(--text-faint)]">[0 linked]</span>
-			</div>
-			<div>
-				<h2 class="text-xl font-semibold text-[var(--text-primary)] m-0 leading-tight">
-					No tickets yet. Three ways to start.
-				</h2>
-				<p class="text-sm text-[var(--text-muted)] mt-1.5 mb-0 max-w-[60ch]">
-					Karma watches your Claude Code sessions. Link one to a ticket and the time
-					spent, tool calls, and prompts roll up here.
-				</p>
-			</div>
-
-			<div class="flex flex-col rounded-md border border-[var(--border)] bg-[var(--bg-base)] overflow-hidden">
-				{#each LINK_PATHS as row, i (row.n)}
-					<div
-						class="grid items-center gap-4 px-4 py-3.5"
-						class:border-t={i > 0}
-						class:border-[var(--border-subtle)]={i > 0}
-						style="grid-template-columns: 28px 1fr auto"
-					>
-						<span class="font-mono text-xs text-[var(--text-faint)]">{row.n}</span>
-						<div>
-							<div class="text-sm font-medium text-[var(--text-primary)] flex items-center gap-2">
-								<row.Icon size={12} class="text-[var(--text-muted)]" />
-								{row.title}
-							</div>
-							<p class="text-xs text-[var(--text-muted)] mt-0.5 mb-0">{row.sub}</p>
-						</div>
-						<code class="font-mono text-[11.5px] px-2.5 py-1.5 rounded bg-[var(--bg-muted)] text-[var(--text-primary)] border border-[var(--border-subtle)] whitespace-nowrap">
-							{row.cmd}
-						</code>
-					</div>
-				{/each}
-			</div>
-
-			<div class="flex items-center gap-2 text-[11px] text-[var(--text-faint)]">
-				<Sparkles size={11} />
-				Karma stores key, title, and status — the ticket lives in its source of truth.
-			</div>
+		<div class="w-full max-w-[760px] mx-auto">
+			<TicketEmptyState scope="global" />
 		</div>
 	{:else}
 		<!-- Filter bar -->
