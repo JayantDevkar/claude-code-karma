@@ -27,12 +27,12 @@ from config import Settings, settings
 from http_caching import cacheable
 from models import Project
 from parallel import run_in_thread
-from routers.projects import safely_resolve_project
 from routers.agent_analytics import (
     collect_all_agent_usage,
     get_agent_detail,
     get_agent_history,
 )
+from routers.projects import safely_resolve_project
 from schemas import (
     AgentCreateRequest,
     AgentDetail,

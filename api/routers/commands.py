@@ -21,8 +21,8 @@ sys.path.insert(0, str(api_path))
 from config import Settings, settings
 from http_caching import cacheable
 from models import Project
-from routers.projects import safely_resolve_project
 from parallel import run_in_thread
+from routers.projects import safely_resolve_project
 from schemas import CommandContent, CommandDetailResponse, CommandInfo, CommandItem
 
 logger = logging.getLogger(__name__)

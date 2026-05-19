@@ -14,7 +14,6 @@ if str(_api_dir) not in sys.path:
 
 from services.git_identity import normalize_git_url, read_git_identity
 
-
 # ---------------------------------------------------------------------------
 # normalize_git_url — pure parser
 # ---------------------------------------------------------------------------

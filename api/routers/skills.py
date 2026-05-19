@@ -33,6 +33,7 @@ from config import Settings, settings
 from http_caching import cacheable
 from models import Project
 from parallel import run_in_thread
+from routers.projects import safely_resolve_project
 from schemas import (
     SessionSummary,
     SessionWithContext,
@@ -46,7 +47,6 @@ from schemas import (
     UsageTrendItem,
     UsageTrendResponse,
 )
-from routers.projects import safely_resolve_project
 from services.session_title_cache import title_cache
 
 logger = logging.getLogger(__name__)
