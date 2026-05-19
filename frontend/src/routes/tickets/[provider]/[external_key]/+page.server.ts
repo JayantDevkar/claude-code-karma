@@ -1,19 +1,8 @@
-import type { Ticket } from '$lib/api-types';
+import type { Ticket, TicketDetailSessionRow } from '$lib/api-types';
 import { API_BASE } from '$lib/config';
 import { safeFetch, fetchWithFallback } from '$lib/utils/api-fetch';
 
-interface TicketSessionRow {
-	link_id: number;
-	session_uuid: string;
-	session_slug: string | null;
-	link_source: 'branch' | 'slash_command' | 'dashboard';
-	linked_at: string;
-	sessions_slug: string | null;
-	project_encoded_name: string | null;
-	start_time: string | null;
-	end_time: string | null;
-	initial_prompt: string | null;
-}
+type TicketSessionRow = TicketDetailSessionRow;
 
 export async function load({ params, fetch }) {
 	const { provider, external_key } = params;

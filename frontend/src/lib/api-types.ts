@@ -1756,6 +1756,33 @@ export interface SessionTicketRow extends Ticket {
 	session_slug: string | null;
 }
 
+/** Live-session metadata attached to ticket-detail session rows when the
+ * session is currently active (not yet in the indexed `sessions` table).
+ * See api/services/ticket_session_enrichment.py. */
+export interface LiveSessionMeta {
+	status: LiveSessionState;
+	started_at: string | null;
+	last_updated: string | null;
+	cwd: string | null;
+}
+
+/** Row returned from GET /tickets/{provider}/{external_key}/sessions —
+ * a session_tickets join with sessions (LEFT JOIN), enriched with live
+ * data when the indexed `sessions` row doesn't exist yet. */
+export interface TicketDetailSessionRow {
+	link_id: number;
+	session_uuid: string;
+	session_slug: string | null;
+	link_source: TicketLinkSource;
+	linked_at: string;
+	sessions_slug: string | null;
+	project_encoded_name: string | null;
+	start_time: string | null;
+	end_time: string | null;
+	initial_prompt: string | null;
+	live: LiveSessionMeta | null;
+}
+
 /** Row returned from GET /tickets — ticket fields plus aggregate counts. */
 export interface TicketListItem {
 	id: number;

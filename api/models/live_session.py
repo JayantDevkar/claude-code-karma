@@ -363,12 +363,18 @@ def load_live_session_by_slug(slug: str) -> Optional[LiveSessionState]:
 
 
 def load_all_live_sessions() -> List[LiveSessionState]:
-    """Load all live session states."""
+    """Load all live session states.
+
+    Tolerates per-file failures (corruption, partial writes, files
+    deleted between glob and open) so a single bad file doesn't abort
+    the whole batch — important for callers like the ticket-session
+    enrichment service that depend on best-effort coverage.
+    """
     sessions = []
     for state_file in list_live_session_files():
         try:
             sessions.append(LiveSessionState.from_file(state_file))
-        except (json.JSONDecodeError, ValueError, KeyError) as e:
+        except (json.JSONDecodeError, ValueError, KeyError, OSError, UnicodeDecodeError) as e:
             logger.warning(f"Failed to parse live session {state_file.stem}: {e}")
             continue
     return sessions

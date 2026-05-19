@@ -48,6 +48,7 @@ from models.ticket import (
     TicketListItem,
 )
 from services.ticket_parser import parse_ticket_ref
+from services.ticket_session_enrichment import enrich_sessions_with_live
 
 logger = logging.getLogger(__name__)
 
@@ -182,13 +183,20 @@ def list_all_tickets(
 # non-greedy {:path} match prefers the more specific suffix when present.
 @router.get("/tickets/{provider}/{external_key:path}/sessions")
 def list_sessions_for_ticket(provider: Provider, external_key: str) -> list[dict]:
-    """All sessions linked to one ticket. Includes orphan links (session_uuid
-    not yet in the sessions index) — sessions fields are NULL for those."""
+    """All sessions linked to one ticket.
+
+    Rows for sessions that haven't been indexed yet (active sessions whose
+    JSONL is still being written) are enriched from the live-sessions
+    filesystem via `enrich_sessions_with_live`. True orphans (no indexed
+    row AND no live state) keep NULL session fields and `live: None` so the
+    frontend can render them distinctly.
+    """
     conn = create_read_connection()
     try:
-        return get_ticket_sessions(conn, provider=provider, external_key=external_key)
+        rows = get_ticket_sessions(conn, provider=provider, external_key=external_key)
     finally:
         conn.close()
+    return enrich_sessions_with_live(rows)
 
 
 @router.get("/tickets/{provider}/{external_key:path}", response_model=Ticket)

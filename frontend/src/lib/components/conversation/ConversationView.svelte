@@ -22,6 +22,7 @@
 		RefreshCw,
 		Zap,
 		TerminalSquare,
+		Ticket as TicketIcon,
 		Search
 	} from 'lucide-svelte';
 	import TabsTrigger from '$lib/components/ui/TabsTrigger.svelte';
@@ -39,6 +40,7 @@
 	import { PlanViewer } from '$lib/components/plan';
 	import SkillsPanel from '$lib/components/skills/SkillsPanel.svelte';
 	import CommandsPanel from '$lib/components/commands/CommandsPanel.svelte';
+	import { SessionTicketsSection } from '$lib/components/tickets';
 	import ConversationHeader from './ConversationHeader.svelte';
 	import ConversationOverview from './ConversationOverview.svelte';
 	import type {
@@ -56,7 +58,8 @@
 		LiveSessionSummary,
 		LiveSessionStatus,
 		Task,
-		PlanDetail
+		PlanDetail,
+		SessionTicketRow
 	} from '$lib/api-types';
 	import { isSubagentSession, isMainSession } from '$lib/api-types';
 	import {
@@ -94,6 +97,8 @@
 		tasks?: Task[];
 		/** Pre-loaded plan data (optional, may be null if no plan exists) */
 		plan?: PlanDetail | null;
+		/** Pre-loaded tickets linked to this session (Tickets tab seed). */
+		tickets?: SessionTicketRow[];
 	}
 
 	let {
@@ -109,7 +114,8 @@
 		fileActivity: initialFileActivity = [],
 		tools: initialTools = [],
 		tasks: initialTasks = [],
-		plan = null
+		plan = null,
+		tickets = []
 	}: Props = $props();
 
 	// Helper functions to compute initial values from props or entity
@@ -608,6 +614,8 @@
 
 	// Tab state - dynamic based on plan presence and skills
 	// Plan appears at position 2 (after overview) when it exists
+	// Tickets sits before analytics for main sessions, matching the
+	// project-page tab pattern (Memory · Tickets · Analytics).
 	let validTabs = $derived.by(() => {
 		const base: string[] = ['overview'];
 		if (plan) base.push('plan');
@@ -616,6 +624,7 @@
 			base.push('agents');
 			if (skillsArray.length > 0) base.push('skills');
 			if (commandsArray.length > 0) base.push('commands');
+			base.push('tickets');
 		}
 		base.push('analytics');
 		return base;
@@ -975,6 +984,14 @@
 								>
 							</TabsTrigger>
 						{/if}
+						<TabsTrigger value="tickets" icon={TicketIcon}>
+							Tickets
+							{#if tickets.length > 0}
+								<span class="text-xs font-mono text-[var(--text-muted)]"
+									>{tickets.length}</span
+								>
+							{/if}
+						</TabsTrigger>
 					{/if}
 					<TabsTrigger value="analytics" icon={BarChart3}>Analytics</TabsTrigger>
 				</Tabs.List>
@@ -1162,6 +1179,22 @@
 							/>
 						</Tabs.Content>
 					{/if}
+
+					<!-- Tickets Tab (parity with project page tab; same component
+						 that previously sat above ConversationView). -->
+					<Tabs.Content value="tickets" class="animate-fade-in">
+						{#if sessionUuid}
+							<SessionTicketsSection
+								{sessionUuid}
+								{sessionSlug}
+								initial={tickets}
+							/>
+						{:else}
+							<p class="text-sm text-[var(--text-muted)] m-0 px-1 py-6 text-center">
+								Session UUID unavailable.
+							</p>
+						{/if}
+					</Tabs.Content>
 				{/if}
 
 				<!-- Analytics Tab -->

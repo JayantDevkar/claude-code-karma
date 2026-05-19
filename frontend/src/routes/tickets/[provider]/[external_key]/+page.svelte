@@ -31,6 +31,25 @@
 		return 'text-[var(--info)] bg-[var(--info-subtle)]';
 	}
 
+	/** Map a live SessionState to a small badge spec. Returns null for
+	 * STOPPED/ENDED — those don't merit an "active" badge. */
+	function liveBadge(status: string | undefined | null): {
+		label: string;
+		klass: string;
+	} | null {
+		if (!status) return null;
+		const s = status.toUpperCase();
+		if (s === 'LIVE')
+			return { label: 'ACTIVE', klass: 'text-[var(--success)] bg-[var(--success-subtle)]' };
+		if (s === 'WAITING')
+			return { label: 'WAITING', klass: 'text-[var(--warning)] bg-[var(--warning-subtle)]' };
+		if (s === 'STARTING')
+			return { label: 'STARTING', klass: 'text-[var(--info)] bg-[var(--info-subtle)]' };
+		if (s === 'STALE')
+			return { label: 'STALE', klass: 'text-[var(--text-muted)] bg-[var(--bg-muted)]' };
+		return null;
+	}
+
 	// Project tabs (Q9b A): "All" + one tab per project that owns ≥ 1 session.
 	// Orphan (unindexed) sessions group last when present.
 	type ProjectBucket = {
@@ -70,10 +89,18 @@
 			: (buckets.find((b) => b.key === activeKey)?.sessions ?? [])
 	);
 
-	// Rollup stats
+	// Rollup stats. Active = live-and-not-quiet OR indexed-with-no-end_time.
+	// Matches the per-row `isLive` derivation below so the count never
+	// disagrees with what the user sees in the list. STALE/STOPPED/ENDED
+	// live states correctly count as ended, not active.
 	let projectCount = $derived(buckets.filter((b) => b.encoded).length);
 	let activeCount = $derived(
-		data.sessions.filter((s: SessionRow) => s.start_time && !s.end_time).length
+		data.sessions.filter((s: SessionRow) => {
+			if (s.live) {
+				return s.live.status === 'LIVE' || s.live.status === 'WAITING' || s.live.status === 'STARTING';
+			}
+			return !!s.start_time && !s.end_time;
+		}).length
 	);
 	let endedCount = $derived(data.sessions.length - activeCount);
 
@@ -248,11 +275,15 @@
 		{:else}
 			<div class="rounded-lg border border-[var(--border)] bg-[var(--bg-base)] overflow-hidden">
 				{#each visibleSessions as s, i (s.link_id)}
-					{@const isActive = !!s.start_time && !s.end_time}
-					{@const href =
-						s.project_encoded_name && s.sessions_slug
-							? `/projects/${s.project_encoded_name}/${s.sessions_slug}`
-							: null}
+					{@const badge = liveBadge(s.live?.status)}
+					{@const isLive = !!s.live && ['LIVE', 'WAITING', 'STARTING'].includes(s.live.status)}
+					{@const isActive = isLive || (!!s.start_time && !s.end_time)}
+					{@const isOrphan = !s.sessions_slug && !s.live}
+					{@const slugLabel = s.sessions_slug ?? s.session_slug ?? null}
+					{@const navIdentifier = slugLabel ?? s.session_uuid.slice(0, 8)}
+					{@const href = s.project_encoded_name
+						? `/projects/${s.project_encoded_name}/${navIdentifier}`
+						: null}
 					<svelte:element
 						this={href ? 'a' : 'div'}
 						href={href}
@@ -264,20 +295,28 @@
 						<span
 							aria-hidden="true"
 							class="inline-block w-2 h-2 rounded-full shrink-0
-								{isActive ? 'animate-pulse' : ''}"
+								{isLive ? 'animate-pulse' : ''}"
 							style="background: var({isActive ? '--success' : '--text-faint'})"
 						></span>
 
 						<div class="min-w-0">
 							<div class="flex items-center gap-2 flex-wrap">
-								{#if s.project_encoded_name && s.sessions_slug}
-									<span class="font-mono text-xs text-[var(--accent)]">{s.sessions_slug}</span>
-								{:else if s.session_slug}
-									<span class="font-mono text-xs text-[var(--text-faint)] italic">{s.session_slug} (orphan)</span>
+								{#if isOrphan}
+									<span class="font-mono text-xs text-[var(--text-faint)] italic">
+										{s.session_slug ?? s.session_uuid.slice(0, 8)} · no data
+									</span>
+								{:else if slugLabel}
+									<span class="font-mono text-xs text-[var(--accent)]">{slugLabel}</span>
 								{:else}
-									<span class="font-mono text-xs text-[var(--text-faint)] italic">unindexed session</span>
+									<span class="font-mono text-xs text-[var(--text-faint)]">
+										{s.session_uuid.slice(0, 8)}
+									</span>
 								{/if}
-								{#if isActive}
+								{#if badge}
+									<span class="text-[9px] uppercase tracking-wider font-semibold px-1.5 py-0.5 rounded {badge.klass}">
+										{badge.label}
+									</span>
+								{:else if isActive && !s.live}
 									<span class="text-[9px] uppercase tracking-wider font-semibold text-[var(--success)]">ACTIVE</span>
 								{/if}
 								<span

@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { ConversationView } from '$lib/components/conversation';
-	import { SessionTicketsSection } from '$lib/components/tickets';
 	import type {
 		SessionDetail,
 		LiveSessionSummary,
@@ -51,19 +50,11 @@
 		</div>
 	</div>
 {:else}
-	{#if session?.uuid}
-		<div class="px-4 pt-4">
-			<SessionTicketsSection
-				sessionUuid={session.uuid}
-				sessionSlug={session.slug ?? data.session_slug}
-				initial={tickets}
-			/>
-		</div>
-	{/if}
 	<ConversationView
 		entity={session}
 		encodedName={data.project_slug}
 		sessionSlug={data.session_slug}
+		sessionUuid={session?.uuid}
 		projectPath={session?.project_path}
 		liveSession={data.liveSession as LiveSessionSummary | null}
 		isStarting={data.isStarting}
@@ -72,5 +63,6 @@
 		tools={session?.tools_used as unknown as ToolUsage[] | undefined}
 		tasks={session?.tasks as Task[] | undefined}
 		{plan}
+		{tickets}
 	/>
 {/if}
