@@ -11,10 +11,14 @@ import type { TicketProvider } from '$lib/api-types';
 export interface ProviderMeta {
 	label: string; // "Linear"
 	short: string; // "LIN" — letter-mark used on the colored chip
-	/** CSS var name for the industry-flavored color. */
+	/** CSS var name for the industry-flavored background color. */
 	colorVar: string;
 	/** CSS var name for the same color at low alpha. */
 	subtleVar: string;
+	/** CSS var name for the foreground (letter-mark text) color.
+	 * Flips per-mode so chips stay AA-legible in dark mode — GitHub's silver
+	 * bg needs dark text, Jira's lightened blue does too. */
+	fgVar: string;
 }
 
 export const PROVIDER_META: Record<TicketProvider, ProviderMeta> = {
@@ -22,19 +26,22 @@ export const PROVIDER_META: Record<TicketProvider, ProviderMeta> = {
 		label: 'Linear',
 		short: 'LIN',
 		colorVar: '--provider-linear',
-		subtleVar: '--provider-linear-subtle'
+		subtleVar: '--provider-linear-subtle',
+		fgVar: '--provider-linear-fg'
 	},
 	jira: {
 		label: 'Jira',
 		short: 'JIR',
 		colorVar: '--provider-jira',
-		subtleVar: '--provider-jira-subtle'
+		subtleVar: '--provider-jira-subtle',
+		fgVar: '--provider-jira-fg'
 	},
 	github: {
 		label: 'GitHub',
 		short: 'GH',
 		colorVar: '--provider-github',
-		subtleVar: '--provider-github-subtle'
+		subtleVar: '--provider-github-subtle',
+		fgVar: '--provider-github-fg'
 	}
 };
 

@@ -58,8 +58,8 @@
 
 {#snippet providerChip()}
 	<span
-		class="inline-flex items-center font-mono font-bold text-white px-1 py-[1px] rounded-sm text-[10px] tracking-wider leading-snug"
-		style="background: var({meta.colorVar})"
+		class="inline-flex items-center font-mono font-bold px-1 py-[1px] rounded-sm text-[10px] tracking-wider leading-snug"
+		style="background: var({meta.colorVar}); color: var({meta.fgVar})"
 		title={meta.label}
 		aria-label={meta.label}
 	>
@@ -125,28 +125,27 @@
 	</span>
 
 {:else}
-	<!-- pill -->
+	<!-- pill — provider chip + key + optional status + kebab. Title lives in
+		 the `title` tooltip; the kebab provides "Open in {provider}" so the
+		 external-link icon next to the key is redundant when onRemove is set. -->
 	<span
-		class="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-[3px] rounded-full text-xs border border-[var(--border)] bg-[var(--bg-base)] max-w-[42ch]"
+		class="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-[3px] rounded-full text-xs border border-[var(--border)] bg-[var(--bg-base)]"
+		title={ticket.title ?? undefined}
 	>
 		{@render providerChip()}
 		<a
 			href={ticket.url}
 			target="_blank"
 			rel="noopener noreferrer"
-			class="font-mono text-[11.5px] text-[var(--text-primary)] hover:text-[var(--accent)] inline-flex items-center gap-1 hover:underline"
-			title={ticket.title ?? undefined}
+			class="font-mono text-[11.5px] text-[var(--text-primary)] hover:text-[var(--accent)] inline-flex items-center gap-1 hover:underline whitespace-nowrap"
 		>
 			{ticket.external_key}
-			<ExternalLink size={9} />
+			{#if !onRemove}
+				<ExternalLink size={9} />
+			{/if}
 		</a>
-		{#if ticket.title}
-			<span class="text-[var(--text-secondary)] truncate max-w-[20ch]" aria-hidden="true">
-				{ticket.title}
-			</span>
-		{/if}
 		{#if showStatus && norm.verbatim}
-			<span class="inline-flex items-center gap-1 pl-1.5 ml-0.5 border-l border-[var(--border-subtle)] text-[11px] text-[var(--text-muted)]">
+			<span class="inline-flex items-center gap-1 pl-1.5 ml-0.5 border-l border-[var(--border-subtle)] text-[11px] text-[var(--text-muted)] whitespace-nowrap">
 				{@render statusDot(6)}
 				{norm.verbatim}
 			</span>

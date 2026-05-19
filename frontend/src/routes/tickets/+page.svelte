@@ -60,21 +60,21 @@
 		{
 			n: '01',
 			title: 'In a session — type a slash command',
-			cmd: '/link OCC-1284',
+			cmd: '/link-ticket-to-session ABC-123',
 			sub: 'Fastest. Works in any active session — the skill is installed by default.',
 			Icon: Slash
 		},
 		{
 			n: '02',
 			title: 'Push a branch that names the ticket',
-			cmd: 'git checkout -b feat/OCC-1284-airflow',
-			sub: 'Karma auto-detects keys like OCC-1284, JIRA-99, or owner/repo#42.',
+			cmd: 'git checkout -b feat/ABC-123-…',
+			sub: 'Karma auto-detects keys like ABC-123, PROJ-42, or owner/repo#42.',
 			Icon: GitBranch
 		},
 		{
 			n: '03',
 			title: 'Paste a URL from any session page',
-			cmd: 'https://linear.app/.../OCC-1284',
+			cmd: 'https://linear.app/team/issue/ABC-123',
 			sub: 'Open the session, scroll to the Tickets section, paste the URL.',
 			Icon: LinkIcon
 		}
@@ -233,8 +233,8 @@
 						style="grid-template-columns: 80px minmax(0, 1fr) 130px 90px 110px"
 					>
 						<span
-							class="inline-flex items-center justify-self-start font-mono font-bold text-white px-1 py-[1px] rounded-sm text-[10px] tracking-wider leading-snug"
-							style="background: var({meta.colorVar})"
+							class="inline-flex items-center justify-self-start font-mono font-bold px-1 py-[1px] rounded-sm text-[10px] tracking-wider leading-snug"
+							style="background: var({meta.colorVar}); color: var({meta.fgVar})"
 							title={meta.label}
 						>
 							{meta.short}

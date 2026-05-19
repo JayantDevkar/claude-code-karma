@@ -59,13 +59,18 @@
 	--info: #3b82f6;
 	--info-subtle: rgba(59, 130, 246, 0.1);
 
-	/* Ticket Provider Identity (industry-flavored, no brand logos) */
+	/* Ticket Provider Identity (industry-flavored, no brand logos)
+	 * Each provider has bg + subtle (low-alpha tint) + fg (letter-mark text).
+	 * fg flips dark in dark mode where bgs lighten — keeps AA contrast. */
 	--provider-linear: #5e6ad2;
 	--provider-linear-subtle: rgba(94, 106, 210, 0.12);
+	--provider-linear-fg: #ffffff;
 	--provider-jira: #0052cc;
 	--provider-jira-subtle: rgba(0, 82, 204, 0.10);
+	--provider-jira-fg: #ffffff;
 	--provider-github: #1f2937;
 	--provider-github-subtle: rgba(31, 41, 55, 0.08);
+	--provider-github-fg: #ffffff;
 
 	/* Normalized Ticket Status (todo / active / review / done / closed) */
 	--status-todo: #94a3b8;
@@ -295,13 +300,16 @@ select:focus {
 	--info: #60a5fa;
 	--info-subtle: rgba(96, 165, 250, 0.15);
 
-	/* Ticket Provider Identity (dark) */
+	/* Ticket Provider Identity (dark) — lightened bgs need dark fg for AA */
 	--provider-linear: #8b95e8;
 	--provider-linear-subtle: rgba(139, 149, 232, 0.18);
+	--provider-linear-fg: #1a1c4e;
 	--provider-jira: #4c9aff;
 	--provider-jira-subtle: rgba(76, 154, 255, 0.15);
+	--provider-jira-fg: #001e4d;
 	--provider-github: #cbd5e1;
 	--provider-github-subtle: rgba(203, 213, 225, 0.10);
+	--provider-github-fg: #0f172a;
 
 	/* Normalized Ticket Status (dark) */
 	--status-todo: #71717a;
@@ -420,10 +428,13 @@ select:focus {
 		/* Ticket Provider Identity (dark — prefers-color-scheme fallback) */
 		--provider-linear: #8b95e8;
 		--provider-linear-subtle: rgba(139, 149, 232, 0.18);
+		--provider-linear-fg: #1a1c4e;
 		--provider-jira: #4c9aff;
 		--provider-jira-subtle: rgba(76, 154, 255, 0.15);
+		--provider-jira-fg: #001e4d;
 		--provider-github: #cbd5e1;
 		--provider-github-subtle: rgba(203, 213, 225, 0.10);
+		--provider-github-fg: #0f172a;
 
 		/* Normalized Ticket Status (dark — prefers-color-scheme fallback) */
 		--status-todo: #71717a;

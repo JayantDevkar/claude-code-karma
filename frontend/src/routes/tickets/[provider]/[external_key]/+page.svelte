@@ -107,105 +107,90 @@
 			</p>
 		</div>
 	{:else}
-		<!-- Compact summary card (stats-first hierarchy) -->
-		<div class="flex items-center gap-3.5 px-4 py-3 rounded-lg border border-[var(--border)] bg-[var(--bg-subtle)]">
-			<span
-				class="inline-flex items-center font-mono font-bold text-white px-2 py-1 rounded text-[13px] tracking-wider leading-none"
-				style="background: var({meta.colorVar})"
-				title={meta.label}
-			>
-				{meta.short}
-			</span>
-			<div class="flex-1 min-w-0">
-				<div class="flex items-center gap-2.5 mb-0.5">
-					<a
-						href={data.ticket.url}
-						target="_blank"
-						rel="noopener noreferrer"
-						class="font-mono text-[13px] text-[var(--text-primary)] hover:text-[var(--accent)] inline-flex items-center gap-1"
-					>
-						{data.ticket.external_key}
-					</a>
-					<span class="inline-flex items-center gap-1.5 text-[11px] text-[var(--text-muted)]">
-						<span
-							class="inline-block w-1.5 h-1.5 rounded-full"
-							style="background: var({statusColorVar(norm.key)})"
-						></span>
-						{data.ticket.status ?? '—'}
-					</span>
-				</div>
-				{#if data.ticket.title}
-					<div class="text-sm text-[var(--text-primary)] truncate">{data.ticket.title}</div>
-				{:else}
-					<div class="text-xs text-[var(--text-faint)] italic">title not yet fetched</div>
-				{/if}
+		<!-- Hero — title is the protagonist. Provider chip + monospace key as
+			 the small identifier above; status as a visible inline state next
+			 to the title; all rollup numbers collapsed into one subtitle line.
+			 No 4-up stats grid — see decision log "F1 rebuild" for rationale. -->
+		<header class="flex flex-col gap-3">
+			<div class="flex items-center gap-2.5 text-[12px] text-[var(--text-muted)]">
+				<span
+					class="inline-flex items-center font-mono font-bold px-1.5 py-[2px] rounded-sm text-[10px] tracking-wider leading-snug"
+					style="background: var({meta.colorVar}); color: var({meta.fgVar})"
+					title={meta.label}
+				>
+					{meta.short}
+				</span>
+				<a
+					href={data.ticket.url}
+					target="_blank"
+					rel="noopener noreferrer"
+					class="font-mono text-[var(--text-secondary)] hover:text-[var(--accent)] inline-flex items-center gap-1"
+				>
+					{data.ticket.external_key}
+					<ExternalLink size={10} />
+				</a>
+				<a
+					href={data.ticket.url}
+					target="_blank"
+					rel="noopener noreferrer"
+					class="ml-auto inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] rounded-md border border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--border-hover)] transition-colors"
+				>
+					Open in {meta.label}
+					<ExternalLink size={10} />
+				</a>
 			</div>
-			<a
-				href={data.ticket.url}
-				target="_blank"
-				rel="noopener noreferrer"
-				class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md border border-[var(--border)] bg-[var(--bg-base)] text-[var(--text-primary)] hover:border-[var(--border-hover)] transition-colors"
-			>
-				Open in {meta.label}
-				<ExternalLink size={11} />
-			</a>
-		</div>
 
-		<!-- Rollup stats — projects / sessions / first seen / last touched -->
-		<div class="flex rounded-lg border border-[var(--border)] bg-[var(--bg-base)] overflow-hidden">
-			<div class="flex-1 p-3.5 border-r border-[var(--border-subtle)]">
-				<div class="text-[9px] uppercase tracking-wider font-semibold text-[var(--text-faint)] mb-1">
-					Projects
-				</div>
-				<div class="font-mono text-xl font-medium text-[var(--text-primary)] leading-none">
-					{projectCount || (data.sessions.length ? 1 : 0)}
-				</div>
-				<div class="text-[10.5px] text-[var(--text-muted)] mt-1">
-					{#if projectCount > 1}
-						across {projectCount} repos
+			<div class="flex items-start gap-4">
+				<div class="flex-1 min-w-0">
+					{#if data.ticket.title}
+						<h1 class="text-2xl sm:text-[28px] font-semibold tracking-tight text-[var(--text-primary)] leading-tight m-0">
+							{data.ticket.title}
+						</h1>
 					{:else}
-						single project
+						<h1 class="text-2xl font-semibold tracking-tight text-[var(--text-muted)] italic leading-tight m-0">
+							title not yet fetched
+						</h1>
 					{/if}
+					<p class="mt-2 text-[12px] text-[var(--text-muted)] m-0 flex flex-wrap items-center gap-x-3 gap-y-1">
+						{#if data.ticket.status}
+							<span class="inline-flex items-center gap-1.5 text-[var(--text-secondary)] font-medium">
+								<span
+									class="inline-block w-2 h-2 rounded-full"
+									style="background: var({statusColorVar(norm.key)})"
+								></span>
+								{data.ticket.status}
+							</span>
+							<span class="text-[var(--text-faint)]">·</span>
+						{/if}
+						<span>
+							{data.sessions.length}
+							{data.sessions.length === 1 ? 'session' : 'sessions'}
+							{#if activeCount > 0}
+								<span class="text-[var(--text-faint)]"> ({activeCount} active)</span>
+							{/if}
+						</span>
+						<span class="text-[var(--text-faint)]">·</span>
+						<span>
+							{projectCount || (data.sessions.length ? 1 : 0)}
+							{(projectCount || (data.sessions.length ? 1 : 0)) === 1 ? 'project' : 'projects'}
+						</span>
+						<span class="text-[var(--text-faint)]">·</span>
+						<span>first seen {formatRelative(data.ticket.first_seen_at)}</span>
+						{#if data.ticket.metadata_updated_at}
+							<span class="text-[var(--text-faint)]">·</span>
+							<span>synced {formatRelative(data.ticket.metadata_updated_at)}</span>
+						{/if}
+					</p>
 				</div>
 			</div>
-			<div class="flex-1 p-3.5 border-r border-[var(--border-subtle)]">
-				<div class="text-[9px] uppercase tracking-wider font-semibold text-[var(--text-faint)] mb-1">
-					Sessions
-				</div>
-				<div class="font-mono text-xl font-medium text-[var(--text-primary)] leading-none">
-					{data.sessions.length}
-				</div>
-				<div class="text-[10.5px] text-[var(--text-muted)] mt-1">
-					{activeCount} active · {endedCount} ended
-				</div>
-			</div>
-			<div class="flex-1 p-3.5 border-r border-[var(--border-subtle)]">
-				<div class="text-[9px] uppercase tracking-wider font-semibold text-[var(--text-faint)] mb-1">
-					First seen
-				</div>
-				<div class="font-mono text-xl font-medium text-[var(--text-primary)] leading-none">
-					{formatRelative(data.ticket.first_seen_at)}
-				</div>
-				<div class="text-[10.5px] text-[var(--text-muted)] mt-1">when karma noticed it</div>
-			</div>
-			<div class="flex-1 p-3.5">
-				<div class="text-[9px] uppercase tracking-wider font-semibold text-[var(--text-faint)] mb-1">
-					Metadata
-				</div>
-				<div class="font-mono text-xl font-medium text-[var(--text-primary)] leading-none">
-					{formatRelative(data.ticket.metadata_updated_at)}
-				</div>
-				<div class="text-[10.5px] text-[var(--text-muted)] mt-1">last refresh from MCP</div>
-			</div>
-		</div>
+		</header>
 
 		<!-- Sessions heading + project tabs -->
-		<div class="flex items-baseline justify-between gap-3 mt-2">
+		<div class="flex items-baseline gap-3 mt-2">
 			<h2 class="text-sm font-semibold text-[var(--text-primary)] m-0">
 				Sessions
-				<span class="font-mono text-xs text-[var(--text-faint)] font-normal">[{data.sessions.length}]</span>
 			</h2>
-			<span class="text-[11px] text-[var(--text-muted)]">Sorted by most recently linked</span>
+			<span class="text-[11px] text-[var(--text-muted)]">·  sorted by most recently linked</span>
 		</div>
 
 		{#if showTabs}

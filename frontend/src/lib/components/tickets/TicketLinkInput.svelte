@@ -187,9 +187,9 @@
 			<Sparkles size={10} />
 			<span>
 				Or use
-				<code class="font-mono px-1 py-px rounded bg-[var(--bg-muted)] text-[var(--text-secondary)]">/link</code>
+				<code class="font-mono px-1 py-px rounded bg-[var(--bg-muted)] text-[var(--text-secondary)]">/link-ticket-to-session</code>
 				in this session, or push a branch named
-				<code class="font-mono px-1 py-px rounded bg-[var(--bg-muted)] text-[var(--text-secondary)]">feat/OCC-1284-…</code>
+				<code class="font-mono px-1 py-px rounded bg-[var(--bg-muted)] text-[var(--text-secondary)]">feat/ABC-123-…</code>
 			</span>
 		</p>
 	{:else if phase === 'typing' && detected}
