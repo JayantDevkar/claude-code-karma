@@ -255,9 +255,7 @@ def test_build_uuid_index_current_wins_over_historical():
     """If two states share a UUID — one as current, one as historical —
     the current one wins in the index."""
     current = _make_state("u1", slug="current")
-    other = _make_state(
-        "u2", slug="other-with-u1-historical", session_ids=["u1", "u2"]
-    )
+    other = _make_state("u2", slug="other-with-u1-historical", session_ids=["u1", "u2"])
     index = _build_uuid_index([current, other])
     # u1 is the current id of `current`, but also a historical id of `other`.
     # Current must win.
@@ -269,9 +267,7 @@ def test_build_uuid_index_current_wins_regardless_of_input_order():
     state B. The two-pass build must yield A regardless of iteration order.
     Regression test for the ordering-fragility flagged in code review."""
     state_a = _make_state("u1", slug="state-a-current")
-    state_b = _make_state(
-        "u2", slug="state-b-current", session_ids=["u1", "u2"]
-    )
+    state_b = _make_state("u2", slug="state-b-current", session_ids=["u1", "u2"])
 
     # Forward order
     forward = _build_uuid_index([state_a, state_b])

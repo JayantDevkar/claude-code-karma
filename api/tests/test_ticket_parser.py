@@ -28,9 +28,24 @@ from services.ticket_parser import parse_ticket_ref
         ("https://acme.atlassian.net/browse/PROJ-45", None, "jira", "PROJ-45"),
         ("https://acme.atlassian.net/browse/PROJ-45?focusedId=99", None, "jira", "PROJ-45"),
         # GitHub URLs
-        ("https://github.com/octocat/hello-world/issues/42", None, "github", "octocat/hello-world#42"),
-        ("https://github.com/octocat/hello-world/pull/42", None, "github", "octocat/hello-world#42"),
-        ("https://github.com/Octocat/hello-world/issues/42", None, "github", "Octocat/hello-world#42"),
+        (
+            "https://github.com/octocat/hello-world/issues/42",
+            None,
+            "github",
+            "octocat/hello-world#42",
+        ),
+        (
+            "https://github.com/octocat/hello-world/pull/42",
+            None,
+            "github",
+            "octocat/hello-world#42",
+        ),
+        (
+            "https://github.com/Octocat/hello-world/issues/42",
+            None,
+            "github",
+            "Octocat/hello-world#42",
+        ),
         # GitHub short
         ("octocat/hello-world#42", None, "github", "octocat/hello-world#42"),
         ("OctoCat/hello-world#1", None, "github", "OctoCat/hello-world#1"),
@@ -69,9 +84,7 @@ def test_github_url_preserves_issues_path_segment():
 def test_github_url_strips_query_and_fragment_but_keeps_kind():
     """We normalize away noise (query, fragment, trailing path) but
     preserve the semantically meaningful path segment."""
-    ref = parse_ticket_ref(
-        "https://github.com/octocat/repo/pull/9?diff=1#discussion_r123"
-    )
+    ref = parse_ticket_ref("https://github.com/octocat/repo/pull/9?diff=1#discussion_r123")
     assert ref is not None
     assert ref.url == "https://github.com/octocat/repo/pull/9"
 

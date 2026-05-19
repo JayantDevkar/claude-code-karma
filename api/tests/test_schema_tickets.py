@@ -85,8 +85,7 @@ def test_fresh_install_check_constraints_fire():
     too_big = "x" * (64 * 1024 + 1)
     with pytest.raises(sqlite3.IntegrityError):
         conn.execute(
-            "INSERT INTO tickets (provider, external_key, url, metadata_json) "
-            "VALUES (?, ?, ?, ?)",
+            "INSERT INTO tickets (provider, external_key, url, metadata_json) VALUES (?, ?, ?, ?)",
             ("linear", "ABC-1", "https://linear.app/x/issue/ABC-1", too_big),
         )
 
@@ -101,8 +100,7 @@ def test_link_source_check_constraint_fires():
 
     with pytest.raises(sqlite3.IntegrityError):
         conn.execute(
-            "INSERT INTO session_tickets (session_uuid, ticket_id, link_source) "
-            "VALUES (?, ?, ?)",
+            "INSERT INTO session_tickets (session_uuid, ticket_id, link_source) VALUES (?, ?, ?)",
             ("sess-1", ticket_id, "magic"),
         )
 
@@ -218,13 +216,11 @@ def test_partial_unique_index_allows_null_slug_duplicates():
     ).fetchone()["id"]
 
     conn.execute(
-        "INSERT INTO session_tickets (session_uuid, ticket_id, link_source) "
-        "VALUES (?, ?, ?)",
+        "INSERT INTO session_tickets (session_uuid, ticket_id, link_source) VALUES (?, ?, ?)",
         ("uuid-a", ticket_id, "branch"),
     )
     conn.execute(
-        "INSERT INTO session_tickets (session_uuid, ticket_id, link_source) "
-        "VALUES (?, ?, ?)",
+        "INSERT INTO session_tickets (session_uuid, ticket_id, link_source) VALUES (?, ?, ?)",
         ("uuid-b", ticket_id, "branch"),
     )
     # No exception — slug-based dedup didn't fire on NULL slugs.
@@ -238,8 +234,7 @@ def test_fk_cascade_deletes_session_tickets_when_ticket_removed():
         ("linear", "ABC-1", "https://linear.app/x/issue/ABC-1"),
     ).fetchone()["id"]
     conn.execute(
-        "INSERT INTO session_tickets (session_uuid, ticket_id, link_source) "
-        "VALUES (?, ?, ?)",
+        "INSERT INTO session_tickets (session_uuid, ticket_id, link_source) VALUES (?, ?, ?)",
         ("uuid-a", ticket_id, "branch"),
     )
     conn.execute("DELETE FROM tickets WHERE id = ?", (ticket_id,))

@@ -54,10 +54,10 @@ def test_normalize_git_url_happy_paths(url, expected):
         "",
         None,
         "not-a-url-at-all",
-        "/local/path/to/repo",                 # local path, not remote
-        "https://github.com/",                 # no owner/repo
-        "https://github.com/onlyone",          # only one segment
-        "git@github.com:",                     # scp-style with empty path
+        "/local/path/to/repo",  # local path, not remote
+        "https://github.com/",  # no owner/repo
+        "https://github.com/onlyone",  # only one segment
+        "git@github.com:",  # scp-style with empty path
     ],
 )
 def test_normalize_git_url_rejects_garbage(url):
@@ -78,11 +78,15 @@ def _make_repo(path: Path, remote_url: str) -> None:
     """
     subprocess.run(
         ["git", "-c", "init.defaultBranch=main", "init", "-q"],
-        cwd=path, check=True, capture_output=True,
+        cwd=path,
+        check=True,
+        capture_output=True,
     )
     subprocess.run(
         ["git", "remote", "add", "origin", remote_url],
-        cwd=path, check=True, capture_output=True,
+        cwd=path,
+        check=True,
+        capture_output=True,
     )
 
 
@@ -105,7 +109,9 @@ def test_read_git_identity_not_a_repo(tmp_path):
 def test_read_git_identity_repo_with_no_remote(tmp_path):
     subprocess.run(
         ["git", "-c", "init.defaultBranch=main", "init", "-q"],
-        cwd=tmp_path, check=True, capture_output=True,
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
     )
     # `git config --get` returns exit code 1 when key is absent.
     assert read_git_identity(str(tmp_path)) is None

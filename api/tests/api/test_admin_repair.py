@@ -48,8 +48,7 @@ def client(tmp_path, monkeypatch):
 
 def _insert_ticket(conn, *, provider, external_key, url, status):
     conn.execute(
-        "INSERT INTO tickets (provider, external_key, url, status) "
-        "VALUES (?, ?, ?, ?)",
+        "INSERT INTO tickets (provider, external_key, url, status) VALUES (?, ?, ?, ?)",
         (provider, external_key, url, status),
     )
     conn.commit()
@@ -105,9 +104,7 @@ def test_repair_leaves_unambiguous_issues_alone(client):
     r = client.post("/admin/repair-github-urls")
     assert r.json()["rewritten"] == 0
 
-    rows = conn.execute(
-        "SELECT external_key, url FROM tickets ORDER BY external_key"
-    ).fetchall()
+    rows = conn.execute("SELECT external_key, url FROM tickets ORDER BY external_key").fetchall()
     assert all("/issues/" in r["url"] for r in rows)
 
 

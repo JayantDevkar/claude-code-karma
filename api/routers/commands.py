@@ -43,7 +43,9 @@ def get_commands_dir(
     config: Annotated[Settings, Depends(get_settings)],
     project: Annotated[
         str | None,
-        Query(description="Project identifier (slug or encoded_name) for project-specific commands"),
+        Query(
+            description="Project identifier (slug or encoded_name) for project-specific commands"
+        ),
     ] = None,
 ) -> Path:
     """Get the commands directory (global or project-specific)."""

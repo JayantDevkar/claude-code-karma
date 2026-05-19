@@ -232,9 +232,7 @@ def get_ticket(provider: Provider, external_key: str) -> Ticket:
     return Ticket(**row)
 
 
-def _refresh_metadata(
-    provider: Provider, external_key: str, body: MetadataUpdate
-) -> Ticket:
+def _refresh_metadata(provider: Provider, external_key: str, body: MetadataUpdate) -> Ticket:
     conn = get_writer_db()
     try:
         found = update_ticket_metadata(
@@ -263,9 +261,7 @@ def _refresh_metadata(
 
 
 @router.put("/tickets/{provider}/{external_key:path}", response_model=Ticket)
-def refresh_ticket_metadata(
-    provider: Provider, external_key: str, body: MetadataUpdate
-) -> Ticket:
+def refresh_ticket_metadata(provider: Provider, external_key: str, body: MetadataUpdate) -> Ticket:
     """Agent-driven refresh: replace title/status/metadata with MCP-fetched
     values. COALESCE preserves existing non-null fields when caller passes
     None, so a degraded MCP fetch never wipes prior data."""
@@ -273,9 +269,7 @@ def refresh_ticket_metadata(
 
 
 @router.patch("/tickets/{provider}/{external_key:path}", response_model=Ticket)
-def patch_ticket_metadata(
-    provider: Provider, external_key: str, body: MetadataUpdate
-) -> Ticket:
+def patch_ticket_metadata(provider: Provider, external_key: str, body: MetadataUpdate) -> Ticket:
     """Dashboard manual metadata edit. Same DB semantics as PUT; distinct
     endpoint kept for auditability (future: emit different log events)."""
     return _refresh_metadata(provider, external_key, body)

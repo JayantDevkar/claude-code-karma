@@ -414,9 +414,7 @@ def get_skill_usage(
 
         with sqlite_read() as conn:
             if conn is not None:
-                rows = query_skill_usage(
-                    conn, project=safely_resolve_project(project), limit=limit
-                )
+                rows = query_skill_usage(conn, project=safely_resolve_project(project), limit=limit)
                 results = []
                 for row in rows:
                     skill_name = row["skill_name"]

@@ -341,13 +341,11 @@ def test_list_tickets_project_filter_requires_session_row(client):
 
     conn = connection.get_writer_db()
     conn.execute(
-        "INSERT INTO sessions (uuid, project_encoded_name, jsonl_mtime) "
-        "VALUES (?, ?, ?)",
+        "INSERT INTO sessions (uuid, project_encoded_name, jsonl_mtime) VALUES (?, ?, ?)",
         ("real-uuid-1", "-Users-me-projA", 0.0),
     )
     conn.execute(
-        "INSERT INTO sessions (uuid, project_encoded_name, jsonl_mtime) "
-        "VALUES (?, ?, ?)",
+        "INSERT INTO sessions (uuid, project_encoded_name, jsonl_mtime) VALUES (?, ?, ?)",
         ("real-uuid-2", "-Users-me-projB", 0.0),
     )
     conn.commit()
@@ -406,8 +404,7 @@ def test_get_ticket_404_when_unknown(client):
 
 def _seed_session(conn, *, uuid: str, project: str) -> None:
     conn.execute(
-        "INSERT INTO sessions (uuid, project_encoded_name, jsonl_mtime) "
-        "VALUES (?, ?, ?)",
+        "INSERT INTO sessions (uuid, project_encoded_name, jsonl_mtime) VALUES (?, ?, ?)",
         (uuid, project, 0.0),
     )
 
