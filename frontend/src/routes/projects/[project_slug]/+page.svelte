@@ -50,7 +50,8 @@
 	import FiltersBottomSheet from '$lib/components/FiltersBottomSheet.svelte';
 	import ActiveFilterChips from '$lib/components/ActiveFilterChips.svelte';
 	import LiveSessionsSection from '$lib/components/LiveSessionsSection.svelte';
-	import { ProjectTicketsCard } from '$lib/components/tickets';
+	import { ProjectTicketsTab } from '$lib/components/tickets';
+	import { Ticket as TicketIcon } from 'lucide-svelte';
 	import type {
 		Project,
 		BranchesData,
@@ -307,7 +308,7 @@
 	});
 
 	// Tab state - initialize from URL immediately (not deferred to onMount)
-	const validTabs = ['overview', 'analytics', 'agents', 'skills', 'tools', 'memory', 'archived'];
+	const validTabs = ['overview', 'analytics', 'agents', 'skills', 'tools', 'memory', 'tickets', 'archived'];
 	const initialTab = $page.url.searchParams.get('tab');
 	let activeTab = $state(initialTab && validTabs.includes(initialTab) ? initialTab : 'overview');
 	let tabsReady = $state(false);
@@ -1075,6 +1076,7 @@
 					<TabsTrigger value="skills" icon={Wrench}>Project Skills</TabsTrigger>
 					<TabsTrigger value="tools" icon={Cable}>Project Tools</TabsTrigger>
 					<TabsTrigger value="memory" icon={Brain}>Project Memory</TabsTrigger>
+					<TabsTrigger value="tickets" icon={TicketIcon}>Tickets</TabsTrigger>
 					<TabsTrigger value="analytics" icon={BarChart3}>Analytics</TabsTrigger>
 					{#if archived.total_sessions > 0}
 						<TabsTrigger value="archived" icon={Archive}>
@@ -1095,11 +1097,6 @@
 							onClearAll={handleClearAllBranches}
 							isLoading={isLoadingAllSessions}
 						/>
-					{/if}
-
-					<!-- Linked Tickets — derived through sessions in this project -->
-					{#if $page.params.project_slug}
-						<ProjectTicketsCard projectEncodedName={$page.params.project_slug} />
 					{/if}
 
 					<!-- Sessions Section -->
@@ -1729,6 +1726,13 @@
 				<!-- Memory Tab -->
 				<Tabs.Content value="memory" class="animate-fade-in">
 					<MemoryViewer projectEncodedName={project.encoded_name} />
+				</Tabs.Content>
+
+				<!-- Tickets Tab (Q9a A — full Tickets tab) -->
+				<Tabs.Content value="tickets" class="animate-fade-in">
+					{#if $page.params.project_slug}
+						<ProjectTicketsTab projectEncodedName={$page.params.project_slug} />
+					{/if}
 				</Tabs.Content>
 
 				<!-- Archived Tab -->

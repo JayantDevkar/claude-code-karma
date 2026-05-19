@@ -59,6 +59,21 @@
 	--info: #3b82f6;
 	--info-subtle: rgba(59, 130, 246, 0.1);
 
+	/* Ticket Provider Identity (industry-flavored, no brand logos) */
+	--provider-linear: #5e6ad2;
+	--provider-linear-subtle: rgba(94, 106, 210, 0.12);
+	--provider-jira: #0052cc;
+	--provider-jira-subtle: rgba(0, 82, 204, 0.10);
+	--provider-github: #1f2937;
+	--provider-github-subtle: rgba(31, 41, 55, 0.08);
+
+	/* Normalized Ticket Status (todo / active / review / done / closed) */
+	--status-todo: #94a3b8;
+	--status-active: #3b82f6;
+	--status-review: #f59e0b;
+	--status-done: #10b981;
+	--status-closed: #64748b;
+
 	/* Model Family Colors */
 	--model-opus: #7c3aed;
 	--model-opus-subtle: rgba(124, 58, 237, 0.1);
@@ -280,6 +295,21 @@ select:focus {
 	--info: #60a5fa;
 	--info-subtle: rgba(96, 165, 250, 0.15);
 
+	/* Ticket Provider Identity (dark) */
+	--provider-linear: #8b95e8;
+	--provider-linear-subtle: rgba(139, 149, 232, 0.18);
+	--provider-jira: #4c9aff;
+	--provider-jira-subtle: rgba(76, 154, 255, 0.15);
+	--provider-github: #cbd5e1;
+	--provider-github-subtle: rgba(203, 213, 225, 0.10);
+
+	/* Normalized Ticket Status (dark) */
+	--status-todo: #71717a;
+	--status-active: #60a5fa;
+	--status-review: #fbbf24;
+	--status-done: #34d399;
+	--status-closed: #94a3b8;
+
 	/* Model Colors (lighter for dark mode) */
 	--model-opus: #a78bfa;
 	--model-opus-subtle: rgba(167, 139, 250, 0.2);
@@ -386,6 +416,22 @@ select:focus {
 		--warning-subtle: rgba(251, 191, 36, 0.15);
 		--info: #60a5fa;
 		--info-subtle: rgba(96, 165, 250, 0.15);
+
+		/* Ticket Provider Identity (dark — prefers-color-scheme fallback) */
+		--provider-linear: #8b95e8;
+		--provider-linear-subtle: rgba(139, 149, 232, 0.18);
+		--provider-jira: #4c9aff;
+		--provider-jira-subtle: rgba(76, 154, 255, 0.15);
+		--provider-github: #cbd5e1;
+		--provider-github-subtle: rgba(203, 213, 225, 0.10);
+
+		/* Normalized Ticket Status (dark — prefers-color-scheme fallback) */
+		--status-todo: #71717a;
+		--status-active: #60a5fa;
+		--status-review: #fbbf24;
+		--status-done: #34d399;
+		--status-closed: #94a3b8;
+
 		--model-opus: #a78bfa;
 		--model-opus-subtle: rgba(167, 139, 250, 0.2);
 		--model-sonnet: #60a5fa;
