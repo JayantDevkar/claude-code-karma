@@ -190,6 +190,22 @@ Track which skills are invoked across sessions, grouped by plugin or shown indiv
   <img src="docs/screenshots/skill-detail.png" alt="Skill Detail with History" width="100%" />
 </p>
 
+### Ticket Linking (Linear / Jira / GitHub Issues)
+
+Attach your Claude Code sessions to the tickets they were about. Karma stays read-only — it stores the link and caches the title/status, but never writes back to your ticket provider.
+
+Three ways to link:
+
+- **Paste a URL or key** into the Tickets section on any session page
+- **Type `/link-ticket-to-session ABC-123`** (or ask the agent in natural language) in any Claude Code session — uses your Linear / Atlassian / GitHub MCP server to fetch the title
+- **Auto-detect from your branch name** — opt-in `SessionStart` hook that watches for keys like `feat/LINEAR-123-foo` and links silently in the background
+
+Then browse:
+
+- A `/tickets` index showing every ticket touched, filterable by provider and project
+- A ticket detail page listing every session linked to a given ticket
+- A **Tickets tab on every project page** that aggregates across all checkouts of the same git repo — so a ticket linked from `claude-karma/frontend/` also shows on the main `claude-karma` project
+
 ### And More
 
 - **Plans Browser** — View implementation plans and their execution status

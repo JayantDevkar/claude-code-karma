@@ -7,7 +7,7 @@ include = ["models*"]
 
 [project]
 name = "claude-code-models"
-version = "0.1.0"
+version = "0.2.0"
 description = "Pydantic models for parsing Claude Code local storage"
 readme = "README.md"
 license = {text = "Apache-2.0"}
