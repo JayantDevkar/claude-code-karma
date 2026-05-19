@@ -15,8 +15,10 @@
 		GitBranch,
 		Slash,
 		Link as LinkIcon,
-		ArrowRight
+		ArrowRight,
+		Ticket as TicketIcon
 	} from 'lucide-svelte';
+	import PageHeader from '$lib/components/layout/PageHeader.svelte';
 
 	let { data } = $props();
 
@@ -88,16 +90,13 @@
 </svelte:head>
 
 <div class="max-w-6xl mx-auto p-6 flex flex-col gap-5">
-	<!-- Page header -->
-	<header class="flex items-baseline justify-between gap-4">
-		<div class="flex items-baseline gap-2.5">
-			<h1 class="text-2xl font-semibold tracking-tight text-[var(--text-primary)] m-0">Tickets</h1>
-			<span class="font-mono text-xs text-[var(--text-muted)]">[{data.tickets.length}]</span>
-		</div>
-		<p class="text-xs text-[var(--text-muted)] m-0">
-			Tickets linked to any session. Click through for the cross-project rollup.
-		</p>
-	</header>
+	<PageHeader
+		title="Tickets"
+		icon={TicketIcon}
+		iconColor="--nav-amber"
+		breadcrumbs={[{ label: 'Dashboard', href: '/' }, { label: 'Tickets' }]}
+		subtitle="Linked across sessions · click through for the cross-project rollup"
+	/>
 
 	{#if data.tickets.length === 0 && !hasFilters}
 		<!-- Terminal-flavored empty state (Q2 A) -->
