@@ -13,6 +13,7 @@
 		projectDisplayName,
 		formatRelative
 	} from '$lib/ticket-helpers';
+	import ProviderChip from '$lib/components/tickets/ProviderChip.svelte';
 
 	let { data } = $props();
 
@@ -151,13 +152,7 @@
 			 No 4-up stats grid — see decision log "F1 rebuild" for rationale. -->
 		<header class="flex flex-col gap-3">
 			<div class="flex items-center gap-2.5 text-[12px] text-[var(--text-muted)]">
-				<span
-					class="inline-flex items-center font-mono font-bold px-1.5 py-[2px] rounded-sm text-[10px] tracking-wider leading-snug"
-					style="background: var({meta.colorVar}); color: var({meta.fgVar})"
-					title={meta.label}
-				>
-					{meta.short}
-				</span>
+				<ProviderChip ticket={data.ticket} />
 				<a
 					href={data.ticket.url}
 					target="_blank"

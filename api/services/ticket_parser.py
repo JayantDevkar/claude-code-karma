@@ -28,9 +28,16 @@ _JIRA_URL = re.compile(
     re.IGNORECASE,
 )
 
-# GitHub: https://github.com/<owner>/<repo>/issues/<N>  (or /pull/<N>)
+# GitHub: https://github.com/<owner>/<repo>/issues/<N>  (or /pull/<N>).
+#
+# Issues and PRs share a numbering namespace but have distinct URL paths
+# and distinct semantics — PRs carry draft/merge state that issues don't.
+# We capture the path segment so the canonical URL preserves it; collapsing
+# both to /issues/ would silently drop information the UI needs to render
+# the right indicator (and would mislead users into thinking their PR is
+# an issue).
 _GITHUB_URL = re.compile(
-    r"^https?://github\.com/(?P<owner>[^/\s]+)/(?P<repo>[^/\s]+)/(?:issues|pull)/(?P<num>\d+)(?:[/?#].*)?$",
+    r"^https?://github\.com/(?P<owner>[^/\s]+)/(?P<repo>[^/\s]+)/(?P<kind>issues|pull)/(?P<num>\d+)(?:[/?#].*)?$",
     re.IGNORECASE,
 )
 
@@ -77,8 +84,12 @@ def parse_ticket_ref(s: str, hint_provider: Optional[Provider] = None) -> Option
         owner = m.group("owner")
         repo = m.group("repo")
         num = m.group("num")
+        kind = m.group("kind").lower()  # 'issues' or 'pull'
         key = f"{owner}/{repo}#{num}"
-        canonical = f"https://github.com/{owner}/{repo}/issues/{num}"
+        # Preserve the user's intent: /pull/ stays /pull/, /issues/ stays
+        # /issues/. We strip noise (query, fragment, extra path segments)
+        # but never rewrite the kind segment.
+        canonical = f"https://github.com/{owner}/{repo}/{kind}/{num}"
         return TicketRef(provider="github", external_key=key, url=canonical)
 
     m = _GITHUB_SHORT.match(s)
@@ -87,6 +98,10 @@ def parse_ticket_ref(s: str, hint_provider: Optional[Provider] = None) -> Option
         repo = m.group("repo")
         num = m.group("num")
         key = f"{owner}/{repo}#{num}"
+        # Bare `owner/repo#N` doesn't tell us which kind. Default to
+        # /issues/ — GitHub auto-redirects /issues/N to /pull/N when N
+        # is a PR, so the link still resolves. The frontend can refine
+        # the displayed kind from MCP-fetched metadata if needed.
         canonical = f"https://github.com/{owner}/{repo}/issues/{num}"
         return TicketRef(provider="github", external_key=key, url=canonical)
 

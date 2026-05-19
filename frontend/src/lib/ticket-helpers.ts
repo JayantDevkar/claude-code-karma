@@ -104,6 +104,31 @@ export function normalizeStatus(status: string | null | undefined): NormalizedSt
 	return { key: 'active', verbatim: status };
 }
 
+/**
+ * GitHub-specific ticket subtype derived from the stored URL.
+ *
+ * GitHub uses one numbering namespace for issues and pull requests but
+ * distinct URL paths (`/issues/N` vs `/pull/N`) and distinct semantics
+ * — PRs carry draft/merged state, issues don't. The backend stores the
+ * URL verbatim from the parser; the UI derives the kind from the URL
+ * at render time. This avoids a schema asymmetry (Linear/Jira have no
+ * equivalent concept) and stays accurate without an extra DB column.
+ *
+ * Returns `'pull_request'` only when the URL is unambiguously a PR
+ * (contains `/pull/<digits>`). Bare/unknown URLs fall through to
+ * `'issue'` since GitHub auto-redirects `/issues/N` to `/pull/N` when
+ * N is actually a PR — those rows are visually-correct-but-imprecise,
+ * not broken.
+ */
+export type GithubKind = 'issue' | 'pull_request';
+
+export function githubKindFromUrl(url: string | null | undefined): GithubKind {
+	if (!url) return 'issue';
+	// Accept any github.com host (github.com proper; enterprise hosts
+	// would use a different domain that this UI doesn't claim to support).
+	return /\/pull\/\d+(?:[/?#]|$)/i.test(url) ? 'pull_request' : 'issue';
+}
+
 /** Client-side parse so the link input can auto-detect provider as the user types. */
 export function detectProviderFromRef(ref: string): TicketProvider | null {
 	const s = ref.trim();

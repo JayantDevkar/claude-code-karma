@@ -48,10 +48,42 @@ def test_parse_recognized(raw, hint, expected_provider, expected_key):
     assert ref.url  # always populated
 
 
-def test_github_url_returns_canonical_form_even_for_pull_url():
+def test_github_url_preserves_pull_path_segment():
+    """GitHub uses one numbering namespace for issues and PRs, but they
+    have different URL paths (/issues/N vs /pull/N) and different
+    semantics (PRs have draft/merged state; issues don't). The parser
+    must preserve which one the caller meant — collapsing both to
+    /issues/ destroys that distinction and tells users their PR is
+    an issue."""
     ref = parse_ticket_ref("https://github.com/octocat/repo/pull/9")
     assert ref is not None
-    # canonical URL prefers /issues/ even when input was /pull/
+    assert ref.url == "https://github.com/octocat/repo/pull/9"
+
+
+def test_github_url_preserves_issues_path_segment():
+    ref = parse_ticket_ref("https://github.com/octocat/repo/issues/9")
+    assert ref is not None
+    assert ref.url == "https://github.com/octocat/repo/issues/9"
+
+
+def test_github_url_strips_query_and_fragment_but_keeps_kind():
+    """We normalize away noise (query, fragment, trailing path) but
+    preserve the semantically meaningful path segment."""
+    ref = parse_ticket_ref(
+        "https://github.com/octocat/repo/pull/9?diff=1#discussion_r123"
+    )
+    assert ref is not None
+    assert ref.url == "https://github.com/octocat/repo/pull/9"
+
+
+def test_github_short_ref_defaults_to_issues_path():
+    """Bare `owner/repo#N` is ambiguous (could be either an issue or a
+    PR — GitHub uses one numbering namespace). We default to /issues/
+    because GitHub auto-redirects /issues/N to /pull/N when N is a PR,
+    so the link still resolves. The frontend may still distinguish
+    later via metadata fetched from MCP."""
+    ref = parse_ticket_ref("octocat/repo#9")
+    assert ref is not None
     assert ref.url == "https://github.com/octocat/repo/issues/9"
 
 

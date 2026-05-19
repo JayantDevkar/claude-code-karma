@@ -2,12 +2,12 @@
 	import type { TicketListItem } from '$lib/api-types';
 	import { API_BASE } from '$lib/config';
 	import {
-		PROVIDER_META,
 		normalizeStatus,
 		statusColorVar,
 		formatRelative
 	} from '$lib/ticket-helpers';
 	import { ExternalLink, Search, Slash, GitBranch, Link as LinkIcon, Sparkles } from 'lucide-svelte';
+	import ProviderChip from './ProviderChip.svelte';
 
 	interface Props {
 		projectEncodedName: string;
@@ -175,19 +175,14 @@
 			</div>
 
 			{#each filtered as t (t.id)}
-				{@const meta = PROVIDER_META[t.provider]}
 				{@const norm = normalizeStatus(t.status)}
 				<a
 					href="/tickets/{t.provider}/{encodeURIComponent(t.external_key)}"
 					class="grid gap-3.5 px-4 py-3 items-center border-t border-[var(--border-subtle)] hover:bg-[var(--accent-muted)] transition-colors"
 					style="grid-template-columns: 80px minmax(0, 1fr) 130px 90px 110px"
 				>
-					<span
-						class="inline-flex items-center justify-self-start font-mono font-bold px-1 py-[1px] rounded-sm text-[10px] tracking-wider leading-snug"
-						style="background: var({meta.colorVar}); color: var({meta.fgVar})"
-						title={meta.label}
-					>
-						{meta.short}
+					<span class="justify-self-start">
+						<ProviderChip ticket={t} />
 					</span>
 
 					<div class="min-w-0">

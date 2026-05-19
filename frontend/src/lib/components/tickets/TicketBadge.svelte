@@ -6,6 +6,7 @@
 		statusColorVar
 	} from '$lib/ticket-helpers';
 	import { ExternalLink, X, MoreHorizontal, Hash, Copy } from 'lucide-svelte';
+	import ProviderChip from './ProviderChip.svelte';
 
 	type Variant = 'inline' | 'card' | 'pill';
 
@@ -57,14 +58,7 @@
 <svelte:document onclick={handleDocClick} onkeydown={handleKey} />
 
 {#snippet providerChip()}
-	<span
-		class="inline-flex items-center font-mono font-bold px-1 py-[1px] rounded-sm text-[10px] tracking-wider leading-snug"
-		style="background: var({meta.colorVar}); color: var({meta.fgVar})"
-		title={meta.label}
-		aria-label={meta.label}
-	>
-		{meta.short}
-	</span>
+	<ProviderChip {ticket} />
 {/snippet}
 
 {#snippet statusDot(size = 6)}
