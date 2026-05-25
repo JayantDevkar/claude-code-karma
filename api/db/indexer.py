@@ -162,6 +162,17 @@ def sync_all_projects(conn: sqlite3.Connection) -> dict:
         # Clean up stale sessions (files deleted from disk)
         _cleanup_stale_sessions(conn, projects_dir)
 
+        # Ingest optional cron live-state hook output. Idempotent via
+        # UNIQUE(session_uuid, trigger_event, captured_at).
+        try:
+            from db.indexer_shells_cron import sync_cron_state_snapshots
+
+            inserted = sync_cron_state_snapshots(conn, settings.karma_base)
+            if inserted:
+                logger.info("Ingested %d new cron-state snapshots", inserted)
+        except Exception as e:
+            logger.warning("cron-state snapshot ingestion failed: %s", e)
+
         # Update project summary table
         _update_project_summaries(conn)
 
@@ -224,12 +235,23 @@ def sync_project(
     source_encoded_name = project_dir.name if encoded_name_override else None
     stats = {"total": 0, "indexed": 0, "skipped": 0, "errors": 0}
 
-    # Load current mtimes from DB for this project
-    rows = conn.execute(
-        "SELECT uuid, jsonl_mtime FROM sessions WHERE project_encoded_name = ?",
-        (encoded_name,),
-    ).fetchall()
-    db_mtimes = {row["uuid"]: row["jsonl_mtime"] for row in rows}
+    # Load current mtimes + v13 reindex flag from DB for this project.
+    # The flag column may not yet exist on older schemas — fall back to {}.
+    try:
+        rows = conn.execute(
+            "SELECT uuid, jsonl_mtime, needs_shell_cron_reindex "
+            "FROM sessions WHERE project_encoded_name = ?",
+            (encoded_name,),
+        ).fetchall()
+        db_mtimes = {row["uuid"]: row["jsonl_mtime"] for row in rows}
+        needs_backfill = {row["uuid"]: bool(row["needs_shell_cron_reindex"]) for row in rows}
+    except sqlite3.OperationalError:
+        rows = conn.execute(
+            "SELECT uuid, jsonl_mtime FROM sessions WHERE project_encoded_name = ?",
+            (encoded_name,),
+        ).fetchall()
+        db_mtimes = {row["uuid"]: row["jsonl_mtime"] for row in rows}
+        needs_backfill = {}
 
     for jsonl_path in project_dir.glob("*.jsonl"):
         # Skip agent files and non-session files
@@ -244,9 +266,19 @@ def sync_project(
             current_mtime = file_stat.st_mtime
             current_size = file_stat.st_size
 
-            # Skip if mtime hasn't changed
+            # mtime unchanged: skip the full re-index. But if the v13
+            # bg-shells/cron backfill is still pending for this row, run
+            # the lightweight extraction-only pass.
             if uuid in db_mtimes and abs(db_mtimes[uuid] - current_mtime) < 0.001:
-                stats["skipped"] += 1
+                if needs_backfill.get(uuid):
+                    try:
+                        _backfill_shells_cron(conn, jsonl_path, uuid)
+                        stats["indexed"] += 1
+                    except Exception as e:
+                        logger.debug("backfill shells/cron error for %s: %s", uuid, e)
+                        stats["errors"] += 1
+                else:
+                    stats["skipped"] += 1
                 continue
 
             # Index this session
@@ -562,6 +594,55 @@ def _index_session(
                     )
         except Exception as e:
             logger.warning("Error indexing subagent invocations for %s: %s", uuid, e)
+
+    # v13: bg-shells/cron extraction pass. Runs whenever mtime changed
+    # (i.e. whenever _index_session is called) and on backfill via
+    # _backfill_shells_cron(). Wrapped in try/except so a parser bug
+    # cannot break the main indexer.
+    try:
+        from db.indexer_shells_cron import (
+            extract_shells_and_cron,
+            persist_shells_and_cron,
+        )
+
+        shells, polls, crons = extract_shells_and_cron(
+            jsonl_path,
+            uuid,
+            session_ended=session.end_time is not None,
+        )
+        persist_shells_and_cron(conn, uuid, shells, polls, crons)
+    except Exception as e:
+        logger.warning("Error indexing bg-shells/cron for %s: %s", uuid, e)
+
+
+def _backfill_shells_cron(
+    conn: sqlite3.Connection,
+    jsonl_path: Path,
+    session_uuid: str,
+) -> None:
+    """
+    Lightweight pass: extract + persist only bg-shells/cron for an existing
+    session whose mtime hasn't changed but whose needs_shell_cron_reindex
+    flag is set (e.g. post-v13 migration).
+
+    Skips all the heavy Session model parsing in _index_session().
+    """
+    from db.indexer_shells_cron import (
+        extract_shells_and_cron,
+        persist_shells_and_cron,
+    )
+
+    # session_ended: rely on stored end_time rather than parsing the JSONL.
+    row = conn.execute(
+        "SELECT end_time FROM sessions WHERE uuid = ?",
+        (session_uuid,),
+    ).fetchone()
+    session_ended = bool(row and row[0])
+
+    shells, polls, crons = extract_shells_and_cron(
+        jsonl_path, session_uuid, session_ended=session_ended
+    )
+    persist_shells_and_cron(conn, session_uuid, shells, polls, crons)
 
 
 def _detect_project_path(session, encoded_name: str) -> Optional[str]:
