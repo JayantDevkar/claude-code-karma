@@ -322,8 +322,9 @@ CREATE TABLE IF NOT EXISTS background_shells (
     last_output_at           TEXT,
     spawn_message_uuid       TEXT,
     CHECK ((terminated_at IS NULL) = (terminated_by IS NULL)),
-    FOREIGN KEY (session_uuid)       REFERENCES sessions(uuid)            ON DELETE CASCADE,
-    FOREIGN KEY (spawn_message_uuid) REFERENCES message_uuids(message_uuid) ON DELETE SET NULL,
+    FOREIGN KEY (session_uuid) REFERENCES sessions(uuid) ON DELETE CASCADE,
+    -- No FK on spawn_message_uuid: it's a label, and session-level CASCADE
+    -- already handles cleanup. Avoids coupling to message_uuids insert order.
     UNIQUE(tool_use_id)
 );
 
@@ -369,8 +370,8 @@ CREATE TABLE IF NOT EXISTS cron_jobs (
     ttl_expires_at      TEXT    NOT NULL,
     create_message_uuid TEXT,
     CHECK ((deleted_at IS NULL) = (deleted_via IS NULL)),
-    FOREIGN KEY (session_uuid)        REFERENCES sessions(uuid)            ON DELETE CASCADE,
-    FOREIGN KEY (create_message_uuid) REFERENCES message_uuids(message_uuid) ON DELETE SET NULL,
+    FOREIGN KEY (session_uuid) REFERENCES sessions(uuid) ON DELETE CASCADE,
+    -- No FK on create_message_uuid: label-only; session CASCADE handles cleanup.
     UNIQUE(tool_use_id)
 );
 
