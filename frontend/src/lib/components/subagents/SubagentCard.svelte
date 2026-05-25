@@ -38,8 +38,8 @@
 		sessionSlug?: string;
 		/** Live status from hooks (optional - for real-time status display) */
 		status?: SubagentStatus;
-		/** Start timestamp for duration calculation (optional) */
-		started_at?: string;
+		/** Start timestamp for duration calculation (optional, null when SubagentStart never fired) */
+		started_at?: string | null;
 		/** Completion timestamp (optional) */
 		completed_at?: string | null;
 		/** Path to subagent transcript JSONL (optional) */

@@ -1323,7 +1323,7 @@ export function mergeSubagentData(
 	liveState?: SubagentState | null
 ): SubagentSummary & {
 	status?: SubagentState['status'];
-	started_at?: string;
+	started_at?: string | null;
 	completed_at?: string | null;
 	transcript_path?: string | null;
 } {
@@ -1341,7 +1341,7 @@ export function mergeSubagentData(
  * Returns duration from start to now (if running) or to completed_at.
  */
 export function calculateSubagentDuration(
-	started_at: string | undefined,
+	started_at: string | null | undefined,
 	completed_at?: string | null
 ): number | null {
 	if (!started_at) return null;

@@ -616,8 +616,9 @@ export interface SubagentState {
 	agent_type: string;
 	status: SubagentStatus;
 	transcript_path: string | null;
-	started_at: string;
+	started_at: string | null;
 	completed_at: string | null;
+	duration_ms: number | null;
 }
 
 export interface LiveSessionSummary {

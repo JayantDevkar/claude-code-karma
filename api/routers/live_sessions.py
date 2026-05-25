@@ -178,6 +178,7 @@ def state_to_summary(
                 "transcript_path": s.transcript_path,
                 "started_at": s.started_at.isoformat() if s.started_at else None,
                 "completed_at": s.completed_at.isoformat() if s.completed_at else None,
+                "duration_ms": getattr(s, "duration_ms", None),
             }
             for agent_id, s in state.subagents.items()
         }
