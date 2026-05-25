@@ -1810,3 +1810,140 @@ export interface CreateLinkResponse {
 	link: SessionTicketLink;
 	ticket: Ticket;
 }
+
+// ============================================
+// Background Shells (v13)
+// ============================================
+
+export type ShellToolName = 'Bash' | 'Monitor';
+export type ShellTerminationReason = 'kill' | 'natural' | 'timeout' | 'session_end';
+export type ShellStatusFilter = 'running' | 'closed';
+
+/** One BashOutput poll against a parent background shell. */
+export interface ShellPoll {
+	id: number;
+	shell_row_id: number;
+	polled_at: string;
+	filter_pattern: string | null;
+	output_bytes: number;
+	output_excerpt: string | null;
+	output_truncated: 0 | 1;
+	tool_use_id: string;
+}
+
+/** A single background shell or Monitor process. polls is empty in list views. */
+export interface BackgroundShell {
+	id: number;
+	session_uuid: string;
+	tool_use_id: string;
+	shell_id: string | null;
+	tool_name: ShellToolName;
+	command: string;
+	command_truncated: 0 | 1;
+	description: string | null;
+	is_persistent: 0 | 1;
+	timeout_ms: number | null;
+	spawned_at: string;
+	terminated_at: string | null;
+	terminated_by: ShellTerminationReason | null;
+	exit_code: number | null;
+	poll_count: number;
+	total_output_bytes: number;
+	last_output_at: string | null;
+	spawn_message_uuid: string | null;
+	polls?: ShellPoll[];
+	// Present on /shells global list rows only:
+	project_encoded_name?: string;
+	session_slug?: string | null;
+	project_display_name?: string | null;
+}
+
+export interface ShellsListResponse {
+	shells: BackgroundShell[];
+	count: number;
+	session_uuid?: string;
+}
+
+export interface ShellsProjectRollupRow {
+	project_encoded_name: string;
+	project_display_name: string | null;
+	shell_count: number;
+	running_count: number;
+	total_output_bytes: number;
+}
+
+export interface ShellsProjectRollupResponse {
+	projects: ShellsProjectRollupRow[];
+	count: number;
+}
+
+// ============================================
+// Cron (v13)
+// ============================================
+
+export type CronDeletionReason = 'CronDelete' | 'session_end' | 'expiry' | 'unknown';
+export type CronStateTriggerEvent =
+	| 'CronCreate'
+	| 'CronDelete'
+	| 'CronList'
+	| 'session_start';
+export type CronFireInferenceSource = 'jsonl' | 'hook';
+
+/** A scheduled cron job created via CronCreate. */
+export interface CronJob {
+	id: number;
+	session_uuid: string;
+	tool_use_id: string;
+	cron_id: string | null;
+	cron_expression: string;
+	prompt: string;
+	recurring: 0 | 1;
+	created_at: string;
+	deleted_at: string | null;
+	deleted_via: CronDeletionReason | null;
+	ttl_expires_at: string;
+	create_message_uuid: string | null;
+	// Attached by GET /sessions/{uuid}/cron:
+	fires?: CronFire[];
+	latest_state?: CronStateSnapshot | null;
+	// Present on /cron global list rows:
+	project_encoded_name?: string;
+	session_slug?: string | null;
+	project_display_name?: string | null;
+}
+
+/** A single inferred fire of a cron job. Derived on read; never persisted. */
+export interface CronFire {
+	fired_at: string;
+	triggering_message_uuid: string | null;
+	inference_confidence: number;
+	inference_source: CronFireInferenceSource;
+	outcome_excerpt: string | null;
+}
+
+/** Snapshot of Claude's in-memory cron table — written by the optional hook. */
+export interface CronStateSnapshot {
+	id: number;
+	session_uuid: string;
+	captured_at: string;
+	trigger_event: CronStateTriggerEvent;
+	payload_json: string;
+}
+
+export interface CronListResponse {
+	jobs: CronJob[];
+	count: number;
+	session_uuid?: string;
+}
+
+export interface CronProjectRollupRow {
+	project_encoded_name: string;
+	project_display_name: string | null;
+	cron_count: number;
+	active_count: number;
+}
+
+export interface CronProjectRollupResponse {
+	projects: CronProjectRollupRow[];
+	count: number;
+}

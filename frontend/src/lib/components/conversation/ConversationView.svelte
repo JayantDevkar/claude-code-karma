@@ -23,7 +23,9 @@
 		Zap,
 		TerminalSquare,
 		Ticket as TicketIcon,
-		Search
+		Search,
+		Activity,
+		AlarmClock
 	} from 'lucide-svelte';
 	import TabsTrigger from '$lib/components/ui/TabsTrigger.svelte';
 	import { SessionDetailSkeleton } from '$lib/components/skeleton';
@@ -41,6 +43,8 @@
 	import SkillsPanel from '$lib/components/skills/SkillsPanel.svelte';
 	import CommandsPanel from '$lib/components/commands/CommandsPanel.svelte';
 	import { SessionTicketsSection } from '$lib/components/tickets';
+	import SessionShellsSection from '$lib/components/shells/SessionShellsSection.svelte';
+	import SessionCronSection from '$lib/components/cron/SessionCronSection.svelte';
 	import ConversationHeader from './ConversationHeader.svelte';
 	import ConversationOverview from './ConversationOverview.svelte';
 	import type {
@@ -624,7 +628,7 @@
 			base.push('agents');
 			if (skillsArray.length > 0) base.push('skills');
 			if (commandsArray.length > 0) base.push('commands');
-			base.push('tickets');
+			base.push('tickets', 'shells', 'cron');
 		}
 		base.push('analytics');
 		return base;
@@ -984,7 +988,9 @@
 								>
 							</TabsTrigger>
 						{/if}
-						<TabsTrigger value="tickets" icon={TicketIcon}>
+						<TabsTrigger value="shells" icon={Activity}>Shells</TabsTrigger>
+					<TabsTrigger value="cron" icon={AlarmClock}>Cron</TabsTrigger>
+					<TabsTrigger value="tickets" icon={TicketIcon}>
 							Tickets
 							{#if tickets.length > 0}
 								<span class="text-xs font-mono text-[var(--text-muted)]"
@@ -1189,6 +1195,26 @@
 								{sessionSlug}
 								initial={tickets}
 							/>
+						{:else}
+							<p class="text-sm text-[var(--text-muted)] m-0 px-1 py-6 text-center">
+								Session UUID unavailable.
+							</p>
+						{/if}
+					</Tabs.Content>
+
+					<Tabs.Content value="shells" class="animate-fade-in">
+						{#if sessionUuid}
+							<SessionShellsSection {sessionUuid} />
+						{:else}
+							<p class="text-sm text-[var(--text-muted)] m-0 px-1 py-6 text-center">
+								Session UUID unavailable.
+							</p>
+						{/if}
+					</Tabs.Content>
+
+					<Tabs.Content value="cron" class="animate-fade-in">
+						{#if sessionUuid}
+							<SessionCronSection {sessionUuid} />
 						{:else}
 							<p class="text-sm text-[var(--text-muted)] m-0 px-1 py-6 text-center">
 								Session UUID unavailable.
