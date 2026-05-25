@@ -245,7 +245,7 @@
 	let typeIcon = $derived(isSubagentSession(entity) ? getTypeIcon(effectiveSubagentType) : null);
 
 	// Copy action state for session ID actions
-	type CopyTarget = 'uuid' | 'resume' | 'path';
+	type CopyTarget = 'uuid' | 'resume';
 	let copiedTarget = $state<CopyTarget | null>(null);
 	let copyTimeout: ReturnType<typeof setTimeout> | null = null;
 
@@ -257,9 +257,6 @@
 			copiedTarget = null;
 		}, 350);
 	}
-
-	// The cwd from liveStatus is the most reliable transcript path base available on the frontend.
-	let transcriptCwd = $derived(liveStatus?.cwd ?? null);
 
 	// UUID is only present on main sessions (SessionDetail), not subagents.
 	let mainSessionUuid = $derived(isSubagentSession(entity) ? null : entity.uuid);
@@ -508,23 +505,6 @@
 								<span>resume</span>
 							{/if}
 						</button>
-						<!-- Copy transcript path (only when cwd is available from live session) -->
-						{#if transcriptCwd}
-							<button
-								type="button"
-								onclick={() => handleCopy('path', transcriptCwd!)}
-								aria-label="Copy transcript path"
-								class="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-muted)] border border-transparent hover:border-[var(--border)] transition-colors"
-								title="Copy working directory: {transcriptCwd}"
-							>
-								<FileText size={11} strokeWidth={2} />
-								{#if copiedTarget === 'path'}
-									<span>copied!</span>
-								{:else}
-									<span>path</span>
-								{/if}
-							</button>
-						{/if}
 					{/if}
 				</div>
 			{/snippet}
