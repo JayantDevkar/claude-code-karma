@@ -10,7 +10,7 @@ import sqlite3
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 12
+SCHEMA_VERSION = 13
 
 SCHEMA_SQL = """
 -- Schema versioning
@@ -47,7 +47,11 @@ CREATE TABLE IF NOT EXISTS sessions (
     jsonl_size INTEGER DEFAULT 0,
     session_source TEXT,
     source_encoded_name TEXT,
-    indexed_at TEXT DEFAULT (datetime('now'))
+    indexed_at TEXT DEFAULT (datetime('now')),
+    -- Per-session flag set to 1 when a session needs the bg-shells/cron
+    -- extraction pass (v13). Cleared by the indexer after processing.
+    -- Avoids touching jsonl_mtime which other consumers depend on.
+    needs_shell_cron_reindex INTEGER NOT NULL DEFAULT 1
 );
 
 CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_encoded_name);
@@ -281,6 +285,123 @@ CREATE UNIQUE INDEX IF NOT EXISTS uniq_session_tickets_slug_ticket
 # brand-new DB still gets everything in one shot through SCHEMA_SQL.
 SCHEMA_SQL = SCHEMA_SQL + _TICKETS_SCHEMA_SQL
 
+# Background shells + cron tables (v13) — extracted into a separate constant
+# so they can be applied UNCONDITIONALLY at ensure_schema() time, same
+# cross-branch safety story as _TICKETS_SCHEMA_SQL above. All statements
+# are CREATE … IF NOT EXISTS and therefore safe to re-run.
+#
+# Design notes:
+#   - One row per logical entity (shell / cron job), keyed by tool_use_id
+#     which is globally unique in Claude's JSONL.
+#   - UPSERT (ON CONFLICT … DO UPDATE) is used in indexer writes — never
+#     INSERT OR REPLACE — so the parent row's `id` is preserved and child
+#     CASCADE deletes don't churn on re-index.
+#   - cron_fires is intentionally absent: fire times are derived on read by
+#     joining cron_jobs to message_uuids and assistant turn timestamps.
+#     Avoids baking croniter's matching window into the DB.
+_SHELLS_CRON_SCHEMA_SQL = """
+-- Background shells: one row per spawned background Bash or Monitor process.
+-- Reconstructed from JSONL by the indexer; represents immutable history.
+CREATE TABLE IF NOT EXISTS background_shells (
+    id                       INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_uuid             TEXT    NOT NULL,
+    tool_use_id              TEXT    NOT NULL,
+    shell_id                 TEXT,
+    tool_name                TEXT    NOT NULL CHECK (tool_name IN ('Bash','Monitor')),
+    command                  TEXT    NOT NULL,
+    command_truncated        INTEGER NOT NULL DEFAULT 0 CHECK (command_truncated IN (0,1)),
+    description              TEXT,
+    is_persistent            INTEGER NOT NULL DEFAULT 0 CHECK (is_persistent IN (0,1)),
+    timeout_ms               INTEGER,
+    spawned_at               TEXT    NOT NULL,
+    terminated_at            TEXT,
+    terminated_by            TEXT    CHECK (terminated_by IN ('kill','natural','timeout','session_end')),
+    exit_code                INTEGER,
+    poll_count               INTEGER NOT NULL DEFAULT 0,
+    total_output_bytes       INTEGER NOT NULL DEFAULT 0,
+    last_output_at           TEXT,
+    spawn_message_uuid       TEXT,
+    CHECK ((terminated_at IS NULL) = (terminated_by IS NULL)),
+    FOREIGN KEY (session_uuid)       REFERENCES sessions(uuid)            ON DELETE CASCADE,
+    FOREIGN KEY (spawn_message_uuid) REFERENCES message_uuids(message_uuid) ON DELETE SET NULL,
+    UNIQUE(tool_use_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_bg_shells_session
+    ON background_shells(session_uuid, spawned_at DESC);
+CREATE INDEX IF NOT EXISTS idx_bg_shells_shell_id
+    ON background_shells(shell_id) WHERE shell_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_bg_shells_spawned
+    ON background_shells(spawned_at DESC);
+
+-- One row per BashOutput poll. Output excerpt stored inline (4KB); full
+-- content remains in JSONL and is re-read on demand by router endpoints.
+CREATE TABLE IF NOT EXISTS shell_polls (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    shell_row_id      INTEGER NOT NULL,
+    polled_at         TEXT    NOT NULL,
+    filter_pattern    TEXT,
+    output_bytes      INTEGER NOT NULL DEFAULT 0,
+    output_excerpt    TEXT,
+    output_truncated  INTEGER NOT NULL DEFAULT 0 CHECK (output_truncated IN (0,1)),
+    tool_use_id       TEXT    NOT NULL,
+    FOREIGN KEY (shell_row_id) REFERENCES background_shells(id) ON DELETE CASCADE,
+    UNIQUE(shell_row_id, tool_use_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_shell_polls_shell
+    ON shell_polls(shell_row_id, polled_at DESC);
+
+-- Cron jobs: one row per CronCreate tool_use. Reconstructed from JSONL.
+-- deleted_at / deleted_via fold in CronDelete events; coherence CHECK
+-- ensures the two NULL/non-NULL together.
+CREATE TABLE IF NOT EXISTS cron_jobs (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_uuid        TEXT    NOT NULL,
+    tool_use_id         TEXT    NOT NULL,
+    cron_id             TEXT,
+    cron_expression     TEXT    NOT NULL,
+    prompt              TEXT    NOT NULL,
+    recurring           INTEGER NOT NULL DEFAULT 0 CHECK (recurring IN (0,1)),
+    created_at          TEXT    NOT NULL,
+    deleted_at          TEXT,
+    deleted_via         TEXT    CHECK (deleted_via IN ('CronDelete','session_end','expiry','unknown')),
+    ttl_expires_at      TEXT    NOT NULL,
+    create_message_uuid TEXT,
+    CHECK ((deleted_at IS NULL) = (deleted_via IS NULL)),
+    FOREIGN KEY (session_uuid)        REFERENCES sessions(uuid)            ON DELETE CASCADE,
+    FOREIGN KEY (create_message_uuid) REFERENCES message_uuids(message_uuid) ON DELETE SET NULL,
+    UNIQUE(tool_use_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_cron_jobs_session
+    ON cron_jobs(session_uuid, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_cron_jobs_cron_id
+    ON cron_jobs(cron_id) WHERE cron_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_cron_jobs_active
+    ON cron_jobs(ttl_expires_at) WHERE deleted_at IS NULL;
+
+-- Cron live-state snapshots: optional, populated by cron_state_capture.py
+-- hook on every CronCreate/CronDelete/CronList tool call. payload_json
+-- holds the raw CronList result so the schema doesn't need to track
+-- Claude's internal cron representation.
+CREATE TABLE IF NOT EXISTS cron_state_snapshots (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_uuid    TEXT    NOT NULL,
+    captured_at     TEXT    NOT NULL,
+    trigger_event   TEXT    NOT NULL CHECK (trigger_event IN ('CronCreate','CronDelete','CronList','session_start')),
+    payload_json    TEXT    NOT NULL,
+    FOREIGN KEY (session_uuid) REFERENCES sessions(uuid) ON DELETE CASCADE,
+    UNIQUE(session_uuid, trigger_event, captured_at)
+);
+
+CREATE INDEX IF NOT EXISTS idx_cron_state_session
+    ON cron_state_snapshots(session_uuid, captured_at DESC);
+"""
+
+# Append to canonical fresh-install schema.
+SCHEMA_SQL = SCHEMA_SQL + _SHELLS_CRON_SCHEMA_SQL
+
 
 def ensure_schema(conn: sqlite3.Connection) -> None:
     """
@@ -295,6 +416,12 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
     # CREATE TABLE IF NOT EXISTS statements make this a no-op when the
     # tables already exist.
     conn.executescript(_TICKETS_SCHEMA_SQL)
+
+    # Same cross-branch guard for v13 bg-shells/cron tables. All statements
+    # inside are CREATE … IF NOT EXISTS so re-running is a no-op. The
+    # sessions.needs_shell_cron_reindex ALTER is handled separately in the
+    # v13 incremental block below (ALTER is not idempotent).
+    conn.executescript(_SHELLS_CRON_SCHEMA_SQL)
 
     # Check current version
     try:
@@ -564,6 +691,28 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
                 # Gated by the same projects-table guard because if projects
                 # doesn't exist, sessions doesn't either in the minimal fixture.
                 conn.execute("UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1")
+
+        if current_version < 13:
+            logger.info(
+                "Migrating → v13: bg-shells/cron tables + "
+                "sessions.needs_shell_cron_reindex flag"
+            )
+            # The CREATE TABLE block for the new tables already ran in the
+            # unconditional executescript() above, so we only need the ALTER
+            # here. Guarded against the minimum-fixture case where sessions
+            # may not exist (same pattern as v12).
+            sessions_cols = {
+                r[1] for r in conn.execute("PRAGMA table_info(sessions)").fetchall()
+            }
+            if sessions_cols and "needs_shell_cron_reindex" not in sessions_cols:
+                # NOT NULL DEFAULT 1 flags every existing row for the bg-shells/
+                # cron extraction pass. The indexer clears the flag after
+                # processing each session, converging on idle without
+                # blocking startup.
+                conn.execute(
+                    "ALTER TABLE sessions ADD COLUMN needs_shell_cron_reindex "
+                    "INTEGER NOT NULL DEFAULT 1"
+                )
 
     # Record version
     conn.execute(
