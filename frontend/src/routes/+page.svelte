@@ -14,7 +14,10 @@
 		Cable,
 		Webhook,
 		Terminal,
-		Ticket
+		Ticket,
+		Activity,
+		Clock,
+		Info
 	} from 'lucide-svelte';
 </script>
 
@@ -34,6 +37,9 @@
 		<NavigationCard title="Plugins" href="/plugins" icon={Puzzle} color="violet" />
 		<NavigationCard title="Tickets" href="/tickets" icon={Ticket} color="amber" />
 		<NavigationCard title="Settings" href="/settings" icon={Settings} color="indigo" />
+		<NavigationCard title="Shells" href="/shells" icon={Activity} color="green" />
+		<NavigationCard title="Cron" href="/cron" icon={Clock} color="yellow" />
+		<NavigationCard title="About" href="/about" icon={Info} color="gray" />
 	</div>
 
 	<!-- Live Sessions Terminal -->
