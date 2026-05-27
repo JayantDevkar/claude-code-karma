@@ -47,6 +47,26 @@ _SHELL_ID_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Modern Claude Code (post-BashOutput) reports the output file path in the
+# Bash{run_in_background} tool_result and instructs the agent to Read it.
+# Pattern: "Output is being written to: /private/tmp/.../tasks/abc.output."
+_OUTPUT_FILE_RE = re.compile(
+    r"Output is being written to:\s*(\S+\.output)",
+    re.IGNORECASE,
+)
+
+# When a background shell exits naturally, Claude Code writes a user message
+# whose content is a raw XML string (not a list of blocks):
+#   <task-notification>
+#     <task-id>bx93dg00s</task-id>
+#     <tool-use-id>toolu_01Wqvk3U47...</tool-use-id>
+#     <status>completed</status>
+#     <summary>... completed (exit code 0)</summary>
+#   </task-notification>
+_TASK_NOTIF_TOOL_USE_ID_RE = re.compile(r"<tool-use-id>\s*(.*?)\s*</tool-use-id>")
+_TASK_NOTIF_STATUS_RE = re.compile(r"<status>\s*(.*?)\s*</status>")
+_TASK_NOTIF_EXIT_CODE_RE = re.compile(r"exit code\s+(\d+)", re.IGNORECASE)
+
 # Cron job IDs are documented as 8-char alphanumeric. Real formats observed:
 #   "task created with ID: a4f9b2c1" or "id": "a4f9b2c1" in JSON.
 _CRON_ID_RE = re.compile(
@@ -107,6 +127,33 @@ def _extract_shell_id(result_text: str) -> Optional[str]:
     return m.group(1) if m else None
 
 
+def _extract_output_file(result_text: str) -> Optional[str]:
+    m = _OUTPUT_FILE_RE.search(result_text)
+    return m.group(1) if m else None
+
+
+def _parse_task_notification(content: str) -> Optional[Dict[str, Any]]:
+    """
+    Parse a <task-notification> string written by Claude Code when a background
+    shell exits naturally. Returns a dict with tool_use_id, terminated_by, and
+    exit_code, or None if the string doesn't match.
+    """
+    if "<task-notification>" not in content:
+        return None
+    tu_m = _TASK_NOTIF_TOOL_USE_ID_RE.search(content)
+    st_m = _TASK_NOTIF_STATUS_RE.search(content)
+    if not tu_m or not st_m:
+        return None
+    status = st_m.group(1).lower()
+    terminated_by = "timeout" if status == "timeout" else "natural"
+    ec_m = _TASK_NOTIF_EXIT_CODE_RE.search(content)
+    return {
+        "tool_use_id": tu_m.group(1),
+        "terminated_by": terminated_by,
+        "exit_code": int(ec_m.group(1)) if ec_m else None,
+    }
+
+
 def _extract_cron_id(result_text: str) -> Optional[str]:
     m = _CRON_ID_RE.search(result_text)
     return m.group(1) if m else None
@@ -155,6 +202,11 @@ def extract_shells_and_cron(
     # Buffered BashOutput rows pending their tool_result (which carries bytes)
     pending_polls: Dict[str, Dict[str, Any]] = {}  # by BashOutput tool_use_id
     polls: List[Dict[str, Any]] = []
+    # Modern Claude Code polls via Read on the output file instead of BashOutput.
+    # Map: output_file_path → parent shell tool_use_id
+    shell_output_files: Dict[str, str] = {}
+    # Buffered Read-poll rows pending their tool_result
+    pending_read_polls: Dict[str, Dict[str, Any]] = {}  # by Read tool_use_id
 
     # Cron, keyed by CronCreate tool_use_id
     crons_by_tool_use: Dict[str, Dict[str, Any]] = {}
@@ -165,6 +217,20 @@ def extract_shells_and_cron(
         msg = obj.get("message") or {}
         msg_uuid = obj.get("uuid")
         content = msg.get("content")
+
+        # task-notification: user message whose content is a raw XML string
+        # (not a list of blocks) written when a bg shell exits naturally.
+        if isinstance(content, str):
+            info = _parse_task_notification(content)
+            if info:
+                shell = shells_by_tool_use.get(info["tool_use_id"])
+                if shell and shell["terminated_at"] is None:
+                    shell["terminated_at"] = ts
+                    shell["terminated_by"] = info["terminated_by"]
+                    if info["exit_code"] is not None:
+                        shell["exit_code"] = info["exit_code"]
+            continue
+
         if not isinstance(content, list):
             continue
 
@@ -204,6 +270,7 @@ def extract_shells_and_cron(
                         "total_output_bytes": 0,
                         "last_output_at": None,
                         "spawn_message_uuid": msg_uuid,
+                        "output_file_path": None,
                     }
 
                 # Monitor (always background-like; streams output)
@@ -227,6 +294,7 @@ def extract_shells_and_cron(
                         "total_output_bytes": 0,
                         "last_output_at": None,
                         "spawn_message_uuid": msg_uuid,
+                        "output_file_path": None,
                     }
 
                 # BashOutput — buffer until we see the tool_result (which has bytes)
@@ -237,6 +305,16 @@ def extract_shells_and_cron(
                         "filter_pattern": inp.get("filter"),
                         "tool_use_id": tu_id,
                     }
+
+                # Read on a known shell output file — modern polling path
+                elif name == "Read":
+                    file_path = inp.get("file_path") or ""
+                    if file_path in shell_output_files:
+                        pending_read_polls[tu_id] = {
+                            "_parent_tool_use_id": shell_output_files[file_path],
+                            "polled_at": ts,
+                            "tool_use_id": tu_id,
+                        }
 
                 # KillShell — close out the parent shell
                 elif name == "KillShell":
@@ -284,13 +362,17 @@ def extract_shells_and_cron(
                     continue
                 text = _flatten_result_content(c.get("content"))
 
-                # bg-shell spawn result → extract shell_id
+                # bg-shell spawn result → extract shell_id + output file path
                 if ref_id in shells_by_tool_use:
                     row = shells_by_tool_use[ref_id]
                     sid = _extract_shell_id(text)
                     if sid and not row["shell_id"]:
                         row["shell_id"] = sid
                         shell_id_to_tu[sid] = ref_id
+                    out_file = _extract_output_file(text)
+                    if out_file:
+                        shell_output_files[out_file] = ref_id
+                        row["output_file_path"] = out_file
 
                 # CronCreate result → extract cron_id
                 elif ref_id in crons_by_tool_use:
@@ -299,6 +381,27 @@ def extract_shells_and_cron(
                     if cid and not row["cron_id"]:
                         row["cron_id"] = cid
                         cron_id_to_tu[cid] = ref_id
+
+                # Read-on-output-file result → finalize as a poll
+                elif ref_id in pending_read_polls:
+                    poll_info = pending_read_polls.pop(ref_id)
+                    parent_tu = poll_info["_parent_tool_use_id"]
+                    parent = shells_by_tool_use.get(parent_tu)
+                    if parent is not None:
+                        excerpt, excerpt_trunc = _truncate(text, OUTPUT_EXCERPT_MAX_BYTES)
+                        output_bytes = len(text.encode("utf-8", errors="replace"))
+                        polls.append({
+                            "_parent_tool_use_id": parent_tu,
+                            "polled_at": poll_info["polled_at"],
+                            "filter_pattern": None,
+                            "output_bytes": output_bytes,
+                            "output_excerpt": excerpt if output_bytes else None,
+                            "output_truncated": 1 if excerpt_trunc else 0,
+                            "tool_use_id": poll_info["tool_use_id"],
+                        })
+                        parent["poll_count"] += 1
+                        parent["total_output_bytes"] += output_bytes
+                        parent["last_output_at"] = poll_info["polled_at"]
 
                 # BashOutput result → finalize the poll, update parent counters
                 elif ref_id in pending_polls:
@@ -366,12 +469,12 @@ INSERT INTO background_shells (
     session_uuid, tool_use_id, shell_id, tool_name, command, command_truncated,
     description, is_persistent, timeout_ms, spawned_at, terminated_at,
     terminated_by, exit_code, poll_count, total_output_bytes, last_output_at,
-    spawn_message_uuid
+    spawn_message_uuid, output_file_path
 ) VALUES (
     :session_uuid, :tool_use_id, :shell_id, :tool_name, :command, :command_truncated,
     :description, :is_persistent, :timeout_ms, :spawned_at, :terminated_at,
     :terminated_by, :exit_code, :poll_count, :total_output_bytes, :last_output_at,
-    :spawn_message_uuid
+    :spawn_message_uuid, :output_file_path
 )
 ON CONFLICT(tool_use_id) DO UPDATE SET
     shell_id           = excluded.shell_id,
@@ -387,7 +490,8 @@ ON CONFLICT(tool_use_id) DO UPDATE SET
     poll_count         = excluded.poll_count,
     total_output_bytes = excluded.total_output_bytes,
     last_output_at     = excluded.last_output_at,
-    spawn_message_uuid = excluded.spawn_message_uuid
+    spawn_message_uuid = excluded.spawn_message_uuid,
+    output_file_path   = excluded.output_file_path
 """
 
 _UPSERT_POLL_SQL = """

@@ -14,11 +14,14 @@ read-path convention.
 from __future__ import annotations
 
 import logging
+import shutil
+import subprocess
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 
-from db.connection import sqlite_read
+from db.connection import get_writer_db, sqlite_read
 from db.queries_shells_cron import (
     get_shells_for_session,
     get_shells_global,
@@ -100,3 +103,73 @@ def list_shells_for_session(
             raise HTTPException(status_code=404, detail="session not found")
         rows = get_shells_for_session(conn, uuid, include_polls=include_polls)
     return {"shells": rows, "count": len(rows), "session_uuid": uuid}
+
+
+# ---------------------------------------------------------------------------
+# Kill
+# ---------------------------------------------------------------------------
+
+
+@router.post("/shells/{tool_use_id}/kill")
+def kill_shell(tool_use_id: str) -> dict:
+    """
+    Attempt to terminate a running background shell by its tool_use_id.
+
+    Looks up the output_file_path stored at index time, uses lsof to find
+    the PID(s) writing to that file, and sends SIGTERM. Falls back to SIGKILL
+    if lsof is unavailable. Always marks the shell as terminated in the DB
+    (terminated_by='kill') regardless of whether a live process was found.
+    """
+    import sqlite3 as _sqlite3
+
+    with sqlite_read() as conn:
+        conn.row_factory = _sqlite3.Row
+        row = conn.execute(
+            "SELECT id, terminated_at, output_file_path FROM background_shells WHERE tool_use_id = ?",
+            (tool_use_id,),
+        ).fetchone()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="shell not found")
+    if row["terminated_at"] is not None:
+        return {"killed": False, "reason": "already terminated"}
+
+    output_file = row["output_file_path"]
+    killed_pids: list[int] = []
+
+    if output_file and shutil.which("lsof"):
+        try:
+            result = subprocess.run(
+                ["lsof", "-F", "p", output_file],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            for line in result.stdout.splitlines():
+                if line.startswith("p"):
+                    try:
+                        pid = int(line[1:])
+                        subprocess.run(["kill", "-TERM", str(pid)], timeout=3)
+                        killed_pids.append(pid)
+                    except (ValueError, subprocess.SubprocessError):
+                        pass
+        except Exception as exc:
+            logger.warning("lsof/kill failed for shell %s: %s", tool_use_id, exc)
+
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.") + "000Z"
+    conn = get_writer_db()
+    conn.execute(
+        """
+        UPDATE background_shells
+        SET terminated_at = ?, terminated_by = 'kill'
+        WHERE tool_use_id = ? AND terminated_at IS NULL
+        """,
+        (now, tool_use_id),
+    )
+    conn.commit()
+
+    return {
+        "killed": True,
+        "pids_signalled": killed_pids,
+        "reason": f"SIGTERM sent to {len(killed_pids)} process(es)" if killed_pids else "no live process found; marked terminated in DB",
+    }

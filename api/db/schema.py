@@ -10,7 +10,7 @@ import sqlite3
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 13
+SCHEMA_VERSION = 18
 
 SCHEMA_SQL = """
 -- Schema versioning
@@ -321,6 +321,7 @@ CREATE TABLE IF NOT EXISTS background_shells (
     total_output_bytes       INTEGER NOT NULL DEFAULT 0,
     last_output_at           TEXT,
     spawn_message_uuid       TEXT,
+    output_file_path         TEXT,
     CHECK ((terminated_at IS NULL) = (terminated_by IS NULL)),
     FOREIGN KEY (session_uuid) REFERENCES sessions(uuid) ON DELETE CASCADE,
     -- No FK on spawn_message_uuid: it's a label, and session-level CASCADE
@@ -713,6 +714,14 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
                 conn.execute(
                     "ALTER TABLE sessions ADD COLUMN needs_shell_cron_reindex "
                     "INTEGER NOT NULL DEFAULT 1"
+                )
+
+        if current_version < 18:
+            logger.info("Migrating → v18: add output_file_path to background_shells")
+            cols = {r[1] for r in conn.execute("PRAGMA table_info(background_shells)").fetchall()}
+            if "output_file_path" not in cols:
+                conn.execute(
+                    "ALTER TABLE background_shells ADD COLUMN output_file_path TEXT"
                 )
 
     # Record version

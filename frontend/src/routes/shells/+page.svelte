@@ -14,6 +14,7 @@
 
 	type Shell = {
 		id: string;
+		toolUseId: string;
 		tool: Tool;
 		command: string;
 		description?: string;
@@ -38,6 +39,7 @@
 		const endMs = running ? Date.now() : new Date(s.terminated_at!).getTime();
 		return {
 			id: s.shell_id ?? s.tool_use_id,
+			toolUseId: s.tool_use_id,
 			tool: s.tool_name.toLowerCase() as Tool,
 			command: s.command,
 			description: s.description ?? undefined,
@@ -63,6 +65,19 @@
 	}
 
 	const shells = $derived((data.shells as BackgroundShell[]).map(toShell));
+
+	// ---- kill ----
+	let killing = $state<Set<string>>(new Set());
+
+	async function killShell(toolUseId: string) {
+		killing = new Set([...killing, toolUseId]);
+		try {
+			await fetch(`/api/shells/${encodeURIComponent(toolUseId)}/kill`, { method: 'POST' });
+			await invalidateAll();
+		} finally {
+			killing = new Set([...killing].filter((id) => id !== toolUseId));
+		}
+	}
 
 	// ---- filters ----
 	let statusFilter = $state<'all' | Status>('all');
@@ -379,7 +394,13 @@
 									</dd>
 								</div>
 								{#if s.status === 'running'}
-									<button class="btn mt-1.5 w-full justify-center">▢ Kill shell</button>
+									<button
+										class="btn mt-1.5 w-full justify-center"
+										disabled={killing.has(s.toolUseId)}
+										onclick={() => killShell(s.toolUseId)}
+									>
+										{killing.has(s.toolUseId) ? '…killing' : '▢ Kill shell'}
+									</button>
 								{/if}
 							</dl>
 

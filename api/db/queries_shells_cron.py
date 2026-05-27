@@ -111,6 +111,7 @@ def get_shells_global(
     status: Optional[str] = None,  # 'running' | 'closed' | None
     tool_name: Optional[str] = None,  # 'Bash' | 'Monitor' | None
     limit: int = 200,
+    include_polls: bool = True,
 ) -> List[Dict[str, Any]]:
     """
     Aggregated background_shells view across all sessions, joined to
@@ -136,7 +137,7 @@ def get_shells_global(
     where_sql = ("WHERE " + " AND ".join(where)) if where else ""
     params.append(int(limit))
 
-    return [
+    shells = [
         _row_to_dict(r)
         for r in conn.execute(
             f"""
@@ -154,6 +155,24 @@ def get_shells_global(
             params,
         )
     ]
+
+    if include_polls and shells:
+        shell_ids = [s["id"] for s in shells]
+        placeholders = ",".join("?" * len(shell_ids))
+        polls_by_shell: Dict[int, List[Dict[str, Any]]] = {sid: [] for sid in shell_ids}
+        for r in conn.execute(
+            f"""
+            SELECT * FROM shell_polls
+            WHERE shell_row_id IN ({placeholders})
+            ORDER BY polled_at ASC
+            """,
+            shell_ids,
+        ):
+            polls_by_shell[r["shell_row_id"]].append(_row_to_dict(r))
+        for s in shells:
+            s["polls"] = polls_by_shell.get(s["id"], [])
+
+    return shells
 
 
 def get_shells_project_rollup(
