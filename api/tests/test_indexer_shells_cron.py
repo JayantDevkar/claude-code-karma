@@ -142,7 +142,7 @@ class TestRegexExtraction:
         assert _SHELL_ID_RE.search("nothing here") is None
 
     def test_cron_id_extraction(self):
-        m = _CRON_ID_RE.search('Task created with ID: a4f9b2c1')
+        m = _CRON_ID_RE.search("Task created with ID: a4f9b2c1")
         assert m is not None
         assert m.group(1) == "a4f9b2c1"
 
@@ -154,13 +154,22 @@ class TestRegexExtraction:
 
 class TestExtraction:
     def test_bg_shell_spawn_extracted(self, tmp_path):
-        jsonl = _write_jsonl(tmp_path / "s.jsonl", [
-            _assistant_tool_use("Bash", "toolu_1", {
-                "command": "npm run dev", "description": "dev server",
-                "run_in_background": True,
-            }, ts=_ts(0)),
-            _tool_result("toolu_1", "Command running in background with ID: bedb379."),
-        ])
+        jsonl = _write_jsonl(
+            tmp_path / "s.jsonl",
+            [
+                _assistant_tool_use(
+                    "Bash",
+                    "toolu_1",
+                    {
+                        "command": "npm run dev",
+                        "description": "dev server",
+                        "run_in_background": True,
+                    },
+                    ts=_ts(0),
+                ),
+                _tool_result("toolu_1", "Command running in background with ID: bedb379."),
+            ],
+        )
         shells, polls, crons = extract_shells_and_cron(jsonl, "s1", session_ended=False)
         assert len(shells) == 1
         assert shells[0]["tool_use_id"] == "toolu_1"
@@ -175,25 +184,43 @@ class TestExtraction:
         assert crons == []
 
     def test_monitor_call_extracted(self, tmp_path):
-        jsonl = _write_jsonl(tmp_path / "s.jsonl", [
-            _assistant_tool_use("Monitor", "toolu_m", {
-                "command": "gh pr checks", "description": "watch CI",
-                "persistent": False, "timeout_ms": 600000,
-            }),
-        ])
+        jsonl = _write_jsonl(
+            tmp_path / "s.jsonl",
+            [
+                _assistant_tool_use(
+                    "Monitor",
+                    "toolu_m",
+                    {
+                        "command": "gh pr checks",
+                        "description": "watch CI",
+                        "persistent": False,
+                        "timeout_ms": 600000,
+                    },
+                ),
+            ],
+        )
         shells, _, _ = extract_shells_and_cron(jsonl, "s1", session_ended=False)
         assert len(shells) == 1
         assert shells[0]["tool_name"] == "Monitor"
         assert shells[0]["timeout_ms"] == 600000
 
     def test_killshell_resolves_via_shell_id(self, tmp_path):
-        jsonl = _write_jsonl(tmp_path / "s.jsonl", [
-            _assistant_tool_use("Bash", "toolu_1", {
-                "command": "sleep 99", "run_in_background": True,
-            }, ts=_ts(0)),
-            _tool_result("toolu_1", "Command running in background with ID: abc12345."),
-            _assistant_tool_use("KillShell", "toolu_k", {"shell_id": "abc12345"}, ts=_ts(1)),
-        ])
+        jsonl = _write_jsonl(
+            tmp_path / "s.jsonl",
+            [
+                _assistant_tool_use(
+                    "Bash",
+                    "toolu_1",
+                    {
+                        "command": "sleep 99",
+                        "run_in_background": True,
+                    },
+                    ts=_ts(0),
+                ),
+                _tool_result("toolu_1", "Command running in background with ID: abc12345."),
+                _assistant_tool_use("KillShell", "toolu_k", {"shell_id": "abc12345"}, ts=_ts(1)),
+            ],
+        )
         shells, _, _ = extract_shells_and_cron(jsonl, "s1", session_ended=False)
         assert len(shells) == 1
         assert shells[0]["terminated_by"] == "kill"
@@ -201,24 +228,37 @@ class TestExtraction:
 
     def test_orphan_killshell_silently_dropped(self, tmp_path):
         """KillShell referencing a shell we never saw spawned in this JSONL."""
-        jsonl = _write_jsonl(tmp_path / "s.jsonl", [
-            _assistant_tool_use("KillShell", "toolu_k", {"shell_id": "unknown"}),
-        ])
+        jsonl = _write_jsonl(
+            tmp_path / "s.jsonl",
+            [
+                _assistant_tool_use("KillShell", "toolu_k", {"shell_id": "unknown"}),
+            ],
+        )
         shells, _, _ = extract_shells_and_cron(jsonl, "s1", session_ended=False)
         assert shells == []
 
     def test_bashoutput_polls_attach_to_parent(self, tmp_path):
-        jsonl = _write_jsonl(tmp_path / "s.jsonl", [
-            _assistant_tool_use("Bash", "toolu_1", {
-                "command": "make", "run_in_background": True,
-            }, ts=_ts(0)),
-            _tool_result("toolu_1", "Command running in background with ID: shellxyz."),
-            _assistant_tool_use("BashOutput", "toolu_p1", {"shell_id": "shellxyz"}, ts=_ts(1)),
-            _tool_result("toolu_p1", "building..."),
-            _assistant_tool_use("BashOutput", "toolu_p2", {"shell_id": "shellxyz",
-                                                              "filter": "ERROR"}, ts=_ts(2)),
-            _tool_result("toolu_p2", "done."),
-        ])
+        jsonl = _write_jsonl(
+            tmp_path / "s.jsonl",
+            [
+                _assistant_tool_use(
+                    "Bash",
+                    "toolu_1",
+                    {
+                        "command": "make",
+                        "run_in_background": True,
+                    },
+                    ts=_ts(0),
+                ),
+                _tool_result("toolu_1", "Command running in background with ID: shellxyz."),
+                _assistant_tool_use("BashOutput", "toolu_p1", {"shell_id": "shellxyz"}, ts=_ts(1)),
+                _tool_result("toolu_p1", "building..."),
+                _assistant_tool_use(
+                    "BashOutput", "toolu_p2", {"shell_id": "shellxyz", "filter": "ERROR"}, ts=_ts(2)
+                ),
+                _tool_result("toolu_p2", "done."),
+            ],
+        )
         shells, polls, _ = extract_shells_and_cron(jsonl, "s1", session_ended=False)
         assert len(shells) == 1
         assert shells[0]["poll_count"] == 2
@@ -230,12 +270,22 @@ class TestExtraction:
         assert all(p["_parent_tool_use_id"] == "toolu_1" for p in polls)
 
     def test_cron_create_extracted(self, tmp_path):
-        jsonl = _write_jsonl(tmp_path / "s.jsonl", [
-            _assistant_tool_use("CronCreate", "toolu_c", {
-                "cron": "*/5 * * * *", "prompt": "ping", "recurring": True,
-            }, ts=_ts(0)),
-            _tool_result("toolu_c", 'Task created with ID: cron0001'),
-        ])
+        jsonl = _write_jsonl(
+            tmp_path / "s.jsonl",
+            [
+                _assistant_tool_use(
+                    "CronCreate",
+                    "toolu_c",
+                    {
+                        "cron": "*/5 * * * *",
+                        "prompt": "ping",
+                        "recurring": True,
+                    },
+                    ts=_ts(0),
+                ),
+                _tool_result("toolu_c", "Task created with ID: cron0001"),
+            ],
+        )
         _, _, crons = extract_shells_and_cron(jsonl, "s1", session_ended=False)
         assert len(crons) == 1
         assert crons[0]["cron_expression"] == "*/5 * * * *"
@@ -248,66 +298,122 @@ class TestExtraction:
         assert (ttl_dt - created_dt).days == 7
 
     def test_cron_delete_folds_into_parent(self, tmp_path):
-        jsonl = _write_jsonl(tmp_path / "s.jsonl", [
-            _assistant_tool_use("CronCreate", "toolu_c", {
-                "cron": "0 9 * * *", "prompt": "x",
-            }, ts=_ts(0)),
-            _tool_result("toolu_c", 'cron_id: cron1111'),
-            _assistant_tool_use("CronDelete", "toolu_d", {"id": "cron1111"}, ts=_ts(5)),
-        ])
+        jsonl = _write_jsonl(
+            tmp_path / "s.jsonl",
+            [
+                _assistant_tool_use(
+                    "CronCreate",
+                    "toolu_c",
+                    {
+                        "cron": "0 9 * * *",
+                        "prompt": "x",
+                    },
+                    ts=_ts(0),
+                ),
+                _tool_result("toolu_c", "cron_id: cron1111"),
+                _assistant_tool_use("CronDelete", "toolu_d", {"id": "cron1111"}, ts=_ts(5)),
+            ],
+        )
         _, _, crons = extract_shells_and_cron(jsonl, "s1", session_ended=False)
         assert len(crons) == 1
         assert crons[0]["deleted_at"] == _ts(5)
         assert crons[0]["deleted_via"] == "CronDelete"
 
     def test_session_ended_marks_orphan_shells(self, tmp_path):
-        jsonl = _write_jsonl(tmp_path / "s.jsonl", [
-            _assistant_tool_use("Bash", "toolu_1", {
-                "command": "x", "run_in_background": True,
-            }, ts=_ts(0)),
-            _tool_result("toolu_1", "Command running in background with ID: leftover1"),
-        ])
+        jsonl = _write_jsonl(
+            tmp_path / "s.jsonl",
+            [
+                _assistant_tool_use(
+                    "Bash",
+                    "toolu_1",
+                    {
+                        "command": "x",
+                        "run_in_background": True,
+                    },
+                    ts=_ts(0),
+                ),
+                _tool_result("toolu_1", "Command running in background with ID: leftover1"),
+            ],
+        )
         shells, _, _ = extract_shells_and_cron(jsonl, "s1", session_ended=True)
         assert shells[0]["terminated_by"] == "session_end"
         assert shells[0]["terminated_at"] is not None
 
     def test_session_open_leaves_shells_running(self, tmp_path):
-        jsonl = _write_jsonl(tmp_path / "s.jsonl", [
-            _assistant_tool_use("Bash", "toolu_1", {
-                "command": "x", "run_in_background": True,
-            }, ts=_ts(0)),
-            _tool_result("toolu_1", "Command running in background with ID: stillrun"),
-        ])
+        jsonl = _write_jsonl(
+            tmp_path / "s.jsonl",
+            [
+                _assistant_tool_use(
+                    "Bash",
+                    "toolu_1",
+                    {
+                        "command": "x",
+                        "run_in_background": True,
+                    },
+                    ts=_ts(0),
+                ),
+                _tool_result("toolu_1", "Command running in background with ID: stillrun"),
+            ],
+        )
         shells, _, _ = extract_shells_and_cron(jsonl, "s1", session_ended=False)
         assert shells[0]["terminated_at"] is None
         assert shells[0]["terminated_by"] is None
 
     def test_command_truncation_flagged(self, tmp_path):
         long_cmd = "x" * 10_000
-        jsonl = _write_jsonl(tmp_path / "s.jsonl", [
-            _assistant_tool_use("Bash", "toolu_1", {
-                "command": long_cmd, "run_in_background": True,
-            }, ts=_ts(0)),
-        ])
+        jsonl = _write_jsonl(
+            tmp_path / "s.jsonl",
+            [
+                _assistant_tool_use(
+                    "Bash",
+                    "toolu_1",
+                    {
+                        "command": long_cmd,
+                        "run_in_background": True,
+                    },
+                    ts=_ts(0),
+                ),
+            ],
+        )
         shells, _, _ = extract_shells_and_cron(jsonl, "s1", session_ended=False)
         assert shells[0]["command_truncated"] == 1
         assert len(shells[0]["command"].encode("utf-8")) <= 4096
 
     def test_tool_result_as_list_content(self, tmp_path):
         """tool_result.content can be either str OR list of {type:text}."""
-        jsonl = _write_jsonl(tmp_path / "s.jsonl", [
-            _assistant_tool_use("Bash", "toolu_1", {
-                "command": "x", "run_in_background": True,
-            }),
-            {
-                "type": "user", "uuid": "r1", "timestamp": _ts(0, 1),
-                "message": {"role": "user", "content": [{
-                    "type": "tool_result", "tool_use_id": "toolu_1",
-                    "content": [{"type": "text",
-                                  "text": "Command running in background with ID: aaa123"}],
-                }]},
-            },
-        ])
+        jsonl = _write_jsonl(
+            tmp_path / "s.jsonl",
+            [
+                _assistant_tool_use(
+                    "Bash",
+                    "toolu_1",
+                    {
+                        "command": "x",
+                        "run_in_background": True,
+                    },
+                ),
+                {
+                    "type": "user",
+                    "uuid": "r1",
+                    "timestamp": _ts(0, 1),
+                    "message": {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": "toolu_1",
+                                "content": [
+                                    {
+                                        "type": "text",
+                                        "text": "Command running in background with ID: aaa123",
+                                    }
+                                ],
+                            }
+                        ],
+                    },
+                },
+            ],
+        )
         shells, _, _ = extract_shells_and_cron(jsonl, "s1", session_ended=False)
         assert shells[0]["shell_id"] == "aaa123"
 
@@ -320,14 +426,23 @@ class TestExtraction:
 class TestPersistence:
     def test_persist_inserts_shells_and_polls(self, mem_db, tmp_path):
         _seed_session(mem_db)
-        jsonl = _write_jsonl(tmp_path / "s.jsonl", [
-            _assistant_tool_use("Bash", "toolu_1", {
-                "command": "x", "run_in_background": True,
-            }, ts=_ts(0)),
-            _tool_result("toolu_1", "Command running in background with ID: shell001"),
-            _assistant_tool_use("BashOutput", "toolu_p1", {"shell_id": "shell001"}, ts=_ts(1)),
-            _tool_result("toolu_p1", "hello"),
-        ])
+        jsonl = _write_jsonl(
+            tmp_path / "s.jsonl",
+            [
+                _assistant_tool_use(
+                    "Bash",
+                    "toolu_1",
+                    {
+                        "command": "x",
+                        "run_in_background": True,
+                    },
+                    ts=_ts(0),
+                ),
+                _tool_result("toolu_1", "Command running in background with ID: shell001"),
+                _assistant_tool_use("BashOutput", "toolu_p1", {"shell_id": "shell001"}, ts=_ts(1)),
+                _tool_result("toolu_p1", "hello"),
+            ],
+        )
         shells, polls, crons = extract_shells_and_cron(jsonl, "s1", session_ended=True)
         persist_shells_and_cron(mem_db, "s1", shells, polls, crons)
 
@@ -343,12 +458,20 @@ class TestPersistence:
 
     def test_upsert_preserves_parent_id(self, mem_db, tmp_path):
         _seed_session(mem_db)
-        jsonl = _write_jsonl(tmp_path / "s.jsonl", [
-            _assistant_tool_use("Bash", "toolu_1", {
-                "command": "x", "run_in_background": True,
-            }),
-            _tool_result("toolu_1", "Command running in background with ID: shell001"),
-        ])
+        jsonl = _write_jsonl(
+            tmp_path / "s.jsonl",
+            [
+                _assistant_tool_use(
+                    "Bash",
+                    "toolu_1",
+                    {
+                        "command": "x",
+                        "run_in_background": True,
+                    },
+                ),
+                _tool_result("toolu_1", "Command running in background with ID: shell001"),
+            ],
+        )
         shells, polls, crons = extract_shells_and_cron(jsonl, "s1", session_ended=True)
         persist_shells_and_cron(mem_db, "s1", shells, polls, crons)
         id_before = mem_db.execute("SELECT id FROM background_shells").fetchone()[0]
@@ -361,25 +484,39 @@ class TestPersistence:
 
     def test_persist_clears_reindex_flag(self, mem_db):
         _seed_session(mem_db)
-        assert mem_db.execute(
-            "SELECT needs_shell_cron_reindex FROM sessions WHERE uuid=?", ("s1",)
-        ).fetchone()[0] == 1
+        assert (
+            mem_db.execute(
+                "SELECT needs_shell_cron_reindex FROM sessions WHERE uuid=?", ("s1",)
+            ).fetchone()[0]
+            == 1
+        )
         persist_shells_and_cron(mem_db, "s1", [], [], [])
-        assert mem_db.execute(
-            "SELECT needs_shell_cron_reindex FROM sessions WHERE uuid=?", ("s1",)
-        ).fetchone()[0] == 0
+        assert (
+            mem_db.execute(
+                "SELECT needs_shell_cron_reindex FROM sessions WHERE uuid=?", ("s1",)
+            ).fetchone()[0]
+            == 0
+        )
 
     def test_polls_dedupe_on_reindex(self, mem_db, tmp_path):
         """Re-running a JSONL with same BashOutput tool_use_ids must not duplicate."""
         _seed_session(mem_db)
-        jsonl = _write_jsonl(tmp_path / "s.jsonl", [
-            _assistant_tool_use("Bash", "toolu_1", {
-                "command": "x", "run_in_background": True,
-            }),
-            _tool_result("toolu_1", "Command running in background with ID: shell001"),
-            _assistant_tool_use("BashOutput", "toolu_p1", {"shell_id": "shell001"}),
-            _tool_result("toolu_p1", "out"),
-        ])
+        jsonl = _write_jsonl(
+            tmp_path / "s.jsonl",
+            [
+                _assistant_tool_use(
+                    "Bash",
+                    "toolu_1",
+                    {
+                        "command": "x",
+                        "run_in_background": True,
+                    },
+                ),
+                _tool_result("toolu_1", "Command running in background with ID: shell001"),
+                _assistant_tool_use("BashOutput", "toolu_p1", {"shell_id": "shell001"}),
+                _tool_result("toolu_p1", "out"),
+            ],
+        )
         for _ in range(3):
             shells, polls, crons = extract_shells_and_cron(jsonl, "s1", session_ended=True)
             persist_shells_and_cron(mem_db, "s1", shells, polls, crons)
@@ -430,14 +567,22 @@ class TestSchemaConstraints:
 
     def test_cascade_delete_session_clears_children(self, mem_db, tmp_path):
         _seed_session(mem_db)
-        jsonl = _write_jsonl(tmp_path / "s.jsonl", [
-            _assistant_tool_use("Bash", "toolu_1", {
-                "command": "x", "run_in_background": True,
-            }),
-            _tool_result("toolu_1", "Command running in background with ID: shell01"),
-            _assistant_tool_use("BashOutput", "toolu_p", {"shell_id": "shell01"}),
-            _tool_result("toolu_p", "out"),
-        ])
+        jsonl = _write_jsonl(
+            tmp_path / "s.jsonl",
+            [
+                _assistant_tool_use(
+                    "Bash",
+                    "toolu_1",
+                    {
+                        "command": "x",
+                        "run_in_background": True,
+                    },
+                ),
+                _tool_result("toolu_1", "Command running in background with ID: shell01"),
+                _assistant_tool_use("BashOutput", "toolu_p", {"shell_id": "shell01"}),
+                _tool_result("toolu_p", "out"),
+            ],
+        )
         shells, polls, crons = extract_shells_and_cron(jsonl, "s1", session_ended=True)
         persist_shells_and_cron(mem_db, "s1", shells, polls, crons)
 
@@ -455,8 +600,7 @@ class TestSchemaConstraints:
 
 
 class TestHookIngestion:
-    def _write_events(self, karma_dir: Path, session: str,
-                      events: List[Dict[str, Any]]) -> Path:
+    def _write_events(self, karma_dir: Path, session: str, events: List[Dict[str, Any]]) -> Path:
         d = karma_dir / "cron-state" / session
         d.mkdir(parents=True, exist_ok=True)
         with (d / "events.jsonl").open("w") as fp:
@@ -466,41 +610,72 @@ class TestHookIngestion:
 
     def test_inserts_known_events(self, mem_db, tmp_path):
         _seed_session(mem_db)
-        self._write_events(tmp_path, "s1", [
-            {"captured_at": "2026-05-25T01:00:00Z", "trigger_event": "CronCreate",
-             "tool_response": {"id": "c1"}},
-            {"captured_at": "2026-05-25T01:01:00Z", "trigger_event": "CronList",
-             "tool_response": {"jobs": []}},
-        ])
+        self._write_events(
+            tmp_path,
+            "s1",
+            [
+                {
+                    "captured_at": "2026-05-25T01:00:00Z",
+                    "trigger_event": "CronCreate",
+                    "tool_response": {"id": "c1"},
+                },
+                {
+                    "captured_at": "2026-05-25T01:01:00Z",
+                    "trigger_event": "CronList",
+                    "tool_response": {"jobs": []},
+                },
+            ],
+        )
         inserted = sync_cron_state_snapshots(mem_db, tmp_path)
         assert inserted == 2
         assert mem_db.execute("SELECT COUNT(*) FROM cron_state_snapshots").fetchone()[0] == 2
 
     def test_idempotent_resync(self, mem_db, tmp_path):
         _seed_session(mem_db)
-        self._write_events(tmp_path, "s1", [
-            {"captured_at": "2026-05-25T01:00:00Z", "trigger_event": "CronCreate",
-             "tool_response": {}},
-        ])
+        self._write_events(
+            tmp_path,
+            "s1",
+            [
+                {
+                    "captured_at": "2026-05-25T01:00:00Z",
+                    "trigger_event": "CronCreate",
+                    "tool_response": {},
+                },
+            ],
+        )
         sync_cron_state_snapshots(mem_db, tmp_path)
         inserted2 = sync_cron_state_snapshots(mem_db, tmp_path)
         assert inserted2 == 0
 
     def test_skips_unknown_trigger_event(self, mem_db, tmp_path):
         _seed_session(mem_db)
-        self._write_events(tmp_path, "s1", [
-            {"captured_at": "2026-05-25T01:00:00Z", "trigger_event": "NotAValidEvent",
-             "tool_response": {}},
-        ])
+        self._write_events(
+            tmp_path,
+            "s1",
+            [
+                {
+                    "captured_at": "2026-05-25T01:00:00Z",
+                    "trigger_event": "NotAValidEvent",
+                    "tool_response": {},
+                },
+            ],
+        )
         assert sync_cron_state_snapshots(mem_db, tmp_path) == 0
 
     def test_orphan_session_skipped_silently(self, mem_db, tmp_path):
         """When session_uuid has no row in sessions, FK violation → skip."""
         # No _seed_session — sessions table is empty
-        self._write_events(tmp_path, "ghost-session", [
-            {"captured_at": "2026-05-25T01:00:00Z", "trigger_event": "CronCreate",
-             "tool_response": {}},
-        ])
+        self._write_events(
+            tmp_path,
+            "ghost-session",
+            [
+                {
+                    "captured_at": "2026-05-25T01:00:00Z",
+                    "trigger_event": "CronCreate",
+                    "tool_response": {},
+                },
+            ],
+        )
         # Must not raise
         assert sync_cron_state_snapshots(mem_db, tmp_path) == 0
 
@@ -514,15 +689,20 @@ class TestHookIngestion:
 
 
 class TestFireInference:
-    def _make_cron(self, expr: str = "*/15 * * * *", created_min: int = 0,
-                   ttl_hours: int = 2, recurring: bool = True) -> Dict[str, Any]:
+    def _make_cron(
+        self,
+        expr: str = "*/15 * * * *",
+        created_min: int = 0,
+        ttl_hours: int = 2,
+        recurring: bool = True,
+    ) -> Dict[str, Any]:
         created = datetime(2026, 5, 25, 0, created_min, 0, tzinfo=timezone.utc)
         return {
             "created_at": created.isoformat().replace("+00:00", "Z"),
             "deleted_at": None,
-            "ttl_expires_at": (
-                created + timedelta(hours=ttl_hours)
-            ).isoformat().replace("+00:00", "Z"),
+            "ttl_expires_at": (created + timedelta(hours=ttl_hours))
+            .isoformat()
+            .replace("+00:00", "Z"),
             "cron_expression": expr,
             "recurring": 1 if recurring else 0,
         }
@@ -534,21 +714,28 @@ class TestFireInference:
             # Use timedelta math so callers can pass seconds > 59 to land
             # outside the matching window without tripping datetime bounds.
             ts = base + timedelta(minutes=minute, seconds=second)
-            lines.append({
-                "type": "assistant",
-                "uuid": f"u-{minute}-{second}",
-                "timestamp": ts.isoformat().replace("+00:00", "Z"),
-                "message": {"content": [{"type": "text", "text": f"resp at {minute}:{second}"}]},
-            })
+            lines.append(
+                {
+                    "type": "assistant",
+                    "uuid": f"u-{minute}-{second}",
+                    "timestamp": ts.isoformat().replace("+00:00", "Z"),
+                    "message": {
+                        "content": [{"type": "text", "text": f"resp at {minute}:{second}"}]
+                    },
+                }
+            )
         return _write_jsonl(path, lines)
 
     def test_match_within_window(self, tmp_path):
         cron = self._make_cron()
-        jsonl = self._make_jsonl_with_turns(tmp_path / "s.jsonl", [
-            (15, 2),   # close to scheduled 15:00 → high confidence
-            (30, 30),  # half-window from 30:00 → mid confidence
-            (45, 200), # 200s off, outside ±60s → drop
-        ])
+        jsonl = self._make_jsonl_with_turns(
+            tmp_path / "s.jsonl",
+            [
+                (15, 2),  # close to scheduled 15:00 → high confidence
+                (30, 30),  # half-window from 30:00 → mid confidence
+                (45, 200),  # 200s off, outside ±60s → drop
+            ],
+        )
         fires = infer_cron_fires(jsonl, cron)
         assert len(fires) == 2
         assert fires[0]["inference_confidence"] > 0.9
@@ -578,9 +765,14 @@ class TestFireInference:
     def test_one_shot_no_recurrence(self, tmp_path):
         cron = self._make_cron(expr="*/15 * * * *", recurring=False)
         # 3 turns, all near scheduled times → only the first counts
-        jsonl = self._make_jsonl_with_turns(tmp_path / "s.jsonl", [
-            (15, 5), (30, 5), (45, 5),
-        ])
+        jsonl = self._make_jsonl_with_turns(
+            tmp_path / "s.jsonl",
+            [
+                (15, 5),
+                (30, 5),
+                (45, 5),
+            ],
+        )
         fires = infer_cron_fires(jsonl, cron)
         assert len(fires) <= 1
 
@@ -604,19 +796,34 @@ class TestQueryHelpers:
         _seed_session(mem_db, "s1")
         _seed_project(mem_db)
         # shell IDs need to be 6-16 chars (matches Claude Code's real 8-char format)
-        jsonl = _write_jsonl(tmp_path / "s.jsonl", [
-            _assistant_tool_use("Bash", "toolu_1", {
-                "command": "running", "run_in_background": True,
-            }, ts=_ts(0)),
-            _tool_result("toolu_1", "Command running in background with ID: alphaa1"),
-            _assistant_tool_use("Bash", "toolu_2", {
-                "command": "killed", "run_in_background": True,
-            }, ts=_ts(1)),
-            _tool_result("toolu_2", "Command running in background with ID: betab22"),
-            _assistant_tool_use("KillShell", "toolu_k", {"shell_id": "betab22"}, ts=_ts(2)),
-            _assistant_tool_use("BashOutput", "toolu_p", {"shell_id": "alphaa1"}, ts=_ts(3)),
-            _tool_result("toolu_p", "running output"),
-        ])
+        jsonl = _write_jsonl(
+            tmp_path / "s.jsonl",
+            [
+                _assistant_tool_use(
+                    "Bash",
+                    "toolu_1",
+                    {
+                        "command": "running",
+                        "run_in_background": True,
+                    },
+                    ts=_ts(0),
+                ),
+                _tool_result("toolu_1", "Command running in background with ID: alphaa1"),
+                _assistant_tool_use(
+                    "Bash",
+                    "toolu_2",
+                    {
+                        "command": "killed",
+                        "run_in_background": True,
+                    },
+                    ts=_ts(1),
+                ),
+                _tool_result("toolu_2", "Command running in background with ID: betab22"),
+                _assistant_tool_use("KillShell", "toolu_k", {"shell_id": "betab22"}, ts=_ts(2)),
+                _assistant_tool_use("BashOutput", "toolu_p", {"shell_id": "alphaa1"}, ts=_ts(3)),
+                _tool_result("toolu_p", "running output"),
+            ],
+        )
         shells, polls, crons = extract_shells_and_cron(jsonl, "s1", session_ended=False)
         persist_shells_and_cron(mem_db, "s1", shells, polls, crons)
 
@@ -687,28 +894,33 @@ class TestQueryHelpers:
         _seed_session(mem_db)
         _seed_project(mem_db)
         now_iso = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-        future = (
-            datetime.now(timezone.utc) + timedelta(days=3)
-        ).isoformat().replace("+00:00", "Z")
-        past = (
-            datetime.now(timezone.utc) - timedelta(days=1)
-        ).isoformat().replace("+00:00", "Z")
-        mem_db.execute("""
+        future = (datetime.now(timezone.utc) + timedelta(days=3)).isoformat().replace("+00:00", "Z")
+        past = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat().replace("+00:00", "Z")
+        mem_db.execute(
+            """
             INSERT INTO cron_jobs (session_uuid, tool_use_id, cron_expression, prompt,
                                     recurring, created_at, ttl_expires_at)
             VALUES ('s1', 'toolu_active', '* * * * *', 'p', 1, ?, ?)
-        """, (now_iso, future))
-        mem_db.execute("""
+        """,
+            (now_iso, future),
+        )
+        mem_db.execute(
+            """
             INSERT INTO cron_jobs (session_uuid, tool_use_id, cron_expression, prompt,
                                     recurring, created_at, ttl_expires_at,
                                     deleted_at, deleted_via)
             VALUES ('s1', 'toolu_deleted', '* * * * *', 'p', 1, ?, ?, ?, 'CronDelete')
-        """, (now_iso, future, now_iso))
-        mem_db.execute("""
+        """,
+            (now_iso, future, now_iso),
+        )
+        mem_db.execute(
+            """
             INSERT INTO cron_jobs (session_uuid, tool_use_id, cron_expression, prompt,
                                     recurring, created_at, ttl_expires_at)
             VALUES ('s1', 'toolu_expired', '* * * * *', 'p', 1, ?, ?)
-        """, (now_iso, past))
+        """,
+            (now_iso, past),
+        )
 
         all_three = get_cron_global(mem_db)
         active = get_cron_global(mem_db, active_only=True)
@@ -721,11 +933,14 @@ class TestQueryHelpers:
         _seed_project(mem_db)
         future = (datetime.now(timezone.utc) + timedelta(days=3)).isoformat().replace("+00:00", "Z")
         now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-        mem_db.execute("""
+        mem_db.execute(
+            """
             INSERT INTO cron_jobs (session_uuid, tool_use_id, cron_expression, prompt,
                                     recurring, created_at, ttl_expires_at)
             VALUES ('s1', 'toolu_a', '* * * * *', 'p', 1, ?, ?)
-        """, (now, future))
+        """,
+            (now, future),
+        )
         rolls = get_cron_project_rollup(mem_db)
         assert len(rolls) == 1
         assert rolls[0]["cron_count"] == 1

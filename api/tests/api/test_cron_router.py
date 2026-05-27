@@ -112,8 +112,17 @@ def _seed_cron(
              created_at, deleted_at, deleted_via, ttl_expires_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        (session_uuid, tool_use_id, cron_expression, prompt, recurring,
-         created_at, deleted_at, deleted_via, ttl_expires_at),
+        (
+            session_uuid,
+            tool_use_id,
+            cron_expression,
+            prompt,
+            recurring,
+            created_at,
+            deleted_at,
+            deleted_via,
+            ttl_expires_at,
+        ),
     )
     return cur.lastrowid  # type: ignore[return-value]
 

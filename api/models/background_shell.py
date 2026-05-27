@@ -30,9 +30,9 @@ class ShellToolName(str, Enum):
 class ShellTerminationReason(str, Enum):
     """How a background shell ended. None means still running."""
 
-    KILL = "kill"          # KillShell tool was called
-    NATURAL = "natural"    # Process exited on its own; final BashOutput showed exit
-    TIMEOUT = "timeout"    # Timeout reached without explicit termination
+    KILL = "kill"  # KillShell tool was called
+    NATURAL = "natural"  # Process exited on its own; final BashOutput showed exit
+    TIMEOUT = "timeout"  # Timeout reached without explicit termination
     SESSION_END = "session_end"  # Session ended while shell was alive
 
 
@@ -110,9 +110,7 @@ class BackgroundShell(BaseModel):
         None, description="Exit code if detectable from the natural-exit output"
     )
     poll_count: int = Field(0, description="Number of BashOutput calls against this shell")
-    total_output_bytes: int = Field(
-        0, description="Cumulative bytes returned across all polls"
-    )
+    total_output_bytes: int = Field(0, description="Cumulative bytes returned across all polls")
     last_output_at: Optional[datetime] = Field(
         None, description="Timestamp of the most recent BashOutput call"
     )

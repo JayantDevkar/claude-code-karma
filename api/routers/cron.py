@@ -98,9 +98,7 @@ def list_cron_for_session(
     """
     with sqlite_read() as conn:
         conn.row_factory = sqlite3.Row
-        if not conn.execute(
-            "SELECT 1 FROM sessions WHERE uuid = ?", (uuid,)
-        ).fetchone():
+        if not conn.execute("SELECT 1 FROM sessions WHERE uuid = ?", (uuid,)).fetchone():
             raise HTTPException(status_code=404, detail="session not found")
 
         jobs = get_cron_for_session(

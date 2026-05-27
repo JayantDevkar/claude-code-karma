@@ -27,10 +27,10 @@ from pydantic import BaseModel, ConfigDict, Field
 class CronDeletionReason(str, Enum):
     """Why a cron job is no longer active."""
 
-    CRON_DELETE = "CronDelete"        # Explicit CronDelete tool call
-    SESSION_END = "session_end"        # Session ended; cron is in-memory, so it died with it
-    EXPIRY = "expiry"                  # 7-day TTL passed without a resume
-    UNKNOWN = "unknown"                # Live-state hook said it's gone, source uncertain
+    CRON_DELETE = "CronDelete"  # Explicit CronDelete tool call
+    SESSION_END = "session_end"  # Session ended; cron is in-memory, so it died with it
+    EXPIRY = "expiry"  # 7-day TTL passed without a resume
+    UNKNOWN = "unknown"  # Live-state hook said it's gone, source uncertain
 
 
 class CronStateTriggerEvent(str, Enum):
@@ -74,9 +74,7 @@ class CronJob(BaseModel):
             "when the result has not yet been parsed."
         ),
     )
-    cron_expression: str = Field(
-        ..., description="5-field cron expression, e.g. '*/5 * * * *'"
-    )
+    cron_expression: str = Field(..., description="5-field cron expression, e.g. '*/5 * * * *'")
     prompt: str = Field(..., description="Prompt the cron job will run when it fires")
     recurring: bool = Field(False, description="True for recurring jobs; False for one-shots")
     created_at: datetime = Field(..., description="Timestamp of the CronCreate tool_use")

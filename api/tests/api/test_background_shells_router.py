@@ -85,8 +85,7 @@ def _seed_shell(
              terminated_at, terminated_by)
         VALUES (?, ?, ?, ?, ?, ?, ?)
         """,
-        (session_uuid, tool_use_id, tool_name, command, spawned_at,
-         terminated_at, terminated_by),
+        (session_uuid, tool_use_id, tool_name, command, spawned_at, terminated_at, terminated_by),
     )
     return cur.lastrowid  # type: ignore[return-value]
 
@@ -131,7 +130,9 @@ class TestListShellsGlobal:
         conn = _writer(client)
         _seed_session(conn, "s1")
         _seed_shell(conn, session_uuid="s1", tool_use_id="toolu_a")
-        _seed_shell(conn, session_uuid="s1", tool_use_id="toolu_b", tool_name="Monitor", command="watch ls")
+        _seed_shell(
+            conn, session_uuid="s1", tool_use_id="toolu_b", tool_name="Monitor", command="watch ls"
+        )
         conn.commit()
 
         r = client.get("/shells")
@@ -173,7 +174,9 @@ class TestListShellsGlobal:
     def test_filter_status_running(self, client):
         conn = _writer(client)
         _seed_session(conn, "sr")
-        _seed_shell(conn, session_uuid="sr", tool_use_id="toolu_run", spawned_at="2026-05-25T00:00:00Z")
+        _seed_shell(
+            conn, session_uuid="sr", tool_use_id="toolu_run", spawned_at="2026-05-25T00:00:00Z"
+        )
         _seed_shell(
             conn,
             session_uuid="sr",
@@ -211,7 +214,13 @@ class TestListShellsGlobal:
         conn = _writer(client)
         _seed_session(conn, "st")
         _seed_shell(conn, session_uuid="st", tool_use_id="toolu_bash", tool_name="Bash")
-        _seed_shell(conn, session_uuid="st", tool_use_id="toolu_mon", tool_name="Monitor", command="tail -f /var/log/syslog")
+        _seed_shell(
+            conn,
+            session_uuid="st",
+            tool_use_id="toolu_mon",
+            tool_name="Monitor",
+            command="tail -f /var/log/syslog",
+        )
         conn.commit()
 
         r = client.get("/shells?tool=Bash")
@@ -222,7 +231,13 @@ class TestListShellsGlobal:
         conn = _writer(client)
         _seed_session(conn, "sm")
         _seed_shell(conn, session_uuid="sm", tool_use_id="toolu_bash2", tool_name="Bash")
-        _seed_shell(conn, session_uuid="sm", tool_use_id="toolu_mon2", tool_name="Monitor", command="tail -f /var/log/syslog")
+        _seed_shell(
+            conn,
+            session_uuid="sm",
+            tool_use_id="toolu_mon2",
+            tool_name="Monitor",
+            command="tail -f /var/log/syslog",
+        )
         conn.commit()
 
         r = client.get("/shells?tool=Monitor")
