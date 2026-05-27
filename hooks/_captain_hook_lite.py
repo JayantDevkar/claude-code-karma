@@ -80,7 +80,7 @@ if HAS_PYDANTIC:
     class StopHook(_BaseHook):
         hook_event_name: str = Field("Stop")
         stop_hook_active: bool = Field(
-            False,
+            True,
             description="True if already continuing from a previous Stop hook",
         )
 
