@@ -22,7 +22,6 @@ if str(_api_dir) not in sys.path:
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-
 # ---------------------------------------------------------------------------
 # Fixture
 # ---------------------------------------------------------------------------

@@ -27,8 +27,8 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from db.indexer_shells_cron import (
-    _SHELL_ID_RE,
     _CRON_ID_RE,
+    _SHELL_ID_RE,
     extract_shells_and_cron,
     persist_shells_and_cron,
     sync_cron_state_snapshots,
@@ -45,7 +45,6 @@ from db.queries_shells_cron import (
     infer_cron_fires,
 )
 from db.schema import ensure_schema
-
 
 # ============================================================================
 # Fixtures + helpers
