@@ -28,6 +28,38 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 logger = logging.getLogger(__name__)
 
+# Sessions whose JSONL was modified within this window are treated as
+# potentially still-active, regardless of whether end_time is set.
+# (session.end_time is always equal to the last message timestamp — it is
+# never None for a session with messages, so it cannot be used to distinguish
+# a truly-ended session from an active one.)
+_LIVE_FALLBACK_SECS = 30 * 60  # 30 minutes
+
+
+def _is_session_ended(session_uuid: str, jsonl_mtime: float) -> bool:
+    """
+    Return True when the session has truly ended.
+
+    Primary: read the live-session state file written by the hooks.
+      ENDED   → True   (hooks confirmed shutdown)
+      LIVE / WAITING / STALE → False (session still open)
+      absent  → fall through to heuristic
+
+    Fallback (no live-session file): assume ended if the JSONL has not been
+    touched in the last _LIVE_FALLBACK_SECS seconds.
+    """
+    state_file = Path.home() / ".claude_karma" / "live-sessions" / f"{session_uuid}.json"
+    if state_file.exists():
+        try:
+            import json as _json
+
+            data = _json.loads(state_file.read_text())
+            return data.get("state", "").upper() == "ENDED"
+        except Exception:
+            pass
+    return (time.time() - jsonl_mtime) > _LIVE_FALLBACK_SECS
+
+
 # Module-level state
 _ready = threading.Event()
 _indexing_lock = threading.Lock()
@@ -608,7 +640,7 @@ def _index_session(
         shells, polls, crons = extract_shells_and_cron(
             jsonl_path,
             uuid,
-            session_ended=session.end_time is not None,
+            session_ended=_is_session_ended(uuid, mtime),
         )
         persist_shells_and_cron(conn, uuid, shells, polls, crons)
     except Exception as e:
@@ -632,15 +664,10 @@ def _backfill_shells_cron(
         persist_shells_and_cron,
     )
 
-    # session_ended: rely on stored end_time rather than parsing the JSONL.
-    row = conn.execute(
-        "SELECT end_time FROM sessions WHERE uuid = ?",
-        (session_uuid,),
-    ).fetchone()
-    session_ended = bool(row and row[0])
-
     shells, polls, crons = extract_shells_and_cron(
-        jsonl_path, session_uuid, session_ended=session_ended
+        jsonl_path,
+        session_uuid,
+        session_ended=_is_session_ended(session_uuid, jsonl_path.stat().st_mtime),
     )
     persist_shells_and_cron(conn, session_uuid, shells, polls, crons)
 
