@@ -251,8 +251,10 @@ def get_cron_for_session(
                 / f"{session_uuid}.jsonl"
             )
             if jsonl_path.exists():
+                # Read JSONL once and infer fires for all jobs in a single pass.
+                fires_by_job = infer_cron_fires_bulk(jsonl_path, jobs)
                 for j in jobs:
-                    j["fires"] = infer_cron_fires(jsonl_path, j)
+                    j["fires"] = fires_by_job.get(j["tool_use_id"], [])
             else:
                 for j in jobs:
                     j["fires"] = []
@@ -271,10 +273,18 @@ def get_cron_global(
     project_encoded_name: Optional[str] = None,
     active_only: bool = False,
     limit: int = 200,
+    include_fires: bool = True,
+    claude_projects_dir: Optional[Path] = None,
 ) -> List[Dict[str, Any]]:
     """
     Aggregated cron jobs across all sessions. `active_only=True` filters to
     jobs that are not explicitly deleted AND whose 7-day TTL has not expired.
+
+    When `include_fires=True` and `claude_projects_dir` is provided, fire
+    inference is run per session (grouping jobs to read each JSONL once) and
+    the latest cron-state snapshot is attached. Works identically to the
+    per-session path — the session's JSONL is already on disk whether the
+    session is live or closed.
     """
     where: List[str] = []
     params: List[Any] = []
@@ -290,7 +300,7 @@ def get_cron_global(
     where_sql = ("WHERE " + " AND ".join(where)) if where else ""
     params.append(int(limit))
 
-    return [
+    rows = [
         _row_to_dict(r)
         for r in conn.execute(
             f"""
@@ -308,6 +318,43 @@ def get_cron_global(
             params,
         )
     ]
+
+    if not rows:
+        return rows
+
+    if include_fires and claude_projects_dir is not None:
+        # Group by session so we read each JSONL file exactly once.
+        from collections import defaultdict
+        by_session: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+        for j in rows:
+            by_session[j["session_uuid"]].append(j)
+
+        for session_uuid, jobs in by_session.items():
+            snap = get_latest_cron_state(conn, session_uuid)
+            enc = jobs[0].get("project_encoded_name")
+            if enc:
+                jsonl_path = (
+                    claude_projects_dir
+                    / _PROJECTS_SUBDIR
+                    / enc
+                    / f"{session_uuid}.jsonl"
+                )
+                fires_map = (
+                    infer_cron_fires_bulk(jsonl_path, jobs)
+                    if jsonl_path.exists()
+                    else {}
+                )
+            else:
+                fires_map = {}
+            for j in jobs:
+                j["fires"] = fires_map.get(j["tool_use_id"], [])
+                j["latest_state"] = snap
+    else:
+        for j in rows:
+            j["fires"] = []
+            j["latest_state"] = None
+
+    return rows
 
 
 def get_cron_project_rollup(
@@ -368,58 +415,81 @@ def get_latest_cron_state(
 # ============================================================================
 
 
-def infer_cron_fires(
+def infer_cron_fires_bulk(
     jsonl_path: Path,
-    cron_job: Dict[str, Any],
-) -> List[Dict[str, Any]]:
+    cron_jobs: List[Dict[str, Any]],
+) -> Dict[str, List[Dict[str, Any]]]:
     """
-    Infer fires of a cron job by matching assistant turn timestamps in the
-    session JSONL against the cron expression's scheduled times.
+    Infer fires for multiple cron jobs by reading the JSONL file exactly once.
 
-    Returns list of dicts: { fired_at, triggering_message_uuid,
-                              inference_confidence, inference_source,
-                              outcome_excerpt }
+    Returns a dict keyed by tool_use_id → list of fire dicts.
 
-    Designed to be call-once-per-cron-job from a router endpoint. Cost is
-    O(N_messages + N_scheduled) per cron job; assumes croniter is installed.
-    Silently returns [] if croniter is missing — feature degrades gracefully.
+    All jobs must belong to the same session (same JSONL file). The single-pass
+    approach is O(N_messages + N_jobs * N_scheduled) vs the old per-job approach
+    which was O(N_jobs * N_messages).
     """
+    result: Dict[str, List[Dict[str, Any]]] = {j["tool_use_id"]: [] for j in cron_jobs}
+    if not cron_jobs:
+        return result
+
     try:
         from croniter import croniter
     except ImportError:
         logger.debug("croniter not installed; cron fire inference skipped")
-        return []
+        return result
 
-    created_at = _parse_iso(cron_job.get("created_at"))
-    deleted_at = _parse_iso(cron_job.get("deleted_at"))
-    ttl_expires_at = _parse_iso(cron_job.get("ttl_expires_at"))
-    cron_expr = cron_job.get("cron_expression")
-    if not created_at or not cron_expr:
-        return []
+    now = _now_utc()
 
-    # End the scan at the earliest of: deletion, TTL expiry, now.
-    end = min(filter(None, [deleted_at, ttl_expires_at, _now_utc()]))
-    if end <= created_at:
-        return []
+    # Build per-job schedule metadata and overall time bounds for the scan.
+    job_metas: List[Dict[str, Any]] = []
+    scan_start = now  # will be tightened to earliest created_at
+    scan_end = datetime(1970, 1, 1, tzinfo=timezone.utc)  # will be max end
 
-    # Build list of scheduled times
-    try:
-        it = croniter(cron_expr, created_at)
-    except (ValueError, KeyError):
-        return []
-    scheduled: List[datetime] = []
-    for _ in range(10000):  # hard cap on schedule fanout
-        nxt = it.get_next(datetime)
-        if nxt > end:
-            break
-        scheduled.append(nxt)
-        if not cron_job.get("recurring"):
-            break
-    if not scheduled:
-        return []
+    for j in cron_jobs:
+        created_at = _parse_iso(j.get("created_at"))
+        deleted_at = _parse_iso(j.get("deleted_at"))
+        ttl_expires_at = _parse_iso(j.get("ttl_expires_at"))
+        cron_expr = j.get("cron_expression")
+        if not created_at or not cron_expr:
+            continue
 
-    # Collect assistant turn (uuid, ts, text-excerpt) from JSONL.
-    # Excerpts trimmed to 500 chars per row to keep this cheap.
+        end = min(filter(None, [deleted_at, ttl_expires_at, now]))
+        if end <= created_at:
+            continue
+
+        try:
+            it = croniter(cron_expr, created_at)
+        except (ValueError, KeyError):
+            continue
+
+        scheduled: List[datetime] = []
+        for _ in range(10000):
+            nxt = it.get_next(datetime)
+            if nxt > end:
+                break
+            scheduled.append(nxt)
+            if not j.get("recurring"):
+                break
+
+        if not scheduled:
+            continue
+
+        job_metas.append({
+            "tool_use_id": j["tool_use_id"],
+            "created_at": created_at,
+            "end": end,
+            "scheduled": scheduled,
+        })
+
+        if created_at < scan_start:
+            scan_start = created_at
+        if end > scan_end:
+            scan_end = end
+
+    if not job_metas:
+        return result
+
+    # Read JSONL once, collecting assistant turns within the overall bounds.
     assistant_turns: List[Dict[str, Any]] = []
     try:
         with jsonl_path.open("r", encoding="utf-8", errors="replace") as fp:
@@ -434,9 +504,8 @@ def infer_cron_fires(
                 if obj.get("type") != "assistant":
                     continue
                 ts = _parse_iso(obj.get("timestamp"))
-                if not ts or ts < created_at or ts > end:
+                if not ts or ts < scan_start or ts > scan_end:
                     continue
-                # Extract a short outcome excerpt
                 excerpt: Optional[str] = None
                 msg = obj.get("message") or {}
                 content = msg.get("content")
@@ -454,40 +523,58 @@ def infer_cron_fires(
                 })
     except OSError as e:
         logger.debug("cannot read JSONL for fire inference: %s", e)
-        return []
+        return result
 
     if not assistant_turns:
-        return []
+        return result
 
-    # For each scheduled time, find the nearest assistant turn within window
-    # and score by closeness. A single assistant turn can be claimed by only
-    # one scheduled time (the closest one) to avoid double-counting.
-    claimed_turns: set = set()
-    fires: List[Dict[str, Any]] = []
-    for s_time in scheduled:
-        best_turn = None
-        best_delta: Optional[float] = None
-        for turn in assistant_turns:
-            if turn["uuid"] in claimed_turns:
+    # Match each job's scheduled times against assistant turns. Claim tracking
+    # is per-job so one turn can serve as evidence for different jobs' fires.
+    for meta in job_metas:
+        claimed_turns: set = set()
+        fires: List[Dict[str, Any]] = []
+        relevant_turns = [
+            t for t in assistant_turns
+            if meta["created_at"] <= t["ts"] <= meta["end"]
+        ]
+        for s_time in meta["scheduled"]:
+            best_turn = None
+            best_delta: Optional[float] = None
+            for turn in relevant_turns:
+                if turn["uuid"] in claimed_turns:
+                    continue
+                delta = abs((turn["ts"] - s_time).total_seconds())
+                if delta > FIRE_WINDOW_SECONDS:
+                    continue
+                if best_delta is None or delta < best_delta:
+                    best_delta = delta
+                    best_turn = turn
+            if best_turn is None or best_delta is None:
                 continue
-            delta = abs((turn["ts"] - s_time).total_seconds())
-            if delta > FIRE_WINDOW_SECONDS:
+            confidence = 1.0 - (best_delta / FIRE_WINDOW_SECONDS)
+            if confidence < FIRE_CONFIDENCE_FLOOR:
                 continue
-            if best_delta is None or delta < best_delta:
-                best_delta = delta
-                best_turn = turn
-        if best_turn is None or best_delta is None:
-            continue
-        confidence = 1.0 - (best_delta / FIRE_WINDOW_SECONDS)
-        if confidence < FIRE_CONFIDENCE_FLOOR:
-            continue
-        claimed_turns.add(best_turn["uuid"])
-        fires.append({
-            "fired_at": best_turn["ts"].isoformat().replace("+00:00", "Z"),
-            "triggering_message_uuid": best_turn["uuid"],
-            "inference_confidence": round(confidence, 3),
-            "inference_source": "jsonl",
-            "outcome_excerpt": best_turn["excerpt"],
-        })
+            claimed_turns.add(best_turn["uuid"])
+            fires.append({
+                "fired_at": best_turn["ts"].isoformat().replace("+00:00", "Z"),
+                "triggering_message_uuid": best_turn["uuid"],
+                "inference_confidence": round(confidence, 3),
+                "inference_source": "jsonl",
+                "outcome_excerpt": best_turn["excerpt"],
+            })
+        result[meta["tool_use_id"]] = fires
 
-    return fires
+    return result
+
+
+def infer_cron_fires(
+    jsonl_path: Path,
+    cron_job: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    """Single-job wrapper around infer_cron_fires_bulk. Kept for test compatibility."""
+    # Ensure a stable key exists; tests may omit tool_use_id.
+    _sentinel = cron_job.get("tool_use_id") or "__single__"
+    job = dict(cron_job)
+    job.setdefault("tool_use_id", _sentinel)
+    bulk = infer_cron_fires_bulk(jsonl_path, [job])
+    return bulk.get(_sentinel, [])

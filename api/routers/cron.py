@@ -52,10 +52,15 @@ def list_cron_global(
         description="filter to jobs not deleted AND whose 7d TTL has not expired",
     ),
     limit: int = Query(200, ge=1, le=1000),
+    include_fires: bool = Query(
+        True,
+        description="infer cron fires by reading each session's JSONL (grouped, one read per session)",
+    ),
 ) -> dict:
     """
     Aggregated cron_jobs across all sessions, joined to sessions + projects.
-    Ordered by created_at DESC.
+    Ordered by created_at DESC. Fire inference reads each session's on-disk
+    JSONL once (sessions are already closed when their cron TTL is visible here).
     """
     with sqlite_read() as conn:
         conn.row_factory = sqlite3.Row
@@ -64,6 +69,8 @@ def list_cron_global(
             project_encoded_name=project,
             active_only=active_only,
             limit=limit,
+            include_fires=include_fires,
+            claude_projects_dir=_claude_root() if include_fires else None,
         )
     return {"jobs": rows, "count": len(rows)}
 

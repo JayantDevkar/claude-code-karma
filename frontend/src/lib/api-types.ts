@@ -1903,7 +1903,6 @@ export interface CronJob {
 	deleted_via: CronDeletionReason | null;
 	ttl_expires_at: string;
 	create_message_uuid: string | null;
-	// Attached by GET /sessions/{uuid}/cron:
 	fires?: CronFire[];
 	latest_state?: CronStateSnapshot | null;
 	// Present on /cron global list rows:

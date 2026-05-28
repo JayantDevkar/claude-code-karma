@@ -1,4 +1,4 @@
-import type { CronListResponse } from '$lib/api-types';
+import type { CronListResponse, CronProjectRollupResponse } from '$lib/api-types';
 import { API_BASE } from '$lib/config';
 import { fetchWithFallback } from '$lib/utils/api-fetch';
 
@@ -13,15 +13,22 @@ export async function load({ url, fetch }) {
 	if (limit) qs.set('limit', limit);
 	const queryString = qs.toString();
 
-	const response = await fetchWithFallback<CronListResponse>(
-		fetch,
-		`${API_BASE}/cron${queryString ? `?${queryString}` : ''}`,
-		{ jobs: [], count: 0 }
-	);
+	const [cronData, rollupData] = await Promise.all([
+		fetchWithFallback<CronListResponse>(
+			fetch,
+			`${API_BASE}/cron${queryString ? `?${queryString}` : ''}`,
+			{ jobs: [], count: 0 }
+		),
+		fetchWithFallback<CronProjectRollupResponse>(fetch, `${API_BASE}/cron/project-rollup`, {
+			projects: [],
+			count: 0
+		})
+	]);
 
 	return {
-		jobs: response?.jobs ?? [],
-		count: response?.count ?? 0,
+		jobs: cronData?.jobs ?? [],
+		count: cronData?.count ?? 0,
+		rollup: rollupData?.projects ?? [],
 		filters: { project, active_only, limit }
 	};
 }

@@ -1214,7 +1214,7 @@
 
 					<Tabs.Content value="cron" class="animate-fade-in">
 						{#if sessionUuid}
-							<SessionCronSection {sessionUuid} />
+							<SessionCronSection {sessionUuid} projectEncodedName={encodedName} />
 						{:else}
 							<p class="text-sm text-[var(--text-muted)] m-0 px-1 py-6 text-center">
 								Session UUID unavailable.
