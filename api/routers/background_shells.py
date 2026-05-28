@@ -171,5 +171,7 @@ def kill_shell(tool_use_id: str) -> dict:
     return {
         "killed": True,
         "pids_signalled": killed_pids,
-        "reason": f"SIGTERM sent to {len(killed_pids)} process(es)" if killed_pids else "no live process found; marked terminated in DB",
+        "reason": f"SIGTERM sent to {len(killed_pids)} process(es)"
+        if killed_pids
+        else "no live process found; marked terminated in DB",
     }
