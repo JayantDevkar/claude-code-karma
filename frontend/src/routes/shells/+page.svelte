@@ -1,6 +1,9 @@
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
 	import type { BackgroundShell } from '$lib/api-types';
+	import PageHeader from '$lib/components/layout/PageHeader.svelte';
+	import StatsGrid from '$lib/components/StatsGrid.svelte';
+	import { Activity, Terminal, Box } from 'lucide-svelte';
 
 	type Tool = 'bash' | 'monitor';
 	type Status = 'running' | 'closed';
@@ -193,52 +196,26 @@
 
 <div class="mx-auto max-w-[1120px] px-8 pb-20 pt-8 text-stone-900">
 	<!-- Page header -->
-	<header class="mb-7 flex items-start justify-between gap-6">
-		<div>
-			<div class="mb-3 flex items-center gap-1.5 font-mono text-xs text-stone-400">
-				<a href="/" class="text-stone-500 hover:text-stone-900">Home</a>
-				<span>/</span>
-				<span>Shells</span>
-			</div>
-			<h1 class="mb-1.5 text-[32px] font-bold tracking-tight">Background Shells</h1>
-			<p class="text-sm text-violet-500">
-				Every terminal Claude Code has spawned — what ran, what's still alive, what came back.
-			</p>
-		</div>
-		<button class="btn" onclick={() => invalidateAll()}>↻ Refresh</button>
-	</header>
+	<PageHeader
+		title="Background Shells"
+		subtitle="Every terminal Claude Code has spawned — what ran, what's still alive, what came back."
+		icon={Terminal}
+		iconColor="--nav-green"
+		breadcrumbs={[{ label: 'Home', href: '/' }, { label: 'Shells' }]}
+	>
+		{#snippet headerRight()}
+			<button class="btn" onclick={() => invalidateAll()}>↻ Refresh</button>
+		{/snippet}
+	</PageHeader>
 
 	<!-- Stat strip -->
-	<section class="mb-6 grid grid-cols-3 gap-3">
-		<div class="stat-card">
-			<div class="stat-ico bg-violet-100 text-violet-700">Σ</div>
-			<div>
-				<div class="stat-num">{globalCounts.total}</div>
-				<div class="stat-label">Total spawned</div>
-			</div>
-		</div>
-		<div class="stat-card">
-			<div class="stat-ico bg-emerald-100 text-emerald-700">⌁</div>
-			<div>
-				<div class="stat-num">
-					{globalCounts.running}
-					{#if globalCounts.running > 0}
-						<span
-							class="ml-2 inline-block size-1.5 -translate-y-1 rounded-full bg-emerald-500 ring-4 ring-emerald-500/30 animate-pulse"
-						></span>
-					{/if}
-				</div>
-				<div class="stat-label">Currently running</div>
-			</div>
-		</div>
-		<div class="stat-card">
-			<div class="stat-ico bg-stone-100 text-stone-600">▢</div>
-			<div>
-				<div class="stat-num">{globalCounts.closed}</div>
-				<div class="stat-label">Closed</div>
-			</div>
-		</div>
-	</section>
+	<div class="relative overflow-hidden rounded-2xl p-6 border border-[var(--border)] mb-6" style="background: linear-gradient(135deg, rgba(16,185,129,0.02) 0%, rgba(16,185,129,0.06) 100%);">
+		<StatsGrid columns={3} stats={[
+			{ title: 'Total spawned', value: globalCounts.total, icon: Terminal, color: 'purple' },
+			{ title: 'Currently running', value: globalCounts.running, icon: Activity, color: 'green' },
+			{ title: 'Closed', value: globalCounts.closed, icon: Box, color: 'gray' }
+		]} />
+	</div>
 
 	<!-- Toolbar -->
 	<div class="mb-3.5 flex flex-wrap items-center gap-2">
@@ -460,36 +437,6 @@
 	}
 	.btn:hover {
 		background: #fafaf9;
-	}
-	.stat-card {
-		display: flex;
-		align-items: center;
-		gap: 0.875rem;
-		padding: 1rem 1.125rem;
-		border: 1px solid #e7e5e4;
-		background: #fff;
-		border-radius: 0.75rem;
-	}
-	.stat-ico {
-		width: 36px;
-		height: 36px;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		border-radius: 0.5rem;
-		font-family: 'JetBrains Mono', ui-monospace, monospace;
-		font-weight: 600;
-	}
-	.stat-num {
-		font-size: 26px;
-		font-weight: 600;
-		letter-spacing: -0.02em;
-		line-height: 1;
-	}
-	.stat-label {
-		font-size: 12px;
-		color: #57534e;
-		margin-top: 4px;
 	}
 	.seg {
 		display: inline-flex;

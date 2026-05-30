@@ -300,6 +300,8 @@ def get_cron_global(
     where_sql = ("WHERE " + " AND ".join(where)) if where else ""
     params.append(int(limit))
 
+    import json as _json
+
     rows = [
         _row_to_dict(r)
         for r in conn.execute(
@@ -307,6 +309,7 @@ def get_cron_global(
             SELECT cj.*,
                    s.project_encoded_name,
                    s.slug              AS session_slug,
+                   s.session_titles    AS session_titles_json,
                    p.display_name      AS project_display_name
             FROM cron_jobs cj
             JOIN sessions  s ON s.uuid = cj.session_uuid
@@ -318,6 +321,11 @@ def get_cron_global(
             params,
         )
     ]
+
+    for row in rows:
+        raw = row.pop("session_titles_json", None)
+        titles = _json.loads(raw) if raw else []
+        row["session_display_name"] = titles[0] if titles else None
 
     if not rows:
         return rows

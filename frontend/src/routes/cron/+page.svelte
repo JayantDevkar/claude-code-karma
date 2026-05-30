@@ -7,12 +7,13 @@
 		Archive,
 		RefreshCw,
 		Search,
-		Info,
-		X,
 		Calendar,
-		ChevronRight
+		ChevronRight,
+		Repeat,
+		Zap
 	} from 'lucide-svelte';
 	import PageHeader from '$lib/components/layout/PageHeader.svelte';
+	import StatsGrid from '$lib/components/StatsGrid.svelte';
 	import type { CronJob, CronProjectRollupRow } from '$lib/api-types';
 
 	let { data } = $props();
@@ -22,7 +23,6 @@
 	let activeOnly = $state(data.filters.active_only === 'true');
 	let query = $state('');
 	let openIds = $state<Set<string>>(new Set());
-	let caveatOpen = $state(true);
 	let rescanning = $state(false);
 
 	const NOW_MS = Date.now();
@@ -135,6 +135,10 @@
 		});
 	}
 
+	function formatDate(iso: string): string {
+		return new Date(iso).toLocaleString(undefined, { month: 'short', day: 'numeric' });
+	}
+
 	function formatShortTime(iso: string): string {
 		return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 	}
@@ -155,7 +159,7 @@
 			const truth = j.latest_state !== null && j.latest_state !== undefined;
 			return truth
 				? { dot: 'truth', label: 'ACTIVE', isLikely: false, via: null, truth: true }
-				: { dot: 'likely', label: 'LIKELY ACTIVE', isLikely: true, via: null, truth: false };
+				: { dot: 'likely', label: 'ACTIVE', isLikely: true, via: null, truth: false };
 		}
 		if (s === 'expired') {
 			return { dot: 'expired', label: 'TTL EXPIRED', isLikely: false, via: null, truth: false };
@@ -199,6 +203,11 @@
 
 	async function rescan() {
 		rescanning = true;
+		try {
+			await fetch('http://localhost:8000/admin/reindex?force=true', { method: 'POST' });
+		} catch {
+			// non-critical — still refresh the view
+		}
 		await invalidateAll();
 		rescanning = false;
 	}
@@ -220,86 +229,26 @@
 	<!-- Page header -->
 	<PageHeader
 		title="Cron Jobs"
+		subtitle="Scheduled prompts — when they ran, what they answered, and how long until TTL expires."
 		icon={Clock}
 		iconColor="--nav-purple"
 		breadcrumbs={[{ label: 'Home', href: '/' }, { label: 'Cron' }]}
 	>
 		{#snippet headerRight()}
-			<button
-				class="rescan-btn"
-				onclick={rescan}
-				disabled={rescanning}
-				aria-label="Rescan session logs"
-			>
+			<button class="rescan-btn" onclick={rescan} disabled={rescanning} aria-label="Rescan session logs">
 				<RefreshCw size={14} class={rescanning ? 'spinning' : ''} />
 				Rescan logs
 			</button>
 		{/snippet}
 	</PageHeader>
 
-	<!-- Purple tagline -->
-	<p class="tagline">
-		Every scheduled prompt Claude Code has set up — when it ran, what it answered, and how long
-		it has left before the 7-day TTL burns it down.
-	</p>
-
-	<!-- Caveat banner -->
-	{#if caveatOpen}
-		<div class="caveat-banner">
-			<Info size={14} class="shrink-0 mt-px" style="color: var(--text-faint);" />
-			<span class="caveat-body">
-				Cron jobs live <b>in memory inside the Claude Code session</b> that created them — they
-				can't be queried directly. This page reconstructs them from session logs and infers fires
-				from assistant turns, so <b>"likely active"</b> means "TTL not elapsed and we haven't seen
-				a delete." Install the optional hook for ground-truth state.
-			</span>
-			<button
-				class="caveat-close"
-				onclick={() => (caveatOpen = false)}
-				aria-label="Dismiss"
-			>
-				<X size={14} />
-			</button>
-		</div>
-	{/if}
-
 	<!-- Stat strip -->
-	<div class="stat-grid">
-		<!-- Total tracked -->
-		<div class="stat-card">
-			<div class="stat-ico" style="background: var(--accent-muted); color: var(--accent);">
-				<Clock size={18} />
-			</div>
-			<div>
-				<div class="stat-num">{counts.total}</div>
-				<div class="stat-label">Total tracked</div>
-			</div>
-		</div>
-
-		<!-- Likely active -->
-		<div class="stat-card">
-			<div class="stat-ico" style="background: var(--success-subtle); color: var(--success);">
-				<Activity size={18} />
-			</div>
-			<div>
-				<div class="stat-num">
-					<span class="approx">~</span>{counts.active}
-					{#if counts.active > 0}<span class="pulse-dot"></span>{/if}
-				</div>
-				<div class="stat-label">Likely active · inferred from TTL</div>
-			</div>
-		</div>
-
-		<!-- Expired or deleted -->
-		<div class="stat-card">
-			<div class="stat-ico" style="background: var(--bg-muted); color: var(--text-muted);">
-				<Archive size={18} />
-			</div>
-			<div>
-				<div class="stat-num">{counts.inactive}</div>
-				<div class="stat-label">Expired or deleted</div>
-			</div>
-		</div>
+	<div class="stats-wrap">
+		<StatsGrid columns={3} stats={[
+			{ title: 'Total tracked', value: counts.total, icon: Clock, color: 'purple' },
+			{ title: 'Likely active', value: counts.active, icon: Activity, color: 'green', description: 'inferred from TTL' },
+			{ title: 'Expired or deleted', value: counts.inactive, icon: Archive, color: 'gray' }
+		]} />
 	</div>
 
 	<!-- Toolbar -->
@@ -380,6 +329,7 @@
 				{@const ttl = getTtlInfo(job)}
 				{@const s = statusOf(job)}
 				{@const human = cronHuman(job.cron_expression)}
+				{@const visibleFireCount = (job.fires ?? []).filter((f) => f.outcome_excerpt || f.inference_source === 'hook').length}
 
 				<div class="cron-card" class:expanded class:gone={s !== 'active'}>
 					<!-- ── Collapsed row ─────────────────────────────────────────── -->
@@ -388,11 +338,6 @@
 						class="cron-row"
 						onclick={() => toggle(key)}
 					>
-						<!-- Caret -->
-						<span class="caret" class:open={expanded} aria-hidden="true">
-							<ChevronRight size={14} />
-						</span>
-
 						<!-- Status dot -->
 						<span
 							class="status-dot"
@@ -402,24 +347,27 @@
 
 						<!-- Content column -->
 						<div class="row-content">
-							<!-- Line 1: ID + pills + status tag -->
+							<!-- Line 1: ID + recur icon + status tag -->
 							<div class="row-head">
-								<span class="cron-id">{(job.cron_id ?? job.tool_use_id).slice(0, 8)}</span>
-								<span class="pill pill-schedule">{human}</span>
-								{#if job.recurring}
-									<span class="pill pill-recur">RECURRING</span>
-								{:else}
-									<span class="pill pill-once">ONE-SHOT</span>
-								{/if}
+								<span class="cron-id" class:cron-id-fallback={!job.cron_id}>{(job.cron_id ?? job.tool_use_id).slice(0, 8)}</span>
+								<span
+									class="recur-icon"
+									class:recur-icon-on={job.recurring}
+									title={job.recurring ? 'Recurring' : 'One-shot'}
+								>
+									{#if job.recurring}
+										<Repeat size={11} />
+									{:else}
+										<Zap size={11} />
+									{/if}
+								</span>
 								<span
 									class="status-tag"
-									class:tag-active={!meta.isLikely && s === 'active'}
+									class:tag-active={s === 'active' && !meta.isLikely}
 									class:tag-likely={meta.isLikely}
 									class:tag-inactive={s !== 'active'}
 								>
-									{meta.label}
-									{#if meta.isLikely}<span class="qm">·?</span>{/if}
-									{#if meta.via}<span class="via"> · {meta.via}</span>{/if}
+									{meta.label}{#if meta.isLikely}<span class="qm">?</span>{/if}{#if meta.via}<span class="via"> · {meta.via}</span>{/if}
 								</span>
 								{#if meta.truth}
 									<span class="pill pill-hook">HOOK</span>
@@ -428,21 +376,18 @@
 
 							<!-- Line 2: Prompt preview -->
 							<div class="row-prompt">
-								<span class="quote">"</span>{job.prompt}<span class="quote">"</span>
+								{job.prompt}
 							</div>
 
 							<!-- Line 3: Meta -->
 							<div class="row-meta-line">
-								<span class="mono-dim">{job.cron_expression}</span>
+								<span class="mono-dim">{human}</span>
+								{#if visibleFireCount > 0}
+									<span class="sep">·</span>
+									<span class="mono-dim">{visibleFireCount} {visibleFireCount === 1 ? 'fire' : 'fires'}</span>
+								{/if}
 								<span class="sep">·</span>
 								<span class="mono-dim">{job.project_display_name ?? '—'}</span>
-								{#if job.fires && job.fires.length > 0}
-									<span class="sep">·</span>
-									<span class="mono-dim"
-										>{job.fires.length}
-										{job.fires.length === 1 ? 'fire' : 'fires'}</span
-									>
-								{/if}
 							</div>
 						</div>
 
@@ -477,144 +422,89 @@
 								<div class="ttl-sub">TTL {formatShortTime(job.ttl_expires_at)}</div>
 							{/if}
 						</div>
+
+						<!-- Caret (right side) -->
+						<span class="caret" class:open={expanded} aria-hidden="true">
+							<ChevronRight size={14} />
+						</span>
 					</button>
 
 					<!-- ── Expanded panel ────────────────────────────────────────── -->
 					{#if expanded}
 						<div class="panel">
-							<!-- Top metadata rows spanning both columns -->
-							<div class="meta-strip">
+							<!-- Single meta row -->
+							<div class="meta-row">
 								<div class="kv-row">
-									<span class="kv-label">Cron ID</span>
-									<span class="kv-val" style="color: var(--accent);"
-										>{job.cron_id ?? job.tool_use_id}</span
-									>
-								</div>
-								<div class="kv-row">
-									<span class="kv-label">Schedule</span>
-									<span class="kv-val">
-										{job.cron_expression}<span class="kv-sep"> · </span><span
-											class="kv-dim">{human}</span
-										>
+									<span class="kv-label">Lifetime</span>
+									<span class="kv-val kv-flex">
+										<span>{formatDate(job.created_at)}</span>
+										<span class="kv-arrow">→</span>
+										<span>{formatDate(job.ttl_expires_at)}</span>
+										<span class="kv-dot">·</span><span class="kv-dim">7 days</span>
 									</span>
 								</div>
 								<div class="kv-row">
-									<span class="kv-label">Created</span>
+									<span class="kv-label">Session</span>
 									<span class="kv-val">
-										{formatAbsolute(job.created_at)}<span class="kv-sep kv-dim"> · {formatTimeAgo(job.created_at)}</span>
-									</span>
-								</div>
-								<div class="kv-row">
-									<span class="kv-label">TTL expires</span>
-									<span class="kv-val">
-										{formatAbsolute(job.ttl_expires_at)}<span class="kv-sep kv-dim"> · {formatTimeAgo(job.ttl_expires_at)}</span>
+										{#if job.project_encoded_name}
+											<a class="session-link" href="/projects/{job.project_encoded_name}/{job.session_slug ?? job.session_uuid}" onclick={(e) => e.stopPropagation()}>{(job as any).session_display_name ?? job.session_uuid.slice(0, 13) + '\u2026'}</a>
+										{:else}
+											<span>{(job as any).session_display_name ?? job.session_uuid.slice(0, 13) + '\u2026'}</span>
+										{/if}
 									</span>
 								</div>
 								{#if job.deleted_at}
 									<div class="kv-row">
 										<span class="kv-label">Deleted</span>
-										<span class="kv-val">
-											{formatAbsolute(job.deleted_at)}<span class="kv-sep kv-dim"> · {meta.via}</span>
-										</span>
+										<span class="kv-val kv-flex"><span>{formatAbsolute(job.deleted_at)}</span><span class="kv-dot">·</span><span class="kv-dim">{meta.via}</span></span>
 									</div>
 								{/if}
-								<div class="kv-row">
-									<span class="kv-label">Project</span>
-									<span class="kv-val">{job.project_display_name ?? '—'}</span>
-								</div>
-								<div class="kv-row">
-									<span class="kv-label">Source session</span>
-									<span class="kv-val">
-										{#if job.project_encoded_name}
-											<a
-												class="session-link"
-												href="/projects/{job.project_encoded_name}/{job.session_slug ?? job.session_uuid}"
-												onclick={(e) => e.stopPropagation()}
-											>{job.session_uuid.slice(0, 13)}…</a>
-										{:else}
-											<span>{job.session_uuid.slice(0, 13)}…</span>
-										{/if}
-									</span>
-								</div>
 								{#if job.latest_state}
 									<div class="kv-row">
-										<span class="kv-label">Ground-truth state</span>
-										<span class="kv-val">
-											<span style="color: var(--success);">● alive</span>
-											<span class="kv-dim"> · observed {formatTimeAgo(job.latest_state.captured_at)}</span>
-										</span>
+										<span class="kv-label">Live state</span>
+										<span class="kv-val kv-flex"><span style="color: var(--success);">● alive</span><span class="kv-dot">·</span><span class="kv-dim">{formatTimeAgo(job.latest_state.captured_at)}</span></span>
 									</div>
 								{/if}
 							</div>
 
-							<!-- Bottom row: prompt block ← → fires scroll — same height naturally -->
-							<div class="prompt-fires-row">
-								<!-- Left: prompt -->
-								<div class="prompt-col">
-									<span class="kv-label">Prompt</span>
-									<div class="prompt-block">
-										<span class="barb">{'>'}</span>
-										{job.prompt}
-									</div>
-								</div>
-
-								<!-- Right: fires -->
-								<div class="fires-col">
-									<div class="fires-header">
-										<span class="kv-label">
-											{#if !job.fires || job.fires.length === 0}
-												No fires recorded
-											{:else}
-												Fires · {job.fires.length}
-												{job.fires.length === 1 ? 'event' : 'events'}
-											{/if}
-										</span>
-										<span class="fires-source">
-											{job.fires?.some((f) => f.inference_source === 'hook')
-												? 'hook · ground truth'
-												: 'inferred from logs'}
-										</span>
-									</div>
-
-									{#if !job.fires || job.fires.length === 0}
-										<div class="fires-empty">
-											{#if job.recurring}
-												No fires observed in the session log yet.
-											{:else}
-												One-shot cron — no fires recorded.
-											{/if}
-										</div>
+							<!-- Fires -->
+							<div class="fires-section">
+								
+								<span class="kv-label">
+									{#if visibleFireCount === 0}
+										No fires recorded
 									{:else}
-										<div class="fires-scroll">
-											{#each job.fires as fire, i}
-												{@const truth = fire.inference_source === 'hook'}
-												{@const low = !truth && fire.inference_confidence < 0.7}
-												{@const pct = Math.round(fire.inference_confidence * 100)}
-												<div class="fire-card">
-													<div class="fire-head">
-														<span class="fire-time">
-															<b>{formatShortTime(fire.fired_at)}</b>
-														</span>
-														<span class="fire-ago">· {formatTimeAgo(fire.fired_at)}</span>
-														<span class="fire-conf" class:low>
-															{#if truth}
-																<span style="color: var(--success);">ground truth</span>
-															{:else}
-																<span class="conf-bar">
-																	<span class="conf-fill" style="width: {pct}%;"></span>
-																</span>
-																<span class="conf-pct">~{pct}%</span>
-															{/if}
-														</span>
-													</div>
+										Fires · {visibleFireCount} {visibleFireCount === 1 ? 'event' : 'events'}
+									{/if}
+								</span>
+
+								{#if visibleFireCount === 0}
+									<div class="fires-empty">
+										{#if job.recurring}No fires observed yet.{:else}One-shot — no fires recorded.{/if}
+									</div>
+								{:else}
+									{@const visibleFires = job.fires.filter((f) => f.outcome_excerpt || f.inference_source === 'hook')}
+									<div class="fire-timeline">
+										{#each visibleFires as fire, i}
+											{@const truth = fire.inference_source === 'hook'}
+											{@const last = i === visibleFires.length - 1}
+											<div class="fire-tl-row" class:last>
+												<div class="fire-tl-track">
+													<span class="fire-tl-dot" class:truth></span>
+													{#if !last}<span class="fire-tl-line"></span>{/if}
+												</div>
+												<div class="fire-tl-content">
+													<span class="fire-tl-time">{formatShortTime(fire.fired_at)}</span>
+													<span class="fire-tl-ago">{formatTimeAgo(fire.fired_at)}</span>
+													{#if truth}<span class="fire-truth">confirmed</span>{/if}
 													{#if fire.outcome_excerpt}
-														<div class="fire-body">{fire.outcome_excerpt}</div>
+														<p class="fire-tl-body">{fire.outcome_excerpt}</p>
 													{/if}
 												</div>
-											{/each}
-										</div>
-									{/if}
-								</div>
+											</div>
+										{/each}
+									</div>
+								{/if}
 							</div>
 						</div>
 					{/if}
@@ -641,118 +531,15 @@
 		gap: 0;
 	}
 
-	.tagline {
-		font-size: 14px;
-		color: var(--accent);
-		margin: 0 0 24px;
-		white-space: nowrap;
-	}
-
-	/* ── Caveat banner ─────────────────────────────────────────────────────── */
-	.caveat-banner {
-		display: flex;
-		align-items: flex-start;
-		gap: 10px;
-		background: var(--bg-subtle);
-		border: 1px solid var(--border);
-		border-radius: 10px;
-		padding: 10px 12px 10px 14px;
-		font-size: 12.5px;
-		line-height: 1.55;
-		color: var(--text-muted);
-		margin-bottom: 22px;
-	}
-
-	.caveat-body {
-		flex: 1;
-	}
-
-	.caveat-body b {
-		font-weight: 600;
-		color: var(--text-primary);
-	}
-
-	.caveat-close {
-		margin-left: auto;
-		padding: 2px;
-		color: var(--text-faint);
-		background: none;
-		border: none;
-		cursor: pointer;
-		line-height: 1;
-		display: flex;
-	}
-
-	.caveat-close:hover {
-		color: var(--text-primary);
-	}
-
 	/* ── Stat strip ────────────────────────────────────────────────────────── */
-	.stat-grid {
-		display: grid;
-		grid-template-columns: repeat(3, 1fr);
-		gap: 12px;
-		margin-bottom: 22px;
-	}
-
-	.stat-card {
-		display: flex;
-		align-items: center;
-		gap: 14px;
-		background: var(--bg-base);
+	.stats-wrap {
+		position: relative;
+		overflow: hidden;
+		border-radius: 16px;
+		padding: 24px;
 		border: 1px solid var(--border);
-		border-radius: 12px;
-		padding: 16px 18px;
-	}
-
-	.stat-ico {
-		width: 36px;
-		height: 36px;
-		border-radius: 9px;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		flex-shrink: 0;
-	}
-
-	.stat-num {
-		font-size: 26px;
-		font-weight: 600;
-		letter-spacing: -0.02em;
-		line-height: 1;
-		font-variant-numeric: tabular-nums;
-		display: flex;
-		align-items: baseline;
-		gap: 4px;
-	}
-
-	.approx {
-		font-size: 13px;
-		font-weight: 500;
-		color: var(--text-faint);
-		letter-spacing: 0;
-	}
-
-	.stat-label {
-		font-size: 12px;
-		color: var(--text-muted);
-		margin-top: 4px;
-	}
-
-	.pulse-dot {
-		width: 7px;
-		height: 7px;
-		border-radius: 50%;
-		background: var(--success);
-		display: inline-block;
-		margin-left: 4px;
-		animation: cronPulse 1.6s infinite;
-	}
-
-	@keyframes cronPulse {
-		0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.6); }
-		70% { box-shadow: 0 0 0 8px rgba(16, 185, 129, 0); }
-		100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+		background: linear-gradient(135deg, rgba(124, 58, 237, 0.02) 0%, rgba(124, 58, 237, 0.06) 100%);
+		margin-bottom: 22px;
 	}
 
 	/* ── Toolbar ───────────────────────────────────────────────────────────── */
@@ -936,15 +723,20 @@
 	.cron-card.expanded {
 		border-color: var(--border-hover);
 		box-shadow: 0 1px 0 rgba(0, 0, 0, 0.03), 0 6px 20px -8px rgba(0, 0, 0, 0.08);
+		background: #ffffff;
 	}
 
 	.cron-card.gone {
 		background: var(--bg-subtle);
 	}
 
+	.cron-card.gone.expanded {
+		background: #ffffff;
+	}
+
 	.cron-row {
 		display: grid;
-		grid-template-columns: 18px 14px 1fr auto;
+		grid-template-columns: 14px 1fr auto 18px;
 		align-items: center;
 		gap: 14px;
 		padding: 14px 16px;
@@ -1002,6 +794,11 @@
 		color: var(--accent);
 	}
 
+	.cron-id-fallback {
+		color: var(--text-faint);
+		font-weight: 500;
+	}
+
 	.pill {
 		display: inline-flex;
 		align-items: center;
@@ -1019,19 +816,26 @@
 		color: var(--accent);
 	}
 
-	.pill-recur {
-		background: var(--info-subtle);
-		color: var(--info);
-	}
-
-	.pill-once {
-		background: var(--bg-muted);
-		color: var(--text-secondary);
-	}
-
 	.pill-hook {
 		background: var(--success-subtle);
 		color: var(--success);
+	}
+
+	.recur-icon {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 20px;
+		height: 20px;
+		border-radius: 5px;
+		background: var(--bg-muted);
+		color: var(--text-faint);
+		flex-shrink: 0;
+	}
+
+	.recur-icon-on {
+		background: var(--info-subtle);
+		color: var(--info);
 	}
 
 	.status-tag {
@@ -1051,11 +855,12 @@
 	}
 
 	.qm {
-		font-family: var(--font-mono);
-		font-size: 11px;
-		opacity: 0.7;
+		font-size: 9px;
+		opacity: 0.6;
 		letter-spacing: 0;
 		text-transform: none;
+		vertical-align: super;
+		font-weight: 500;
 	}
 
 	.via {
@@ -1075,10 +880,12 @@
 		text-overflow: ellipsis;
 	}
 
-	.quote {
-		font-family: var(--font-mono);
-		color: var(--text-faint);
+	.cron-card.expanded .row-prompt {
+		white-space: normal;
+		overflow: visible;
+		text-overflow: unset;
 	}
+
 
 	.row-meta-line {
 		display: flex;
@@ -1170,34 +977,38 @@
 	}
 
 	/* Metadata rows sit above, full width */
-	.meta-strip {
+	.meta-row {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 12px 24px;
+		align-items: flex-start;
+		gap: 0 32px;
 	}
 
-	.meta-strip .kv-row {
-		min-width: 160px;
+	.kv-flex {
+		display: inline-flex;
+		align-items: center;
+		gap: 5px;
 	}
 
-	/* Prompt + fires side by side — height is driven by whichever is taller */
-	.prompt-fires-row {
-		display: grid;
-		grid-template-columns: 260px 1fr;
-		align-items: stretch;
-		gap: 22px;
-		border-top: 1px dashed var(--border);
-		padding-top: 14px;
+	.kv-arrow {
+		color: var(--text-faint);
+		font-size: 12px;
+		line-height: 1;
+		flex-shrink: 0;
 	}
 
-	.prompt-col {
+	.kv-dot {
+		color: var(--text-faint);
+		opacity: 0.6;
+		line-height: 1;
+		flex-shrink: 0;
+	}
+
+	.fires-section {
 		display: flex;
 		flex-direction: column;
-		gap: 6px;
-	}
-
-	.prompt-col .prompt-block {
-		flex: 1;
+		border-top: 1px dashed var(--border);
+		padding-top: 14px;
 	}
 
 	/* ── Key-value column (kept for any remaining .kv-row usage) ───────────── */
@@ -1246,154 +1057,98 @@
 		border-bottom-color: var(--accent);
 	}
 
-	.prompt-block {
-		background: var(--bg-subtle);
-		border: 1px solid var(--border);
-		border-radius: 8px;
-		padding: 10px 12px;
-		font-family: var(--font-mono);
-		font-size: 12px;
-		line-height: 1.55;
-		color: var(--text-primary);
-		white-space: pre-wrap;
-		word-break: break-word;
-		margin-top: 2px;
-	}
 
-	.barb {
-		color: var(--accent);
-		font-weight: 600;
-		margin-right: 6px;
-	}
-
-	/* ── Fires column ──────────────────────────────────────────────────────── */
-	.fires-col {
-		min-width: 0;
+	/* ── Fires ─────────────────────────────────────────────────────────────── */
+	/* ── Fire timeline ─────────────────────────────────────────────────────── */
+	.fire-timeline {
 		display: flex;
 		flex-direction: column;
+		margin-top: 10px;
 	}
 
-	.fires-scroll {
-		max-height: 400px;
-		overflow-y: auto;
-		padding-right: 4px;
+	.fire-tl-row {
+		display: grid;
+		grid-template-columns: 20px 1fr;
+		gap: 0 10px;
 	}
 
-	.fires-scroll::-webkit-scrollbar {
-		width: 4px;
-	}
-
-	.fires-scroll::-webkit-scrollbar-track {
-		background: transparent;
-	}
-
-	.fires-scroll::-webkit-scrollbar-thumb {
-		background: var(--border-hover);
-		border-radius: 99px;
-	}
-
-	.fires-header {
+	.fire-tl-track {
 		display: flex;
+		flex-direction: column;
 		align-items: center;
-		justify-content: space-between;
-		margin-bottom: 10px;
+		padding-top: 4px;
 	}
 
-	.fires-source {
-		font-size: 11px;
-		text-transform: uppercase;
-		letter-spacing: 0.04em;
-		color: var(--text-faint);
+	.fire-tl-dot {
+		width: 7px;
+		height: 7px;
+		border-radius: 50%;
+		background: var(--border-hover);
+		flex-shrink: 0;
 	}
 
-	.fire-card {
-		background: var(--bg-subtle);
-		border: 1px solid var(--border);
-		border-radius: 8px;
-		padding: 10px 12px;
-		margin-bottom: 6px;
+	.fire-tl-dot.truth {
+		background: var(--success);
+		box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2);
 	}
 
-	.fire-head {
+	.fire-tl-line {
+		flex: 1;
+		width: 1px;
+		background: var(--border);
+		margin: 3px 0;
+		min-height: 8px;
+	}
+
+	.fire-tl-content {
 		display: flex;
 		flex-wrap: wrap;
-		align-items: center;
-		gap: 8px;
-		margin-bottom: 6px;
+		align-items: baseline;
+		gap: 0 8px;
+		padding-bottom: 12px;
 	}
 
-	.fire-time {
+	.fire-tl-row.last .fire-tl-content {
+		padding-bottom: 0;
+	}
+
+	.fire-tl-time {
 		font-family: var(--font-mono);
-		font-size: 11.5px;
-		color: var(--text-muted);
-	}
-
-	.fire-time b {
+		font-size: 12px;
+		font-weight: 600;
 		color: var(--text-primary);
-		font-weight: 500;
 	}
 
-	.fire-ago {
+	.fire-tl-ago {
 		font-size: 11.5px;
 		color: var(--text-faint);
 	}
 
-	.fire-conf {
-		margin-left: auto;
-		display: inline-flex;
-		align-items: center;
-		gap: 6px;
-		font-family: var(--font-mono);
-		font-size: 11px;
+	.fire-truth {
+		font-size: 10.5px;
+		font-weight: 600;
+		letter-spacing: 0.04em;
+		text-transform: uppercase;
+		color: var(--success);
 	}
 
-	.conf-bar {
-		width: 38px;
-		height: 3px;
-		background: rgba(0, 0, 0, 0.06);
-		border-radius: 99px;
-		overflow: hidden;
-		display: inline-block;
-	}
-
-	.conf-fill {
-		height: 100%;
-		background: var(--text-muted);
-		opacity: 0.5;
-		border-radius: 99px;
-		display: block;
-	}
-
-	.fire-conf.low .conf-fill {
-		background: var(--warning);
-		opacity: 0.7;
-	}
-
-	.conf-pct {
+	.fire-tl-body {
+		width: 100%;
+		margin: 3px 0 0;
+		font-size: 12.5px;
+		line-height: 1.5;
 		color: var(--text-muted);
-	}
-
-	.fire-conf.low .conf-pct {
-		color: var(--warning);
-	}
-
-	.fire-body {
-		font-size: 13px;
-		line-height: 1.55;
-		color: var(--text-primary);
-		white-space: pre-wrap;
 		word-break: break-word;
 	}
 
 	.fires-empty {
-		padding: 20px;
+		margin-top: 8px;
+		padding: 16px;
 		text-align: center;
 		color: var(--text-muted);
-		background: var(--bg-subtle);
 		border: 1px dashed var(--border);
 		border-radius: 8px;
 		font-size: 12.5px;
-		line-height: 1.55;
 	}
 
 	/* ── Big empty state ───────────────────────────────────────────────────── */
@@ -1522,16 +1277,8 @@
 
 	/* ── Responsive ────────────────────────────────────────────────────────── */
 	@media (max-width: 760px) {
-		.stat-grid {
-			grid-template-columns: 1fr;
-		}
-
-		.prompt-fires-row {
-			grid-template-columns: 1fr;
-		}
-
 		.cron-row {
-			grid-template-columns: 18px 14px 1fr;
+			grid-template-columns: 14px 1fr 18px;
 		}
 
 		.ttl-col {

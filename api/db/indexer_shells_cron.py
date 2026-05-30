@@ -68,9 +68,10 @@ _TASK_NOTIF_STATUS_RE = re.compile(r"<status>\s*(.*?)\s*</status>")
 _TASK_NOTIF_EXIT_CODE_RE = re.compile(r"exit code\s+(\d+)", re.IGNORECASE)
 
 # Cron job IDs are documented as 8-char alphanumeric. Real formats observed:
+#   "Scheduled recurring job 18a4d15a"  (current Claude Code format)
 #   "task created with ID: a4f9b2c1" or "id": "a4f9b2c1" in JSON.
 _CRON_ID_RE = re.compile(
-    r"(?:cron[_ ]?id|task[_ ]?id|\bid)[\":\s]+([a-z0-9]{8})\b",
+    r"(?:cron[_ ]?id|task[_ ]?id|\bjob|\bid)[\":\s]+([a-z0-9]{8})\b",
     re.IGNORECASE,
 )
 
