@@ -30,8 +30,6 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-
-
 def _get_analytics_sqlite(
     project: Optional[str],
     start_dt: Optional[datetime],
@@ -86,7 +84,9 @@ def _get_analytics_sqlite(
 
         return ProjectAnalytics(
             total_sessions=totals["total_sessions"],
-            total_tokens=totals["total_input"] + totals["total_cache_read"] + totals["total_output"],
+            total_tokens=totals["total_input"]
+            + totals["total_cache_read"]
+            + totals["total_output"],
             total_input_tokens=totals["total_input"],
             total_output_tokens=totals["total_output"],
             total_duration_seconds=totals["total_duration"],
