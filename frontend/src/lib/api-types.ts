@@ -465,6 +465,7 @@ export interface StatItem {
 	title: string;
 	value: string | number;
 	description?: string;
+	footnote?: string;
 	// Using 'any' for icon to allow Lucide components which have complex signatures
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	icon?: any;

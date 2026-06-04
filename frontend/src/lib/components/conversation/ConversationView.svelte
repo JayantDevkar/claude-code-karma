@@ -796,6 +796,7 @@
 			{
 				title: 'Total Cost',
 				value: formatCost(entity.total_cost),
+				footnote: 'Pay-as-you-go API rate — not your subscription cost',
 				icon: DollarSign,
 				color: 'purple'
 			},

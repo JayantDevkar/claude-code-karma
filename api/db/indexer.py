@@ -492,7 +492,7 @@ def _index_session(
                         subagent_type,
                         usage.total_input,
                         usage.output_tokens,
-                        usage.calculate_cost(),
+                        usage.calculate_cost(subagent.get_primary_model()),
                         duration,
                         subagent.start_time.isoformat() if subagent.start_time else None,
                     ),
