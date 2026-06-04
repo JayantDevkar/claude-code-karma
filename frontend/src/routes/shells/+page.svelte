@@ -314,7 +314,7 @@
 			{#each filtered as s (s.id)}
 				{@const open = openIds.has(s.id)}
 				<li
-					class="rounded-xl border bg-white transition
+					class="group rounded-xl border bg-white transition
                  {open
 						? 'border-stone-300 shadow-[0_1px_0_rgba(0,0,0,.03),0_6px_20px_-8px_rgba(0,0,0,.08)]'
 						: 'border-stone-200 hover:border-stone-300'}"
@@ -355,23 +355,31 @@
 						</button>
 
 						<div class="flex items-center gap-2.5">
+							{#if s.status === 'running'}
+								<div class="kill-wrap w-0 overflow-hidden group-hover:w-[90px]">
+									<div class="flex justify-end pr-2">
+										<button
+											type="button"
+											disabled={killing.has(s.toolUseId)}
+											onclick={() => killShell(s.toolUseId)}
+											class="kill-pill whitespace-nowrap disabled:opacity-50"
+										>
+											{#if killing.has(s.toolUseId)}
+												<svg class="kill-spinner mr-1" xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+													<path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+												</svg>
+												Killing…
+											{:else}
+												Kill shell
+											{/if}
+										</button>
+									</div>
+								</div>
+							{/if}
 							<div class="flex flex-col items-end gap-0.5 text-right">
 								<span class="font-mono text-[13px] font-medium">{formatDuration(s.durationMs)}</span>
-								<span class="font-mono text-[11.5px] text-stone-400">
-									{s.pollCount} polls
-								</span>
+								<span class="font-mono text-[11.5px] text-stone-400">{s.pollCount} polls</span>
 							</div>
-							{#if s.status === 'running'}
-								<button
-									type="button"
-									title="Kill shell"
-									disabled={killing.has(s.toolUseId)}
-									onclick={() => killShell(s.toolUseId)}
-									class="shrink-0 text-[18px] leading-none text-red-400 transition hover:text-red-600 disabled:opacity-40"
-								>
-									{killing.has(s.toolUseId) ? '…' : '×'}
-								</button>
-							{/if}
 						</div>
 
 						<button
@@ -534,6 +542,41 @@
 		letter-spacing: 0.07em;
 		color: #a8a29e;
 		font-weight: 600;
+	}
+
+	.kill-wrap {
+		transition: width 180ms cubic-bezier(0.4, 0, 0.2, 1);
+		flex-shrink: 0;
+	}
+	.kill-pill {
+		display: inline-flex;
+		align-items: center;
+		height: 24px;
+		padding: 0 10px;
+		border-radius: 6px;
+		font-size: 12.5px;
+		font-weight: 500;
+		color: #dc2626;
+		background: #fef2f2;
+		border: 1px solid #fecaca;
+		transition: background 120ms ease, border-color 120ms ease, color 120ms ease, transform 100ms ease;
+		cursor: pointer;
+	}
+	.kill-pill:hover {
+		background: #fee2e2;
+		border-color: #f87171;
+		color: #b91c1c;
+		transform: scale(1.03);
+	}
+	.kill-pill:active {
+		transform: scale(0.97);
+	}
+	@keyframes spin {
+		to { transform: rotate(360deg); }
+	}
+	.kill-spinner {
+		animation: spin 0.8s linear infinite;
+		color: #ef4444;
 	}
 
 	.poll-pre {
