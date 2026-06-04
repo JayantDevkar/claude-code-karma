@@ -483,7 +483,7 @@
 										{#if job.recurring}No fires observed yet.{:else}One-shot — no fires recorded.{/if}
 									</div>
 								{:else}
-									{@const visibleFires = job.fires.filter((f) => f.outcome_excerpt || f.inference_source === 'hook')}
+									{@const visibleFires = (job.fires ?? []).filter((f) => f.outcome_excerpt || f.inference_source === 'hook')}
 									<div class="fire-timeline">
 										{#each visibleFires as fire, i}
 											{@const truth = fire.inference_source === 'hook'}

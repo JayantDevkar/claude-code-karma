@@ -787,7 +787,9 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
                 )
                 conn.execute("PRAGMA foreign_keys=ON")
             # Force reindex so manual shells get picked up.
-            conn.execute("UPDATE sessions SET needs_shell_cron_reindex = 1")
+            # Guard: minimal test fixtures may not have a sessions table.
+            if "sessions" in existing:
+                conn.execute("UPDATE sessions SET needs_shell_cron_reindex = 1")
 
     # Record version
     conn.execute(
