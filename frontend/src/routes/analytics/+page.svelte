@@ -259,6 +259,7 @@
 		{
 			title: 'Total Cost',
 			value: formatCurrency(analytics.estimated_cost_usd),
+			footnote: 'Pay-as-you-go API rate — not your subscription cost',
 			icon: Zap,
 			color: 'green'
 		},

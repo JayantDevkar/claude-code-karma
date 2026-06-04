@@ -832,6 +832,7 @@
 			{
 				title: 'Estimated Cost',
 				value: formatCost(analytics.estimated_cost_usd),
+				footnote: 'Pay-as-you-go API rate — not your subscription cost',
 				icon: DollarSign,
 				color: 'purple'
 			},
@@ -1584,7 +1585,7 @@
 
 									<div class="pt-4 border-t border-[var(--border)] space-y-2">
 										<div class="flex justify-between items-center text-xs">
-											<span class="text-[var(--text-muted)]">Est. Cost</span>
+											<span class="text-[var(--text-muted)]" title="Pay-as-you-go API rate — not your subscription cost">Est. Cost ⓘ</span>
 											<span class="font-mono text-[var(--text-primary)]"
 												>${analytics.estimated_cost_usd}</span
 											>
