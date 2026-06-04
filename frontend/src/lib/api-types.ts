@@ -1815,7 +1815,7 @@ export interface CreateLinkResponse {
 // Background Shells (v13)
 // ============================================
 
-export type ShellToolName = 'Bash' | 'Monitor';
+export type ShellToolName = 'Bash' | 'Monitor' | 'Manual';
 export type ShellTerminationReason = 'kill' | 'natural' | 'timeout' | 'session_end';
 export type ShellStatusFilter = 'running' | 'closed';
 

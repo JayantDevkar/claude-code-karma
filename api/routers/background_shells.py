@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 import shutil
 import subprocess
+import time
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -31,6 +32,27 @@ from db.queries_shells_cron import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["background-shells"])
+
+# Debounce: only run the incremental sync at most once per this many seconds.
+_SYNC_DEBOUNCE_SECS = 10
+_last_sync_at: float = 0.0
+
+
+def _maybe_sync() -> None:
+    """Run an incremental JSONL sync if enough time has passed since the last one."""
+    global _last_sync_at
+    now = time.monotonic()
+    if now - _last_sync_at < _SYNC_DEBOUNCE_SECS:
+        return
+    _last_sync_at = now
+    try:
+        from db.connection import get_writer_db as _gw
+        from db.indexer import sync_all_projects
+
+        conn = _gw()
+        sync_all_projects(conn)
+    except Exception as exc:
+        logger.warning("shells quick-sync failed: %s", exc)
 
 
 # ---------------------------------------------------------------------------
@@ -48,8 +70,8 @@ def list_shells_global(
     ),
     tool: Optional[str] = Query(
         None,
-        description="'Bash' or 'Monitor'",
-        pattern="^(Bash|Monitor)$",
+        description="'Bash', 'Monitor', or 'Manual'",
+        pattern="^(Bash|Monitor|Manual)$",
     ),
     limit: int = Query(200, ge=1, le=1000),
 ) -> dict:
@@ -57,6 +79,7 @@ def list_shells_global(
     Aggregated background_shells across all sessions, joined to sessions +
     projects for display labels. Ordered by spawned_at DESC.
     """
+    _maybe_sync()
     with sqlite_read() as conn:
         conn.row_factory = __import__("sqlite3").Row
         rows = get_shells_global(

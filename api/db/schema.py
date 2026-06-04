@@ -10,7 +10,7 @@ import sqlite3
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 18
+SCHEMA_VERSION = 19
 
 SCHEMA_SQL = """
 -- Schema versioning
@@ -307,7 +307,7 @@ CREATE TABLE IF NOT EXISTS background_shells (
     session_uuid             TEXT    NOT NULL,
     tool_use_id              TEXT    NOT NULL,
     shell_id                 TEXT,
-    tool_name                TEXT    NOT NULL CHECK (tool_name IN ('Bash','Monitor')),
+    tool_name                TEXT    NOT NULL CHECK (tool_name IN ('Bash','Monitor','Manual')),
     command                  TEXT    NOT NULL,
     command_truncated        INTEGER NOT NULL DEFAULT 0 CHECK (command_truncated IN (0,1)),
     description              TEXT,
@@ -723,6 +723,71 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
                 conn.execute(
                     "ALTER TABLE background_shells ADD COLUMN output_file_path TEXT"
                 )
+
+        if current_version < 19:
+            logger.info(
+                "Migrating → v19: extend background_shells.tool_name CHECK to include 'Manual'"
+            )
+            # SQLite can't ALTER a CHECK constraint — must recreate the table.
+            # Disable FK enforcement so the DROP isn't blocked by shell_polls.
+            existing = {
+                r[0] for r in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                ).fetchall()
+            }
+            if "background_shells" in existing:
+                conn.execute("PRAGMA foreign_keys=OFF")
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS background_shells_v19 (
+                        id                       INTEGER PRIMARY KEY AUTOINCREMENT,
+                        session_uuid             TEXT    NOT NULL,
+                        tool_use_id              TEXT    NOT NULL,
+                        shell_id                 TEXT,
+                        tool_name                TEXT    NOT NULL
+                            CHECK (tool_name IN ('Bash','Monitor','Manual')),
+                        command                  TEXT    NOT NULL,
+                        command_truncated        INTEGER NOT NULL DEFAULT 0
+                            CHECK (command_truncated IN (0,1)),
+                        description              TEXT,
+                        is_persistent            INTEGER NOT NULL DEFAULT 0
+                            CHECK (is_persistent IN (0,1)),
+                        timeout_ms               INTEGER,
+                        spawned_at               TEXT    NOT NULL,
+                        terminated_at            TEXT,
+                        terminated_by            TEXT
+                            CHECK (terminated_by IN ('kill','natural','timeout','session_end')),
+                        exit_code                INTEGER,
+                        poll_count               INTEGER NOT NULL DEFAULT 0,
+                        total_output_bytes       INTEGER NOT NULL DEFAULT 0,
+                        last_output_at           TEXT,
+                        spawn_message_uuid       TEXT,
+                        output_file_path         TEXT,
+                        CHECK ((terminated_at IS NULL) = (terminated_by IS NULL)),
+                        UNIQUE(tool_use_id)
+                    )
+                """)
+                conn.execute(
+                    "INSERT OR IGNORE INTO background_shells_v19 SELECT * FROM background_shells"
+                )
+                conn.execute("DROP TABLE background_shells")
+                conn.execute(
+                    "ALTER TABLE background_shells_v19 RENAME TO background_shells"
+                )
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_bg_shells_session "
+                    "ON background_shells(session_uuid, spawned_at DESC)"
+                )
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_bg_shells_shell_id "
+                    "ON background_shells(shell_id) WHERE shell_id IS NOT NULL"
+                )
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_bg_shells_spawned "
+                    "ON background_shells(spawned_at DESC)"
+                )
+                conn.execute("PRAGMA foreign_keys=ON")
+            # Force reindex so manual shells get picked up.
+            conn.execute("UPDATE sessions SET needs_shell_cron_reindex = 1")
 
     # Record version
     conn.execute(

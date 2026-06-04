@@ -5,7 +5,7 @@
 	import StatsGrid from '$lib/components/StatsGrid.svelte';
 	import { Activity, Terminal, Box } from 'lucide-svelte';
 
-	type Tool = 'bash' | 'monitor';
+	type Tool = 'bash' | 'monitor' | 'manual';
 	type Status = 'running' | 'closed';
 	type CloseReason = 'kill' | 'natural' | 'timeout' | 'session_end';
 
@@ -56,8 +56,8 @@
 			project: (s as any).project_display_name ?? (s as any).project_encoded_name ?? '—',
 			session: (s as any).session_slug ?? s.session_uuid?.slice(0, 8) ?? '—',
 			sessionUrl:
-				(s as any).project_encoded_name && (s as any).session_slug
-					? `/projects/${(s as any).project_encoded_name}/${(s as any).session_slug}`
+				(s as any).project_encoded_name && (s.session_uuid || (s as any).session_slug)
+					? `/projects/${(s as any).project_encoded_name}/${(s as any).session_slug ?? s.session_uuid}`
 					: undefined,
 			polls: (s.polls ?? []).map((p) => ({
 				ts: p.polled_at,
@@ -88,6 +88,15 @@
 	let projectFilter = $state<string>('all');
 	let query = $state('');
 	let openIds = $state<Set<string>>(new Set());
+	let copiedIds = $state<Set<string>>(new Set());
+
+	function copyCommand(id: string, command: string) {
+		navigator.clipboard.writeText(command);
+		copiedIds = new Set([...copiedIds, id]);
+		setTimeout(() => {
+			copiedIds = new Set([...copiedIds].filter((x) => x !== id));
+		}, 1500);
+	}
 
 	const projects = $derived(Array.from(new Set(shells.map((s) => s.project))));
 
@@ -151,10 +160,15 @@
 
 	function formatSpawned(iso: string): string {
 		const d = new Date(iso);
-		const t = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-		const today = new Date();
-		const same = d.toDateString() === today.toDateString();
-		return same ? `Today, ${t}` : d.toLocaleString();
+		const now = new Date();
+		const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+		if (d.toDateString() === now.toDateString()) return `Today at ${time}`;
+		const yesterday = new Date(now);
+		yesterday.setDate(now.getDate() - 1);
+		if (d.toDateString() === yesterday.toDateString()) return `Yesterday at ${time}`;
+		const sameYear = d.getFullYear() === now.getFullYear();
+		const dateStr = d.toLocaleDateString([], { month: 'short', day: 'numeric', ...(sameYear ? {} : { year: 'numeric' }) });
+		return `${dateStr} at ${time}`;
 	}
 
 	function statusLabel(s: Shell): string {
@@ -192,6 +206,28 @@
 			}[s.closeReason ?? 'session_end'] ?? 'bg-stone-400'
 		);
 	}
+
+	// Auto-refresh every 5s; track last refresh time for footer display
+	import { onMount } from 'svelte';
+	let lastRefresh = $state(new Date());
+	let secondsAgo = $state(0);
+
+	onMount(() => {
+		const tick = setInterval(() => {
+			secondsAgo = Math.round((Date.now() - lastRefresh.getTime()) / 1000);
+		}, 1000);
+
+		const refresh = setInterval(async () => {
+			await invalidateAll();
+			lastRefresh = new Date();
+			secondsAgo = 0;
+		}, 5000);
+
+		return () => {
+			clearInterval(tick);
+			clearInterval(refresh);
+		};
+	});
 </script>
 
 <div class="mx-auto max-w-[1120px] px-8 pb-20 pt-8 text-stone-900">
@@ -232,6 +268,7 @@
 			<option value="all">All tools</option>
 			<option value="bash">Bash</option>
 			<option value="monitor">Monitor</option>
+			<option value="manual">Manual</option>
 		</select>
 
 		<select bind:value={projectFilter} class="select">
@@ -282,29 +319,25 @@
 						? 'border-stone-300 shadow-[0_1px_0_rgba(0,0,0,.03),0_6px_20px_-8px_rgba(0,0,0,.08)]'
 						: 'border-stone-200 hover:border-stone-300'}"
 				>
-					<button
-						type="button"
-						class="grid w-full grid-cols-[18px_14px_1fr_auto] items-center gap-3.5 px-4 py-3.5 text-left"
-						onclick={() => toggle(s.id)}
-					>
-						<span class="text-stone-400 transition {open ? 'rotate-90 text-stone-900' : ''}"
-							>›</span
-						>
+					<div class="grid w-full grid-cols-[14px_1fr_auto_18px] items-center gap-3.5 px-4 py-3.5">
 						<span class="size-2 rounded-full {dotClass(s)}"></span>
 
-						<div class="min-w-0 space-y-1">
+						<button
+							type="button"
+							class="min-w-0 space-y-0.5 text-left"
+							onclick={() => toggle(s.id)}
+						>
 							<div class="flex flex-wrap items-center gap-2.5">
 								<span class="font-mono text-[12.5px] font-semibold text-violet-700">{s.id}</span>
 								<span
 									class="rounded px-1.5 py-0.5 text-[10.5px] font-semibold uppercase tracking-wider
                              {s.tool === 'bash'
 										? 'bg-violet-100 text-violet-700'
-										: 'bg-blue-100 text-blue-600'}"
+										: s.tool === 'monitor'
+											? 'bg-blue-100 text-blue-600'
+											: 'bg-amber-100 text-amber-700'}"
 								>
 									{s.tool}
-								</span>
-								<span class="text-[10.5px] font-semibold uppercase tracking-wider {statusTone(s)}">
-									{statusLabel(s)}
 								</span>
 								{#if s.exitCode !== undefined}
 									<span
@@ -318,91 +351,101 @@
 									<span class="text-[13px] font-medium text-stone-900">· {s.description}</span>
 								{/if}
 							</div>
-							<div class="truncate font-mono text-[12.5px] text-stone-500">
-								<span class="mr-1.5 text-violet-500">$</span>{s.command}
+							<div class="font-mono text-[11.5px] text-stone-400">{s.project} · {formatSpawned(s.spawnedAt)}</div>
+						</button>
+
+						<div class="flex items-center gap-2.5">
+							<div class="flex flex-col items-end gap-0.5 text-right">
+								<span class="font-mono text-[13px] font-medium">{formatDuration(s.durationMs)}</span>
+								<span class="font-mono text-[11.5px] text-stone-400">
+									{s.pollCount} polls
+								</span>
 							</div>
+							{#if s.status === 'running'}
+								<button
+									type="button"
+									title="Kill shell"
+									disabled={killing.has(s.toolUseId)}
+									onclick={() => killShell(s.toolUseId)}
+									class="shrink-0 text-[18px] leading-none text-red-400 transition hover:text-red-600 disabled:opacity-40"
+								>
+									{killing.has(s.toolUseId) ? '…' : '×'}
+								</button>
+							{/if}
 						</div>
 
-						<div class="flex flex-col items-end gap-0.5 text-right">
-							<span class="font-mono text-[13px] font-medium">{formatDuration(s.durationMs)}</span>
-							<span class="font-mono text-[11.5px] text-stone-400">
-								{s.pollCount} polls · {formatBytes(s.totalBytes)}
-							</span>
-						</div>
-					</button>
+						<button
+							type="button"
+							class="text-stone-400 transition {open ? 'rotate-90 text-stone-900' : ''}"
+							onclick={() => toggle(s.id)}
+						>›</button>
+					</div>
 
 					{#if open}
-						<div
-							class="grid grid-cols-[240px_1fr] gap-6 border-t border-dashed border-stone-200 px-4.5 pb-4.5 pt-4"
-						>
-							<dl class="space-y-2.5">
-								<div>
-									<dt class="kv-label">Shell ID</dt>
-									<dd class="font-mono text-[12.5px] text-violet-700">{s.id}</dd>
-								</div>
-								<div>
-									<dt class="kv-label">Spawned</dt>
-									<dd class="font-mono text-[12.5px]">{formatSpawned(s.spawnedAt)}</dd>
-								</div>
-								<div>
-									<dt class="kv-label">Duration</dt>
-									<dd class="font-mono text-[12.5px]">
-										{formatDuration(s.durationMs)}{s.status === 'running' ? ' · ongoing' : ''}
-									</dd>
-								</div>
-								<div>
-									<dt class="kv-label">Project</dt>
-									<dd class="font-mono text-[12.5px]">{s.project}</dd>
-								</div>
-								<div>
-									<dt class="kv-label">Session</dt>
-									<dd class="font-mono text-[12.5px] text-violet-700">
-										{#if s.sessionUrl}
-											<a href={s.sessionUrl} class="hover:underline">{s.session}</a>
-										{:else}
-											{s.session}
-										{/if}
-									</dd>
-								</div>
-								<div>
-									<dt class="kv-label">Output</dt>
-									<dd class="font-mono text-[12.5px]">
-										{formatBytes(s.totalBytes)} across {s.pollCount} polls
-									</dd>
-								</div>
-								{#if s.status === 'running'}
-									<button
-										class="btn mt-1.5 w-full justify-center"
-										disabled={killing.has(s.toolUseId)}
-										onclick={() => killShell(s.toolUseId)}
-									>
-										{killing.has(s.toolUseId) ? '…killing' : '▢ Kill shell'}
-									</button>
-								{/if}
-							</dl>
+						<div class="border-t border-dashed border-stone-200 px-4.5 pb-4.5 pt-4 space-y-3">
 
-							<div class="min-w-0">
-								<div class="mb-2 flex items-center justify-between">
-									<h4 class="kv-label">Output polls · {s.polls.length} shown</h4>
-									<span class="kv-label">via BashOutput</span>
-								</div>
-								{#each s.polls as poll, i (i)}
-									<div class="mb-1.5 rounded-lg border border-stone-200 bg-stone-100 px-3 py-2.5">
-										<div class="mb-1.5 flex items-center justify-between">
-											<span class="font-mono text-[11.5px] text-stone-500">
-												<b class="font-medium text-stone-900">{poll.ts}</b>
-											</span>
-											<span
-												class="rounded border border-stone-200 bg-white px-1.5 py-0.5 font-mono text-[11px] text-stone-500"
-											>
-												{formatBytes(poll.bytes)}
-											</span>
-										</div>
-										<pre
-											class="m-0 max-h-28 overflow-auto whitespace-pre-wrap break-words font-mono text-[12px] leading-6 text-stone-800">{poll.text}</pre>
-									</div>
-								{/each}
+							<!-- Command block -->
+							<div class="flex items-start gap-2 rounded-[10px] border border-[var(--border)] bg-[var(--bg-subtle)] px-3.5 py-2.5 font-mono text-[12.5px]">
+								<span class="shrink-0 font-semibold text-[var(--accent)]">$</span>
+								<span class="min-w-0 flex-1 whitespace-pre-wrap break-all text-[var(--text-primary)]">{s.command}</span>
+								<button
+									type="button"
+									title="Copy command"
+									onclick={() => copyCommand(s.id, s.command)}
+									class="shrink-0 text-stone-400 transition hover:text-stone-700"
+								>
+									{#if copiedIds.has(s.id)}
+										<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="text-emerald-500"><polyline points="20 6 9 17 4 12"/></svg>
+									{:else}
+										<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+									{/if}
+								</button>
 							</div>
+
+							<!-- Session link -->
+							<div class="flex items-baseline gap-1.5">
+								<span class="kv-label">Session</span>
+								{#if s.sessionUrl}
+									<a href={s.sessionUrl} class="font-mono text-[12.5px] text-violet-700 hover:underline">{s.session}</a>
+								{:else}
+									<span class="font-mono text-[12.5px] text-violet-700">{s.session}</span>
+								{/if}
+							</div>
+
+							<!-- Output polls -->
+							{#if s.polls.length > 0}
+								<div>
+									<div class="mb-2 flex items-center justify-between">
+										<span class="kv-label">Output polls · {s.polls.length} shown</span>
+										<span class="kv-label">via BashOutput</span>
+									</div>
+									{#each s.polls as poll, i (i)}
+										{@const pollKey = s.id + ':' + i}
+										<div class="mb-1.5 rounded-lg border border-stone-200 bg-stone-100 px-3 py-2.5">
+											<div class="mb-1.5 flex items-center justify-between">
+												<span class="font-mono text-[11px] text-stone-400">{formatSpawned(poll.ts)}</span>
+												<div class="flex items-center gap-2">
+													<span class="font-mono text-[10.5px] text-stone-400">{formatBytes(poll.bytes)}</span>
+													<button
+														type="button"
+														title="Copy output"
+														onclick={() => copyCommand(pollKey, poll.text)}
+														class="text-stone-400 transition hover:text-stone-700"
+													>
+														{#if copiedIds.has(pollKey)}
+															<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="text-emerald-500"><polyline points="20 6 9 17 4 12"/></svg>
+														{:else}
+															<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+														{/if}
+													</button>
+												</div>
+											</div>
+											<pre class="poll-pre m-0 max-h-48 overflow-auto whitespace-pre-wrap break-words font-mono text-[12px] leading-6 text-stone-800">{poll.text}</pre>
+										</div>
+									{/each}
+								</div>
+							{/if}
+
 						</div>
 					{/if}
 				</li>
@@ -416,7 +459,7 @@
 			>↵</kbd
 		>
 		<span>Click any row to expand poll history</span>
-		<span class="ml-auto">Updated 2s ago</span>
+		<span class="ml-auto">Updated {secondsAgo === 0 ? 'just now' : `${secondsAgo}s ago`}</span>
 	</p>
 </div>
 
@@ -491,5 +534,24 @@
 		letter-spacing: 0.07em;
 		color: #a8a29e;
 		font-weight: 600;
+	}
+
+	.poll-pre {
+		scrollbar-width: thin;
+		scrollbar-color: rgba(0, 0, 0, 0.12) transparent;
+	}
+	.poll-pre::-webkit-scrollbar {
+		width: 3px;
+		height: 3px;
+	}
+	.poll-pre::-webkit-scrollbar-track {
+		background: transparent;
+	}
+	.poll-pre::-webkit-scrollbar-thumb {
+		background: rgba(0, 0, 0, 0.12);
+		border-radius: 99px;
+	}
+	.poll-pre::-webkit-scrollbar-thumb:hover {
+		background: rgba(0, 0, 0, 0.28);
 	}
 </style>

@@ -64,8 +64,21 @@ _OUTPUT_FILE_RE = re.compile(
 #     <summary>... completed (exit code 0)</summary>
 #   </task-notification>
 _TASK_NOTIF_TOOL_USE_ID_RE = re.compile(r"<tool-use-id>\s*(.*?)\s*</tool-use-id>")
+_TASK_NOTIF_TASK_ID_RE = re.compile(r"<task-id>\s*(.*?)\s*</task-id>")
 _TASK_NOTIF_STATUS_RE = re.compile(r"<status>\s*(.*?)\s*</status>")
 _TASK_NOTIF_EXIT_CODE_RE = re.compile(r"exit code\s+(\d+)", re.IGNORECASE)
+
+# User-initiated background commands (! <cmd> in Claude Code CLI).
+# The CLI writes two sequential user messages:
+#   1. <bash-input>the command</bash-input>
+#   2. <bash-stdout>Command was manually backgrounded by user with ID: abc123.
+#         Output is being written to: /tmp/.../tasks/abc123.output</bash-stdout>
+_BASH_INPUT_RE = re.compile(r"<bash-input>(.*?)</bash-input>", re.DOTALL)
+_MANUAL_BG_RE = re.compile(
+    r"manually backgrounded by user with ID:\s*([a-z0-9]{6,16})"
+    r".{0,200}?Output is being written to:\s*(\S+\.output)",
+    re.IGNORECASE | re.DOTALL,
+)
 
 # Cron job IDs are documented as 8-char alphanumeric. Real formats observed:
 #   "Scheduled recurring job 18a4d15a"  (current Claude Code format)
@@ -136,20 +149,23 @@ def _extract_output_file(result_text: str) -> Optional[str]:
 def _parse_task_notification(content: str) -> Optional[Dict[str, Any]]:
     """
     Parse a <task-notification> string written by Claude Code when a background
-    shell exits naturally. Returns a dict with tool_use_id, terminated_by, and
-    exit_code, or None if the string doesn't match.
+    shell exits naturally. Returns a dict with tool_use_id (may be None for
+    user-initiated shells), task_id, terminated_by, and exit_code, or None if
+    the string doesn't match.
     """
     if "<task-notification>" not in content:
         return None
-    tu_m = _TASK_NOTIF_TOOL_USE_ID_RE.search(content)
     st_m = _TASK_NOTIF_STATUS_RE.search(content)
-    if not tu_m or not st_m:
+    if not st_m:
         return None
+    tu_m = _TASK_NOTIF_TOOL_USE_ID_RE.search(content)
+    tid_m = _TASK_NOTIF_TASK_ID_RE.search(content)
     status = st_m.group(1).lower()
     terminated_by = "timeout" if status == "timeout" else "natural"
     ec_m = _TASK_NOTIF_EXIT_CODE_RE.search(content)
     return {
-        "tool_use_id": tu_m.group(1),
+        "tool_use_id": tu_m.group(1) if tu_m else None,
+        "task_id": tid_m.group(1) if tid_m else None,
         "terminated_by": terminated_by,
         "exit_code": int(ec_m.group(1)) if ec_m else None,
     }
@@ -209,6 +225,10 @@ def extract_shells_and_cron(
     # Buffered Read-poll rows pending their tool_result
     pending_read_polls: Dict[str, Dict[str, Any]] = {}  # by Read tool_use_id
 
+    # User-initiated background commands (! <cmd>): map message UUID → command
+    # text so the "manually backgrounded" child message can look up its parent.
+    uuid_to_bash_input: Dict[str, str] = {}
+
     # Cron, keyed by CronCreate tool_use_id
     crons_by_tool_use: Dict[str, Dict[str, Any]] = {}
     cron_id_to_tu: Dict[str, str] = {}
@@ -219,12 +239,82 @@ def extract_shells_and_cron(
         msg_uuid = obj.get("uuid")
         content = msg.get("content")
 
-        # task-notification: user message whose content is a raw XML string
-        # (not a list of blocks) written when a bg shell exits naturally.
+        # User messages whose content is a raw string (not a list of blocks).
+        # Three sub-cases: bash-input, manually-backgrounded, task-notification.
         if isinstance(content, str):
+            # Store bash-input so the following "manually backgrounded" child
+            # message can recover the command text via parentUuid lookup.
+            bash_in_m = _BASH_INPUT_RE.search(content)
+            if bash_in_m and msg_uuid:
+                uuid_to_bash_input[msg_uuid] = bash_in_m.group(1).strip()
+
+            # User ran `! <cmd>` → Claude Code emits a "manually backgrounded" msg.
+            manual_m = _MANUAL_BG_RE.search(content)
+            if manual_m:
+                task_id = manual_m.group(1)
+                output_file = manual_m.group(2)
+                synthetic_tu = f"manual:{task_id}"
+                if synthetic_tu not in shells_by_tool_use:
+                    parent_uuid = obj.get("parentUuid")
+                    command = uuid_to_bash_input.get(parent_uuid, "") if parent_uuid else ""
+                    cmd, cmd_trunc = _truncate(command, COMMAND_MAX_BYTES)
+                    shells_by_tool_use[synthetic_tu] = {
+                        "session_uuid": session_uuid,
+                        "tool_use_id": synthetic_tu,
+                        "shell_id": task_id,
+                        "tool_name": "Manual",
+                        "command": cmd,
+                        "command_truncated": 1 if cmd_trunc else 0,
+                        "description": None,
+                        "is_persistent": 0,
+                        "timeout_ms": None,
+                        "spawned_at": ts,
+                        "terminated_at": None,
+                        "terminated_by": None,
+                        "exit_code": None,
+                        "poll_count": 0,
+                        "total_output_bytes": 0,
+                        "last_output_at": None,
+                        "spawn_message_uuid": msg_uuid,
+                        "output_file_path": output_file,
+                    }
+                    shell_id_to_tu[task_id] = synthetic_tu
+                    shell_output_files[output_file] = synthetic_tu
+                # Snapshot output file as a synthetic poll (idempotent UPSERT
+                # on subsequent passes updates content as the file grows).
+                try:
+                    p = Path(output_file)
+                    if p.exists():
+                        raw = p.read_text(encoding="utf-8", errors="replace")
+                        if raw:
+                            excerpt, trunc = _truncate(raw, OUTPUT_EXCERPT_MAX_BYTES)
+                            ob = len(raw.encode("utf-8", errors="replace"))
+                            polls.append({
+                                "_parent_tool_use_id": synthetic_tu,
+                                "polled_at": ts,
+                                "filter_pattern": None,
+                                "output_bytes": ob,
+                                "output_excerpt": excerpt,
+                                "output_truncated": 1 if trunc else 0,
+                                "tool_use_id": f"manual_poll:{task_id}",
+                            })
+                            row = shells_by_tool_use[synthetic_tu]
+                            row["poll_count"] = 1
+                            row["total_output_bytes"] = ob
+                            row["last_output_at"] = ts
+                except (OSError, IOError):
+                    pass
+
+            # task-notification: emitted when any bg shell exits naturally.
+            # tool_use_id may be absent for user-initiated shells; fall back
+            # to task_id lookup via shell_id_to_tu.
             info = _parse_task_notification(content)
             if info:
-                shell = shells_by_tool_use.get(info["tool_use_id"])
+                shell = shells_by_tool_use.get(info["tool_use_id"]) if info["tool_use_id"] else None
+                if shell is None and info.get("task_id"):
+                    tu = shell_id_to_tu.get(info["task_id"])
+                    if tu:
+                        shell = shells_by_tool_use.get(tu)
                 if shell and shell["terminated_at"] is None:
                     shell["terminated_at"] = ts
                     shell["terminated_by"] = info["terminated_by"]
@@ -488,9 +578,9 @@ ON CONFLICT(tool_use_id) DO UPDATE SET
     terminated_at      = excluded.terminated_at,
     terminated_by      = excluded.terminated_by,
     exit_code          = excluded.exit_code,
-    poll_count         = excluded.poll_count,
-    total_output_bytes = excluded.total_output_bytes,
-    last_output_at     = excluded.last_output_at,
+    poll_count         = MAX(excluded.poll_count, background_shells.poll_count),
+    total_output_bytes = MAX(excluded.total_output_bytes, background_shells.total_output_bytes),
+    last_output_at     = COALESCE(excluded.last_output_at, background_shells.last_output_at),
     spawn_message_uuid = excluded.spawn_message_uuid,
     output_file_path   = excluded.output_file_path
 """
