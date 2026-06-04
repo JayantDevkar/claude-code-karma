@@ -412,7 +412,7 @@ class TestMemoryFilePathValidation:
         for bad in ("..etc.passwd", "foo..bar.md", "._hidden.md"):
             # Some of these should fail the leading-dot or .. or regex checks.
             with pytest.raises(HTTPException) as exc_info:
-                asyncio.get_event_loop().run_until_complete(
+                asyncio.run(
                     get_project_memory_file(
                         encoded_name=ENCODED_NAME,
                         filename=bad,
