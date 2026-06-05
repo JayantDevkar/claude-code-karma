@@ -1128,7 +1128,7 @@
 											class="
 												text-sm font-medium
 												{isSelected
-												? 'text-emerald-600 dark:text-emerald-400'
+												? 'text-[var(--success)]'
 												: 'text-[var(--text-primary)]'}
 											"
 										>
@@ -1139,7 +1139,7 @@
 												class="
 													mt-0.5 text-xs leading-relaxed
 													{isSelected
-													? 'text-emerald-600/70 dark:text-emerald-400/70'
+													? 'text-[var(--success)]/70'
 													: 'text-[var(--text-muted)]'}
 												"
 											>
@@ -1150,7 +1150,7 @@
 
 									{#if isSelected}
 										<span
-											class="shrink-0 rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400"
+											class="shrink-0 rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold text-[var(--success)]"
 										>
 											Selected
 										</span>
@@ -1180,18 +1180,18 @@
 									</div>
 									<div class="flex-1 min-w-0">
 										<span
-											class="text-[10px] font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400"
+											class="text-[10px] font-semibold uppercase tracking-wider text-[var(--success)]"
 										>
 											Custom Answer
 										</span>
 										<p
-											class="mt-0.5 text-sm font-medium text-emerald-600 dark:text-emerald-400"
+											class="mt-0.5 text-sm font-medium text-[var(--success)]"
 										>
 											{getCustomAnswer(q)}
 										</p>
 									</div>
 									<span
-										class="shrink-0 rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400"
+										class="shrink-0 rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold text-[var(--success)]"
 									>
 										Selected
 									</span>
@@ -1204,7 +1204,7 @@
 									class="mt-2 rounded-[var(--radius-md)] border border-amber-500/20 bg-amber-500/5 px-3 py-2"
 								>
 									<span
-										class="text-[10px] font-semibold uppercase tracking-wider text-amber-600 dark:text-amber-400"
+										class="text-[10px] font-semibold uppercase tracking-wider text-[var(--warning)]"
 									>
 										User Note
 									</span>
@@ -1260,7 +1260,7 @@
 					Result
 				</h4>
 				<span
-					class="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400"
+					class="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-[var(--success)]"
 				>
 					<CheckCircle2 size={10} />
 					Answered

@@ -59,7 +59,7 @@
 			<Loader2 class="animate-spin text-[var(--text-muted)]" size={32} />
 		</div>
 	{:else if error}
-		<div class="p-4 bg-red-500/10 text-red-500 rounded-lg text-sm border border-red-500/20">
+		<div class="p-4 bg-[var(--error-subtle)] text-[var(--error)] rounded-lg text-sm border border-[var(--error)]/20">
 			{error}
 		</div>
 	{:else if !overview?.servers?.length}

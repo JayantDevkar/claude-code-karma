@@ -49,7 +49,7 @@
 			onclick={action.onClick}
 			class="
 				mt-4 px-4 py-2
-				bg-[var(--accent)] text-white
+				bg-[var(--accent)] text-[var(--bg-base)]
 				rounded-md
 				hover:bg-[var(--accent-hover)]
 				transition-colors duration-[var(--duration-base)]

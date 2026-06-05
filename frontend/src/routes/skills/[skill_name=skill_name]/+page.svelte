@@ -584,51 +584,47 @@
 							<div class="flex h-2.5 rounded-full overflow-hidden bg-[var(--bg-muted)] flex-1 max-w-xs">
 								{#if manualPercent > 0}
 									<div
-										class="bg-blue-500 transition-all duration-300"
-										style="width: {manualPercent}%"
+										class="transition-all duration-300" style="background-color: var(--info); width: {manualPercent}%"
 										title="Manual: {manualCalls}"
 									></div>
 								{/if}
 								{#if commandTriggeredPercent > 0}
 									<div
-										class="bg-amber-500 transition-all duration-300"
-										style="width: {commandTriggeredPercent}%"
+										class="transition-all duration-300" style="background-color: var(--warning); width: {commandTriggeredPercent}%"
 										title="Command-triggered: {commandTriggeredCalls}"
 									></div>
 								{/if}
 								{#if autoPercent > 0}
 									<div
-										class="bg-purple-500 transition-all duration-300"
-										style="width: {autoPercent}%"
+										class="transition-all duration-300" style="background-color: var(--accent); width: {autoPercent}%"
 										title="Auto: {autoCalls}"
 									></div>
 								{/if}
 								{#if mentionedPercent > 0}
 									<div
-										class="bg-gray-500/50 transition-all duration-300"
-										style="width: {mentionedPercent}%"
+										class="transition-all duration-300" style="background-color: var(--border-hover); width: {mentionedPercent}%"
 										title="Mentioned (not invoked): {mentionedCalls}"
 									></div>
 								{/if}
 							</div>
 							<div class="flex items-center gap-3 text-[10px] text-[var(--text-secondary)]">
 								<span class="flex items-center gap-1">
-									<span class="w-2 h-2 rounded-full bg-blue-500"></span>
+									<span class="w-2 h-2 rounded-full" style="background-color: var(--info);"></span>
 									Manual: {manualCalls}
 								</span>
 								<span class="flex items-center gap-1">
-									<span class="w-2 h-2 rounded-full bg-purple-500"></span>
+									<span class="w-2 h-2 rounded-full" style="background-color: var(--accent);"></span>
 									Auto: {autoCalls}
 								</span>
 								{#if commandTriggeredCalls > 0}
 									<span class="flex items-center gap-1">
-										<span class="w-2 h-2 rounded-full bg-amber-500"></span>
+										<span class="w-2 h-2 rounded-full" style="background-color: var(--warning);"></span>
 										Command-triggered: {commandTriggeredCalls}
 									</span>
 								{/if}
 								{#if mentionedCalls > 0}
 									<span class="flex items-center gap-1">
-										<span class="w-2 h-2 rounded-full bg-gray-500/50"></span>
+										<span class="w-2 h-2 rounded-full" style="background-color: var(--border-hover);"></span>
 										Mentioned <span class="opacity-60">(Not invoked)</span>: {mentionedCalls}
 									</span>
 								{/if}
@@ -715,8 +711,8 @@
 								<div class="flex h-5 rounded-full overflow-hidden bg-[var(--bg-muted)] shadow-inner">
 									{#if manualPercent > 0}
 										<div
-											class="bg-blue-500 transition-all duration-300 ease-out flex items-center justify-center text-[10px] font-bold text-white"
-											style="width: {manualPercent}%"
+											class="transition-all duration-300 ease-out flex items-center justify-center text-[10px] font-bold text-white"
+											style="width: {manualPercent}%; background-color: var(--info);"
 											title="Manual: {manualCalls}"
 										>
 											{#if manualPercent > 15}{Math.round(manualPercent)}%{/if}
@@ -724,8 +720,8 @@
 									{/if}
 									{#if commandTriggeredPercent > 0}
 										<div
-											class="bg-amber-500 transition-all duration-300 ease-out flex items-center justify-center text-[10px] font-bold text-white"
-											style="width: {commandTriggeredPercent}%"
+											class="transition-all duration-300 ease-out flex items-center justify-center text-[10px] font-bold text-white"
+											style="width: {commandTriggeredPercent}%; background-color: var(--warning);"
 											title="By Command: {commandTriggeredCalls}"
 										>
 											{#if commandTriggeredPercent > 15}{Math.round(commandTriggeredPercent)}%{/if}
@@ -733,8 +729,8 @@
 									{/if}
 									{#if autoPercent > 0}
 										<div
-											class="bg-purple-500 transition-all duration-300 ease-out flex items-center justify-center text-[10px] font-bold text-white"
-											style="width: {autoPercent}%"
+											class="transition-all duration-300 ease-out flex items-center justify-center text-[10px] font-bold text-white"
+											style="width: {autoPercent}%; background-color: var(--accent);"
 											title="Auto: {autoCalls}"
 										>
 											{#if autoPercent > 15}{Math.round(autoPercent)}%{/if}
@@ -742,8 +738,8 @@
 									{/if}
 									{#if mentionedPercent > 0}
 										<div
-											class="bg-gray-500/50 transition-all duration-300 ease-out flex items-center justify-center text-[10px] font-bold text-white"
-											style="width: {mentionedPercent}%"
+											class="transition-all duration-300 ease-out flex items-center justify-center text-[10px] font-bold text-white"
+											style="width: {mentionedPercent}%; background-color: var(--border-hover);"
 											title="Mentioned (not invoked): {mentionedCalls}"
 										>
 											{#if mentionedPercent > 15}{Math.round(mentionedPercent)}%{/if}
@@ -755,7 +751,7 @@
 							<!-- Legend grid -->
 							<div class="grid grid-cols-2 gap-3 text-xs">
 								<div class="flex items-center gap-2 text-[var(--text-secondary)] bg-[var(--bg-subtle)] rounded-lg p-2.5">
-									<span class="w-3 h-3 rounded-full bg-blue-500"></span>
+									<span class="w-3 h-3 rounded-full" style="background-color: var(--info);"></span>
 									<div class="flex-1 min-w-0">
 										<div class="font-medium">Manual</div>
 										<div class="text-[var(--text-primary)] font-semibold tabular-nums">
@@ -764,7 +760,7 @@
 									</div>
 								</div>
 								<div class="flex items-center gap-2 text-[var(--text-secondary)] bg-[var(--bg-subtle)] rounded-lg p-2.5">
-									<span class="w-3 h-3 rounded-full bg-purple-500"></span>
+									<span class="w-3 h-3 rounded-full" style="background-color: var(--accent);"></span>
 									<div class="flex-1 min-w-0">
 										<div class="font-medium">Auto</div>
 										<div class="text-[var(--text-primary)] font-semibold tabular-nums">
@@ -774,7 +770,7 @@
 								</div>
 								{#if commandTriggeredCalls > 0}
 									<div class="flex items-center gap-2 text-[var(--text-secondary)] bg-[var(--bg-subtle)] rounded-lg p-2.5">
-										<span class="w-3 h-3 rounded-full bg-amber-500"></span>
+										<span class="w-3 h-3 rounded-full" style="background-color: var(--warning);"></span>
 										<div class="flex-1 min-w-0">
 											<div class="font-medium">By Command</div>
 											<div class="text-[var(--text-primary)] font-semibold tabular-nums">
@@ -785,7 +781,7 @@
 								{/if}
 								{#if mentionedCalls > 0}
 									<div class="flex items-center gap-2 text-[var(--text-secondary)] bg-[var(--bg-subtle)] rounded-lg p-2.5">
-										<span class="w-3 h-3 rounded-full bg-gray-500/50"></span>
+										<span class="w-3 h-3 rounded-full" style="background-color: var(--border-hover);"></span>
 										<div class="flex-1 min-w-0">
 											<div class="font-medium">Mentioned</div>
 											<div class="text-[var(--text-primary)] font-semibold tabular-nums">
@@ -855,7 +851,7 @@
 						<button
 							onclick={() => (sourceFilter = sourceFilter === 'manual' ? 'all' : 'manual')}
 							class="px-3 py-1 text-xs font-medium rounded-full transition-all {sourceFilter === 'manual'
-								? 'bg-blue-500/15 text-blue-400 border border-blue-500/30'
+								? 'border border-[var(--info)]/30 bg-[var(--info-subtle)] text-[var(--info)]'
 								: 'bg-[var(--bg-subtle)] text-[var(--text-muted)] border border-transparent hover:border-[var(--border)] hover:text-[var(--text-secondary)]'}"
 							aria-pressed={sourceFilter === 'manual'}
 						>
@@ -864,7 +860,7 @@
 						<button
 							onclick={() => (sourceFilter = sourceFilter === 'auto' ? 'all' : 'auto')}
 							class="px-3 py-1 text-xs font-medium rounded-full transition-all {sourceFilter === 'auto'
-								? 'bg-purple-500/15 text-purple-400 border border-purple-500/30'
+								? 'border border-[var(--accent)]/30 bg-[var(--accent-subtle)] text-[var(--accent)]'
 								: 'bg-[var(--bg-subtle)] text-[var(--text-muted)] border border-transparent hover:border-[var(--border)] hover:text-[var(--text-secondary)]'}"
 							aria-pressed={sourceFilter === 'auto'}
 						>
@@ -874,7 +870,7 @@
 							<button
 								onclick={() => (sourceFilter = sourceFilter === 'command_triggered' ? 'all' : 'command_triggered')}
 								class="px-3 py-1 text-xs font-medium rounded-full transition-all {sourceFilter === 'command_triggered'
-									? 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
+									? 'border border-[var(--warning)]/30 bg-[var(--warning-subtle)] text-[var(--warning)]'
 									: 'bg-[var(--bg-subtle)] text-[var(--text-muted)] border border-transparent hover:border-[var(--border)] hover:text-[var(--text-secondary)]'}"
 								aria-pressed={sourceFilter === 'command_triggered'}
 							>

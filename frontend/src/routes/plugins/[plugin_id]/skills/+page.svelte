@@ -61,9 +61,9 @@
 	<!-- Error State -->
 	{#if data.error}
 		<div
-			class="text-center py-20 bg-[var(--bg-subtle)] rounded-2xl border border-dashed border-red-500/20"
+			class="text-center py-20 bg-[var(--bg-subtle)] rounded-2xl border border-dashed border-[var(--error)]/20"
 		>
-			<AlertCircle class="mx-auto text-red-500 mb-3" size={48} />
+			<AlertCircle class="mx-auto text-[var(--error)] mb-3" size={48} />
 			<p class="text-[var(--text-secondary)] font-medium">{data.error}</p>
 			<p class="text-sm text-[var(--text-muted)] mt-1">
 				The plugin may not exist or could not be loaded

@@ -50,7 +50,7 @@
 				transition-all duration-150 ease-out
 				focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-1
 				{value === option.value
-				? 'bg-[var(--accent)] text-white shadow-sm'
+				? 'bg-[var(--accent)] text-[var(--bg-base)] shadow-sm'
 				: 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}
 				{disabled ? 'cursor-not-allowed' : 'cursor-pointer'}
 			"

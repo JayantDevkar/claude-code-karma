@@ -279,7 +279,7 @@
 								effectiveSubagentType
 							)}?tab=history&project={encodeURIComponent(encodedName)}"
 							class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full transition-opacity hover:opacity-80"
-							style="background: color-mix(in srgb, {colorVars.color} 15%, white); border: 1px solid color-mix(in srgb, {colorVars.color} 40%, transparent);"
+							style="background: color-mix(in srgb, {colorVars.color} 15%, var(--bg-base)); border: 1px solid color-mix(in srgb, {colorVars.color} 40%, transparent);"
 							title="View all sessions using {getSubagentTypeDisplayName(
 								effectiveSubagentType
 							)}"
@@ -350,7 +350,7 @@
 				<a
 					href="/projects/{encodedName}/{sessionSlug}?tab=agents"
 					class="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-md border transition-colors hover:opacity-90"
-					style="background: color-mix(in srgb, {colorVars.color} 10%, white); border-color: color-mix(in srgb, {colorVars.color} 30%, transparent); color: {colorVars.color};"
+					style="background: color-mix(in srgb, {colorVars.color} 10%, var(--bg-base)); border-color: color-mix(in srgb, {colorVars.color} 30%, transparent); color: {colorVars.color};"
 				>
 					<ArrowLeft size={16} strokeWidth={2} />
 					Back to Session
@@ -361,7 +361,7 @@
 							effectiveSubagentType
 						)}?tab=history&project={encodeURIComponent(encodedName)}"
 						class="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-md border transition-colors hover:opacity-90"
-						style="background: color-mix(in srgb, {colorVars.color} 10%, white); border-color: color-mix(in srgb, {colorVars.color} 30%, transparent); color: {colorVars.color};"
+						style="background: color-mix(in srgb, {colorVars.color} 10%, var(--bg-base)); border-color: color-mix(in srgb, {colorVars.color} 30%, transparent); color: {colorVars.color};"
 					>
 						<Bot size={16} strokeWidth={2} />
 						All {getSubagentTypeDisplayName(effectiveSubagentType)} Sessions

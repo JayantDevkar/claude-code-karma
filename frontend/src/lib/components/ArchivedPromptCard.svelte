@@ -101,7 +101,7 @@
 					opacity-0 group-hover:opacity-100
 					hover:text-[var(--text-primary)] hover:bg-[var(--bg-muted)]
 					transition-all
-					{copied ? 'opacity-100 text-green-500' : ''}
+					{copied ? 'opacity-100 text-[var(--success)]' : ''}
 				"
 				title={copied ? 'Copied!' : 'Copy prompt'}
 			>
@@ -188,9 +188,9 @@
 
 		<!-- FOOTER ZONE: Info message -->
 		<div
-			class="px-4 py-2.5 bg-[rgba(184,84,80,0.06)] border-t border-[rgba(184,84,80,0.15)] flex items-center"
+			class="px-4 py-2.5 bg-[var(--error-subtle)] border-t border-[var(--error)]/20 flex items-center"
 		>
-			<span class="text-[11px] text-[#B85450] italic">
+			<span class="text-[11px] text-[var(--error)] italic">
 				Session data no longer available
 			</span>
 		</div>

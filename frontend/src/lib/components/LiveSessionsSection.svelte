@@ -685,7 +685,7 @@
 		gap: 3px;
 		padding: 2px 6px;
 		border-radius: 10px;
-		background: var(--nav-purple-subtle, rgba(139, 92, 246, 0.1));
+		background: var(--nav-purple-subtle, rgba(var(--accent-rgb), 0.1));
 		color: var(--nav-purple);
 		font-size: 10px;
 		font-weight: 500;
