@@ -15,6 +15,7 @@
 	import PageHeader from '$lib/components/layout/PageHeader.svelte';
 	import StatsGrid from '$lib/components/StatsGrid.svelte';
 	import type { CronJob, CronProjectRollupRow } from '$lib/api-types';
+	import { API_BASE } from '$lib/config';
 
 	let { data } = $props();
 
@@ -204,7 +205,7 @@
 	async function rescan() {
 		rescanning = true;
 		try {
-			await fetch('http://localhost:8000/admin/reindex?force=true', { method: 'POST' });
+			await fetch(`${API_BASE}/admin/reindex?force=true`, { method: 'POST' });
 		} catch {
 			// non-critical — still refresh the view
 		}
