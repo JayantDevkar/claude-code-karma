@@ -3,6 +3,7 @@
 	import { FolderOpen, Bot, Trash2 } from 'lucide-svelte';
 	import type { LiveSessionSummary } from '$lib/api-types';
 	import { projectHrefFromSession } from '$lib/utils/project-url';
+	import { getSessionDisplayLabel } from '$lib/utils/sessionIdentifier';
 	import { statusConfig } from '$lib/live-session-config';
 	import { API_BASE } from '$lib/config';
 
@@ -121,7 +122,7 @@
 		if (!session.project_encoded_name) {
 			return '#'; // Can't link without project
 		}
-		const identifier = session.session_id.slice(0, 8);
+		const identifier = getSessionDisplayLabel(session.session_id, session.slug);
 		return projectHrefFromSession(session, `/${identifier}`);
 	}
 
@@ -252,7 +253,9 @@
 					<div class="session-info">
 						<!-- Row 1: Session ID + Status + Agents -->
 						<div class="session-primary">
-							<span class="session-id">{session.session_id.slice(0, 8)}</span>
+							<span class="session-id"
+								>{getSessionDisplayLabel(session.session_id, session.slug)}</span
+							>
 							<span class="status-badge" style="color: {config.color}"
 								>{config.label}</span
 							>

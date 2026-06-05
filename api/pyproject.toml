@@ -25,6 +25,7 @@ dev = [
     "ruff>=0.1.0",
     "aiofiles>=24.1.0",
     "cachetools>=5.0.0",
+    "croniter>=2.0.0",
 ]
 
 [tool.pytest.ini_options]

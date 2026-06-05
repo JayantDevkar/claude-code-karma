@@ -1,6 +1,13 @@
 """
 Live Sessions router - read active session state from ~/.claude_karma/live-sessions/
 
+GET endpoints in this router are strictly read-only — they never delete
+state files. Stale-file cleanup is owned by
+``services.live_session_store.purge_old_files`` (invoked periodically by
+the session reconciler) and by the explicit ``DELETE`` / ``POST /cleanup*``
+endpoints below, which route writes through ``live_session_store`` so the
+fcntl lock stays uncontested across hook scripts and the API process.
+
 These endpoints are designed for frequent polling to display live session status
 on the frontend homepage. Cache times are intentionally short (1s) for near-real-time updates.
 
@@ -171,6 +178,7 @@ def state_to_summary(
                 "transcript_path": s.transcript_path,
                 "started_at": s.started_at.isoformat() if s.started_at else None,
                 "completed_at": s.completed_at.isoformat() if s.completed_at else None,
+                "duration_ms": getattr(s, "duration_ms", None),
             }
             for agent_id, s in state.subagents.items()
         }

@@ -16,7 +16,9 @@
 		Webhook,
 		Puzzle,
 		LineChart,
-		History
+		History,
+		Activity,
+		Clock
 	} from 'lucide-svelte';
 	import LogoIcon from '$lib/assets/LogoIcon.svelte';
 
@@ -47,6 +49,8 @@
 		{ href: '/skills', label: 'Skills', icon: Wrench, color: 'orange' },
 		{ href: '/commands', label: 'Commands', icon: Terminal, color: 'red' },
 		{ href: '/tools', label: 'Tools', icon: Cable, color: 'indigo' },
+		{ href: '/shells', label: 'Shells', icon: Activity, color: 'green' },
+		{ href: '/cron', label: 'Cron', icon: Clock, color: 'yellow' },
 		{ href: '/hooks', label: 'Hooks', icon: Webhook, color: 'cyan' },
 		{ href: '/plugins', label: 'Plugins', icon: Puzzle, color: 'violet' },
 		{ href: '/analytics', label: 'Analytics', icon: LineChart, color: 'green' },

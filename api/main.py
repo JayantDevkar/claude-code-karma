@@ -24,7 +24,9 @@ from routers import (  # noqa: E402
     admin,
     agents,
     analytics,
+    background_shells,
     commands,
+    cron,
     docs,
     history,
     hooks,
@@ -187,6 +189,11 @@ app.include_router(
 )
 app.include_router(admin.router)
 app.include_router(tickets.router)
+# bg-shells + cron routers are no-prefix (they span /shells, /cron,
+# /sessions/{uuid}/shells, /sessions/{uuid}/cron — two URL roots each,
+# same pattern as tickets).
+app.include_router(background_shells.router)
+app.include_router(cron.router)
 
 
 @app.get("/")

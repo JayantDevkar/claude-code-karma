@@ -11,7 +11,8 @@
 		RefreshCw,
 		Minimize2,
 		MessageCircle,
-		Monitor
+		Monitor,
+		Copy
 	} from 'lucide-svelte';
 	import { fade } from 'svelte/transition';
 	import PageHeader from '$lib/components/layout/PageHeader.svelte';
@@ -32,7 +33,8 @@
 		cleanAgentIdForDisplay,
 		getEffectiveSubagentType,
 		getSessionDisplayName,
-		sessionHasTitle
+		sessionHasTitle,
+		copyToClipboard
 	} from '$lib/utils';
 
 	interface Props {
@@ -241,6 +243,23 @@
 		isSubagentSession(entity) ? getSubagentColorVars(effectiveSubagentType) : null
 	);
 	let typeIcon = $derived(isSubagentSession(entity) ? getTypeIcon(effectiveSubagentType) : null);
+
+	// Copy action state for session ID actions
+	type CopyTarget = 'uuid' | 'resume';
+	let copiedTarget = $state<CopyTarget | null>(null);
+	let copyTimeout: ReturnType<typeof setTimeout> | null = null;
+
+	async function handleCopy(target: CopyTarget, text: string) {
+		await copyToClipboard(text);
+		if (copyTimeout) clearTimeout(copyTimeout);
+		copiedTarget = target;
+		copyTimeout = setTimeout(() => {
+			copiedTarget = null;
+		}, 350);
+	}
+
+	// UUID is only present on main sessions (SessionDetail), not subagents.
+	let mainSessionUuid = $derived(isSubagentSession(entity) ? null : entity.uuid);
 </script>
 
 <!-- Agent Session Header with colored background -->
@@ -296,10 +315,14 @@
 						{/if}
 						<!-- Show subagent's own status (running/completed/error), not parent session's -->
 						{#if subagentLiveStatus}
-							{@const displayStatus = enhancedSubagentStatus || subagentLiveStatus.status}
-							{@const config = displayStatus === 'active' ? statusConfig['active'] :
-                     displayStatus === 'idle' ? statusConfig['idle'] :
-                     subagentStatusConfig[subagentLiveStatus.status]}
+							{@const displayStatus =
+								enhancedSubagentStatus || subagentLiveStatus.status}
+							{@const config =
+								displayStatus === 'active'
+									? statusConfig['active']
+									: displayStatus === 'idle'
+										? statusConfig['idle']
+										: subagentStatusConfig[subagentLiveStatus.status]}
 							<div
 								class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full"
 								style="background: color-mix(in srgb, {config.color} 10%, transparent); border: 1px solid color-mix(in srgb, {config.color} 30%, transparent);"
@@ -449,6 +472,39 @@
 								{config.label}
 							</span>
 						</div>
+					{/if}
+					{#if mainSessionUuid}
+						<!-- Copy session ID -->
+						<button
+							type="button"
+							onclick={() => handleCopy('uuid', mainSessionUuid!)}
+							aria-label="Copy session ID"
+							class="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-muted)] border border-transparent hover:border-[var(--border)] transition-colors font-mono"
+							title="Copy full session ID: {mainSessionUuid}"
+						>
+							<Copy size={11} strokeWidth={2} />
+							{#if copiedTarget === 'uuid'}
+								<span>copied!</span>
+							{:else}
+								<span>{mainSessionUuid.slice(0, 8)}</span>
+							{/if}
+						</button>
+						<!-- Copy resume command -->
+						<button
+							type="button"
+							onclick={() =>
+								handleCopy('resume', `claude --resume ${mainSessionUuid}`)}
+							aria-label="Copy claude --resume command"
+							class="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-muted)] border border-transparent hover:border-[var(--border)] transition-colors"
+							title="Copy: claude --resume {mainSessionUuid}"
+						>
+							<Terminal size={11} strokeWidth={2} />
+							{#if copiedTarget === 'resume'}
+								<span>copied!</span>
+							{:else}
+								<span>resume</span>
+							{/if}
+						</button>
 					{/if}
 				</div>
 			{/snippet}

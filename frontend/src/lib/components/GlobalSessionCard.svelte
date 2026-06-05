@@ -12,6 +12,7 @@
 	} from 'lucide-svelte';
 	import type { SessionWithContext, LiveSessionSummary } from '$lib/api-types';
 	import { projectHrefFromSession } from '$lib/utils/project-url';
+	import { getSessionDisplayLabel } from '$lib/utils/sessionIdentifier';
 	import { statusConfig } from '$lib/live-session-config';
 	import {
 		formatRelativeTime,
@@ -52,7 +53,9 @@
 
 	// Parse project name from encoded name to preserve hyphens (e.g., "claude-karma" not "karma")
 	const displayProjectName = $derived(
-		session.project_display_name || session.project_name || getProjectNameFromEncoded(session.project_encoded_name ?? '')
+		session.project_display_name ||
+			session.project_name ||
+			getProjectNameFromEncoded(session.project_encoded_name ?? '')
 	);
 
 	// Local formatDuration that returns null instead of '--' for card display
@@ -87,7 +90,7 @@
 			session.chain_title
 		)
 	);
-	const urlIdentifier = $derived(session.uuid.slice(0, 8));
+	const urlIdentifier = $derived(getSessionDisplayLabel(session.uuid, session.slug, displaySlug));
 	const displayPrompt = $derived(
 		getSessionDisplayPrompt(session.initial_prompt, session.session_titles)
 	);

@@ -88,9 +88,22 @@ class SubagentState(BaseModel):
     agent_type: str = Field(..., description="Type of subagent (Bash, Explore, Plan, etc.)")
     status: SubagentStatus = Field(..., description="Current subagent status")
     transcript_path: Optional[str] = Field(None, description="Path to subagent's JSONL transcript")
-    started_at: datetime = Field(..., description="When subagent started")
+    started_at: Optional[datetime] = Field(
+        None,
+        description=(
+            "When subagent started. May be null if SubagentStop fired without a prior "
+            "SubagentStart (e.g. tracker started mid-flight)."
+        ),
+    )
     completed_at: Optional[datetime] = Field(
         None, description="When subagent finished (if completed)"
+    )
+    duration_ms: Optional[int] = Field(
+        None,
+        description=(
+            "Duration in ms between SubagentStart and SubagentStop. Null when started_at is "
+            "unknown."
+        ),
     )
 
 
@@ -138,6 +151,23 @@ class LiveSessionState(BaseModel):
     # SessionStart source (startup, resume, clear, compact)
     source: Optional[str] = Field(
         None, description="SessionStart source: startup, resume, clear, compact"
+    )
+
+    # Surfaced from hook payloads (optional, added by hooks/live_session_tracker.py)
+    claude_model: Optional[str] = Field(
+        None, description="Model identifier from SessionStart (e.g. claude-sonnet-4-...)"
+    )
+    agent_type: Optional[str] = Field(
+        None, description="Agent type if started with --agent flag (Explore, Plan, ...)"
+    )
+    pending_permission_message: Optional[str] = Field(
+        None,
+        description=(
+            "Latest permission_prompt message while state=WAITING. Cleared on transition out."
+        ),
+    )
+    last_notification_message: Optional[str] = Field(
+        None, description="Last Notification or PermissionRequest message text"
     )
 
     # Subagent tracking
@@ -381,15 +411,17 @@ def load_all_live_sessions() -> List[LiveSessionState]:
 
 
 async def load_all_live_sessions_async(
-    auto_cleanup_seconds: int = 600,
+    auto_cleanup_seconds: int = 600,  # retained for backward compat, ignored
 ) -> List[LiveSessionState]:
     """Load all live session states asynchronously in parallel.
 
-    Args:
-        auto_cleanup_seconds: Auto-delete ENDED session files older than this many
-            seconds (default 600 = 10 minutes). Set to 0 to disable auto-cleanup.
-            This prevents stale ENDED files from accumulating and slowing down
-            all live-session endpoints.
+    This function is now strictly side-effect-free — it never deletes
+    files. Stale-file cleanup is owned by
+    :func:`services.live_session_store.purge_old_files`, which the
+    session reconciler invokes on a timer.
+
+    The ``auto_cleanup_seconds`` parameter is kept for ABI compatibility
+    with callers that still pass it, but is no longer honored.
     """
     import asyncio
 
@@ -405,165 +437,35 @@ async def load_all_live_sessions_async(
             return None
 
     results = await asyncio.gather(*[load_one(p) for p in state_files])
-    sessions = [r for r in results if r is not None]
-
-    # Auto-cleanup: delete old ENDED session files to prevent accumulation
-    if auto_cleanup_seconds > 0:
-        kept: List[LiveSessionState] = []
-        for state in sessions:
-            if (
-                state.state in (SessionState.ENDED, SessionState.STARTING)
-                and state.idle_seconds > auto_cleanup_seconds
-            ):
-                # Delete the stale file
-                try:
-                    identifier = state.slug or state.session_id
-                    live_dir = get_live_sessions_dir()
-                    state_file = live_dir / f"{identifier}.json"
-                    if state_file.exists():
-                        state_file.unlink()
-                        logger.debug(
-                            f"Auto-cleaned {state.state.value.lower()} session: {identifier}"
-                        )
-                    else:
-                        # Fallback: try session_id-named file
-                        state_file = live_dir / f"{state.session_id}.json"
-                        if state_file.exists():
-                            state_file.unlink()
-                            logger.debug(
-                                f"Auto-cleaned {state.state.value.lower()} session: {state.session_id}"
-                            )
-                except OSError as e:
-                    logger.warning(f"Failed to auto-clean session {state.session_id}: {e}")
-                    kept.append(state)  # Keep if deletion fails
-            else:
-                kept.append(state)
-        if len(kept) < len(sessions):
-            logger.info(
-                f"Auto-cleaned {len(sessions) - len(kept)} old ended/starting sessions "
-                f"(kept {len(kept)})"
-            )
-        sessions = kept
-
-    return sessions
+    return [r for r in results if r is not None]
 
 
 def delete_live_session(identifier: str) -> bool:
     """
     Delete a live session state file by slug or session_id.
 
-    First tries direct file lookup, then searches for matching session_id.
+    Delegates to :func:`services.live_session_store.delete_by_identifier`
+    so all delete paths go through the same lock-aware code.
     """
-    live_dir = get_live_sessions_dir()
+    # Late import: live_session_store imports nothing from this module,
+    # but keeping the import local avoids accidental circulars at startup.
+    from services.live_session_store import delete_by_identifier
 
-    # Try direct file lookup
-    state_file = live_dir / f"{identifier}.json"
-    if state_file.exists():
-        try:
-            state_file.unlink()
-            return True
-        except OSError as e:
-            logger.error(f"Failed to delete live session {identifier}: {e}")
-            return False
-
-    # Search for session_id match in all files
-    for state_file in list_live_session_files():
-        try:
-            with open(state_file, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            if data.get("session_id") == identifier or identifier in data.get("session_ids", []):
-                state_file.unlink()
-                return True
-        except (json.JSONDecodeError, OSError):
-            continue
-
-    return False
+    return delete_by_identifier(identifier)
 
 
 def cleanup_old_session_files() -> dict:
     """
-    Clean up old session_id-based files that have been superseded by slug-based files.
+    Delete stale ENDED/STARTING state files.
 
-    When a session is resumed, the tracker creates a new slug-based file and tries
-    to delete the old session_id-based file. This function cleans up any that were missed.
-
-    Returns:
-        dict with counts: {"deleted": N, "kept": N, "errors": N}
+    Slug-based filenames are no longer written, so the old duplicate-slug
+    dedup logic is obsolete. This function now delegates to
+    :func:`services.live_session_store.purge_old_files` for a single
+    lock-aware path, and reports the count via the legacy return shape.
     """
-    live_dir = get_live_sessions_dir()
-    if not live_dir.exists():
-        return {"deleted": 0, "kept": 0, "errors": 0}
+    from services.live_session_store import purge_old_files
 
-    # First, load all sessions and build a map of slug -> state files
-    slug_to_files: dict = {}  # slug -> list of (path, data)
-    session_id_files: list = []  # files without slugs
-
-    for state_file in list_live_session_files():
-        try:
-            with open(state_file, "r", encoding="utf-8") as f:
-                data = json.load(f)
-
-            slug = data.get("slug")
-            if slug:
-                if slug not in slug_to_files:
-                    slug_to_files[slug] = []
-                slug_to_files[slug].append((state_file, data))
-            else:
-                session_id_files.append((state_file, data))
-        except (json.JSONDecodeError, OSError) as e:
-            logger.warning(f"Error reading {state_file}: {e}")
-            continue
-
-    deleted = 0
-    kept = 0
-    errors = 0
-
-    # For each slug, keep only the most recently updated file
-    for _slug, files in slug_to_files.items():
-        if len(files) <= 1:
-            kept += 1
-            continue
-
-        # Sort by updated_at, keep the most recent
-        def get_updated_at(item: tuple) -> str:
-            return item[1].get("updated_at", "")
-
-        files.sort(key=get_updated_at, reverse=True)
-
-        # Keep the first (most recent), delete the rest
-        kept += 1
-        for path, _data in files[1:]:
-            try:
-                path.unlink()
-                deleted += 1
-                logger.info(f"Deleted duplicate slug file: {path.name}")
-            except OSError as e:
-                logger.error(f"Failed to delete {path}: {e}")
-                errors += 1
-
-    # Keep session_id files that don't have a corresponding slug file
-    for path, data in session_id_files:
-        # Check if there's a slug-based file that includes this session_id
-        session_id = data.get("session_id", "")
-        is_duplicate = False
-
-        for _slug, files in slug_to_files.items():
-            for _, slug_data in files:
-                if session_id in slug_data.get("session_ids", []):
-                    is_duplicate = True
-                    break
-            if is_duplicate:
-                break
-
-        if is_duplicate:
-            try:
-                path.unlink()
-                deleted += 1
-                logger.info(f"Deleted superseded session_id file: {path.name}")
-            except OSError as e:
-                logger.error(f"Failed to delete {path}: {e}")
-                errors += 1
-        else:
-            kept += 1
-
-    return {"deleted": deleted, "kept": kept, "errors": errors}
+    before = len(list_live_session_files())
+    deleted = purge_old_files()
+    after = len(list_live_session_files())
+    return {"deleted": deleted, "kept": after, "errors": max(0, before - after - deleted)}

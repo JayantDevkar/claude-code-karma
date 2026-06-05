@@ -12,11 +12,11 @@ the session was replaced.
 import asyncio
 import json
 import logging
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
 from models.live_session import LiveSessionState, list_live_session_files
+from services import live_session_store
 
 logger = logging.getLogger(__name__)
 
@@ -49,14 +49,17 @@ def _has_newer_jsonl(project_dir: Path, session_mtime: float, own_stem: str) -> 
 def _mark_session_ended(
     state_file: Path, state_data: dict, end_reason: str = "session_handoff"
 ) -> None:
-    """Update a state file to mark the session as ENDED via reconciler."""
-    state_data["state"] = "ENDED"
-    state_data["end_reason"] = end_reason
-    state_data["last_hook"] = "Reconciler"
-    state_data["updated_at"] = datetime.now(timezone.utc).isoformat()
+    """Update a state file to mark the session as ENDED via reconciler.
 
-    with open(state_file, "w", encoding="utf-8") as f:
-        json.dump(state_data, f, indent=2, default=str)
+    Routes through ``live_session_store`` so the write contends for the
+    fcntl lock with every other writer (hook scripts, router cleanup).
+    """
+    session_id = state_data.get("session_id") or state_file.stem
+    live_session_store.mark_ended(
+        session_id,
+        end_reason=end_reason,
+        last_hook="Reconciler",
+    )
 
 
 def _reconcile_once(idle_threshold: int) -> int:
@@ -156,12 +159,23 @@ async def run_session_reconciler(check_interval: int = 60, idle_threshold: int =
         idle_threshold,
     )
 
+    purge_every_n = max(1, 300 // max(1, check_interval))  # ~every 5 minutes
+    tick = 0
     while True:
         try:
             await asyncio.sleep(check_interval)
             count = await asyncio.to_thread(_reconcile_once, idle_threshold)
             if count > 0:
                 logger.info("Reconciler: ended %d stuck session(s)", count)
+
+            tick += 1
+            if tick % purge_every_n == 0:
+                try:
+                    purged = await asyncio.to_thread(live_session_store.purge_old_files)
+                    if purged:
+                        logger.info("Reconciler: purged %d stale state file(s)", purged)
+                except Exception as e:  # noqa: BLE001 - best-effort purge
+                    logger.warning("Reconciler: purge_old_files error: %s", e)
         except asyncio.CancelledError:
             logger.info("Session reconciler stopped")
             return

@@ -599,22 +599,17 @@ def _collect_plugin_usage_sync(period: str = "all") -> dict[str, dict]:
                                                 plugin_stats[short]["last_used"] = session_time
                                         break
 
-                # Calculate cost from session token usage
-                if hasattr(session, "total_usage") and session.total_usage:
-                    usage = session.total_usage
-                    # Claude pricing estimates: $3/M input, $15/M output
-                    input_cost = (usage.input_tokens / 1_000_000) * 3.0
-                    output_cost = (usage.output_tokens / 1_000_000) * 15.0
-                    session_cost = input_cost + output_cost
+                # Calculate cost using per-message pricing (correct model + cache tokens)
+                session_cost = session.get_total_cost()
 
-                    # Distribute cost equally among all plugins used in this session
-                    if plugins_in_session:
-                        cost_per_plugin = session_cost / len(plugins_in_session)
-                        for plugin_name in plugins_in_session:
-                            plugin_stats[plugin_name]["cost_usd"] += cost_per_plugin
-                            plugin_stats[plugin_name]["daily_usage"][date_key]["cost_usd"] += (
-                                cost_per_plugin
-                            )
+                # Distribute cost equally among all plugins used in this session
+                if plugins_in_session:
+                    cost_per_plugin = session_cost / len(plugins_in_session)
+                    for plugin_name in plugins_in_session:
+                        plugin_stats[plugin_name]["cost_usd"] += cost_per_plugin
+                        plugin_stats[plugin_name]["daily_usage"][date_key]["cost_usd"] += (
+                            cost_per_plugin
+                        )
         except Exception as e:
             logger.debug(f"Error processing project {project.encoded_name}: {e}")
             continue

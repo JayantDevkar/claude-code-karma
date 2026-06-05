@@ -186,6 +186,9 @@ class TokenUsage(BaseModel):
         """
         pricing = _resolve_model(model)
 
+        # Anthropic's long-context surcharge applies to total context length, which includes
+        # cache-read tokens — the model still attends to them. Using total context here is
+        # correct per billing; the high numbers come from legitimate large-context sessions.
         total_input = (
             self.input_tokens + self.cache_creation_input_tokens + self.cache_read_input_tokens
         )

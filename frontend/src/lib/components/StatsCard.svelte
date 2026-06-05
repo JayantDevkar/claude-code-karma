@@ -6,6 +6,7 @@
 		title: string;
 		value: string | number;
 		description?: string;
+		footnote?: string;
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		icon?: any;
 		class?: string;
@@ -19,6 +20,7 @@
 		title,
 		value,
 		description,
+		footnote,
 		icon: Icon,
 		class: className = '',
 		color,
@@ -142,5 +144,9 @@
 				</span>
 			</div>
 		</div>
+	{/if}
+
+	{#if footnote}
+		<p class="mt-2 text-[10px] italic text-[var(--text-muted)] leading-snug">{footnote}</p>
 	{/if}
 </div>
