@@ -150,7 +150,7 @@
 	function dotStyle(dot: DotVariant): string {
 		if (dot === 'truth') return 'background: var(--success);';
 		if (dot === 'likely') return 'background: var(--success); opacity: 0.55;';
-		if (dot === 'expired') return 'background: #9ca3af;';
+		if (dot === 'expired') return 'background: var(--text-faint); opacity: 0.7;';
 		return 'background: var(--text-faint);';
 	}
 </script>
@@ -515,7 +515,7 @@
 
 	.cron-card.expanded {
 		border-color: var(--border-hover);
-		box-shadow: 0 1px 0 rgba(0, 0, 0, 0.03), 0 4px 14px -6px rgba(0, 0, 0, 0.07);
+		box-shadow: 0 1px 0 var(--border-subtle), 0 4px 14px -6px var(--border-subtle);
 	}
 
 	.cron-card.gone {
@@ -556,14 +556,14 @@
 	}
 
 	.dot-truth {
-		box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.18);
+		box-shadow: 0 0 0 3px rgba(var(--success-rgb), 0.18);
 		animation: sessionCronPulse 1.6s infinite;
 	}
 
 	@keyframes sessionCronPulse {
-		0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.6); }
-		70% { box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
-		100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+		0% { box-shadow: 0 0 0 0 rgba(var(--success-rgb), 0.6); }
+		70% { box-shadow: 0 0 0 6px rgba(var(--success-rgb), 0); }
+		100% { box-shadow: 0 0 0 0 rgba(var(--success-rgb), 0); }
 	}
 
 	.row-content {
@@ -841,7 +841,7 @@
 	.conf-bar {
 		width: 32px;
 		height: 2px;
-		background: rgba(0, 0, 0, 0.06);
+		background: var(--border);
 		border-radius: 99px;
 		overflow: hidden;
 		display: inline-block;

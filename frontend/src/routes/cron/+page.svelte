@@ -198,7 +198,7 @@
 	function dotStyle(dot: DotVariant): string {
 		if (dot === 'truth') return 'background: var(--success);';
 		if (dot === 'likely') return 'background: var(--success); opacity: 0.55;';
-		if (dot === 'expired') return 'background: #9ca3af;';
+		if (dot === 'expired') return 'background: var(--text-faint); opacity: 0.7;';
 		return 'background: var(--text-faint);';
 	}
 
@@ -539,7 +539,7 @@
 		border-radius: 16px;
 		padding: 24px;
 		border: 1px solid var(--border);
-		background: linear-gradient(135deg, rgba(124, 58, 237, 0.02) 0%, rgba(124, 58, 237, 0.06) 100%);
+		background: linear-gradient(135deg, rgba(var(--accent-rgb), 0.02) 0%, rgba(var(--accent-rgb), 0.06) 100%);
 		margin-bottom: 22px;
 	}
 
@@ -589,7 +589,7 @@
 	.sw {
 		width: 26px;
 		height: 15px;
-		background: #d8d8d4;
+		background: var(--border-hover);
 		border-radius: 99px;
 		position: relative;
 		transition: background 0.15s;
@@ -603,10 +603,10 @@
 		left: 2px;
 		width: 11px;
 		height: 11px;
-		background: white;
+		background: var(--bg-base);
 		border-radius: 50%;
 		transition: transform 0.15s;
-		box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+		box-shadow: 0 1px 2px var(--border-subtle);
 	}
 
 	.toggle-btn.on .sw {
@@ -723,8 +723,8 @@
 
 	.cron-card.expanded {
 		border-color: var(--border-hover);
-		box-shadow: 0 1px 0 rgba(0, 0, 0, 0.03), 0 6px 20px -8px rgba(0, 0, 0, 0.08);
-		background: #ffffff;
+		box-shadow: 0 1px 0 var(--border-subtle), 0 6px 20px -8px var(--border-subtle);
+		background: var(--bg-base);
 	}
 
 	.cron-card.gone {
@@ -732,7 +732,7 @@
 	}
 
 	.cron-card.gone.expanded {
-		background: #ffffff;
+		background: var(--bg-base);
 	}
 
 	.cron-row {
@@ -769,7 +769,7 @@
 	}
 
 	.dot-truth {
-		box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.18);
+		box-shadow: 0 0 0 3px rgba(var(--success-rgb), 0.18);
 		animation: cronPulse 1.6s infinite;
 	}
 
@@ -1050,7 +1050,7 @@
 
 	.session-link {
 		color: var(--accent);
-		border-bottom: 1px solid rgba(124, 58, 237, 0.3);
+		border-bottom: 1px solid rgba(var(--accent-rgb), 0.3);
 		text-decoration: none;
 	}
 
@@ -1090,7 +1090,7 @@
 
 	.fire-tl-dot.truth {
 		background: var(--success);
-		box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2);
+		box-shadow: 0 0 0 2px rgba(var(--success-rgb), 0.2);
 	}
 
 	.fire-tl-line {

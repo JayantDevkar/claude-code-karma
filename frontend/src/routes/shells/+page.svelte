@@ -184,26 +184,26 @@
 	}
 
 	function statusTone(s: Shell): string {
-		if (s.status === 'running') return 'text-emerald-600';
+		if (s.status === 'running') return 'color: var(--success);';
 		return (
 			{
-				kill: 'text-red-600',
-				natural: 'text-blue-600',
-				timeout: 'text-amber-600',
-				session_end: 'text-stone-400'
-			}[s.closeReason ?? 'session_end'] ?? 'text-stone-400'
+				kill: 'color: var(--error);',
+				natural: 'color: var(--info);',
+				timeout: 'color: var(--warning);',
+				session_end: 'color: var(--text-faint);'
+			}[s.closeReason ?? 'session_end'] ?? 'color: var(--text-faint);'
 		);
 	}
 
 	function dotClass(s: Shell): string {
-		if (s.status === 'running') return 'bg-emerald-500 ring-4 ring-emerald-500/15 animate-pulse';
+		if (s.status === 'running') return 'status-dot-running animate-pulse';
 		return (
 			{
-				kill: 'bg-red-500',
-				natural: 'bg-blue-500',
-				timeout: 'bg-amber-500',
-				session_end: 'bg-stone-400'
-			}[s.closeReason ?? 'session_end'] ?? 'bg-stone-400'
+				kill: 'status-dot-kill',
+				natural: 'status-dot-natural',
+				timeout: 'status-dot-timeout',
+				session_end: 'status-dot-ended'
+			}[s.closeReason ?? 'session_end'] ?? 'status-dot-ended'
 		);
 	}
 
@@ -230,7 +230,7 @@
 	});
 </script>
 
-<div class="mx-auto max-w-[1120px] px-8 pb-20 pt-8 text-stone-900">
+<div class="mx-auto max-w-[1120px] px-8 pb-20 pt-8 text-[var(--text-primary)]">
 	<!-- Page header -->
 	<PageHeader
 		title="Background Shells"
@@ -245,7 +245,7 @@
 	</PageHeader>
 
 	<!-- Stat strip -->
-	<div class="relative overflow-hidden rounded-2xl p-6 border border-[var(--border)] mb-6" style="background: linear-gradient(135deg, rgba(16,185,129,0.02) 0%, rgba(16,185,129,0.06) 100%);">
+	<div class="relative overflow-hidden rounded-2xl p-6 border border-[var(--border)] mb-6" style="background: linear-gradient(135deg, rgba(var(--success-rgb),0.02) 0%, rgba(var(--success-rgb),0.06) 100%);">
 		<StatsGrid columns={3} stats={[
 			{ title: 'Total spawned', value: globalCounts.total, icon: Terminal, color: 'purple' },
 			{ title: 'Currently running', value: globalCounts.running, icon: Activity, color: 'green' },
@@ -279,33 +279,31 @@
 		</select>
 
 		<label class="relative ml-auto min-w-[220px] flex-1">
-			<span class="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400">⌕</span>
+			<span class="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-faint)]">⌕</span>
 			<input
 				bind:value={query}
 				placeholder="Search shell id, command, project…"
-				class="h-[34px] w-full rounded-lg border border-stone-300 bg-white px-3 pl-8 text-[13px] outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-100"
+				class="search-input"
 			/>
 		</label>
 	</div>
 
 	<!-- Section bar -->
-	<div
-		class="mb-3 flex items-center justify-between rounded-[10px] border border-stone-200 bg-stone-100 px-3.5 py-2.5 font-mono text-[13px]"
-	>
+	<div class="section-bar">
 		<span class="flex items-center gap-2">
-			<span class="text-violet-500">$</span>
+			<span class="text-[var(--accent)]">$</span>
 			<span>shells --status={statusFilter} --tool={toolFilter}{projectFilter !== 'all' ? ` --project=${projectFilter}` : ''}</span>
 		</span>
-		<span class="text-[12.5px] text-stone-500">
-			showing <b class="text-stone-900">{filtered.length}</b> of
-			<b class="text-stone-900">{globalCounts.total}</b>
+		<span class="text-[12.5px] text-[var(--text-secondary)]">
+			showing <b class="text-[var(--text-primary)]">{filtered.length}</b> of
+			<b class="text-[var(--text-primary)]">{globalCounts.total}</b>
 		</span>
 	</div>
 
 	<!-- Shell list -->
 	{#if filtered.length === 0}
 		<div
-			class="rounded-xl border border-dashed border-stone-200 bg-stone-50 px-5 py-16 text-center text-stone-500"
+			class="rounded-xl border border-dashed border-[var(--border)] bg-[var(--bg-subtle)] px-5 py-16 text-center text-[var(--text-secondary)]"
 		>
 			No shells match these filters.
 		</div>
@@ -314,10 +312,8 @@
 			{#each filtered as s (s.id)}
 				{@const open = openIds.has(s.id)}
 				<li
-					class="group rounded-xl border bg-white transition
-                 {open
-						? 'border-stone-300 shadow-[0_1px_0_rgba(0,0,0,.03),0_6px_20px_-8px_rgba(0,0,0,.08)]'
-						: 'border-stone-200 hover:border-stone-300'}"
+					class="group rounded-xl border bg-[var(--bg-base)] transition shell-card
+                 {open ? 'shell-card-open' : 'shell-card-closed'}"
 				>
 					<div class="grid w-full grid-cols-[14px_1fr_auto_18px] items-center gap-3.5 px-4 py-3.5">
 						<span class="size-2 rounded-full {dotClass(s)}"></span>
@@ -328,30 +324,30 @@
 							onclick={() => toggle(s.id)}
 						>
 							<div class="flex flex-wrap items-center gap-2.5">
-								<span class="font-mono text-[12.5px] font-semibold text-violet-700">{s.id}</span>
+								<span class="font-mono text-[12.5px] font-semibold text-[var(--accent)]">{s.id}</span>
 								<span
 									class="rounded px-1.5 py-0.5 text-[10.5px] font-semibold uppercase tracking-wider
                              {s.tool === 'bash'
-										? 'bg-violet-100 text-violet-700'
+										? 'tool-badge-bash'
 										: s.tool === 'monitor'
-											? 'bg-blue-100 text-blue-600'
-											: 'bg-amber-100 text-amber-700'}"
+											? 'tool-badge-monitor'
+											: 'tool-badge-manual'}"
 								>
 									{s.tool}
 								</span>
 								{#if s.exitCode !== undefined}
 									<span
-										class="font-mono text-[10.5px] font-semibold uppercase tracking-wider
-                               {s.exitCode === 0 ? 'text-emerald-600' : 'text-red-600'}"
+										class="font-mono text-[10.5px] font-semibold uppercase tracking-wider"
+										style={s.exitCode === 0 ? 'color: var(--success);' : 'color: var(--error);'}
 									>
 										exit {s.exitCode}
 									</span>
 								{/if}
 								{#if s.description}
-									<span class="text-[13px] font-medium text-stone-900">· {s.description}</span>
+									<span class="text-[13px] font-medium text-[var(--text-primary)]">· {s.description}</span>
 								{/if}
 							</div>
-							<div class="font-mono text-[11.5px] text-stone-400">{s.project} · {formatSpawned(s.spawnedAt)}</div>
+							<div class="font-mono text-[11.5px] text-[var(--text-faint)]">{s.project} · {formatSpawned(s.spawnedAt)}</div>
 						</button>
 
 						<div class="flex items-center gap-2.5">
@@ -378,19 +374,19 @@
 							{/if}
 							<div class="flex flex-col items-end gap-0.5 text-right">
 								<span class="font-mono text-[13px] font-medium">{formatDuration(s.durationMs)}</span>
-								<span class="font-mono text-[11.5px] text-stone-400">{s.pollCount} polls</span>
+								<span class="font-mono text-[11.5px] text-[var(--text-faint)]">{s.pollCount} polls</span>
 							</div>
 						</div>
 
 						<button
 							type="button"
-							class="text-stone-400 transition {open ? 'rotate-90 text-stone-900' : ''}"
+							class="text-[var(--text-faint)] transition {open ? 'rotate-90 text-[var(--text-primary)]' : ''}"
 							onclick={() => toggle(s.id)}
 						>›</button>
 					</div>
 
 					{#if open}
-						<div class="border-t border-dashed border-stone-200 px-4.5 pb-4.5 pt-4 space-y-3">
+						<div class="border-t border-dashed border-[var(--border)] px-4.5 pb-4.5 pt-4 space-y-3">
 
 							<!-- Command block -->
 							<div class="flex items-start gap-2 rounded-[10px] border border-[var(--border)] bg-[var(--bg-subtle)] px-3.5 py-2.5 font-mono text-[12.5px]">
@@ -400,10 +396,10 @@
 									type="button"
 									title="Copy command"
 									onclick={() => copyCommand(s.id, s.command)}
-									class="shrink-0 text-stone-400 transition hover:text-stone-700"
+									class="shrink-0 text-[var(--text-faint)] transition hover:text-[var(--text-primary)]"
 								>
 									{#if copiedIds.has(s.id)}
-										<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="text-emerald-500"><polyline points="20 6 9 17 4 12"/></svg>
+										<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="color: var(--success);"><polyline points="20 6 9 17 4 12"/></svg>
 									{:else}
 										<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
 									{/if}
@@ -414,9 +410,9 @@
 							<div class="flex items-baseline gap-1.5">
 								<span class="kv-label">Session</span>
 								{#if s.sessionUrl}
-									<a href={s.sessionUrl} class="font-mono text-[12.5px] text-violet-700 hover:underline">{s.session}</a>
+									<a href={s.sessionUrl} class="font-mono text-[12.5px] text-[var(--accent)] hover:underline">{s.session}</a>
 								{:else}
-									<span class="font-mono text-[12.5px] text-violet-700">{s.session}</span>
+									<span class="font-mono text-[12.5px] text-[var(--accent)]">{s.session}</span>
 								{/if}
 							</div>
 
@@ -429,26 +425,26 @@
 									</div>
 									{#each s.polls as poll, i (i)}
 										{@const pollKey = s.id + ':' + i}
-										<div class="mb-1.5 rounded-lg border border-stone-200 bg-stone-100 px-3 py-2.5">
+										<div class="mb-1.5 rounded-lg border border-[var(--border)] bg-[var(--bg-muted)] px-3 py-2.5">
 											<div class="mb-1.5 flex items-center justify-between">
-												<span class="font-mono text-[11px] text-stone-400">{formatSpawned(poll.ts)}</span>
+												<span class="font-mono text-[11px] text-[var(--text-faint)]">{formatSpawned(poll.ts)}</span>
 												<div class="flex items-center gap-2">
-													<span class="font-mono text-[10.5px] text-stone-400">{formatBytes(poll.bytes)}</span>
+													<span class="font-mono text-[10.5px] text-[var(--text-faint)]">{formatBytes(poll.bytes)}</span>
 													<button
 														type="button"
 														title="Copy output"
 														onclick={() => copyCommand(pollKey, poll.text)}
-														class="text-stone-400 transition hover:text-stone-700"
+														class="text-[var(--text-faint)] transition hover:text-[var(--text-primary)]"
 													>
 														{#if copiedIds.has(pollKey)}
-															<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="text-emerald-500"><polyline points="20 6 9 17 4 12"/></svg>
+															<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="color: var(--success);"><polyline points="20 6 9 17 4 12"/></svg>
 														{:else}
 															<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
 														{/if}
 													</button>
 												</div>
 											</div>
-											<pre class="poll-pre m-0 max-h-48 overflow-auto whitespace-pre-wrap break-words font-mono text-[12px] leading-6 text-stone-800">{poll.text}</pre>
+											<pre class="poll-pre m-0 max-h-48 overflow-auto whitespace-pre-wrap break-words font-mono text-[12px] leading-6 text-[var(--text-primary)]">{poll.text}</pre>
 										</div>
 									{/each}
 								</div>
@@ -461,9 +457,9 @@
 		</ul>
 	{/if}
 
-	<p class="mt-4 flex items-center gap-2 text-xs text-stone-400">
+	<p class="mt-4 flex items-center gap-2 text-xs text-[var(--text-faint)]">
 		<kbd
-			class="rounded border border-stone-200 border-b-2 bg-stone-100 px-1.5 py-px font-mono text-[11px] text-stone-900"
+			class="rounded border border-[var(--border)] border-b-2 bg-[var(--bg-muted)] px-1.5 py-px font-mono text-[11px] text-[var(--text-primary)]"
 			>↵</kbd
 		>
 		<span>Click any row to expand poll history</span>
@@ -472,6 +468,59 @@
 </div>
 
 <style>
+	/* ── Status dot variants ────────────────────────────────────────────────── */
+	.status-dot-running { background: var(--success); box-shadow: 0 0 0 4px rgba(var(--success-rgb), 0.15); }
+	.status-dot-kill    { background: var(--error); }
+	.status-dot-natural { background: var(--info); }
+	.status-dot-timeout { background: var(--warning); }
+	.status-dot-ended   { background: var(--text-faint); }
+
+	/* ── Tool badges ─────────────────────────────────────────────────────────── */
+	.tool-badge-bash    { background: var(--accent-muted); color: var(--accent); }
+	.tool-badge-monitor { background: var(--info-subtle);  color: var(--info); }
+	.tool-badge-manual  { background: var(--warning-subtle); color: var(--warning); }
+
+	/* ── Shell card border states ────────────────────────────────────────────── */
+	.shell-card-open   { border-color: var(--border-hover); box-shadow: 0 1px 0 var(--border-subtle), 0 6px 20px -8px var(--border-subtle); }
+	.shell-card-closed { border-color: var(--border); }
+	.shell-card-closed:hover { border-color: var(--border-hover); }
+
+	/* ── Search input ────────────────────────────────────────────────────────── */
+	.search-input {
+		height: 34px;
+		width: 100%;
+		border-radius: 0.5rem;
+		border: 1px solid var(--border-hover);
+		background: var(--bg-base);
+		padding: 0 0.75rem 0 2rem;
+		font-size: 13px;
+		color: var(--text-primary);
+		outline: none;
+	}
+	.search-input:focus {
+		border-color: var(--accent);
+		box-shadow: 0 0 0 2px var(--accent-muted);
+	}
+	.search-input::placeholder {
+		color: var(--text-faint);
+	}
+
+	/* ── Section bar ─────────────────────────────────────────────────────────── */
+	.section-bar {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		border-radius: 10px;
+		border: 1px solid var(--border);
+		background: var(--bg-muted);
+		padding: 10px 14px;
+		font-family: var(--font-mono);
+		font-size: 13px;
+		color: var(--text-primary);
+		margin-bottom: 12px;
+	}
+
+	/* ── Refresh button ──────────────────────────────────────────────────────── */
 	.btn {
 		display: inline-flex;
 		align-items: center;
@@ -479,20 +528,22 @@
 		height: 34px;
 		padding: 0 0.75rem;
 		border-radius: 0.5rem;
-		border: 1px solid #d6d3d1;
-		background: #fff;
+		border: 1px solid var(--border-hover);
+		background: var(--bg-base);
 		font-size: 13px;
 		font-weight: 500;
-		color: #0c0a09;
+		color: var(--text-primary);
 		cursor: pointer;
 	}
 	.btn:hover {
-		background: #fafaf9;
+		background: var(--bg-subtle);
 	}
+
+	/* ── Segmented control ───────────────────────────────────────────────────── */
 	.seg {
 		display: inline-flex;
-		background: #f5f5f4;
-		border: 1px solid #e7e5e4;
+		background: var(--bg-muted);
+		border: 1px solid var(--border);
 		border-radius: 0.5rem;
 		padding: 3px;
 	}
@@ -504,46 +555,51 @@
 		border-radius: 0.375rem;
 		font-size: 12.5px;
 		font-weight: 500;
-		color: #57534e;
+		color: var(--text-secondary);
 		background: transparent;
 		border: 0;
 		cursor: pointer;
 	}
 	.seg button.active {
-		background: #fff;
-		color: #0c0a09;
-		box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+		background: var(--bg-base);
+		color: var(--text-primary);
+		box-shadow: 0 1px 2px var(--border-subtle);
 	}
 	.seg-count {
 		font-family: 'JetBrains Mono', ui-monospace, monospace;
 		font-size: 11px;
 		padding: 1px 6px;
 		border-radius: 9999px;
-		background: rgba(0, 0, 0, 0.05);
-		color: #57534e;
+		background: var(--border-subtle);
+		color: var(--text-secondary);
 	}
 	.seg button.active .seg-count {
-		background: #f3eefe;
-		color: #6d28d9;
+		background: var(--accent-subtle);
+		color: var(--accent);
 	}
+
+	/* ── Select ──────────────────────────────────────────────────────────────── */
 	.select {
 		height: 32px;
 		padding: 0 0.625rem 0 0.75rem;
-		border: 1px solid #d6d3d1;
-		background: #fff;
+		border: 1px solid var(--border-hover);
+		background: var(--bg-base);
 		border-radius: 0.5rem;
 		font-size: 13px;
-		color: #0c0a09;
+		color: var(--text-primary);
 		cursor: pointer;
 	}
+
+	/* ── KV label ────────────────────────────────────────────────────────────── */
 	.kv-label {
 		font-size: 10.5px;
 		text-transform: uppercase;
 		letter-spacing: 0.07em;
-		color: #a8a29e;
+		color: var(--text-faint);
 		font-weight: 600;
 	}
 
+	/* ── Kill pill ───────────────────────────────────────────────────────────── */
 	.kill-wrap {
 		transition: width 180ms cubic-bezier(0.4, 0, 0.2, 1);
 		flex-shrink: 0;
@@ -556,16 +612,15 @@
 		border-radius: 6px;
 		font-size: 12.5px;
 		font-weight: 500;
-		color: #dc2626;
-		background: #fef2f2;
-		border: 1px solid #fecaca;
+		color: var(--error);
+		background: var(--error-subtle);
+		border: 1px solid rgba(var(--error-rgb), 0.3);
 		transition: background 120ms ease, border-color 120ms ease, color 120ms ease, transform 100ms ease;
 		cursor: pointer;
 	}
 	.kill-pill:hover {
-		background: #fee2e2;
-		border-color: #f87171;
-		color: #b91c1c;
+		background: rgba(var(--error-rgb), 0.18);
+		border-color: rgba(var(--error-rgb), 0.5);
 		transform: scale(1.03);
 	}
 	.kill-pill:active {
@@ -576,12 +631,13 @@
 	}
 	.kill-spinner {
 		animation: spin 0.8s linear infinite;
-		color: #ef4444;
+		color: var(--error);
 	}
 
+	/* ── Poll output scrollbar ───────────────────────────────────────────────── */
 	.poll-pre {
 		scrollbar-width: thin;
-		scrollbar-color: rgba(0, 0, 0, 0.12) transparent;
+		scrollbar-color: var(--border) transparent;
 	}
 	.poll-pre::-webkit-scrollbar {
 		width: 3px;
@@ -591,10 +647,10 @@
 		background: transparent;
 	}
 	.poll-pre::-webkit-scrollbar-thumb {
-		background: rgba(0, 0, 0, 0.12);
+		background: var(--border);
 		border-radius: 99px;
 	}
 	.poll-pre::-webkit-scrollbar-thumb:hover {
-		background: rgba(0, 0, 0, 0.28);
+		background: var(--border-hover);
 	}
 </style>
