@@ -25,6 +25,7 @@ class ShellToolName(str, Enum):
 
     BASH = "Bash"
     MONITOR = "Monitor"
+    MANUAL = "Manual"  # user ran a command with ! that backgrounded
 
 
 class ShellTerminationReason(str, Enum):

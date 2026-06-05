@@ -575,14 +575,14 @@ ON CONFLICT(tool_use_id) DO UPDATE SET
     is_persistent      = excluded.is_persistent,
     timeout_ms         = excluded.timeout_ms,
     spawned_at         = excluded.spawned_at,
-    terminated_at      = excluded.terminated_at,
-    terminated_by      = excluded.terminated_by,
-    exit_code          = excluded.exit_code,
+    terminated_at      = COALESCE(background_shells.terminated_at, excluded.terminated_at),
+    terminated_by      = COALESCE(background_shells.terminated_by, excluded.terminated_by),
+    exit_code          = COALESCE(background_shells.exit_code, excluded.exit_code),
     poll_count         = MAX(excluded.poll_count, background_shells.poll_count),
     total_output_bytes = MAX(excluded.total_output_bytes, background_shells.total_output_bytes),
     last_output_at     = COALESCE(excluded.last_output_at, background_shells.last_output_at),
     spawn_message_uuid = excluded.spawn_message_uuid,
-    output_file_path   = excluded.output_file_path
+    output_file_path   = COALESCE(excluded.output_file_path, background_shells.output_file_path)
 """
 
 _UPSERT_POLL_SQL = """

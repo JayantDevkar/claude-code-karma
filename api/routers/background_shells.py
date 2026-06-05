@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 import shutil
 import subprocess
+import threading
 import time
 from datetime import datetime, timezone
 from typing import Optional
@@ -36,15 +37,22 @@ router = APIRouter(tags=["background-shells"])
 # Debounce: only run the incremental sync at most once per this many seconds.
 _SYNC_DEBOUNCE_SECS = 10
 _last_sync_at: float = 0.0
+# Guards the check-then-act on _last_sync_at so concurrent GET /shells requests
+# can't both pass the debounce window and double-run the sync.
+_sync_lock = threading.Lock()
 
 
 def _maybe_sync() -> None:
     """Run an incremental JSONL sync if enough time has passed since the last one."""
     global _last_sync_at
-    now = time.monotonic()
-    if now - _last_sync_at < _SYNC_DEBOUNCE_SECS:
-        return
-    _last_sync_at = now
+    # Make the debounce decision (read + update of _last_sync_at) atomic, but
+    # release the lock before running the sync so the work itself isn't
+    # serialized — only the once-per-window decision is.
+    with _sync_lock:
+        now = time.monotonic()
+        if now - _last_sync_at < _SYNC_DEBOUNCE_SECS:
+            return
+        _last_sync_at = now
     try:
         from db.connection import get_writer_db as _gw
         from db.indexer import sync_all_projects
@@ -139,9 +147,10 @@ def kill_shell(tool_use_id: str) -> dict:
     Attempt to terminate a running background shell by its tool_use_id.
 
     Looks up the output_file_path stored at index time, uses lsof to find
-    the PID(s) writing to that file, and sends SIGTERM. Falls back to SIGKILL
-    if lsof is unavailable. Always marks the shell as terminated in the DB
-    (terminated_by='kill') regardless of whether a live process was found.
+    the PID(s) writing to that file, and sends SIGTERM. If lsof is unavailable,
+    no signal is sent and the shell is only marked terminated in the DB. Always
+    marks the shell as terminated in the DB (terminated_by='kill') regardless of
+    whether a live process was found.
     """
     import sqlite3 as _sqlite3
 
@@ -179,7 +188,7 @@ def kill_shell(tool_use_id: str) -> dict:
         except Exception as exc:
             logger.warning("lsof/kill failed for shell %s: %s", tool_use_id, exc)
 
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.") + "000Z"
+    now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     conn = get_writer_db()
     conn.execute(
         """

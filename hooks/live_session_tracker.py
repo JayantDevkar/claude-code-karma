@@ -34,6 +34,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+import traceback
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional
@@ -58,6 +59,22 @@ except ImportError:
     HAS_MSVCRT = False
 
 LIVE_SESSIONS_DIR = Path.home() / ".claude_karma" / "live-sessions"
+ERROR_LOG = LIVE_SESSIONS_DIR / ".errors.log"
+
+
+def _log_error(detail: str) -> None:
+    """Append to a per-user error log. Best-effort: ignores write failures.
+
+    Mirrors hooks/cron_state_capture.py so a hook failure stays debuggable
+    without ever propagating to (and breaking) the Claude Code session.
+    """
+    try:
+        LIVE_SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
+        ts = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        with ERROR_LOG.open("a", encoding="utf-8") as fp:
+            fp.write(f"{ts}\t{detail}\n")
+    except OSError:
+        pass
 
 
 def resolve_git_root(cwd: str) -> Optional[str]:
@@ -368,13 +385,8 @@ def _get(obj: Any, name: str, default: Any = None) -> Any:
     return default
 
 
-def main() -> None:
-    """Entry point — read hook JSON from stdin and update state."""
-    try:
-        data = json.loads(sys.stdin.read())
-    except json.JSONDecodeError:
-        return
-
+def _handle_event(data: Dict[str, Any]) -> None:
+    """Dispatch a single parsed hook event to the matching state write."""
     if not isinstance(data, dict):
         return
 
@@ -464,6 +476,25 @@ def main() -> None:
     elif hook_name == "SessionEnd":
         reason = _get(hook, "reason")
         write_state(session_id, "ENDED", data, end_reason=reason)
+
+
+def main() -> None:
+    """Entry point — read hook JSON from stdin and update state.
+
+    Never propagates an exception: any failure (bad stdin, lock/disk errors
+    from write_state/add_subagent/etc.) is swallowed and logged so the hook
+    always exits 0 and never surfaces as a Claude Code hook error. Mirrors
+    the "hook must never propagate" contract in hooks/cron_state_capture.py.
+    """
+    try:
+        try:
+            data = json.loads(sys.stdin.read())
+        except json.JSONDecodeError:
+            return
+        _handle_event(data)
+    except Exception:  # noqa: BLE001 — hook must never propagate
+        _log_error(f"unexpected:\n{traceback.format_exc()}")
+        return
 
 
 if __name__ == "__main__":
