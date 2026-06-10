@@ -363,6 +363,12 @@ Enable real-time session monitoring by installing Claude Code hooks. See [SETUP.
 | `PUT` | `/tickets/{provider}/{key}` | Refresh metadata from MCP |
 | `POST` | `/admin/repair-github-urls` | Repair stale `/issues/` URLs to `/pull/` |
 
+### System Cron
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /cron/system` | Host OS crontab (user crontab, `/etc/crontab`, `/etc/cron.d/*`, run-parts), grouped by origin |
+
 </details>
 
 ## Contributing

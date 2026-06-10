@@ -16,6 +16,7 @@
 	import StatsGrid from '$lib/components/StatsGrid.svelte';
 	import type { CronJob, CronProjectRollupRow } from '$lib/api-types';
 	import { API_BASE } from '$lib/config';
+	import SystemCrontabSection from '$lib/components/cron/SystemCrontabSection.svelte';
 
 	let { data } = $props();
 
@@ -520,6 +521,9 @@
 			<span class="footer-right">Reconstructed from session logs · <span class="mono-dim">{formatTimeAgo(new Date().toISOString())}</span></span>
 		</div>
 	{/if}
+
+	<!-- ADDITIVE: real Linux crontab, independent of Claude CronCreate jobs -->
+	<SystemCrontabSection />
 </div>
 
 <style>
