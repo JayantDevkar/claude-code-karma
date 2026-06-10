@@ -1,293 +1,344 @@
 <script lang="ts">
-	import { Brain, FolderOpen, Search, FileText, BookOpen } from 'lucide-svelte';
+	import {
+		Brain,
+		Search,
+		FolderGit2,
+		BookOpen,
+		ArrowRight,
+		LayoutGrid,
+		FolderTree
+	} from 'lucide-svelte';
 	import PageHeader from '$lib/components/layout/PageHeader.svelte';
-
-	interface MemoryProjectRow {
-		encoded: string;
-		label: string;
-		path: string;
-		note_count: number;
-		has_index: boolean;
-	}
+	import StatsGrid from '$lib/components/StatsGrid.svelte';
+	import MemoryTreeNode from '$lib/components/memory/MemoryTreeNode.svelte';
+	import { buildMemoryTree, type MemoryProjectRow } from '$lib/components/memory/memoryTree';
 
 	let { data } = $props();
-	const allProjects = $derived((data.projects ?? []) as MemoryProjectRow[]);
 
 	let query = $state('');
+	let view = $state<'cards' | 'tree'>('cards');
 
-	const filtered = $derived(
-		allProjects.filter((p) => {
-			const q = query.trim().toLowerCase();
-			if (!q) return true;
-			return p.label.toLowerCase().includes(q) || p.path.toLowerCase().includes(q);
-		})
-	);
+	const filtered = $derived.by(() => {
+		const q = query.trim().toLowerCase();
+		const rows = data.projects as MemoryProjectRow[];
+		if (!q) return rows;
+		return rows.filter(
+			(p) => p.label.toLowerCase().includes(q) || p.path.toLowerCase().includes(q)
+		);
+	});
 
-	function memoryHref(p: MemoryProjectRow): string {
-		return `/projects/${p.encoded}?tab=memory`;
-	}
+	const tree = $derived(buildMemoryTree(filtered));
+	const searching = $derived(query.trim().length > 0);
 </script>
 
 <svelte:head>
-	<title>Memory · Claude Code Karma</title>
+	<title>Memory · Claude Karma</title>
 </svelte:head>
 
-<div class="memory-page">
+<div class="page-wrap">
 	<PageHeader
 		title="Memory"
-		iconName="memory"
-		iconColor="--nav-blue"
-		subtitle="Browse each project's persistent memory"
+		subtitle="La mémoire Claude Code de tous tes projets. Vue d'ensemble en cartes, ou arbre par dossier — déplie un projet pour lire son contenu directement."
+		icon={Brain}
+		iconColor="--nav-purple"
+		breadcrumbs={[{ label: 'Home', href: '/' }, { label: 'Memory' }]}
 	/>
 
-	{#if allProjects.length > 0}
-		<div class="stats">
-			<div class="stat">
-				<span class="stat-value">{data.totalProjects}</span>
-				<span class="stat-label">projects with memory</span>
-			</div>
-			<div class="stat-divider"></div>
-			<div class="stat">
-				<span class="stat-value">{data.totalNotes}</span>
-				<span class="stat-label">total notes</span>
-			</div>
-		</div>
-	{/if}
+	<div class="stats-wrap">
+		<StatsGrid
+			columns={2}
+			stats={[
+				{
+					title: 'Projets avec mémoire',
+					value: data.totalProjects,
+					icon: FolderGit2,
+					color: 'blue'
+				},
+				{ title: 'Notes mémoire', value: data.totalNotes, icon: Brain, color: 'purple' }
+			]}
+		/>
+	</div>
 
-	{#if allProjects.length === 0}
-		<div class="state">
-			No projects have memory yet (<code>~/.claude/projects/&lt;project&gt;/memory/</code>).
+	<div class="toolbar">
+		<div class="search-wrap">
+			<span class="search-ico"><Search size={14} /></span>
+			<input
+				class="search-input"
+				placeholder="Filtrer par projet ou chemin…"
+				bind:value={query}
+			/>
+		</div>
+
+		<div class="seg" role="tablist" aria-label="Mode d'affichage">
+			<button
+				class="seg-btn"
+				class:on={view === 'cards'}
+				onclick={() => (view = 'cards')}
+				role="tab"
+				aria-selected={view === 'cards'}
+			>
+				<LayoutGrid size={14} /> Cartes
+			</button>
+			<button
+				class="seg-btn"
+				class:on={view === 'tree'}
+				onclick={() => (view = 'tree')}
+				role="tab"
+				aria-selected={view === 'tree'}
+			>
+				<FolderTree size={14} /> Arbre
+			</button>
+		</div>
+	</div>
+
+	{#if filtered.length === 0}
+		<div class="empty">
+			{#if data.totalProjects === 0}
+				Aucun projet n'a encore de mémoire (<code
+					>~/.claude/projects/&lt;projet&gt;/memory/</code
+				>).
+			{:else}
+				Aucun projet ne correspond au filtre.
+			{/if}
+		</div>
+	{:else if view === 'cards'}
+		<div class="grid">
+			{#each filtered as p (p.encoded)}
+				<a class="card" href="/projects/{p.encoded}?tab=memory">
+					<div class="card-top">
+						<span class="card-ico"><FolderGit2 size={16} /></span>
+						<span class="card-label">{p.label}</span>
+					</div>
+					<div class="card-meta">
+						<span class="meta-item">
+							<Brain size={13} />
+							{p.note_count} note{p.note_count === 1 ? '' : 's'}
+						</span>
+						{#if p.has_index}
+							<span class="meta-item index"><BookOpen size={13} /> index</span>
+						{/if}
+					</div>
+					<div class="card-enc">{p.path}</div>
+					<span class="card-go">Voir la mémoire <ArrowRight size={13} /></span>
+				</a>
+			{/each}
 		</div>
 	{:else}
-		<div class="search">
-			<Search size={15} strokeWidth={2} />
-			<input type="text" placeholder="Search projects…" bind:value={query} />
+		<div class="tree">
+			{#each tree as node (node.project?.encoded ?? node.name)}
+				<MemoryTreeNode {node} forceOpen={searching} />
+			{/each}
 		</div>
-
-		{#if filtered.length === 0}
-			<div class="state">No projects match "{query}".</div>
-		{:else}
-			<div class="grid">
-				{#each filtered as project (project.encoded)}
-					<a class="card" href={memoryHref(project)}>
-						<!-- Header -->
-						<div class="card-header">
-							<div class="card-icon">
-								<FolderOpen size={20} strokeWidth={2} />
-							</div>
-							<div class="card-title-wrap">
-								<span class="card-name">{project.label}</span>
-								<span class="card-path">{project.path}</span>
-							</div>
-						</div>
-
-						<!-- Footer -->
-						<div class="card-footer">
-							<span class="footer-stat">
-								<FileText size={13} strokeWidth={2} />
-								{project.note_count} note{project.note_count === 1 ? '' : 's'}
-							</span>
-							{#if project.has_index}
-								<span class="badge-index">
-									<BookOpen size={11} /> index
-								</span>
-							{/if}
-						</div>
-					</a>
-				{/each}
-			</div>
-		{/if}
 	{/if}
 </div>
 
 <style>
-	.memory-page {
-		max-width: 1100px;
+	.page-wrap {
+		max-width: 1120px;
 		margin: 0 auto;
-		padding: 0 16px;
+		padding: 32px 32px 80px;
 	}
 
-	/* Stats */
-	.stats {
+	.stats-wrap {
+		border-radius: 16px;
+		padding: 24px;
+		border: 1px solid var(--border);
+		background: linear-gradient(
+			135deg,
+			rgba(var(--accent-rgb), 0.02) 0%,
+			rgba(var(--accent-rgb), 0.06) 100%
+		);
+		margin-bottom: 22px;
+	}
+
+	.toolbar {
 		display: flex;
 		align-items: center;
-		gap: 20px;
-		padding: 14px 18px;
-		background: var(--bg-subtle);
-		border: 1px solid var(--border);
-		border-radius: 10px;
+		gap: 10px;
 		margin-bottom: 16px;
 	}
 
-	.stat {
-		display: flex;
-		align-items: baseline;
-		gap: 6px;
-	}
-
-	.stat-value {
-		font-size: 18px;
-		font-weight: 700;
-		color: var(--text-primary);
-		font-variant-numeric: tabular-nums;
-	}
-
-	.stat-label {
-		font-size: 12px;
-		color: var(--text-muted);
-	}
-
-	.stat-divider {
-		width: 1px;
-		height: 20px;
-		background: var(--border);
-	}
-
-	/* Search */
-	.state {
-		padding: 32px 16px;
-		text-align: center;
-		color: var(--text-muted);
-		font-size: 14px;
-	}
-
-	.state code {
-		font-family: var(--font-mono);
-		font-size: 12px;
-		background: var(--bg-muted);
-		padding: 1px 5px;
-		border-radius: 4px;
-	}
-
-	.search {
+	.search-wrap {
+		position: relative;
 		display: flex;
 		align-items: center;
-		gap: 8px;
-		padding: 9px 12px;
-		margin-bottom: 16px;
-		background: var(--bg-subtle);
-		border: 1px solid var(--border);
-		border-radius: 8px;
-		color: var(--text-muted);
-	}
-
-	.search input {
 		flex: 1;
-		border: none;
-		background: transparent;
-		outline: none;
-		color: var(--text-primary);
-		font-size: 14px;
-		font-family: var(--font-sans);
 	}
 
-	/* Grid */
+	.search-ico {
+		position: absolute;
+		left: 11px;
+		color: var(--text-faint);
+		pointer-events: none;
+		display: flex;
+	}
+
+	.search-input {
+		width: 100%;
+		height: 36px;
+		border: 1px solid var(--border-hover);
+		border-radius: 8px;
+		background: var(--bg-base);
+		padding: 0 12px 0 34px;
+		font-size: 13px;
+		color: var(--text-primary);
+		outline: none;
+	}
+
+	.search-input:focus {
+		border-color: var(--accent);
+		box-shadow: 0 0 0 3px var(--accent-muted);
+	}
+
+	.seg {
+		display: inline-flex;
+		border: 1px solid var(--border-hover);
+		border-radius: 8px;
+		overflow: hidden;
+		flex-shrink: 0;
+	}
+
+	.seg-btn {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		height: 36px;
+		padding: 0 12px;
+		background: var(--bg-base);
+		border: none;
+		font-size: 12.5px;
+		color: var(--text-muted);
+		cursor: pointer;
+	}
+
+	.seg-btn:hover {
+		background: var(--bg-subtle);
+	}
+
+	.seg-btn.on {
+		background: var(--accent-muted);
+		color: var(--accent);
+		font-weight: 600;
+	}
+
+	.seg-btn + .seg-btn {
+		border-left: 1px solid var(--border-hover);
+	}
+
+	/* ── Cards ─────────────────────────────────────────────────────────────── */
 	.grid {
 		display: grid;
 		grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
 		gap: 12px;
 	}
 
-	/* Card — matches ProjectCard default variant */
 	.card {
 		display: flex;
 		flex-direction: column;
-		gap: 0;
-		background: var(--bg-subtle);
+		gap: 10px;
 		border: 1px solid var(--border);
-		border-left: 3px solid var(--nav-blue);
-		border-radius: 10px;
-		padding: 16px 16px 0;
+		border-radius: 12px;
+		background: var(--bg-base);
+		padding: 16px;
 		text-decoration: none;
 		transition:
-			box-shadow 120ms,
-			border-color 120ms;
+			border-color 0.15s,
+			box-shadow 0.15s;
 	}
 
 	.card:hover {
-		box-shadow: 0 4px 16px -6px rgba(0, 0, 0, 0.12);
+		border-color: var(--border-hover);
+		box-shadow: 0 6px 20px -10px var(--border-subtle);
 	}
 
-	.card:focus-visible {
-		outline: 2px solid var(--accent);
-		outline-offset: 2px;
-	}
-
-	.card-header {
+	.card-top {
 		display: flex;
-		align-items: flex-start;
-		gap: 12px;
-		margin-bottom: 12px;
+		align-items: center;
+		gap: 9px;
+		min-width: 0;
 	}
 
-	.card-icon {
+	.card-ico {
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		width: 40px;
-		height: 40px;
+		width: 30px;
+		height: 30px;
 		border-radius: 8px;
-		background: var(--nav-blue-subtle);
-		color: var(--nav-blue);
+		background: var(--accent-muted);
+		color: var(--accent);
 		flex-shrink: 0;
 	}
 
-	.card-title-wrap {
-		display: flex;
-		flex-direction: column;
-		min-width: 0;
-		flex: 1;
-	}
-
-	.card-name {
-		font-size: 13.5px;
+	.card-label {
+		font-size: 14px;
 		font-weight: 600;
-		font-family: var(--font-mono);
-		color: var(--accent);
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-		line-height: 1.3;
-		margin-bottom: 2px;
-	}
-
-	.card-path {
-		font-size: 11px;
-		font-family: var(--font-mono);
-		color: var(--text-muted);
+		color: var(--text-primary);
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
 	}
 
-	/* Footer */
-	.card-footer {
+	.card-meta {
 		display: flex;
 		align-items: center;
-		justify-content: space-between;
-		gap: 8px;
-		padding: 10px 0;
-		border-top: 1px solid var(--border);
-		margin-top: auto;
+		gap: 12px;
 	}
 
-	.footer-stat {
+	.meta-item {
 		display: inline-flex;
 		align-items: center;
 		gap: 5px;
-		font-size: 12px;
+		font-size: 12.5px;
 		color: var(--text-muted);
 	}
 
-	.badge-index {
+	.meta-item.index {
+		color: var(--accent);
+	}
+
+	.card-enc {
+		font-family: var(--font-mono);
+		font-size: 11px;
+		color: var(--text-faint);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.card-go {
 		display: inline-flex;
 		align-items: center;
-		gap: 3px;
-		font-size: 10.5px;
+		gap: 5px;
+		font-size: 12.5px;
 		font-weight: 500;
 		color: var(--accent);
-		background: var(--accent-muted);
-		padding: 2px 7px;
-		border-radius: 99px;
+		margin-top: 2px;
+	}
+
+	/* ── Tree ──────────────────────────────────────────────────────────────── */
+	.tree {
+		border: 1px solid var(--border);
+		border-radius: 12px;
+		background: var(--bg-base);
+		padding: 8px;
+	}
+
+	.empty {
+		padding: 50px 20px;
+		text-align: center;
+		color: var(--text-muted);
+		border: 1px dashed var(--border);
+		border-radius: 12px;
+		background: var(--bg-subtle);
+		font-size: 13px;
+	}
+
+	.empty code {
+		font-family: var(--font-mono);
+		font-size: 12px;
+		background: var(--bg-muted);
+		padding: 0 5px;
+		border-radius: 4px;
 	}
 </style>
