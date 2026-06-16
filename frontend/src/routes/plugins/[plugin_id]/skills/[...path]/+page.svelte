@@ -86,7 +86,7 @@
 	<PageHeader title={filename} icon={FileText} {breadcrumbs} />
 
 	{#if data.error}
-		<div class="p-8 bg-red-500/10 text-red-500 rounded-xl text-center border border-red-500/20">
+		<div class="p-8 bg-[var(--error-subtle)] text-[var(--error)] rounded-xl text-center border border-[var(--error)]/20">
 			<p class="text-lg font-medium">{data.error}</p>
 		</div>
 	{:else if data.skill}
@@ -135,7 +135,7 @@
 						title="Copy content"
 					>
 						{#if copied}
-							<Check size={20} class="text-green-500" />
+							<Check size={20} class="text-[var(--success)]" />
 						{:else}
 							<Copy size={20} />
 						{/if}

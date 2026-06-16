@@ -82,7 +82,7 @@
 	<div class="flex items-center justify-between">
 		<div class="space-y-1 min-w-0">
 			<div class="flex items-center gap-2">
-				<FileText size={20} class="text-blue-500 flex-shrink-0" />
+				<FileText size={20} class="text-[var(--info)] flex-shrink-0" />
 				<h1
 					class="text-xl font-semibold tracking-tight text-[var(--text-primary)] truncate"
 				>
@@ -138,7 +138,7 @@
 				title="Copy to clipboard"
 			>
 				{#if copied}
-					<Check size={16} class="text-green-500" />
+					<Check size={16} class="text-[var(--success)]" />
 					Copied
 				{:else}
 					<Copy size={16} />
@@ -149,7 +149,7 @@
 	</div>
 
 	{#if error}
-		<div class="p-4 bg-red-500/10 text-red-500 rounded-lg text-sm border border-red-500/20">
+		<div class="p-4 bg-[var(--error-subtle)] text-[var(--error)] rounded-lg text-sm border border-[var(--error)]/20">
 			{error}
 		</div>
 	{:else if loading}

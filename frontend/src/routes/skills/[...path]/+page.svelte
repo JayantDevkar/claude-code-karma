@@ -185,7 +185,7 @@
 					title="Copy to clipboard"
 				>
 					{#if copied}
-						<Check size={18} class="text-green-500" />
+						<Check size={18} class="text-[var(--success)]" />
 						Copied!
 					{:else}
 						<Copy size={18} />

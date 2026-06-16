@@ -225,7 +225,7 @@
 			<Loader2 class="animate-spin text-[var(--text-muted)]" size={32} />
 		</div>
 	{:else if error}
-		<div class="p-4 bg-red-500/10 text-red-500 rounded-lg text-sm border border-red-500/20">
+		<div class="p-4 bg-[var(--error-subtle)] text-[var(--error)] rounded-lg text-sm border border-[var(--error)]/20">
 			{error}
 		</div>
 	{:else if items.length === 0}
@@ -251,7 +251,7 @@
 						data-list-item
 					>
 						<div
-							class="p-2.5 bg-blue-500/10 text-blue-500 rounded-lg group-hover:bg-blue-500/20 transition-colors"
+							class="p-2.5 bg-[var(--info-subtle)] text-[var(--info)] rounded-lg transition-colors"
 						>
 							<Folder size={20} />
 						</div>
@@ -263,7 +263,7 @@
 						</div>
 						<ChevronRight
 							size={16}
-							class="ml-auto text-[var(--text-faint)] group-hover:text-blue-500 transition-colors"
+							class="ml-auto text-[var(--text-faint)] group-hover:text-[var(--info)] transition-colors"
 						/>
 					</a>
 				{:else}

@@ -262,14 +262,14 @@
 							<div class="flex h-2.5 rounded-full overflow-hidden bg-[var(--bg-muted)] flex-1 max-w-xs">
 								{#if manualPercent > 0}
 									<div
-										class="bg-blue-500 transition-all duration-300"
+										class="bg-[var(--info)] transition-all duration-300"
 										style="width: {manualPercent}%"
 										title="Manual: {manualCalls}"
 									></div>
 								{/if}
 								{#if autoPercent > 0}
 									<div
-										class="bg-purple-500 transition-all duration-300"
+										class="bg-[var(--accent)] transition-all duration-300"
 										style="width: {autoPercent}%"
 										title="Auto: {autoCalls}"
 									></div>
@@ -277,11 +277,11 @@
 							</div>
 							<div class="flex items-center gap-3 text-[10px] text-[var(--text-secondary)]">
 								<span class="flex items-center gap-1">
-									<span class="w-2 h-2 rounded-full bg-blue-500"></span>
+									<span class="w-2 h-2 rounded-full bg-[var(--info)]"></span>
 									Manual: {manualCalls}
 								</span>
 								<span class="flex items-center gap-1">
-									<span class="w-2 h-2 rounded-full bg-purple-500"></span>
+									<span class="w-2 h-2 rounded-full bg-[var(--accent)]"></span>
 									Auto: {autoCalls}
 								</span>
 							</div>
@@ -374,7 +374,7 @@
 								<div class="flex h-5 rounded-full overflow-hidden bg-[var(--bg-muted)] shadow-inner">
 									{#if manualPercent > 0}
 										<div
-											class="bg-blue-500 transition-all duration-300 ease-out flex items-center justify-center text-[10px] font-bold text-white"
+											class="bg-[var(--info)] transition-all duration-300 ease-out flex items-center justify-center text-[10px] font-bold text-white"
 											style="width: {manualPercent}%"
 											title="Manual: {manualCalls}"
 										>
@@ -383,7 +383,7 @@
 									{/if}
 									{#if autoPercent > 0}
 										<div
-											class="bg-purple-500 transition-all duration-300 ease-out flex items-center justify-center text-[10px] font-bold text-white"
+											class="bg-[var(--accent)] transition-all duration-300 ease-out flex items-center justify-center text-[10px] font-bold text-white"
 											style="width: {autoPercent}%"
 											title="Auto: {autoCalls}"
 										>
@@ -396,7 +396,7 @@
 							<!-- Legend grid -->
 							<div class="grid grid-cols-2 gap-3 text-xs">
 								<div class="flex items-center gap-2 text-[var(--text-secondary)] bg-[var(--bg-subtle)] rounded-lg p-2.5">
-									<span class="w-3 h-3 rounded-full bg-blue-500"></span>
+									<span class="w-3 h-3 rounded-full bg-[var(--info)]"></span>
 									<div class="flex-1 min-w-0">
 										<div class="font-medium">Manual</div>
 										<div class="text-[var(--text-primary)] font-semibold tabular-nums">
@@ -405,7 +405,7 @@
 									</div>
 								</div>
 								<div class="flex items-center gap-2 text-[var(--text-secondary)] bg-[var(--bg-subtle)] rounded-lg p-2.5">
-									<span class="w-3 h-3 rounded-full bg-purple-500"></span>
+									<span class="w-3 h-3 rounded-full bg-[var(--accent)]"></span>
 									<div class="flex-1 min-w-0">
 										<div class="font-medium">Auto</div>
 										<div class="text-[var(--text-primary)] font-semibold tabular-nums">
@@ -444,7 +444,7 @@
 						<button
 							onclick={() => (sourceFilter = sourceFilter === 'manual' ? 'all' : 'manual')}
 							class="px-3 py-1 text-xs font-medium rounded-full transition-all {sourceFilter === 'manual'
-								? 'bg-blue-500/15 text-blue-400 border border-blue-500/30'
+								? 'bg-[var(--info-subtle)] text-[var(--info)] border border-[var(--info)]/30'
 								: 'bg-[var(--bg-subtle)] text-[var(--text-muted)] border border-transparent hover:border-[var(--border)] hover:text-[var(--text-secondary)]'}"
 							aria-pressed={sourceFilter === 'manual'}
 						>
@@ -453,7 +453,7 @@
 						<button
 							onclick={() => (sourceFilter = sourceFilter === 'auto' ? 'all' : 'auto')}
 							class="px-3 py-1 text-xs font-medium rounded-full transition-all {sourceFilter === 'auto'
-								? 'bg-purple-500/15 text-purple-400 border border-purple-500/30'
+								? 'bg-[var(--accent-subtle)] text-[var(--accent)] border border-[var(--accent)]/30'
 								: 'bg-[var(--bg-subtle)] text-[var(--text-muted)] border border-transparent hover:border-[var(--border)] hover:text-[var(--text-secondary)]'}"
 							aria-pressed={sourceFilter === 'auto'}
 						>

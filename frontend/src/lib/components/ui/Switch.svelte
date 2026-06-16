@@ -30,7 +30,7 @@
 >
 	<Switch.Thumb
 		class={cn(
-			'pointer-events-none block h-4 w-4 rounded-full bg-white shadow-sm ring-0 transition-transform duration-200 ease-[cubic-bezier(0.25,1,0.5,1)]',
+			'pointer-events-none block h-4 w-4 rounded-full bg-[var(--bg-base)] shadow-sm ring-0 transition-transform duration-200 ease-[cubic-bezier(0.25,1,0.5,1)]',
 			checked ? 'translate-x-4' : 'translate-x-0'
 		)}
 	/>

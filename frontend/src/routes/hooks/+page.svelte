@@ -284,7 +284,7 @@
 									class="
 										px-2 py-0.5
 										text-[10px] font-semibold uppercase tracking-wider
-										bg-red-500/10 text-red-600 dark:text-red-400
+										bg-[var(--error-subtle)] text-[var(--error)]
 										rounded-full
 									"
 								>

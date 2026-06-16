@@ -88,7 +88,7 @@
 
 	{#if data.error}
 		<div
-			class="p-4 rounded-lg bg-[var(--bg-error,rgba(239,68,68,0.1))] border border-[var(--border-error,rgba(239,68,68,0.3))] text-[var(--text-error,#ef4444)]"
+			class="p-4 rounded-lg bg-[var(--error-subtle)] border border-[var(--error)] text-[var(--error)]"
 		>
 			<p class="text-sm">Failed to load documentation: {data.error}</p>
 			<p class="text-xs mt-1 opacity-70">Make sure the API is running on port 8000.</p>

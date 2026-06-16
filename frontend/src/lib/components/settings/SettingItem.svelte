@@ -32,7 +32,7 @@
 			{/if}
 			{#if success}
 				<span
-					class="text-xs text-green-600 dark:text-green-500 font-medium animate-fade-in"
+					class="text-xs text-[var(--success)] font-medium animate-fade-in"
 				>
 					{success}
 				</span>

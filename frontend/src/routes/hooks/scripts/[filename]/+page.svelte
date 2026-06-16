@@ -132,7 +132,7 @@
 	<section>
 		<div
 			class="
-				border border-[#30363d]
+				border border-[var(--border)]
 				rounded-xl
 				overflow-hidden
 				bg-[#0d1117]
@@ -143,11 +143,11 @@
 				class="
 					flex items-center justify-between
 					px-4 py-3
-					border-b border-[#30363d]
-					bg-[#161b22]
+					border-b border-[var(--border)]
+					bg-[var(--bg-subtle)]
 				"
 			>
-				<div class="flex items-center gap-2 text-sm text-[#8b949e]">
+				<div class="flex items-center gap-2 text-sm text-[var(--text-muted)]">
 					<FileCode size={14} />
 					<span class="font-mono text-xs">{script.filename}</span>
 				</div>
@@ -159,9 +159,9 @@
 							px-3 py-1.5
 							text-xs font-medium
 							rounded-lg
-							text-[#8b949e]
-							hover:text-[#e6edf3]
-							hover:bg-[#30363d]
+							text-[var(--text-muted)]
+							hover:text-[var(--text-primary)]
+							hover:bg-[var(--bg-muted)]
 							transition-colors
 						"
 					>

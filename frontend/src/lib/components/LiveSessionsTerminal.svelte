@@ -334,7 +334,7 @@
 	.cleanup-btn:hover:not(:disabled) {
 		color: var(--error);
 		border-color: var(--error);
-		background: rgba(239, 68, 68, 0.05);
+		background: rgba(var(--error-rgb), 0.05);
 	}
 
 	.cleanup-btn:disabled {
@@ -500,7 +500,7 @@
 		gap: 3px;
 		padding: 1px 6px;
 		border-radius: 10px;
-		background: var(--nav-purple-subtle, rgba(139, 92, 246, 0.1));
+		background: var(--nav-purple-subtle, rgba(var(--accent-rgb), 0.1));
 		color: var(--nav-purple);
 		font-size: 10px;
 		font-weight: 500;

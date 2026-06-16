@@ -305,7 +305,7 @@
 	}
 
 	.token-search-container.at-limit {
-		border-color: var(--warning, #f59e0b);
+		border-color: var(--warning);
 	}
 
 	.search-icon {
@@ -385,7 +385,7 @@
 	.token-remove:hover {
 		opacity: 1;
 		background: var(--accent);
-		color: white;
+		color: var(--bg-base);
 	}
 
 	.token-remove:focus {
@@ -526,21 +526,21 @@
 	}
 
 	.token-count-indicator.warning {
-		background: rgba(245, 158, 11, 0.15);
+		background: rgba(var(--warning-rgb), 0.15);
 	}
 
 	.token-count-indicator.danger {
-		background: rgba(239, 68, 68, 0.15);
+		background: rgba(var(--error-rgb), 0.15);
 		animation: pulse-danger 2s ease-in-out infinite;
 	}
 
 	@keyframes pulse-danger {
 		0%,
 		100% {
-			background: rgba(239, 68, 68, 0.15);
+			background: rgba(var(--error-rgb), 0.15);
 		}
 		50% {
-			background: rgba(239, 68, 68, 0.25);
+			background: rgba(var(--error-rgb), 0.25);
 		}
 	}
 
@@ -554,11 +554,11 @@
 	}
 
 	.token-count-indicator.warning .count-text {
-		color: #f59e0b;
+		color: var(--warning);
 	}
 
 	.token-count-indicator.danger .count-text {
-		color: #ef4444;
+		color: var(--error);
 	}
 
 	.progress-bar {
@@ -578,11 +578,11 @@
 	}
 
 	.token-count-indicator.warning .progress-fill {
-		background: #f59e0b;
+		background: var(--warning);
 	}
 
 	.token-count-indicator.danger .progress-fill {
-		background: #ef4444;
+		background: var(--error);
 	}
 
 	.search-hints {
@@ -624,18 +624,18 @@
 		0% {
 			box-shadow:
 				0 0 0 2px var(--accent-subtle),
-				0 0 0 0 rgba(139, 92, 246, 0);
+				0 0 0 0 rgba(var(--accent-rgb), 0);
 		}
 		50% {
 			box-shadow:
 				0 0 0 4px var(--accent-subtle),
 				0 0 0 2px var(--accent),
-				0 0 12px 4px rgba(139, 92, 246, 0.3);
+				0 0 12px 4px rgba(var(--accent-rgb), 0.3);
 		}
 		100% {
 			box-shadow:
 				0 0 0 2px var(--accent-subtle),
-				0 0 0 0 rgba(139, 92, 246, 0);
+				0 0 0 0 rgba(var(--accent-rgb), 0);
 		}
 	}
 
