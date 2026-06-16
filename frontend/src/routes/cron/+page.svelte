@@ -10,7 +10,8 @@
 		Calendar,
 		ChevronRight,
 		Repeat,
-		Zap
+		Zap,
+		TerminalSquare
 	} from 'lucide-svelte';
 	import PageHeader from '$lib/components/layout/PageHeader.svelte';
 	import StatsGrid from '$lib/components/StatsGrid.svelte';
@@ -26,6 +27,19 @@
 	let query = $state('');
 	let openIds = $state<Set<string>>(new Set());
 	let rescanning = $state(false);
+	// Persisted in the URL (?source=system) so the chosen tab survives reloads.
+	let cronSource = $state<'claude' | 'system'>(
+		$page.url.searchParams.get('source') === 'system' ? 'system' : 'claude'
+	);
+
+	function setCronSource(s: 'claude' | 'system') {
+		cronSource = s;
+		const params = new URLSearchParams($page.url.searchParams);
+		if (s === 'system') params.set('source', 'system');
+		else params.delete('source');
+		const qs = params.toString();
+		goto(`/cron${qs ? `?${qs}` : ''}`, { replaceState: true });
+	}
 
 	const NOW_MS = Date.now();
 
@@ -253,6 +267,32 @@
 		]} />
 	</div>
 
+	<!-- Source toggle: Claude's CronCreate jobs vs the host OS crontab -->
+	<div class="source-seg" role="tablist" aria-label="Cron source">
+		<button
+			class="source-seg-btn"
+			class:on={cronSource === 'claude'}
+			onclick={() => setCronSource('claude')}
+			role="tab"
+			aria-selected={cronSource === 'claude'}
+		>
+			<Clock size={14} /> Claude crons
+		</button>
+		<button
+			class="source-seg-btn"
+			class:on={cronSource === 'system'}
+			onclick={() => setCronSource('system')}
+			role="tab"
+			aria-selected={cronSource === 'system'}
+		>
+			<TerminalSquare size={14} /> System crontab
+		</button>
+	</div>
+
+	{#if cronSource === 'system'}
+		<SystemCrontabSection />
+	{:else}
+
 	<!-- Toolbar -->
 	<div class="toolbar">
 		<select
@@ -285,19 +325,6 @@
 				bind:value={query}
 			/>
 		</div>
-	</div>
-
-	<!-- Section bar -->
-	<div class="section-bar">
-		<span class="section-cmd">
-			<span class="dollar">$</span>
-			crons --project={projectFilter}{activeOnly ? ' --active-only' : ''}{query
-				? ` --search="${query}"`
-				: ''}
-		</span>
-		<span class="section-count">
-			showing <b>{sorted.length}</b> of <b>{counts.total}</b>
-		</span>
 	</div>
 
 	<!-- List / empty state -->
@@ -522,8 +549,7 @@
 		</div>
 	{/if}
 
-	<!-- ADDITIVE: real Linux crontab, independent of Claude CronCreate jobs -->
-	<SystemCrontabSection />
+	{/if}
 </div>
 
 <style>
@@ -545,6 +571,47 @@
 		border: 1px solid var(--border);
 		background: linear-gradient(135deg, rgba(var(--accent-rgb), 0.02) 0%, rgba(var(--accent-rgb), 0.06) 100%);
 		margin-bottom: 22px;
+	}
+
+	/* ── Source segmented toggle ───────────────────────────────────────────── */
+	.source-seg {
+		display: inline-flex;
+		align-self: flex-start;
+		gap: 4px;
+		padding: 4px;
+		margin: 4px 0 18px;
+		border: 1px solid var(--border);
+		border-radius: 12px;
+		background: var(--bg-subtle);
+	}
+
+	.source-seg-btn {
+		display: inline-flex;
+		align-items: center;
+		gap: 7px;
+		height: 32px;
+		padding: 0 16px;
+		background: none;
+		border: none;
+		border-radius: 9px;
+		font-size: 12.5px;
+		font-weight: 500;
+		color: var(--text-muted);
+		cursor: pointer;
+		transition:
+			background 0.15s,
+			color 0.15s;
+	}
+
+	.source-seg-btn:hover {
+		color: var(--text-primary);
+	}
+
+	.source-seg-btn.on {
+		background: var(--bg-base);
+		color: var(--accent);
+		font-weight: 600;
+		box-shadow: 0 1px 3px -1px var(--border-hover);
 	}
 
 	/* ── Toolbar ───────────────────────────────────────────────────────────── */
@@ -659,49 +726,10 @@
 		color: var(--text-faint);
 	}
 
-	/* ── Section bar ───────────────────────────────────────────────────────── */
-	.section-bar {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 12px;
-		background: var(--bg-subtle);
-		border: 1px solid var(--border);
-		border-radius: 10px;
-		padding: 10px 14px;
-		font-family: var(--font-mono);
-		font-size: 13px;
-		color: var(--text-primary);
-		margin-bottom: 12px;
-		overflow: hidden;
-	}
-
-	.section-cmd {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-		min-width: 0;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-
 	.dollar {
 		color: var(--accent);
 		font-weight: 600;
 		flex-shrink: 0;
-	}
-
-	.section-count {
-		font-size: 12.5px;
-		color: var(--text-muted);
-		flex-shrink: 0;
-		font-family: inherit;
-	}
-
-	.section-count b {
-		font-weight: 600;
-		color: var(--text-primary);
 	}
 
 	/* ── Cron list ─────────────────────────────────────────────────────────── */

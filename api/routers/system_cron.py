@@ -114,18 +114,29 @@ def _classify(command: str, source: str) -> tuple[str, Optional[str]]:
     return "user", None
 
 
-def _next_run_iso(expr: str) -> Optional[str]:
-    """Best-effort next fire time as ISO, or None if croniter can't parse."""
+def _run_times(expr: str, n: int = 3) -> tuple[Optional[str], list[str], list[str]]:
+    """
+    Best-effort (next_run, recent_runs, upcoming_runs) as tz-aware ISO
+    strings, all computed from the cron expression. The OS keeps no per-job
+    run history, so the recent list is "when it was scheduled to fire", not
+    proof it ran. Returns (None, [], []) if croniter can't parse it.
+    """
     try:
         from datetime import datetime
 
         from croniter import croniter
 
         if not croniter.is_valid(expr):
-            return None
-        return croniter(expr, datetime.now()).get_next(datetime).isoformat()
+            return None, [], []
+        now = datetime.now().astimezone()
+        fwd = croniter(expr, now)
+        upcoming = [fwd.get_next(datetime).isoformat() for _ in range(n)]
+        back = croniter(expr, now)
+        recent = [back.get_prev(datetime).isoformat() for _ in range(n)]
+        recent.reverse()  # oldest → newest, reads naturally in a timeline
+        return upcoming[0], recent, upcoming
     except Exception:
-        return None
+        return None, [], []
 
 
 def _human(expr: str) -> str:
@@ -185,6 +196,7 @@ def _parse_line(line: str, *, has_user: bool, source: str) -> Optional[dict]:
         return None
 
     origin, skill = _classify(command, source)
+    next_run, recent_runs, upcoming_runs = _run_times(expr)
     return {
         "schedule": expr,
         "schedule_human": _human(expr),
@@ -193,9 +205,27 @@ def _parse_line(line: str, *, has_user: bool, source: str) -> Optional[dict]:
         "source": source,
         "origin": origin,
         "skill": skill,
-        "next_run": _next_run_iso(expr),
+        "next_run": next_run,
+        "recent_runs": recent_runs,
+        "upcoming_runs": upcoming_runs,
+        "description": None,
         "raw": raw,
     }
+
+
+def _skill_description(skill: str) -> Optional[str]:
+    """Purpose of a skill cron, from the skill's own SKILL.md frontmatter."""
+    try:
+        text = (settings.skills_dir / skill / "SKILL.md").read_text(errors="replace")
+    except OSError:
+        return None
+    m = re.search(r"^description:\s*(.+)$", text[:4000], re.MULTILINE)
+    if not m:
+        return None
+    desc = m.group(1).strip().strip("\"'")
+    # Skill descriptions can be long trigger blurbs — keep the first sentence.
+    first = re.split(r"(?<=[.!?])\s", desc, maxsplit=1)[0]
+    return first or None
 
 
 def _read_user_crontab() -> tuple[list[dict], Optional[str]]:
@@ -221,12 +251,28 @@ def _read_user_crontab() -> tuple[list[dict], Optional[str]]:
             return [], None
         return [], (proc.stderr or "crontab -l error").strip()
 
-    entries = []
-    for line in proc.stdout.splitlines():
-        e = _parse_line(line, has_user=False, source="user crontab")
+    return _parse_text(proc.stdout, has_user=False, source="user crontab"), None
+
+
+def _parse_text(text: str, *, has_user: bool, source: str) -> list[dict]:
+    """
+    Parse a whole crontab body. Comment lines directly above a job are the
+    conventional place to document it, so a contiguous `# ...` block becomes
+    that job's description (a blank line or any other line breaks the block).
+    """
+    entries: list[dict] = []
+    pending_comment: list[str] = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("#"):
+            pending_comment.append(stripped.lstrip("#").strip())
+            continue
+        e = _parse_line(line, has_user=has_user, source=source)
         if e:
+            e["description"] = " ".join(c for c in pending_comment if c) or None
             entries.append(e)
-    return entries, None
+        pending_comment = []
+    return entries
 
 
 def _read_file_crontab(path: Path, source: str) -> list[dict]:
@@ -235,12 +281,7 @@ def _read_file_crontab(path: Path, source: str) -> list[dict]:
         text = path.read_text(errors="replace")
     except (FileNotFoundError, PermissionError, OSError):
         return []
-    entries = []
-    for line in text.splitlines():
-        e = _parse_line(line, has_user=True, source=source)
-        if e:
-            entries.append(e)
-    return entries
+    return _parse_text(text, has_user=True, source=source)
 
 
 def _read_periodic() -> list[dict]:
@@ -265,6 +306,9 @@ def _read_periodic() -> list[dict]:
                         "origin": origin,
                         "skill": skill,
                         "next_run": None,
+                        "recent_runs": [],
+                        "upcoming_runs": [],
+                        "description": None,
                         "raw": f"run-parts {dir_path} → {f.name}",
                     }
                 )
@@ -327,6 +371,14 @@ def list_system_cron(
 
     if include_periodic:
         entries.extend(_read_periodic())
+
+    # Skill crons without an inline comment inherit their SKILL.md description.
+    skill_desc_cache: dict[str, Optional[str]] = {}
+    for e in entries:
+        if e["skill"] and not e["description"]:
+            if e["skill"] not in skill_desc_cache:
+                skill_desc_cache[e["skill"]] = _skill_description(e["skill"])
+            e["description"] = skill_desc_cache[e["skill"]]
 
     by_source: dict[str, int] = {}
     by_origin: dict[str, int] = {}
