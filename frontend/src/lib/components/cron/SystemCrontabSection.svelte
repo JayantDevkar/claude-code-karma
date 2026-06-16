@@ -2,9 +2,9 @@
   SystemCrontabSection — renders the host's real OS cron table (the cron
   daemon), distinct from Claude Code's session-scoped CronCreate jobs on
   /cron. Each entry is an expandable card mirroring the Claude cron list:
-  the expanded panel shows the raw crontab line, its source, and a schedule
-  timeline (recent + upcoming fire times computed from the expression — the
-  OS keeps no per-job run history to read back). Self-fetches
+  the expanded panel shows its source/user (when not the plain user crontab)
+  and a schedule timeline (recent + upcoming fire times computed from the
+  expression — the OS keeps no per-job run history to read back). Self-fetches
   GET /cron/system so the page's +page.server.ts stays untouched.
 -->
 <script lang="ts">
@@ -194,7 +194,7 @@
 
 		<!-- Entry cards -->
 		<div class="sc-list">
-			{#each visible as e (entryKey(e))}
+			{#each visible as e, i (`${entryKey(e)}#${i}`)}
 				{@const key = entryKey(e)}
 				{@const expanded = openKeys.has(key)}
 				{@const meta = ORIGIN_META[e.origin] ?? ORIGIN_META.user}

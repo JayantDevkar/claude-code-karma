@@ -215,6 +215,10 @@ def _parse_line(line: str, *, has_user: bool, source: str) -> Optional[dict]:
 
 def _skill_description(skill: str) -> Optional[str]:
     """Purpose of a skill cron, from the skill's own SKILL.md frontmatter."""
+    # `skill` is derived from the (attacker-influenceable) crontab command, so
+    # never let it escape the skills dir — reject separators and dot segments.
+    if not skill or skill in (".", "..") or "/" in skill or "\\" in skill:
+        return None
     try:
         text = (settings.skills_dir / skill / "SKILL.md").read_text(errors="replace")
     except OSError:

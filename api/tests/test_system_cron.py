@@ -13,7 +13,14 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import pytest
 
-from routers.system_cron import _classify, _human, _parse_line
+from routers.system_cron import (
+    _classify,
+    _human,
+    _parse_line,
+    _parse_text,
+    _run_times,
+    _skill_description,
+)
 
 # ---------------------------------------------------------------------------
 # _parse_line — user crontab (5 schedule fields, no user column)
@@ -148,3 +155,95 @@ class TestHuman:
 
     def test_unknown_falls_back_to_raw(self):
         assert _human("15 14 1 * 5") == "15 14 1 * 5"
+
+
+# ---------------------------------------------------------------------------
+# _parse_text — comment-block → description capture
+# ---------------------------------------------------------------------------
+
+
+class TestParseText:
+    def test_comment_above_job_becomes_description(self):
+        text = "# Nightly backup of docs\n@daily /home/me/backup.sh\n"
+        entries = _parse_text(text, has_user=False, source="user crontab")
+        assert len(entries) == 1
+        assert entries[0]["description"] == "Nightly backup of docs"
+
+    def test_multiline_comment_block_joins(self):
+        text = "# line one\n# line two\n*/5 * * * * /bin/true\n"
+        entries = _parse_text(text, has_user=False, source="user crontab")
+        assert entries[0]["description"] == "line one line two"
+
+    def test_blank_line_breaks_the_block(self):
+        # A blank line between the comment and the job detaches the comment.
+        text = "# orphan comment\n\n*/5 * * * * /bin/true\n"
+        entries = _parse_text(text, has_user=False, source="user crontab")
+        assert entries[0]["description"] is None
+
+    def test_comment_does_not_leak_to_later_job(self):
+        text = "# for job A\n0 1 * * * /a.sh\n0 2 * * * /b.sh\n"
+        entries = _parse_text(text, has_user=False, source="user crontab")
+        assert entries[0]["description"] == "for job A"
+        assert entries[1]["description"] is None
+
+
+# ---------------------------------------------------------------------------
+# _skill_description — SKILL.md frontmatter + path-traversal safety
+# ---------------------------------------------------------------------------
+
+
+class TestSkillDescription:
+    def _make_skill(self, tmp_path, monkeypatch, name, body):
+        from config import settings
+
+        monkeypatch.setattr(settings, "claude_base", tmp_path)
+        skill_dir = tmp_path / "skills" / name
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text(body)
+
+    def test_reads_first_sentence_of_description(self, tmp_path, monkeypatch):
+        self._make_skill(
+            tmp_path,
+            monkeypatch,
+            "gmail-triage",
+            "---\nname: gmail-triage\ndescription: Triages Gmail. Long trigger blurb here.\n---\n",
+        )
+        assert _skill_description("gmail-triage") == "Triages Gmail."
+
+    def test_missing_skill_returns_none(self, tmp_path, monkeypatch):
+        from config import settings
+
+        monkeypatch.setattr(settings, "claude_base", tmp_path)
+        (tmp_path / "skills").mkdir()
+        assert _skill_description("nope") is None
+
+    @pytest.mark.parametrize("evil", ["..", ".", "../secrets", "a/b", "a\\b"])
+    def test_rejects_path_traversal(self, evil, tmp_path, monkeypatch):
+        """A skill name with separators / dot-segments must never read outside."""
+        from config import settings
+
+        monkeypatch.setattr(settings, "claude_base", tmp_path)
+        # Plant a SKILL.md one level up — it must NOT be reachable via '..'.
+        (tmp_path / "SKILL.md").write_text("description: leaked\n")
+        assert _skill_description(evil) is None
+
+
+# ---------------------------------------------------------------------------
+# _run_times — timeline computation + timezone-awareness
+# ---------------------------------------------------------------------------
+
+
+class TestRunTimes:
+    def test_valid_expr_returns_aware_timestamps(self):
+        next_run, recent, upcoming = _run_times("*/30 * * * *")
+        assert next_run is not None
+        assert len(recent) == 3 and len(upcoming) == 3
+        # tz-aware ISO strings carry an offset (not a naive datetime)
+        assert ("+" in next_run) or next_run.endswith("Z") or "-" in next_run[11:]
+
+    def test_recent_is_oldest_to_newest(self):
+        _, recent, _ = _run_times("*/30 * * * *")
+        assert recent == sorted(recent)
+
+    def test_invalid_expr_returns_empty(self):
+        assert _run_times("not a cron") == (None, [], [])
