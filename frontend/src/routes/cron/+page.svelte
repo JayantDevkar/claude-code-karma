@@ -31,6 +31,8 @@
 	let cronSource = $state<'claude' | 'system'>(
 		$page.url.searchParams.get('source') === 'system' ? 'system' : 'claude'
 	);
+	// Reported up by SystemCrontabSection after it fetches /cron/system.
+	let systemSummary = $state<{ count: number; byOrigin: Record<string, number> } | null>(null);
 
 	function setCronSource(s: 'claude' | 'system') {
 		cronSource = s;
@@ -258,13 +260,21 @@
 		{/snippet}
 	</PageHeader>
 
-	<!-- Stat strip -->
+	<!-- Stat strip — reacts to the source toggle -->
 	<div class="stats-wrap">
-		<StatsGrid columns={3} stats={[
-			{ title: 'Total tracked', value: counts.total, icon: Clock, color: 'purple' },
-			{ title: 'Likely active', value: counts.active, icon: Activity, color: 'green', description: 'inferred from TTL' },
-			{ title: 'Expired or deleted', value: counts.inactive, icon: Archive, color: 'gray' }
-		]} />
+		{#if cronSource === 'system'}
+			<StatsGrid columns={3} stats={[
+				{ title: 'Crontab entries', value: systemSummary?.count ?? 0, icon: TerminalSquare, color: 'purple' },
+				{ title: 'Claude-related', value: (systemSummary?.byOrigin['claude-skill'] ?? 0) + (systemSummary?.byOrigin['claude'] ?? 0), icon: Clock, color: 'green', description: 'skills + ~/.claude scripts' },
+				{ title: 'User & system', value: (systemSummary?.byOrigin['user'] ?? 0) + (systemSummary?.byOrigin['system'] ?? 0), icon: Archive, color: 'gray' }
+			]} />
+		{:else}
+			<StatsGrid columns={3} stats={[
+				{ title: 'Total tracked', value: counts.total, icon: Clock, color: 'purple' },
+				{ title: 'Likely active', value: counts.active, icon: Activity, color: 'green', description: 'inferred from TTL' },
+				{ title: 'Expired or deleted', value: counts.inactive, icon: Archive, color: 'gray' }
+			]} />
+		{/if}
 	</div>
 
 	<!-- Source toggle: Claude's CronCreate jobs vs the host OS crontab -->
@@ -290,7 +300,7 @@
 	</div>
 
 	{#if cronSource === 'system'}
-		<SystemCrontabSection />
+		<SystemCrontabSection onSummary={(s) => (systemSummary = s)} />
 	{:else}
 
 	<!-- Toolbar -->

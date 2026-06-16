@@ -37,6 +37,13 @@
 		note?: string;
 	}
 
+	// Optional callback so the page can show a stat strip for the system view.
+	interface SystemCronSummary {
+		count: number;
+		byOrigin: Record<string, number>;
+	}
+	let { onSummary }: { onSummary?: (s: SystemCronSummary) => void } = $props();
+
 	let entries = $state<SystemCronEntry[]>([]);
 	let errors = $state<string[]>([]);
 	let loading = $state(true);
@@ -57,6 +64,7 @@
 			errors = data.errors ?? [];
 			supported = data.supported !== false;
 			unsupportedNote = data.note ?? null;
+			onSummary?.({ count: data.count ?? entries.length, byOrigin: data.by_origin ?? {} });
 		} catch (e) {
 			loadError = e instanceof Error ? e.message : 'fetch failed';
 		} finally {
