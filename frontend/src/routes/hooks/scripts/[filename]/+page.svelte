@@ -210,7 +210,7 @@
 				</div>
 			{:else if detail.content}
 				<pre
-					class="p-4 overflow-x-auto text-sm font-mono text-[var(--text-primary)] leading-relaxed">{detail.content}</pre>
+					class="p-4 overflow-x-auto text-sm font-mono text-[#e6edf3] leading-relaxed">{detail.content}</pre>
 			{:else}
 				<div class="p-8">
 					<EmptyState

@@ -602,7 +602,7 @@
 								{/if}
 								{#if mentionedPercent > 0}
 									<div
-										class="transition-all duration-300" style="background-color: var(--border-hover); width: {mentionedPercent}%"
+										class="transition-all duration-300" style="background-color: var(--text-muted); width: {mentionedPercent}%"
 										title="Mentioned (not invoked): {mentionedCalls}"
 									></div>
 								{/if}
@@ -624,7 +624,7 @@
 								{/if}
 								{#if mentionedCalls > 0}
 									<span class="flex items-center gap-1">
-										<span class="w-2 h-2 rounded-full" style="background-color: var(--border-hover);"></span>
+										<span class="w-2 h-2 rounded-full" style="background-color: var(--text-muted);"></span>
 										Mentioned <span class="opacity-60">(Not invoked)</span>: {mentionedCalls}
 									</span>
 								{/if}
@@ -739,7 +739,7 @@
 									{#if mentionedPercent > 0}
 										<div
 											class="transition-all duration-300 ease-out flex items-center justify-center text-[10px] font-bold text-white"
-											style="width: {mentionedPercent}%; background-color: var(--border-hover);"
+											style="width: {mentionedPercent}%; background-color: var(--text-muted);"
 											title="Mentioned (not invoked): {mentionedCalls}"
 										>
 											{#if mentionedPercent > 15}{Math.round(mentionedPercent)}%{/if}
@@ -781,7 +781,7 @@
 								{/if}
 								{#if mentionedCalls > 0}
 									<div class="flex items-center gap-2 text-[var(--text-secondary)] bg-[var(--bg-subtle)] rounded-lg p-2.5">
-										<span class="w-3 h-3 rounded-full" style="background-color: var(--border-hover);"></span>
+										<span class="w-3 h-3 rounded-full" style="background-color: var(--text-muted);"></span>
 										<div class="flex-1 min-w-0">
 											<div class="font-medium">Mentioned</div>
 											<div class="text-[var(--text-primary)] font-semibold tabular-nums">
