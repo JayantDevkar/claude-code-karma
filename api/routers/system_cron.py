@@ -151,7 +151,7 @@ def _human(expr: str) -> str:
         return "every min"
     if minute.startswith("*/") and hour == "*":
         return f"every {minute[2:]} min"
-    if hour.startswith("*/") and minute in ("0", "*"):
+    if hour.startswith("*/") and minute == "0":
         return f"every {hour[2:]}h"
     if minute != "*" and hour != "*" and dom == "*" and month == "*" and dow == "*":
         return f"daily {hour.zfill(2)}:{minute.zfill(2)}"

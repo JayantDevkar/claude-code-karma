@@ -156,6 +156,12 @@ class TestHuman:
     def test_unknown_falls_back_to_raw(self):
         assert _human("15 14 1 * 5") == "15 14 1 * 5"
 
+    def test_every_nth_hour_requires_zero_minute(self):
+        # "0 */2 * * *" is every 2h; "* */2 * * *" fires every minute during
+        # even hours, so it must NOT be labelled "every 2h".
+        assert _human("0 */2 * * *") == "every 2h"
+        assert _human("* */2 * * *") == "* */2 * * *"
+
 
 # ---------------------------------------------------------------------------
 # _parse_text — comment-block → description capture
