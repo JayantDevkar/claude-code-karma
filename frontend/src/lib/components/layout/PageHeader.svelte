@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { ComponentType, Snippet } from 'svelte';
+	import KarmaIcon from '$lib/components/icons/Icon.svelte';
 
 	interface Breadcrumb {
 		label: string;
@@ -16,6 +17,7 @@
 	interface Props {
 		title: string;
 		icon?: ComponentType;
+		iconName?: string; // hand-drawn icon name (preferred over icon)
 		iconColor?: string; // CSS color variable name, e.g., '--subagent-plan'
 		iconColorRaw?: { color: string; subtle: string }; // Raw color values (e.g., OKLCH)
 		breadcrumbs?: Breadcrumb[];
@@ -28,7 +30,8 @@
 
 	let {
 		title,
-		icon: Icon,
+		icon: LucideIcon,
+		iconName,
 		iconColor,
 		iconColorRaw,
 		breadcrumbs = [],
@@ -67,7 +70,7 @@
 	<div class="mb-6 pb-6 border-b border-[var(--border)]">
 		<div class="flex items-start gap-4">
 			<!-- Icon -->
-			{#if Icon}
+			{#if iconName || LucideIcon}
 				<div
 					class="
 						inline-flex items-center justify-center
@@ -82,7 +85,11 @@
 							? `background-color: var(${iconColor}-subtle); border-color: var(${iconColor}); color: var(${iconColor});`
 							: 'background-color: var(--bg-subtle); border-color: var(--border); color: var(--text-muted);'}
 				>
-					<Icon size={24} strokeWidth={2} />
+					{#if iconName}
+						<KarmaIcon name={iconName} size={24} strokeWidth={1.5} />
+					{:else if LucideIcon}
+						<LucideIcon size={24} strokeWidth={2} />
+					{/if}
 				</div>
 			{/if}
 

@@ -77,7 +77,7 @@
 			{#each overview.servers as server (server.name)}
 				{@const colorVars = getServerColorVars(server.name, server.plugin_name)}
 				<a
-					href="/tools/{encodeURIComponent(server.name)}{projectEncodedName
+					href="/mcp/{encodeURIComponent(server.name)}{projectEncodedName
 						? `?project=${encodeURIComponent(projectEncodedName)}`
 						: ''}"
 					class="group block bg-[var(--bg-base)] border border-[var(--border)] rounded-xl p-5 hover:border-[var(--accent)]/50 hover:shadow-lg transition-all duration-300 relative overflow-hidden focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2"

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import PageHeader from '$lib/components/layout/PageHeader.svelte';
-	import { BookOpen, FileText, Loader2 } from 'lucide-svelte';
+	import { BookOpen, FileText, Loader2, Info } from 'lucide-svelte';
 	import { renderMarkdownEffect } from '$lib/utils';
 	import { API_BASE } from '$lib/config';
 
@@ -80,7 +80,7 @@
 <div class="space-y-6">
 	<PageHeader
 		title="About"
-		icon={BookOpen}
+		icon={Info}
 		iconColor="--nav-red"
 		breadcrumbs={[{ label: 'Dashboard', href: '/' }, { label: 'About' }]}
 		subtitle="Documentation & guides for Claude Code Karma"

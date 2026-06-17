@@ -439,7 +439,7 @@
 	<!-- Page Header with Breadcrumb -->
 	<PageHeader
 		title="Analytics"
-		icon={BarChart3}
+		iconName="analytics"
 		iconColor="--nav-green"
 		breadcrumbs={[{ label: 'Dashboard', href: '/' }, { label: 'Analytics' }]}
 		subtitle="Your coding patterns and AI collaboration"

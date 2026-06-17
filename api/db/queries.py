@@ -396,14 +396,29 @@ def query_dashboard_stats(
         """SELECT
             COUNT(*) as session_count,
             COUNT(DISTINCT project_encoded_name) as projects_active,
-            COALESCE(SUM(duration_seconds), 0) as total_duration
+            COALESCE(SUM(duration_seconds), 0) as total_duration,
+            COALESCE(SUM(input_tokens + output_tokens + cache_read_tokens), 0) as total_tokens,
+            COALESCE(SUM(total_cost), 0) as total_cost
         FROM sessions
         WHERE start_time >= :start AND start_time <= :end""",
         {"start": start_dt.isoformat(), "end": end_dt.isoformat()},
     ).fetchone()
     if not row or row["session_count"] == 0:
         return None
-    return dict(row)
+    result = dict(row)
+
+    # MCP tool calls (tool names prefixed with mcp__)
+    mcp_row = conn.execute(
+        """SELECT COALESCE(SUM(st.count), 0) as mcp_calls
+        FROM session_tools st
+        JOIN sessions s ON st.session_uuid = s.uuid
+        WHERE s.start_time >= :start AND s.start_time <= :end
+          AND st.tool_name LIKE 'mcp__%'""",
+        {"start": start_dt.isoformat(), "end": end_dt.isoformat()},
+    ).fetchone()
+    result["mcp_calls"] = mcp_row["mcp_calls"] if mcp_row else 0
+
+    return result
 
 
 def query_analytics(

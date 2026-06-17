@@ -430,6 +430,9 @@ class DashboardStats(BaseModel):
     sessions_count: int = Field(0, description="Sessions in the period")
     projects_active: int = Field(0, description="Projects with sessions in the period")
     duration_seconds: float = Field(0.0, description="Total time spent in seconds")
+    total_tokens: int = Field(0, description="Total tokens used in the period")
+    estimated_cost_usd: float = Field(0.0, description="Estimated cost in USD")
+    mcp_calls: int = Field(0, description="MCP tool calls in the period")
 
 
 class BranchSummary(BaseModel):

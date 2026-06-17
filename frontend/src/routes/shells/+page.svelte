@@ -235,7 +235,7 @@
 	<PageHeader
 		title="Background Shells"
 		subtitle="Every terminal Claude Code has spawned — what ran, what's still alive, what came back."
-		icon={Terminal}
+		iconName="shells"
 		iconColor="--nav-green"
 		breadcrumbs={[{ label: 'Home', href: '/' }, { label: 'Shells' }]}
 	>

@@ -684,6 +684,9 @@ def _get_dashboard_stats_sqlite() -> DashboardStats | None:
                         sessions_count=result["session_count"],
                         projects_active=result["projects_active"],
                         duration_seconds=round(result["total_duration"], 1),
+                        total_tokens=result.get("total_tokens", 0),
+                        estimated_cost_usd=round(result.get("total_cost", 0.0), 4),
+                        mcp_calls=result.get("mcp_calls", 0),
                     )
             return None
     except sqlite3.Error as e:

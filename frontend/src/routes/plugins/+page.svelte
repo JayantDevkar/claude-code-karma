@@ -111,7 +111,7 @@
 	<!-- Page Header -->
 	<PageHeader
 		title="Plugins"
-		icon={Puzzle}
+		iconName="plugins"
 		iconColor="--nav-violet"
 		breadcrumbs={[{ label: 'Dashboard', href: '/' }, { label: 'Plugins' }]}
 		subtitle="View and manage Claude Code plugins"

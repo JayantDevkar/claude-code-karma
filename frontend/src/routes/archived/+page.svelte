@@ -139,7 +139,7 @@
 	<!-- Page Header with inline stat badges -->
 	<PageHeader
 		title="Archived"
-		icon={History}
+		iconName="archived"
 		iconColor="--nav-gray"
 		breadcrumbs={[{ label: 'Dashboard', href: '/' }, { label: 'Archived' }]}
 		subtitle="Archived prompts from sessions that have been cleaned up"
@@ -239,13 +239,13 @@
 		</EmptyState>
 	{:else if viewMode === 'recent' && hasProjects}
 		<EmptyState
-			icon={Archive}
+			iconName="archived"
 			title="No recent archived projects"
 			description="No projects have been archived in the last 30 days. Try switching to All to see everything."
 		/>
 	{:else}
 		<EmptyState
-			icon={Archive}
+			iconName="archived"
 			title="No archived prompts"
 			description="When sessions are cleaned up by Claude Code's retention policy, their prompts will appear here."
 		>

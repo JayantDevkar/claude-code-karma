@@ -355,7 +355,7 @@
 	<!-- Page Header -->
 	<PageHeader
 		title="Agents"
-		icon={Bot}
+		iconName="agents"
 		iconColor="--nav-purple"
 		breadcrumbs={[{ label: 'Dashboard', href: '/' }, { label: 'Agents' }]}
 		subtitle="View agent usage analytics and manage custom agent definitions"

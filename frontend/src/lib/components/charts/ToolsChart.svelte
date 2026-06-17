@@ -143,7 +143,7 @@
 					{#if mcp}
 						<span class="flex items-center gap-1 truncate flex-1 min-w-0">
 							<a
-								href="/tools/{encodeURIComponent(mcp.server)}"
+								href="/mcp/{encodeURIComponent(mcp.server)}"
 								class="inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[9px] font-medium bg-[var(--nav-teal)]/10 text-[var(--nav-teal)] hover:bg-[var(--nav-teal)]/20 transition-colors flex-shrink-0"
 								title="View {mcp.server} in MCP Tools"
 							>

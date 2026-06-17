@@ -238,7 +238,7 @@
 	<!-- Page Header with Breadcrumb -->
 	<PageHeader
 		title="Projects"
-		icon={FolderOpen}
+		iconName="projects"
 		iconColor="--nav-blue"
 		breadcrumbs={[{ label: 'Dashboard', href: '/' }, { label: 'Projects' }]}
 		subtitle="Active Claude Code workspaces"

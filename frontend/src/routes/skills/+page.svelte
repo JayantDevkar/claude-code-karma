@@ -440,7 +440,7 @@
 	<!-- Page Header with Breadcrumb -->
 	<PageHeader
 		title="Skills"
-		icon={Wrench}
+		iconName="skills"
 		iconColor="--nav-orange"
 		breadcrumbs={[{ label: 'Dashboard', href: '/' }, { label: 'Skills' }]}
 		subtitle="Track skill usage analytics and browse skill files"

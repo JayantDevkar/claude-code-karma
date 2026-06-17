@@ -1070,7 +1070,7 @@
 	<!-- Page Header with Breadcrumb -->
 	<PageHeader
 		title="Sessions"
-		icon={MessageSquareText}
+		iconName="sessions"
 		iconColor="--nav-teal"
 		breadcrumbs={[{ label: 'Dashboard', href: '/' }, { label: 'Sessions' }]}
 		subtitle="Browse all Claude Code sessions across projects"
@@ -1405,7 +1405,7 @@
 			description={activeFiltersCount > 0 || hasSearchFilters
 				? 'Try adjusting your filters or search term'
 				: 'Start a Claude Code session to see it here'}
-			icon={MessageSquareText}
+			iconName="sessions"
 		>
 			{#if activeFiltersCount > 0 || hasSearchFilters}
 				<button

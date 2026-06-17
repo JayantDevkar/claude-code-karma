@@ -657,7 +657,7 @@
 								<div class="flex items-center justify-between text-sm mb-1">
 									{#if serverName}
 										<a
-											href="/tools/{encodeURIComponent(
+											href="/mcp/{encodeURIComponent(
 												serverName
 											)}/{encodeURIComponent(name)}"
 											class="text-[var(--text-secondary)] hover:text-[var(--accent)] truncate flex-1 mr-2 text-xs font-medium transition-colors"

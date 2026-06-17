@@ -31,6 +31,7 @@ from routers import (  # noqa: E402
     history,
     hooks,
     live_sessions,
+    memory,
     plans,
     plugins,
     projects,
@@ -195,6 +196,7 @@ app.include_router(tickets.router)
 # same pattern as tickets).
 app.include_router(background_shells.router)
 app.include_router(cron.router)
+app.include_router(memory.router)
 app.include_router(system_cron.router)  # ADDITIVE: Linux crontab view at /cron/system
 
 

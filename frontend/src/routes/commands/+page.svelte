@@ -431,7 +431,7 @@
 	<!-- Page Header -->
 	<PageHeader
 		title="Commands"
-		icon={Terminal}
+		iconName="commands"
 		iconColor="--nav-red"
 		breadcrumbs={[{ label: 'Dashboard', href: '/' }, { label: 'Commands' }]}
 		subtitle="Track command usage analytics across all sessions"

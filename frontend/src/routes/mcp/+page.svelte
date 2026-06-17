@@ -191,7 +191,7 @@
 	let hasServers = $derived(data.overview.servers.length > 0);
 	let hasFiltered = $derived(filteredServers.length > 0);
 
-	let isPageLoading = $derived(!!$navigating && $navigating.to?.route.id === '/tools');
+	let isPageLoading = $derived(!!$navigating && $navigating.to?.route.id === '/mcp');
 </script>
 
 <div class="space-y-8">
@@ -272,11 +272,11 @@
 	{:else}
 	<!-- Page Header -->
 	<PageHeader
-		title="Tools"
-		icon={Wrench}
+		title="MCP Servers"
+		iconName="tools"
 		iconColor="--nav-indigo"
-		breadcrumbs={[{ label: 'Dashboard', href: '/' }, { label: 'Tools' }]}
-		subtitle="Built-in tools and external MCP integrations"
+		breadcrumbs={[{ label: 'Dashboard', href: '/' }, { label: 'MCP Servers' }]}
+		subtitle="MCP servers & tools connected to your Claude Code account"
 	/>
 
 	<!-- Hero Stats -->
@@ -477,7 +477,7 @@
 								accentColor={colorVars.color}
 							/>
 							<a
-								href="/tools/{server.name}"
+								href="/mcp/{server.name}"
 								class="text-xs text-[var(--accent)] hover:underline flex items-center gap-1"
 							>
 								View details
@@ -491,7 +491,7 @@
 						>
 							{#each server.tools.slice(0, 12) as tool (tool.full_name)}
 								<a
-									href="/tools/{encodeURIComponent(
+									href="/mcp/{encodeURIComponent(
 										server.name
 									)}/{encodeURIComponent(tool.name)}"
 									class="no-underline"
@@ -508,7 +508,7 @@
 
 						{#if server.tools.length > 12}
 							<a
-								href="/tools/{server.name}"
+								href="/mcp/{server.name}"
 								class="block text-center text-sm text-[var(--accent)] hover:underline py-2"
 							>
 								+{server.tools.length - 12} more tools →
