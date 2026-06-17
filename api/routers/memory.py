@@ -50,9 +50,7 @@ def memory_index() -> dict:
                 continue
 
             try:
-                md_files = [
-                    f for f in mem_dir.iterdir() if f.is_file() and f.suffix == ".md"
-                ]
+                md_files = [f for f in mem_dir.iterdir() if f.is_file() and f.suffix == ".md"]
             except OSError:
                 continue
             if not md_files:
