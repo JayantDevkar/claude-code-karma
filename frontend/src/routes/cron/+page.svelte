@@ -248,7 +248,7 @@
 	<PageHeader
 		title="Cron Jobs"
 		subtitle="Scheduled prompts — when they ran, what they answered, and how long until TTL expires."
-		icon={Clock}
+		iconName="cron"
 		iconColor="--nav-purple"
 		breadcrumbs={[{ label: 'Home', href: '/' }, { label: 'Cron' }]}
 	>

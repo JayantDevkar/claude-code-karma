@@ -273,7 +273,7 @@
 	<!-- Page Header with Breadcrumb -->
 	<PageHeader
 		title="Plans"
-		icon={FileText}
+		iconName="plans"
 		iconColor="--nav-yellow"
 		breadcrumbs={[{ label: 'Dashboard', href: '/' }, { label: 'Plans' }]}
 		subtitle="Implementation plans from Claude Code plan mode sessions"

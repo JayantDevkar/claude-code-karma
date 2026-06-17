@@ -847,7 +847,7 @@
 								<div class="flex items-center justify-between mb-2">
 									{#if mcp}
 										<a
-											href="/tools/{encodeURIComponent(mcp.server)}/{encodeURIComponent(mcp.shortName)}"
+											href="/mcp/{encodeURIComponent(mcp.server)}/{encodeURIComponent(mcp.shortName)}"
 											class="text-sm text-[var(--accent)] font-semibold truncate max-w-[70%] hover:underline"
 											title={tool}
 										>

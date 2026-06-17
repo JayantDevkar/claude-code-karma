@@ -119,7 +119,7 @@
 <div class="max-w-6xl mx-auto p-6 flex flex-col gap-5">
 	<PageHeader
 		title="Tickets"
-		icon={TicketIcon}
+		iconName="tickets"
 		iconColor="--nav-amber"
 		breadcrumbs={[{ label: 'Dashboard', href: '/' }, { label: 'Tickets' }]}
 		subtitle="Linked across sessions · click through for the cross-project rollup"

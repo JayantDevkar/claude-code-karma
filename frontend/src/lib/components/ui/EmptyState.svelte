@@ -1,8 +1,10 @@
 <script lang="ts">
 	import type { ComponentType, Snippet } from 'svelte';
+	import KarmaIcon from '$lib/components/icons/Icon.svelte';
 
 	interface Props {
-		icon: ComponentType;
+		icon?: ComponentType;
+		iconName?: string;
 		title: string;
 		description?: string;
 		action?: {
@@ -14,7 +16,8 @@
 	}
 
 	let {
-		icon: Icon,
+		icon: LucideIcon,
+		iconName,
 		title,
 		description,
 		action,
@@ -31,7 +34,13 @@
 		{className}
 	"
 >
-	<Icon size={48} strokeWidth={1.5} class="text-[var(--text-muted)] mb-4" />
+	{#if iconName}
+		<span class="text-[var(--text-muted)] mb-4">
+			<KarmaIcon name={iconName} size={48} strokeWidth={1.5} />
+		</span>
+	{:else if LucideIcon}
+		<LucideIcon size={48} strokeWidth={1.5} class="text-[var(--text-muted)] mb-4" />
+	{/if}
 	<h3 class="text-lg font-medium text-[var(--text-primary)] mb-2">
 		{title}
 	</h3>

@@ -8,23 +8,21 @@
 		FolderOpen,
 		Bot,
 		AlertCircle,
-		ExternalLink,
-		Puzzle,
 		TrendingUp,
 		Layers,
 		Search,
 		LayoutGrid,
 		List,
-		X
+		X,
+		Puzzle
 	} from 'lucide-svelte';
 	import { formatDistanceToNow, isToday, isYesterday, isThisWeek, isThisMonth } from 'date-fns';
 	import { onMount, tick } from 'svelte';
 
 	import PageHeader from '$lib/components/layout/PageHeader.svelte';
+	import Badge from '$lib/components/ui/Badge.svelte';
 	import StatsGrid from '$lib/components/StatsGrid.svelte';
 	import SegmentedControl from '$lib/components/ui/SegmentedControl.svelte';
-	import Badge from '$lib/components/ui/Badge.svelte';
-	import McpServerIcon from '$lib/components/tools/McpServerIcon.svelte';
 	import McpContextBar from '$lib/components/tools/McpContextBar.svelte';
 	import McpTrendChart from '$lib/components/tools/McpTrendChart.svelte';
 	import ContextSplitCard from '$lib/components/tools/ContextSplitCard.svelte';
@@ -71,12 +69,12 @@
 	];
 
 	// View mode for sessions
-	let viewMode = $state<'list' | 'grid'>('grid');
+	let viewMode = $state<'list' | 'grid'>('list');
 	let viewModeInitialized = $state(false);
 
 	$effect(() => {
 		if (browser && !viewModeInitialized) {
-			const saved = localStorage.getItem('claude-code-karma-server-sessions-view-mode');
+			const saved = localStorage.getItem('claude-code-karma-tool-sessions-view-mode');
 			if (saved === 'list' || saved === 'grid') {
 				viewMode = saved;
 			}
@@ -86,7 +84,7 @@
 
 	$effect(() => {
 		if (browser && viewModeInitialized) {
-			localStorage.setItem('claude-code-karma-server-sessions-view-mode', viewMode);
+			localStorage.setItem('claude-code-karma-tool-sessions-view-mode', viewMode);
 		}
 	});
 
@@ -182,14 +180,8 @@
 		detail
 			? [
 					{
-						title: 'Tools',
-						value: detail.tool_count,
-						icon: Wrench,
-						color: 'teal'
-					},
-					{
 						title: 'Total Calls',
-						value: detail.total_calls.toLocaleString(),
+						value: detail.calls.toLocaleString(),
 						icon: Play,
 						color: 'blue'
 					},
@@ -202,30 +194,23 @@
 					{
 						title: 'Subagent %',
 						value:
-							detail.total_calls > 0
-								? Math.round((detail.subagent_calls / detail.total_calls) * 100) +
-									'%'
+							detail.calls > 0
+								? Math.round((detail.subagent_calls / detail.calls) * 100) + '%'
 								: '0%',
 						icon: Bot,
 						color: 'purple'
+					},
+					{
+						title: 'Server',
+						value: detail.server_display_name,
+						icon: Cable,
+						color: 'teal'
 					}
 				]
 			: []
 	);
 
-	// Tool breakdown sorted by calls
-	let sortedTools = $derived(detail ? [...detail.tools].sort((a, b) => b.calls - a.calls) : []);
-
-	let maxToolCalls = $derived(sortedTools.length > 0 ? sortedTools[0].calls : 1);
-
-	// Usage trend max for bar chart
-	let trendSlice = $derived(detail && detail.trend.length > 0 ? detail.trend.slice(-30) : []);
-
-	let trendMaxCalls = $derived(
-		detail && detail.trend.length > 0 ? Math.max(...detail.trend.map((t) => t.calls), 1) : 1
-	);
-
-	// Map McpSessionSummary to SessionWithContext for filtering and display
+	// Convert McpSessionSummary to SessionWithContext
 	function toSessionWithContext(s: McpSessionSummary): SessionWithContext {
 		return {
 			uuid: s.uuid,
@@ -410,23 +395,26 @@
 </script>
 
 <div class="space-y-8">
-	<!-- Page Header -->
 	{#if detail}
 		<PageHeader
-			title={detail.display_name}
-			icon={Cable}
+			title={detail.name}
+			icon={Wrench}
 			iconColorRaw={{ color: accentColor, subtle: colorVars.subtle }}
 			breadcrumbs={[
 				{ label: 'Dashboard', href: '/' },
-				{ label: 'Tools', href: '/tools' },
-				{ label: detail.display_name }
+				{ label: 'Tools', href: '/mcp' },
+				{
+					label: detail.server_display_name,
+					href: `/tools/${encodeURIComponent(data.serverName)}`
+				},
+				{ label: detail.name }
 			]}
 			metadata={[
-				{ text: `${detail.tool_count} tool${detail.tool_count !== 1 ? 's' : ''}` },
-				{
-					text: `${detail.total_calls.toLocaleString()} call${detail.total_calls !== 1 ? 's' : ''}`
-				},
-				{ text: `${detail.session_count} session${detail.session_count !== 1 ? 's' : ''}` }
+				{ text: `${detail.calls.toLocaleString()} call${detail.calls !== 1 ? 's' : ''}` },
+				{ text: `${detail.session_count} session${detail.session_count !== 1 ? 's' : ''}` },
+				...(detail.plugin_name
+					? [{ icon: Puzzle, text: detail.plugin_name, href: `/plugins/${encodeURIComponent(detail.plugin_name)}` }]
+					: [{ text: detail.server_display_name }])
 			]}
 		>
 			{#snippet badges()}
@@ -434,15 +422,11 @@
 					<a
 						href="/plugins/{encodeURIComponent(detail.plugin_name)}"
 						class="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-full hover:bg-[var(--bg-muted)] transition-colors no-underline"
-						style="color: {colorVars.color}; background-color: {colorVars.subtle};"
+						style="color: {accentColor}; background-color: color-mix(in srgb, {accentColor} 12%, transparent);"
 					>
 						<Puzzle size={12} />
 						{detail.plugin_name}
 					</a>
-				{:else}
-					<Badge variant="accent">
-						{detail.source}
-					</Badge>
 				{/if}
 			{/snippet}
 		</PageHeader>
@@ -473,7 +457,7 @@
 
 		<!-- Overview Tab -->
 		{#if activeTab === 'overview'}
-			<div class="space-y-6">
+			<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
 				<!-- Context Split Card -->
 				<div
 					class="bg-[var(--bg-base)] border border-[var(--border)] rounded-xl p-6 shadow-sm hover:shadow-md transition-shadow"
@@ -481,36 +465,12 @@
 					<ContextSplitCard
 						mainCalls={detail.main_calls}
 						subagentCalls={detail.subagent_calls}
-						totalCalls={detail.total_calls}
+						totalCalls={detail.calls}
 						firstUsed={detail.first_used}
 						lastUsed={detail.last_used}
 						sessions={detail.sessions}
 						accentColor={accentColor}
 					/>
-
-					<!-- Related Plugin -->
-					{#if detail.plugin_name}
-						<div class="mt-6 pt-4 border-t border-[var(--border)]">
-							<a
-								href="/plugins/{encodeURIComponent(detail.plugin_name)}"
-								class="flex items-center gap-3 p-3 bg-[var(--bg-subtle)] rounded-lg hover:bg-[var(--bg-muted)] transition-colors group"
-							>
-								<Puzzle size={18} style="color: {colorVars.color};" />
-								<div class="flex-1">
-									<p
-										class="text-sm font-medium text-[var(--text-primary)] transition-colors"
-										style="--hover-color: {colorVars.color};"
-									>
-										{detail.plugin_name} plugin
-									</p>
-									<p class="text-xs text-[var(--text-muted)]">
-										View plugin details
-									</p>
-								</div>
-								<ExternalLink size={14} class="text-[var(--text-faint)]" />
-							</a>
-						</div>
-					{/if}
 				</div>
 
 				<!-- Usage Trend Card -->
@@ -527,65 +487,9 @@
 								>Last {detail.trend.length} days</span
 							>
 						</div>
-
 						<McpTrendChart trend={detail.trend} accentColor={chartAccentHex} />
 					</div>
 				{/if}
-
-				<!-- Tool Breakdown Card -->
-				<div
-					class="bg-[var(--bg-base)] border border-[var(--border)] rounded-xl p-6 shadow-sm hover:shadow-md transition-shadow"
-				>
-					<div class="flex items-center gap-2 mb-6">
-						<Wrench size={18} class="text-[var(--text-muted)]" />
-						<h3 class="text-lg font-bold text-[var(--text-primary)]">Tool Breakdown</h3>
-					</div>
-
-					{#if sortedTools.length === 0}
-						<p class="text-sm text-[var(--text-muted)]">No tool data available</p>
-					{:else}
-						<div class="space-y-3.5 stagger-children">
-							{#each sortedTools as tool (tool.full_name)}
-								<div class="group">
-									<div class="flex items-center justify-between mb-2">
-										<a
-											href="/tools/{encodeURIComponent(
-												data.serverName
-											)}/{encodeURIComponent(tool.name)}"
-											class="text-sm text-[var(--text-secondary)] font-medium truncate max-w-[60%] hover:text-[var(--accent)] transition-colors"
-											title={tool.full_name}
-										>
-											{tool.name}
-										</a>
-										<div class="flex items-center gap-3">
-											<McpContextBar
-												mainCalls={tool.main_calls}
-												subagentCalls={tool.subagent_calls}
-												accentColor={accentColor}
-												compact
-											/>
-											<span
-												class="text-sm text-[var(--text-primary)] tabular-nums font-semibold"
-											>
-												{tool.calls.toLocaleString()}
-											</span>
-										</div>
-									</div>
-									<div
-										class="h-2 bg-[var(--bg-subtle)] rounded-full overflow-hidden"
-									>
-										<div
-											class="h-full rounded-full transition-all duration-300 ease-out"
-											style="width: {(tool.calls / maxToolCalls) *
-												100}%; background-color: {accentColor};"
-										></div>
-									</div>
-								</div>
-							{/each}
-						</div>
-					{/if}
-				</div>
-
 			</div>
 
 			<!-- History Tab -->
@@ -595,7 +499,7 @@
 					<div class="flex items-center gap-2 text-sm text-[var(--text-muted)]">
 						<Layers size={16} style="color: {accentColor};" />
 						<span class="font-medium text-[var(--text-primary)]">{totalCount}</span>
-						<span>{totalCount === 1 ? 'session' : 'sessions'} using this server</span>
+						<span>{totalCount === 1 ? 'session' : 'sessions'} using this tool</span>
 					</div>
 					<div class="flex items-center gap-3">
 						<span class="text-xs text-[var(--text-muted)] font-mono tabular-nums">
@@ -819,21 +723,21 @@
 					<EmptyState
 						icon={Layers}
 						title="No sessions yet"
-						description="This server hasn't been used in any sessions."
+						description="This tool hasn't been used in any sessions."
 					/>
 				{/if}
 			</div>
 		{/if}
 	{:else}
-		<!-- Server not found -->
 		<PageHeader
-			title={data.serverName}
-			icon={Cable}
+			title={data.toolName}
+			icon={Wrench}
 			iconColor="--nav-teal"
 			breadcrumbs={[
 				{ label: 'Dashboard', href: '/' },
-				{ label: 'Tools', href: '/tools' },
-				{ label: data.serverName }
+				{ label: 'Tools', href: '/mcp' },
+				{ label: data.serverName, href: `/tools/${encodeURIComponent(data.serverName)}` },
+				{ label: data.toolName }
 			]}
 		/>
 		<div
@@ -841,9 +745,9 @@
 		>
 			<AlertCircle size={20} class="text-[var(--text-muted)] flex-shrink-0" />
 			<div>
-				<p class="text-sm text-[var(--text-secondary)] font-medium">Server not found</p>
+				<p class="text-sm text-[var(--text-secondary)] font-medium">Tool not found</p>
 				<p class="text-xs text-[var(--text-muted)]">
-					No MCP server named "{data.serverName}" was found in your session data
+					No MCP tool named "{data.toolName}" was found for server "{data.serverName}"
 				</p>
 			</div>
 		</div>

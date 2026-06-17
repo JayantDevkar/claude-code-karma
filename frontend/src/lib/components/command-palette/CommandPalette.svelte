@@ -388,10 +388,10 @@
 								<Command.Item
 									value="Tools MCP servers integrations"
 									onSelect={() =>
-										handleSelect(() => goto('/tools'), {
+										handleSelect(() => goto('/mcp'), {
 											id: 'nav-tools',
 											label: 'Tools',
-											path: '/tools',
+											path: '/mcp',
 											icon: 'zap'
 										})}
 									class="cmd-item"

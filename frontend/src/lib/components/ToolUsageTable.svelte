@@ -52,7 +52,7 @@
 						{#if mcp}
 							<span class="flex items-center gap-1.5 min-w-0 flex-1 truncate">
 								<a
-									href="/tools/{encodeURIComponent(mcp.server)}"
+									href="/mcp/{encodeURIComponent(mcp.server)}"
 									class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-[var(--nav-teal)]/10 text-[var(--nav-teal)] hover:bg-[var(--nav-teal)]/20 transition-colors flex-shrink-0"
 									title="View {mcp.server} in MCP Tools"
 								>
@@ -71,7 +71,7 @@
 							{#if builtin}
 								<span class="flex items-center gap-1.5 min-w-0 flex-1 truncate">
 									<a
-										href="/tools/{encodeURIComponent(builtin.server)}"
+										href="/mcp/{encodeURIComponent(builtin.server)}"
 										class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-[var(--nav-purple)]/10 text-[var(--nav-purple)] hover:bg-[var(--nav-purple)]/20 transition-colors flex-shrink-0"
 										title="View {builtin.server} in Tools"
 									>
@@ -79,7 +79,7 @@
 										built-in
 									</a>
 									<a
-										href="/tools/{encodeURIComponent(builtin.server)}/{encodeURIComponent(builtin.shortName)}"
+										href="/mcp/{encodeURIComponent(builtin.server)}/{encodeURIComponent(builtin.shortName)}"
 										class="text-sm font-mono text-[var(--text-primary)] hover:text-[var(--accent)] truncate transition-colors"
 										title={tool.tool_name}
 									>
