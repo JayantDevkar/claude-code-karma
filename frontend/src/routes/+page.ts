@@ -8,6 +8,9 @@ interface DashboardStats {
 	sessions_count: number;
 	projects_active: number;
 	duration_seconds: number;
+	total_tokens: number;
+	estimated_cost_usd: number;
+	mcp_calls: number;
 }
 
 export async function load({ fetch }) {

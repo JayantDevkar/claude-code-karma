@@ -5,13 +5,21 @@
 	import HomeIcon from '$lib/components/home/HomeIcon.svelte';
 	import { Settings, Info } from 'lucide-svelte';
 
+	import { onMount, onDestroy } from 'svelte';
+
 	let { data } = $props();
 
 	function fmtDuration(secs: number): string {
 		const h = Math.floor(secs / 3600);
 		const m = Math.floor((secs % 3600) / 60);
-		if (h > 0) return `${h}h ${m}m`;
+		if (h > 0) return `${h}h${m}m`;
 		return `${m}m`;
+	}
+
+	function fmtTokens(n: number): string {
+		if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+		if (n >= 1_000) return `${(n / 1_000).toFixed(0)}k`;
+		return `${n}`;
 	}
 
 	const PERIOD_LABEL: Record<string, string> = {
@@ -20,6 +28,37 @@
 		this_week: 'this week',
 		none: ''
 	};
+
+	function buildStatMessages(s: typeof data.stats): string[] {
+		if (!s || s.period === 'none') return [];
+		const p = PERIOD_LABEL[s.period];
+		const msgs: string[] = [];
+		if (s.duration_seconds > 0) msgs.push(`${fmtDuration(s.duration_seconds)} with agents ${p}`);
+		if (s.sessions_count > 0) msgs.push(`${s.sessions_count} session${s.sessions_count !== 1 ? 's' : ''} started ${p}`);
+		if (s.projects_active > 0) msgs.push(`${s.projects_active} project${s.projects_active !== 1 ? 's' : ''} active ${p}`);
+		if (s.mcp_calls > 0) msgs.push(`${s.mcp_calls} MCP call${s.mcp_calls !== 1 ? 's' : ''} made ${p}`);
+		if (s.total_tokens > 0) msgs.push(`${fmtTokens(s.total_tokens)} tokens used ${p}`);
+		return msgs;
+	}
+
+	let statMessages = $derived(buildStatMessages(data.stats));
+	let statIndex = $state(0);
+	let rotateTimer: ReturnType<typeof setInterval> | null = null;
+
+	function rotate() {
+		if (statMessages.length <= 1) return;
+		statIndex = (statIndex + 1) % statMessages.length;
+	}
+
+	onMount(() => {
+		if (statMessages.length > 1) {
+			rotateTimer = setInterval(rotate, 2500);
+		}
+	});
+
+	onDestroy(() => {
+		if (rotateTimer) clearInterval(rotateTimer);
+	});
 
 	const automate = [
 		{
@@ -198,10 +237,9 @@
 						About
 					</a>
 				</div>
-				{#if data.stats && data.stats.period !== 'none' && data.stats.duration_seconds > 0}
+				{#if statMessages.length > 0}
 					<a href="/analytics" class="stats-line">
-						<span class="stats-prompt">&gt;</span>
-						<span>You spent <strong>{fmtDuration(data.stats.duration_seconds)}</strong> with agents {PERIOD_LABEL[data.stats.period]}</span>
+						<span class="stats-prompt">&gt;</span><span class="stats-msg">{statMessages[statIndex]}</span><span class="stats-cursor">_</span>
 					</a>
 				{/if}
 			</div>
@@ -341,7 +379,6 @@
 	.stats-line {
 		display: flex;
 		align-items: center;
-		gap: 6px;
 		text-decoration: none;
 		font-family: var(--font-mono, 'JetBrains Mono', monospace);
 		font-size: 11.5px;
@@ -362,6 +399,22 @@
 	.stats-prompt {
 		color: var(--accent);
 		font-weight: 700;
+		margin-right: 6px;
+	}
+
+	.stats-msg {
+		white-space: nowrap;
+	}
+
+	.stats-cursor {
+		animation: blink 1s step-end infinite;
+		color: var(--accent);
+		font-weight: 700;
+	}
+
+	@keyframes blink {
+		0%, 100% { opacity: 1; }
+		50% { opacity: 0; }
 	}
 
 	.terminal-wrap {

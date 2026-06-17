@@ -21,37 +21,30 @@
 	<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width={strokeWidth} stroke-linecap="round" stroke-linejoin="round">
 		<rect x="2" y="3" width="20" height="18" rx="3" />
 		<line x1="2" y1="8" x2="22" y2="8" />
-		<polyline points="6,13 9,16 6,19" />
-		<line x1="11" y1="19" x2="16" y2="19" />
 	</svg>
 {:else if name === 'analytics'}
-	<svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor">
-		<rect x="2"  y="2"  width="4" height="4" rx="0.5" opacity="0.25" />
-		<rect x="7"  y="2"  width="4" height="4" rx="0.5" opacity="0.9"  />
-		<rect x="12" y="2"  width="4" height="4" rx="0.5" opacity="0.5"  />
-		<rect x="17" y="2"  width="4" height="4" rx="0.5" opacity="0.15" />
-		<rect x="2"  y="7"  width="4" height="4" rx="0.5" opacity="0.8"  />
-		<rect x="7"  y="7"  width="4" height="4" rx="0.5" opacity="0.3"  />
-		<rect x="12" y="7"  width="4" height="4" rx="0.5" opacity="1"    />
-		<rect x="17" y="7"  width="4" height="4" rx="0.5" opacity="0.4"  />
-		<rect x="2"  y="12" width="4" height="4" rx="0.5" opacity="0.5"  />
-		<rect x="7"  y="12" width="4" height="4" rx="0.5" opacity="0.7"  />
-		<rect x="12" y="12" width="4" height="4" rx="0.5" opacity="0.2"  />
-		<rect x="17" y="12" width="4" height="4" rx="0.5" opacity="0.85" />
-		<rect x="2"  y="17" width="4" height="4" rx="0.5" opacity="0.15" />
-		<rect x="7"  y="17" width="4" height="4" rx="0.5" opacity="0.6"  />
-		<rect x="12" y="17" width="4" height="4" rx="0.5" opacity="0.95" />
-		<rect x="17" y="17" width="4" height="4" rx="0.5" opacity="0.35" />
+	<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width={strokeWidth} stroke-linecap="round" stroke-linejoin="round">
+		<line x1="6" y1="4" x2="6" y2="7"/>
+		<rect x="4.5" y="7" width="3" height="7" rx="0.5"/>
+		<line x1="6" y1="14" x2="6" y2="17"/>
+		<line x1="12" y1="6" x2="12" y2="9"/>
+		<rect x="10.5" y="9" width="3" height="5" rx="0.5" fill="currentColor" fill-opacity="0.15"/>
+		<line x1="12" y1="14" x2="12" y2="18"/>
+		<line x1="18" y1="3" x2="18" y2="6"/>
+		<rect x="16.5" y="6" width="3" height="9" rx="0.5"/>
+		<line x1="18" y1="15" x2="18" y2="19"/>
+		<line x1="2" y1="21" x2="22" y2="21" opacity="0.3"/>
 	</svg>
 {:else if name === 'agents'}
 	<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width={strokeWidth} stroke-linecap="round" stroke-linejoin="round">
-		<circle cx="12" cy="12" r="2.5" />
-		<line x1="12" y1="9.5" x2="12" y2="4.5" />
-		<polyline points="10.5,6 12,4.5 13.5,6" />
-		<line x1="13.7" y1="13.6" x2="18.5" y2="16" />
-		<polyline points="16.3,15.3 18.5,16 18,18.3" />
-		<line x1="10.3" y1="13.6" x2="5.5" y2="16" />
-		<polyline points="8,15.3 5.5,16 6,18.3" />
+		<line x1="12" y1="2" x2="12" y2="5"/>
+		<circle cx="12" cy="1.5" r="1.2"/>
+		<rect x="4" y="5" width="16" height="13" rx="3"/>
+		<circle cx="9" cy="10.5" r="2"/>
+		<circle cx="15" cy="10.5" r="2"/>
+		<line x1="10" y1="15" x2="14" y2="15"/>
+		<path d="M4 11 C1.5 11 1.5 14 4 14"/>
+		<path d="M20 11 C22.5 11 22.5 14 20 14"/>
 	</svg>
 {:else if name === 'skills'}
 	<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width={strokeWidth} stroke-linecap="round" stroke-linejoin="round">

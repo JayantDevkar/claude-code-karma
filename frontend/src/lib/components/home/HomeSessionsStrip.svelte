@@ -117,6 +117,11 @@
 		<div class="strip-header">
 			<span class="cmd">$ live-sessions</span>
 			<div class="meta">
+				<span class="legend">
+					<span class="legend-item"><span class="dot" style="background: var(--success)"></span>active</span>
+					<span class="legend-item"><span class="dot" style="background: var(--warning)"></span>idle</span>
+					<span class="legend-item"><span class="dot" style="background: var(--error)"></span>stale</span>
+				</span>
 				<span class="count">
 					{#if loading}
 						[…]
@@ -151,14 +156,7 @@
 								class:pulse={config.pulse}
 								style="background: {config.color}"
 							></span>
-							<span class="id"
-								>{getSessionDisplayLabel(session.session_id, session.slug)}</span
-							>
-							<span
-								class="badge"
-								style="color: {config.color}; background: {config.bgTint}"
-								>{config.label}</span
-							>
+							<span class="id">{getSessionDisplayLabel(session.session_id, session.slug)}</span>
 							<span class="project" title={session.cwd}>{projectName(session)}</span>
 						</span>
 						<span class="time">{formatDuration(session.duration_seconds)}</span>
@@ -250,6 +248,21 @@
 		min-width: 0;
 	}
 
+	.legend {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+	}
+
+	.legend-item {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+		font-family: var(--font-mono);
+		font-size: 9.5px;
+		color: var(--text-faint);
+	}
+
 	.dot {
 		width: 6px;
 		height: 6px;
@@ -276,16 +289,6 @@
 		font-size: 11px;
 		color: var(--accent);
 		white-space: nowrap;
-	}
-
-	.badge {
-		font-size: 9.5px;
-		font-weight: 700;
-		text-transform: uppercase;
-		letter-spacing: 0.04em;
-		border-radius: 3px;
-		padding: 1px 5px;
-		flex-shrink: 0;
 	}
 
 	.project {
