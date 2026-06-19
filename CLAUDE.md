@@ -25,6 +25,26 @@ npm install && npm run dev
 
 Open http://localhost:5173 to view the dashboard.
 
+### Docker Quick Start
+
+```bash
+# Production (read-only ~/.claude mount)
+make up
+
+# Dev frontend with HMR
+make dev
+
+# Health check
+make health
+
+# Stop
+make down
+```
+
+Open http://localhost:8080 to view the dashboard.
+
+See `Makefile` for all available targets.
+
 ## Repository Structure
 
 This is a monorepo with all components in a single repository:
