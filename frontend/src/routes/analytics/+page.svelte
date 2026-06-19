@@ -1,24 +1,10 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { browser } from '$app/environment';
-	import { Activity, Zap, Database, Cpu, FolderOpen, Clock, BarChart3 } from 'lucide-svelte';
 	import { goto } from '$app/navigation';
 	import { page, navigating } from '$app/stores';
-	import SkeletonBox from '$lib/components/skeleton/SkeletonBox.svelte';
-	import SkeletonText from '$lib/components/skeleton/SkeletonText.svelte';
-	import SkeletonStatsCard from '$lib/components/skeleton/SkeletonStatsCard.svelte';
-	import { getChartColorPalette } from '$lib/components/charts/chartConfig';
 	import TimeFilterDropdown from '$lib/components/TimeFilterDropdown.svelte';
-	import PageHeader from '$lib/components/layout/PageHeader.svelte';
-	import StatsGrid from '$lib/components/StatsGrid.svelte';
-	import CollapsibleGroup from '$lib/components/ui/CollapsibleGroup.svelte';
-	import type { AnalyticsFilterPeriod, StatItem } from '$lib/api-types';
-	import {
-		analyticsFilterOptions,
-		getTimestampRangeForFilter,
-		isHourBasedFilter,
-		getAnalyticsFilterLabel
-	} from '$lib/utils';
+	import type { AnalyticsFilterPeriod } from '$lib/api-types';
+	import { analyticsFilterOptions, getTimestampRangeForFilter } from '$lib/utils';
 
 	// Read filter directly from URL
 	let selectedFilter = $derived.by((): AnalyticsFilterPeriod => {
@@ -33,7 +19,6 @@
 		const url = new URL($page.url);
 		const range = getTimestampRangeForFilter(filter);
 
-		// Always include timezone offset for accurate local date grouping
 		if (browser) {
 			url.searchParams.set('tz_offset', new Date().getTimezoneOffset().toString());
 		}
@@ -83,7 +68,6 @@
 
 	let { data } = $props();
 
-	// Default analytics object to prevent SSR errors when data is undefined
 	const defaultAnalytics: Analytics = {
 		total_sessions: 0,
 		total_tokens: 0,
@@ -108,11 +92,9 @@
 		}
 	};
 
-	// Merge actual data with defaults to ensure all properties exist
 	let analytics = $derived.by(() => {
 		const rawAnalytics = data.analytics as unknown as Analytics | undefined;
 		if (!rawAnalytics) return defaultAnalytics;
-
 		return {
 			...defaultAnalytics,
 			...rawAnalytics,
@@ -123,616 +105,708 @@
 		};
 	});
 
-	// --- Helpers ---
-	const formatK = (n: number) => {
-		if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
-		if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
-		return n.toString();
-	};
+	let topProjects = $derived(data.topProjects ?? []);
 
-	const formatCurrency = (n: number) =>
-		new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n);
-
-	// --- Date Processing ---
-	let sortedDates = $derived(Object.keys(analytics.sessions_by_date).sort());
-
-	// Stats - context-aware based on filter
-	let last30Days = $derived(sortedDates.slice(-30));
-
-	// For hour-based filters, show sessions per hour; for day-based, show per day
-	let avgDisplay = $derived.by(() => {
-		const numDays = sortedDates.length;
-		const totalSessions = analytics.total_sessions;
-
-		if (numDays === 0 || totalSessions === 0) {
-			return { value: '0', unit: '/day' };
-		}
-
-		// For single-day (hour-based) filters, calculate per-hour rate
-		if (isHourBasedFilter(selectedFilter)) {
-			const hours = parseInt(selectedFilter) || 6;
-			const perHour = (totalSessions / hours).toFixed(1);
-			return { value: perHour, unit: '/hour' };
-		}
-
-		// For multi-day filters, show per-day average
-		const perDay = (totalSessions / numDays).toFixed(1);
-		return { value: perDay, unit: '/day' };
-	});
-
-	// Legacy movingAvg for backward compatibility
-	let movingAvg = $derived(
-		last30Days.length > 0
-			? (
-					last30Days.reduce((sum, d) => sum + (analytics.sessions_by_date[d] || 0), 0) /
-					last30Days.length
-				).toFixed(1)
-			: '0'
-	);
-
-	let tokensPerSession = $derived(
-		analytics.total_sessions > 0
-			? Math.round(analytics.total_tokens / analytics.total_sessions)
-			: 0
-	);
-
-	// Sparkline
-	let sparklineData = $derived(
-		sortedDates.slice(-14).map((d) => analytics.sessions_by_date[d] || 0)
-	);
-	let sparkMax = $derived(Math.max(...sparklineData, 1));
-
-	// --- Model Distribution ---
-	// Use models_categorized if it has data, otherwise fall back to models_used
-	let modelsData = $derived(() => {
-		const categorized = analytics.models_categorized;
-		const used = analytics.models_used;
-		// Check for non-empty objects (empty {} is truthy but has no keys)
-		if (categorized && Object.keys(categorized).length > 0) return categorized;
-		if (used && Object.keys(used).length > 0) return used;
-		return {};
-	});
-
-	let modelDist = $derived(
-		Object.entries(modelsData())
-			.filter(([_, count]) => count > 0)
-			.sort((a, b) => b[1] - a[1])
-			.map(([name, count]) => {
-				const total = Object.values(modelsData()).reduce((a, b) => a + b, 0);
-				return { name, count, perc: total > 0 ? (count / total) * 100 : 0 };
-			})
-			.filter((m) => m.perc >= 2)
-	); // Hide <2%
-
-	const getModelColor = (name: string) => {
-		const lower = name.toLowerCase();
-		if (lower.includes('opus')) return 'var(--model-opus)';
-		if (lower.includes('sonnet')) return 'var(--model-sonnet)';
-		if (lower.includes('haiku')) return 'var(--model-haiku)';
-		return '#14b8a6'; // Teal for 'Other' models
-	};
-
-	// --- Cache ---
-	let cacheHitPercent = $derived((analytics.cache_hit_rate * 100).toFixed(1));
-
-	// --- Cost ---
-	let costPerSession = $derived(
-		analytics.total_sessions ? analytics.estimated_cost_usd / analytics.total_sessions : 0
-	);
-
-	// Format peak hours array (e.g., [9, 10, 11]) to readable range "9am-12pm"
-	const formatPeakHours = (hours: number[]) => {
-		if (!hours || hours.length === 0) return '—';
-		const sorted = [...hours].sort((a, b) => a - b);
-		const start = sorted[0];
-		const end = sorted[sorted.length - 1] + 1; // +1 because it's the *end* of the hour
-		const formatHour = (h: number) => {
-			const hour12 = h % 12 || 12;
-			const ampm = h < 12 ? 'am' : 'pm';
-			return `${hour12}${ampm}`;
-		};
-		return `${formatHour(start)}–${formatHour(end % 24)}`;
-	};
-
-	// Calculate absolute hours from percentage based on total duration
-	const formatHoursFromPct = (pct: number) => {
-		const totalHours = analytics.total_duration_seconds / 3600;
-		const hours = (pct / 100) * totalHours;
-		return hours >= 1 ? `${hours.toFixed(0)}h` : `${(hours * 60).toFixed(0)}m`;
-	};
-
-	// Format date string (YYYY-MM-DD) without timezone shift
-	// Using T12:00:00 to avoid day boundary issues in any timezone
-	const formatDateLabel = (dateStr: string): string => {
-		const d = new Date(dateStr + 'T12:00:00');
-		return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-	};
-
-	// --- Hero Stats ---
-	let stats = $derived<StatItem[]>([
-		{
-			title: 'Total Sessions',
-			value: analytics.total_sessions.toLocaleString(),
-			icon: Activity,
-			color: 'purple'
-		},
-		{
-			title: 'Total Cost',
-			value: formatCurrency(analytics.estimated_cost_usd),
-			footnote: 'Pay-as-you-go API rate — not your subscription cost',
-			icon: Zap,
-			color: 'green'
-		},
-		{
-			title: 'Cache Hit Rate',
-			value: `${cacheHitPercent}%`,
-			icon: Database,
-			color: 'blue'
-		}
-	]);
-
-	let isPageLoading = $derived(!!$navigating && $navigating.to?.route.id === '/analytics');
-
-	// --- Collapsible Group State ---
-	const groupKeys = ['velocity', 'efficiency', 'rhythm'] as const;
-	let expandedGroups = $state<Set<string>>(new Set(groupKeys));
-
-	function toggleGroup(key: string) {
-		if (expandedGroups.has(key)) {
-			expandedGroups.delete(key);
-		} else {
-			expandedGroups.add(key);
-		}
-		expandedGroups = new Set(expandedGroups);
+	// --- Formatters ---
+	function formatTokens(n: number): { value: string; unit: string } {
+		if (n >= 1e12) return { value: (n / 1e12).toFixed(1), unit: 'T' };
+		if (n >= 1e9) return { value: (n / 1e9).toFixed(1), unit: 'B' };
+		if (n >= 1e6) return { value: (n / 1e6).toFixed(1), unit: 'M' };
+		if (n >= 1e3) return { value: (n / 1e3).toFixed(1), unit: 'K' };
+		return { value: n.toString(), unit: '' };
 	}
 
-	// Chart
-	// svelte-ignore non_reactive_update: chartCanvas is only bound once during mount
-	let chartCanvas: HTMLCanvasElement;
-	let chartInstance = $state<any>(null);
+	function formatTokensShort(n: number): string {
+		if (n >= 1e12) return (n / 1e12).toFixed(1) + 'T';
+		if (n >= 1e9) return (n / 1e9).toFixed(1) + 'B';
+		if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
+		if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K';
+		return n.toString();
+	}
 
-	$effect(() => {
-		if (chartInstance && sortedDates) {
-			const newCounts = sortedDates.map((date) => analytics.sessions_by_date[date]);
-			const newLabels = sortedDates.map((date) => formatDateLabel(date));
+	function formatDate(dateStr: string): string {
+		if (!dateStr) return '';
+		const d = new Date(dateStr + 'T12:00:00');
+		return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+	}
 
-			chartInstance.data.labels = newLabels;
-			chartInstance.data.datasets[0].data = newCounts;
-			chartInstance.update();
+function projectDisplayName(p: { path: string; display_name?: string }): string {
+		if (p.display_name) return p.display_name;
+		return p.path.split('/').filter(Boolean).pop() ?? p.path;
+	}
+
+	// --- Derived values ---
+	let sortedDates = $derived(Object.keys(analytics.sessions_by_date).sort());
+
+	let numDays = $derived(Math.max(sortedDates.length, 1));
+
+	let totalHours = $derived(analytics.total_duration_seconds / 3600);
+
+	let avgHoursPerDay = $derived(totalHours / numDays);
+
+	let daysEquivalent = $derived(Math.round(totalHours / 24));
+
+	let avgSessionsPerDay = $derived((analytics.total_sessions / numDays).toFixed(1));
+
+	let subscriptionMultiple = $derived(Math.round(analytics.estimated_cost_usd / 20));
+
+	let avgTokensPerSession = $derived(
+		analytics.total_sessions > 0 ? analytics.total_tokens / analytics.total_sessions : 0
+	);
+
+	let cacheHitPercent = $derived((analytics.cache_hit_rate * 100).toFixed(1));
+
+	let firstSessionDate = $derived(sortedDates[0] ? formatDate(sortedDates[0]) : '');
+
+	let peakDay = $derived.by(() => {
+		let maxCount = 0;
+		let maxDate = '';
+		for (const [date, count] of Object.entries(analytics.sessions_by_date)) {
+			if ((count as number) > maxCount) {
+				maxCount = count as number;
+				maxDate = date;
+			}
 		}
+		return { date: maxDate, count: maxCount };
 	});
 
-	onMount(async () => {
-		const Chart = (await import('chart.js/auto')).default;
-		const colors = getChartColorPalette();
-		const style = getComputedStyle(document.documentElement);
-		const textMuted = style.getPropertyValue('--text-muted').trim() || '#94a3b8';
-		const textPrimary = style.getPropertyValue('--text-primary').trim() || '#0f172a';
-		const border = style.getPropertyValue('--border').trim() || 'rgba(0,0,0,0.08)';
+	// Token breakdown: raw input, cache tokens (all non-input/output), output
+	let cacheTokens = $derived(
+		Math.max(0, analytics.total_tokens - analytics.total_input_tokens - analytics.total_output_tokens)
+	);
+	let totalInputSide = $derived(analytics.total_tokens - analytics.total_output_tokens);
 
-		const sessionCounts = sortedDates.map((date) => analytics.sessions_by_date[date]);
+	// Heatmap
+	type HeatmapDay = { date: string; count: number };
+	type HeatmapMonthLabel = { label: string; weekIndex: number };
+	type TooltipState = { x: number; y: number; day: HeatmapDay } | null;
 
-		chartInstance = new Chart(chartCanvas, {
-			type: 'bar',
-			data: {
-				labels: sortedDates.map((date) => formatDateLabel(date)),
-				datasets: [
-					{
-						label: 'Sessions',
-						data: sessionCounts,
-						backgroundColor: textMuted,
-						hoverBackgroundColor: colors[0],
-						borderRadius: 3,
-						barThickness: 'flex',
-						maxBarThickness: 14
-					}
-				]
-			},
-			options: {
-				responsive: true,
-				maintainAspectRatio: false,
-				plugins: {
-					legend: { display: false },
-					tooltip: {
-						backgroundColor: textPrimary,
-						padding: 10,
-						cornerRadius: 6,
-						displayColors: false
-					}
-				},
-				scales: {
-					y: { beginAtZero: true, grid: { color: border }, ticks: { display: false } },
-					x: {
-						grid: { display: false },
-						ticks: {
-							font: { size: 10 },
-							color: textMuted,
-							maxTicksLimit: 8,
-							maxRotation: 0
-						}
+	// Cell size constants (px)
+	const CELL = 15;
+	const GAP = 3;
+	const STRIDE = CELL + GAP; // 18px per column
+
+	function heatmapColor(count: number): string {
+		if (count === 0) return 'var(--bg-muted)';
+		if (count <= 2) return '#ddd6fe';
+		if (count <= 6) return '#c084fc';
+		if (count <= 12) return '#a855f7';
+		return 'var(--accent)';
+	}
+
+	const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+	const VISIBLE_DOW = new Set([1, 3, 5]); // Mon, Wed, Fri
+
+	// Year filter state
+	let availableYears = $derived.by(() => {
+		const byDate = analytics.sessions_by_date;
+		const years = new Set<number>();
+		for (const date of Object.keys(byDate)) {
+			years.add(parseInt(date.slice(0, 4)));
+		}
+		return [...years].sort((a, b) => b - a); // descending
+	});
+
+	let selectedYear = $state<number>(0); // 0 = unset, will default to latest year
+
+	let activeYear = $derived(selectedYear || availableYears[0] || new Date().getFullYear());
+
+	let heatmapData = $derived.by(() => {
+		const byDate = analytics.sessions_by_date;
+		const year = activeYear;
+
+		if (!year) return { days: [] as HeatmapDay[], totalWeeks: 0, monthLabels: [] as HeatmapMonthLabel[] };
+
+		// Start: Sunday on or before Jan 1 of the selected year
+		const jan1 = new Date(`${year}-01-01T12:00:00`);
+		const startDate = new Date(jan1);
+		startDate.setDate(jan1.getDate() - jan1.getDay());
+
+		// End: Saturday on or after Dec 31 of the selected year (always full year)
+		const dec31 = new Date(`${year}-12-31T12:00:00`);
+		const endDate = new Date(dec31);
+		endDate.setDate(dec31.getDate() + (6 - dec31.getDay()));
+
+		// Build flat list of all calendar days (Sun→Sat columns)
+		const days: HeatmapDay[] = [];
+		const cur = new Date(startDate);
+		while (cur <= endDate) {
+			const yr = cur.getFullYear();
+			const mo = String(cur.getMonth() + 1).padStart(2, '0');
+			const dy = String(cur.getDate()).padStart(2, '0');
+			const dateStr = `${yr}-${mo}-${dy}`;
+			days.push({ date: dateStr, count: byDate[dateStr] || 0 });
+			cur.setDate(cur.getDate() + 1);
+		}
+
+		const totalWeeks = Math.ceil(days.length / 7);
+
+		// Month labels: first week column where each month appears
+		const monthLabels: HeatmapMonthLabel[] = [];
+		const seenMonths = new Set<string>();
+
+		for (let wi = 0; wi < totalWeeks; wi++) {
+			for (let dow = 0; dow < 7; dow++) {
+				const idx = wi * 7 + dow;
+				if (idx >= days.length) break;
+				const monthKey = days[idx].date.slice(0, 7);
+				if (!seenMonths.has(monthKey)) {
+					seenMonths.add(monthKey);
+					const d = new Date(days[idx].date + 'T12:00:00');
+					// Only show month labels for days within the selected year
+					if (d.getFullYear() === year) {
+						monthLabels.push({
+							label: d.toLocaleDateString('en-US', { month: 'short' }),
+							weekIndex: wi
+						});
 					}
 				}
 			}
-		});
+		}
+
+		return { days, totalWeeks, monthLabels };
 	});
+
+	// Tooltip
+	let tooltip = $state<TooltipState>(null);
+
+	function showTooltip(e: MouseEvent, day: HeatmapDay) {
+		const cell = e.currentTarget as HTMLElement;
+		const container = cell.closest('.heatmap-grid-area') as HTMLElement;
+		if (!container) return;
+		const cellRect = cell.getBoundingClientRect();
+		const containerRect = container.getBoundingClientRect();
+		tooltip = {
+			x: cellRect.left - containerRect.left + CELL / 2,
+			y: cellRect.top - containerRect.top,
+			day
+		};
+	}
+
+	function hideTooltip() {
+		tooltip = null;
+	}
+
+	function tooltipLabel(day: HeatmapDay): string {
+		const d = new Date(day.date + 'T12:00:00');
+		const dateLabel = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+		if (day.count === 0) return `No sessions — ${dateLabel}`;
+		const estTokens = avgTokensPerSession > 0 ? Math.round(avgTokensPerSession * day.count) : 0;
+		const tokStr = estTokens > 0 ? `  ·  ~${formatTokensShort(estTokens)} tokens` : '';
+		return `${day.count} session${day.count !== 1 ? 's' : ''}${tokStr} — ${dateLabel}`;
+	}
+
+	// Model mix
+	let modelColors: Record<string, string> = {
+		Opus: '#a855f7',
+		Sonnet: '#c084fc',
+		Haiku: '#e9d5ff',
+		Other: '#7c3aed'
+	};
+
+	let modelMix = $derived.by(() => {
+		const cats = analytics.models_categorized;
+		const total = Object.values(cats).reduce((a, b) => a + b, 0);
+		if (total === 0) return [];
+		return Object.entries(cats)
+			.map(([model, count]) => ({
+				model,
+				count,
+				percentage: Math.round((count / total) * 100)
+			}))
+			.sort((a, b) => b.count - a.count);
+	});
+
+	let isPageLoading = $derived(!!$navigating && $navigating.to?.route.id === '/analytics');
+
+	// Tokens formatted
+	let tokensFormatted = $derived(formatTokens(analytics.total_tokens));
+	let hoursDisplay = $derived(
+		totalHours >= 1000
+			? { value: (totalHours / 1000).toFixed(1), unit: 'Kh' }
+			: { value: Math.round(totalHours).toLocaleString(), unit: 'h' }
+	);
+
+	// Pre-computed for template
+	let totalTokensFormatted = $derived(formatTokens(analytics.total_tokens));
+
+	let tokenCachePct = $derived(
+		analytics.total_tokens > 0 ? (cacheTokens / analytics.total_tokens) * 100 : 0
+	);
+	let tokenInputPct = $derived(
+		analytics.total_tokens > 0 ? (analytics.total_input_tokens / analytics.total_tokens) * 100 : 0
+	);
+	let tokenOutputPct = $derived(
+		analytics.total_tokens > 0
+			? (analytics.total_output_tokens / analytics.total_tokens) * 100
+			: 0
+	);
+
+	let topProjectsMaxSessions = $derived(topProjects[0]?.session_count ?? 1);
 </script>
 
-<div class="max-w-[1100px] mx-auto space-y-6">
+<div class="max-w-[1100px] mx-auto" style="-webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;">
 	{#if isPageLoading}
-		<div class="space-y-6" role="status" aria-busy="true" aria-label="Loading...">
-			<!-- Page Header skeleton -->
-			<div class="flex items-start justify-between">
-				<div>
-					<div class="flex items-center gap-2 mb-2">
-						<SkeletonText width="70px" size="xs" />
-						<span class="text-[var(--text-muted)]">/</span>
-						<SkeletonText width="80px" size="xs" />
-					</div>
-					<div class="flex items-center gap-4">
-						<SkeletonBox width="48px" height="48px" rounded="lg" />
-						<div>
-							<SkeletonText width="120px" size="xl" class="mb-2" />
-							<SkeletonText width="260px" size="sm" />
-						</div>
-					</div>
-				</div>
-				<SkeletonBox width="140px" height="36px" rounded="md" />
-			</div>
-
-			<!-- Hero Stats skeleton (3 cols) -->
-			<div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-				{#each Array(3) as _}
-					<SkeletonStatsCard />
+		<div class="space-y-5 animate-pulse">
+			<div class="h-24 rounded-lg bg-[var(--bg-muted)]"></div>
+			<div class="grid grid-cols-4 gap-[10px]">
+				{#each Array(4) as _}
+					<div class="h-28 rounded-lg bg-[var(--bg-muted)]"></div>
 				{/each}
 			</div>
-
-			<!-- Velocity group skeleton -->
-			<div class="border border-[var(--border)] rounded-[var(--radius-lg)] overflow-hidden bg-[var(--bg-base)]">
-				<div class="flex items-center gap-3 px-4 py-4">
-					<SkeletonBox width="32px" height="32px" rounded="md" />
-					<SkeletonText width="100px" size="sm" />
-					<div class="flex-1"></div>
-					<SkeletonText width="80px" size="xs" />
-				</div>
-				<div class="border-t border-[var(--border)] p-4">
-					<SkeletonBox height="160px" rounded="lg" />
-				</div>
-			</div>
-
-			<!-- Efficiency group skeleton -->
-			<div class="border border-[var(--border)] rounded-[var(--radius-lg)] overflow-hidden bg-[var(--bg-base)]">
-				<div class="flex items-center gap-3 px-4 py-4">
-					<SkeletonBox width="32px" height="32px" rounded="md" />
-					<SkeletonText width="100px" size="sm" />
-					<div class="flex-1"></div>
-					<SkeletonText width="80px" size="xs" />
-				</div>
-				<div class="border-t border-[var(--border)] p-4">
-					<div class="grid grid-cols-1 lg:grid-cols-4 gap-4">
-						{#each Array(4) as _}
-							<SkeletonBox height="120px" rounded="lg" />
-						{/each}
-					</div>
-				</div>
-			</div>
-
-			<!-- Rhythm group skeleton -->
-			<div class="border border-[var(--border)] rounded-[var(--radius-lg)] overflow-hidden bg-[var(--bg-base)]">
-				<div class="flex items-center gap-3 px-4 py-4">
-					<SkeletonBox width="32px" height="32px" rounded="md" />
-					<SkeletonText width="80px" size="sm" />
-					<div class="flex-1"></div>
-					<SkeletonText width="80px" size="xs" />
-				</div>
-				<div class="border-t border-[var(--border)] p-4 space-y-3">
-					{#each Array(4) as _}
-						<div class="flex items-center gap-3">
-							<SkeletonText width="80px" size="xs" />
-							<SkeletonBox height="6px" rounded="full" class="flex-1" />
-							<SkeletonText width="80px" size="xs" />
-						</div>
-					{/each}
-				</div>
+			<div class="h-48 rounded-lg bg-[var(--bg-muted)]"></div>
+			<div class="h-40 rounded-lg bg-[var(--bg-muted)]"></div>
+			<div class="grid grid-cols-2 gap-[10px]">
+				<div class="h-48 rounded-lg bg-[var(--bg-muted)]"></div>
+				<div class="h-48 rounded-lg bg-[var(--bg-muted)]"></div>
 			</div>
 		</div>
 	{:else}
-	<!-- Page Header with Breadcrumb -->
-	<PageHeader
-		title="Analytics"
-		iconName="analytics"
-		iconColor="--nav-green"
-		breadcrumbs={[{ label: 'Dashboard', href: '/' }, { label: 'Analytics' }]}
-		subtitle="Your coding patterns and AI collaboration"
-	>
-		{#snippet headerRight()}
-			<TimeFilterDropdown {selectedFilter} onFilterChange={handleFilterChange} />
-		{/snippet}
-	</PageHeader>
-
-	<!-- Hero Stats Row -->
-	<StatsGrid {stats} columns={3} />
-
-	<!-- Group 1: Velocity — Activity bar chart -->
-	<CollapsibleGroup
-		title="Velocity"
-		open={expandedGroups.has('velocity')}
-		onOpenChange={() => toggleGroup('velocity')}
-	>
-		{#snippet icon()}
-			<div class="p-1.5 bg-[var(--bg-subtle)] rounded-md">
-				<Activity size={14} class="text-[var(--text-muted)]" />
-			</div>
-		{/snippet}
-		{#snippet metadata()}
-			<div class="flex items-center gap-3 text-xs text-[var(--text-muted)]">
-				<span
-					>Avg: <span class="font-mono text-[var(--text-secondary)]"
-						>{avgDisplay.value}</span
-					>{avgDisplay.unit}</span
-				>
-				<span class="hidden sm:flex items-end gap-0.5 h-6">
-					{#each sparklineData as val, i}
-						<span
-							class="inline-block w-1 rounded-sm"
-							style="height: {Math.max(
-								4,
-								(val / sparkMax) * 100
-							)}%; background-color: var(--accent); opacity: {0.3 +
-								(i / sparklineData.length) * 0.7};"
-						></span>
-					{/each}
-				</span>
-			</div>
-		{/snippet}
-
-		<div class="space-y-4">
-			<!-- Token context row -->
-			<div class="flex gap-3 text-xs text-[var(--text-muted)]">
-				<span
-					><span class="font-mono text-[var(--text-secondary)]"
-						>{formatK(analytics.total_tokens)}</span
-					> tokens</span
-				>
-				<span>•</span>
-				<span
-					><span class="font-mono text-[var(--text-secondary)]"
-						>{(analytics.total_duration_seconds / 3600).toFixed(0)}</span
-					>h</span
-				>
-				<span>•</span>
-				<span
-					><span class="font-mono text-[var(--text-secondary)]"
-						>{formatK(tokensPerSession)}</span
-					> tokens/sess</span
-				>
+		<!-- Page Header -->
+		<div class="mb-3">
+			<!-- Breadcrumb -->
+			<div class="flex items-center gap-[5px] mb-[9px]">
+				<span style="font-size: 13px; color: var(--text-primary);">Dashboard</span>
+				<span style="font-size: 13px; color: var(--text-faint);">/</span>
+				<span style="font-size: 13px; font-weight: 600; color: var(--text-primary);">Analytics</span>
 			</div>
 
-			<!-- Bar chart -->
-			<div class="h-40 w-full">
-				<canvas bind:this={chartCanvas}></canvas>
-			</div>
-		</div>
-	</CollapsibleGroup>
-
-	<!-- Group 2: Efficiency — Cache, Projects, Compute DNA -->
-	<CollapsibleGroup
-		title="Efficiency"
-		open={expandedGroups.has('efficiency')}
-		onOpenChange={() => toggleGroup('efficiency')}
-	>
-		{#snippet icon()}
-			<div class="p-1.5 bg-[var(--bg-subtle)] rounded-md">
-				<Zap size={14} class="text-[var(--text-muted)]" />
-			</div>
-		{/snippet}
-		{#snippet metadata()}
-			<span class="text-xs text-[var(--text-muted)] tabular-nums">
-				{getAnalyticsFilterLabel(selectedFilter)}
-			</span>
-		{/snippet}
-
-		<div class="grid grid-cols-1 lg:grid-cols-4 gap-4">
-			<!-- Cache Card -->
-			<div class="p-5 bg-[var(--bg-subtle)] border border-[var(--border)] rounded-lg">
-				<div class="flex items-center justify-between mb-3">
-					<div class="flex items-center gap-2">
-						<Database size={14} class="text-[var(--text-muted)]" />
-						<span
-							class="text-[11px] font-medium uppercase tracking-wider text-[var(--text-muted)]"
-							>Cache</span
-						>
-					</div>
-					{#if analytics.cache_hit_rate > 0.85}
-						<span
-							class="px-1.5 py-0.5 bg-[var(--success-subtle)] rounded text-[10px] font-medium text-[var(--success)]"
-						>
-							Excellent
-						</span>
+			<div class="flex items-end justify-between">
+				<div>
+					<h1 style="font-size: 25px; font-weight: 700; color: var(--text-primary); letter-spacing: -0.02em; line-height: 1.2;">
+						Your head has been in the Claude
+					</h1>
+					{#if firstSessionDate}
+						<p class="font-mono mt-1" style="font-size: 13px; color: var(--text-faint);">
+							since {firstSessionDate}
+						</p>
 					{/if}
 				</div>
-				<div class="flex items-baseline gap-1.5 mb-3">
-					<span
-						class="text-xl font-semibold font-mono tabular-nums text-[var(--text-primary)]"
-						>{cacheHitPercent}%</span
-					>
-					<span class="text-xs text-[var(--text-muted)]">hit rate</span>
-				</div>
-				<div
-					class="relative w-full h-1.5 bg-[var(--bg-muted)] rounded-full overflow-hidden"
-				>
-					<div
-						class="absolute top-0 left-0 h-full rounded-full bg-[var(--accent)]"
-						style="width: {analytics.cache_hit_rate * 100}%"
-					></div>
-				</div>
+				<TimeFilterDropdown {selectedFilter} onFilterChange={handleFilterChange} />
 			</div>
+		</div>
 
-			<!-- Projects Card -->
-			<div class="p-5 bg-[var(--bg-subtle)] border border-[var(--border)] rounded-lg">
-				<div class="flex items-center justify-between mb-3">
-					<div class="flex items-center gap-2">
-						<FolderOpen size={14} class="text-[var(--text-muted)]" />
-						<span
-							class="text-[11px] font-medium uppercase tracking-wider text-[var(--text-muted)]"
-							>Projects</span
-						>
+		<div class="flex flex-col" style="gap: 20px;">
+			<!-- Section 1: How much? -->
+			<div>
+				<div class="font-mono mb-2" style="font-size: 13px; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: 0.12em;">
+					How much?
+				</div>
+				<div class="grid gap-[10px]" style="grid-template-columns: repeat(4, 1fr);">
+					<!-- Time card -->
+					<div class="rounded-lg" style="background: var(--bg-base); border: 1px solid var(--border); padding: 16px 18px;">
+						<div style="font-size: 12px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 9px;">
+							Time
+						</div>
+						<div class="font-mono flex items-baseline gap-1" style="line-height: 1;">
+							<span style="font-size: 30px; font-weight: 700; color: var(--text-primary); letter-spacing: -1px;">
+								{hoursDisplay.value}
+							</span>
+							<span style="font-size: 15px; font-weight: 500; color: var(--text-muted); letter-spacing: 0;">
+								{hoursDisplay.unit}
+							</span>
+						</div>
+						<div style="font-size: 13px; color: var(--text-muted); margin-top: 7px;">
+							avg {avgHoursPerDay.toFixed(1)} hours / day
+						</div>
+						<div style="font-size: 12px; color: var(--text-faint); margin-top: 2px;">
+							{daysEquivalent} days equivalent
+						</div>
+					</div>
+
+					<!-- Tokens card -->
+					<div class="rounded-lg" style="background: var(--bg-base); border: 1px solid var(--border); padding: 16px 18px;">
+						<div style="font-size: 12px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 9px;">
+							Tokens
+						</div>
+						<div class="font-mono flex items-baseline gap-1" style="line-height: 1;">
+							<span style="font-size: 30px; font-weight: 700; color: var(--text-primary); letter-spacing: -1px;">
+								{tokensFormatted.value}
+							</span>
+							<span style="font-size: 15px; font-weight: 500; color: var(--text-muted); letter-spacing: 0;">
+								{tokensFormatted.unit}
+							</span>
+						</div>
+						<div style="font-size: 13px; color: var(--text-muted); margin-top: 7px;">
+							{cacheHitPercent}% served from cache
+						</div>
+						<div style="font-size: 12px; color: var(--text-faint); margin-top: 2px;">
+							~{formatTokensShort(Math.round(avgTokensPerSession))} per session avg
+						</div>
+					</div>
+
+					<!-- Sessions card -->
+					<div class="rounded-lg" style="background: var(--bg-base); border: 1px solid var(--border); padding: 16px 18px;">
+						<div style="font-size: 12px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 9px;">
+							Sessions
+						</div>
+						<div class="font-mono flex items-baseline gap-1" style="line-height: 1;">
+							<span style="font-size: 30px; font-weight: 700; color: var(--text-primary); letter-spacing: -1px;">
+								{analytics.total_sessions.toLocaleString()}
+							</span>
+						</div>
+						<div style="font-size: 13px; color: var(--text-muted); margin-top: 7px;">
+							avg {avgSessionsPerDay} / day
+						</div>
+						<div style="font-size: 12px; color: var(--text-faint); margin-top: 2px;">
+							across {analytics.projects_active} projects
+						</div>
+					</div>
+
+					<!-- Value card (accent) -->
+					<div class="rounded-lg" style="background: var(--accent-muted); border: 1.5px solid var(--accent-subtle); padding: 16px 18px;">
+						<div style="font-size: 12px; color: var(--accent); font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 9px;">
+							Value
+						</div>
+						<div class="font-mono flex items-baseline gap-1" style="line-height: 1;">
+							<span style="font-size: 30px; font-weight: 700; color: var(--text-primary); letter-spacing: -1px;">
+								${Math.round(analytics.estimated_cost_usd).toLocaleString()}
+							</span>
+						</div>
+						<div style="font-size: 13px; color: var(--text-muted); margin-top: 7px;">
+							API-equivalent usage
+						</div>
+						{#if subscriptionMultiple > 1}
+							<div
+								class="inline-flex items-center mt-[7px]"
+								style="background: linear-gradient(135deg, #a855f7, var(--accent)); border-radius: 20px; padding: 2px 9px;"
+							>
+								<span style="font-size: 12px; font-weight: 700; color: #ffffff; letter-spacing: 0.02em;">
+									{subscriptionMultiple}× your $20/mo
+								</span>
+							</div>
+						{/if}
 					</div>
 				</div>
-				<div class="flex items-baseline gap-1.5">
-					<span
-						class="text-xl font-semibold font-mono tabular-nums text-[var(--text-primary)]"
-					>
-						{analytics.projects_active}
-					</span>
-					<span class="text-xs text-[var(--text-muted)]">worked on</span>
-				</div>
 			</div>
 
-			<!-- Compute DNA Card -->
-			<div
-				class="lg:col-span-2 p-5 bg-[var(--bg-subtle)] border border-[var(--border)] rounded-lg"
-			>
-				<div class="flex items-center gap-2 mb-3">
-					<Cpu size={14} class="text-[var(--text-muted)]" />
-					<span
-						class="text-[11px] font-medium uppercase tracking-wider text-[var(--text-muted)]"
-						>Compute DNA</span
-					>
+			<!-- Section 2: How often? (Activity Heatmap) -->
+			<div>
+				<div class="font-mono mb-2" style="font-size: 13px; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: 0.12em;">
+					How often?
 				</div>
-				<div class="w-full flex h-5 rounded overflow-hidden mb-3">
-					{#each modelDist as model}
-						<div
-							class="h-full"
-							style="width: {model.perc}%; background-color: {getModelColor(
-								model.name
-							)};"
-							title="{model.name}: {model.perc.toFixed(0)}%"
-						></div>
-					{/each}
-				</div>
-				<div class="flex flex-wrap gap-3 text-xs">
-					{#each modelDist as model}
-						<div class="flex items-center gap-1">
-							<div
-								class="w-2 h-2 rounded-full"
-								style="background-color: {getModelColor(model.name)}"
-							></div>
-							<span class="text-[var(--text-secondary)]">{model.name}</span>
-							<span class="text-[var(--text-muted)] font-mono"
-								>{model.perc.toFixed(0)}%</span
-							>
+				<div class="rounded-lg" style="background: var(--bg-base); border: 1px solid var(--border); padding: 16px 18px;">
+					<!-- Card header -->
+					<div class="flex items-baseline justify-between" style="margin-bottom: 16px;">
+						<span style="font-size: 13px; font-weight: 600; color: var(--text-primary);">Activity</span>
+						<span class="font-mono" style="font-size: 13px; color: var(--text-faint);">
+							avg {avgSessionsPerDay} sessions / day{peakDay.count > 0 ? ` · peak ${peakDay.count} on ${formatDate(peakDay.date)}` : ''}
+						</span>
+					</div>
+
+					{#if heatmapData.days.length > 0}
+						<!-- Main heatmap row: day labels + grid + year filter -->
+						<div class="flex items-start" style="gap: 8px;">
+							<!-- Day labels column -->
+							<div class="flex flex-col shrink-0" style="gap: {GAP}px; padding-top: 22px;">
+								{#each DAY_NAMES as name, i}
+									<div
+										class="font-mono"
+										style="height: {CELL}px; line-height: {CELL}px; font-size: 12px; color: {VISIBLE_DOW.has(i) ? 'var(--text-faint)' : 'transparent'};"
+									>{name}</div>
+								{/each}
+							</div>
+
+							<!-- Grid area with tooltip container -->
+							<div class="heatmap-grid-area" style="flex: 1; min-width: 0; overflow-x: auto; position: relative;">
+								<!-- Month labels row -->
+								<div style="position: relative; height: 18px; margin-bottom: 4px; min-width: {heatmapData.totalWeeks * STRIDE}px;">
+									{#each heatmapData.monthLabels as ml}
+										<span
+											class="font-mono"
+											style="position: absolute; top: 0; left: {ml.weekIndex * STRIDE}px; font-size: 12px; color: var(--accent); white-space: nowrap;"
+										>{ml.label}</span>
+									{/each}
+								</div>
+
+								<!-- Cell grid — fixed square cells, scrolls if needed -->
+								<div
+									style="display: grid; grid-template-rows: repeat(7, {CELL}px); grid-auto-flow: column; grid-auto-columns: {CELL}px; gap: {GAP}px; width: fit-content;"
+								>
+									{#each heatmapData.days as day}
+										<div
+											role="img"
+											aria-label={tooltipLabel(day)}
+											style="width: {CELL}px; height: {CELL}px; border-radius: 2px; background: {heatmapColor(day.count)}; cursor: {day.count > 0 ? 'pointer' : 'default'};"
+											onmouseenter={(e) => showTooltip(e, day)}
+											onmouseleave={hideTooltip}
+										></div>
+									{/each}
+								</div>
+
+								<!-- Tooltip -->
+								{#if tooltip}
+									<div
+										class="font-mono"
+										style="
+											position: absolute;
+											left: {tooltip.x}px;
+											top: {tooltip.y - 36}px;
+											transform: translateX(-50%);
+											background: var(--text-primary);
+											color: var(--bg-base);
+											font-size: 12px;
+											padding: 4px 8px;
+											border-radius: 5px;
+											white-space: nowrap;
+											pointer-events: none;
+											z-index: 10;
+											box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+										"
+									>
+										{tooltipLabel(tooltip.day)}
+									</div>
+								{/if}
+							</div>
+
+							<!-- Year filter buttons (right side) -->
+							{#if availableYears.length > 1}
+								<div class="flex flex-col shrink-0" style="gap: 4px; padding-top: 22px;">
+									{#each availableYears as yr}
+										<button
+											type="button"
+											onclick={() => (selectedYear = yr)}
+											class="font-mono"
+											style="
+												font-size: 15px;
+												font-weight: {activeYear === yr ? '700' : '400'};
+												color: {activeYear === yr ? 'var(--accent)' : 'var(--text-faint)'};
+												background: {activeYear === yr ? 'var(--accent-muted)' : 'transparent'};
+												border: 1px solid {activeYear === yr ? 'var(--accent-subtle)' : 'transparent'};
+												border-radius: 4px;
+												padding: 2px 7px;
+												cursor: pointer;
+												transition: color 0.15s, background 0.15s;
+											"
+										>{yr}</button>
+									{/each}
+								</div>
+							{/if}
 						</div>
-					{/each}
+
+						<!-- Legend -->
+						<div class="flex items-center justify-end" style="gap: 5px; margin-top: 12px;">
+							<span style="font-size: 12px; color: var(--text-faint); margin-right: 2px;">Less</span>
+							<div style="width: {CELL}px; height: {CELL}px; border-radius: 2px; background: var(--bg-muted); border: 1px solid var(--border);"></div>
+							<div style="width: {CELL}px; height: {CELL}px; border-radius: 2px; background: #ddd6fe;"></div>
+							<div style="width: {CELL}px; height: {CELL}px; border-radius: 2px; background: #c084fc;"></div>
+							<div style="width: {CELL}px; height: {CELL}px; border-radius: 2px; background: #a855f7;"></div>
+							<div style="width: {CELL}px; height: {CELL}px; border-radius: 2px; background: var(--accent);"></div>
+							<span style="font-size: 12px; color: var(--text-faint); margin-left: 2px;">More</span>
+						</div>
+					{:else}
+						<div style="color: var(--text-faint); font-size: 12px; padding: 24px 0; text-align: center;">
+							No session data available
+						</div>
+					{/if}
+				</div>
+			</div>
+
+			<!-- Section 3: How intensely? -->
+			<div>
+				<div class="font-mono mb-2" style="font-size: 13px; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: 0.12em;">
+					How intensely?
+				</div>
+				<div class="grid gap-[10px]" style="grid-template-columns: 1fr 2fr;">
+					<!-- Left: Token Consumption Summary -->
+					<div class="rounded-lg" style="background: var(--bg-base); border: 1px solid var(--border); padding: 16px 18px;">
+						<div style="font-size: 12px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 9px;">
+							Token consumption
+						</div>
+						<div class="font-mono flex items-baseline gap-1 mb-3" style="line-height: 1;">
+							<span style="font-size: 30px; font-weight: 700; color: var(--text-primary); letter-spacing: -1px;">
+								{totalTokensFormatted.value}
+							</span>
+							<span style="font-size: 15px; font-weight: 500; color: var(--text-muted);">{totalTokensFormatted.unit}</span>
+						</div>
+
+						<div class="flex flex-col" style="gap: 8px;">
+							<div class="flex items-center justify-between">
+								<span style="font-size: 13px; color: var(--text-muted);">Input tokens</span>
+								<span class="font-mono" style="font-size: 13px; color: var(--text-primary); font-weight: 500;">
+									{formatTokensShort(totalInputSide)}
+								</span>
+							</div>
+							<div class="flex items-center justify-between">
+								<span style="font-size: 13px; color: var(--text-muted);">Output tokens</span>
+								<span class="font-mono" style="font-size: 13px; color: var(--text-primary); font-weight: 500;">
+									{formatTokensShort(analytics.total_output_tokens)}
+								</span>
+							</div>
+							<div style="height: 1px; background: var(--border); margin: 2px 0;"></div>
+							<div class="flex items-center justify-between">
+								<span style="font-size: 13px; color: var(--text-secondary); font-weight: 500;">Cache efficiency</span>
+								<span class="font-mono" style="font-size: 13px; color: var(--accent); font-weight: 700;">
+									{cacheHitPercent}%
+								</span>
+							</div>
+						</div>
+					</div>
+
+					<!-- Right: Where Tokens Go -->
+					<div class="rounded-lg" style="background: var(--bg-base); border: 1px solid var(--border); padding: 16px 18px;">
+						<div style="font-size: 12px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 9px;">
+							Where tokens go
+						</div>
+
+						{#if analytics.total_tokens > 0}
+							<!-- Stacked bar -->
+							<div class="flex mb-4" style="height: 16px; border-radius: 5px; overflow: hidden; gap: 1px;">
+								{#if tokenCachePct > 0}
+									<div
+										style="flex: {tokenCachePct}; background: var(--accent-subtle); border: 1px solid var(--accent-subtle);"
+										title="Cached: {tokenCachePct.toFixed(1)}%"
+									></div>
+								{/if}
+								{#if tokenInputPct > 0}
+									<div
+										style="flex: {tokenInputPct}; background: #a855f7;"
+										title="Uncached input: {tokenInputPct.toFixed(1)}%"
+									></div>
+								{/if}
+								{#if tokenOutputPct > 0}
+									<div
+										style="flex: {tokenOutputPct}; background: var(--accent);"
+										title="Output: {tokenOutputPct.toFixed(1)}%"
+									></div>
+								{/if}
+							</div>
+
+							<!-- Legend -->
+							<div class="flex flex-col" style="gap: 9px;">
+								<div class="flex items-center gap-2">
+									<div style="width: 10px; height: 10px; border-radius: 2px; background: var(--accent-subtle); border: 1px solid var(--accent-subtle); flex-shrink: 0;"></div>
+									<span style="font-size: 13px; color: var(--text-muted); flex: 1;">Cached input</span>
+									<span class="font-mono" style="font-size: 13px; color: var(--text-primary); font-weight: 500;">
+										{formatTokensShort(cacheTokens)}
+									</span>
+									<span class="font-mono" style="font-size: 13px; color: var(--text-faint); width: 40px; text-align: right;">
+										{tokenCachePct.toFixed(1)}%
+									</span>
+								</div>
+								<div class="flex items-center gap-2">
+									<div style="width: 10px; height: 10px; border-radius: 2px; background: #a855f7; flex-shrink: 0;"></div>
+									<span style="font-size: 13px; color: var(--text-muted); flex: 1;">Uncached input</span>
+									<span class="font-mono" style="font-size: 13px; color: var(--text-primary); font-weight: 500;">
+										{formatTokensShort(analytics.total_input_tokens)}
+									</span>
+									<span class="font-mono" style="font-size: 13px; color: var(--text-faint); width: 40px; text-align: right;">
+										{tokenInputPct.toFixed(1)}%
+									</span>
+								</div>
+								<div class="flex items-center gap-2">
+									<div style="width: 10px; height: 10px; border-radius: 2px; background: var(--accent); flex-shrink: 0;"></div>
+									<span style="font-size: 13px; color: var(--text-muted); flex: 1;">Output</span>
+									<span class="font-mono" style="font-size: 13px; color: var(--text-primary); font-weight: 500;">
+										{formatTokensShort(analytics.total_output_tokens)}
+									</span>
+									<span class="font-mono" style="font-size: 13px; color: var(--text-faint); width: 40px; text-align: right;">
+										{tokenOutputPct.toFixed(1)}%
+									</span>
+								</div>
+							</div>
+
+							<div style="height: 1px; background: var(--border); margin: 12px 0 8px;"></div>
+							<p style="font-size: 13px; color: var(--text-faint); line-height: 1.5; font-style: italic;">
+								{cacheHitPercent}% of tokens were cached — you build on context, not prompts from scratch.
+							</p>
+						{:else}
+							<div style="color: var(--text-faint); font-size: 12px;">No token data available</div>
+						{/if}
+					</div>
+				</div>
+			</div>
+
+			<!-- Section 4: Bottom Row — Projects + Models -->
+			<div class="grid gap-[10px]" style="grid-template-columns: 1fr 1fr; padding-bottom: 48px;">
+				<!-- Left: What are you building? -->
+				<div class="rounded-lg" style="background: var(--bg-base); border: 1px solid var(--border); padding: 16px 18px;">
+					<div class="font-mono mb-3" style="font-size: 13px; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: 0.12em;">
+						What are you building?
+					</div>
+					<div class="flex items-baseline mb-4" style="gap: 6px;">
+						<span class="font-mono" style="font-size: 28px; font-weight: 700; color: var(--text-primary); letter-spacing: -0.5px;">
+							{analytics.projects_active}
+						</span>
+						<span style="font-size: 12px; color: var(--text-muted);">
+							projects · {analytics.total_sessions.toLocaleString()} sessions total
+						</span>
+					</div>
+
+					{#if topProjects.length > 0}
+						<div class="flex flex-col" style="gap: 10px;">
+							{#each topProjects as project, i}
+								<div>
+									<div class="flex items-center justify-between mb-1" style="gap: 8px;">
+										<div class="flex items-center gap-2" style="min-width: 0;">
+											<span class="font-mono" style="font-size: 12px; font-weight: 600; color: var(--accent); width: 16px; text-align: right; flex-shrink: 0;">
+												{i + 1}
+											</span>
+											<span style="font-size: 13px; color: var(--text-primary); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+												{projectDisplayName(project)}
+											</span>
+										</div>
+										<span class="font-mono" style="font-size: 12px; color: var(--text-muted); flex-shrink: 0;">
+											{project.session_count}
+										</span>
+									</div>
+									<div style="height: 6px; background: var(--bg-muted); border-radius: 3px; overflow: hidden; margin-left: 24px;">
+										<div style="background: linear-gradient(90deg, var(--accent), #a855f7); border-radius: 3px; height: 100%; width: {(project.session_count / topProjectsMaxSessions) * 100}%;"></div>
+									</div>
+								</div>
+							{/each}
+						</div>
+						{#if analytics.projects_active > 5}
+							<div style="font-size: 12px; color: var(--text-faint); margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border);">
+								Showing top 5 of {analytics.projects_active} projects
+							</div>
+						{/if}
+					{:else}
+						<div style="color: var(--text-faint); font-size: 12px;">No project data available</div>
+					{/if}
+				</div>
+
+				<!-- Right: Which models? -->
+				<div class="rounded-lg" style="background: var(--bg-base); border: 1px solid var(--border); padding: 16px 18px;">
+					<div class="font-mono mb-3" style="font-size: 13px; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: 0.12em;">
+						Which models?
+					</div>
+
+					{#if modelMix.length > 0}
+						<!-- Stacked model bar -->
+						<div class="flex mb-4" style="height: 14px; border-radius: 5px; overflow: hidden; gap: 1px;">
+							{#each modelMix as m}
+								<div
+									style="flex: {m.percentage}; background: {modelColors[m.model] ?? 'var(--accent)'};"
+									title="{m.model}: {m.percentage}%"
+								></div>
+							{/each}
+						</div>
+
+						<!-- Model legend -->
+						<div class="flex flex-col" style="gap: 9px;">
+							{#each modelMix as m}
+								<div class="flex items-center gap-2">
+									<div
+										style="width: 10px; height: 10px; border-radius: 2px; background: {modelColors[m.model] ?? 'var(--accent)'}; flex-shrink: 0;"
+									></div>
+									<span class="font-mono" style="font-size: 13px; color: var(--text-secondary); flex: 1;">
+										{m.model.toLowerCase()}
+									</span>
+									<span class="font-mono" style="font-size: 13px; color: var(--text-muted); text-align: right; white-space: nowrap;">
+										{m.count} sessions
+									</span>
+									<span class="font-mono" style="font-size: 13px; color: var(--text-faint); width: 38px; text-align: right;">
+										{m.percentage}%
+									</span>
+								</div>
+							{/each}
+						</div>
+					{:else}
+						<div style="color: var(--text-faint); font-size: 12px;">No model data available</div>
+					{/if}
 				</div>
 			</div>
 		</div>
-	</CollapsibleGroup>
-
-	<!-- Group 3: Rhythm — Time Distribution -->
-	<CollapsibleGroup
-		title="Rhythm"
-		open={expandedGroups.has('rhythm')}
-		onOpenChange={() => toggleGroup('rhythm')}
-	>
-		{#snippet icon()}
-			<div class="p-1.5 bg-[var(--bg-subtle)] rounded-md">
-				<Clock size={14} class="text-[var(--text-muted)]" />
-			</div>
-		{/snippet}
-		{#snippet metadata()}
-			<div class="flex items-center gap-4 text-[11px] text-[var(--text-muted)]">
-				<span>
-					Peak: <span class="font-mono text-[var(--text-secondary)]"
-						>{formatPeakHours(analytics.peak_hours)}</span
-					>
-				</span>
-			</div>
-		{/snippet}
-
-		<div class="space-y-2.5">
-			<!-- Morning -->
-			<div class="flex items-center gap-3">
-				<span class="text-[11px] text-[var(--text-muted)] w-20 shrink-0">06:00–12:00</span>
-				<div
-					class="relative flex-1 h-1.5 bg-[var(--bg-muted)] rounded-full overflow-hidden"
-				>
-					<div
-						class="absolute top-0 left-0 h-full bg-[var(--accent)] rounded-full"
-						style="width: {analytics.time_distribution.morning_pct}%"
-					></div>
-				</div>
-				<span class="text-[11px] font-mono text-[var(--text-secondary)] w-20 text-right">
-					{formatHoursFromPct(analytics.time_distribution.morning_pct)} ({analytics.time_distribution.morning_pct.toFixed(
-						0
-					)}%)
-				</span>
-			</div>
-
-			<!-- Afternoon -->
-			<div class="flex items-center gap-3">
-				<span class="text-[11px] text-[var(--text-muted)] w-20 shrink-0">12:00–18:00</span>
-				<div
-					class="relative flex-1 h-1.5 bg-[var(--bg-muted)] rounded-full overflow-hidden"
-				>
-					<div
-						class="absolute top-0 left-0 h-full bg-[var(--accent)] rounded-full"
-						style="width: {analytics.time_distribution.afternoon_pct}%"
-					></div>
-				</div>
-				<span class="text-[11px] font-mono text-[var(--text-secondary)] w-20 text-right">
-					{formatHoursFromPct(analytics.time_distribution.afternoon_pct)} ({analytics.time_distribution.afternoon_pct.toFixed(
-						0
-					)}%)
-				</span>
-			</div>
-
-			<!-- Evening -->
-			<div class="flex items-center gap-3">
-				<span class="text-[11px] text-[var(--text-muted)] w-20 shrink-0">18:00–24:00</span>
-				<div
-					class="relative flex-1 h-1.5 bg-[var(--bg-muted)] rounded-full overflow-hidden"
-				>
-					<div
-						class="absolute top-0 left-0 h-full bg-[var(--accent)] rounded-full"
-						style="width: {analytics.time_distribution.evening_pct}%"
-					></div>
-				</div>
-				<span class="text-[11px] font-mono text-[var(--text-secondary)] w-20 text-right">
-					{formatHoursFromPct(analytics.time_distribution.evening_pct)} ({analytics.time_distribution.evening_pct.toFixed(
-						0
-					)}%)
-				</span>
-			</div>
-
-			<!-- Night -->
-			<div class="flex items-center gap-3">
-				<span class="text-[11px] text-[var(--text-muted)] w-20 shrink-0">00:00–06:00</span>
-				<div
-					class="relative flex-1 h-1.5 bg-[var(--bg-muted)] rounded-full overflow-hidden"
-				>
-					<div
-						class="absolute top-0 left-0 h-full bg-[var(--accent)] rounded-full"
-						style="width: {analytics.time_distribution.night_pct}%"
-					></div>
-				</div>
-				<span class="text-[11px] font-mono text-[var(--text-secondary)] w-20 text-right">
-					{formatHoursFromPct(analytics.time_distribution.night_pct)} ({analytics.time_distribution.night_pct.toFixed(
-						0
-					)}%)
-				</span>
-			</div>
-
-			<!-- Footer -->
-			<div
-				class="mt-3 pt-2 border-t border-[var(--border)] flex items-center gap-4 text-[11px] text-[var(--text-muted)]"
-			>
-				<span
-					>Total: <span class="font-mono text-[var(--text-secondary)]"
-						>{(analytics.total_duration_seconds / 3600).toFixed(0)}h</span
-					></span
-				>
-			</div>
-		</div>
-	</CollapsibleGroup>
 	{/if}
 </div>
