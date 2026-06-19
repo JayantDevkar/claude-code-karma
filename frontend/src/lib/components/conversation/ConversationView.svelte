@@ -911,6 +911,7 @@
 		| 'cron';
 
 	let activeDrawer = $state<DrawerKey | null>(null);
+	let drawerOpen = $state(false);
 	let drawerWidth = $state(296);
 	let resumeCopied = $state(false);
 	let expandedAgentIds = $state<Set<string>>(new Set());
@@ -947,7 +948,12 @@
 	let resumeCopyTimeout: ReturnType<typeof setTimeout> | null = null;
 
 	function toggleDrawer(key: DrawerKey) {
-		activeDrawer = activeDrawer === key ? null : key;
+		if (activeDrawer === key) {
+			drawerOpen = !drawerOpen;
+		} else {
+			activeDrawer = key;
+			drawerOpen = true;
+		}
 	}
 
 	type RailItem = { key: DrawerKey; icon: typeof Info | null; iconName?: string; label: string; disabled: boolean; disabledTip: string };
@@ -981,6 +987,7 @@
 		if (activeDrawer === null) return;
 		const next = (activeDrawerIdx + dir + enabledRailItems.length) % enabledRailItems.length;
 		activeDrawer = enabledRailItems[next].key;
+		drawerOpen = true;
 	}
 
 	async function handleResumeCopy() {
@@ -1020,18 +1027,18 @@
 	>
 		<!-- ── Session Header ─────────────────────────────────────────────── -->
 		<div
-			class="flex-shrink-0 bg-white"
+			class="flex-shrink-0 bg-[var(--bg-base)]"
 			style="padding: 13px 24px 14px;"
 		>
 			<!-- Breadcrumb row -->
-			<div class="flex items-center gap-1 mb-2" style="font-size: 11px; color: #94a3b8;">
-				<a href="/" class="hover:text-[#64748b] transition-colors" style="color: #94a3b8;">Dashboard</a>
-				<span style="color: #d1d5db;">/</span>
-				<a href="/projects" class="hover:text-[#64748b] transition-colors" style="color: #94a3b8;">Projects</a>
-				<span style="color: #d1d5db;">/</span>
-				<a href="/projects/{encodedName}" class="hover:text-[#64748b] transition-colors" style="color: #94a3b8;">{getProjectName(projectPath || '')}</a>
-				<span style="color: #d1d5db;">/</span>
-				<span style="color: #64748b; font-family: 'JetBrains Mono', monospace;">{shortId}</span>
+			<div class="flex items-center gap-1 mb-2" style="font-size: 11px; color: var(--text-faint);">
+				<a href="/" class="hover:text-[var(--text-muted)] transition-colors" style="color: var(--text-faint);">Dashboard</a>
+				<span style="color: var(--border);">/</span>
+				<a href="/projects" class="hover:text-[var(--text-muted)] transition-colors" style="color: var(--text-faint);">Projects</a>
+				<span style="color: var(--border);">/</span>
+				<a href="/projects/{encodedName}" class="hover:text-[var(--text-muted)] transition-colors" style="color: var(--text-faint);">{getProjectName(projectPath || '')}</a>
+				<span style="color: var(--border);">/</span>
+				<span style="color: var(--text-muted); font-family: 'JetBrains Mono', monospace;">{shortId}</span>
 			</div>
 
 			<!-- Title row -->
@@ -1039,7 +1046,7 @@
 				<div class="min-w-0 flex-1">
 					<!-- Session title -->
 					<h1
-						class="leading-[1.3] text-[#0f172a]"
+						class="leading-[1.3] text-[var(--text-primary)]"
 						style="font-size: 17px; font-weight: 700; letter-spacing: -0.02em; text-wrap: pretty;"
 					>
 						{sessionTitle}
@@ -1050,21 +1057,21 @@
 						<!-- Session ID chip -->
 						<span
 							class="inline-flex items-center"
-							style="font-size: 10.5px; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 4px; padding: 2px 7px; color: #64748b; font-family: 'JetBrains Mono', monospace;"
+							style="font-size: 10.5px; background: var(--bg-subtle); border: 1px solid var(--border); border-radius: 4px; padding: 2px 7px; color: var(--text-muted); font-family: 'JetBrains Mono', monospace;"
 						>#{shortId}</span>
 
 						<!-- Date -->
 						{#if sessionEntity.start_time}
-							<span class="inline-flex items-center gap-1" style="font-size: 11px; color: #64748b;">
-								<Calendar size={11} color="#94a3b8" />
+							<span class="inline-flex items-center gap-1" style="font-size: 11px; color: var(--text-muted);">
+								<Calendar size={11} color="var(--text-faint)" />
 								{formatDateFull(sessionEntity.start_time)}
 							</span>
 						{/if}
 
 						<!-- Duration -->
 						{#if sessionEntity.duration_seconds}
-							<span class="inline-flex items-center gap-1" style="font-size: 11px; color: #64748b;">
-								<Clock size={11} color="#94a3b8" />
+							<span class="inline-flex items-center gap-1" style="font-size: 11px; color: var(--text-muted);">
+								<Clock size={11} color="var(--text-faint)" />
 								{formatDuration(sessionEntity.duration_seconds)}
 							</span>
 						{/if}
@@ -1073,9 +1080,9 @@
 						{#if primaryModel}
 							<span
 								class="inline-flex items-center gap-1"
-								style="font-size: 10.5px; font-weight: 500; color: #7c3aed; background: #faf5ff; border: 1px solid #e9d5ff; border-radius: 4px; padding: 2px 7px;"
+								style="font-size: 10.5px; font-weight: 500; color: var(--nav-purple); background: var(--nav-purple-subtle); border: 1px solid color-mix(in srgb, var(--nav-purple) 25%, transparent); border-radius: 4px; padding: 2px 7px;"
 							>
-								<Sparkles size={10} color="#7c3aed" />
+								<Sparkles size={10} color="var(--nav-purple)" />
 								{primaryModel}
 							</span>
 						{/if}
@@ -1084,9 +1091,9 @@
 						{#if primaryBranch}
 							<span
 								class="inline-flex items-center gap-1"
-								style="font-size: 10.5px; font-weight: 500; color: #0891b2; background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 4px; padding: 2px 7px;"
+								style="font-size: 10.5px; font-weight: 500; color: var(--nav-teal); background: var(--nav-teal-subtle); border: 1px solid color-mix(in srgb, var(--nav-teal) 25%, transparent); border-radius: 4px; padding: 2px 7px;"
 							>
-								<GitBranch size={10} color="#0891b2" />
+								<GitBranch size={10} color="var(--nav-teal)" />
 								{primaryBranch}
 							</span>
 						{/if}
@@ -1096,16 +1103,16 @@
 							{@const ci = sessionEntity.chain_info}
 							<span
 								class="inline-flex items-center gap-1"
-								style="font-size: 10.5px; color: #64748b; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px; padding: 2px 7px;"
+								style="font-size: 10.5px; color: var(--text-muted); background: var(--bg-subtle); border: 1px solid var(--border); border-radius: 4px; padding: 2px 7px;"
 							>
-								<Link2 size={10} color="#94a3b8" />
+								<Link2 size={10} color="var(--text-faint)" />
 								Session {ci.position + 1} of {ci.total}
 							</span>
 						{/if}
 
 						<!-- Cost -->
 						{#if sessionEntity.total_cost}
-							<span style="font-size: 11px; color: #64748b;">{formatCost(sessionEntity.total_cost)}</span>
+							<span style="font-size: 11px; color: var(--text-muted);">{formatCost(sessionEntity.total_cost)}</span>
 						{/if}
 
 						<!-- Live status -->
@@ -1130,8 +1137,8 @@
 
 						<!-- Syncing indicator -->
 						{#if isRefreshing}
-							<span class="inline-flex items-center gap-1" style="font-size: 10.5px; color: #0891b2;">
-								<RefreshCw size={10} class="animate-spin" color="#0891b2" />
+							<span class="inline-flex items-center gap-1" style="font-size: 10.5px; color: var(--nav-teal);">
+								<RefreshCw size={10} class="animate-spin" color="var(--nav-teal)" />
 								Syncing
 							</span>
 						{/if}
@@ -1149,11 +1156,11 @@
 							style="
 								padding: 5px 10px;
 								border-radius: 7px;
-								border: 1px solid {isTailing ? '#bbf7d0' : '#e2e8f0'};
-								background: {isTailing ? '#f0fdf4' : '#fff'};
+								border: 1px solid {isTailing ? 'color-mix(in srgb, var(--nav-green) 30%, transparent)' : 'var(--border)'};
+								background: {isTailing ? 'var(--nav-green-subtle)' : 'var(--bg-base)'};
 								font-size: 11px;
 								font-weight: 500;
-								color: {isTailing ? '#16a34a' : '#64748b'};
+								color: {isTailing ? 'var(--nav-green)' : 'var(--text-muted)'};
 								box-shadow: 0 1px 2px rgba(0,0,0,0.04);
 							"
 						>
@@ -1168,19 +1175,19 @@
 						class="inline-flex items-center gap-1.5 transition-all"
 						style="
 							padding: 7px 14px;
-							border: 1px solid #e2e8f0;
+							border: 1px solid var(--border);
 							border-radius: 7px;
-							background: #fff;
+							background: var(--bg-base);
 							font-size: 12px;
 							font-weight: 500;
-							color: {resumeCopied ? '#16a34a' : '#374151'};
+							color: {resumeCopied ? 'var(--nav-green)' : 'var(--text-primary)'};
 							box-shadow: 0 1px 2px rgba(0,0,0,0.04);
 							white-space: nowrap;
 						"
 						title="Copy: claude --resume {sessionEntity.uuid}"
 					>
 						{#if resumeCopied}
-							<Check size={12} color="#16a34a" />
+							<Check size={12} color="var(--nav-green)" />
 							Copied!
 						{:else}
 							<Play size={12} />
@@ -1195,7 +1202,7 @@
 		<div class="flex flex-1 min-h-0" style="gap: 10px; padding: 8px 0 8px; overflow: hidden; align-items: stretch;">
 
 			<!-- ── Timeline column ─────────────────────────────────────────── -->
-			<div class="flex-1 flex flex-col overflow-hidden min-w-0" style="background: #fff;">
+			<div class="flex-1 flex flex-col overflow-hidden min-w-0" style="background: var(--bg-base);">
 				{#if timelineEvents.length > 0}
 					<div class="flex-1 overflow-y-auto" style="scrollbar-width: none;">
 						<TimelineRail
@@ -1221,21 +1228,21 @@
 			</div>
 
 			<!-- ── Right group: drawer + rail, no gap between them ──────────── -->
-			<div class="flex flex-shrink-0 overflow-hidden" style="border-radius: 12px; background: #f1f5f9;">
+			<div class="flex flex-shrink-0 overflow-hidden" style="border-radius: 12px; background: var(--bg-subtle);">
 
 			<!-- ── Drawer ────────────────────────────────────────────────────── -->
-			{#if activeDrawer !== null}
+			{#if drawerOpen && activeDrawer !== null}
 				<div
 					class="flex flex-col overflow-hidden flex-shrink-0"
-					style="width: 350px; border-right: 1px solid #e2e8f0;"
+					style="width: 350px; border-right: 1px solid var(--border);"
 				>
 					<!-- Drawer header -->
-					<div class="flex items-center justify-between flex-shrink-0" style="height: 44px; padding: 0 16px; border-bottom: 1px solid #e2e8f0;">
-						<span style="font-size: 13px; font-weight: 600; color: #0f172a; letter-spacing: -0.01em;">{drawerTitle}</span>
+					<div class="flex items-center justify-between flex-shrink-0" style="height: 44px; padding: 0 16px; border-bottom: 1px solid var(--border);">
+						<span style="font-size: 13px; font-weight: 600; color: var(--text-primary); letter-spacing: -0.01em;">{drawerTitle}</span>
 						<div class="flex items-center" style="gap: 2px;">
-							<button onclick={() => cycleDrawer(-1)} disabled={activeDrawerIdx <= 0} style="width: 26px; height: 26px; border: none; background: none; color: #64748b; opacity: {activeDrawerIdx <= 0 ? 0.25 : 1}; cursor: {activeDrawerIdx <= 0 ? 'default' : 'pointer'}; display: flex; align-items: center; justify-content: center; border-radius: 4px;" aria-label="Previous drawer"><ChevronLeft size={15} /></button>
-							<button onclick={() => cycleDrawer(1)} disabled={activeDrawerIdx >= enabledRailItems.length - 1} style="width: 26px; height: 26px; border: none; background: none; color: #64748b; opacity: {activeDrawerIdx >= enabledRailItems.length - 1 ? 0.25 : 1}; cursor: {activeDrawerIdx >= railItems.length - 1 ? 'default' : 'pointer'}; display: flex; align-items: center; justify-content: center; border-radius: 4px;" aria-label="Next drawer"><ChevronRight size={15} /></button>
-							<button onclick={() => (activeDrawer = null)} style="width: 26px; height: 26px; border: none; background: none; color: #64748b; cursor: pointer; display: flex; align-items: center; justify-content: center; border-radius: 4px;" aria-label="Close drawer"><X size={15} /></button>
+							<button onclick={() => cycleDrawer(-1)} disabled={activeDrawerIdx <= 0} style="width: 26px; height: 26px; border: none; background: none; color: var(--text-muted); opacity: {activeDrawerIdx <= 0 ? 0.25 : 1}; cursor: {activeDrawerIdx <= 0 ? 'default' : 'pointer'}; display: flex; align-items: center; justify-content: center; border-radius: 4px;" aria-label="Previous drawer"><ChevronLeft size={15} /></button>
+							<button onclick={() => cycleDrawer(1)} disabled={activeDrawerIdx >= enabledRailItems.length - 1} style="width: 26px; height: 26px; border: none; background: none; color: var(--text-muted); opacity: {activeDrawerIdx >= enabledRailItems.length - 1 ? 0.25 : 1}; cursor: {activeDrawerIdx >= railItems.length - 1 ? 'default' : 'pointer'}; display: flex; align-items: center; justify-content: center; border-radius: 4px;" aria-label="Next drawer"><ChevronRight size={15} /></button>
+							<button onclick={() => (drawerOpen = false)} style="width: 26px; height: 26px; border: none; background: none; color: var(--text-muted); cursor: pointer; display: flex; align-items: center; justify-content: center; border-radius: 4px;" aria-label="Close drawer"><X size={15} /></button>
 						</div>
 					</div>
 					<!-- Drawer body -->
@@ -1437,9 +1444,10 @@
 				style="width: 68px; padding: 14px 0; gap: 6px; scrollbar-width: none;"
 			>
 				{#each railItems as item (item.key)}
-					{@const isActive = activeDrawer === item.key}
+					{@const isSelected = activeDrawer === item.key}
+					{@const isOpen = isSelected && drawerOpen}
 					{@const IconComponent = item.icon}
-					{@const iconColor = isActive ? '#ffffff' : item.disabled ? '#94a3b8' : '#475569'}
+					{@const iconColor = isSelected ? 'var(--rail-active-icon)' : item.disabled ? 'var(--text-faint)' : 'var(--text-primary)'}
 					<!-- Wrapper carries the tooltip — pointer-events on button are off when disabled so title fires from wrapper -->
 					<span
 						title={item.disabled ? item.disabledTip : item.label}
@@ -1447,10 +1455,10 @@
 					>
 						<button
 							onclick={() => toggleDrawer(item.key)}
-							aria-pressed={isActive}
+							aria-pressed={isOpen}
 							aria-disabled={item.disabled}
 							class="relative flex items-center justify-center flex-shrink-0 transition-all duration-150"
-							style="width: 52px; height: 52px; border-radius: 12px; border: none; cursor: {item.disabled ? 'default' : 'pointer'}; background: {isActive ? '#0f172a' : 'transparent'}; opacity: {item.disabled ? 0.7 : 1}; pointer-events: {item.disabled ? 'none' : 'auto'};"
+							style="width: 52px; height: 52px; border-radius: 12px; border: none; cursor: {item.disabled ? 'default' : 'pointer'}; background: {isOpen ? 'var(--rail-active-bg)' : 'transparent'}; opacity: {isSelected ? 1 : item.disabled ? 0.3 : 0.85}; pointer-events: {item.disabled ? 'none' : 'auto'};"
 						>
 							{#if item.iconName}
 								<CustomIcon name={item.iconName} size={22} strokeWidth={2} color={iconColor} />

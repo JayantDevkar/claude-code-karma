@@ -30,6 +30,10 @@
 	/* Missing tokens (referenced but were undefined) */
 	--accent-primary: var(--accent);
 	--border-hover: rgba(0, 0, 0, 0.12);
+
+	/* Rail active button */
+	--rail-active-bg: rgba(0, 0, 0, 0.1);
+	--rail-active-icon: #000000;
 	--radius-xs: 2px;
 	--duration-normal: 300ms;
 
@@ -267,6 +271,10 @@ select:focus {
 	--bg-subtle: #1a1f26;
 	--bg-muted: #242b35;
 
+	/* Rail active button */
+	--rail-active-bg: rgba(255, 255, 255, 0.15);
+	--rail-active-icon: #ffffff;
+
 	/* Text (soft off-white, easier on eyes) */
 	--text-primary: #e2e8f0;
 	--text-secondary: #a1a1aa;
@@ -408,6 +416,8 @@ select:focus {
 		--bg-base: #0f1419;
 		--bg-subtle: #1a1f26;
 		--bg-muted: #242b35;
+		--rail-active-bg: rgba(255, 255, 255, 0.15);
+		--rail-active-icon: #ffffff;
 		--text-primary: #e2e8f0;
 		--text-secondary: #a1a1aa;
 		--text-muted: #71717a;
