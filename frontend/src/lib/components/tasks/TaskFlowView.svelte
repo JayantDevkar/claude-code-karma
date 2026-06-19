@@ -176,21 +176,6 @@
 			</div>
 		{/each}
 
-		<!-- Legend -->
-		<div class="legend">
-			<div class="legend-item">
-				<Circle size={12} class="text-[var(--text-muted)]" />
-				<span>Pending</span>
-			</div>
-			<div class="legend-item">
-				<Loader2 size={12} class="text-[var(--nav-blue)]" />
-				<span>In Progress</span>
-			</div>
-			<div class="legend-item">
-				<Check size={12} class="text-[var(--success)]" />
-				<span>Completed</span>
-			</div>
-		</div>
 	</div>
 {/if}
 
@@ -306,9 +291,8 @@
 		font-size: 0.8rem;
 		font-weight: 500;
 		color: var(--text-primary);
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
+		word-break: break-word;
+		min-width: 0;
 	}
 
 	.status-badge {
@@ -396,18 +380,5 @@
 		color: var(--text-secondary);
 	}
 
-	.legend {
-		display: flex;
-		gap: 1rem;
-		padding-top: 1rem;
-		border-top: 1px solid var(--border);
-	}
 
-	.legend-item {
-		display: flex;
-		align-items: center;
-		gap: 0.375rem;
-		font-size: 0.7rem;
-		color: var(--text-muted);
-	}
 </style>

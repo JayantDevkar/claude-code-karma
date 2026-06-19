@@ -968,7 +968,7 @@
 			items.push({ key: 'commands', icon: Terminal,                  label: 'Commands', disabled: commandsArray.length === 0, disabledTip: 'No commands in this session' });
 			items.push({ key: 'shells',   icon: null, iconName: 'shells',  label: 'Shells',   disabled: shellCount === 0,           disabledTip: 'No background shells in this session' });
 			items.push({ key: 'cron',     icon: null, iconName: 'cron',    label: 'Cron',     disabled: cronCount === 0,            disabledTip: 'No cron jobs in this session' });
-			items.push({ key: 'tickets',  icon: null, iconName: 'tickets', label: 'Tickets',  disabled: tickets.length === 0,      disabledTip: 'No tickets in this session' });
+			items.push({ key: 'tickets',  icon: null, iconName: 'tickets', label: 'Tickets',  disabled: false,                     disabledTip: '' });
 		}
 		return items;
 	});
@@ -1412,14 +1412,20 @@
 							{/if}
 						{/if}
 					</div>
-					<!-- Drawer footer: shell legend -->
+					<!-- Drawer footer legends -->
 					{#if activeDrawer === 'shells'}
-						<div class="flex-shrink-0 flex items-center gap-4 flex-wrap" style="padding: 10px 20px; border-top: 1px solid #e2e8f0;">
+						<div class="flex-shrink-0 flex items-center gap-4 flex-wrap" style="padding: 10px 20px; border-top: 1px solid var(--border);">
 							<span class="flex items-center gap-1.5 text-[10px] text-[var(--text-faint)]"><span class="w-1.5 h-1.5 rounded-full" style="background: var(--success);"></span>running</span>
 							<span class="flex items-center gap-1.5 text-[10px] text-[var(--text-faint)]"><span class="w-1.5 h-1.5 rounded-full" style="background: var(--info);"></span>done</span>
 							<span class="flex items-center gap-1.5 text-[10px] text-[var(--text-faint)]"><span class="w-1.5 h-1.5 rounded-full" style="background: var(--error);"></span>killed</span>
 							<span class="flex items-center gap-1.5 text-[10px] text-[var(--text-faint)]"><span class="w-1.5 h-1.5 rounded-full" style="background: var(--warning);"></span>timeout</span>
 							<span class="flex items-center gap-1.5 text-[10px] text-[var(--text-faint)]"><span class="w-1.5 h-1.5 rounded-full" style="background: var(--text-faint);"></span>ended</span>
+						</div>
+					{:else if activeDrawer === 'tasks'}
+						<div class="flex-shrink-0 flex items-center justify-center gap-4 flex-wrap" style="padding: 10px 20px; border-top: 1px solid var(--border);">
+							<span class="flex items-center gap-1.5 text-[10px] text-[var(--text-faint)]"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/></svg>Pending</span>
+							<span class="flex items-center gap-1.5 text-[10px]" style="color: var(--nav-blue);"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>In Progress</span>
+							<span class="flex items-center gap-1.5 text-[10px]" style="color: var(--success);"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>Completed</span>
 						</div>
 					{/if}
 				</div>
