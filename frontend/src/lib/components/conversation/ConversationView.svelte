@@ -957,14 +957,14 @@
 		const items: RailItem[] = [
 			{ key: 'overview',  icon: Info,        label: 'Overview',  disabled: false, disabledTip: '' },
 			{ key: 'files',     icon: FileText,    label: 'Files',     disabled: fileActivities.length === 0, disabledTip: 'No file activity in this session' },
-			{ key: 'analytics', icon: BarChart2,   label: 'Analytics', disabled: false, disabledTip: '' },
+			{ key: 'analytics', icon: null, iconName: 'analytics', label: 'Analytics', disabled: false, disabledTip: '' },
 			{ key: 'tasks',     icon: CheckSquare, label: 'Tasks',     disabled: tasksArray.length === 0, disabledTip: 'No tasks in this session' },
 		];
 		if (isMain) {
 			const agentCount = (entity as { subagents?: unknown[] }).subagents?.length ?? 0;
 			items.push({ key: 'agents',   icon: null, iconName: 'agents',  label: 'Agents',   disabled: agentCount === 0,          disabledTip: 'No agents in this session' });
 			items.push({ key: 'plan',     icon: null, iconName: 'plans',   label: 'Plan',     disabled: !plan,                     disabledTip: 'No plan in this session' });
-			items.push({ key: 'skills',   icon: Zap,                       label: 'Skills',   disabled: skillsArray.length === 0,  disabledTip: 'No skills in this session' });
+			items.push({ key: 'skills',   icon: null, iconName: 'skills',  label: 'Skills',   disabled: skillsArray.length === 0,  disabledTip: 'No skills in this session' });
 			items.push({ key: 'commands', icon: Terminal,                  label: 'Commands', disabled: commandsArray.length === 0, disabledTip: 'No commands in this session' });
 			items.push({ key: 'shells',   icon: null, iconName: 'shells',  label: 'Shells',   disabled: shellCount === 0,           disabledTip: 'No background shells in this session' });
 			items.push({ key: 'cron',     icon: null, iconName: 'cron',    label: 'Cron',     disabled: cronCount === 0,            disabledTip: 'No cron jobs in this session' });

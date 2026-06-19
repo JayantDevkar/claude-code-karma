@@ -36,6 +36,8 @@
 		projectEncoded?: string;
 		/** Session slug (short UUID) for building subagent links */
 		sessionSlug?: string;
+		/** When true, filter bar sticks to top-0 (scroll container is an ancestor, not the page) */
+		contained?: boolean;
 	}
 
 	let {
@@ -50,7 +52,8 @@
 		onSearchMatchCount,
 		onCurrentMatchChange,
 		projectEncoded,
-		sessionSlug
+		sessionSlug,
+		contained = false
 	}: Props = $props();
 
 	// Auto-scroll state
@@ -312,11 +315,11 @@
 			onClear={timeline.clearFilters}
 			searchQuery={timeline.searchQuery}
 			onSearchChange={timeline.setSearchQuery}
-			class="mb-6 sticky top-14 z-20"
+			class="sticky {contained ? 'top-0' : 'top-14'} z-20 {contained ? '' : 'mb-6'}"
 		/>
 
 		<!-- Timeline -->
-		<div class="pl-2" bind:this={timelineContentRef}>
+		<div class="pt-4 mx-[2.5%]" bind:this={timelineContentRef}>
 			{#each timeline.viewItems as item, loopIndex (item.id)}
 				{#if 'type' in item && item.type === 'gap'}
 					{@const gapItem = item}
