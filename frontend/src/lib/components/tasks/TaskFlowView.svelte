@@ -219,23 +219,10 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.25rem;
-		padding-left: 0.5rem;
-		border-left: 2px solid var(--border);
-		margin-left: 0.75rem;
 	}
 
 	.task-node {
 		position: relative;
-	}
-
-	.task-node::before {
-		content: '';
-		position: absolute;
-		left: -0.5rem;
-		top: 0.875rem;
-		width: 0.5rem;
-		height: 2px;
-		background: var(--border);
 	}
 
 	.node-header {
