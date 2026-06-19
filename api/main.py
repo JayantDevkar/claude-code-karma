@@ -197,7 +197,7 @@ app.include_router(tickets.router)
 app.include_router(background_shells.router)
 app.include_router(cron.router)
 app.include_router(memory.router)
-app.include_router(system_cron.router)  # ADDITIVE: Linux crontab view at /cron/system
+app.include_router(system_cron.router)
 
 
 @app.get("/")

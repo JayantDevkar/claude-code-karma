@@ -369,6 +369,12 @@ Enable real-time session monitoring by installing Claude Code hooks. See [SETUP.
 |----------|-------------|
 | `GET /cron/system` | Host OS crontab (user crontab, `/etc/crontab`, `/etc/cron.d/*`, run-parts), grouped by origin |
 
+### Memory
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /memory` | Global roll-up of projects that hold memory (note counts); links to each project's Memory tab |
+
 </details>
 
 ## Contributing
