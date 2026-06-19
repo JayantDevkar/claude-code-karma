@@ -46,45 +46,28 @@
 	const getTaskSubject = $derived(createTaskSubjectLookup(tasks));
 </script>
 
-<div class="space-y-4">
-	<div class="flex items-start justify-between gap-4">
-		<div>
-			<h2 class="text-lg font-semibold text-[var(--text-primary)]">
-				Tasks ({tasks.length})
-			</h2>
-			<p class="text-sm text-[var(--text-muted)]">Structured work plan for this session</p>
-		</div>
+<div class="space-y-3">
+	<div class="flex items-center justify-between gap-2">
+		<span class="text-[10px] uppercase tracking-wide font-medium text-[var(--text-muted)]">
+			{tasks.length} task{tasks.length !== 1 ? 's' : ''}
+		</span>
 
 		<!-- View Toggle -->
 		{#if tasks.length > 0}
-			<div
-				class="flex items-center gap-0.5 p-0.5 bg-[var(--bg-muted)] rounded-md border border-[var(--border)]"
-			>
+			<div class="flex items-center gap-0.5 p-0.5 bg-[var(--bg-muted)] rounded border border-[var(--border)]">
 				<button
-					class="
-						flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded transition-all
-						{viewMode === 'flow'
-						? 'bg-[var(--bg-base)] text-[var(--text-primary)] shadow-sm'
-						: 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}
-					"
+					class="flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium rounded transition-all {viewMode === 'flow' ? 'bg-[var(--bg-base)] text-[var(--text-primary)] shadow-sm' : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}"
 					onclick={() => setViewMode('flow')}
 					aria-pressed={viewMode === 'flow'}
 				>
-					<LayoutList size={14} />
-					Flow
+					<LayoutList size={12} />Flow
 				</button>
 				<button
-					class="
-						flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded transition-all
-						{viewMode === 'grid'
-						? 'bg-[var(--bg-base)] text-[var(--text-primary)] shadow-sm'
-						: 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}
-					"
+					class="flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium rounded transition-all {viewMode === 'grid' ? 'bg-[var(--bg-base)] text-[var(--text-primary)] shadow-sm' : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}"
 					onclick={() => setViewMode('grid')}
 					aria-pressed={viewMode === 'grid'}
 				>
-					<LayoutGrid size={14} />
-					Grid
+					<LayoutGrid size={12} />Grid
 				</button>
 			</div>
 		{/if}

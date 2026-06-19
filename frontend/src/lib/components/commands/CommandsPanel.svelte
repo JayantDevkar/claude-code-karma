@@ -158,65 +158,40 @@
 	}
 </script>
 
-<div class="space-y-4">
-	<div>
-		<h2 class="text-lg font-semibold text-[var(--text-primary)]">
-			Commands ({commands.length})
-		</h2>
-		<p class="text-sm text-[var(--text-muted)]">Slash commands invoked during this session</p>
-	</div>
+<div class="flex flex-col gap-2">
+	<span class="text-[10px] uppercase tracking-wide font-medium text-[var(--text-muted)]">
+		{sortedCommands.length} command{sortedCommands.length !== 1 ? 's' : ''}
+	</span>
 
 	{#if sortedCommands.length > 0}
-		<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-			{#each sortedCommands as command (command.name)}
+		<div class="flex flex-col rounded-lg border border-[var(--border)]/60 overflow-hidden bg-[var(--bg-base)]">
+			{#each sortedCommands as command, i (command.name)}
 				{@const cmdColors = getCommandColors(command)}
 				{@const Icon = isPluginCommand(command) ? Zap : TerminalSquare}
 				{@const isClickable = !isBuiltinCommand(command)}
+				{@const displayName = isPluginCommand(command) ? cleanSkillName(command.name, true) : command.name}
 
 				<button
 					onclick={() => openCommand(command)}
 					disabled={!isClickable}
-					class="group flex items-start gap-4 p-4 bg-[var(--bg-base)] border border-[var(--border)] rounded-xl transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2 text-left {isClickable
-						? 'cursor-pointer hover:border-[var(--accent)]/50 hover:shadow-sm'
-						: 'cursor-default opacity-75'}"
+					class="group flex items-center gap-2.5 px-3 py-2.5 text-left hover:bg-[var(--bg-subtle)] transition-colors {i > 0 ? 'border-t border-[var(--border)]/40' : ''} {isClickable ? 'cursor-pointer' : 'cursor-default'}"
 				>
-					<div
-						class="p-2.5 rounded-lg shrink-0 transition-colors"
-						style="background-color: {cmdColors.subtle}; color: {cmdColors.color};"
+					<span
+						class="shrink-0 flex items-center justify-center w-6 h-6 rounded-md"
+						style="background: {cmdColors.subtle}; color: {cmdColors.color};"
 					>
-						<Icon size={20} />
-					</div>
+						<Icon size={13} strokeWidth={2} />
+					</span>
 
-					<div class="min-w-0 flex-1">
-						<div class="flex items-center gap-2">
-							<span
-								class="font-medium text-[var(--text-primary)] truncate"
-								title={command.name}
-							>
-								/{isPluginCommand(command)
-									? cleanSkillName(command.name, true)
-									: command.name}
-							</span>
-						</div>
-						<div class="flex items-center gap-2 text-xs text-[var(--text-muted)] mt-1">
-							<span
-								class="px-1.5 py-0.5 rounded text-[10px] uppercase font-medium"
-								style="background-color: {cmdColors.subtle}; color: {cmdColors.color};"
-							>
-								{getBadgeLabel(command)}
-							</span>
-							{#if command.plugin}
-								<span class="text-[var(--text-faint)]">{command.plugin}</span>
-							{/if}
+					<div class="flex-1 min-w-0">
+						<span class="text-xs font-medium text-[var(--text-primary)] truncate block" title={command.name}>/{displayName}</span>
+						<div class="flex items-center gap-1 mt-0.5">
+							<span class="text-[10px] font-medium px-1 py-px rounded" style="background: {cmdColors.subtle}; color: {cmdColors.color};">{getBadgeLabel(command)}</span>
+							{#if command.plugin}<span class="text-[10px] text-[var(--text-faint)] truncate">{command.plugin}</span>{/if}
 						</div>
 					</div>
 
-					<div
-						class="shrink-0 px-2.5 py-1 rounded-full text-xs font-medium"
-						style="background-color: {cmdColors.subtle}; color: {cmdColors.color};"
-					>
-						{command.count}x
-					</div>
+					<span class="shrink-0 font-mono text-[11px] font-semibold" style="color: {cmdColors.color};">{command.count}×</span>
 				</button>
 			{/each}
 		</div>

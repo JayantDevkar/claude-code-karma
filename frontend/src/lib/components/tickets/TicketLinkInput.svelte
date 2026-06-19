@@ -109,7 +109,7 @@
 		<div class="relative flex-1 min-w-0">
 			<input
 				type="text"
-				placeholder="Paste URL or ref (e.g. LINEAR-123, owner/repo#42)"
+				placeholder="URL or ref (e.g. LINEAR-1)"
 				value={ref}
 				oninput={onInput}
 				disabled={phase === 'validating' || phase === 'success'}
@@ -183,14 +183,9 @@
 
 	<!-- Below-input feedback row -->
 	{#if phase === 'idle'}
-		<p class="text-[11px] text-[var(--text-faint)] inline-flex items-center gap-1.5 m-0">
-			<Sparkles size={10} />
-			<span>
-				Or use
-				<code class="font-mono px-1 py-px rounded bg-[var(--bg-muted)] text-[var(--text-secondary)]">/link-ticket-to-session</code>
-				in this session, or push a branch named
-				<code class="font-mono px-1 py-px rounded bg-[var(--bg-muted)] text-[var(--text-secondary)]">feat/ABC-123-…</code>
-			</span>
+		<p class="text-[11px] text-[var(--text-faint)] flex items-start gap-1.5 m-0 leading-relaxed">
+			<Sparkles size={10} class="shrink-0 mt-0.5" />
+			<span>Or use <code class="font-mono px-1 py-px rounded bg-[var(--bg-muted)] text-[var(--text-secondary)] break-all">/link-ticket-to-session</code> in chat.</span>
 		</p>
 	{:else if phase === 'typing' && detected}
 		<p class="text-[11px] text-[var(--text-secondary)] inline-flex items-center gap-1.5 m-0">
