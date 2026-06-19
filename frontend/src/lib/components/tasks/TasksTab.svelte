@@ -52,8 +52,8 @@
 			{tasks.length} task{tasks.length !== 1 ? 's' : ''}
 		</span>
 
-		<!-- View Toggle -->
-		{#if tasks.length > 0}
+		<!-- View Toggle (hidden in drawer — flow only at 350px) -->
+		<!-- {#if tasks.length > 0}
 			<div class="flex items-center gap-0.5 p-0.5 bg-[var(--bg-muted)] rounded border border-[var(--border)]">
 				<button
 					class="flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium rounded transition-all {viewMode === 'flow' ? 'bg-[var(--bg-base)] text-[var(--text-primary)] shadow-sm' : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}"
@@ -70,21 +70,15 @@
 					<LayoutGrid size={12} />Grid
 				</button>
 			</div>
-		{/if}
+		{/if} -->
 	</div>
 
 	{#if tasks.length > 0}
 		<!-- Progress Summary -->
 		<TasksProgressBar tasks={enrichedTasks} />
 
-		<!-- Task Views -->
-		{#if viewMode === 'flow'}
-			<!-- Flow View: Vertical list with dependency lines -->
-			<TaskFlowView tasks={enrichedTasks} {getTaskSubject} />
-		{:else}
-			<!-- Grid View: Kanban columns -->
-			<TasksKanban tasks={enrichedTasks} {getTaskSubject} />
-		{/if}
+		<!-- Task Views (drawer always uses flow — grid toggle hidden) -->
+		<TaskFlowView tasks={enrichedTasks} {getTaskSubject} />
 	{:else}
 		<EmptyState
 			icon={ListTodo}
