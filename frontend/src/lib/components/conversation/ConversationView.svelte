@@ -92,6 +92,7 @@
 		getSubagentColorVars,
 		cleanAgentIdForDisplay,
 		calculateSubagentDuration,
+		getEffectiveSubagentType,
 		truncate
 	} from '$lib/utils';
 
@@ -1513,118 +1514,339 @@
 	</div>
 
 <!-- ═══════════════════════════════════════════════════════════════════
-     SUBAGENT SESSION — keep original tab layout
+     SUBAGENT SESSION — new timeline-first layout with rail + drawer
      ═══════════════════════════════════════════════════════════════════ -->
 {:else if entity && isSubagentSession(entity)}
-	<div class="space-y-6">
-		<ConversationHeader
-			{entity}
-			{encodedName}
-			{sessionSlug}
-			{projectPath}
-			{parentSessionSlug}
-			{liveStatus}
-			{isRefreshing}
-		/>
+	{@const agentEntity = entity}
+	{@const agentType = getEffectiveSubagentType(agentEntity.subagent_type, agentEntity.agent_id)}
+	{@const agentColorVars = getSubagentColorVars(agentType)}
+	{@const displayId = cleanAgentIdForDisplay(agentEntity.agent_id)}
+	{@const agentShortId = agentEntity.agent_id.slice(-8)}
+	{@const agentTypeLabel = getSubagentTypeDisplayName(agentType)}
+	{@const agentLiveInfo = liveStatus?.subagents?.[agentEntity.agent_id] ?? null}
 
-		{#if tabsReady}
-			<Tabs.Root bind:value={activeTab} class="space-y-6">
-				<Tabs.List class="flex items-center gap-1 p-1 bg-[var(--bg-subtle)] rounded-lg w-fit mx-auto border border-[var(--border)]">
-					<TabsTrigger value="overview" icon={Info}>Overview</TabsTrigger>
-					<TabsTrigger value="timeline" icon={Clock}>Timeline</TabsTrigger>
-					<TabsTrigger value="tasks" icon={ListTodo}>
-						Tasks
-						{#if tasksArray.length > 0}
-							<span class="text-xs font-mono text-[var(--text-muted)]">{tasksArray.filter((t) => t.status === 'completed').length}/{tasksArray.length}</span>
+	<!-- Full-viewport column: negate the layout's px-6 py-8 padding -->
+	<div
+		class="-mx-6 -my-8 flex flex-col overflow-hidden"
+		style="height: calc(100vh - 56px);"
+	>
+		<!-- ── Agent Header ──────────────────────────────────────────────── -->
+		<div
+			class="flex-shrink-0 bg-[var(--bg-base)]"
+			style="padding: 13px 24px 14px;"
+		>
+			<!-- Breadcrumb row -->
+			<div class="flex items-center gap-1 mb-2" style="font-size: 11px; color: var(--text-faint);">
+				<a href="/" class="hover:text-[var(--text-muted)] transition-colors" style="color: var(--text-faint);">Dashboard</a>
+				<span style="color: var(--border);">/</span>
+				<a href="/projects" class="hover:text-[var(--text-muted)] transition-colors" style="color: var(--text-faint);">Projects</a>
+				<span style="color: var(--border);">/</span>
+				<a href="/projects/{encodedName}" class="hover:text-[var(--text-muted)] transition-colors" style="color: var(--text-faint);">{getProjectName(projectPath || '')}</a>
+				<span style="color: var(--border);">/</span>
+				<a href="/projects/{encodedName}/{parentSessionSlug || sessionSlug}" class="hover:text-[var(--text-muted)] transition-colors" style="color: var(--text-faint);">{parentSessionSlug || sessionSlug}</a>
+				<span style="color: var(--border);">/</span>
+				<span style="color: var(--text-muted); font-family: 'JetBrains Mono', monospace;">{displayId}</span>
+			</div>
+
+			<!-- Title row -->
+			<div class="flex items-start justify-between gap-4">
+				<div class="min-w-0 flex-1">
+					<!-- Agent title: type name -->
+					<h1
+						class="leading-[1.3] text-[var(--text-primary)]"
+						style="font-size: 17px; font-weight: 700; letter-spacing: -0.02em;"
+					>
+						{agentTypeLabel}
+					</h1>
+
+					<!-- Metadata chips row -->
+					<div class="flex items-center flex-wrap mt-2" style="gap: 6px;">
+						<!-- Agent ID chip -->
+						<span
+							class="inline-flex items-center"
+							style="font-size: 10.5px; background: var(--bg-subtle); border: 1px solid var(--border); border-radius: 4px; padding: 2px 7px; color: var(--text-muted); font-family: 'JetBrains Mono', monospace;"
+						>#{agentShortId}</span>
+
+						<!-- Date -->
+						{#if agentEntity.start_time}
+							<span class="inline-flex items-center gap-1" style="font-size: 11px; color: var(--text-muted);">
+								<Calendar size={11} color="var(--text-faint)" />
+								{formatDateFull(agentEntity.start_time)}
+							</span>
 						{/if}
-					</TabsTrigger>
-					<TabsTrigger value="files" icon={FileText}>Files</TabsTrigger>
-					<TabsTrigger value="analytics" icon={BarChart3}>Analytics</TabsTrigger>
-				</Tabs.List>
 
-				<Tabs.Content value="overview">
-					<ConversationOverview
-						{entity}
-						{toolsArray}
-						{totalToolCalls}
-						projectEncoded={encodedName}
-						{continuationSession}
-						{continuationLoading}
-						{continuationError}
-					/>
-				</Tabs.Content>
+						<!-- Duration -->
+						{#if agentEntity.duration_seconds}
+							<span class="inline-flex items-center gap-1" style="font-size: 11px; color: var(--text-muted);">
+								<Clock size={11} color="var(--text-faint)" />
+								{formatDuration(agentEntity.duration_seconds)}
+							</span>
+						{/if}
 
-				<Tabs.Content value="timeline" class="animate-fade-in">
-					<div class="space-y-4">
-						<div class="flex items-start justify-between gap-4">
-							<div>
-								<h2 class="text-lg font-semibold text-[var(--text-primary)]">Timeline</h2>
-								<p class="text-sm text-[var(--text-muted)]">
-									{#if isTailing && timelineEvents.length > TAIL_COUNT}
-										Showing {TAIL_COUNT} of {timelineEvents.length} events
-									{:else}
-										Chronological sequence of events in this agent
-									{/if}
-								</p>
+						<!-- Model chip -->
+						{#if agentEntity.models_used?.[0]}
+							<span
+								class="inline-flex items-center gap-1"
+								style="font-size: 10.5px; font-weight: 500; color: var(--nav-purple); background: var(--nav-purple-subtle); border: 1px solid color-mix(in srgb, var(--nav-purple) 25%, transparent); border-radius: 4px; padding: 2px 7px;"
+							>
+								<Sparkles size={10} color="var(--nav-purple)" />
+								{agentEntity.models_used[0]}
+							</span>
+						{/if}
+
+						<!-- Cost -->
+						{#if agentEntity.total_cost}
+							<span style="font-size: 11px; color: var(--text-muted);">{formatCost(agentEntity.total_cost)}</span>
+						{/if}
+
+						<!-- Subagent live status -->
+						{#if agentLiveInfo}
+							{@const liveColor = agentLiveInfo.status === 'running' ? '#16a34a' : agentLiveInfo.status === 'error' ? '#dc2626' : '#94a3b8'}
+							<span
+								class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full"
+								style="background: color-mix(in srgb, {liveColor} 10%, transparent); border: 1px solid color-mix(in srgb, {liveColor} 30%, transparent);"
+							>
+								<span
+									class="w-1.5 h-1.5 rounded-full"
+									class:animate-pulse={agentLiveInfo.status === 'running'}
+									style="background: {liveColor};"
+								></span>
+								<span style="font-size: 10.5px; font-weight: 500; color: {liveColor};">{agentLiveInfo.status}</span>
+							</span>
+						{/if}
+
+						<!-- Syncing indicator -->
+						{#if isRefreshing}
+							<span class="inline-flex items-center gap-1" style="font-size: 10.5px; color: var(--nav-teal);">
+								<RefreshCw size={10} class="animate-spin" color="var(--nav-teal)" />
+								Syncing
+							</span>
+						{/if}
+					</div>
+				</div>
+
+				<!-- Right: tail toggle (live only) + Back to Session -->
+				<div class="flex items-center gap-2 flex-shrink-0">
+					{#if isCurrentlyLive && timelineEvents.length > 0}
+						<button
+							onclick={toggleTailing}
+							aria-pressed={isTailing}
+							title={isTailing ? 'Stop tailing — show all events' : 'Tail live events'}
+							class="inline-flex items-center gap-1 transition-all"
+							style="
+								padding: 5px 10px;
+								border-radius: 7px;
+								border: 1px solid {isTailing ? 'color-mix(in srgb, var(--nav-green) 30%, transparent)' : 'var(--border)'};
+								background: {isTailing ? 'var(--nav-green-subtle)' : 'var(--bg-base)'};
+								font-size: 11px;
+								font-weight: 500;
+								color: {isTailing ? 'var(--nav-green)' : 'var(--text-muted)'};
+								box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+							"
+						>
+							<ArrowDown size={11} strokeWidth={2} class={isTailing ? 'animate-pulse' : ''} />
+							Tail
+						</button>
+					{/if}
+
+					<a
+						href="/projects/{encodedName}/{parentSessionSlug || sessionSlug}"
+						class="inline-flex items-center gap-1.5 transition-all"
+						style="
+							padding: 7px 14px;
+							border: 1px solid var(--border);
+							border-radius: 7px;
+							background: var(--bg-base);
+							font-size: 12px;
+							font-weight: 500;
+							color: var(--text-primary);
+							box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+							white-space: nowrap;
+							text-decoration: none;
+						"
+					>
+						<ArrowLeft size={12} />
+						Original Session
+					</a>
+				</div>
+			</div>
+		</div>
+
+		<!-- ── Main content row ─────────────────────────────────────────── -->
+		<div class="flex flex-1 min-h-0" style="gap: 10px; padding: 8px 0 8px; overflow: hidden; align-items: stretch;">
+
+			<!-- ── Timeline column ──────────────────────────────────────── -->
+			<div class="flex-1 flex flex-col overflow-hidden min-w-0" style="background: var(--bg-base);">
+				{#if timelineEvents.length > 0}
+					<div class="flex-1 overflow-y-auto" style="scrollbar-width: none;">
+						<TimelineRail
+							events={timelineEvents}
+							isLive={isCurrentlyLive}
+							{isTailing}
+							onToggleTailing={toggleTailing}
+							{currentAgentId}
+							{projectPath}
+							projectEncoded={encodedName}
+							{sessionSlug}
+							searchQuery={showConversationSearch ? conversationSearchQuery : ''}
+							onSearchMatchCount={(count) => { searchMatchCount = count; }}
+							onCurrentMatchChange={(idx) => { currentSearchMatch = idx; }}
+							contained={true}
+						/>
+					</div>
+				{:else}
+					<div class="flex-1 flex items-center justify-center">
+						<EmptyState icon={Clock} title="No timeline events yet" description="Events will appear here as the agent progresses" />
+					</div>
+				{/if}
+			</div>
+
+			<!-- ── Right group: drawer + rail, no gap between them ──────── -->
+			<div class="flex flex-shrink-0 overflow-hidden" style="border-radius: 12px; background: var(--bg-subtle);">
+
+				<!-- ── Drawer ─────────────────────────────────────────────── -->
+				{#if drawerOpen && activeDrawer !== null}
+					<div
+						class="flex flex-col overflow-hidden flex-shrink-0"
+						style="width: 350px; border-right: 1px solid var(--border);"
+					>
+						<!-- Drawer header -->
+						<div class="flex items-center justify-between flex-shrink-0" style="height: 44px; padding: 0 16px; border-bottom: 1px solid var(--border);">
+							<span style="font-size: 13px; font-weight: 600; color: var(--text-primary); letter-spacing: -0.01em;">{drawerTitle}</span>
+							<div class="flex items-center" style="gap: 2px;">
+								<button onclick={() => cycleDrawer(-1)} disabled={activeDrawerIdx <= 0} style="width: 26px; height: 26px; border: none; background: none; color: var(--text-muted); opacity: {activeDrawerIdx <= 0 ? 0.25 : 1}; cursor: {activeDrawerIdx <= 0 ? 'default' : 'pointer'}; display: flex; align-items: center; justify-content: center; border-radius: 4px;" aria-label="Previous drawer"><ChevronLeft size={15} /></button>
+								<button onclick={() => cycleDrawer(1)} disabled={activeDrawerIdx >= enabledRailItems.length - 1} style="width: 26px; height: 26px; border: none; background: none; color: var(--text-muted); opacity: {activeDrawerIdx >= enabledRailItems.length - 1 ? 0.25 : 1}; cursor: {activeDrawerIdx >= enabledRailItems.length - 1 ? 'default' : 'pointer'}; display: flex; align-items: center; justify-content: center; border-radius: 4px;" aria-label="Next drawer"><ChevronRight size={15} /></button>
+								<button onclick={() => (drawerOpen = false)} style="width: 26px; height: 26px; border: none; background: none; color: var(--text-muted); cursor: pointer; display: flex; align-items: center; justify-content: center; border-radius: 4px;" aria-label="Close drawer"><X size={15} /></button>
 							</div>
-							{#if isCurrentlyLive && timelineEvents.length > 0}
-								<button
-									onclick={toggleTailing}
-									class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-[var(--radius-md)] border transition-all duration-150 shrink-0 {isTailing ? 'bg-[var(--success-subtle)] border-[var(--success)]/50 text-[var(--success)]' : 'bg-[var(--bg-base)] border-[var(--border)] text-[var(--text-muted)]'}"
-									aria-pressed={isTailing}
-								>
-									<ArrowDown size={14} strokeWidth={2} class={isTailing ? 'animate-pulse' : ''} />
-									Tail Events
-								</button>
+						</div>
+						<!-- Drawer body -->
+						<div class="flex-1 overflow-y-auto" style="padding: 20px 20px 24px; scrollbar-width: none;">
+							{#if activeDrawer === 'overview'}
+								<ConversationOverview entity={agentEntity} {toolsArray} {totalToolCalls} projectEncoded={encodedName} {continuationSession} {continuationLoading} {continuationError} />
+							{:else if activeDrawer === 'files'}
+								{#if fileActivities.length > 0}
+									<FileActivityTable activities={fileActivities} {projectPath} {currentAgentId} {subagentTypes} />
+								{:else}
+									<EmptyState icon={FileText} title="No file activity" description="File operations will appear here" />
+								{/if}
+							{:else if activeDrawer === 'analytics'}
+								{@const totalTokens = (agentEntity.total_input_tokens || 0) + (agentEntity.total_output_tokens || 0)}
+								{@const inPct = totalTokens > 0 ? ((agentEntity.total_input_tokens || 0) / totalTokens) * 100 : 50}
+								{@const outPct = totalTokens > 0 ? ((agentEntity.total_output_tokens || 0) / totalTokens) * 100 : 50}
+								{@const maxToolCount = toolsArray.length > 0 ? Math.max(...toolsArray.map(t => t.count)) : 1}
+								{@const sortedTools = [...toolsArray].sort((a, b) => b.count - a.count)}
+								<div class="flex flex-col gap-4">
+
+									<!-- Key metrics: 2-col grid -->
+									<div class="grid grid-cols-2 gap-2">
+										<div class="rounded-lg border border-[var(--border)]/60 bg-[var(--bg-base)] px-3 py-2.5">
+											<p class="text-[10px] uppercase tracking-wide text-[var(--text-muted)] mb-1">Cost</p>
+											<p class="text-base font-bold text-[var(--text-primary)]">{formatCost(agentEntity.total_cost)}</p>
+											<p class="text-[10px] text-[var(--text-muted)] mt-0.5 leading-tight">API rate</p>
+										</div>
+										<div class="rounded-lg border border-[var(--border)]/60 bg-[var(--bg-base)] px-3 py-2.5">
+											<p class="text-[10px] uppercase tracking-wide text-[var(--text-muted)] mb-1">Duration</p>
+											<p class="text-base font-bold text-[var(--text-primary)]">{formatDuration(agentEntity.duration_seconds)}</p>
+										</div>
+										<div class="rounded-lg border border-[var(--border)]/60 bg-[var(--bg-base)] px-3 py-2.5">
+											<p class="text-[10px] uppercase tracking-wide text-[var(--text-muted)] mb-1">Cache hits</p>
+											<p class="text-base font-bold text-[var(--text-primary)]">{((agentEntity.cache_hit_rate || 0) * 100).toFixed(1)}%</p>
+										</div>
+										<div class="rounded-lg border border-[var(--border)]/60 bg-[var(--bg-base)] px-3 py-2.5">
+											<p class="text-[10px] uppercase tracking-wide text-[var(--text-muted)] mb-1">Tools used</p>
+											<p class="text-base font-bold text-[var(--text-primary)]">{toolsArray.length}</p>
+											<p class="text-[10px] text-[var(--text-muted)] mt-0.5">{totalToolCalls} calls</p>
+										</div>
+									</div>
+
+									<!-- Token breakdown -->
+									<div class="rounded-lg border border-[var(--border)]/60 bg-[var(--bg-base)] px-3 py-2.5">
+										<div class="flex items-baseline justify-between mb-2">
+											<p class="text-[10px] uppercase tracking-wide text-[var(--text-muted)]">Tokens</p>
+											<p class="text-xs font-bold text-[var(--text-primary)] font-mono">{formatTokens(totalTokens)}</p>
+										</div>
+										<div class="flex h-2 rounded-full overflow-hidden bg-[var(--bg-muted)]">
+											<div class="bg-[var(--accent)] transition-all" style="width: {inPct}%" title="Input"></div>
+											<div class="bg-[var(--nav-teal)] transition-all" style="width: {outPct}%" title="Output"></div>
+										</div>
+										<div class="flex justify-between mt-1.5">
+											<span class="flex items-center gap-1 text-[10px] text-[var(--text-muted)]">
+												<span class="w-1.5 h-1.5 rounded-full bg-[var(--accent)]"></span>
+												In · {formatTokens(agentEntity.total_input_tokens)}
+											</span>
+											<span class="flex items-center gap-1 text-[10px] text-[var(--text-muted)]">
+												Out · {formatTokens(agentEntity.total_output_tokens)}
+												<span class="w-1.5 h-1.5 rounded-full bg-[var(--nav-teal)]"></span>
+											</span>
+										</div>
+									</div>
+
+									<!-- Tool usage -->
+									{#if sortedTools.length > 0}
+										<div class="flex flex-col gap-1">
+											<p class="text-[10px] uppercase tracking-wide text-[var(--text-muted)] font-medium mb-1">Tool usage</p>
+											{#each sortedTools as tool}
+												{@const pct = (tool.count / maxToolCount) * 100}
+												<div class="flex items-center gap-2 group">
+													<span class="w-28 shrink-0 text-[11px] font-mono text-[var(--text-secondary)] truncate" title={tool.tool_name}>{tool.tool_name}</span>
+													<div class="flex-1 h-1.5 rounded-full bg-[var(--bg-muted)] overflow-hidden">
+														<div class="h-full rounded-full transition-all" style="width: {pct}%; background: {agentColorVars.color};"></div>
+													</div>
+													<span class="shrink-0 w-6 text-right font-mono text-[10px] text-[var(--text-muted)]">{tool.count}</span>
+												</div>
+											{/each}
+										</div>
+									{/if}
+
+								</div>
+							{:else if activeDrawer === 'tasks'}
+								<TasksTab tasks={tasksArray} />
 							{/if}
 						</div>
-						{#if timelineEvents.length > 0}
-							<TimelineRail
-								events={timelineEvents}
-								isLive={isCurrentlyLive}
-								{isTailing}
-								onToggleTailing={toggleTailing}
-								{currentAgentId}
-								{projectPath}
-								projectEncoded={encodedName}
-								{sessionSlug}
-								searchQuery={showConversationSearch ? conversationSearchQuery : ''}
-								onSearchMatchCount={(count) => { searchMatchCount = count; }}
-								onCurrentMatchChange={(idx) => { currentSearchMatch = idx; }}
-							/>
-						{:else}
-							<EmptyState icon={Clock} title="No timeline events available" description="Timeline events will appear here as they occur" />
-						{/if}
-					</div>
-				</Tabs.Content>
-
-				<Tabs.Content value="tasks" class="animate-fade-in">
-					<TasksTab tasks={tasksArray} />
-				</Tabs.Content>
-
-				<Tabs.Content value="files" class="animate-fade-in">
-					{#if fileActivities.length > 0}
-						<FileActivityTable activities={fileActivities} {projectPath} {currentAgentId} {subagentTypes} />
-					{:else}
-						<EmptyState icon={FileText} title="No file activity recorded" description="File operations will appear here when files are accessed" />
-					{/if}
-				</Tabs.Content>
-
-				<Tabs.Content value="analytics" class="animate-fade-in">
-					<div class="space-y-6">
-						<StatsGrid stats={analyticsStats} columns={5} />
-						{#if toolsArray.length > 0}
-							<div class="grid gap-6 lg:grid-cols-2">
-								<ToolUsageTable tools={toolsArray} totalCalls={totalToolCalls} />
-								<ToolsChart toolsUsed={toolsUsedRecord} />
+						<!-- Drawer footer legends -->
+						{#if activeDrawer === 'tasks'}
+							<div class="flex-shrink-0 flex items-center justify-center gap-4 flex-wrap" style="padding: 10px 20px; border-top: 1px solid var(--border);">
+								<span class="flex items-center gap-1.5 text-[10px] text-[var(--text-faint)]"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/></svg>Pending</span>
+								<span class="flex items-center gap-1.5 text-[10px]" style="color: var(--nav-blue);"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>In Progress</span>
+								<span class="flex items-center gap-1.5 text-[10px]" style="color: var(--success);"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>Completed</span>
 							</div>
-						{:else}
-							<EmptyState icon={BarChart3} title="No tools used" description="Tool usage statistics will appear here" />
 						{/if}
 					</div>
-				</Tabs.Content>
-			</Tabs.Root>
-		{/if}
+				{/if}
+
+				<!-- ── Rail: always at the right edge ──────────────────────── -->
+				<div
+					class="flex flex-col items-center flex-shrink-0 overflow-y-auto"
+					style="width: 68px; padding: 14px 0; gap: 6px; scrollbar-width: none;"
+				>
+					{#each railItems as item (item.key)}
+						{@const isSelected = activeDrawer === item.key}
+						{@const isOpen = isSelected && drawerOpen}
+						{@const IconComponent = item.icon}
+						{@const iconColor = isSelected ? 'var(--rail-active-icon)' : item.disabled ? 'var(--text-faint)' : 'var(--text-primary)'}
+						<span
+							title={item.disabled ? item.disabledTip : item.label}
+							style="display: flex; align-items: center; justify-content: center; width: 52px; height: 52px;"
+						>
+							<button
+								onclick={() => toggleDrawer(item.key)}
+								aria-pressed={isOpen}
+								aria-disabled={item.disabled}
+								class="relative flex items-center justify-center flex-shrink-0 transition-all duration-150"
+								style="width: 52px; height: 52px; border-radius: 12px; border: none; cursor: {item.disabled ? 'default' : 'pointer'}; background: {isOpen ? 'var(--rail-active-bg)' : 'transparent'}; opacity: {isSelected ? 1 : item.disabled ? 0.3 : 0.85}; pointer-events: {item.disabled ? 'none' : 'auto'};"
+							>
+								{#if item.iconName}
+									<CustomIcon name={item.iconName} size={22} strokeWidth={2} color={iconColor} />
+								{:else if IconComponent}
+									<IconComponent size={22} color={iconColor} strokeWidth={2.5} />
+								{/if}
+							</button>
+						</span>
+					{/each}
+				</div>
+
+			</div><!-- end right group -->
+		</div>
 	</div>
 
 <!-- ═══════════════════════════════════════════════════════════════════

@@ -563,6 +563,9 @@ class SubagentSessionDetail(BaseModel):
     initial_prompt: Optional[str] = Field(
         None, description="First user message to subagent (truncated)"
     )
+    models_used: list[str] = Field(
+        default_factory=list, description="Models seen in assistant messages"
+    )
 
 
 # =============================================================================
