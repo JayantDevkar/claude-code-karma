@@ -261,19 +261,29 @@
 	</PageHeader>
 
 	<!-- Stat strip — reacts to the source toggle -->
-	<div class="stats-wrap">
+	<div style="display: flex; gap: 10px; margin-bottom: 22px;">
 		{#if cronSource === 'system'}
-			<StatsGrid columns={3} stats={[
-				{ title: 'Crontab entries', value: systemSummary?.count ?? 0, icon: TerminalSquare, color: 'purple' },
-				{ title: 'Claude-related', value: (systemSummary?.byOrigin['claude-skill'] ?? 0) + (systemSummary?.byOrigin['claude'] ?? 0), icon: Clock, color: 'green', description: 'skills + ~/.claude scripts' },
-				{ title: 'User & system', value: (systemSummary?.byOrigin['user'] ?? 0) + (systemSummary?.byOrigin['system'] ?? 0), icon: Archive, color: 'gray' }
-			]} />
+			{#each [
+				{ label: 'Crontab entries', value: systemSummary?.count ?? 0, accent: false },
+				{ label: 'Claude-related', value: (systemSummary?.byOrigin['claude-skill'] ?? 0) + (systemSummary?.byOrigin['claude'] ?? 0), accent: false },
+				{ label: 'User & system', value: (systemSummary?.byOrigin['user'] ?? 0) + (systemSummary?.byOrigin['system'] ?? 0), accent: false },
+			] as stat}
+				<div style="background: var(--bg-subtle); border: 1px solid var(--border); border-radius: 10px; padding: 14px 20px; display: flex; align-items: baseline; gap: 10px;">
+					<span style="font-size: 32px; font-weight: 700; font-family: 'JetBrains Mono', monospace; color: var(--text-primary); line-height: 1;">{stat.value}</span>
+					<span style="font-size: 14px; color: var(--text-muted);">{stat.label}</span>
+				</div>
+			{/each}
 		{:else}
-			<StatsGrid columns={3} stats={[
-				{ title: 'Total tracked', value: counts.total, icon: Clock, color: 'purple' },
-				{ title: 'Likely active', value: counts.active, icon: Activity, color: 'green', description: 'inferred from TTL' },
-				{ title: 'Expired or deleted', value: counts.inactive, icon: Archive, color: 'gray' }
-			]} />
+			{#each [
+				{ label: 'Total tracked', value: counts.total, accent: false },
+				{ label: 'Likely active', value: counts.active, accent: true },
+				{ label: 'Expired or deleted', value: counts.inactive, accent: false },
+			] as stat}
+				<div style="background: var(--bg-subtle); border: 1px solid {stat.accent && stat.value > 0 ? 'rgba(42,138,80,0.3)' : 'var(--border)'}; border-radius: 10px; padding: 14px 20px; display: flex; align-items: baseline; gap: 10px;">
+					<span style="font-size: 32px; font-weight: 700; font-family: 'JetBrains Mono', monospace; color: {stat.accent && stat.value > 0 ? '#2A8A50' : 'var(--text-primary)'}; line-height: 1;">{stat.value}</span>
+					<span style="font-size: 14px; color: var(--text-muted);">{stat.label}</span>
+				</div>
+			{/each}
 		{/if}
 	</div>
 
@@ -566,21 +576,10 @@
 	.page-wrap {
 		max-width: 1120px;
 		margin: 0 auto;
-		padding: 32px 32px 80px;
+		padding: 0 32px 80px;
 		display: flex;
 		flex-direction: column;
 		gap: 0;
-	}
-
-	/* ── Stat strip ────────────────────────────────────────────────────────── */
-	.stats-wrap {
-		position: relative;
-		overflow: hidden;
-		border-radius: 16px;
-		padding: 24px;
-		border: 1px solid var(--border);
-		background: linear-gradient(135deg, rgba(var(--accent-rgb), 0.02) 0%, rgba(var(--accent-rgb), 0.06) 100%);
-		margin-bottom: 22px;
 	}
 
 	/* ── Source segmented toggle ───────────────────────────────────────────── */

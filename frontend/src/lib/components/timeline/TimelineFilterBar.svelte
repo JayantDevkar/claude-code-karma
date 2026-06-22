@@ -265,23 +265,32 @@
 			{/if}
 		</div>
 
-		<!-- Event Count -->
-		<div class="text-[11px] text-[var(--text-muted)] font-mono shrink-0 opacity-60">
+		<!-- Event Count + Clear (inline, always on first row) -->
+		<div class="flex items-center gap-2 shrink-0">
+			<div class="text-[11px] text-[var(--text-muted)] font-mono opacity-60">
+				{#if hasActiveFilters}
+					<span class="text-[var(--text-primary)] font-semibold opacity-100">{matchingEvents}</span>
+					<span class="opacity-50"> of </span>
+					<span class="opacity-80">{totalEvents}</span>
+					<span class="opacity-50 ml-0.5">events</span>
+				{:else}
+					<span class="font-medium opacity-80">{totalEvents}</span>
+					<span class="opacity-50 ml-0.5">events</span>
+				{/if}
+			</div>
 			{#if hasActiveFilters}
-				<span class="text-[var(--text-primary)] font-semibold opacity-100"
-					>{matchingEvents}</span
+				<button
+					onclick={onClear}
+					class="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-muted)] rounded-[var(--radius-md)] border border-[var(--border)] transition-colors"
 				>
-				<span class="opacity-50"> of </span>
-				<span class="opacity-80">{totalEvents}</span>
-				<span class="opacity-50 ml-0.5">events</span>
-			{:else}
-				<span class="font-medium opacity-80">{totalEvents}</span>
-				<span class="opacity-50 ml-0.5">events</span>
+					<X size={12} strokeWidth={2} />
+					Clear
+				</button>
 			{/if}
 		</div>
 	</div>
 
-	<!-- Bottom Row: Filters -->
+	<!-- Filter chips -->
 	<div class="flex flex-wrap items-center gap-x-1.5 gap-y-2 min-h-[32px]">
 		{#each filters as filter}
 			{@const count = counts[filter.countKey]}
@@ -306,32 +315,9 @@
 				>
 					<filter.icon size={14} strokeWidth={2} class={colors.icon} />
 					<span class="hidden md:inline">{filter.label}</span>
-					<span class="font-mono opacity-70">
-						{count}
-					</span>
+					<span class="font-mono opacity-70">{count}</span>
 				</button>
 			{/if}
 		{/each}
-
-		{#if hasActiveFilters}
-			<button
-				onclick={onClear}
-				class="
-					ml-auto
-					inline-flex items-center gap-1.5
-					px-2.5 py-1.5
-					text-xs font-medium
-					text-[var(--text-muted)]
-					hover:text-[var(--text-primary)]
-					hover:bg-[var(--bg-muted)]
-					rounded-[var(--radius-md)]
-					border border-[var(--border)]
-					transition-colors
-				"
-			>
-				<X size={14} strokeWidth={2} />
-				<span>Clear</span>
-			</button>
-		{/if}
 	</div>
 </div>

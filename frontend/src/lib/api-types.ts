@@ -646,6 +646,7 @@ export interface LiveSessionSummary {
 	subagents: Record<string, SubagentState>;
 	active_subagent_count: number;
 	total_subagent_count: number;
+	last_notification_message: string | null;
 }
 
 // ============================================

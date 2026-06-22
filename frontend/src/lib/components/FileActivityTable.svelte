@@ -6,16 +6,13 @@
 		FileMinusIcon,
 		SearchIcon,
 		BotIcon,
-		UserIcon,
-		ChevronUp,
-		ChevronDown,
 		Copy,
-		ExternalLink
+		ExternalLink,
+		X
 	} from 'lucide-svelte';
 	import type { FileActivity, FileOperation } from '$lib/api-types';
 	import {
 		formatDate,
-		truncate,
 		formatDisplayPath,
 		copyToClipboard,
 		getSubagentColorVars
@@ -24,9 +21,7 @@
 	interface Props {
 		activities: FileActivity[];
 		projectPath?: string | null;
-		/** Current agent ID - when set, activities from this agent won't show subagent badges */
 		currentAgentId?: string | null;
-		/** Map of agent_id to subagent_type for color lookup */
 		subagentTypes?: Record<string, string | null>;
 		class?: string;
 	}
@@ -39,327 +34,171 @@
 		class: className = ''
 	}: Props = $props();
 
-	// Sort state
-	type SortField = 'timestamp' | 'path' | 'operation' | 'actor';
-	type SortOrder = 'asc' | 'desc';
-
-	let sortField = $state<SortField>('timestamp');
-	let sortOrder = $state<SortOrder>('asc');
 	let filterQuery = $state('');
+	let activeOps = $state<Set<FileOperation>>(new Set());
 
-	// Toast state for copy feedback
 	let showToast = $state(false);
-	let toastMessage = $state('');
 
-	// Operation icons and colors
-	const operationConfig: Record<
-		FileOperation,
-		{ icon: typeof FileIcon; color: string; bgColor: string }
-	> = {
-		read: { icon: FileIcon, color: 'text-blue-400', bgColor: 'bg-blue-500/20' },
-		write: { icon: FilePlusIcon, color: 'text-green-400', bgColor: 'bg-green-500/20' },
-		edit: { icon: FilePenIcon, color: 'text-yellow-400', bgColor: 'bg-yellow-500/20' },
-		delete: { icon: FileMinusIcon, color: 'text-red-400', bgColor: 'bg-red-500/20' },
-		search: { icon: SearchIcon, color: 'text-purple-400', bgColor: 'bg-purple-500/20' }
+	const operationConfig: Record<FileOperation, { icon: typeof FileIcon; label: string; color: string; bgColor: string; borderColor: string }> = {
+		read:   { icon: FileIcon,      label: 'Read',   color: 'text-blue-500',   bgColor: 'bg-blue-500/10',   borderColor: 'border-blue-500/30' },
+		write:  { icon: FilePlusIcon,  label: 'Write',  color: 'text-green-500',  bgColor: 'bg-green-500/10',  borderColor: 'border-green-500/30' },
+		edit:   { icon: FilePenIcon,   label: 'Edit',   color: 'text-amber-500',  bgColor: 'bg-amber-500/10',  borderColor: 'border-amber-500/30' },
+		delete: { icon: FileMinusIcon, label: 'Delete', color: 'text-red-500',    bgColor: 'bg-red-500/10',    borderColor: 'border-red-500/30' },
+		search: { icon: SearchIcon,    label: 'Search', color: 'text-purple-500', bgColor: 'bg-purple-500/10', borderColor: 'border-purple-500/30' }
 	};
 
-	// Sorted and filtered activities
-	let sortedActivities = $derived.by(() => {
-		let filtered = activities;
+	// Which op types actually exist in the data
+	const presentOps = $derived(
+		[...new Set(activities.map(a => a.operation))] as FileOperation[]
+	);
 
-		// Apply filter
-		if (filterQuery) {
-			const lowerFilter = filterQuery.toLowerCase();
-			filtered = activities.filter(
-				(a) =>
-					a.path.toLowerCase().includes(lowerFilter) ||
-					a.actor.toLowerCase().includes(lowerFilter) ||
-					a.operation.toLowerCase().includes(lowerFilter) ||
-					a.tool_name.toLowerCase().includes(lowerFilter)
-			);
-		}
+	function toggleOp(op: FileOperation) {
+		const next = new Set(activeOps);
+		if (next.has(op)) next.delete(op);
+		else next.add(op);
+		activeOps = next;
+	}
 
-		// Apply sort
-		return [...filtered].sort((a, b) => {
-			let cmp = 0;
-			switch (sortField) {
-				case 'timestamp':
-					cmp = new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime();
-					break;
-				case 'path':
-					cmp = a.path.localeCompare(b.path);
-					break;
-				case 'operation':
-					cmp = a.operation.localeCompare(b.operation);
-					break;
-				case 'actor':
-					cmp = a.actor.localeCompare(b.actor);
-					break;
-			}
-			return sortOrder === 'asc' ? cmp : -cmp;
+	const filteredActivities = $derived.by(() => {
+		return activities.filter(a => {
+			const matchesOp = activeOps.size === 0 || activeOps.has(a.operation);
+			const q = filterQuery.toLowerCase();
+			const matchesQuery = !q ||
+				a.path.toLowerCase().includes(q) ||
+				a.operation.toLowerCase().includes(q) ||
+				a.actor.toLowerCase().includes(q);
+			return matchesOp && matchesQuery;
 		});
 	});
-
-	function handleSort(field: SortField) {
-		if (sortField === field) {
-			sortOrder = sortOrder === 'asc' ? 'desc' : 'asc';
-		} else {
-			sortField = field;
-			sortOrder = 'asc';
-		}
-	}
 
 	async function handleCopyPath(path: string) {
 		const success = await copyToClipboard(path);
 		if (success) {
-			toastMessage = 'Path copied to clipboard';
 			showToast = true;
-			setTimeout(() => {
-				showToast = false;
-			}, 2000);
+			setTimeout(() => { showToast = false; }, 2000);
 		}
 	}
 
 	function handleOpenInEditor(path: string) {
-		// Use VS Code protocol to open file
 		window.open(`vscode://file/${path}`, '_blank');
+	}
+
+	// Format just the time portion (HH:MM AM/PM)
+	function formatTime(ts: string): string {
+		return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 	}
 </script>
 
-<div
-	class="
-		rounded-lg border border-[var(--border)]
-		bg-[var(--bg-subtle)]
-		{className}
-	"
->
-	<!-- Header with search -->
-	<div class="border-b border-[var(--border)] p-4">
-		<div class="flex items-center gap-4">
-			<div class="relative flex-1">
-				<SearchIcon
-					class="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-muted)]"
-				/>
-				<input
-					type="text"
-					placeholder="Filter by path, actor, or operation..."
-					bind:value={filterQuery}
-					class="
-						w-full rounded-md border border-[var(--border)]
-						bg-[var(--bg-base)]
-						py-2 pl-10 pr-4 text-sm
-						focus:outline-none focus:ring-2 focus:ring-[var(--accent)]
-						placeholder:text-[var(--text-faint)]
-					"
-				/>
-			</div>
-			<span class="text-sm text-[var(--text-muted)]">
-				{sortedActivities.length} operations
-			</span>
-		</div>
+<div class="flex flex-col gap-3 {className}">
+
+	<!-- Search -->
+	<div class="relative">
+		<SearchIcon class="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--text-muted)]" />
+		<input
+			type="text"
+			placeholder="Search files…"
+			bind:value={filterQuery}
+			class="w-full rounded-lg border border-[var(--border)] bg-[var(--bg-base)] py-1.5 pl-8 pr-8 text-xs focus:outline-none focus:ring-1 focus:ring-[var(--accent)] placeholder:text-[var(--text-faint)]"
+		/>
+		{#if filterQuery}
+			<button onclick={() => (filterQuery = '')} class="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-[var(--text-primary)]">
+				<X class="h-3 w-3" />
+			</button>
+		{/if}
 	</div>
 
-	<!-- Table -->
-	<div class="overflow-x-auto">
-		<table class="w-full">
-			<thead>
-				<tr class="border-b border-[var(--border)] bg-[var(--bg-muted)]/30">
-					<th
-						class="cursor-pointer px-4 py-3 text-left text-xs font-medium text-[var(--text-muted)]"
-						onclick={() => handleSort('timestamp')}
-					>
-						<div class="flex items-center gap-1">
-							Time
-							{#if sortField === 'timestamp'}
-								{#if sortOrder === 'asc'}
-									<ChevronUp class="h-4 w-4" />
-								{:else}
-									<ChevronDown class="h-4 w-4" />
-								{/if}
-							{/if}
-						</div>
-					</th>
-					<th
-						class="cursor-pointer px-4 py-3 text-left text-xs font-medium text-[var(--text-muted)]"
-						onclick={() => handleSort('operation')}
-					>
-						<div class="flex items-center gap-1">
-							Operation
-							{#if sortField === 'operation'}
-								{#if sortOrder === 'asc'}
-									<ChevronUp class="h-4 w-4" />
-								{:else}
-									<ChevronDown class="h-4 w-4" />
-								{/if}
-							{/if}
-						</div>
-					</th>
-					<th
-						class="cursor-pointer px-4 py-3 text-left text-xs font-medium text-[var(--text-muted)]"
-						onclick={() => handleSort('path')}
-					>
-						<div class="flex items-center gap-1">
-							Path
-							{#if sortField === 'path'}
-								{#if sortOrder === 'asc'}
-									<ChevronUp class="h-4 w-4" />
-								{:else}
-									<ChevronDown class="h-4 w-4" />
-								{/if}
-							{/if}
-						</div>
-					</th>
-					<th
-						class="cursor-pointer px-4 py-3 text-left text-xs font-medium text-[var(--text-muted)]"
-						onclick={() => handleSort('actor')}
-					>
-						<div class="flex items-center gap-1">
-							Actor
-							{#if sortField === 'actor'}
-								{#if sortOrder === 'asc'}
-									<ChevronUp class="h-4 w-4" />
-								{:else}
-									<ChevronDown class="h-4 w-4" />
-								{/if}
-							{/if}
-						</div>
-					</th>
-					<th class="px-4 py-3 text-left text-xs font-medium text-[var(--text-muted)]">
-						Tool
-					</th>
-					<th class="px-4 py-3 text-left text-xs font-medium text-[var(--text-muted)]">
-						Actions
-					</th>
-				</tr>
-			</thead>
-			<tbody>
-				{#each sortedActivities as activity, i}
-					{@const config = operationConfig[activity.operation] || operationConfig.read}
-					<tr
-						class="border-b border-[var(--border)] last:border-0 hover:bg-[var(--bg-muted)]/20"
-					>
-						<td
-							class="whitespace-nowrap px-4 py-3 text-xs text-[var(--text-muted)] font-mono"
-						>
-							{formatDate(activity.timestamp)}
-						</td>
-						<td class="px-4 py-3">
-							<div class="flex items-center gap-2">
-								<config.icon class="h-4 w-4 {config.color}" />
-								<span
-									class="
-										rounded-full px-2 py-0.5 text-xs capitalize
-										{config.bgColor}
-										{config.color}
-									"
-								>
-									{activity.operation}
-								</span>
-							</div>
-						</td>
-						<td class="px-4 py-3">
-							<code
-								class="
-									inline-block
-									px-2 py-1
-									font-mono text-xs
-									text-[var(--text-primary)]
-									bg-[var(--bg-muted)]
-									border border-[var(--border)]
-									rounded-md
-								"
-								title={activity.path}
-							>
-								{truncate(formatDisplayPath(activity.path, projectPath), 60)}
-							</code>
-						</td>
-						<td class="px-4 py-3">
-							<div class="flex items-center gap-1.5">
-								{#if activity.actor_type === 'subagent' && (!currentAgentId || activity.actor !== currentAgentId)}
-									{@const colorVars = getSubagentColorVars(
-										subagentTypes[activity.actor]
-									)}
-									<!-- Show subagent badge for nested subagents (not the current agent being viewed) -->
-									<BotIcon class="h-3.5 w-3.5" style="color: {colorVars.color}" />
-									<span class="text-xs" style="color: {colorVars.color}"
-										>{activity.actor}</span
-									>
-								{:else}
-									<!-- Show main/session style for current agent or main session activities -->
-									<UserIcon class="h-3.5 w-3.5 text-[var(--text-muted)]" />
-									<span class="text-xs text-[var(--text-muted)]"
-										>{activity.actor}</span
-									>
-								{/if}
-							</div>
-						</td>
-						<td class="px-4 py-3">
-							<span
-								class="rounded bg-[var(--bg-muted)] px-1.5 py-0.5 text-xs font-mono"
-							>
-								{activity.tool_name}
-							</span>
-						</td>
-						<td class="px-4 py-3">
-							<div class="flex items-center gap-1">
-								<button
-									onclick={() => handleCopyPath(activity.path)}
-									class="
-										p-1.5 rounded
-										text-[var(--text-muted)]
-										hover:text-[var(--text-primary)]
-										hover:bg-[var(--bg-muted)]
-										transition-colors
-									"
-									title="Copy path"
-								>
-									<Copy class="h-3.5 w-3.5" />
-								</button>
-								<button
-									onclick={() => handleOpenInEditor(activity.path)}
-									class="
-										p-1.5 rounded
-										text-[var(--text-muted)]
-										hover:text-[var(--text-primary)]
-										hover:bg-[var(--bg-muted)]
-										transition-colors
-									"
-									title="Open in Editor"
-								>
-									<ExternalLink class="h-3.5 w-3.5" />
-								</button>
-							</div>
-						</td>
-					</tr>
+	<!-- Operation filter chips -->
+	{#if presentOps.length > 1}
+		<div class="flex flex-wrap gap-1.5">
+			{#each presentOps as op}
+				{@const cfg = operationConfig[op]}
+				{@const count = activities.filter(a => a.operation === op).length}
+				{@const active = activeOps.has(op)}
+				<button
+					onclick={() => toggleOp(op)}
+					class="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium transition-all
+						{active
+							? `${cfg.bgColor} ${cfg.borderColor} ${cfg.color}`
+							: 'border-[var(--border)] bg-[var(--bg-base)] text-[var(--text-muted)] hover:border-[var(--border-hover)] hover:text-[var(--text-secondary)]'
+						}"
+				>
+					<cfg.icon class="h-3 w-3" />
+					{cfg.label}
+					<span class="font-mono opacity-60">{count}</span>
+				</button>
+			{/each}
+			{#if activeOps.size > 0}
+				<button
+					onclick={() => (activeOps = new Set())}
+					class="inline-flex items-center gap-1 rounded-full border border-[var(--border)] px-2 py-1 text-[11px] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+				>
+					<X class="h-3 w-3" /> Clear
+				</button>
+			{/if}
+		</div>
+	{/if}
+
+	<!-- Count -->
+	<div class="flex items-center justify-between px-0.5">
+		<span class="text-[10px] uppercase tracking-wide text-[var(--text-muted)] font-medium">
+			{filteredActivities.length} {filteredActivities.length === 1 ? 'operation' : 'operations'}
+			{#if activeOps.size > 0 || filterQuery} <span class="opacity-50">filtered</span>{/if}
+		</span>
+	</div>
+
+	<!-- File list -->
+	<div class="flex flex-col rounded-lg border border-[var(--border)]/60 overflow-hidden bg-[var(--bg-base)]">
+		{#each filteredActivities as activity, i}
+			{@const cfg = operationConfig[activity.operation] || operationConfig.read}
+			{@const displayPath = formatDisplayPath(activity.path, projectPath)}
+			{@const filename = displayPath.split('/').pop() ?? displayPath}
+			{@const dirPath = displayPath.includes('/') ? displayPath.slice(0, displayPath.lastIndexOf('/')) : ''}
+			{@const isSubagent = activity.actor_type === 'subagent' && (!currentAgentId || activity.actor !== currentAgentId)}
+			{@const colorVars = isSubagent ? getSubagentColorVars(subagentTypes[activity.actor]) : null}
+
+			<div class="group flex items-stretch gap-2.5 px-3 py-2.5 {i > 0 ? 'border-t border-[var(--border)]/40' : ''} hover:bg-[var(--bg-subtle)]">
+				<!-- Op icon -->
+				<div class="mt-0.5 shrink-0 rounded-md p-1.5 self-start {cfg.bgColor}">
+					<cfg.icon class="h-3.5 w-3.5 {cfg.color}" />
+				</div>
+
+				<!-- Info (fills remaining width) -->
+				<div class="flex-1 min-w-0">
+					<span class="text-xs font-medium text-[var(--text-primary)] truncate block">{filename}</span>
+					<div class="mt-0.5 flex items-center gap-1.5 min-w-0">
+						{#if dirPath}
+							<span class="text-[10px] text-[var(--text-muted)] font-mono truncate" title={activity.path}>{dirPath}</span>
+						{/if}
+						<span class="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium capitalize {cfg.bgColor} {cfg.color}">{activity.operation}</span>
+						{#if isSubagent && colorVars}
+							<BotIcon class="shrink-0 h-3 w-3" style="color: {colorVars.color}" />
+						{/if}
+					</div>
+				</div>
+
+				<!-- Right column: time top, actions bottom on hover -->
+				<div class="shrink-0 flex flex-col items-end justify-between">
+					<span class="font-mono text-[10px] text-[var(--text-muted)]">{formatTime(activity.timestamp)}</span>
+					<div class="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+						<button onclick={() => handleCopyPath(activity.path)} class="p-1 rounded text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-muted)]" title="Copy path"><Copy class="h-3 w-3" /></button>
+						<button onclick={() => handleOpenInEditor(activity.path)} class="p-1 rounded text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-muted)]" title="Open in editor"><ExternalLink class="h-3 w-3" /></button>
+					</div>
+				</div>
+			</div>
+		{:else}
+			<div class="px-3 py-10 text-center text-xs text-[var(--text-muted)]">
+				{#if activeOps.size > 0 || filterQuery}
+					No operations match your filter
 				{:else}
-					<tr>
-						<td
-							colspan="6"
-							class="px-4 py-8 text-center text-sm text-[var(--text-muted)]"
-						>
-							No file activity found
-						</td>
-					</tr>
-				{/each}
-			</tbody>
-		</table>
+					No file activity
+				{/if}
+			</div>
+		{/each}
 	</div>
 </div>
 
-<!-- Toast notification -->
 {#if showToast}
-	<div
-		class="
-			fixed bottom-4 left-1/2 -translate-x-1/2
-			px-4 py-2
-			bg-[var(--text-primary)]
-			text-[var(--bg-base)]
-			text-sm font-medium
-			rounded-lg
-			shadow-lg
-			animate-slide-up
-		"
-	>
-		{toastMessage}
+	<div class="fixed bottom-4 left-1/2 -translate-x-1/2 px-4 py-2 bg-[var(--text-primary)] text-[var(--bg-base)] text-xs font-medium rounded-lg shadow-lg">
+		Path copied
 	</div>
 {/if}

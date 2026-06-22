@@ -281,7 +281,7 @@
 >
 
 	<!-- ── Page Header ──────────────────────────────────────────────────────── -->
-	<div class="flex-shrink-0" style="padding: 0 24px; background: var(--bg-base);">
+	<div class="flex-shrink-0" style="padding: 32px 24px 0; background: var(--bg-base);">
 		<PageHeader
 			title="Commands"
 			iconName="commands"
