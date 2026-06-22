@@ -97,10 +97,10 @@
 	function selectEvent(eventType: string) {
 		selectedEventType = eventType;
 		drawerOpen = true;
-		if (typeof history !== 'undefined') {
-			const url = new URL(location.href);
+		if (typeof window !== 'undefined') {
+			const url = new URL(window.location.href);
 			url.searchParams.set('event', eventType);
-			history.replaceState({}, '', url);
+			window.history.replaceState({}, '', url);
 		}
 	}
 
