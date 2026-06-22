@@ -116,147 +116,55 @@
 </script>
 
 {#if isCommandOnly}
-	<!-- Command-only prompt (e.g., /init with no additional text) -->
-	<div
-		class="
-			relative
-			p-4 pl-5
-			bg-[var(--bg-subtle)]
-			border border-[var(--border)]
-			border-l-[3px] border-l-[var(--nav-purple)]
-			rounded-[var(--radius-lg)]
-			{className}
-		"
-	>
-		<div class="flex items-center gap-2">
-			<div class="p-1.5 rounded-md bg-[var(--nav-purple-subtle)]">
-				<Terminal size={14} strokeWidth={2} class="text-[var(--nav-purple)]" />
-			</div>
-			<h3 class="text-sm font-medium text-[var(--text-primary)]">Session Command</h3>
-		</div>
-		<div class="mt-2 flex items-center gap-2">
-			<code
-				class="px-2 py-1 bg-[var(--bg-muted)] rounded font-mono text-sm text-[var(--nav-purple)]"
-			>
-				{commandName}
-			</code>
-			<span class="text-xs text-[var(--text-muted)]">Session started via command</span>
+	<div class="rounded-lg border-l-2 border-l-[var(--nav-purple)] border border-[var(--border)]/60 bg-[var(--bg-base)] px-3 py-2.5 {className}">
+		<div class="flex items-center gap-1.5">
+			<Terminal size={12} strokeWidth={2} class="text-[var(--nav-purple)]" />
+			<span class="text-xs font-medium text-[var(--text-primary)]">Command</span>
+			<code class="ml-1 px-1.5 py-0.5 bg-[var(--bg-muted)] rounded font-mono text-xs text-[var(--nav-purple)]">{commandName}</code>
 		</div>
 	</div>
 {:else}
-	<!-- Regular prompt with user text -->
-	<div
-		class="
-			relative
-			p-4 pl-5
-			bg-[var(--bg-subtle)]
-			border border-[var(--border)]
-			border-l-[3px] border-l-[var(--accent)]
-			rounded-[var(--radius-lg)]
-			{className}
-		"
-	>
-		<!-- Header with title, command badge, and action buttons -->
-		<div class="flex items-center justify-between mb-3">
-			<div class="flex items-center gap-2">
-				<div class="p-1.5 rounded-md bg-[var(--accent-subtle)]">
-					<MessageSquare size={14} strokeWidth={2} class="text-[var(--accent)]" />
-				</div>
-				<h3 class="text-sm font-medium text-[var(--text-primary)]">Initial Prompt</h3>
+	<div class="rounded-lg border-l-2 border-l-[var(--accent)] border border-[var(--border)]/60 bg-[var(--bg-base)] {className}">
+		<!-- Header -->
+		<div class="flex items-center justify-between px-3 pt-2.5 pb-2">
+			<div class="flex items-center gap-1.5">
+				<MessageSquare size={12} strokeWidth={2} class="text-[var(--accent)]" />
+				<span class="text-xs font-medium text-[var(--text-primary)]">Initial Prompt</span>
 				{#if commandName}
-					<code
-						class="px-1.5 py-0.5 bg-[var(--bg-muted)] rounded font-mono text-xs text-[var(--text-muted)]"
-					>
-						{commandName}
-					</code>
+					<code class="px-1 py-0.5 bg-[var(--bg-muted)] rounded font-mono text-[10px] text-[var(--text-muted)]">{commandName}</code>
 				{/if}
 			</div>
-
-			<!-- Action buttons -->
-			<div class="flex items-center gap-1">
+			<div class="flex items-center gap-0.5">
 				{#if showFullViewButton}
-					<button
-						type="button"
-						onclick={() => (modalOpen = true)}
-						class="
-							p-1.5 rounded-md
-							text-[var(--text-muted)]
-							hover:text-[var(--text-primary)]
-							hover:bg-[var(--bg-muted)]
-							transition-colors
-						"
-						title="Full view"
-						aria-label="Open full view"
-					>
-						<Maximize2 size={14} />
-					</button>
+					<button type="button" onclick={() => (modalOpen = true)} class="p-1 rounded text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-muted)] transition-colors" title="Full view"><Maximize2 size={12} /></button>
 				{/if}
-				<button
-					type="button"
-					onclick={copyToClipboard}
-					class="
-						p-1.5 rounded-md
-						text-[var(--text-muted)]
-						hover:text-[var(--text-primary)]
-						hover:bg-[var(--bg-muted)]
-						transition-colors
-						{copied ? 'text-green-500' : ''}
-					"
-					title={copied ? 'Copied!' : 'Copy prompt'}
-					aria-label={copied ? 'Copied to clipboard' : 'Copy prompt to clipboard'}
-				>
-					{#if copied}
-						<Check size={14} />
-					{:else}
-						<Copy size={14} />
-					{/if}
+				<button type="button" onclick={copyToClipboard} class="p-1 rounded text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-muted)] transition-colors {copied ? 'text-green-500' : ''}" title={copied ? 'Copied!' : 'Copy'}>
+					{#if copied}<Check size={12} />{:else}<Copy size={12} />{/if}
 				</button>
 			</div>
 		</div>
 
-		<!-- Markdown content -->
-		<div class="bg-[var(--bg-muted)] px-3 py-2 rounded-md">
+		<!-- Content -->
+		<div class="px-3 pb-2.5">
 			{#if imageAttachments && imageAttachments.length > 0}
-				<ImageAttachments attachments={imageAttachments} class="mt-1" />
+				<ImageAttachments attachments={imageAttachments} class="mb-2" />
 			{/if}
 			<div
-				class="markdown-preview text-sm prompt-content {!isExpanded && needsExpansion
-					? 'prompt-preview'
-					: ''}"
+				class="markdown-preview text-xs prompt-content {!isExpanded && needsExpansion ? 'prompt-preview' : ''}"
 				use:markdownCopyButtons={renderedContent}
 			>
 				{@html renderedContent}
 			</div>
-		</div>
-
-		<!-- Expand/Collapse button with character count -->
-		{#if needsExpansion}
-			<div class="flex justify-center mt-3">
+			{#if needsExpansion}
 				<button
 					type="button"
 					onclick={() => (isExpanded = !isExpanded)}
-					class="
-						flex items-center gap-1.5 px-3 py-1.5
-						text-xs font-medium
-						text-[var(--accent)]
-						hover:bg-[var(--accent-subtle)]
-						rounded-full
-						transition-colors
-						focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-base)]
-					"
-					aria-expanded={isExpanded}
-					aria-label={isExpanded ? 'Collapse prompt' : 'Expand prompt'}
+					class="mt-1.5 flex items-center gap-1 text-[11px] text-[var(--accent)] hover:underline"
 				>
-					{#if isExpanded}
-						<ChevronUp size={14} strokeWidth={2.5} />
-						<span>Show less</span>
-					{:else}
-						<ChevronDown size={14} strokeWidth={2.5} />
-						<span>Show more ({formatCharCount(charCount)} chars)</span>
-					{/if}
+					{#if isExpanded}<ChevronUp size={11} />Show less{:else}<ChevronDown size={11} />Show more ({formatCharCount(charCount)} chars){/if}
 				</button>
-			</div>
-		{/if}
+			{/if}
+		</div>
 	</div>
 
 	<!-- Full view modal for very long prompts -->

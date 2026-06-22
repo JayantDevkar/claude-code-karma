@@ -646,6 +646,7 @@ export interface LiveSessionSummary {
 	subagents: Record<string, SubagentState>;
 	active_subagent_count: number;
 	total_subagent_count: number;
+	last_notification_message: string | null;
 }
 
 // ============================================
@@ -694,6 +695,7 @@ export interface SubagentSessionDetail {
 	// Subagent-specific metadata
 	subagent_type: string | null;
 	initial_prompt: string | null;
+	models_used: string[];
 }
 
 /**

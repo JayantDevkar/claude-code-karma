@@ -566,7 +566,7 @@
 	.page-wrap {
 		max-width: 1120px;
 		margin: 0 auto;
-		padding: 32px 32px 80px;
+		padding: 0 32px 80px;
 		display: flex;
 		flex-direction: column;
 		gap: 0;

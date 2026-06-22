@@ -30,6 +30,10 @@
 	/* Missing tokens (referenced but were undefined) */
 	--accent-primary: var(--accent);
 	--border-hover: rgba(0, 0, 0, 0.12);
+
+	/* Rail active button */
+	--rail-active-bg: rgba(0, 0, 0, 0.1);
+	--rail-active-icon: #000000;
 	--radius-xs: 2px;
 	--duration-normal: 300ms;
 
@@ -267,6 +271,10 @@ select:focus {
 	--bg-subtle: #1a1f26;
 	--bg-muted: #242b35;
 
+	/* Rail active button */
+	--rail-active-bg: rgba(255, 255, 255, 0.15);
+	--rail-active-icon: #ffffff;
+
 	/* Text (soft off-white, easier on eyes) */
 	--text-primary: #e2e8f0;
 	--text-secondary: #a1a1aa;
@@ -408,6 +416,8 @@ select:focus {
 		--bg-base: #0f1419;
 		--bg-subtle: #1a1f26;
 		--bg-muted: #242b35;
+		--rail-active-bg: rgba(255, 255, 255, 0.15);
+		--rail-active-icon: #ffffff;
 		--text-primary: #e2e8f0;
 		--text-secondary: #a1a1aa;
 		--text-muted: #71717a;
@@ -543,6 +553,28 @@ body {
 	background-color: var(--bg-base);
 	color: var(--text-primary);
 	font-variant-numeric: tabular-nums;
+}
+
+/* Minimal scrollbars */
+::-webkit-scrollbar {
+	width: 4px;
+	height: 4px;
+}
+::-webkit-scrollbar-track {
+	background: transparent;
+}
+::-webkit-scrollbar-thumb {
+	background: rgba(0, 0, 0, 0.12);
+	border-radius: 99px;
+}
+::-webkit-scrollbar-thumb:hover {
+	background: rgba(0, 0, 0, 0.22);
+}
+[data-theme='dark'] ::-webkit-scrollbar-thumb {
+	background: rgba(255, 255, 255, 0.12);
+}
+[data-theme='dark'] ::-webkit-scrollbar-thumb:hover {
+	background: rgba(255, 255, 255, 0.22);
 }
 
 /* Markdown Preview Styles */
@@ -705,6 +737,22 @@ body {
 .markdown-preview li > ol {
 	@apply mt-1 mb-0;
 }
+
+/* ── Compact markdown variant for narrow drawers (350px) ── */
+.markdown-preview--compact h1 { @apply text-sm font-semibold mt-4 mb-2 pb-1; }
+.markdown-preview--compact h2 { @apply text-xs font-semibold mt-3 mb-1.5 uppercase tracking-wide; color: var(--text-muted); }
+.markdown-preview--compact h3 { @apply text-xs font-medium mt-2.5 mb-1; }
+.markdown-preview--compact p  { @apply text-xs mb-2 leading-relaxed; }
+.markdown-preview--compact ul,
+.markdown-preview--compact ol { @apply text-xs mb-2 space-y-0.5; }
+.markdown-preview--compact li { @apply pl-0.5; }
+.markdown-preview--compact code { @apply text-[10px] px-1 py-px; }
+.markdown-preview--compact pre { @apply p-2.5 mb-3 text-[10px]; }
+.markdown-preview--compact blockquote { @apply pl-2 py-0.5 mb-2 text-xs; }
+.markdown-preview--compact hr { @apply my-2; }
+.markdown-preview--compact table { @apply text-[10px]; }
+.markdown-preview--compact th,
+.markdown-preview--compact td { @apply px-2 py-1; }
 
 /* ── Markdown inline copy buttons (injected by markdownCopyButtons action) ── */
 

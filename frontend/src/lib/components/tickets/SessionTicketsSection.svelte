@@ -1,25 +1,21 @@
 <script lang="ts">
 	import type { CreateLinkResponse, SessionTicketRow } from '$lib/api-types';
 	import { API_BASE } from '$lib/config';
-	import { Ticket as TicketIcon, Undo2, Plus } from 'lucide-svelte';
-	import TicketBadge from './TicketBadge.svelte';
+	import { ExternalLink, X, Undo2 } from 'lucide-svelte';
+	import { normalizeStatus, statusColorVar, PROVIDER_META } from '$lib/ticket-helpers';
 	import TicketLinkInput from './TicketLinkInput.svelte';
 	import { onDestroy } from 'svelte';
 
 	interface Props {
 		sessionUuid: string;
 		sessionSlug?: string | null;
-		/** Initial tickets fetched server-side. Component holds local state from here. */
 		initial?: SessionTicketRow[];
 	}
 
 	let { sessionUuid, sessionSlug, initial = [] }: Props = $props();
 
-	// Seed once at construction. Route changes unmount the component so we don't
-	// need to react to `initial` changing.
 	let tickets = $state<SessionTicketRow[]>($state.snapshot(initial));
 
-	// Undo toast state — keyed by linkId so we never overlap.
 	type PendingUndo = {
 		ticket: SessionTicketRow;
 		expiresAt: number;
@@ -34,9 +30,7 @@
 		if (countdownInterval) return;
 		countdownInterval = setInterval(() => {
 			tick++;
-			if (!pending || pending.expiresAt <= Date.now()) {
-				stopCountdown();
-			}
+			if (!pending || pending.expiresAt <= Date.now()) stopCountdown();
 		}, 250);
 	}
 	function stopCountdown() {
@@ -46,7 +40,6 @@
 	onDestroy(stopCountdown);
 
 	let secondsLeft = $derived.by(() => {
-		// reference tick so this recomputes
 		void tick;
 		if (!pending) return 0;
 		return Math.max(0, Math.ceil((pending.expiresAt - Date.now()) / 1000));
@@ -66,21 +59,16 @@
 	}
 
 	function requestUnlink(ticket: SessionTicketRow) {
-		// Optimistic remove
 		tickets = tickets.filter((t) => t.id !== ticket.id);
-
-		// If there's already a pending undo, commit it immediately (we only show one toast)
 		if (pending) {
 			clearTimeout(pending.timeoutId);
 			void commitUnlink(pending.ticket);
 		}
-
 		const timeoutId = setTimeout(() => {
 			void commitUnlink(ticket);
 			pending = null;
 			stopCountdown();
 		}, UNDO_MS);
-
 		pending = { ticket, expiresAt: Date.now() + UNDO_MS, timeoutId };
 		startCountdown();
 	}
@@ -88,7 +76,6 @@
 	function undoUnlink() {
 		if (!pending) return;
 		clearTimeout(pending.timeoutId);
-		// Restore the ticket at the top (most recent linked-at)
 		tickets = [pending.ticket, ...tickets];
 		pending = null;
 		stopCountdown();
@@ -96,83 +83,83 @@
 
 	async function commitUnlink(ticket: SessionTicketRow) {
 		try {
-			const res = await fetch(`${API_BASE}/sessions/${sessionUuid}/tickets/${ticket.id}`, {
-				method: 'DELETE'
-			});
-			if (!res.ok) {
-				// Restore on failure
-				tickets = [ticket, ...tickets];
-			}
+			const res = await fetch(`${API_BASE}/sessions/${sessionUuid}/tickets/${ticket.id}`, { method: 'DELETE' });
+			if (!res.ok) tickets = [ticket, ...tickets];
 		} catch {
 			tickets = [ticket, ...tickets];
 		}
 	}
 </script>
 
-<section
-	class="flex flex-col gap-2.5 px-4 py-3 rounded-lg border border-[var(--border)] bg-[var(--bg-base)]"
-	aria-labelledby="tickets-heading"
->
-	<header class="flex items-center justify-between gap-2">
-		<div class="flex items-center gap-2">
-			<TicketIcon size={13} class="text-[var(--text-muted)]" />
-			<span
-				id="tickets-heading"
-				class="font-mono text-[12px] text-[var(--accent)]"
-			>
-				$ tickets
-			</span>
-			<span class="font-mono text-[11px] text-[var(--text-faint)]">
-				[{tickets.length} linked]
-			</span>
-		</div>
-	</header>
+<div class="flex flex-col gap-2.5">
+	<span class="text-[10px] uppercase tracking-wide font-medium text-[var(--text-muted)]">
+		{tickets.length} ticket{tickets.length !== 1 ? 's' : ''} linked
+	</span>
 
+	<!-- Ticket list -->
 	{#if tickets.length > 0}
-		<ul class="flex flex-wrap gap-1.5 m-0 p-0 list-none">
+		<div class="flex flex-col gap-2">
 			{#each tickets as ticket (ticket.id)}
-				<li>
-					<TicketBadge
-						{ticket}
-						variant="pill"
-						showStatus={true}
-						onRemove={() => requestUnlink(ticket)}
-					/>
-				</li>
-			{/each}
-		</ul>
-	{/if}
+				{@const norm = normalizeStatus(ticket.status)}
+				{@const meta = PROVIDER_META[ticket.provider]}
+				<div class="rounded-lg border border-[var(--border)] bg-[var(--bg-base)] overflow-hidden">
+					<!-- Card header: provider chip + key + unlink -->
+					<div class="flex items-center gap-2 px-3 pt-3 pb-2">
+						<!-- Provider badge -->
+						<span
+							class="shrink-0 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide"
+							style="background: var({meta?.subtleVar ?? '--bg-muted'}); color: var({meta?.colorVar ?? '--text-muted'});"
+						>{meta?.short ?? '??'}</span>
 
-	{#if pending}
-		<div
-			class="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-[var(--bg-muted)] border border-dashed border-[var(--border)] text-[11px] text-[var(--text-muted)] self-start"
-			role="status"
-			aria-live="polite"
-		>
-			<Undo2 size={11} />
-			<span>
-				Unlinked
-				<code class="font-mono">{pending.ticket.external_key}</code>
-			</span>
-			<span class="text-[var(--text-faint)]">· undo in {secondsLeft}s</span>
-			<button
-				type="button"
-				onclick={undoUnlink}
-				class="text-[var(--accent)] hover:underline font-semibold focus-ring"
-			>
-				Undo
-			</button>
+						<!-- Key link -->
+						<a
+							href={ticket.url}
+							target="_blank"
+							rel="noopener noreferrer"
+							class="flex-1 min-w-0 font-mono text-xs font-semibold text-[var(--accent)] hover:underline inline-flex items-center gap-1"
+						>
+							<span class="truncate">{ticket.external_key}</span>
+							<ExternalLink size={10} class="shrink-0 opacity-60" />
+						</a>
+
+						<!-- Unlink -->
+						<button
+							type="button"
+							onclick={() => requestUnlink(ticket)}
+							class="shrink-0 p-1 rounded text-[var(--text-faint)] hover:text-[var(--error)] hover:bg-[var(--error-subtle)] transition-colors"
+							title="Unlink"
+						>
+							<X size={13} />
+						</button>
+					</div>
+
+					<!-- Title -->
+					{#if ticket.title}
+						<p class="px-3 pb-2 text-xs text-[var(--text-primary)] leading-relaxed line-clamp-2 m-0">{ticket.title}</p>
+					{/if}
+
+					<!-- Status footer -->
+					{#if norm.verbatim}
+						<div class="flex items-center gap-1.5 px-3 py-2 border-t border-[var(--border)]/60">
+							<span class="w-2 h-2 rounded-full shrink-0" style="background: var({statusColorVar(norm.key)})"></span>
+							<span class="text-[11px] font-medium text-[var(--text-secondary)] uppercase tracking-wide">{norm.verbatim}</span>
+						</div>
+					{/if}
+				</div>
+			{/each}
 		</div>
 	{/if}
 
-	{#if tickets.length === 0 && !pending}
-		<p class="text-[11px] text-[var(--text-muted)] m-0 inline-flex items-center gap-1.5">
-			<Plus size={10} />
-			Paste a URL, key, or
-			<code class="font-mono px-1 py-px rounded bg-[var(--bg-muted)] text-[var(--text-secondary)]">owner/repo#N</code>
-			below to link this session.
-		</p>
+	<!-- Undo toast -->
+	{#if pending}
+		<div class="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-[var(--bg-muted)] border border-dashed border-[var(--border)] text-[11px] text-[var(--text-muted)]">
+			<Undo2 size={11} class="shrink-0" />
+			<span class="flex-1 min-w-0 truncate">Unlinked <code class="font-mono">{pending.ticket.external_key}</code></span>
+			<span class="shrink-0 text-[var(--text-faint)]">{secondsLeft}s</span>
+			<button type="button" onclick={undoUnlink} class="shrink-0 text-[var(--accent)] hover:underline font-semibold">Undo</button>
+		</div>
 	{/if}
 
+	<!-- Link input -->
 	<TicketLinkInput {sessionUuid} {sessionSlug} onCreated={handleCreated} />
-</section>
+</div>

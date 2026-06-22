@@ -61,8 +61,8 @@
 </script>
 
 {#if embedded}
-	<!-- Embedded mode: just the markdown content, no wrapper -->
-	<div class="markdown-preview max-w-none prose prose-slate dark:prose-invert" use:markdownCopyButtons={renderedContent}>
+	<!-- Embedded mode: compact markdown for narrow drawers -->
+	<div class="markdown-preview markdown-preview--compact max-w-none" use:markdownCopyButtons={renderedContent}>
 		{@html renderedContent}
 	</div>
 {:else}

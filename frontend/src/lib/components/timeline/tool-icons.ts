@@ -99,63 +99,63 @@ export const eventTypeConfig = {
 		icon: MessageSquareIcon,
 		color: 'text-[var(--event-prompt)]',
 		bgColor: 'bg-[var(--event-prompt-subtle)]',
-		borderColor: 'border-[var(--event-prompt)]/60',
+		borderColor: 'border-[var(--event-prompt)]/25',
 		leftAccent: 'border-l-[var(--event-prompt)]'
 	},
 	tool_call: {
 		icon: TerminalIcon,
 		color: 'text-[var(--event-tool)]',
 		bgColor: 'bg-[var(--event-tool-subtle)]',
-		borderColor: 'border-[var(--event-tool)]/60',
+		borderColor: 'border-[var(--event-tool)]/25',
 		leftAccent: 'border-l-[var(--event-tool)]'
 	},
 	subagent_spawn: {
 		icon: BotIcon,
 		color: 'text-[var(--event-subagent)]',
 		bgColor: 'bg-[var(--event-subagent-subtle)]',
-		borderColor: 'border-[var(--event-subagent)]/60',
+		borderColor: 'border-[var(--event-subagent)]/25',
 		leftAccent: 'border-l-[var(--event-subagent)]'
 	},
 	thinking: {
 		icon: BrainIcon,
 		color: 'text-[var(--event-thinking)]',
 		bgColor: 'bg-[var(--event-thinking-subtle)]',
-		borderColor: 'border-[var(--event-thinking)]/60',
+		borderColor: 'border-[var(--event-thinking)]/25',
 		leftAccent: 'border-l-[var(--event-thinking)]'
 	},
 	response: {
 		icon: MessageCircleIcon,
 		color: 'text-[var(--event-response)]',
 		bgColor: 'bg-[var(--event-response-subtle)]',
-		borderColor: 'border-[var(--event-response)]/60',
+		borderColor: 'border-[var(--event-response)]/25',
 		leftAccent: 'border-l-[var(--event-response)]'
 	},
 	todo_update: {
 		icon: ListTodoIcon,
 		color: 'text-[var(--event-todo)]',
 		bgColor: 'bg-[var(--event-todo-subtle)]',
-		borderColor: 'border-[var(--event-todo)]/60',
+		borderColor: 'border-[var(--event-todo)]/25',
 		leftAccent: 'border-l-[var(--event-todo)]'
 	},
 	command_invocation: {
 		icon: TerminalSquareIcon,
 		color: 'text-[var(--event-command)]',
 		bgColor: 'bg-[var(--event-command-subtle)]',
-		borderColor: 'border-[var(--event-command)]/60',
+		borderColor: 'border-[var(--event-command)]/25',
 		leftAccent: 'border-l-[var(--event-command)]'
 	},
 	skill_invocation: {
 		icon: TerminalSquareIcon,
 		color: 'text-[var(--accent)]',
 		bgColor: 'bg-[var(--accent)]/10',
-		borderColor: 'border-[var(--accent)]/60',
+		borderColor: 'border-[var(--accent)]/25',
 		leftAccent: 'border-l-[var(--accent)]'
 	},
 	builtin_command: {
 		icon: TerminalSquareIcon,
 		color: 'text-gray-400',
 		bgColor: 'bg-gray-500/10',
-		borderColor: 'border-gray-500/60',
+		borderColor: 'border-gray-500/25',
 		leftAccent: 'border-l-gray-500'
 	}
 } as const;

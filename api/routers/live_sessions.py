@@ -206,6 +206,7 @@ def state_to_summary(
         subagents=subagents_dict,
         active_subagent_count=state.active_subagent_count,
         total_subagent_count=state.total_subagent_count,
+        last_notification_message=state.last_notification_message,
     )
 
 

@@ -563,6 +563,9 @@ class SubagentSessionDetail(BaseModel):
     initial_prompt: Optional[str] = Field(
         None, description="First user message to subagent (truncated)"
     )
+    models_used: list[str] = Field(
+        default_factory=list, description="Models seen in assistant messages"
+    )
 
 
 # =============================================================================
@@ -1014,6 +1017,9 @@ class LiveSessionSummary(BaseModel):
     )
     total_subagent_count: Optional[int] = Field(
         None, description="Total subagents tracked (running + completed)"
+    )
+    last_notification_message: Optional[str] = Field(
+        None, description="Last notification message received in this session"
     )
     session_ids: List[str] = Field(
         default_factory=list,

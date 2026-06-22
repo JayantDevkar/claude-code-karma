@@ -145,7 +145,10 @@
 								: ''}
 						>
 							{#if grpActive && activeItm}
-								<span class="group-btn-icon">
+								<span
+									class="group-btn-icon"
+									style="background-color: var(--nav-{activeItm.color}-subtle); color: var(--nav-{activeItm.color}); width: 22px; height: 22px; border-radius: 5px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;"
+								>
 									<Icon name={activeItm.icon} size={14} strokeWidth={1.5} />
 								</span>
 								<span class="group-btn-label">{activeItm.label}</span>

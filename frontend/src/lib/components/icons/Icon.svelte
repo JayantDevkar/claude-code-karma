@@ -3,11 +3,13 @@
 		name: string;
 		size?: number;
 		strokeWidth?: number;
+		color?: string;
 	}
 
-	let { name, size = 24, strokeWidth = 1.5 }: Props = $props();
+	let { name, size = 24, strokeWidth = 1.5, color }: Props = $props();
 </script>
 
+<span style={color ? `color: ${color}; display: contents;` : 'display: contents;'}>
 {#if name === 'projects'}
 	<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width={strokeWidth} stroke-linecap="round" stroke-linejoin="round">
 		<circle cx="12" cy="20" r="2" />
@@ -138,3 +140,4 @@
 		<line x1="8" y1="20" x2="16" y2="20" />
 	</svg>
 {/if}
+</span>

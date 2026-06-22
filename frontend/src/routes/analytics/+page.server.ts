@@ -16,12 +16,21 @@ export const load: PageServerLoad = async ({ fetch, url }) => {
 
 	const apiUrl = params.toString() ? `${API_BASE}/analytics?${params}` : `${API_BASE}/analytics`;
 
-	const result = await safeFetch<Record<string, unknown>>(fetch, apiUrl);
+	const [result, projectsResult] = await Promise.all([
+		safeFetch<Record<string, unknown>>(fetch, apiUrl),
+		safeFetch<Array<{ path: string; encoded_name: string; session_count: number; display_name?: string }>>(fetch, `${API_BASE}/projects`)
+	]);
 
 	if (!result.ok) {
 		console.error('Failed to fetch analytics:', result.message);
-		return { analytics: null, error: result.message };
+		return { analytics: null, topProjects: [], error: result.message };
 	}
 
-	return { analytics: result.data, error: null };
+	const topProjects = projectsResult.ok
+		? [...(projectsResult.data ?? [])]
+				.sort((a, b) => (b.session_count ?? 0) - (a.session_count ?? 0))
+				.slice(0, 5)
+		: [];
+
+	return { analytics: result.data, topProjects, error: null };
 };
