@@ -5,14 +5,14 @@ A token-derived, framework-free HTML catalog of every primitive in the app. It m
 ## Commands
 
 ```bash
-# Build: generate foundations + validate all 21 cards
+# Build: generate foundations + validate all 23 cards
 cd frontend && npm run ds:build
 
 # Drift check: verify cards are newer than their mapped sources
 cd frontend && npm run ds:drift
 ```
 
-`ds:build` copies `tokens.css` into the bundle, generates `foundations/*.html`, validates every `@dsCard` marker, enforces the mapping.json contract, then writes `.render-check.json`. It outputs `catalog OK — 21 cards validated` on success with `{total, bad, thin}` counters. `thin` = cards whose body has fewer than 200 non-whitespace characters (a real signal). `bad` = cards with missing or malformed `@dsCard` markers.
+`ds:build` copies `tokens.css` into the bundle, generates `foundations/*.html`, validates every `@dsCard` marker, enforces the mapping.json contract, then writes `.render-check.json`. It outputs `catalog OK — 23 cards validated` on success with `{total, bad, thin}` counters. `thin` = cards whose body has fewer than 200 non-whitespace characters (a real signal). `bad` = cards with missing or malformed `@dsCard` markers.
 
 `ds:drift` prints `no drift — all cards are current with their sources` when every card's mtime ≥ all its mapped source files. Drift is flagged when a source file's mtime exceeds its card's mtime — the card is stale and must be rebuilt. If it reports stale cards, re-run `ds:build` or touch the affected `.html` file after updating the source.
 

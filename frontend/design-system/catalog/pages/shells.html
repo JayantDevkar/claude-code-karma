@@ -176,6 +176,8 @@
   color: var(--text-faint); font-weight: 600;
 }
 .kv-val { font-family: var(--font-mono); font-size: 12.5px; color: var(--accent); }
+.session-link { font-family: var(--font-mono); font-size: 12.5px; color: var(--accent); text-decoration: none; cursor: pointer; }
+.session-link:hover { text-decoration: underline; }
 .polls-section { display: flex; flex-direction: column; gap: 8px; }
 .poll-card {
   border-radius: 8px; border: 1px solid var(--border); background: var(--bg-muted); padding: 10px 12px;
@@ -330,7 +332,7 @@
         </div>
         <div class="kv-row">
           <span class="kv-label">Session</span>
-          <span class="kv-val">design-system-cards-abc1…</span>
+          <a href="#" class="session-link">design-system-cards-abc1…</a>
         </div>
         <div class="polls-section">
           <span class="kv-label">Output polls · 1 shown</span>
