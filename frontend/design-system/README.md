@@ -79,3 +79,5 @@ Foundation cards (`foundations/*.html`) are generated automatically; their mappi
 The `catalog/` directory is the `localDir` used by the DesignSync step (Task 8). Sync is plan-gated and incremental — it pushes only changed cards to the remote design system and requires a one-time `claude.ai` authentication flow.
 
 The sync step is intentionally separate from `ds:build`; running `ds:build` locally never touches the remote. See the task-8 brief for the auth + sync command sequence.
+
+**Synced project:** `Claude Karma Design System` — projectId `5fdd2fba-3802-4151-98ba-586d685cebf5` (initial sync 2026-06-23, 24 files: 21 cards + `shared/{tokens,preview}.css` + `mapping.json`). For incremental re-syncs, run `npm run ds:build`, then `DesignSync` `list_files` → `finalize_plan` (writes: `foundations/*.html`, `components/*.html`, `shared/*.css`, `mapping.json`; `localDir` = this `catalog/`) → `write_files`.
