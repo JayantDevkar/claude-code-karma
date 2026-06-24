@@ -1,0 +1,103 @@
+<!-- @dsCard group="Components" -->
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Segmented Control</title>
+<link rel="stylesheet" href="../shared/tokens.css">
+<link rel="stylesheet" href="../shared/preview.css">
+<style>
+/* Mirrors SegmentedControl.svelte layout */
+.seg {
+  display:inline-flex; align-items:center; gap:4px; padding:4px;
+  background:var(--bg-subtle); border:1px solid var(--border);
+  border-radius:var(--radius-lg);
+}
+.seg-btn {
+  border:none; background:none; cursor:pointer; font-family:var(--font-sans);
+  font-weight:500; border-radius:var(--radius-md);
+  color:var(--text-secondary); transition:all 150ms ease-out;
+}
+.seg-btn:hover:not([disabled]):not([aria-checked="true"]) { color:var(--text-primary); }
+.seg-btn:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+.seg-btn[aria-checked="true"] { background:var(--accent); color:#fff; box-shadow:0 1px 2px rgba(0,0,0,.1); }
+.seg-btn[disabled] { cursor:not-allowed; }
+.seg[data-disabled] { opacity:.5; }
+/* sizes */
+.seg-btn--sm { padding:4px 8px; font-size:12px; }
+.seg-btn--md { padding:6px 12px; font-size:14px; }
+</style>
+</head>
+<body>
+<div class="ds-frame">
+<h1 class="ds-title">Segmented Control</h1>
+<p class="ds-subtitle">2 sizes · 2/3/4-option examples · disabled state — src/lib/components/ui/SegmentedControl.svelte</p>
+
+<div class="ds-section">
+<p class="ds-section-label">Size md — 2 options</p>
+<div class="ds-row">
+  <div class="seg" role="radiogroup" id="seg-2">
+    <button type="button" role="radio" aria-checked="true"  class="seg-btn seg-btn--md" onclick="selectSeg(this,'seg-2')">Sessions</button>
+    <button type="button" role="radio" aria-checked="false" class="seg-btn seg-btn--md" onclick="selectSeg(this,'seg-2')">Agents</button>
+  </div>
+</div>
+</div>
+
+<div class="ds-section">
+<p class="ds-section-label">Size md — 3 options</p>
+<div class="ds-row">
+  <div class="seg" role="radiogroup" id="seg-3">
+    <button type="button" role="radio" aria-checked="true"  class="seg-btn seg-btn--md" onclick="selectSeg(this,'seg-3')">Overview</button>
+    <button type="button" role="radio" aria-checked="false" class="seg-btn seg-btn--md" onclick="selectSeg(this,'seg-3')">Timeline</button>
+    <button type="button" role="radio" aria-checked="false" class="seg-btn seg-btn--md" onclick="selectSeg(this,'seg-3')">Analytics</button>
+  </div>
+</div>
+</div>
+
+<div class="ds-section">
+<p class="ds-section-label">Size md — 4 options</p>
+<div class="ds-row">
+  <div class="seg" role="radiogroup" id="seg-4">
+    <button type="button" role="radio" aria-checked="false" class="seg-btn seg-btn--md" onclick="selectSeg(this,'seg-4')">Day</button>
+    <button type="button" role="radio" aria-checked="true"  class="seg-btn seg-btn--md" onclick="selectSeg(this,'seg-4')">Week</button>
+    <button type="button" role="radio" aria-checked="false" class="seg-btn seg-btn--md" onclick="selectSeg(this,'seg-4')">Month</button>
+    <button type="button" role="radio" aria-checked="false" class="seg-btn seg-btn--md" onclick="selectSeg(this,'seg-4')">Year</button>
+  </div>
+</div>
+</div>
+
+<div class="ds-section">
+<p class="ds-section-label">Size sm — 3 options</p>
+<div class="ds-row">
+  <div class="seg" role="radiogroup" id="seg-sm">
+    <button type="button" role="radio" aria-checked="true"  class="seg-btn seg-btn--sm" onclick="selectSeg(this,'seg-sm')">List</button>
+    <button type="button" role="radio" aria-checked="false" class="seg-btn seg-btn--sm" onclick="selectSeg(this,'seg-sm')">Grid</button>
+    <button type="button" role="radio" aria-checked="false" class="seg-btn seg-btn--sm" onclick="selectSeg(this,'seg-sm')">Tree</button>
+  </div>
+</div>
+</div>
+
+<div class="ds-section">
+<p class="ds-section-label">Disabled</p>
+<div class="ds-row">
+  <div class="seg" role="radiogroup" data-disabled id="seg-dis">
+    <button type="button" role="radio" aria-checked="true"  class="seg-btn seg-btn--md" disabled>Active</button>
+    <button type="button" role="radio" aria-checked="false" class="seg-btn seg-btn--md" disabled>Option B</button>
+    <button type="button" role="radio" aria-checked="false" class="seg-btn seg-btn--md" disabled>Option C</button>
+  </div>
+</div>
+</div>
+</div>
+
+<button class="ds-theme-toggle" onclick="(function(r){var d=r.getAttribute('data-theme')==='dark';r.setAttribute('data-theme',d?'light':'dark');})(document.documentElement)">Toggle theme</button>
+
+<script>
+function selectSeg(btn, groupId) {
+  var group = document.getElementById(groupId);
+  group.querySelectorAll('[role="radio"]').forEach(function(b) { b.setAttribute('aria-checked','false'); });
+  btn.setAttribute('aria-checked','true');
+}
+</script>
+</body>
+</html>

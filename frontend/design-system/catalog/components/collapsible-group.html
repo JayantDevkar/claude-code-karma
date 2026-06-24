@@ -1,0 +1,131 @@
+<!-- @dsCard group="Components" -->
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Collapsible Group</title>
+<link rel="stylesheet" href="../shared/tokens.css">
+<link rel="stylesheet" href="../shared/preview.css">
+<style>
+/* Mirrors CollapsibleGroup.svelte structure */
+.cg {
+  border:1px solid var(--border); border-radius:var(--radius-lg);
+  overflow:hidden; background:var(--bg-base);
+}
+.cg--accent { border-left:3px solid var(--accent); }
+.cg-header {
+  display:flex; align-items:center; gap:12px;
+  padding:16px; width:100%;
+  background:none; border:none; cursor:pointer; text-align:left;
+  font-family:var(--font-sans);
+}
+.cg-header:hover { background:var(--bg-subtle); }
+.cg-header:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
+.cg-chevron {
+  width:16px; height:16px; flex-shrink:0; color:var(--text-muted);
+  transition:transform var(--duration-normal, 200ms);
+}
+.cg-chevron--open { transform:rotate(90deg); }
+.cg-title { flex:1; font-size:14px; font-weight:500; color:var(--text-primary); margin:0; }
+.cg-meta { font-size:12px; color:var(--text-muted); }
+.cg-body { border-top:1px solid var(--border); padding:16px; font-size:13px; color:var(--text-secondary); font-family:var(--font-sans); }
+/* side-by-side demo grid */
+.cg-demo-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+@media(max-width:600px) { .cg-demo-grid { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<div class="ds-frame">
+<h1 class="ds-title">Collapsible Group</h1>
+<p class="ds-subtitle">Expanded vs collapsed · accent-border variant · interactive toggle — src/lib/components/ui/CollapsibleGroup.svelte</p>
+
+<div class="ds-section">
+<p class="ds-section-label">Expanded and collapsed — side by side</p>
+<div class="cg-demo-grid">
+
+  <!-- Expanded instance -->
+  <div class="cg" id="cg-1">
+    <button type="button" class="cg-header" aria-expanded="true" onclick="toggleCG('cg-1')">
+      <!-- chevron rotated → open -->
+      <svg class="cg-chevron cg-chevron--open" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="6 4 10 8 6 12"/>
+      </svg>
+      <h3 class="cg-title">Session 1a2b3c — Expanded</h3>
+      <span class="cg-meta">42 msgs</span>
+    </button>
+    <div class="cg-body">
+      Session content: tool calls, messages, and subagent activity for this session.
+    </div>
+  </div>
+
+  <!-- Collapsed instance -->
+  <div class="cg" id="cg-2">
+    <button type="button" class="cg-header" aria-expanded="false" onclick="toggleCG('cg-2')">
+      <!-- chevron at rest → closed -->
+      <svg class="cg-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="6 4 10 8 6 12"/>
+      </svg>
+      <h3 class="cg-title">Session 4d5e6f — Collapsed</h3>
+      <span class="cg-meta">18 msgs</span>
+    </button>
+    <!-- no body visible -->
+  </div>
+
+</div>
+</div>
+
+<div class="ds-section">
+<p class="ds-section-label">Accent-border variant (expanded)</p>
+<div class="cg cg--accent" id="cg-3">
+  <button type="button" class="cg-header" aria-expanded="true" onclick="toggleCG('cg-3')">
+    <svg class="cg-chevron cg-chevron--open" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="6 4 10 8 6 12"/>
+    </svg>
+    <h3 class="cg-title">Active session (accent border)</h3>
+    <span class="cg-meta">Live · 7 msgs</span>
+  </button>
+  <div class="cg-body">
+    This group uses <code>border-left: 3px solid var(--accent)</code> — the <code>accentColor</code> prop in the component.
+  </div>
+</div>
+</div>
+
+<div class="ds-section">
+<p class="ds-section-label">Accent-border variant (collapsed)</p>
+<div class="cg cg--accent" id="cg-4">
+  <button type="button" class="cg-header" aria-expanded="false" onclick="toggleCG('cg-4')">
+    <svg class="cg-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="6 4 10 8 6 12"/>
+    </svg>
+    <h3 class="cg-title">Idle session (accent border, collapsed)</h3>
+    <span class="cg-meta">3 msgs</span>
+  </button>
+</div>
+</div>
+</div>
+
+<button class="ds-theme-toggle" onclick="(function(r){var d=r.getAttribute('data-theme')==='dark';r.setAttribute('data-theme',d?'light':'dark');})(document.documentElement)">Toggle theme</button>
+
+<script>
+function toggleCG(id) {
+  var el = document.getElementById(id);
+  var header = el.querySelector('.cg-header');
+  var chevron = el.querySelector('.cg-chevron');
+  var body = el.querySelector('.cg-body');
+  var isOpen = header.getAttribute('aria-expanded') === 'true';
+  header.setAttribute('aria-expanded', isOpen ? 'false' : 'true');
+  chevron.classList.toggle('cg-chevron--open', !isOpen);
+  if (body) {
+    body.style.display = isOpen ? 'none' : '';
+  } else if (!isOpen) {
+    /* create body on expand if missing */
+    var b = document.createElement('div');
+    b.className = 'cg-body';
+    b.textContent = 'Content revealed on expand.';
+    el.appendChild(b);
+  }
+}
+</script>
+</body>
+</html>

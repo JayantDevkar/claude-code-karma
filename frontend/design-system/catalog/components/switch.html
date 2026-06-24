@@ -1,0 +1,120 @@
+<!-- @dsCard group="Components" -->
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Switch</title>
+<link rel="stylesheet" href="../shared/tokens.css">
+<link rel="stylesheet" href="../shared/preview.css">
+<style>
+/* Mirrors Switch.svelte — bits-ui Switch.Root + Switch.Thumb */
+.sw-track {
+  display:inline-flex; align-items:center;
+  width:36px; height:20px; border-radius:9999px;
+  border:2px solid transparent;
+  cursor:pointer; padding:0;
+  transition:background 200ms ease;
+  position:relative;
+}
+.sw-track:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+.sw-track[data-state="unchecked"] { background:var(--border); }
+.sw-track[data-state="checked"]   { background:var(--accent); }
+.sw-track[disabled] { cursor:not-allowed; opacity:.5; }
+/* thumb */
+.sw-thumb {
+  display:block; width:16px; height:16px; border-radius:9999px;
+  background:var(--bg-base); box-shadow:0 1px 2px rgba(0,0,0,.2);
+  transition:transform 200ms cubic-bezier(0.25,1,0.5,1);
+  pointer-events:none;
+}
+.sw-track[data-state="unchecked"] .sw-thumb { transform:translateX(0); }
+.sw-track[data-state="checked"]   .sw-thumb { transform:translateX(16px); }
+/* label row */
+.sw-row { display:flex; align-items:center; gap:10px; }
+.sw-label { font-size:13px; color:var(--text-secondary); font-family:var(--font-sans); }
+</style>
+</head>
+<body>
+<div class="ds-frame">
+<h1 class="ds-title">Switch</h1>
+<p class="ds-subtitle">All 4 states: checked/unchecked × enabled/disabled — src/lib/components/ui/Switch.svelte</p>
+
+<div class="ds-section">
+<p class="ds-section-label">Enabled states (interactive)</p>
+<div class="ds-row" style="gap:24px;">
+  <div class="sw-row">
+    <button type="button" role="switch" aria-checked="false" data-state="unchecked" class="sw-track" id="sw-a" onclick="toggleSwitch(this)">
+      <span class="sw-thumb"></span>
+    </button>
+    <span class="sw-label">Off (unchecked)</span>
+  </div>
+  <div class="sw-row">
+    <button type="button" role="switch" aria-checked="true" data-state="checked" class="sw-track" id="sw-b" onclick="toggleSwitch(this)">
+      <span class="sw-thumb"></span>
+    </button>
+    <span class="sw-label">On (checked)</span>
+  </div>
+</div>
+</div>
+
+<div class="ds-section">
+<p class="ds-section-label">Disabled states</p>
+<div class="ds-row" style="gap:24px;">
+  <div class="sw-row">
+    <button type="button" role="switch" aria-checked="false" data-state="unchecked" class="sw-track" disabled>
+      <span class="sw-thumb"></span>
+    </button>
+    <span class="sw-label">Off + disabled</span>
+  </div>
+  <div class="sw-row">
+    <button type="button" role="switch" aria-checked="true" data-state="checked" class="sw-track" disabled>
+      <span class="sw-thumb"></span>
+    </button>
+    <span class="sw-label">On + disabled</span>
+  </div>
+</div>
+</div>
+
+<div class="ds-section">
+<p class="ds-section-label">All 4 states — static reference</p>
+<div class="ds-grid" style="grid-template-columns:repeat(4,auto); gap:16px; width:fit-content;">
+  <div style="display:flex;flex-direction:column;align-items:center;gap:6px;">
+    <button type="button" role="switch" aria-checked="false" data-state="unchecked" class="sw-track" onclick="toggleSwitch(this)">
+      <span class="sw-thumb"></span>
+    </button>
+    <span style="font-size:11px;color:var(--text-faint);">unchecked</span>
+  </div>
+  <div style="display:flex;flex-direction:column;align-items:center;gap:6px;">
+    <button type="button" role="switch" aria-checked="true" data-state="checked" class="sw-track" onclick="toggleSwitch(this)">
+      <span class="sw-thumb"></span>
+    </button>
+    <span style="font-size:11px;color:var(--text-faint);">checked</span>
+  </div>
+  <div style="display:flex;flex-direction:column;align-items:center;gap:6px;">
+    <button type="button" role="switch" aria-checked="false" data-state="unchecked" class="sw-track" disabled>
+      <span class="sw-thumb"></span>
+    </button>
+    <span style="font-size:11px;color:var(--text-faint);">unchecked+dis</span>
+  </div>
+  <div style="display:flex;flex-direction:column;align-items:center;gap:6px;">
+    <button type="button" role="switch" aria-checked="true" data-state="checked" class="sw-track" disabled>
+      <span class="sw-thumb"></span>
+    </button>
+    <span style="font-size:11px;color:var(--text-faint);">checked+dis</span>
+  </div>
+</div>
+</div>
+</div>
+
+<button class="ds-theme-toggle" onclick="(function(r){var d=r.getAttribute('data-theme')==='dark';r.setAttribute('data-theme',d?'light':'dark');})(document.documentElement)">Toggle theme</button>
+
+<script>
+function toggleSwitch(btn) {
+  var isChecked = btn.getAttribute('aria-checked') === 'true';
+  btn.setAttribute('aria-checked', isChecked ? 'false' : 'true');
+  btn.setAttribute('data-state', isChecked ? 'unchecked' : 'checked');
+}
+</script>
+</body>
+</html>

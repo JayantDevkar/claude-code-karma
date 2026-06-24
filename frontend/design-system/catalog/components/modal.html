@@ -1,0 +1,205 @@
+<!-- @dsCard group="Components" -->
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Modal</title>
+<link rel="stylesheet" href="../shared/tokens.css">
+<link rel="stylesheet" href="../shared/preview.css">
+<style>
+/* Mirrors Modal.svelte (bits-ui Dialog) rendered DOM */
+.modal-overlay {
+  position:fixed; inset:0; z-index:50;
+  background:rgba(0,0,0,.5);
+  display:none;
+  animation:fadeIn 150ms cubic-bezier(0.16,1,0.3,1) forwards;
+}
+.modal-overlay.is-open { display:block; }
+.modal-content {
+  position:fixed; left:50%; top:50%; z-index:51;
+  transform:translate(-50%,-50%);
+  background:var(--bg-base);
+  border:1px solid var(--border);
+  border-radius:var(--radius-xl, 12px);
+  padding:24px; width:calc(100% - 32px);
+  box-shadow:var(--shadow-elevated, 0 20px 60px rgba(0,0,0,.2));
+  font-family:var(--font-sans);
+  display:none;
+  animation:zoomIn 150ms cubic-bezier(0.16,1,0.3,1) forwards;
+}
+.modal-content.is-open { display:block; }
+/* maxWidth variants */
+.modal-sm { max-width:24rem; }  /* ~384px */
+.modal-md { max-width:28rem; }  /* ~448px */
+.modal-lg { max-width:32rem; }  /* ~512px */
+.modal-xl { max-width:80vw;  }
+/* header */
+.modal-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; }
+.modal-title { font-size:18px; font-weight:600; color:var(--text-primary); margin:0; }
+.modal-close {
+  display:inline-flex; align-items:center; justify-content:center;
+  width:28px; height:28px; border:none; background:none; cursor:pointer;
+  border-radius:var(--radius-md); color:var(--text-muted);
+  transition:color 100ms;
+}
+.modal-close:hover { color:var(--text-primary); }
+.modal-close:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+.modal-desc { font-size:14px; color:var(--text-secondary); margin:0 0 16px; }
+.modal-body  { font-size:14px; color:var(--text-secondary); }
+.modal-footer {
+  display:flex; justify-content:flex-end; gap:12px;
+  margin-top:16px; padding-top:16px; border-top:1px solid var(--border);
+}
+/* inline keyframes from Modal.svelte <style> */
+@keyframes fadeIn  { from { opacity:0; } to { opacity:1; } }
+@keyframes fadeOut { from { opacity:1; } to { opacity:0; } }
+@keyframes zoomIn  { from { transform:translate(-50%,-50%) scale(0.95); } to { transform:translate(-50%,-50%) scale(1); } }
+@keyframes zoomOut { from { transform:translate(-50%,-50%) scale(1); } to { transform:translate(-50%,-50%) scale(0.95); } }
+/* Trigger buttons */
+.open-btn {
+  display:inline-flex; align-items:center; gap:6px; padding:8px 16px;
+  font:inherit; font-size:13px; font-weight:500;
+  border:1px solid var(--border); border-radius:var(--radius-md);
+  background:var(--bg-subtle); color:var(--text-primary); cursor:pointer;
+}
+.open-btn:hover { background:var(--bg-muted); }
+/* static reference boxes */
+.static-modal-box {
+  border:1px solid var(--border); border-radius:var(--radius-xl, 12px);
+  padding:20px; background:var(--bg-base);
+  box-shadow:var(--shadow-elevated, 0 8px 24px rgba(0,0,0,.12));
+  font-family:var(--font-sans);
+}
+.static-modal-box .modal-title { font-size:15px; }
+.size-tag {
+  font-size:11px; padding:2px 6px; border-radius:var(--radius-sm,4px);
+  background:var(--bg-muted); color:var(--text-muted); font-family:var(--font-mono);
+}
+</style>
+</head>
+<body>
+<div class="ds-frame">
+<h1 class="ds-title">Modal</h1>
+<p class="ds-subtitle">Overlay + dialog · all 4 maxWidth sizes · inline @keyframes from component — src/lib/components/ui/Modal.svelte</p>
+
+<div class="ds-section">
+<p class="ds-section-label">Interactive demo — open/close</p>
+<div class="ds-row">
+  <button class="open-btn" onclick="openModal('demo-sm')">Open sm</button>
+  <button class="open-btn" onclick="openModal('demo-md')">Open md</button>
+  <button class="open-btn" onclick="openModal('demo-lg')">Open lg</button>
+  <button class="open-btn" onclick="openModal('demo-xl')">Open xl</button>
+</div>
+</div>
+
+<!-- sm modal -->
+<div class="modal-overlay" id="overlay-demo-sm" onclick="closeModal('demo-sm')"></div>
+<div role="dialog" aria-modal="true" aria-labelledby="title-demo-sm" class="modal-content modal-sm" id="demo-sm">
+  <div class="modal-header">
+    <h2 class="modal-title" id="title-demo-sm">Small Modal <span class="size-tag">sm · max-w-sm</span></h2>
+    <button class="modal-close" aria-label="Close dialog" onclick="closeModal('demo-sm')">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+  </div>
+  <p class="modal-desc">A small confirmation dialog.</p>
+  <div class="modal-body">Compact modal for quick confirmations or single-field inputs.</div>
+  <div class="modal-footer">
+    <button class="open-btn" onclick="closeModal('demo-sm')">Cancel</button>
+    <button class="open-btn" style="background:var(--accent);color:#fff;border-color:var(--accent);">Confirm</button>
+  </div>
+</div>
+
+<!-- md modal -->
+<div class="modal-overlay" id="overlay-demo-md" onclick="closeModal('demo-md')"></div>
+<div role="dialog" aria-modal="true" aria-labelledby="title-demo-md" class="modal-content modal-md" id="demo-md">
+  <div class="modal-header">
+    <h2 class="modal-title" id="title-demo-md">Medium Modal <span class="size-tag">md · max-w-md</span></h2>
+    <button class="modal-close" aria-label="Close dialog" onclick="closeModal('demo-md')">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+  </div>
+  <p class="modal-desc">Default modal size for most dialogs.</p>
+  <div class="modal-body">Standard modal with description, body content, and footer actions. This is the default <code>maxWidth</code> value used when no size is specified.</div>
+  <div class="modal-footer">
+    <button class="open-btn" onclick="closeModal('demo-md')">Cancel</button>
+    <button class="open-btn" style="background:var(--accent);color:#fff;border-color:var(--accent);">Save</button>
+  </div>
+</div>
+
+<!-- lg modal -->
+<div class="modal-overlay" id="overlay-demo-lg" onclick="closeModal('demo-lg')"></div>
+<div role="dialog" aria-modal="true" aria-labelledby="title-demo-lg" class="modal-content modal-lg" id="demo-lg">
+  <div class="modal-header">
+    <h2 class="modal-title" id="title-demo-lg">Large Modal <span class="size-tag">lg · max-w-lg</span></h2>
+    <button class="modal-close" aria-label="Close dialog" onclick="closeModal('demo-lg')">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+  </div>
+  <p class="modal-desc">Larger modal for forms or detail views.</p>
+  <div class="modal-body">Used for more complex content such as multi-field forms, session detail previews, or rich text editors where extra horizontal space improves readability.</div>
+  <div class="modal-footer">
+    <button class="open-btn" onclick="closeModal('demo-lg')">Discard</button>
+    <button class="open-btn" style="background:var(--accent);color:#fff;border-color:var(--accent);">Apply</button>
+  </div>
+</div>
+
+<!-- xl modal -->
+<div class="modal-overlay" id="overlay-demo-xl" onclick="closeModal('demo-xl')"></div>
+<div role="dialog" aria-modal="true" aria-labelledby="title-demo-xl" class="modal-content modal-xl" id="demo-xl">
+  <div class="modal-header">
+    <h2 class="modal-title" id="title-demo-xl">Extra Large Modal <span class="size-tag">xl · max-w-[80vw]</span></h2>
+    <button class="modal-close" aria-label="Close dialog" onclick="closeModal('demo-xl')">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+  </div>
+  <p class="modal-desc">Full-width modal for code viewers, diffs, or data tables.</p>
+  <div class="modal-body">XL uses <code>max-w-[80vw]</code> — 80% of the viewport width. Suited for the session conversation view, file diff, or any content that benefits from near-full-screen width.</div>
+  <div class="modal-footer">
+    <button class="open-btn" onclick="closeModal('demo-xl')">Close</button>
+  </div>
+</div>
+
+<div class="ds-section">
+<p class="ds-section-label">All 4 maxWidth sizes — static reference</p>
+<div style="display:flex;flex-direction:column;gap:16px;max-width:600px;">
+  <div class="static-modal-box" style="max-width:24rem;">
+    <div class="modal-header"><h2 class="modal-title">sm <span class="size-tag">max-w-sm · 384px</span></h2></div>
+    <p class="modal-body" style="margin:0;">Confirmation dialogs, single-action prompts.</p>
+  </div>
+  <div class="static-modal-box" style="max-width:28rem;">
+    <div class="modal-header"><h2 class="modal-title">md <span class="size-tag">max-w-md · 448px</span></h2></div>
+    <p class="modal-body" style="margin:0;">Default. Short forms, settings panels.</p>
+  </div>
+  <div class="static-modal-box" style="max-width:32rem;">
+    <div class="modal-header"><h2 class="modal-title">lg <span class="size-tag">max-w-lg · 512px</span></h2></div>
+    <p class="modal-body" style="margin:0;">Multi-field forms, detail previews.</p>
+  </div>
+  <div class="static-modal-box" style="max-width:100%;">
+    <div class="modal-header"><h2 class="modal-title">xl <span class="size-tag">max-w-[80vw]</span></h2></div>
+    <p class="modal-body" style="margin:0;">Code/diff viewers, data tables, conversation views.</p>
+  </div>
+</div>
+</div>
+</div>
+
+<button class="ds-theme-toggle" onclick="(function(r){var d=r.getAttribute('data-theme')==='dark';r.setAttribute('data-theme',d?'light':'dark');})(document.documentElement)">Toggle theme</button>
+
+<script>
+function openModal(id) {
+  document.getElementById(id).classList.add('is-open');
+  document.getElementById('overlay-' + id).classList.add('is-open');
+}
+function closeModal(id) {
+  document.getElementById(id).classList.remove('is-open');
+  document.getElementById('overlay-' + id).classList.remove('is-open');
+}
+/* close on Escape */
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') {
+    ['demo-sm','demo-md','demo-lg','demo-xl'].forEach(closeModal);
+  }
+});
+</script>
+</body>
+</html>
