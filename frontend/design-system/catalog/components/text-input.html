@@ -1,0 +1,85 @@
+<!-- @dsCard group="Components" -->
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TextInput</title>
+<link rel="stylesheet" href="../shared/tokens.css">
+<link rel="stylesheet" href="../shared/preview.css">
+<style>
+.input {
+  width:100%; padding:8px 12px; font-size:14px; font-family:var(--font-sans);
+  background:var(--bg-base); color:var(--text-primary);
+  border:1px solid var(--border); border-radius:var(--radius-md);
+  outline:none; transition:box-shadow 150ms;
+  box-sizing:border-box;
+}
+.input::placeholder { color:var(--text-muted); }
+.input:focus {
+  ring:none;
+  box-shadow:0 0 0 2px var(--accent), 0 0 0 3px var(--bg-base);
+}
+.input:disabled { opacity:.5; cursor:not-allowed; }
+.input-wrap { width:300px; }
+label { display:block; font-size:12px; font-weight:500; color:var(--text-secondary); margin-bottom:6px; }
+</style>
+</head>
+<body>
+<div class="ds-frame">
+<h1 class="ds-title">TextInput</h1>
+<p class="ds-subtitle">text / placeholder / disabled / password — src/lib/components/ui/TextInput.svelte</p>
+
+<div class="ds-section">
+<p class="ds-section-label">Default (with value)</p>
+<div class="ds-row">
+  <div class="input-wrap">
+    <label>Session name</label>
+    <input class="input" type="text" value="claude-karma · main">
+  </div>
+</div>
+</div>
+
+<div class="ds-section">
+<p class="ds-section-label">Placeholder only</p>
+<div class="ds-row">
+  <div class="input-wrap">
+    <label>Search sessions</label>
+    <input class="input" type="text" placeholder="Filter by project or date…">
+  </div>
+</div>
+</div>
+
+<div class="ds-section">
+<p class="ds-section-label">Disabled</p>
+<div class="ds-row">
+  <div class="input-wrap">
+    <label>Project path (read-only)</label>
+    <input class="input" type="text" value="/Users/jayant/Documents/GitHub/claude-karma" disabled>
+  </div>
+</div>
+</div>
+
+<div class="ds-section">
+<p class="ds-section-label">type="password"</p>
+<div class="ds-row">
+  <div class="input-wrap">
+    <label>API key</label>
+    <input class="input" type="password" value="sk-ant-api03-secret">
+  </div>
+</div>
+</div>
+
+<div class="ds-section">
+<p class="ds-section-label">Focus state (click to activate)</p>
+<div class="ds-row">
+  <div class="input-wrap">
+    <label>Click to see focus ring</label>
+    <input class="input" type="text" placeholder="Click here…">
+  </div>
+</div>
+</div>
+</div>
+<button class="ds-theme-toggle" onclick="(function(r){var d=r.getAttribute('data-theme')==='dark';r.setAttribute('data-theme',d?'light':'dark');})(document.documentElement)">Toggle theme</button>
+</body>
+</html>

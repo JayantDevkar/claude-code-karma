@@ -1,0 +1,87 @@
+<!-- @dsCard group="Components" -->
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Badge</title>
+<link rel="stylesheet" href="../shared/tokens.css">
+<link rel="stylesheet" href="../shared/preview.css">
+<style>
+.badge {
+  display:inline-flex; align-items:center; gap:4px;
+  font-family:var(--font-sans); font-weight:500; border:1px solid transparent;
+}
+.badge--sm { font-size:10px; padding:2px 6px; }
+.badge--md { font-size:12px; padding:4px 10px; }
+.r-md { border-radius:var(--radius-md); }
+.r-full { border-radius:9999px; }
+/* variant → token mapping mirrors Badge.svelte variantClasses */
+.v-default  { background:var(--bg-muted);          color:var(--text-primary);    border-color:var(--border); }
+.v-accent   { background:var(--accent-subtle);      color:var(--accent);          border-color:var(--accent); }
+.v-success  { background:var(--success-subtle);     color:var(--success);         border-color:var(--success); }
+.v-warning  { background:var(--warning-subtle);     color:var(--warning);         border-color:var(--warning); }
+.v-error    { background:var(--error-subtle);       color:var(--error);           border-color:var(--error); }
+.v-info     { background:var(--info-subtle);        color:var(--info);            border-color:var(--info); }
+.v-purple   { background:var(--model-opus-subtle);  color:var(--model-opus);      border-color:color-mix(in srgb, var(--model-opus) 40%, transparent); }
+.v-blue     { background:var(--model-sonnet-subtle);color:var(--model-sonnet);    border-color:color-mix(in srgb, var(--model-sonnet) 40%, transparent); }
+.v-emerald  { background:var(--model-haiku-subtle); color:var(--model-haiku);     border-color:color-mix(in srgb, var(--model-haiku) 40%, transparent); }
+.v-slate    { background:var(--bg-muted);           color:var(--text-secondary);  border-color:var(--border); }
+</style>
+</head>
+<body>
+<div class="ds-frame">
+<h1 class="ds-title">Badge</h1>
+<p class="ds-subtitle">10 variants × 2 sizes + rounded-full — src/lib/components/ui/Badge.svelte</p>
+
+<div class="ds-section">
+<p class="ds-section-label">Size md (default)</p>
+<div class="ds-row">
+  <span class="badge badge--md r-md v-default">default</span>
+  <span class="badge badge--md r-md v-accent">accent</span>
+  <span class="badge badge--md r-md v-success">success</span>
+  <span class="badge badge--md r-md v-warning">warning</span>
+  <span class="badge badge--md r-md v-error">error</span>
+  <span class="badge badge--md r-md v-info">info</span>
+  <span class="badge badge--md r-md v-purple">purple</span>
+  <span class="badge badge--md r-md v-blue">blue</span>
+  <span class="badge badge--md r-md v-emerald">emerald</span>
+  <span class="badge badge--md r-md v-slate">slate</span>
+</div>
+</div>
+
+<div class="ds-section">
+<p class="ds-section-label">Size sm</p>
+<div class="ds-row">
+  <span class="badge badge--sm r-md v-default">default</span>
+  <span class="badge badge--sm r-md v-accent">accent</span>
+  <span class="badge badge--sm r-md v-success">success</span>
+  <span class="badge badge--sm r-md v-warning">warning</span>
+  <span class="badge badge--sm r-md v-error">error</span>
+  <span class="badge badge--sm r-md v-info">info</span>
+  <span class="badge badge--sm r-md v-purple">purple</span>
+  <span class="badge badge--sm r-md v-blue">blue</span>
+  <span class="badge badge--sm r-md v-emerald">emerald</span>
+  <span class="badge badge--sm r-md v-slate">slate</span>
+</div>
+</div>
+
+<div class="ds-section">
+<p class="ds-section-label">rounded="full" — md size</p>
+<div class="ds-row">
+  <span class="badge badge--md r-full v-default">default</span>
+  <span class="badge badge--md r-full v-accent">accent</span>
+  <span class="badge badge--md r-full v-success">success</span>
+  <span class="badge badge--md r-full v-warning">warning</span>
+  <span class="badge badge--md r-full v-error">error</span>
+  <span class="badge badge--md r-full v-info">info</span>
+  <span class="badge badge--md r-full v-purple">purple</span>
+  <span class="badge badge--md r-full v-blue">blue</span>
+  <span class="badge badge--md r-full v-emerald">emerald</span>
+  <span class="badge badge--md r-full v-slate">slate</span>
+</div>
+</div>
+</div>
+<button class="ds-theme-toggle" onclick="(function(r){var d=r.getAttribute('data-theme')==='dark';r.setAttribute('data-theme',d?'light':'dark');})(document.documentElement)">Toggle theme</button>
+</body>
+</html>
