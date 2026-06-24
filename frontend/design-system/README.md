@@ -74,6 +74,17 @@ Foundation cards (`foundations/*.html`) are generated automatically; their mappi
 
 3. Run `cd frontend && npm run ds:build` to validate. The total count in the success message will increment by 1.
 
+## Pages layer
+
+The `catalog/pages/` directory mirrors whole application routes (not individual components). Each card is a full-page snapshot using the real design tokens, with realistic sample data, so it serves as the before-picture for redesign work.
+
+| Card | Route | Key sources |
+|------|-------|-------------|
+| `pages/cron.html` | `/cron` | `+page.svelte`, `SystemCrontabSection.svelte`, `PageHeader.svelte`, `StatsGrid.svelte` |
+| `pages/shells.html` | `/shells` | `+page.svelte`, `PageHeader.svelte`, `StatsGrid.svelte` |
+
+Cards are annotated `<!-- @dsCard group="Pages" -->` and wired into `mapping.json` like any other card. Run `ds:build` after modifying a page card.
+
 ## Sync to claude.ai/design
 
 The `catalog/` directory is the `localDir` used by the DesignSync step (Task 8). Sync is plan-gated and incremental — it pushes only changed cards to the remote design system and requires a one-time `claude.ai` authentication flow.

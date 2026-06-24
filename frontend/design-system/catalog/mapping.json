@@ -19,5 +19,7 @@
   "components/tabs.html": ["src/lib/components/ui/Tabs.svelte", "src/lib/components/ui/TabsList.svelte", "src/lib/components/ui/TabsTrigger.svelte", "src/lib/components/ui/TabsContent.svelte"],
   "components/text-input.html": ["src/lib/components/ui/TextInput.svelte"],
   "components/theme-toggle.html": ["src/lib/components/ui/ThemeToggle.svelte"],
-  "components/tier-badge.html": ["src/lib/components/ui/TierBadge.svelte"]
+  "components/tier-badge.html": ["src/lib/components/ui/TierBadge.svelte"],
+  "pages/cron.html": ["src/routes/cron/+page.svelte", "src/routes/cron/+page.server.ts", "src/lib/components/cron/SystemCrontabSection.svelte", "src/lib/components/layout/PageHeader.svelte", "src/lib/components/StatsGrid.svelte", "src/lib/components/StatsCard.svelte"],
+  "pages/shells.html": ["src/routes/shells/+page.svelte", "src/routes/shells/+page.server.ts", "src/lib/components/layout/PageHeader.svelte", "src/lib/components/StatsGrid.svelte", "src/lib/components/StatsCard.svelte"]
 }
