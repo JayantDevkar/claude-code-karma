@@ -4,7 +4,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Background Shells — Page</title>
+<title>Background Shells — The Process Monitor</title>
 <link rel="stylesheet" href="../shared/tokens.css">
 <link rel="stylesheet" href="../shared/preview.css">
 <style>
@@ -24,7 +24,7 @@
   color: var(--nav-green);
 }
 .page-header-text { flex: 1; min-width: 0; }
-.breadcrumb { font-size: 12px; color: var(--text-faint); margin: 0 0 4px; font-family: var(--font-sans); }
+.breadcrumb { font-size: 12px; color: var(--text-faint); margin: 0 0 4px; }
 .breadcrumb a { color: var(--text-faint); text-decoration: none; }
 .page-h1 { font-size: 24px; font-weight: 600; margin: 0 0 6px; line-height: 1.2; }
 .page-subtitle {
@@ -37,7 +37,6 @@
   height: 34px; padding: 0 12px; border-radius: 8px;
   border: 1px solid var(--border-hover); background: var(--bg-base);
   font-size: 13px; font-weight: 500; color: var(--text-primary); cursor: pointer;
-  font-family: var(--font-sans);
 }
 
 /* ── Stats strip ── */
@@ -65,6 +64,7 @@
 /* ── Toolbar ── */
 .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 14px; }
 
+/* Segmented All/Running/Closed control */
 .seg {
   display: inline-flex; background: var(--bg-muted); border: 1px solid var(--border);
   border-radius: 8px; padding: 3px;
@@ -72,7 +72,7 @@
 .seg-btn {
   display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px;
   border-radius: 6px; font-size: 12.5px; font-weight: 500; color: var(--text-secondary);
-  background: transparent; border: 0; cursor: pointer; font-family: var(--font-sans);
+  background: transparent; border: 0; cursor: pointer;
 }
 .seg-btn.active { background: var(--bg-base); color: var(--text-primary); box-shadow: 0 1px 2px var(--border-subtle); }
 .seg-count {
@@ -84,18 +84,18 @@
 .select-input {
   height: 32px; padding: 0 10px 0 12px; border: 1px solid var(--border-hover);
   background: var(--bg-base); border-radius: 8px; font-size: 13px;
-  color: var(--text-primary); cursor: pointer; font-family: var(--font-sans);
+  color: var(--text-primary); cursor: pointer;
 }
 .search-wrap { position: relative; flex: 1; min-width: 220px; display: flex; align-items: center; margin-left: auto; }
 .search-icon { position: absolute; left: 11px; color: var(--text-faint); font-size: 14px; pointer-events: none; }
 .search-input {
   width: 100%; height: 34px; border: 1px solid var(--border-hover); border-radius: 8px;
   background: var(--bg-base); padding: 0 12px 0 34px; font-size: 13px;
-  color: var(--text-primary); outline: none; font-family: var(--font-sans);
+  color: var(--text-primary); outline: none;
 }
 .search-input::placeholder { color: var(--text-faint); }
 
-/* ── Section bar ── */
+/* ── Mono section bar ── */
 .section-bar {
   display: flex; align-items: center; justify-content: space-between;
   border-radius: 10px; border: 1px solid var(--border); background: var(--bg-muted);
@@ -107,60 +107,111 @@
 .section-bar-count { font-size: 12.5px; color: var(--text-secondary); }
 .section-bar-count b { color: var(--text-primary); }
 
-/* ── Shell list ── */
-.shell-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 18px; list-style: none; padding: 0; margin-top: 0; }
-.shell-card {
-  border: 1px solid var(--border); background: var(--bg-base); border-radius: 12px; overflow: hidden;
+/* ── Triage table ── */
+/* Column headers */
+.sA-thead {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) 130px 96px 96px 78px;
+  align-items: center; gap: 14px; padding: 0 16px 8px;
 }
-.shell-card.open { border-color: var(--border-hover); box-shadow: 0 1px 0 var(--border-subtle), 0 6px 20px -8px var(--border-subtle); }
-.shell-card:not(.open):hover { border-color: var(--border-hover); }
+.sA-thead span {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.07em;
+  text-transform: uppercase; color: var(--text-faint);
+}
+.sA-thead .r { text-align: right; }
 
-.shell-row {
-  display: grid; grid-template-columns: 14px 1fr auto 18px;
-  align-items: center; gap: 14px; padding: 14px 16px;
+.sA-table {
+  border: 1px solid var(--border); border-radius: 12px;
+  overflow: hidden; list-style: none; margin: 0; padding: 0;
+}
+.sA-li { border-bottom: 1px solid var(--border-subtle); }
+.sA-li:last-child { border-bottom: none; }
+/* Running shells pinned/highlighted */
+.sA-li.is-running { background: linear-gradient(90deg, rgba(var(--success-rgb),0.045), transparent 60%); }
+.sA-li.is-dim { background: var(--bg-subtle); }
+.sA-li:hover { background: var(--bg-muted); }
+.sA-li.is-running:hover { background: linear-gradient(90deg, rgba(var(--success-rgb),0.075), transparent 60%); }
+.sA-li.is-open { background: var(--bg-base); }
+
+.sA-row {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) 130px 96px 96px 78px;
+  align-items: center; gap: 14px; padding: 12px 16px;
 }
 
-/* ── Status dots ── */
-.sdot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-.sdot-running  { background: var(--success); box-shadow: 0 0 0 4px rgba(var(--success-rgb),0.15); }
-.sdot-kill     { background: var(--error); }
-.sdot-natural  { background: var(--info); }
-.sdot-timeout  { background: var(--warning); }
-.sdot-ended    { background: var(--text-faint); }
+/* Status dot variants */
+.sdot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; display: block; }
+.sdot-running { background: var(--success); box-shadow: 0 0 0 4px rgba(var(--success-rgb),0.15); }
+.sdot-kill    { background: var(--error); }
+.sdot-natural { background: var(--info); }
+.sdot-timeout { background: var(--warning); }
+.sdot-ended   { background: var(--text-faint); }
 
-/* ── Row content ── */
-.row-content { min-width: 0; display: flex; flex-direction: column; gap: 4px; cursor: pointer; }
-.row-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.shell-id { font-family: var(--font-mono); font-size: 12.5px; font-weight: 600; color: var(--accent); }
-.tool-badge {
-  border-radius: 4px; padding: 2px 6px; font-size: 10.5px; font-weight: 600;
-  text-transform: uppercase; letter-spacing: 0.05em;
+/* Main column: id-line + command */
+.sA-c-main { min-width: 0; cursor: pointer; background: transparent; border: 0; padding: 0; text-align: left; }
+.sA-idline { display: flex; align-items: center; gap: 8px; margin-bottom: 3px; flex-wrap: wrap; }
+.sA-id { font-family: var(--font-mono); font-size: 12px; font-weight: 600; color: var(--accent); }
+
+/* Tool badges */
+.tag-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+  padding: 2px 7px; border-radius: 5px; font-family: var(--font-mono);
 }
-.tool-bash    { background: var(--accent-muted);    color: var(--accent); }
-.tool-monitor { background: var(--info-subtle);     color: var(--info); }
-.tool-manual  { background: var(--warning-subtle);  color: var(--warning); }
-.exit-ok  { font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; text-transform: uppercase; color: var(--success); }
-.exit-err { font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; text-transform: uppercase; color: var(--error); }
-.shell-desc { font-size: 13px; font-weight: 500; color: var(--text-primary); }
-.row-meta { font-family: var(--font-mono); font-size: 11.5px; color: var(--text-faint); }
+.tool-badge-bash    { background: var(--accent-muted);    color: var(--accent); }
+.tool-badge-monitor { background: var(--info-subtle);     color: var(--info); }
+.tool-badge-manual  { background: var(--warning-subtle);  color: var(--warning); }
 
-/* ── Duration col ── */
-.dur-col { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
-.dur-main { font-family: var(--font-mono); font-size: 13px; font-weight: 500; color: var(--text-primary); }
-.dur-polls { font-family: var(--font-mono); font-size: 11.5px; color: var(--text-faint); }
-.kill-pill {
-  display: inline-flex; align-items: center; height: 24px; padding: 0 10px;
-  border-radius: 6px; font-size: 12.5px; font-weight: 500;
+.sA-exit { font-family: var(--font-mono); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
+.sA-desc { font-size: 11px; color: var(--text-muted); }
+.sA-cmd {
+  font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.sA-cmd .p { color: var(--accent); font-weight: 700; margin-right: 6px; }
+
+/* Status column */
+.sA-status { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.sA-status .sl {
+  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.sA-status .ss {
+  font-family: var(--font-mono); font-size: 10.5px; color: var(--text-faint);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* Output sparkline (decorative) */
+.sA-spark { display: flex; align-items: flex-end; justify-content: flex-end; gap: 2px; height: 22px; }
+.sA-spark > i { display: block; width: 3px; background: color-mix(in srgb, var(--accent) 55%, transparent); border-radius: 2px; }
+.sA-spark.g > i { background: color-mix(in srgb, var(--success) 60%, transparent); }
+
+/* Duration/metric column */
+.sA-metric { text-align: right; }
+.sA-metric .mv { font-family: var(--font-mono); font-size: 12.5px; font-weight: 600; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.sA-metric .ml { font-size: 10px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.04em; margin-top: 2px; }
+
+/* Trailing: kill button (running) or caret (closed) */
+.sA-caret { display: flex; justify-content: flex-end; align-items: center; }
+.caret-btn {
+  color: var(--text-faint); background: transparent; border: 0; cursor: pointer;
+  display: inline-flex;
+}
+.caret-btn:hover { color: var(--text-primary); }
+.caret-btn.open { transform: rotate(90deg); color: var(--text-primary); }
+
+/* Inline kill button */
+.sA-kill {
+  display: inline-flex; align-items: center; height: 24px; padding: 0 9px;
+  border-radius: 6px; font-size: 11.5px; font-weight: 600;
   color: var(--error); background: var(--error-subtle);
-  border: 1px solid rgba(var(--error-rgb),0.3); cursor: pointer; font-family: var(--font-sans);
+  border: 1px solid rgba(var(--error-rgb),0.3); cursor: pointer; white-space: nowrap;
 }
-.caret { color: var(--text-faint); font-size: 16px; display: flex; align-items: center; cursor: pointer; }
-.caret.open { transform: rotate(90deg); color: var(--text-primary); }
 
-/* ── Expanded panel ── */
-.panel {
-  border-top: 1px dashed var(--border); padding: 16px 18px 18px;
-  display: flex; flex-direction: column; gap: 14px;
+/* ── Expanded detail panel ── */
+.sA-detail {
+  border-top: 1px dashed var(--border); padding: 16px 16px 18px;
+  display: flex; flex-direction: column; gap: 12px;
 }
 .cmd-block {
   display: flex; align-items: flex-start; gap: 8px;
@@ -168,20 +219,16 @@
   padding: 10px 14px;
 }
 .cmd-dollar { font-family: var(--font-mono); font-size: 12.5px; font-weight: 600; color: var(--accent); flex-shrink: 0; }
-.cmd-text { font-family: var(--font-mono); font-size: 12.5px; color: var(--text-primary); flex: 1; word-break: break-all; }
+.cmd-text { font-family: var(--font-mono); font-size: 12.5px; color: var(--text-primary); flex: 1; word-break: break-all; white-space: pre-wrap; }
 .copy-icon { color: var(--text-faint); flex-shrink: 0; cursor: pointer; }
+
 .kv-row { display: flex; align-items: baseline; gap: 6px; }
-.kv-label {
-  font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.07em;
-  color: var(--text-faint); font-weight: 600;
-}
-.kv-val { font-family: var(--font-mono); font-size: 12.5px; color: var(--accent); }
-.session-link { font-family: var(--font-mono); font-size: 12.5px; color: var(--accent); text-decoration: none; cursor: pointer; }
+.kv-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-faint); font-weight: 600; }
+.session-link { font-family: var(--font-mono); font-size: 12.5px; color: var(--accent); text-decoration: none; }
 .session-link:hover { text-decoration: underline; }
+
 .polls-section { display: flex; flex-direction: column; gap: 8px; }
-.poll-card {
-  border-radius: 8px; border: 1px solid var(--border); background: var(--bg-muted); padding: 10px 12px;
-}
+.poll-card { border-radius: 8px; border: 1px solid var(--border); background: var(--bg-muted); padding: 10px 12px; }
 .poll-meta { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
 .poll-ts { font-family: var(--font-mono); font-size: 11px; color: var(--text-faint); }
 .poll-bytes { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-faint); }
@@ -193,35 +240,26 @@
 }
 
 /* ── Footer hint ── */
-.footer-hint { display: flex; align-items: center; gap: 8px; margin-top: 18px; font-size: 12px; color: var(--text-faint); }
+.footer-hint { display: flex; align-items: center; gap: 8px; margin-top: 16px; font-size: 12px; color: var(--text-faint); }
 .footer-right { margin-left: auto; }
 .kbd {
   font-family: var(--font-mono); font-size: 11px; background: var(--bg-subtle);
   border: 1px solid var(--border); border-bottom-width: 2px; padding: 1px 5px;
   border-radius: 4px; color: var(--text-primary);
 }
-
-/* ── Empty state reference ── */
-.empty-state-ref { margin-top: 32px; }
-.filter-empty {
-  border: 1px dashed var(--border); border-radius: 12px; background: var(--bg-subtle);
-  padding: 48px 20px; text-align: center; color: var(--text-secondary); font-size: 14px;
-}
 </style>
 </head>
 <body>
 <div class="ds-frame">
-  <h1 class="ds-title">Background Shells — /shells page</h1>
-  <p class="ds-subtitle">Full-page snapshot of the /shells route — PageHeader, stats strip, toolbar with segmented control, section bar, shell list (one expanded with poll output), footer hint, and empty-state reference.</p>
+  <h1 class="ds-title">Background Shells — /shells page (The Process Monitor)</h1>
+  <p class="ds-subtitle">Full-page snapshot of the redesigned /shells route — PageHeader with green icon, 3-stat strip, segmented All/Running/Closed + tool/project selects + search, mono section bar, triage TABLE (RUNNING pinned to top), one row expanded showing command block + poll output pre, footer hint.</p>
 
   <!-- ── Page Header ──────────────────────────────────────────────────── -->
   <div class="page-header">
     <div class="page-icon-tile">
-      <!-- Stacked rectangles + > polyline for "shells" icon -->
+      <!-- Activity/terminal icon — green -->
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <rect x="2" y="3" width="20" height="6" rx="1"/>
-        <rect x="2" y="11" width="20" height="6" rx="1"/>
-        <polyline points="5 17 9 20 5 23"/>
+        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
       </svg>
     </div>
     <div class="page-header-text">
@@ -232,11 +270,12 @@
     <button class="refresh-btn">↻ Refresh</button>
   </div>
 
-  <!-- ── Stats strip ──────────────────────────────────────────────────── -->
+  <!-- ── Stats strip: TOTAL SPAWNED / CURRENTLY RUNNING / CLOSED ─────── -->
   <div class="stats-wrap">
     <div class="stats-grid">
       <div class="stat-tile">
         <div class="stat-icon stat-icon-purple">
+          <!-- Terminal icon -->
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
         </div>
         <div class="stat-body">
@@ -246,6 +285,7 @@
       </div>
       <div class="stat-tile">
         <div class="stat-icon stat-icon-green">
+          <!-- Activity icon -->
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
         </div>
         <div class="stat-body">
@@ -255,6 +295,7 @@
       </div>
       <div class="stat-tile">
         <div class="stat-icon stat-icon-gray">
+          <!-- Box icon -->
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
         </div>
         <div class="stat-body">
@@ -267,30 +308,34 @@
 
   <!-- ── Toolbar ──────────────────────────────────────────────────────── -->
   <div class="toolbar">
+    <!-- Segmented All / Running / Closed -->
     <div class="seg">
       <button class="seg-btn active">All <span class="seg-count">6</span></button>
       <button class="seg-btn">Running <span class="seg-count">1</span></button>
       <button class="seg-btn">Closed <span class="seg-count">5</span></button>
     </div>
+    <!-- Tool select -->
     <select class="select-input">
       <option>All tools</option>
       <option>Bash</option>
       <option>Monitor</option>
       <option>Manual</option>
     </select>
+    <!-- Project select -->
     <select class="select-input">
       <option>All projects</option>
       <option>claude-karma</option>
       <option>hubdata</option>
       <option>api-server</option>
     </select>
+    <!-- Search -->
     <div class="search-wrap">
       <span class="search-icon">⌕</span>
       <input class="search-input" type="text" placeholder="Search shell id, command, project…" readonly>
     </div>
   </div>
 
-  <!-- ── Section bar ──────────────────────────────────────────────────── -->
+  <!-- ── Mono section bar ── -->
   <div class="section-bar">
     <span class="section-bar-cmd">
       <span class="dollar">$</span>
@@ -299,30 +344,61 @@
     <span class="section-bar-count">showing <b>6</b> of <b>6</b></span>
   </div>
 
-  <!-- ── Shell list ────────────────────────────────────────────────────── -->
-  <ul class="shell-list">
+  <!-- ── Triage table ─────────────────────────────────────────────────── -->
+  <!-- Column header row -->
+  <div class="sA-thead" aria-hidden="true">
+    <span></span>
+    <span>Shell · command</span>
+    <span>Status</span>
+    <span class="r">Output</span>
+    <span class="r">Duration</span>
+    <span></span>
+  </div>
 
-    <!-- Row 1: sh_7Kq2 — RUNNING (green pulse) — EXPANDED -->
-    <li class="shell-card open">
-      <div class="shell-row">
-        <span class="sdot sdot-running"></span>
-        <div class="row-content">
-          <div class="row-head">
-            <span class="shell-id">sh_7Kq2</span>
-            <span class="tool-badge tool-bash">bash</span>
-            <span class="shell-desc">· Watch build</span>
+  <ul class="sA-table">
+
+    <!-- Row 1: sh_7Kq2 — RUNNING (pinned top) — EXPANDED -->
+    <li class="sA-li is-running is-open">
+      <div class="sA-row">
+        <span class="sdot sdot-running" aria-hidden="true"></span>
+        <!-- Main: id-line + command -->
+        <div class="sA-c-main">
+          <div class="sA-idline">
+            <span class="sA-id">sh_7Kq2</span>
+            <span class="tag-badge tool-badge-bash">bash</span>
+            <span class="sA-desc">· Watch build</span>
           </div>
-          <div class="row-meta">claude-karma · 2:02 PM</div>
+          <div class="sA-cmd"><span class="p">$</span>npm run build -- --watch 2&gt;&amp;1 | tee /tmp/build.log</div>
         </div>
-        <div class="dur-col">
-          <span class="kill-pill">Kill shell</span>
-          <span class="dur-main">5m 12s</span>
-          <span class="dur-polls">14 polls</span>
+        <!-- Status: RUNNING + project -->
+        <div class="sA-status">
+          <span class="sl" style="color:var(--success);">RUNNING</span>
+          <span class="ss">claude-karma</span>
         </div>
-        <span class="caret open">›</span>
+        <!-- Output sparkline (decorative, aria-hidden) -->
+        <div class="sA-spark g" aria-hidden="true" title="14 polls">
+          <i style="height:30%"></i>
+          <i style="height:50%"></i>
+          <i style="height:80%"></i>
+          <i style="height:60%"></i>
+          <i style="height:90%"></i>
+          <i style="height:100%"></i>
+          <i style="height:75%"></i>
+          <i style="height:85%"></i>
+        </div>
+        <!-- Duration + polls -->
+        <div class="sA-metric">
+          <div class="mv">5m 12s</div>
+          <div class="ml">14 polls</div>
+        </div>
+        <!-- Kill button (running row) -->
+        <div class="sA-caret">
+          <button type="button" class="sA-kill">Kill</button>
+        </div>
       </div>
-      <!-- Expanded panel -->
-      <div class="panel">
+      <!-- Expanded detail -->
+      <div class="sA-detail">
+        <!-- Command block -->
         <div class="cmd-block">
           <span class="cmd-dollar">$</span>
           <span class="cmd-text">npm run build -- --watch 2>&amp;1 | tee /tmp/build.log</span>
@@ -330,12 +406,17 @@
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
           </span>
         </div>
+        <!-- Session link -->
         <div class="kv-row">
           <span class="kv-label">Session</span>
           <a href="#" class="session-link">design-system-cards-abc1…</a>
         </div>
+        <!-- Poll output -->
         <div class="polls-section">
-          <span class="kv-label">Output polls · 1 shown</span>
+          <div class="kv-row" style="justify-content:space-between;margin-bottom:4px;">
+            <span class="kv-label">Output polls · 1 shown</span>
+            <span class="kv-label">via BashOutput</span>
+          </div>
           <div class="poll-card">
             <div class="poll-meta">
               <span class="poll-ts">Today at 2:07 PM</span>
@@ -354,123 +435,207 @@ watching for file changes...</pre>
       </div>
     </li>
 
-    <!-- Row 2: toolu_01ABcdef8 — bash exit 0, natural -->
-    <li class="shell-card">
-      <div class="shell-row">
-        <span class="sdot sdot-natural"></span>
-        <div class="row-content">
-          <div class="row-head">
-            <span class="shell-id">toolu_01ABcdef8</span>
-            <span class="tool-badge tool-bash">bash</span>
-            <span class="exit-ok">exit 0</span>
-            <span class="shell-desc">· pytest run</span>
+    <!-- Row 2: toolu_01ABcdef8 — bash exit 0, natural (EXITED) -->
+    <li class="sA-li is-dim">
+      <div class="sA-row">
+        <span class="sdot sdot-natural" aria-hidden="true"></span>
+        <div class="sA-c-main">
+          <div class="sA-idline">
+            <span class="sA-id">toolu_01ABcdef8</span>
+            <span class="tag-badge tool-badge-bash">bash</span>
+            <span class="sA-exit" style="color:var(--success);">exit 0</span>
+            <span class="sA-desc">· pytest run</span>
           </div>
-          <div class="row-meta">claude-karma · 1:47 PM</div>
+          <div class="sA-cmd"><span class="p">$</span>pytest tests/ -v --tb=short 2>&amp;1</div>
         </div>
-        <div class="dur-col">
-          <span class="dur-main">18.3s</span>
-          <span class="dur-polls">3 polls</span>
+        <div class="sA-status">
+          <span class="sl" style="color:var(--info);">EXITED</span>
+          <span class="ss">claude-karma</span>
         </div>
-        <span class="caret">›</span>
+        <div class="sA-spark" aria-hidden="true" title="3 polls · 2.1 KB">
+          <i style="height:8%"></i>
+          <i style="height:8%"></i>
+          <i style="height:8%"></i>
+          <i style="height:8%"></i>
+          <i style="height:40%"></i>
+          <i style="height:100%"></i>
+          <i style="height:60%"></i>
+          <i style="height:8%"></i>
+        </div>
+        <div class="sA-metric">
+          <div class="mv">18.3s</div>
+          <div class="ml">2.1 KB</div>
+        </div>
+        <div class="sA-caret">
+          <button class="caret-btn" aria-label="Expand shell details">
+            <svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+          </button>
+        </div>
       </div>
     </li>
 
     <!-- Row 3: sh_3Pm9 — bash KILLED -->
-    <li class="shell-card">
-      <div class="shell-row">
-        <span class="sdot sdot-kill"></span>
-        <div class="row-content">
-          <div class="row-head">
-            <span class="shell-id">sh_3Pm9</span>
-            <span class="tool-badge tool-bash">bash</span>
-            <span class="shell-desc">· Load test run</span>
+    <li class="sA-li is-dim">
+      <div class="sA-row">
+        <span class="sdot sdot-kill" aria-hidden="true"></span>
+        <div class="sA-c-main">
+          <div class="sA-idline">
+            <span class="sA-id">sh_3Pm9</span>
+            <span class="tag-badge tool-badge-bash">bash</span>
+            <span class="sA-desc">· Load test run</span>
           </div>
-          <div class="row-meta">hubdata · 12:30 PM</div>
+          <div class="sA-cmd"><span class="p">$</span>artillery run load-test.yml --target http://localhost:8000</div>
         </div>
-        <div class="dur-col">
-          <span class="dur-main">47s</span>
-          <span class="dur-polls">9 polls</span>
+        <div class="sA-status">
+          <span class="sl" style="color:var(--error);">KILLED</span>
+          <span class="ss">hubdata</span>
         </div>
-        <span class="caret">›</span>
+        <div class="sA-spark" aria-hidden="true" title="9 polls · 18.4 KB">
+          <i style="height:20%"></i>
+          <i style="height:60%"></i>
+          <i style="height:80%"></i>
+          <i style="height:100%"></i>
+          <i style="height:90%"></i>
+          <i style="height:70%"></i>
+          <i style="height:40%"></i>
+          <i style="height:8%"></i>
+        </div>
+        <div class="sA-metric">
+          <div class="mv">47s</div>
+          <div class="ml">18.4 KB</div>
+        </div>
+        <div class="sA-caret">
+          <button class="caret-btn" aria-label="Expand shell details">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+          </button>
+        </div>
       </div>
     </li>
 
     <!-- Row 4: toolu_01TimeEx — monitor TIMEOUT -->
-    <li class="shell-card">
-      <div class="shell-row">
-        <span class="sdot sdot-timeout"></span>
-        <div class="row-content">
-          <div class="row-head">
-            <span class="shell-id">toolu_01TimeEx</span>
-            <span class="tool-badge tool-monitor">monitor</span>
-            <span class="shell-desc">· Error watcher</span>
+    <li class="sA-li is-dim">
+      <div class="sA-row">
+        <span class="sdot sdot-timeout" aria-hidden="true"></span>
+        <div class="sA-c-main">
+          <div class="sA-idline">
+            <span class="sA-id">toolu_01TimeEx</span>
+            <span class="tag-badge tool-badge-monitor">monitor</span>
+            <span class="sA-desc">· Error watcher</span>
           </div>
-          <div class="row-meta">api-server · 11:00 AM</div>
+          <div class="sA-cmd"><span class="p">$</span>tail -f /var/log/api-server/error.log</div>
         </div>
-        <div class="dur-col">
-          <span class="dur-main">5m 0s</span>
-          <span class="dur-polls">6 polls</span>
+        <div class="sA-status">
+          <span class="sl" style="color:var(--warning);">TIMEOUT</span>
+          <span class="ss">api-server</span>
         </div>
-        <span class="caret">›</span>
+        <div class="sA-spark" aria-hidden="true" title="6 polls · 4.2 KB">
+          <i style="height:30%"></i>
+          <i style="height:30%"></i>
+          <i style="height:30%"></i>
+          <i style="height:30%"></i>
+          <i style="height:30%"></i>
+          <i style="height:30%"></i>
+          <i style="height:30%"></i>
+          <i style="height:30%"></i>
+        </div>
+        <div class="sA-metric">
+          <div class="mv">5m 0s</div>
+          <div class="ml">4.2 KB</div>
+        </div>
+        <div class="sA-caret">
+          <button class="caret-btn" aria-label="Expand shell details">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+          </button>
+        </div>
       </div>
     </li>
 
     <!-- Row 5: sh_2Lk1 — bash exit 0 SESSION ENDED -->
-    <li class="shell-card">
-      <div class="shell-row">
-        <span class="sdot sdot-ended"></span>
-        <div class="row-content">
-          <div class="row-head">
-            <span class="shell-id">sh_2Lk1</span>
-            <span class="tool-badge tool-bash">bash</span>
-            <span class="exit-ok">exit 0</span>
-            <span class="shell-desc">· git log</span>
+    <li class="sA-li is-dim">
+      <div class="sA-row">
+        <span class="sdot sdot-ended" aria-hidden="true"></span>
+        <div class="sA-c-main">
+          <div class="sA-idline">
+            <span class="sA-id">sh_2Lk1</span>
+            <span class="tag-badge tool-badge-bash">bash</span>
+            <span class="sA-exit" style="color:var(--success);">exit 0</span>
+            <span class="sA-desc">· git log</span>
           </div>
-          <div class="row-meta">claude-karma · Jun 22</div>
+          <div class="sA-cmd"><span class="p">$</span>git log --oneline -20</div>
         </div>
-        <div class="dur-col">
-          <span class="dur-main">2.8s</span>
-          <span class="dur-polls">1 poll</span>
+        <div class="sA-status">
+          <span class="sl" style="color:var(--text-faint);">SESSION ENDED</span>
+          <span class="ss">claude-karma</span>
         </div>
-        <span class="caret">›</span>
+        <div class="sA-spark" aria-hidden="true" title="1 poll · 0.8 KB">
+          <i style="height:8%"></i>
+          <i style="height:8%"></i>
+          <i style="height:8%"></i>
+          <i style="height:8%"></i>
+          <i style="height:8%"></i>
+          <i style="height:8%"></i>
+          <i style="height:8%"></i>
+          <i style="height:100%"></i>
+        </div>
+        <div class="sA-metric">
+          <div class="mv">2.8s</div>
+          <div class="ml">0.8 KB</div>
+        </div>
+        <div class="sA-caret">
+          <button class="caret-btn" aria-label="Expand shell details">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+          </button>
+        </div>
       </div>
     </li>
 
-    <!-- Row 6: sh_9Xr7 — bash exit 1, natural dot -->
-    <li class="shell-card">
-      <div class="shell-row">
-        <span class="sdot sdot-natural"></span>
-        <div class="row-content">
-          <div class="row-head">
-            <span class="shell-id">sh_9Xr7</span>
-            <span class="tool-badge tool-bash">bash</span>
-            <span class="exit-err">exit 1</span>
-            <span class="shell-desc">· Type + lint check</span>
+    <!-- Row 6: sh_9Xr7 — bash exit 1 -->
+    <li class="sA-li is-dim">
+      <div class="sA-row">
+        <span class="sdot sdot-natural" aria-hidden="true"></span>
+        <div class="sA-c-main">
+          <div class="sA-idline">
+            <span class="sA-id">sh_9Xr7</span>
+            <span class="tag-badge tool-badge-bash">bash</span>
+            <span class="sA-exit" style="color:var(--error);">exit 1</span>
+            <span class="sA-desc">· Type + lint check</span>
           </div>
-          <div class="row-meta">claude-karma · 2:01 PM</div>
+          <div class="sA-cmd"><span class="p">$</span>npm run check &amp;&amp; npm run lint</div>
         </div>
-        <div class="dur-col">
-          <span class="dur-main">6.2s</span>
-          <span class="dur-polls">2 polls</span>
+        <div class="sA-status">
+          <span class="sl" style="color:var(--info);">EXITED</span>
+          <span class="ss">claude-karma</span>
         </div>
-        <span class="caret">›</span>
+        <div class="sA-spark" aria-hidden="true" title="2 polls · 3.5 KB">
+          <i style="height:8%"></i>
+          <i style="height:8%"></i>
+          <i style="height:8%"></i>
+          <i style="height:8%"></i>
+          <i style="height:8%"></i>
+          <i style="height:8%"></i>
+          <i style="height:70%"></i>
+          <i style="height:100%"></i>
+        </div>
+        <div class="sA-metric">
+          <div class="mv">6.2s</div>
+          <div class="ml">3.5 KB</div>
+        </div>
+        <div class="sA-caret">
+          <button class="caret-btn" aria-label="Expand shell details">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+          </button>
+        </div>
       </div>
     </li>
 
-  </ul><!-- /shell-list -->
+  </ul><!-- /sA-table -->
 
   <!-- ── Footer hint ──────────────────────────────────────────────────── -->
-  <div class="footer-hint">
+  <p class="footer-hint">
     <kbd class="kbd">↵</kbd>
     <span>Click any row to expand poll history</span>
     <span class="footer-right">Updated just now</span>
-  </div>
-
-  <!-- ── Empty state reference block ─────────────────────────────────── -->
-  <div class="empty-state-ref" style="margin-top:32px;">
-    <p class="ds-section-label">Empty state</p>
-    <div class="filter-empty">No shells match these filters.</div>
-  </div>
+  </p>
 
 </div><!-- /ds-frame -->
 <button class="ds-theme-toggle" onclick="(function(r){var d=r.getAttribute('data-theme')==='dark';r.setAttribute('data-theme',d?'light':'dark');})(document.documentElement)">Toggle theme</button>

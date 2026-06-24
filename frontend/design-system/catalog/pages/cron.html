@@ -4,7 +4,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Cron Jobs — Page</title>
+<title>Cron Jobs — The Ledger</title>
 <link rel="stylesheet" href="../shared/tokens.css">
 <link rel="stylesheet" href="../shared/preview.css">
 <style>
@@ -24,7 +24,7 @@
   color: var(--nav-purple);
 }
 .page-header-text { flex: 1; min-width: 0; }
-.breadcrumb { font-size: 12px; color: var(--text-faint); margin: 0 0 4px; font-family: var(--font-sans); }
+.breadcrumb { font-size: 12px; color: var(--text-faint); margin: 0 0 4px; }
 .breadcrumb a { color: var(--text-faint); text-decoration: none; }
 .breadcrumb a:hover { color: var(--accent); }
 .breadcrumb-sep { margin: 0 6px; }
@@ -39,16 +39,15 @@
   height: 34px; padding: 0 12px; border-radius: 8px;
   border: 1px solid var(--border-hover); background: var(--bg-base);
   font-size: 13px; font-weight: 500; color: var(--text-primary); cursor: pointer;
-  font-family: var(--font-sans);
 }
 
-/* ── Stats strip ── */
+/* ── Stats strip (4 columns — Tracked / Confirmed / Inferred / Expiring) ── */
 .stats-wrap {
   border-radius: 16px; padding: 24px; border: 1px solid var(--border);
   background: linear-gradient(135deg, rgba(var(--accent-rgb),0.02) 0%, rgba(var(--accent-rgb),0.06) 100%);
   margin-bottom: 22px;
 }
-.stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.stats-grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
 .stat-tile {
   background: var(--bg-base); border: 1px solid var(--border); border-radius: 12px;
   padding: 20px; display: flex; align-items: center; gap: 14px;
@@ -59,7 +58,8 @@
 }
 .stat-icon-purple { background: var(--model-opus-subtle); color: var(--model-opus); }
 .stat-icon-green  { background: var(--success-subtle);     color: var(--success); }
-.stat-icon-gray   { background: var(--bg-muted);           color: var(--text-faint); }
+.stat-icon-teal   { background: var(--info-subtle);        color: var(--info); }
+.stat-icon-orange { background: var(--warning-subtle);     color: var(--warning); }
 .stat-body { display: flex; flex-direction: column; gap: 2px; }
 .stat-num { font-size: 24px; font-weight: 700; line-height: 1; color: var(--text-primary); }
 .stat-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-faint); }
@@ -74,7 +74,7 @@
 .source-seg-btn {
   display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 16px;
   background: none; border: none; border-radius: 9px; font-size: 12.5px; font-weight: 500;
-  color: var(--text-muted); cursor: pointer; font-family: var(--font-sans);
+  color: var(--text-muted); cursor: pointer;
 }
 .source-seg-btn.on {
   background: var(--bg-base); color: var(--accent); font-weight: 600;
@@ -86,12 +86,12 @@
 .select-input {
   height: 32px; padding: 0 10px 0 12px; border: 1px solid var(--border-hover);
   background: var(--bg-base); border-radius: 8px; font-size: 13px;
-  color: var(--text-primary); cursor: pointer; font-family: var(--font-sans);
+  color: var(--text-primary); cursor: pointer;
 }
 .toggle-btn {
   display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 12px;
   border: 1px solid var(--border-hover); border-radius: 8px; background: var(--bg-base);
-  font-size: 13px; color: var(--text-muted); cursor: pointer; font-family: var(--font-sans);
+  font-size: 13px; color: var(--text-muted); cursor: pointer;
 }
 .sw {
   width: 26px; height: 15px; background: var(--border-hover); border-radius: 99px;
@@ -107,72 +107,124 @@
 .search-input {
   width: 100%; height: 34px; border: 1px solid var(--border-hover); border-radius: 8px;
   background: var(--bg-base); padding: 0 12px 0 34px; font-size: 13px;
-  color: var(--text-primary); outline: none; font-family: var(--font-sans);
+  color: var(--text-primary); outline: none;
 }
 .search-input::placeholder { color: var(--text-faint); }
 
-/* ── Cron list ── */
-.cron-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 18px; }
+/* Trust legend */
+.legend { display: flex; align-items: center; gap: 14px; margin-left: auto; font-size: 11px; color: var(--text-muted); }
+.legend .li { display: inline-flex; align-items: center; gap: 5px; }
+.legend-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+
+/* ── The Ledger: status-grouped tables ── */
+.ledger { display: flex; flex-direction: column; }
+
+.cA-group {
+  display: flex; align-items: center; gap: 8px; margin: 4px 2px 8px;
+}
+.cA-group .gl {
+  font-size: 11px; font-weight: 700; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--text-secondary);
+}
+.cA-group .gn {
+  font-family: var(--font-mono); font-size: 11px; color: var(--text-faint);
+  background: var(--bg-muted); border-radius: 20px; padding: 1px 8px;
+}
+.cA-group .gline { flex: 1; height: 1px; background: var(--border); }
+
+.cA-table {
+  border: 1px solid var(--border); border-radius: 12px;
+  overflow: hidden; margin-bottom: 18px; background: var(--bg-base);
+}
+
+/* Each job card — reads like a table row */
 .cron-card {
-  border: 1px solid var(--border); background: var(--bg-base);
-  border-radius: 12px; overflow: hidden;
+  background: var(--bg-base); border-bottom: 1px solid var(--border-subtle);
+}
+.cron-card:last-child { border-bottom: none; }
+.cron-card:hover { background: var(--bg-subtle); }
+.cron-card.expanded {
+  background: var(--bg-base);
+  box-shadow: inset 3px 0 0 var(--accent), 0 6px 20px -10px var(--border-subtle);
 }
 .cron-card.gone { background: var(--bg-subtle); }
-.cron-card.expanded { border-color: var(--border-hover); box-shadow: 0 1px 0 var(--border-subtle), 0 6px 20px -8px var(--border-subtle); }
+
+/* 6-column grid: dot | main | trust | cadence | ttl | caret */
 .cron-row {
-  display: grid; grid-template-columns: 14px 1fr auto 18px;
-  align-items: center; gap: 14px; padding: 14px 16px; cursor: pointer;
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) 120px 150px 132px 18px;
+  align-items: center; gap: 14px; padding: 13px 16px;
+  cursor: pointer;
 }
+
 .status-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-.dot-active  { background: var(--success); }
-.dot-likely  { background: var(--success); opacity: 0.55; }
+.dot-truth  { background: var(--success); box-shadow: 0 0 0 3px rgba(var(--success-rgb),0.18); }
+.dot-likely { background: var(--success); opacity: 0.55; }
 .dot-expired { background: var(--text-faint); opacity: 0.7; }
 .dot-deleted { background: var(--text-faint); }
-.dot-truth   { background: var(--success); box-shadow: 0 0 0 3px rgba(var(--success-rgb),0.18); }
 
-.row-content { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
-.row-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.cron-id { font-family: var(--font-mono); font-size: 12.5px; font-weight: 600; color: var(--accent); }
+/* Main column */
+.cA-c-main { min-width: 0; }
+.cA-idline { display: flex; align-items: center; gap: 8px; margin-bottom: 3px; }
+.cron-id { font-family: var(--font-mono); font-size: 12px; font-weight: 600; color: var(--accent); }
 .recur-icon {
   display: inline-flex; align-items: center; justify-content: center;
   width: 20px; height: 20px; border-radius: 5px;
 }
 .recur-icon-on { background: var(--info-subtle); color: var(--info); }
 .recur-icon-off { background: var(--bg-muted); color: var(--text-faint); }
-.status-tag {
-  font-size: 10.5px; font-weight: 600; letter-spacing: 0.05em;
-  text-transform: uppercase; display: inline-flex; align-items: center; gap: 3px;
-}
-.tag-active  { color: var(--success); }
-.tag-likely  { color: var(--success); opacity: 0.8; }
-.tag-inactive { color: var(--text-faint); }
 .pill {
-  display: inline-flex; align-items: center; font-size: 10.5px; font-weight: 600;
-  letter-spacing: 0.04em; text-transform: uppercase; padding: 2px 7px;
+  display: inline-flex; align-items: center; font-size: 10px; font-weight: 700;
+  letter-spacing: 0.06em; text-transform: uppercase; padding: 2px 7px;
   border-radius: 5px; font-family: var(--font-mono);
 }
 .pill-hook { background: var(--success-subtle); color: var(--success); }
-.row-prompt { font-size: 13px; line-height: 1.45; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.cron-card.expanded .row-prompt { white-space: normal; overflow: visible; text-overflow: unset; }
-.row-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 12px; }
-.mono-dim { font-family: var(--font-mono); color: var(--text-muted); }
-.sep { color: var(--text-faint); }
+.cA-prompt {
+  font-size: 13px; line-height: 1.4; color: var(--text-primary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.cron-card.gone .cA-prompt { color: var(--text-muted); }
+.cron-card.expanded .cA-prompt { white-space: normal; overflow: visible; text-overflow: unset; }
+.cA-outcome {
+  display: flex; align-items: center; gap: 7px; margin-top: 4px;
+  font-size: 11.5px; color: var(--text-muted); min-width: 0;
+}
+.cA-outcome .ot { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-faint); flex-shrink: 0; }
+.cA-outcome .ox { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cA-outcome.none { color: var(--text-faint); font-style: italic; }
 
-/* ── TTL column ── */
+/* Trust column */
+.cA-trust { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.cA-trust .tt { font-size: 10.5px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
+.tt-confirmed { color: var(--success); }
+.tt-inferred  { color: var(--text-muted); }
+.tt-ended     { color: var(--text-faint); }
+.cA-trust .ts { font-size: 10.5px; color: var(--text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Cadence column */
+.cA-cad { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.cA-cad .cv {
+  font-family: var(--font-mono); font-size: 12px; color: var(--text-primary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.cA-cad .cs { font-size: 10.5px; color: var(--text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* TTL column */
 .ttl-col {
   text-align: right; display: flex; flex-direction: column;
   align-items: flex-end; gap: 5px; min-width: 130px;
 }
 .ttl-done { font-size: 12.5px; color: var(--text-faint); }
 .ttl-remaining { display: flex; align-items: baseline; gap: 5px; font-size: 12.5px; font-weight: 500; color: var(--text-primary); }
-.ttl-num { font-family: var(--font-mono); }
+.ttl-num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 .ttl-warn .ttl-num { color: var(--warning); }
 .ttl-lbl { font-size: 11px; color: var(--text-faint); }
 .ttl-bar-wrap { width: 110px; }
 .ttl-bar-track { height: 3px; background: var(--bg-muted); border-radius: 99px; overflow: hidden; }
 .ttl-bar-fill { height: 100%; border-radius: 99px; }
 .ttl-sub { font-family: var(--font-mono); font-size: 11.5px; color: var(--text-faint); }
-.caret { color: var(--text-faint); font-size: 16px; display: flex; align-items: center; }
+
+.caret { color: var(--text-faint); font-size: 16px; display: flex; align-items: center; transition: transform 0.15s; }
 .caret.open { transform: rotate(90deg); color: var(--text-primary); }
 
 /* ── Expanded panel ── */
@@ -181,11 +233,8 @@
   display: flex; flex-direction: column; gap: 16px;
 }
 .meta-row { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 0 32px; }
-.kv-row { display: flex; flex-direction: column; gap: 3px; min-width: 160px; }
-.kv-label {
-  font-size: 10.5px; letter-spacing: 0.07em; text-transform: uppercase;
-  color: var(--text-faint); font-weight: 600;
-}
+.kv-row { display: flex; flex-direction: column; gap: 3px; }
+.kv-label { font-size: 10.5px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--text-faint); font-weight: 600; }
 .kv-val { font-family: var(--font-mono); font-size: 12.5px; line-height: 1.5; color: var(--text-primary); }
 .kv-flex { display: inline-flex; align-items: center; gap: 5px; }
 .kv-arrow { color: var(--text-faint); font-size: 12px; }
@@ -193,62 +242,41 @@
 .kv-dim { color: var(--text-faint); }
 .session-link { color: var(--accent); border-bottom: 1px solid rgba(var(--accent-rgb),0.3); text-decoration: none; }
 
-/* ── Fires section ── */
-.fires-section { display: flex; flex-direction: column; border-top: 1px dashed var(--border); padding-top: 14px; gap: 10px; }
-.fire-timeline { display: flex; flex-direction: column; margin-top: 6px; }
+/* Fires section */
+.fires-section { display: flex; flex-direction: column; border-top: 1px dashed var(--border); padding-top: 14px; }
+.fire-timeline { display: flex; flex-direction: column; margin-top: 10px; }
 .fire-tl-row { display: grid; grid-template-columns: 20px 1fr; gap: 0 10px; }
 .fire-tl-track { display: flex; flex-direction: column; align-items: center; padding-top: 4px; }
 .fire-tl-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--border-hover); flex-shrink: 0; }
 .fire-tl-dot.truth { background: var(--success); box-shadow: 0 0 0 2px rgba(var(--success-rgb),0.2); }
-.fire-tl-line { flex: 1; width: 1px; background: var(--border); margin: 3px 0; min-height: 12px; }
+.fire-tl-line { flex: 1; width: 1px; background: var(--border); margin: 3px 0; min-height: 8px; }
 .fire-tl-content { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 8px; padding-bottom: 12px; }
 .fire-tl-row.last .fire-tl-content { padding-bottom: 0; }
 .fire-tl-time { font-family: var(--font-mono); font-size: 12px; font-weight: 600; color: var(--text-primary); }
 .fire-tl-ago { font-size: 11.5px; color: var(--text-faint); }
 .fire-truth { font-size: 10.5px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--success); }
-.fire-tl-body { width: 100%; margin: 3px 0 0; font-size: 12.5px; line-height: 1.5; color: var(--text-muted); }
+.fire-tl-body { width: 100%; margin: 3px 0 0; font-size: 12.5px; line-height: 1.5; color: var(--text-muted); word-break: break-word; }
 
 /* ── Footer hint ── */
 .footer-hint { display: flex; align-items: center; gap: 8px; margin-top: 18px; font-size: 12px; color: var(--text-faint); }
 .footer-right { margin-left: auto; }
+.mono-dim { font-family: var(--font-mono); color: var(--text-muted); }
 .kbd {
   font-family: var(--font-mono); font-size: 11px; background: var(--bg-subtle);
   border: 1px solid var(--border); border-bottom-width: 2px; padding: 1px 5px;
   border-radius: 4px; color: var(--text-primary);
 }
-
-/* ── Empty state reference ── */
-.empty-state-ref { margin-top: 32px; }
-.empty-state-ref .ds-section-label { margin-bottom: 12px; }
-.big-empty {
-  border: 1px dashed var(--border); border-radius: 14px; background: var(--bg-subtle);
-  padding: 48px 32px 56px; display: flex; flex-direction: column;
-  align-items: center; text-align: center; gap: 14px;
-}
-.empty-icon-frame {
-  width: 56px; height: 56px; border-radius: 14px;
-  background: var(--accent-muted); color: var(--accent);
-  display: flex; align-items: center; justify-content: center;
-}
-.empty-h3 { font-size: 18px; font-weight: 600; margin: 0; color: var(--text-primary); }
-.empty-body { max-width: 440px; font-size: 13px; color: var(--text-muted); line-height: 1.55; margin: 0; }
-.code-hint {
-  background: var(--bg-base); border: 1px solid var(--border); border-radius: 8px;
-  padding: 8px 14px; font-family: var(--font-mono); font-size: 12.5px; color: var(--text-primary);
-}
-.dollar { color: var(--accent); font-weight: 600; }
-.empty-fine { font-size: 11.5px; color: var(--text-faint); margin: 0; }
 </style>
 </head>
 <body>
 <div class="ds-frame">
-  <h1 class="ds-title">Cron Jobs — /cron page</h1>
-  <p class="ds-subtitle">Full-page snapshot of the /cron route — PageHeader, stats strip, source toggle, toolbar, cron list (one expanded), footer hint, and empty-state reference. Starting point for redesign.</p>
+  <h1 class="ds-title">Cron Jobs — /cron page (The Ledger)</h1>
+  <p class="ds-subtitle">Full-page snapshot of the redesigned /cron route — PageHeader, 4-stat strip, source toggle, toolbar with trust legend, status-grouped Ledger (ACTIVE + EXPIRED &amp; DELETED), one row expanded showing fire timeline, footer hint.</p>
 
   <!-- ── Page Header ──────────────────────────────────────────────────── -->
   <div class="page-header">
     <div class="page-icon-tile">
-      <!-- Clock/Calendar inline SVG -->
+      <!-- Clock icon -->
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <circle cx="12" cy="12" r="10"/>
         <polyline points="12 6 12 12 16 14"/>
@@ -269,35 +297,52 @@
     </button>
   </div>
 
-  <!-- ── Stats strip ──────────────────────────────────────────────────── -->
+  <!-- ── Stats strip — 4 columns (Claude crons view) ─────────────────── -->
   <div class="stats-wrap">
-    <div class="stats-grid">
+    <div class="stats-grid-4">
+      <!-- TRACKED -->
       <div class="stat-tile">
         <div class="stat-icon stat-icon-purple">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
         </div>
         <div class="stat-body">
           <span class="stat-num">6</span>
-          <span class="stat-label">Total tracked</span>
+          <span class="stat-label">Tracked</span>
         </div>
       </div>
+      <!-- CONFIRMED LIVE (hook verified) -->
       <div class="stat-tile">
         <div class="stat-icon stat-icon-green">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+          <!-- ShieldCheck icon -->
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg>
         </div>
         <div class="stat-body">
-          <span class="stat-num">3</span>
-          <span class="stat-label">Likely active</span>
-          <span class="stat-desc">inferred from TTL</span>
+          <span class="stat-num">1</span>
+          <span class="stat-label">Confirmed live</span>
+          <span class="stat-desc">hook verified</span>
         </div>
       </div>
+      <!-- INFERRED ACTIVE (from TTL only) -->
       <div class="stat-tile">
-        <div class="stat-icon stat-icon-gray">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>
+        <div class="stat-icon stat-icon-teal">
+          <!-- CircleHelp icon -->
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
         </div>
         <div class="stat-body">
           <span class="stat-num">2</span>
-          <span class="stat-label">Expired or deleted</span>
+          <span class="stat-label">Inferred active</span>
+          <span class="stat-desc">from TTL only</span>
+        </div>
+      </div>
+      <!-- EXPIRING < 24H -->
+      <div class="stat-tile">
+        <div class="stat-icon stat-icon-orange">
+          <!-- AlertTriangle icon -->
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        </div>
+        <div class="stat-body">
+          <span class="stat-num">1</span>
+          <span class="stat-label">Expiring &lt; 24h</span>
         </div>
       </div>
     </div>
@@ -315,7 +360,7 @@
     </button>
   </div>
 
-  <!-- ── Toolbar ──────────────────────────────────────────────────────── -->
+  <!-- ── Toolbar (project filter + active-only toggle + search + trust legend) ── -->
   <div class="toolbar">
     <select class="select-input">
       <option>All projects</option>
@@ -331,284 +376,327 @@
       <span class="search-icon">⌕</span>
       <input class="search-input" type="text" placeholder="Search cron id, prompt, schedule…" readonly>
     </div>
+    <!-- Trust legend: decodes the dot + verdict colours used in the ledger -->
+    <div class="legend" aria-hidden="true">
+      <span class="li"><span class="legend-dot" style="background:var(--success);box-shadow:0 0 0 3px rgba(var(--success-rgb),0.18);"></span> confirmed</span>
+      <span class="li"><span class="legend-dot" style="background:var(--success);opacity:0.55;"></span> inferred</span>
+      <span class="li"><span class="legend-dot" style="background:var(--text-faint);"></span> ended</span>
+    </div>
   </div>
 
-  <!-- ── Cron list ────────────────────────────────────────────────────── -->
-  <div class="cron-list">
+  <!-- ── The Ledger ─────────────────────────────────────────────────── -->
+  <div class="ledger">
 
-    <!-- Row 1: 3fa8cd12 — ACTIVE [HOOK] recurring -->
-    <div class="cron-card">
-      <div class="cron-row">
-        <span class="status-dot dot-truth"></span>
-        <div class="row-content">
-          <div class="row-head">
-            <span class="cron-id">3fa8cd12</span>
-            <span class="recur-icon recur-icon-on" title="Recurring">
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
-            </span>
-            <span class="status-tag tag-active">ACTIVE</span>
-            <span class="pill pill-hook">HOOK</span>
-          </div>
-          <div class="row-prompt">"remind me every 5 minutes to check the build"</div>
-          <div class="row-meta">
-            <span class="mono-dim">every 5 min</span>
-            <span class="sep">·</span>
-            <span class="mono-dim">3 fires</span>
-            <span class="sep">·</span>
-            <span class="mono-dim">my-api-service</span>
-          </div>
-        </div>
-        <div class="ttl-col">
-          <div class="ttl-remaining"><span class="ttl-num">5d 2h</span><span class="ttl-lbl">left</span></div>
-          <div class="ttl-bar-wrap">
-            <div class="ttl-bar-track">
-              <div class="ttl-bar-fill" style="width:80%;background:var(--success);"></div>
-            </div>
-          </div>
-          <div class="ttl-sub">TTL 02:00</div>
-        </div>
-        <span class="caret">›</span>
-      </div>
+    <!-- ── GROUP: ACTIVE (3 jobs) ─────────────────────────────────────── -->
+    <div class="cA-group">
+      <span class="gl">Active</span>
+      <span class="gn">3</span>
+      <span class="gline"></span>
     </div>
 
-    <!-- Row 2: a1b2c3d4 — ACTIVE? one-shot -->
-    <div class="cron-card">
-      <div class="cron-row">
-        <span class="status-dot dot-likely"></span>
-        <div class="row-content">
-          <div class="row-head">
-            <span class="cron-id">a1b2c3d4</span>
-            <span class="recur-icon recur-icon-off" title="One-shot">
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-            </span>
-            <span class="status-tag tag-likely">ACTIVE<sup style="font-size:9px;vertical-align:super;opacity:0.6;">?</sup></span>
-          </div>
-          <div class="row-prompt">"run the deployment checklist once this evening"</div>
-          <div class="row-meta">
-            <span class="mono-dim">daily 20:00</span>
-            <span class="sep">·</span>
-            <span class="mono-dim">0 fires</span>
-            <span class="sep">·</span>
-            <span class="mono-dim">checkout-frontend</span>
-          </div>
-        </div>
-        <div class="ttl-col">
-          <div class="ttl-remaining ttl-warn"><span class="ttl-num">2h 15m</span><span class="ttl-lbl">left</span></div>
-          <div class="ttl-bar-wrap">
-            <div class="ttl-bar-track">
-              <div class="ttl-bar-fill" style="width:10%;background:var(--warning);"></div>
+    <div class="cA-table">
+
+      <!-- Row 1: 3fa8cd12 — Confirmed, recurring, HOOK -->
+      <div class="cron-card">
+        <div class="cron-row">
+          <span class="status-dot dot-truth"></span>
+          <!-- Main -->
+          <div class="cA-c-main">
+            <div class="cA-idline">
+              <span class="cron-id">3fa8cd12</span>
+              <span class="recur-icon recur-icon-on" title="Recurring">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+              </span>
+              <span class="pill pill-hook">HOOK</span>
+            </div>
+            <div class="cA-prompt">"remind me every 5 minutes to check the build"</div>
+            <div class="cA-outcome">
+              <span class="ot">14:05</span>
+              <span style="display:inline-flex;align-items:center;color:var(--success);flex-shrink:0;">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+              </span>
+              <span class="ox">Build is passing — 142 modules, 2.4s, no errors.</span>
             </div>
           </div>
-          <div class="ttl-sub">TTL 22:15</div>
+          <!-- Trust -->
+          <div class="cA-trust">
+            <span class="tt tt-confirmed">Confirmed</span>
+            <span class="ts">3 fires · last 6m ago</span>
+          </div>
+          <!-- Cadence -->
+          <div class="cA-cad">
+            <span class="cv">every 5 min</span>
+            <span class="cs">my-api-service</span>
+          </div>
+          <!-- TTL -->
+          <div class="ttl-col">
+            <div class="ttl-remaining"><span class="ttl-num">5d 2h</span><span class="ttl-lbl">left</span></div>
+            <div class="ttl-bar-wrap">
+              <div class="ttl-bar-track">
+                <div class="ttl-bar-fill" style="width:80%;background:var(--success);"></div>
+              </div>
+            </div>
+            <div class="ttl-sub">TTL 02:00</div>
+          </div>
+          <span class="caret">›</span>
         </div>
-        <span class="caret">›</span>
       </div>
+
+      <!-- Row 2: a1b2c3d4 — Inferred, one-shot, expiring soon -->
+      <div class="cron-card">
+        <div class="cron-row">
+          <span class="status-dot dot-likely"></span>
+          <div class="cA-c-main">
+            <div class="cA-idline">
+              <span class="cron-id">a1b2c3d4</span>
+              <span class="recur-icon recur-icon-off" title="One-shot">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+              </span>
+            </div>
+            <div class="cA-prompt">"run the deployment checklist once this evening"</div>
+            <div class="cA-outcome none">
+              <span class="ox">awaiting first fire</span>
+            </div>
+          </div>
+          <div class="cA-trust">
+            <span class="tt tt-inferred">Inferred</span>
+            <span class="ts">no hook signal yet</span>
+          </div>
+          <div class="cA-cad">
+            <span class="cv">daily 20:00</span>
+            <span class="cs">checkout-frontend</span>
+          </div>
+          <div class="ttl-col">
+            <div class="ttl-remaining ttl-warn"><span class="ttl-num">2h 15m</span><span class="ttl-lbl">left</span></div>
+            <div class="ttl-bar-wrap">
+              <div class="ttl-bar-track">
+                <div class="ttl-bar-fill" style="width:10%;background:var(--warning);"></div>
+              </div>
+            </div>
+            <div class="ttl-sub">TTL 22:15</div>
+          </div>
+          <span class="caret">›</span>
+        </div>
+      </div>
+
+      <!-- Row 3: 7f2e9a1c — Inferred, recurring — EXPANDED with fire timeline -->
+      <div class="cron-card expanded">
+        <div class="cron-row">
+          <span class="status-dot dot-likely"></span>
+          <div class="cA-c-main">
+            <div class="cA-idline">
+              <span class="cron-id">7f2e9a1c</span>
+              <span class="recur-icon recur-icon-on" title="Recurring">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+              </span>
+            </div>
+            <div class="cA-prompt">"fetch the latest news on LLM pricing and summarize it"</div>
+            <div class="cA-outcome">
+              <span class="ot">08:00</span>
+              <span class="ox">Anthropic released Claude 3.7 Haiku with 30% cost reduction vs Haiku 3.5.</span>
+            </div>
+          </div>
+          <div class="cA-trust">
+            <span class="tt tt-inferred">Inferred</span>
+            <span class="ts">4 fires · last 6h ago</span>
+          </div>
+          <div class="cA-cad">
+            <span class="cv">every 2h</span>
+            <span class="cs">research-notes</span>
+          </div>
+          <div class="ttl-col">
+            <div class="ttl-remaining"><span class="ttl-num">6d 14h</span><span class="ttl-lbl">left</span></div>
+            <div class="ttl-bar-wrap">
+              <div class="ttl-bar-track">
+                <div class="ttl-bar-fill" style="width:85%;background:var(--success);"></div>
+              </div>
+            </div>
+            <div class="ttl-sub">TTL 14:00</div>
+          </div>
+          <span class="caret open">›</span>
+        </div>
+        <!-- Expanded panel -->
+        <div class="panel">
+          <div class="meta-row">
+            <div class="kv-row">
+              <span class="kv-label">Lifetime</span>
+              <span class="kv-val kv-flex">
+                <span>Jun 12</span>
+                <span class="kv-arrow">→</span>
+                <span>Jun 19</span>
+                <span class="kv-dot">·</span>
+                <span class="kv-dim">7 days</span>
+              </span>
+            </div>
+            <div class="kv-row">
+              <span class="kv-label">Session</span>
+              <span class="kv-val">
+                <a class="session-link" href="#">fetch-news-7f2e9a1c…</a>
+              </span>
+            </div>
+          </div>
+          <div class="fires-section">
+            <span class="kv-label">Fires · 4 events</span>
+            <div class="fire-timeline">
+              <div class="fire-tl-row">
+                <div class="fire-tl-track">
+                  <span class="fire-tl-dot truth"></span>
+                  <span class="fire-tl-line"></span>
+                </div>
+                <div class="fire-tl-content">
+                  <span class="fire-tl-time">08:00</span>
+                  <span class="fire-tl-ago">6h ago</span>
+                  <span class="fire-truth">confirmed</span>
+                  <p class="fire-tl-body">Anthropic released Claude 3.7 Haiku with 30% cost reduction vs Haiku 3.5. OpenAI GPT-4o mini pricing unchanged at $0.15/1M tokens.</p>
+                </div>
+              </div>
+              <div class="fire-tl-row">
+                <div class="fire-tl-track">
+                  <span class="fire-tl-dot"></span>
+                  <span class="fire-tl-line"></span>
+                </div>
+                <div class="fire-tl-content">
+                  <span class="fire-tl-time">06:00</span>
+                  <span class="fire-tl-ago">8h ago</span>
+                  <p class="fire-tl-body">No new pricing changes found in LLM news sources.</p>
+                </div>
+              </div>
+              <div class="fire-tl-row last">
+                <div class="fire-tl-track">
+                  <span class="fire-tl-dot"></span>
+                </div>
+                <div class="fire-tl-content">
+                  <span class="fire-tl-time">04:00</span>
+                  <span class="fire-tl-ago">10h ago</span>
+                  <p class="fire-tl-body">Google Gemini 2.0 Flash pricing leaked in API response headers: $0.10/1M input.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /cA-table ACTIVE -->
+
+    <!-- ── GROUP: EXPIRED & DELETED (3 jobs) ──────────────────────────── -->
+    <div class="cA-group">
+      <span class="gl">Expired &amp; deleted</span>
+      <span class="gn">3</span>
+      <span class="gline"></span>
     </div>
 
-    <!-- Row 3: 7f2e9a1c — ACTIVE? recurring — EXPANDED -->
-    <div class="cron-card expanded">
-      <div class="cron-row">
-        <span class="status-dot dot-likely"></span>
-        <div class="row-content">
-          <div class="row-head">
-            <span class="cron-id">7f2e9a1c</span>
-            <span class="recur-icon recur-icon-on" title="Recurring">
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
-            </span>
-            <span class="status-tag tag-likely">ACTIVE<sup style="font-size:9px;vertical-align:super;opacity:0.6;">?</sup></span>
-          </div>
-          <div class="row-prompt">"fetch the latest news on LLM pricing and summarize it"</div>
-          <div class="row-meta">
-            <span class="mono-dim">every 2h</span>
-            <span class="sep">·</span>
-            <span class="mono-dim">4 fires</span>
-            <span class="sep">·</span>
-            <span class="mono-dim">research-notes</span>
-          </div>
-        </div>
-        <div class="ttl-col">
-          <div class="ttl-remaining"><span class="ttl-num">6d 14h</span><span class="ttl-lbl">left</span></div>
-          <div class="ttl-bar-wrap">
-            <div class="ttl-bar-track">
-              <div class="ttl-bar-fill" style="width:85%;background:var(--success);"></div>
-            </div>
-          </div>
-          <div class="ttl-sub">TTL 14:00</div>
-        </div>
-        <span class="caret open">›</span>
-      </div>
-      <!-- Expanded panel -->
-      <div class="panel">
-        <div class="meta-row">
-          <div class="kv-row">
-            <span class="kv-label">Lifetime</span>
-            <span class="kv-val kv-flex">
-              <span>Jun 12</span>
-              <span class="kv-arrow">→</span>
-              <span>Jun 19</span>
-              <span class="kv-dot">·</span>
-              <span class="kv-dim">7 days</span>
-            </span>
-          </div>
-          <div class="kv-row">
-            <span class="kv-label">Session</span>
-            <span class="kv-val">
-              <a class="session-link" href="#">fetch-news-7f2e9a1c…</a>
-            </span>
-          </div>
-        </div>
-        <div class="fires-section">
-          <span class="kv-label">Fires · 4 events</span>
-          <div class="fire-timeline">
-            <div class="fire-tl-row">
-              <div class="fire-tl-track">
-                <span class="fire-tl-dot truth"></span>
-                <span class="fire-tl-line"></span>
-              </div>
-              <div class="fire-tl-content">
-                <span class="fire-tl-time">08:00</span>
-                <span class="fire-tl-ago">6h ago</span>
-                <span class="fire-truth">confirmed</span>
-                <p class="fire-tl-body">Summary: Anthropic released Claude 3.7 Haiku with 30% cost reduction vs Haiku 3.5. OpenAI GPT-4o mini pricing unchanged at $0.15/1M tokens.</p>
-              </div>
-            </div>
-            <div class="fire-tl-row">
-              <div class="fire-tl-track">
-                <span class="fire-tl-dot"></span>
-                <span class="fire-tl-line"></span>
-              </div>
-              <div class="fire-tl-content">
-                <span class="fire-tl-time">06:00</span>
-                <span class="fire-tl-ago">8h ago</span>
-                <p class="fire-tl-body">No new pricing changes found in LLM news sources.</p>
-              </div>
-            </div>
-            <div class="fire-tl-row last">
-              <div class="fire-tl-track">
-                <span class="fire-tl-dot"></span>
-              </div>
-              <div class="fire-tl-content">
-                <span class="fire-tl-time">04:00</span>
-                <span class="fire-tl-ago">10h ago</span>
-                <p class="fire-tl-body">Google Gemini 2.0 Flash pricing leaked in API response headers: $0.10/1M input.</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
+    <div class="cA-table">
 
-    <!-- Row 4: 0d4f8b33 — TTL EXPIRED (subtle bg) -->
-    <div class="cron-card gone">
-      <div class="cron-row">
-        <span class="status-dot dot-expired"></span>
-        <div class="row-content">
-          <div class="row-head">
-            <span class="cron-id">0d4f8b33</span>
-            <span class="recur-icon recur-icon-on" title="Recurring">
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
-            </span>
-            <span class="status-tag tag-inactive">TTL EXPIRED</span>
-          </div>
-          <div class="row-prompt">"clean up the tmp directory and report size saved"</div>
-          <div class="row-meta">
-            <span class="mono-dim">every 1h</span>
-            <span class="sep">·</span>
-            <span class="mono-dim">12 fires</span>
-            <span class="sep">·</span>
-            <span class="mono-dim">system-cleanup</span>
-          </div>
-        </div>
-        <div class="ttl-col">
-          <span class="ttl-done">TTL elapsed</span>
-          <div class="ttl-bar-wrap">
-            <div class="ttl-bar-track">
-              <div class="ttl-bar-fill" style="width:100%;background:var(--text-faint);opacity:0.4;"></div>
+      <!-- Row 4: 0d4f8b33 — TTL expired -->
+      <div class="cron-card gone">
+        <div class="cron-row">
+          <span class="status-dot dot-expired"></span>
+          <div class="cA-c-main">
+            <div class="cA-idline">
+              <span class="cron-id">0d4f8b33</span>
+              <span class="recur-icon recur-icon-on" title="Recurring">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+              </span>
+            </div>
+            <div class="cA-prompt">"clean up the tmp directory and report size saved"</div>
+            <div class="cA-outcome none">
+              <span class="ox">no fires recorded</span>
             </div>
           </div>
-          <div class="ttl-sub">3d ago</div>
+          <div class="cA-trust">
+            <span class="tt tt-ended">TTL expired</span>
+            <span class="ts">12 fires · last 3d ago</span>
+          </div>
+          <div class="cA-cad">
+            <span class="cv">every 1h</span>
+            <span class="cs">system-cleanup</span>
+          </div>
+          <div class="ttl-col">
+            <span class="ttl-done">TTL elapsed</span>
+            <div class="ttl-bar-wrap">
+              <div class="ttl-bar-track">
+                <div class="ttl-bar-fill" style="width:100%;background:var(--text-faint);opacity:0.4;"></div>
+              </div>
+            </div>
+            <div class="ttl-sub">3d ago</div>
+          </div>
+          <span class="caret">›</span>
         </div>
-        <span class="caret">›</span>
       </div>
-    </div>
 
-    <!-- Row 5: c9e7a044 — DELETED via session end (subtle bg) -->
-    <div class="cron-card gone">
-      <div class="cron-row">
-        <span class="status-dot dot-deleted"></span>
-        <div class="row-content">
-          <div class="row-head">
-            <span class="cron-id">c9e7a044</span>
-            <span class="recur-icon recur-icon-off" title="One-shot">
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-            </span>
-            <span class="status-tag tag-inactive">DELETED <span style="font-size:11.5px;text-transform:none;letter-spacing:0;font-weight:500;color:var(--text-faint);">· via session end</span></span>
+      <!-- Row 5: c9e7a044 — DELETED via session end -->
+      <div class="cron-card gone">
+        <div class="cron-row">
+          <span class="status-dot dot-deleted"></span>
+          <div class="cA-c-main">
+            <div class="cA-idline">
+              <span class="cron-id">c9e7a044</span>
+              <span class="recur-icon recur-icon-off" title="One-shot">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+              </span>
+            </div>
+            <div class="cA-prompt">"check if the postgres replica is lagging"</div>
+            <div class="cA-outcome none">
+              <span class="ox">one-shot — no fire recorded</span>
+            </div>
           </div>
-          <div class="row-prompt">"check if the postgres replica is lagging"</div>
-          <div class="row-meta">
-            <span class="mono-dim">*/15 * * * *</span>
-            <span class="sep">·</span>
-            <span class="mono-dim">2 fires</span>
-            <span class="sep">·</span>
-            <span class="mono-dim">data-pipeline</span>
+          <div class="cA-trust">
+            <span class="tt tt-ended">Deleted</span>
+            <span class="ts">via session end</span>
           </div>
+          <div class="cA-cad">
+            <span class="cv">*/15 * * * *</span>
+            <span class="cs">data-pipeline</span>
+          </div>
+          <div class="ttl-col">
+            <span class="ttl-done">deleted</span>
+            <div class="ttl-sub">3h ago</div>
+          </div>
+          <span class="caret">›</span>
         </div>
-        <div class="ttl-col">
-          <span class="ttl-done">deleted 3h ago</span>
-        </div>
-        <span class="caret">›</span>
       </div>
-    </div>
 
-    <!-- Row 6: 2b5d1f88 — DELETED via explicit delete (subtle bg) -->
-    <div class="cron-card gone">
-      <div class="cron-row">
-        <span class="status-dot dot-deleted"></span>
-        <div class="row-content">
-          <div class="row-head">
-            <span class="cron-id">2b5d1f88</span>
-            <span class="recur-icon recur-icon-on" title="Recurring">
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
-            </span>
-            <span class="status-tag tag-inactive">DELETED <span style="font-size:11.5px;text-transform:none;letter-spacing:0;font-weight:500;color:var(--text-faint);">· via explicit delete</span></span>
+      <!-- Row 6: 2b5d1f88 — DELETED via explicit delete -->
+      <div class="cron-card gone">
+        <div class="cron-row">
+          <span class="status-dot dot-deleted"></span>
+          <div class="cA-c-main">
+            <div class="cA-idline">
+              <span class="cron-id">2b5d1f88</span>
+              <span class="recur-icon recur-icon-on" title="Recurring">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+              </span>
+            </div>
+            <div class="cA-prompt">"send me a ping every 10 minutes while the migration runs"</div>
+            <div class="cA-outcome none">
+              <span class="ox">no fires recorded</span>
+            </div>
           </div>
-          <div class="row-prompt">"send me a ping every 10 minutes while the migration runs"</div>
-          <div class="row-meta">
-            <span class="mono-dim">*/10 * * * *</span>
-            <span class="sep">·</span>
-            <span class="mono-dim">7 fires</span>
-            <span class="sep">·</span>
-            <span class="mono-dim">db-migration</span>
+          <div class="cA-trust">
+            <span class="tt tt-ended">Deleted</span>
+            <span class="ts">via explicit delete</span>
           </div>
+          <div class="cA-cad">
+            <span class="cv">*/10 * * * *</span>
+            <span class="cs">db-migration</span>
+          </div>
+          <div class="ttl-col">
+            <span class="ttl-done">deleted</span>
+            <div class="ttl-sub">1d 4h ago</div>
+          </div>
+          <span class="caret">›</span>
         </div>
-        <div class="ttl-col">
-          <span class="ttl-done">deleted 1d 4h ago</span>
-        </div>
-        <span class="caret">›</span>
       </div>
-    </div>
 
-  </div><!-- /cron-list -->
+    </div><!-- /cA-table EXPIRED & DELETED -->
+
+  </div><!-- /ledger -->
 
   <!-- ── Footer hint ──────────────────────────────────────────────────── -->
   <div class="footer-hint">
     <kbd class="kbd">↵</kbd>
     <span>Click any row to expand fire history</span>
     <span class="footer-right">Reconstructed from session logs · <span class="mono-dim">2m ago</span></span>
-  </div>
-
-  <!-- ── Empty state reference block ─────────────────────────────────── -->
-  <div class="empty-state-ref">
-    <p class="ds-section-label">Empty state</p>
-    <div class="big-empty">
-      <div class="empty-icon-frame">
-        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-      </div>
-      <h3 class="empty-h3">No cron jobs yet</h3>
-      <p class="empty-body">When Claude Code creates a scheduled job during a session — via <code>CronCreate</code> — it'll show up here.</p>
-      <div class="code-hint"><span class="dollar">$</span> ask claude to "remind me every 5 minutes to check the build"</div>
-      <p class="empty-fine">Already created one and not seeing it? Check that the session log was written to disk.</p>
-    </div>
   </div>
 
 </div><!-- /ds-frame -->
