@@ -12,9 +12,9 @@ cd frontend && npm run ds:build
 cd frontend && npm run ds:drift
 ```
 
-`ds:build` outputs `catalog OK — 21 cards validated` on success and writes `.render-check.json` with `{total, bad, thin, variantsIdentical}` counters.
+`ds:build` copies `tokens.css` into the bundle, generates `foundations/*.html`, validates every `@dsCard` marker, then writes `.render-check.json`. It outputs `catalog OK — 21 cards validated` on success with `{total, bad, thin, variantsIdentical}` counters.
 
-`ds:drift` prints `no drift — all cards are current with their sources` when every card's mtime ≥ all its mapped source files. If it reports stale cards, re-run `ds:build` or touch the affected `.html` file after updating the source.
+`ds:drift` prints `no drift — all cards are current with their sources` when every card's mtime ≥ all its mapped source files. Drift is flagged when a source file's mtime exceeds its card's mtime — the card is stale and must be rebuilt. If it reports stale cards, re-run `ds:build` or touch the affected `.html` file after updating the source.
 
 ## What's committed vs. generated
 
@@ -72,7 +72,7 @@ Foundation cards (`foundations/*.html`) are generated automatically; their mappi
    "components/<name>.html": ["src/lib/components/ui/YourComponent.svelte"]
    ```
 
-3. Run `npm run ds:build` to validate. The total count in the success message will increment by 1.
+3. Run `cd frontend && npm run ds:build` to validate. The total count in the success message will increment by 1.
 
 ## Sync to claude.ai/design
 
