@@ -135,6 +135,13 @@
 		});
 	});
 
+	// Triage order: running shells pinned to the top, otherwise preserve incoming order.
+	const triaged = $derived.by(() => {
+		const running = filtered.filter((s) => s.status === 'running');
+		const closed = filtered.filter((s) => s.status !== 'running');
+		return [...running, ...closed];
+	});
+
 	function toggle(id: string) {
 		const next = new Set(openIds);
 		next.has(id) ? next.delete(id) : next.add(id);
@@ -205,6 +212,22 @@
 				session_end: 'status-dot-ended'
 			}[s.closeReason ?? 'session_end'] ?? 'status-dot-ended'
 		);
+	}
+
+	// Inline output sparkline: 8 decorative bars whose heights encode per-poll
+	// output bytes. Purely visual (aria-hidden) — real numbers stay as text in
+	// the Output column. Falls back to a flat low baseline when there's no data.
+	function sparkBars(s: Shell): number[] {
+		const SLOTS = 8;
+		const vals = (s.polls ?? []).map((p) => p.bytes ?? 0);
+		if (vals.length === 0) return Array(SLOTS).fill(8);
+		// Take the most recent SLOTS polls (newest activity to the right).
+		const recent = vals.slice(-SLOTS);
+		const max = Math.max(...recent, 1);
+		const bars = recent.map((v) => Math.max(8, Math.round((v / max) * 100)));
+		// Left-pad shorter histories so bars stay right-aligned within the cell.
+		while (bars.length < SLOTS) bars.unshift(8);
+		return bars;
 	}
 
 	// Auto-refresh every 5s; track last refresh time for footer display
@@ -300,34 +323,43 @@
 		</span>
 	</div>
 
-	<!-- Shell list -->
-	{#if filtered.length === 0}
+	<!-- Triage table -->
+	{#if triaged.length === 0}
 		<div
 			class="rounded-xl border border-dashed border-[var(--border)] bg-[var(--bg-subtle)] px-5 py-16 text-center text-[var(--text-secondary)]"
 		>
 			No shells match these filters.
 		</div>
 	{:else}
-		<ul class="flex flex-col gap-2">
-			{#each filtered as s (s.id)}
-				{@const open = openIds.has(s.id)}
-				<li
-					class="group rounded-xl border bg-[var(--bg-base)] transition shell-card
-                 {open ? 'shell-card-open' : 'shell-card-closed'}"
-				>
-					<div class="grid w-full grid-cols-[14px_1fr_auto_18px] items-center gap-3.5 px-4 py-3.5">
-						<span class="size-2 rounded-full {dotClass(s)}"></span>
+		<!-- Column headers -->
+		<div class="sA-thead" aria-hidden="true">
+			<span></span>
+			<span>Shell · command</span>
+			<span>Status</span>
+			<span class="r">Output</span>
+			<span class="r">Duration</span>
+			<span></span>
+		</div>
 
+		<ul class="sA-table">
+			{#each triaged as s (s.id)}
+				{@const open = openIds.has(s.id)}
+				<li class="sA-li {s.status === 'running' ? 'is-running' : 'is-dim'} {open ? 'is-open' : ''}">
+					<!-- Triage row (click toggles expand) -->
+					<div class="sA-row">
+						<span class="size-2 rounded-full {dotClass(s)}" aria-hidden="true"></span>
+
+						<!-- Main: id line + command -->
 						<button
 							type="button"
-							class="min-w-0 space-y-0.5 text-left"
+							class="sA-c-main"
+							aria-expanded={open}
 							onclick={() => toggle(s.id)}
 						>
-							<div class="flex flex-wrap items-center gap-2.5">
-								<span class="font-mono text-[12.5px] font-semibold text-[var(--accent)]">{s.id}</span>
+							<div class="sA-idline">
+								<span class="sA-id">{s.id}</span>
 								<span
-									class="rounded px-1.5 py-0.5 text-[10.5px] font-semibold uppercase tracking-wider
-                             {s.tool === 'bash'
+									class="tag-badge {s.tool === 'bash'
 										? 'tool-badge-bash'
 										: s.tool === 'monitor'
 											? 'tool-badge-monitor'
@@ -337,56 +369,82 @@
 								</span>
 								{#if s.exitCode !== undefined}
 									<span
-										class="font-mono text-[10.5px] font-semibold uppercase tracking-wider"
+										class="sA-exit"
 										style={s.exitCode === 0 ? 'color: var(--success);' : 'color: var(--error);'}
 									>
 										exit {s.exitCode}
 									</span>
 								{/if}
 								{#if s.description}
-									<span class="text-[13px] font-medium text-[var(--text-primary)]">· {s.description}</span>
+									<span class="sA-desc">· {s.description}</span>
 								{/if}
 							</div>
-							<div class="font-mono text-[11.5px] text-[var(--text-faint)]">{s.project} · {formatSpawned(s.spawnedAt)}</div>
+							<div class="sA-cmd"><span class="p">$</span>{s.command}</div>
 						</button>
 
-						<div class="flex items-center gap-2.5">
-							{#if s.status === 'running'}
-								<div class="kill-wrap w-0 overflow-hidden group-hover:w-[90px]">
-									<div class="flex justify-end pr-2">
-										<button
-											type="button"
-											disabled={killing.has(s.toolUseId)}
-											onclick={() => killShell(s.toolUseId)}
-											class="kill-pill whitespace-nowrap disabled:opacity-50"
-										>
-											{#if killing.has(s.toolUseId)}
-												<svg class="kill-spinner mr-1" xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
-													<path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
-												</svg>
-												Killing…
-											{:else}
-												Kill shell
-											{/if}
-										</button>
-									</div>
-								</div>
-							{/if}
-							<div class="flex flex-col items-end gap-0.5 text-right">
-								<span class="font-mono text-[13px] font-medium">{formatDuration(s.durationMs)}</span>
-								<span class="font-mono text-[11.5px] text-[var(--text-faint)]">{s.pollCount} polls</span>
+						<!-- Status: label + project -->
+						<div class="sA-status">
+							<span class="sl" style={statusTone(s)}>{statusLabel(s)}</span>
+							<span class="ss">{s.project}</span>
+						</div>
+
+						<!-- Output sparkline (decorative) -->
+						<div
+							class="sA-spark {s.status === 'running' ? 'g' : ''}"
+							aria-hidden="true"
+							title={`${s.pollCount} polls · ${formatBytes(s.totalBytes)}`}
+						>
+							{#each sparkBars(s) as h, i (i)}
+								<i style={`height:${h}%`}></i>
+							{/each}
+						</div>
+
+						<!-- Metric: duration + polls/bytes -->
+						<div class="sA-metric">
+							<div class="mv tnum">{formatDuration(s.durationMs)}</div>
+							<div class="ml">
+								{#if s.status === 'running'}
+									{s.pollCount} polls
+								{:else}
+									{formatBytes(s.totalBytes)}
+								{/if}
 							</div>
 						</div>
 
-						<button
-							type="button"
-							class="text-[var(--text-faint)] transition {open ? 'rotate-90 text-[var(--text-primary)]' : ''}"
-							onclick={() => toggle(s.id)}
-						>›</button>
+						<!-- Trailing: inline kill (running) or expand caret -->
+						<div class="sA-caret">
+							{#if s.status === 'running'}
+								<button
+									type="button"
+									disabled={killing.has(s.toolUseId)}
+									onclick={() => killShell(s.toolUseId)}
+									class="sA-kill disabled:opacity-50"
+								>
+									{#if killing.has(s.toolUseId)}
+										<svg class="kill-spinner mr-1" xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+											<path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+										</svg>
+										Killing…
+									{:else}
+										Kill
+									{/if}
+								</button>
+							{:else}
+								<button
+									type="button"
+									class="caret-btn {open ? 'rotate-90 text-[var(--text-primary)]' : ''}"
+									aria-label={open ? 'Collapse shell details' : 'Expand shell details'}
+									aria-expanded={open}
+									onclick={() => toggle(s.id)}
+								>
+									<svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+								</button>
+							{/if}
+						</div>
 					</div>
 
 					{#if open}
-						<div class="border-t border-dashed border-[var(--border)] px-4.5 pb-4.5 pt-4 space-y-3">
+						<div class="sA-detail">
 
 							<!-- Command block -->
 							<div class="flex items-start gap-2 rounded-[10px] border border-[var(--border)] bg-[var(--bg-subtle)] px-3.5 py-2.5 font-mono text-[12.5px]">
@@ -476,14 +534,170 @@
 	.status-dot-ended   { background: var(--text-faint); }
 
 	/* ── Tool badges ─────────────────────────────────────────────────────────── */
+	.tag-badge {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		font-size: 10px;
+		font-weight: 700;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+		padding: 2px 7px;
+		border-radius: 5px;
+		font-family: var(--font-mono);
+	}
 	.tool-badge-bash    { background: var(--accent-muted); color: var(--accent); }
 	.tool-badge-monitor { background: var(--info-subtle);  color: var(--info); }
 	.tool-badge-manual  { background: var(--warning-subtle); color: var(--warning); }
 
-	/* ── Shell card border states ────────────────────────────────────────────── */
-	.shell-card-open   { border-color: var(--border-hover); box-shadow: 0 1px 0 var(--border-subtle), 0 6px 20px -8px var(--border-subtle); }
-	.shell-card-closed { border-color: var(--border); }
-	.shell-card-closed:hover { border-color: var(--border-hover); }
+	/* ── Triage table ────────────────────────────────────────────────────────── */
+	.sA-thead {
+		display: grid;
+		grid-template-columns: 16px minmax(0, 1fr) 130px 96px 96px 78px;
+		align-items: center;
+		gap: 14px;
+		padding: 0 16px 8px;
+	}
+	.sA-thead span {
+		font-size: 10px;
+		font-weight: 700;
+		letter-spacing: 0.07em;
+		text-transform: uppercase;
+		color: var(--text-faint);
+	}
+	.sA-thead .r { text-align: right; }
+
+	.sA-table {
+		border: 1px solid var(--border);
+		border-radius: 12px;
+		overflow: hidden;
+		list-style: none;
+		margin: 0;
+		padding: 0;
+	}
+	.sA-li {
+		border-bottom: 1px solid var(--border-subtle);
+		transition: background 120ms ease;
+	}
+	.sA-li:last-child { border-bottom: none; }
+	.sA-li.is-running { background: linear-gradient(90deg, rgba(var(--success-rgb), 0.045), transparent 60%); }
+	.sA-li.is-dim { background: var(--bg-subtle); }
+	.sA-li:hover { background: var(--bg-muted); }
+	.sA-li.is-running:hover { background: linear-gradient(90deg, rgba(var(--success-rgb), 0.075), transparent 60%); }
+	.sA-li.is-open { background: var(--bg-base); }
+
+	.sA-row {
+		display: grid;
+		grid-template-columns: 16px minmax(0, 1fr) 130px 96px 96px 78px;
+		align-items: center;
+		gap: 14px;
+		padding: 12px 16px;
+	}
+
+	.sA-c-main {
+		min-width: 0;
+		text-align: left;
+		background: transparent;
+		border: 0;
+		padding: 0;
+		cursor: pointer;
+	}
+	.sA-idline { display: flex; align-items: center; gap: 8px; margin-bottom: 3px; flex-wrap: wrap; }
+	.sA-id { font-family: var(--font-mono); font-size: 12px; font-weight: 600; color: var(--accent); }
+	.sA-exit { font-family: var(--font-mono); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
+	.sA-desc { font-size: 11px; color: var(--text-muted); }
+	.sA-cmd {
+		font-family: var(--font-mono);
+		font-size: 12px;
+		color: var(--text-secondary);
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	.sA-cmd .p { color: var(--accent); font-weight: 700; margin-right: 6px; }
+
+	.sA-status { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+	.sA-status .sl {
+		font-size: 11px;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+	}
+	.sA-status .ss {
+		font-family: var(--font-mono);
+		font-size: 10.5px;
+		color: var(--text-faint);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	/* ── Output sparkline (decorative) ───────────────────────────────────────── */
+	.sA-spark { display: flex; align-items: flex-end; justify-content: flex-end; gap: 2px; height: 22px; }
+	.sA-spark > i {
+		width: 3px;
+		background: color-mix(in srgb, var(--accent) 55%, transparent);
+		border-radius: 2px;
+	}
+	.sA-spark.g > i { background: color-mix(in srgb, var(--success) 60%, transparent); }
+
+	.sA-metric { text-align: right; }
+	.sA-metric .mv { font-family: var(--font-mono); font-size: 12.5px; font-weight: 600; color: var(--text-primary); }
+	.sA-metric .ml { font-size: 10px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.04em; margin-top: 2px; }
+	.tnum { font-variant-numeric: tabular-nums; }
+
+	.sA-caret { display: flex; justify-content: flex-end; align-items: center; }
+	.caret-btn {
+		color: var(--text-faint);
+		background: transparent;
+		border: 0;
+		cursor: pointer;
+		display: inline-flex;
+		transition: transform 140ms ease, color 120ms ease;
+	}
+	.caret-btn:hover { color: var(--text-primary); }
+
+	/* ── Inline kill ─────────────────────────────────────────────────────────── */
+	.sA-kill {
+		display: inline-flex;
+		align-items: center;
+		height: 24px;
+		padding: 0 9px;
+		border-radius: 6px;
+		font-size: 11.5px;
+		font-weight: 600;
+		color: var(--error);
+		background: var(--error-subtle);
+		border: 1px solid rgba(var(--error-rgb), 0.3);
+		cursor: pointer;
+		white-space: nowrap;
+		transition: background 120ms ease, border-color 120ms ease, transform 100ms ease;
+	}
+	.sA-kill:hover:not(:disabled) {
+		background: rgba(var(--error-rgb), 0.18);
+		border-color: rgba(var(--error-rgb), 0.5);
+		transform: scale(1.03);
+	}
+	.sA-kill:active:not(:disabled) { transform: scale(0.97); }
+	@keyframes spin {
+		to { transform: rotate(360deg); }
+	}
+	.kill-spinner {
+		animation: spin 0.8s linear infinite;
+		color: var(--error);
+	}
+
+	/* ── Expanded detail ─────────────────────────────────────────────────────── */
+	.sA-detail {
+		border-top: 1px dashed var(--border);
+		padding: 16px 16px 18px;
+		display: flex;
+		flex-direction: column;
+		gap: 12px;
+	}
 
 	/* ── Search input ────────────────────────────────────────────────────────── */
 	.search-input {
@@ -599,41 +813,6 @@
 		font-weight: 600;
 	}
 
-	/* ── Kill pill ───────────────────────────────────────────────────────────── */
-	.kill-wrap {
-		transition: width 180ms cubic-bezier(0.4, 0, 0.2, 1);
-		flex-shrink: 0;
-	}
-	.kill-pill {
-		display: inline-flex;
-		align-items: center;
-		height: 24px;
-		padding: 0 10px;
-		border-radius: 6px;
-		font-size: 12.5px;
-		font-weight: 500;
-		color: var(--error);
-		background: var(--error-subtle);
-		border: 1px solid rgba(var(--error-rgb), 0.3);
-		transition: background 120ms ease, border-color 120ms ease, color 120ms ease, transform 100ms ease;
-		cursor: pointer;
-	}
-	.kill-pill:hover {
-		background: rgba(var(--error-rgb), 0.18);
-		border-color: rgba(var(--error-rgb), 0.5);
-		transform: scale(1.03);
-	}
-	.kill-pill:active {
-		transform: scale(0.97);
-	}
-	@keyframes spin {
-		to { transform: rotate(360deg); }
-	}
-	.kill-spinner {
-		animation: spin 0.8s linear infinite;
-		color: var(--error);
-	}
-
 	/* ── Poll output scrollbar ───────────────────────────────────────────────── */
 	.poll-pre {
 		scrollbar-width: thin;
@@ -652,5 +831,13 @@
 	}
 	.poll-pre::-webkit-scrollbar-thumb:hover {
 		background: var(--border-hover);
+	}
+
+	/* ── Reduced motion ──────────────────────────────────────────────────────── */
+	@media (prefers-reduced-motion: reduce) {
+		.kill-spinner { animation: none; }
+		.caret-btn,
+		.sA-kill,
+		.sA-li { transition: none; }
 	}
 </style>
