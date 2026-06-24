@@ -37,16 +37,16 @@
 	--accent-muted: rgba(124, 58, 237, 0.05);
 
 	/* Semantic Colors */
-	--success: #10b981;
+	--success: #047857; /* emerald-700: AA 4.99:1 on success-subtle */
 	--success-subtle: rgba(16, 185, 129, 0.1);
 
-	--error: #ef4444;
+	--error: #b91c1c; /* red-700: AA 5.66:1 on error-subtle */
 	--error-subtle: rgba(239, 68, 68, 0.1);
 
-	--warning: #f59e0b;
+	--warning: #b45309; /* amber-700: AA 4.65:1 on warning-subtle */
 	--warning-subtle: rgba(245, 158, 11, 0.1);
 
-	--info: #3b82f6;
+	--info: #1d4ed8; /* blue-700: AA 5.99:1 on info-subtle */
 	--info-subtle: rgba(59, 130, 246, 0.1);
 
 	/* Ticket Provider Identity (industry-flavored, no brand logos)
@@ -72,9 +72,9 @@
 	/* Model Family Colors */
 	--model-opus: #7c3aed;
 	--model-opus-subtle: rgba(124, 58, 237, 0.1);
-	--model-sonnet: #3b82f6;
+	--model-sonnet: #1d4ed8; /* blue-700: AA 5.99:1 on model-sonnet-subtle */
 	--model-sonnet-subtle: rgba(59, 130, 246, 0.1);
-	--model-haiku: #10b981;
+	--model-haiku: #047857; /* emerald-700: AA 4.99:1 on model-haiku-subtle */
 	--model-haiku-subtle: rgba(16, 185, 129, 0.1);
 
 	/* Event Type Colors */
@@ -94,7 +94,7 @@
 	--event-plan-subtle: rgba(8, 145, 178, 0.18);
 	--event-builtin: #64748b;
 	--event-builtin-subtle: rgba(100, 116, 139, 0.18);
-	--event-command: #14b8a6;
+	--event-command: #0f766e; /* teal-700: AA 4.63:1 on event-command-subtle */
 	--event-command-subtle: rgba(20, 184, 166, 0.18);
 
 	/* Data Visualization Palette */
