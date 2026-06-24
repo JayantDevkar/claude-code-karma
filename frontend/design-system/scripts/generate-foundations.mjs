@@ -57,16 +57,97 @@ ${bodyHtml}
 `;
 }
 
-function swatchGrid(entries) {
-	const cells = entries.map(([name, val]) =>
-		`<div class="ds-swatch"><div class="ds-swatch__chip" style="background:${val}"></div>` +
+function swatchChip(name, val) {
+	return `<div class="ds-swatch"><div class="ds-swatch__chip" style="background:${val}"></div>` +
 		`<div class="ds-swatch__meta"><div class="ds-swatch__name">${esc(name)}</div>` +
-		`<div class="ds-swatch__val">${esc(val)}</div></div></div>`).join('\n');
-	return `<div class="ds-grid">${cells}</div>`;
+		`<div class="ds-swatch__val">${esc(val)}</div></div></div>`;
+}
+
+function swatchGrid(entries) {
+	return `<div class="ds-grid">${entries.map(([n, v]) => swatchChip(n, v)).join('\n')}</div>`;
+}
+
+function rgbNote(entries) {
+	if (!entries.length) return '';
+	return `<div class="ds-card" style="margin-top:8px;font-size:11px;font-family:var(--font-mono)">` +
+		entries.map(([n, v]) => `<div class="ds-swatch__name">${esc(n)}: ${esc(v)}</div>`).join('') +
+		`</div>`;
+}
+
+function section(label, bodyHtml) {
+	return `<div class="ds-section"><p class="ds-section-label">${esc(label)}</p>${bodyHtml}</div>`;
 }
 
 function byPrefix(light, predicate) {
 	return [...light.entries()].filter(([n, v]) => predicate(n, v));
+}
+
+// Build grouped color sections — returns { sections: string[], swatchCount: number }
+function buildColorSections(light) {
+	// Tokens to exclude from color grid entirely
+	const excludeFilter = (n, v) =>
+		isColor(v) &&
+		!n.startsWith('--plugin') &&
+		!n.startsWith('--data') &&
+		!n.startsWith('--font') &&
+		!n.startsWith('--shadow') &&
+		!n.startsWith('--focus');
+
+	const eligible = [...light.entries()].filter(([n, v]) => excludeFilter(n, v));
+
+	// Group matchers in priority order — first match wins
+	const families = [
+		{
+			label: 'Core',
+			match: (n) => n.startsWith('--bg-') || n.startsWith('--text-') || n.startsWith('--border') || n.startsWith('--accent'),
+			rgbMatch: (n) => n.endsWith('-rgb'),
+		},
+		{ label: 'Semantic', match: (n) => /^--(success|error|warning|info)/.test(n) },
+		{ label: 'Model', match: (n) => n.startsWith('--model-') },
+		{ label: 'Event', match: (n) => n.startsWith('--event-') },
+		{ label: 'Subagent', match: (n) => n.startsWith('--subagent-') },
+		{ label: 'Provider', match: (n) => n.startsWith('--provider-') },
+		{ label: 'Ticket Status', match: (n) => n.startsWith('--status-') && !n.endsWith('-bg') },
+		{ label: 'Live Status', match: (n) => n.startsWith('--status-') && n.endsWith('-bg') },
+		{ label: 'Nav', match: (n) => n.startsWith('--nav-') },
+		{ label: 'Scope', match: (n) => n.startsWith('--scope-') },
+	];
+
+	const assigned = new Set();
+	const grouped = families.map((fam) => {
+		// For Core, split out the raw RGB tokens as notes rather than chips
+		if (fam.label === 'Core') {
+			const chips = eligible.filter(([n]) => !assigned.has(n) && fam.match(n) && !n.endsWith('-rgb'));
+			const rgbs = eligible.filter(([n]) => !assigned.has(n) && n.endsWith('-rgb'));
+			chips.forEach(([n]) => assigned.add(n));
+			rgbs.forEach(([n]) => assigned.add(n));
+			return { label: fam.label, chips, rgbs };
+		}
+		const chips = eligible.filter(([n]) => !assigned.has(n) && fam.match(n));
+		chips.forEach(([n]) => assigned.add(n));
+		return { label: fam.label, chips, rgbs: [] };
+	});
+
+	// Collect anything unmatched
+	const other = eligible.filter(([n]) => !assigned.has(n));
+
+	let swatchCount = 0;
+	const sections = [];
+
+	for (const g of grouped) {
+		if (g.chips.length === 0 && g.rgbs.length === 0) continue;
+		swatchCount += g.chips.length;
+		let body = g.chips.length ? swatchGrid(g.chips) : '';
+		if (g.rgbs.length) body += rgbNote(g.rgbs);
+		sections.push(section(g.label, body));
+	}
+
+	if (other.length) {
+		swatchCount += other.length;
+		sections.push(section('Other', swatchGrid(other)));
+	}
+
+	return { sections, swatchCount };
 }
 
 export function generate({ tokensPath = TOKENS, outDir = OUT } = {}) {
@@ -76,15 +157,15 @@ export function generate({ tokensPath = TOKENS, outDir = OUT } = {}) {
 	const written = [];
 	const write = (file, html) => { const p = resolve(outDir, file); writeFileSync(p, html); written.push(p); };
 
-	// Colors — core + semantic + domain + nav + live-status, all color-valued tokens
-	const colorEntries = byPrefix(light, (n, v) => isColor(v) && !n.startsWith('--plugin') && !n.startsWith('--data') && !n.startsWith('--font'));
-	const aliasEntries = byPrefix(light, (n, v) => n.startsWith('--data'));
+	// Colors — grouped by prefix family, excluding shadow/focus (they have own cards)
+	const { sections: colorSections, swatchCount } = buildColorSections(light);
+	const aliasEntries = byPrefix(light, (n) => n.startsWith('--data'));
 	const aliasNote = aliasEntries.length
 		? `<div class="ds-section"><p class="ds-section-label">Aliases</p><div class="ds-card">` +
 			aliasEntries.map(([n, v]) => `<div class="ds-swatch__name">${esc(n)} → ${esc(v)}</div>`).join('') + `</div></div>`
 		: '';
 	const pluginNote = `<div class="ds-section"><p class="ds-section-label">Computed at runtime</p><div class="ds-card">--plugin-* are OKLCH parameters consumed by JS (memoryTypeBadge.ts); not rendered as swatches.</div></div>`;
-	write('colors.html', page('Colors', 'Colors', `${colorEntries.length} color tokens (toggle theme to compare)`, swatchGrid(colorEntries) + aliasNote + pluginNote));
+	write('colors.html', page('Colors', 'Colors', `${swatchCount} color swatches (toggle theme to compare)`, colorSections.join('') + aliasNote + pluginNote));
 
 	// Typography
 	const fonts = byPrefix(light, (n) => n.startsWith('--font'));

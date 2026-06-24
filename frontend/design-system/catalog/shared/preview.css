@@ -13,14 +13,14 @@ body {
 .ds-title { font-size: 18px; font-weight: 600; margin: 0 0 4px; }
 .ds-subtitle { font-size: 13px; color: var(--text-muted); margin: 0 0 20px; }
 .ds-section { margin: 24px 0; }
-.ds-section-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-faint); margin: 0 0 10px; }
+.ds-section-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-secondary); margin: 0 0 10px; }
 .ds-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
 .ds-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; }
 .ds-swatch { border: 1px solid var(--border); border-radius: var(--radius-md); overflow: hidden; }
-.ds-swatch__chip { height: 56px; }
+.ds-swatch__chip { height: 56px; border-bottom: 1px solid var(--border); }
 .ds-swatch__meta { padding: 8px 10px; font-size: 11px; }
 .ds-swatch__name { font-family: var(--font-mono); color: var(--text-primary); }
-.ds-swatch__val { font-family: var(--font-mono); color: var(--text-muted); }
+.ds-swatch__val { font-family: var(--font-mono); color: var(--text-secondary); }
 .ds-card { border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 16px; background: var(--bg-subtle); }
 /* Plain-CSS equivalents of the runtime state attributes bits-ui sets, so static previews can show both states */
 [data-state='active'] { background: var(--bg-base); color: var(--text-primary); box-shadow: var(--shadow-sm); }

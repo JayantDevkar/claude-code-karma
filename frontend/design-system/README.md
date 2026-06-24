@@ -12,7 +12,7 @@ cd frontend && npm run ds:build
 cd frontend && npm run ds:drift
 ```
 
-`ds:build` copies `tokens.css` into the bundle, generates `foundations/*.html`, validates every `@dsCard` marker, then writes `.render-check.json`. It outputs `catalog OK — 21 cards validated` on success with `{total, bad, thin, variantsIdentical}` counters.
+`ds:build` copies `tokens.css` into the bundle, generates `foundations/*.html`, validates every `@dsCard` marker, enforces the mapping.json contract, then writes `.render-check.json`. It outputs `catalog OK — 21 cards validated` on success with `{total, bad, thin}` counters. `thin` = cards whose body has fewer than 200 non-whitespace characters (a real signal). `bad` = cards with missing or malformed `@dsCard` markers.
 
 `ds:drift` prints `no drift — all cards are current with their sources` when every card's mtime ≥ all its mapped source files. Drift is flagged when a source file's mtime exceeds its card's mtime — the card is stale and must be rebuilt. If it reports stale cards, re-run `ds:build` or touch the affected `.html` file after updating the source.
 
@@ -38,7 +38,7 @@ Every card must appear in `catalog/mapping.json` with at least one source path:
 "components/badge.html": ["src/lib/components/ui/Badge.svelte"]
 ```
 
-`ds:build` enforces the contract: a card not listed in `mapping.json` fails validation. `ds:drift` uses the same map to compare mtimes. The contract is bidirectional — adding a card without a mapping entry, or adding a mapping entry without a card, both fail.
+`ds:build` enforces the contract bidirectionally: a card not listed in `mapping.json`, or a mapping entry pointing to a non-existent card, both cause a hard failure. `ds:drift` uses the same map to compare mtimes.
 
 Foundation cards (`foundations/*.html`) are generated automatically; their mapping entries point to `src/styles/tokens.css`.
 
