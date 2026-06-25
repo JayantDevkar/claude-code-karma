@@ -1,0 +1,95 @@
+<!-- @dsCard group="Components" -->
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EmptyState</title>
+<link rel="stylesheet" href="../shared/tokens.css">
+<link rel="stylesheet" href="../shared/preview.css">
+<style>
+.empty {
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  padding:48px 16px; text-align:center;
+  border-radius:var(--radius-lg); border:1px dashed var(--border);
+  background:var(--bg-subtle);
+}
+.empty__icon { color:var(--text-muted); margin-bottom:16px; }
+.empty__title { font-size:18px; font-weight:500; color:var(--text-primary); margin:0 0 8px; }
+.empty__desc  { font-size:14px; color:var(--text-secondary); max-width:380px; margin:0; }
+.empty__action {
+  margin-top:16px; padding:8px 16px;
+  background:var(--accent); color:var(--bg-base);
+  border:none; border-radius:var(--radius-md);
+  font-size:14px; font-family:var(--font-sans); font-weight:500;
+  cursor:pointer; transition:background var(--duration-base, 150ms);
+}
+.empty__action:hover { background:var(--accent-hover); }
+.states-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:20px; }
+</style>
+</head>
+<body>
+<div class="ds-frame">
+<h1 class="ds-title">EmptyState</h1>
+<p class="ds-subtitle">icon-only · with action · bare — src/lib/components/ui/EmptyState.svelte</p>
+
+<div class="ds-section">
+<p class="ds-section-label">Configurations</p>
+<div class="states-grid">
+
+  <!-- icon + title + description (iconName / LucideIcon path) -->
+  <div class="empty">
+    <div class="empty__icon">
+      <!-- inline SVG stand-in for KarmaIcon name="sessions" -->
+      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+      </svg>
+    </div>
+    <h3 class="empty__title">No sessions yet</h3>
+    <p class="empty__desc">Start a Claude Code session to see activity here.</p>
+  </div>
+
+  <!-- icon + title + description + action button -->
+  <div class="empty">
+    <div class="empty__icon">
+      <!-- inline SVG stand-in for KarmaIcon name="projects" -->
+      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 3h6v6H3zM15 3h6v6h-6zM3 15h6v6H3zM15 15h6v6h-6z"/>
+      </svg>
+    </div>
+    <h3 class="empty__title">No projects found</h3>
+    <p class="empty__desc">Open a project in Claude Code to get started.</p>
+    <button class="empty__action">Open Claude Code</button>
+  </div>
+
+  <!-- bare: title only, no icon, no description -->
+  <div class="empty">
+    <h3 class="empty__title">Nothing here</h3>
+  </div>
+
+</div>
+</div>
+
+<div class="ds-section">
+<p class="ds-section-label">With custom children slot (replaces action)</p>
+<div>
+  <div class="empty">
+    <div class="empty__icon">
+      <!-- inline SVG: tool/wrench stand-in -->
+      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+      </svg>
+    </div>
+    <h3 class="empty__title">No tools used</h3>
+    <p class="empty__desc">Tool usage will appear after your first session.</p>
+    <div style="margin-top:16px;display:flex;gap:8px;">
+      <button class="empty__action">Learn more</button>
+      <button style="margin-top:0;padding:8px 16px;background:transparent;color:var(--accent);border:1px solid var(--accent);border-radius:var(--radius-md);font-size:14px;font-family:var(--font-sans);cursor:pointer;">Dismiss</button>
+    </div>
+  </div>
+</div>
+</div>
+</div>
+<button class="ds-theme-toggle" onclick="(function(r){var d=r.getAttribute('data-theme')==='dark';r.setAttribute('data-theme',d?'light':'dark');})(document.documentElement)">Toggle theme</button>
+</body>
+</html>

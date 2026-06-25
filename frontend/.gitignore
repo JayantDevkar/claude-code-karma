@@ -25,3 +25,8 @@ vite.config.ts.timestamp-*
 # Playwright MCP screenshots
 .playwright-mcp/
 .omc/
+
+# design-system generated artifacts
+design-system/catalog/shared/tokens.css
+design-system/catalog/foundations/
+design-system/catalog/.render-check.json

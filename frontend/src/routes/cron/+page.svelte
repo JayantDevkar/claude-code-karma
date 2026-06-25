@@ -11,7 +11,11 @@
 		ChevronRight,
 		Repeat,
 		Zap,
-		TerminalSquare
+		TerminalSquare,
+		Check,
+		ShieldCheck,
+		CircleHelp,
+		AlertTriangle
 	} from 'lucide-svelte';
 	import PageHeader from '$lib/components/layout/PageHeader.svelte';
 	import StatsGrid from '$lib/components/StatsGrid.svelte';
@@ -70,9 +74,21 @@
 
 	// ── counts (always over full server-returned set) ─────────────────────────
 	const counts = $derived.by(() => {
-		const total = (data.jobs as CronJob[]).length;
-		const active = (data.jobs as CronJob[]).filter((j) => statusOf(j) === 'active').length;
-		return { total, active, inactive: total - active };
+		const jobs = data.jobs as CronJob[];
+		const total = jobs.length;
+		const activeJobs = jobs.filter((j) => statusOf(j) === 'active');
+		const active = activeJobs.length;
+		// Trust split: confirmed = a hook saw it; inferred = derived from TTL only.
+		const confirmed = activeJobs.filter(
+			(j) => j.latest_state !== null && j.latest_state !== undefined
+		).length;
+		const inferred = active - confirmed;
+		// Active jobs whose TTL elapses within the next 24h.
+		const expiringSoon = activeJobs.filter((j) => {
+			const remaining = new Date(j.ttl_expires_at).getTime() - NOW_MS;
+			return remaining > 0 && remaining < 24 * 3600 * 1000;
+		}).length;
+		return { total, active, inactive: total - active, confirmed, inferred, expiringSoon };
 	});
 
 	// ── client-side filtering + sorting ──────────────────────────────────────
@@ -98,6 +114,17 @@
 			if (d !== 0) return d;
 			return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
 		});
+	});
+
+	// ── Ledger grouping: split the sorted list into status buckets so each gets
+	// its own header. Order within each bucket is preserved (created_at desc).
+	const groups = $derived.by(() => {
+		const active = sorted.filter((j) => statusOf(j) === 'active');
+		const ended = sorted.filter((j) => statusOf(j) !== 'active');
+		const out: { id: string; label: string; jobs: CronJob[] }[] = [];
+		if (active.length) out.push({ id: 'active', label: 'Active', jobs: active });
+		if (ended.length) out.push({ id: 'ended', label: 'Expired & deleted', jobs: ended });
+		return out;
 	});
 
 	// ── helpers ───────────────────────────────────────────────────────────────
@@ -212,6 +239,70 @@
 		return String(j.id);
 	}
 
+	// Fires that actually carry information (an outcome excerpt or a hook signal).
+	function visibleFires(j: CronJob) {
+		return (j.fires ?? []).filter((f) => f.outcome_excerpt || f.inference_source === 'hook');
+	}
+
+	// Trust column: the headline verdict on "did it really run", pulled out of the
+	// expand. Confirmed = a hook observed it; Inferred = derived from TTL/logs only.
+	interface TrustMeta {
+		label: string;
+		variant: 'confirmed' | 'inferred' | 'ended';
+		sub: string;
+	}
+
+	function getTrustMeta(j: CronJob): TrustMeta {
+		const s = statusOf(j);
+		const fires = visibleFires(j);
+		const fireCount = fires.length;
+		const last = fires.length ? fires[fires.length - 1] : null;
+		const lastAgo = last ? formatTimeAgo(last.fired_at) : null;
+		const firesSub =
+			fireCount > 0
+				? `${fireCount} ${fireCount === 1 ? 'fire' : 'fires'}${lastAgo ? ` · last ${lastAgo}` : ''}`
+				: null;
+
+		if (s === 'deleted') {
+			const m = getStatusMeta(j);
+			return { label: 'Deleted', variant: 'ended', sub: m.via ?? 'deletion unobserved' };
+		}
+		if (s === 'expired') {
+			return { label: 'TTL expired', variant: 'ended', sub: firesSub ?? 'no fires recorded' };
+		}
+		// active
+		const confirmed = j.latest_state !== null && j.latest_state !== undefined;
+		if (confirmed) {
+			return { label: 'Confirmed', variant: 'confirmed', sub: firesSub ?? 'hook verified' };
+		}
+		return { label: 'Inferred', variant: 'inferred', sub: firesSub ?? 'no hook signal yet' };
+	}
+
+	// Inline last-outcome: the most recent fire's excerpt, surfaced onto the row so
+	// "what did it answer" is visible without expanding.
+	interface OutcomeMeta {
+		time: string | null;
+		text: string;
+		confirmed: boolean;
+		none: boolean;
+	}
+
+	function getOutcomeMeta(j: CronJob): OutcomeMeta {
+		const fires = visibleFires(j);
+		// Prefer the most recent fire that actually has an outcome excerpt.
+		const withText = [...fires].reverse().find((f) => f.outcome_excerpt);
+		if (withText) {
+			return {
+				time: formatShortTime(withText.fired_at),
+				text: withText.outcome_excerpt as string,
+				confirmed: withText.inference_source === 'hook',
+				none: false
+			};
+		}
+		const placeholder = j.recurring ? 'awaiting first fire' : 'one-shot — no fire recorded';
+		return { time: null, text: placeholder, confirmed: false, none: true };
+	}
+
 	function dotStyle(dot: DotVariant): string {
 		if (dot === 'truth') return 'background: var(--success);';
 		if (dot === 'likely') return 'background: var(--success); opacity: 0.55;';
@@ -269,10 +360,11 @@
 				{ title: 'User & system', value: (systemSummary?.byOrigin['user'] ?? 0) + (systemSummary?.byOrigin['system'] ?? 0), icon: Archive, color: 'gray' }
 			]} />
 		{:else}
-			<StatsGrid columns={3} stats={[
-				{ title: 'Total tracked', value: counts.total, icon: Clock, color: 'purple' },
-				{ title: 'Likely active', value: counts.active, icon: Activity, color: 'green', description: 'inferred from TTL' },
-				{ title: 'Expired or deleted', value: counts.inactive, icon: Archive, color: 'gray' }
+			<StatsGrid columns={4} stats={[
+				{ title: 'Tracked', value: counts.total, icon: Clock, color: 'purple' },
+				{ title: 'Confirmed live', value: counts.confirmed, icon: ShieldCheck, color: 'green', description: 'hook verified' },
+				{ title: 'Inferred active', value: counts.inferred, icon: CircleHelp, color: 'teal', description: 'from TTL only' },
+				{ title: 'Expiring < 24h', value: counts.expiringSoon, icon: AlertTriangle, color: 'orange' }
 			]} />
 		{/if}
 	</div>
@@ -335,6 +427,13 @@
 				bind:value={query}
 			/>
 		</div>
+
+		<!-- Trust legend: decodes the dot + verdict colours used in the ledger -->
+		<div class="legend" aria-hidden="true">
+			<span class="li"><span class="status-dot dot-truth" style="background: var(--success);"></span> confirmed</span>
+			<span class="li"><span class="status-dot" style="background: var(--success); opacity: 0.55;"></span> inferred</span>
+			<span class="li"><span class="status-dot" style="background: var(--text-faint);"></span> ended</span>
+		</div>
 	</div>
 
 	<!-- List / empty state -->
@@ -360,15 +459,27 @@
 	{:else if sorted.length === 0}
 		<div class="filter-empty">No cron jobs match these filters.</div>
 	{:else}
-		<div class="cron-list">
-			{#each sorted as job (jobKey(job))}
+		<!-- The Ledger: status-grouped table. Trust ("did it really run") and the
+		     last outcome ("what did it answer") are surfaced onto each row. -->
+		<div class="ledger">
+		{#each groups as group (group.id)}
+			<div class="cA-group">
+				<span class="gl">{group.label}</span>
+				<span class="gn">{group.jobs.length}</span>
+				<span class="gline"></span>
+			</div>
+
+			<div class="cA-table">
+			{#each group.jobs as job (jobKey(job))}
 				{@const key = jobKey(job)}
 				{@const expanded = openIds.has(key)}
 				{@const meta = getStatusMeta(job)}
 				{@const ttl = getTtlInfo(job)}
 				{@const s = statusOf(job)}
 				{@const human = cronHuman(job.cron_expression)}
-				{@const visibleFireCount = (job.fires ?? []).filter((f) => f.outcome_excerpt || f.inference_source === 'hook').length}
+				{@const trust = getTrustMeta(job)}
+				{@const outcome = getOutcomeMeta(job)}
+				{@const visibleFireCount = visibleFires(job).length}
 
 				<div class="cron-card" class:expanded class:gone={s !== 'active'}>
 					<!-- ── Collapsed row ─────────────────────────────────────────── -->
@@ -376,6 +487,7 @@
 						type="button"
 						class="cron-row"
 						onclick={() => toggle(key)}
+						aria-expanded={expanded}
 					>
 						<!-- Status dot -->
 						<span
@@ -384,10 +496,10 @@
 							style={dotStyle(meta.dot)}
 						></span>
 
-						<!-- Content column -->
-						<div class="row-content">
-							<!-- Line 1: ID + recur icon + status tag -->
-							<div class="row-head">
+						<!-- Main column: id/tags · prompt · inline last-outcome -->
+						<div class="cA-c-main">
+							<!-- Line 1: ID + recur icon + HOOK pill -->
+							<div class="cA-idline">
 								<span class="cron-id" class:cron-id-fallback={!job.cron_id}>{(job.cron_id ?? job.tool_use_id).slice(0, 8)}</span>
 								<span
 									class="recur-icon"
@@ -400,34 +512,34 @@
 										<Zap size={11} />
 									{/if}
 								</span>
-								<span
-									class="status-tag"
-									class:tag-active={s === 'active' && !meta.isLikely}
-									class:tag-likely={meta.isLikely}
-									class:tag-inactive={s !== 'active'}
-								>
-									{meta.label}{#if meta.isLikely}<span class="qm">?</span>{/if}{#if meta.via}<span class="via"> · {meta.via}</span>{/if}
-								</span>
 								{#if meta.truth}
 									<span class="pill pill-hook">HOOK</span>
 								{/if}
 							</div>
 
 							<!-- Line 2: Prompt preview -->
-							<div class="row-prompt">
+							<div class="cA-prompt">
 								{job.prompt}
 							</div>
 
-							<!-- Line 3: Meta -->
-							<div class="row-meta-line">
-								<span class="mono-dim">{human}</span>
-								{#if visibleFireCount > 0}
-									<span class="sep">·</span>
-									<span class="mono-dim">{visibleFireCount} {visibleFireCount === 1 ? 'fire' : 'fires'}</span>
-								{/if}
-								<span class="sep">·</span>
-								<span class="mono-dim">{job.project_display_name ?? '—'}</span>
+							<!-- Line 3: Inline last outcome — "what did it answer" -->
+							<div class="cA-outcome" class:none={outcome.none}>
+								{#if outcome.time}<span class="ot">{outcome.time}</span>{/if}
+								{#if outcome.confirmed}<span class="oc" aria-hidden="true"><Check size={11} /></span>{/if}
+								<span class="ox">{outcome.text}</span>
 							</div>
+						</div>
+
+						<!-- Trust column — "did it really run" -->
+						<div class="cA-trust">
+							<span class="tt {trust.variant}">{trust.label}</span>
+							<span class="ts">{trust.sub}</span>
+						</div>
+
+						<!-- Cadence column -->
+						<div class="cA-cad">
+							<span class="cv">{human}</span>
+							<span class="cs">{job.project_display_name ?? '—'}</span>
 						</div>
 
 						<!-- TTL meta column -->
@@ -522,11 +634,11 @@
 										{#if job.recurring}No fires observed yet.{:else}One-shot — no fires recorded.{/if}
 									</div>
 								{:else}
-									{@const visibleFires = (job.fires ?? []).filter((f) => f.outcome_excerpt || f.inference_source === 'hook')}
+									{@const firesList = visibleFires(job)}
 									<div class="fire-timeline">
-										{#each visibleFires as fire, i}
+										{#each firesList as fire, i}
 											{@const truth = fire.inference_source === 'hook'}
-											{@const last = i === visibleFires.length - 1}
+											{@const last = i === firesList.length - 1}
 											<div class="fire-tl-row" class:last>
 												<div class="fire-tl-track">
 													<span class="fire-tl-dot" class:truth></span>
@@ -549,6 +661,8 @@
 					{/if}
 				</div>
 			{/each}
+			</div>
+		{/each}
 		</div>
 
 		<!-- Footer hint -->
@@ -742,53 +856,103 @@
 		flex-shrink: 0;
 	}
 
-	/* ── Cron list ─────────────────────────────────────────────────────────── */
-	.cron-list {
+	/* ── The Ledger: status-grouped tables ─────────────────────────────────── */
+	.ledger {
 		display: flex;
 		flex-direction: column;
-		gap: 8px;
 	}
 
-	.cron-card {
+	.cA-group {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		margin: 4px 2px 8px;
+	}
+
+	.cA-group .gl {
+		font-size: 11px;
+		font-weight: 700;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		color: var(--text-secondary);
+	}
+
+	.cA-group .gn {
+		font-family: var(--font-mono);
+		font-size: 11px;
+		color: var(--text-faint);
+		background: var(--bg-muted);
+		border-radius: 20px;
+		padding: 1px 8px;
+	}
+
+	.cA-group .gline {
+		flex: 1;
+		height: 1px;
+		background: var(--border);
+	}
+
+	.cA-table {
 		border: 1px solid var(--border);
-		background: var(--bg-base);
 		border-radius: 12px;
 		overflow: hidden;
+		margin-bottom: 18px;
+		background: var(--bg-base);
+	}
+
+	/* Each job stays its own card (for the expand panel), but inside the table it
+	   reads as a table row: borderless, separated by a bottom rule. */
+	.cron-card {
+		background: var(--bg-base);
+		border-bottom: 1px solid var(--border-subtle);
 		transition:
-			border-color 0.15s,
+			background 0.15s,
 			box-shadow 0.15s;
 	}
 
+	.cron-card:last-child {
+		border-bottom: none;
+	}
+
 	.cron-card:hover {
-		border-color: var(--border-hover);
+		background: var(--bg-subtle);
 	}
 
 	.cron-card.expanded {
-		border-color: var(--border-hover);
-		box-shadow: 0 1px 0 var(--border-subtle), 0 6px 20px -8px var(--border-subtle);
 		background: var(--bg-base);
+		box-shadow:
+			inset 3px 0 0 var(--accent),
+			0 6px 20px -10px var(--border-subtle);
 	}
 
 	.cron-card.gone {
 		background: var(--bg-subtle);
 	}
 
+	.cron-card.gone:hover,
 	.cron-card.gone.expanded {
 		background: var(--bg-base);
 	}
 
 	.cron-row {
 		display: grid;
-		grid-template-columns: 14px 1fr auto 18px;
+		grid-template-columns: 18px minmax(0, 1fr) 120px 150px 132px 18px;
 		align-items: center;
 		gap: 14px;
-		padding: 14px 16px;
+		padding: 13px 16px;
 		width: 100%;
 		cursor: pointer;
 		user-select: none;
 		text-align: left;
 		background: none;
 		border: none;
+		color: inherit;
+	}
+
+	.cron-row:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: -2px;
+		border-radius: 8px;
 	}
 
 	.caret {
@@ -815,24 +979,21 @@
 		animation: cronPulse 1.6s infinite;
 	}
 
-	/* ── Row content ───────────────────────────────────────────────────────── */
-	.row-content {
+	/* ── Main column (id / prompt / inline last-outcome) ───────────────────── */
+	.cA-c-main {
 		min-width: 0;
-		display: flex;
-		flex-direction: column;
-		gap: 4px;
 	}
 
-	.row-head {
+	.cA-idline {
 		display: flex;
-		flex-wrap: wrap;
 		align-items: center;
 		gap: 8px;
+		margin-bottom: 3px;
 	}
 
 	.cron-id {
 		font-family: var(--font-mono);
-		font-size: 12.5px;
+		font-size: 12px;
 		font-weight: 600;
 		color: var(--accent);
 	}
@@ -845,18 +1006,13 @@
 	.pill {
 		display: inline-flex;
 		align-items: center;
-		font-size: 10.5px;
-		font-weight: 600;
-		letter-spacing: 0.04em;
+		font-size: 10px;
+		font-weight: 700;
+		letter-spacing: 0.06em;
 		text-transform: uppercase;
 		padding: 2px 7px;
 		border-radius: 5px;
 		font-family: var(--font-mono);
-	}
-
-	.pill-schedule {
-		background: var(--accent-muted);
-		color: var(--accent);
 	}
 
 	.pill-hook {
@@ -881,62 +1037,125 @@
 		color: var(--info);
 	}
 
-	.status-tag {
-		font-size: 10.5px;
-		font-weight: 600;
-		letter-spacing: 0.05em;
-		text-transform: uppercase;
-		color: var(--text-muted);
-		display: inline-flex;
-		align-items: center;
-		gap: 3px;
-	}
-
-	.tag-active,
-	.tag-likely {
-		color: var(--success);
-	}
-
-	.qm {
-		font-size: 9px;
-		opacity: 0.6;
-		letter-spacing: 0;
-		text-transform: none;
-		vertical-align: super;
-		font-weight: 500;
-	}
-
-	.via {
-		color: var(--text-faint);
-		font-weight: 500;
-		text-transform: none;
-		letter-spacing: 0;
-		font-size: 11.5px;
-	}
-
-	.row-prompt {
+	.cA-prompt {
 		font-size: 13px;
-		line-height: 1.45;
+		line-height: 1.4;
 		color: var(--text-primary);
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
 	}
 
-	.cron-card.expanded .row-prompt {
+	.cron-card.gone .cA-prompt {
+		color: var(--text-muted);
+	}
+
+	.cron-card.expanded .cA-prompt {
 		white-space: normal;
 		overflow: visible;
 		text-overflow: unset;
 	}
 
-
-	.row-meta-line {
+	/* Inline last outcome — the headline "what did it answer" line. */
+	.cA-outcome {
 		display: flex;
-		flex-wrap: wrap;
 		align-items: center;
-		gap: 6px;
-		font-size: 12px;
+		gap: 7px;
+		margin-top: 4px;
+		font-size: 11.5px;
 		color: var(--text-muted);
+		min-width: 0;
+	}
+
+	.cA-outcome .ot {
+		font-family: var(--font-mono);
+		font-size: 10.5px;
+		color: var(--text-faint);
+		flex-shrink: 0;
+	}
+
+	.cA-outcome .oc {
+		display: inline-flex;
+		align-items: center;
+		color: var(--success);
+		flex-shrink: 0;
+	}
+
+	.cA-outcome .ox {
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	.cron-card.expanded .cA-outcome .ox {
+		white-space: normal;
+		overflow: visible;
+		text-overflow: unset;
+	}
+
+	.cA-outcome.none {
+		color: var(--text-faint);
+		font-style: italic;
+	}
+
+	/* Trust column — the "did it really run" verdict. */
+	.cA-trust {
+		display: flex;
+		flex-direction: column;
+		gap: 3px;
+		min-width: 0;
+	}
+
+	.cA-trust .tt {
+		font-size: 10.5px;
+		font-weight: 700;
+		letter-spacing: 0.04em;
+		text-transform: uppercase;
+	}
+
+	.cA-trust .tt.confirmed {
+		color: var(--success);
+	}
+
+	.cA-trust .tt.inferred {
+		color: var(--text-muted);
+	}
+
+	.cA-trust .tt.ended {
+		color: var(--text-faint);
+	}
+
+	.cA-trust .ts {
+		font-size: 10.5px;
+		color: var(--text-faint);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	/* Cadence column — schedule + project. */
+	.cA-cad {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		min-width: 0;
+	}
+
+	.cA-cad .cv {
+		font-family: var(--font-mono);
+		font-size: 12px;
+		color: var(--text-primary);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.cA-cad .cs {
+		font-size: 10.5px;
+		color: var(--text-faint);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
 	.mono-dim {
@@ -946,6 +1165,22 @@
 
 	.sep {
 		color: var(--text-faint);
+	}
+
+	/* ── Trust legend ──────────────────────────────────────────────────────── */
+	.legend {
+		display: flex;
+		align-items: center;
+		gap: 14px;
+		margin-left: auto;
+		font-size: 11px;
+		color: var(--text-muted);
+	}
+
+	.legend .li {
+		display: inline-flex;
+		align-items: center;
+		gap: 5px;
 	}
 
 	/* ── TTL column ────────────────────────────────────────────────────────── */
@@ -1319,9 +1554,25 @@
 	}
 
 	/* ── Responsive ────────────────────────────────────────────────────────── */
+	/* Medium: drop the cadence column, keep trust + TTL. */
+	@media (max-width: 960px) {
+		.cron-row {
+			grid-template-columns: 18px minmax(0, 1fr) 116px 132px 18px;
+		}
+
+		.cA-cad {
+			display: none;
+		}
+
+		.legend {
+			display: none;
+		}
+	}
+
+	/* Small: keep the trust verdict (the point of the ledger), drop TTL. */
 	@media (max-width: 760px) {
 		.cron-row {
-			grid-template-columns: 14px 1fr 18px;
+			grid-template-columns: 14px minmax(0, 1fr) 104px 18px;
 		}
 
 		.ttl-col {

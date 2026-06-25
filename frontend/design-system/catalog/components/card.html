@@ -1,0 +1,72 @@
+<!-- @dsCard group="Components" -->
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Card</title>
+<link rel="stylesheet" href="../shared/tokens.css">
+<link rel="stylesheet" href="../shared/preview.css">
+<style>
+.card {
+  border-radius:var(--radius-lg);
+  border:1px solid var(--border);
+}
+/* variants from Card.svelte variantClasses */
+.card--default     { background:var(--bg-base); }
+.card--subtle      { background:var(--bg-subtle); }
+.card--interactive {
+  background:var(--bg-base); cursor:pointer;
+  transition:box-shadow var(--duration-base, 150ms);
+}
+.card--interactive:hover { box-shadow:var(--shadow-sm); }
+/* padding from Card.svelte paddingClasses */
+.p-none { padding:0; }
+.p-sm   { padding:12px; }
+.p-md   { padding:16px; }
+.p-lg   { padding:24px; }
+/* card content helpers */
+.card-label { font-size:10px; text-transform:uppercase; letter-spacing:.06em; color:var(--text-faint); margin:0 0 6px; }
+.card-title { font-size:14px; font-weight:600; color:var(--text-primary); margin:0 0 4px; }
+.card-body  { font-size:13px; color:var(--text-secondary); margin:0; }
+.cards-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:12px; }
+</style>
+</head>
+<body>
+<div class="ds-frame">
+<h1 class="ds-title">Card</h1>
+<p class="ds-subtitle">3 variants × 4 paddings — src/lib/components/ui/Card.svelte</p>
+
+<div class="ds-section">
+<p class="ds-section-label">variant="default"</p>
+<div class="cards-grid">
+  <div class="card card--default p-none"><p style="padding:16px;font-size:13px;color:var(--text-muted);margin:0">padding none</p></div>
+  <div class="card card--default p-sm"><p class="card-label">padding sm</p><p class="card-title">Session</p><p class="card-body">12 messages</p></div>
+  <div class="card card--default p-md"><p class="card-label">padding md</p><p class="card-title">Project</p><p class="card-body">3 sessions today</p></div>
+  <div class="card card--default p-lg"><p class="card-label">padding lg</p><p class="card-title">Analytics</p><p class="card-body">Usage statistics</p></div>
+</div>
+</div>
+
+<div class="ds-section">
+<p class="ds-section-label">variant="subtle"</p>
+<div class="cards-grid">
+  <div class="card card--subtle p-none"><p style="padding:16px;font-size:13px;color:var(--text-muted);margin:0">padding none</p></div>
+  <div class="card card--subtle p-sm"><p class="card-label">padding sm</p><p class="card-title">Hooks</p><p class="card-body">4 active</p></div>
+  <div class="card card--subtle p-md"><p class="card-label">padding md</p><p class="card-title">Skills</p><p class="card-body">22 loaded</p></div>
+  <div class="card card--subtle p-lg"><p class="card-label">padding lg</p><p class="card-title">Tools</p><p class="card-body">Bash, Read, Edit…</p></div>
+</div>
+</div>
+
+<div class="ds-section">
+<p class="ds-section-label">variant="interactive" — hover for shadow</p>
+<div class="cards-grid">
+  <div class="card card--interactive p-none"><p style="padding:16px;font-size:13px;color:var(--text-muted);margin:0">padding none</p></div>
+  <div class="card card--interactive p-sm"><p class="card-label">padding sm</p><p class="card-title">Click me</p><p class="card-body">Hover for shadow</p></div>
+  <div class="card card--interactive p-md"><p class="card-label">padding md</p><p class="card-title">Open session</p><p class="card-body">Last active 2m ago</p></div>
+  <div class="card card--interactive p-lg"><p class="card-label">padding lg</p><p class="card-title">View project</p><p class="card-body">claude-karma · 8 sessions</p></div>
+</div>
+</div>
+</div>
+<button class="ds-theme-toggle" onclick="(function(r){var d=r.getAttribute('data-theme')==='dark';r.setAttribute('data-theme',d?'light':'dark');})(document.documentElement)">Toggle theme</button>
+</body>
+</html>

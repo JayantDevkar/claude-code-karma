@@ -164,7 +164,8 @@ export default [
 			'pnpm-lock.yaml',
 			'package-lock.json',
 			'yarn.lock',
-			'**/*.d.ts'
+			'**/*.d.ts',
+			'design-system/scripts/*.mjs'
 		]
 	}
 ];

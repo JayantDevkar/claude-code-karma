@@ -8,3 +8,4 @@ package
 pnpm-lock.yaml
 package-lock.json
 yarn.lock
+design-system/catalog/**

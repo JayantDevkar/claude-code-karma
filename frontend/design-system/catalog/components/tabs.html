@@ -1,0 +1,108 @@
+<!-- @dsCard group="Components" -->
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tabs</title>
+<link rel="stylesheet" href="../shared/tokens.css">
+<link rel="stylesheet" href="../shared/preview.css">
+<style>
+/* Mirrors TabsList/TabsTrigger/TabsContent structure from bits-ui */
+.tabs-list {
+  display:inline-flex; align-items:center; gap:4px; padding:4px;
+  background:var(--bg-subtle); border:1px solid var(--border);
+  border-radius:var(--radius-lg);
+}
+.tabs-trigger {
+  display:inline-flex; align-items:center; gap:6px;
+  padding:8px 16px; font-size:14px; font-weight:500;
+  font-family:var(--font-sans); border:none; cursor:pointer;
+  border-radius:var(--radius-md);
+  transition:all 200ms ease-out;
+}
+/* preview.css already sets [data-state='active'] and [data-state='inactive'] */
+.tabs-trigger:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+.tabs-panel {
+  margin-top:16px; padding:16px;
+  border:1px solid var(--border); border-radius:var(--radius-lg);
+  background:var(--bg-subtle); font-size:13px; color:var(--text-secondary);
+  font-family:var(--font-sans);
+}
+/* hide inactive panels */
+.tabs-panel[hidden] { display:none; }
+/* icon stub */
+.tab-icon {
+  width:14px; height:14px; border-radius:2px;
+  background:currentColor; opacity:.6; flex-shrink:0;
+}
+</style>
+</head>
+<body>
+<div class="ds-frame">
+<h1 class="ds-title">Tabs</h1>
+<p class="ds-subtitle">Active/inactive states · panel · with-icon variant — src/lib/components/ui/Tabs*.svelte</p>
+
+<div class="ds-section">
+<p class="ds-section-label">Basic tabs (interactive)</p>
+<div role="tablist" class="tabs-list" id="tabs-a">
+  <button role="tab" data-state="active"   class="tabs-trigger" aria-controls="panel-a-1" id="tab-a-1" onclick="switchTab('tabs-a','panel-a','tab-a-1','panel-a-1')">Overview</button>
+  <button role="tab" data-state="inactive" class="tabs-trigger" aria-controls="panel-a-2" id="tab-a-2" onclick="switchTab('tabs-a','panel-a','tab-a-2','panel-a-2')">Timeline</button>
+  <button role="tab" data-state="inactive" class="tabs-trigger" aria-controls="panel-a-3" id="tab-a-3" onclick="switchTab('tabs-a','panel-a','tab-a-3','panel-a-3')">Analytics</button>
+</div>
+<div role="tabpanel" id="panel-a-1" class="tabs-panel">
+  Overview panel content — session statistics, project summary.
+</div>
+<div role="tabpanel" id="panel-a-2" class="tabs-panel" hidden>
+  Timeline panel content — event rail, message list.
+</div>
+<div role="tabpanel" id="panel-a-3" class="tabs-panel" hidden>
+  Analytics panel content — charts, tool breakdowns.
+</div>
+</div>
+
+<div class="ds-section">
+<p class="ds-section-label">With-icon variant (interactive)</p>
+<div role="tablist" class="tabs-list" id="tabs-b">
+  <button role="tab" data-state="active"   class="tabs-trigger" aria-controls="panel-b-1" id="tab-b-1" onclick="switchTab('tabs-b','panel-b','tab-b-1','panel-b-1')">
+    <span class="tab-icon" style="background:var(--accent);"></span>Sessions
+  </button>
+  <button role="tab" data-state="inactive" class="tabs-trigger" aria-controls="panel-b-2" id="tab-b-2" onclick="switchTab('tabs-b','panel-b','tab-b-2','panel-b-2')">
+    <span class="tab-icon" style="border-radius:50%;"></span>Agents
+  </button>
+  <button role="tab" data-state="inactive" class="tabs-trigger" aria-controls="panel-b-3" id="tab-b-3" onclick="switchTab('tabs-b','panel-b','tab-b-3','panel-b-3')">
+    <span class="tab-icon" style="border-radius:4px;"></span>Skills
+  </button>
+</div>
+<div role="tabpanel" id="panel-b-1" class="tabs-panel">Sessions panel — list of recent Claude Code sessions.</div>
+<div role="tabpanel" id="panel-b-2" class="tabs-panel" hidden>Agents panel — subagent invocations and hierarchy.</div>
+<div role="tabpanel" id="panel-b-3" class="tabs-panel" hidden>Skills panel — skill usage frequency.</div>
+</div>
+
+<div class="ds-section">
+<p class="ds-section-label">Static reference — both states visible</p>
+<div role="tablist" class="tabs-list">
+  <button role="tab" data-state="active"   class="tabs-trigger">Active tab</button>
+  <button role="tab" data-state="inactive" class="tabs-trigger">Inactive tab</button>
+  <button role="tab" data-state="inactive" class="tabs-trigger">Inactive tab</button>
+</div>
+</div>
+</div>
+
+<button class="ds-theme-toggle" onclick="(function(r){var d=r.getAttribute('data-theme')==='dark';r.setAttribute('data-theme',d?'light':'dark');})(document.documentElement)">Toggle theme</button>
+
+<script>
+function switchTab(tablistId, panelPrefix, activeTabId, activePanelId) {
+  /* update trigger states */
+  document.getElementById(tablistId).querySelectorAll('[role="tab"]').forEach(function(t) {
+    t.setAttribute('data-state', t.id === activeTabId ? 'active' : 'inactive');
+  });
+  /* show/hide panels */
+  document.querySelectorAll('[id^="' + panelPrefix + '-"]').forEach(function(p) {
+    if (p.id === activePanelId) { p.removeAttribute('hidden'); }
+    else { p.setAttribute('hidden', ''); }
+  });
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,47 @@
+/* Shared chrome for design-system preview cards (framework-free). */
+
+/* Brand fonts — self-hosted so cards render Inter/JetBrains Mono everywhere
+   (the app's tokens name these families but the app itself loads no web font). */
+@font-face { font-family: 'Inter'; font-style: normal; font-weight: 400; font-display: swap; src: url('fonts/inter-400.woff2') format('woff2'); }
+@font-face { font-family: 'Inter'; font-style: normal; font-weight: 500; font-display: swap; src: url('fonts/inter-500.woff2') format('woff2'); }
+@font-face { font-family: 'Inter'; font-style: normal; font-weight: 600; font-display: swap; src: url('fonts/inter-600.woff2') format('woff2'); }
+@font-face { font-family: 'Inter'; font-style: normal; font-weight: 700; font-display: swap; src: url('fonts/inter-700.woff2') format('woff2'); }
+@font-face { font-family: 'JetBrains Mono'; font-style: normal; font-weight: 400; font-display: swap; src: url('fonts/jetbrains-mono-400.woff2') format('woff2'); }
+@font-face { font-family: 'JetBrains Mono'; font-style: normal; font-weight: 500; font-display: swap; src: url('fonts/jetbrains-mono-500.woff2') format('woff2'); }
+@font-face { font-family: 'JetBrains Mono'; font-style: normal; font-weight: 600; font-display: swap; src: url('fonts/jetbrains-mono-600.woff2') format('woff2'); }
+
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+	margin: 0;
+	font-family: var(--font-sans);
+	background: var(--bg-base);
+	color: var(--text-primary);
+	font-variant-numeric: tabular-nums;
+	padding: 24px;
+}
+.ds-frame { max-width: 980px; margin: 0 auto; }
+.ds-title { font-size: 18px; font-weight: 600; margin: 0 0 4px; }
+.ds-subtitle { font-size: 13px; color: var(--text-muted); margin: 0 0 20px; }
+.ds-section { margin: 24px 0; }
+.ds-section-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-secondary); margin: 0 0 10px; }
+.ds-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.ds-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; }
+.ds-swatch { border: 1px solid var(--border); border-radius: var(--radius-md); overflow: hidden; }
+.ds-swatch__chip { height: 56px; border-bottom: 1px solid var(--border); }
+.ds-swatch__meta { padding: 8px 10px; font-size: 11px; }
+.ds-swatch__name { font-family: var(--font-mono); color: var(--text-primary); }
+.ds-swatch__val { font-family: var(--font-mono); color: var(--text-secondary); }
+.ds-card { border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 16px; background: var(--bg-subtle); }
+/* Plain-CSS equivalents of the runtime state attributes bits-ui sets, so static previews can show both states */
+[data-state='active'] { background: var(--bg-base); color: var(--text-primary); box-shadow: var(--shadow-sm); }
+[data-state='inactive'] { color: var(--text-secondary); }
+/* Theme toggle button (fixed) */
+.ds-theme-toggle {
+	position: fixed; bottom: 16px; right: 16px; z-index: 10;
+	display: inline-flex; align-items: center; gap: 6px;
+	padding: 6px 12px; font: inherit; font-size: 12px;
+	border: 1px solid var(--border); border-radius: var(--radius-md);
+	background: var(--bg-base); color: var(--text-secondary); cursor: pointer;
+}
+.ds-theme-toggle:hover { color: var(--text-primary); border-color: var(--border-hover); }
