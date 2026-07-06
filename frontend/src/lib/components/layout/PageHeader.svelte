@@ -25,6 +25,8 @@
 		metadata?: MetadataItem[];
 		badges?: Snippet;
 		headerRight?: Snippet;
+		/** Optional snippet that replaces the default <h1> title rendering */
+		titleContent?: Snippet;
 		class?: string;
 	}
 
@@ -39,6 +41,7 @@
 		metadata = [],
 		badges,
 		headerRight,
+		titleContent,
 		class: className
 	}: Props = $props();
 </script>
@@ -96,9 +99,13 @@
 			<!-- Title and Content -->
 			<div class="flex-1 min-w-0">
 				<div class="flex items-center gap-3 mb-2">
-					<h1 class="text-2xl font-semibold tracking-tight text-[var(--text-primary)]">
-						{title}
-					</h1>
+					{#if titleContent}
+						{@render titleContent()}
+					{:else}
+						<h1 class="text-2xl font-semibold tracking-tight text-[var(--text-primary)]">
+							{title}
+						</h1>
+					{/if}
 					{#if badges}
 						{@render badges()}
 					{/if}

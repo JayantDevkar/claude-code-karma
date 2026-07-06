@@ -1,15 +1,15 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { Brain, Copy, Check, Bot, ExternalLink, Zap, ChevronLeft, ChevronRight } from 'lucide-svelte';
+	import { Copy, Check, ChevronLeft, ChevronRight, Zap, ExternalLink } from 'lucide-svelte';
 	import { keyboardOverrides } from '$lib/stores/keyboardOverrides';
 	import { marked } from 'marked';
 	import DOMPurify from 'isomorphic-dompurify';
 	import type { TimelineEvent } from '$lib/api-types';
 	import { createTimelineLogic } from '$lib/utils/timelineLogic.svelte';
+	import { groupIntoTurns, type TurnGroup } from '$lib/utils/groupIntoTurns';
 	import { formatDate } from '$lib/utils';
-	import TimelineFilterBar from './TimelineFilterBar.svelte';
-	import TimelineEventCard from './TimelineEventCard.svelte';
-	import TimelineGap from './TimelineGap.svelte';
+	import TurnCard from './TurnCard.svelte';
+	import TimelineMinimap from './TimelineMinimap.svelte';
 	import Modal from '$lib/components/ui/Modal.svelte';
 	import ToolCallDetail from './ToolCallDetail.svelte';
 	import TodoUpdateDetail from './TodoUpdateDetail.svelte';
@@ -21,21 +21,15 @@
 		isLive?: boolean;
 		isTailing?: boolean;
 		onToggleTailing?: () => void;
-		/** Current agent ID - when set, events from this agent won't show subagent badges */
 		currentAgentId?: string | null;
-		/** Project path for formatting file paths */
 		projectPath?: string | null;
 		class?: string;
-		/** External search query (from Cmd+F) */
 		searchQuery?: string;
-		/** Callback when search match count changes */
 		onSearchMatchCount?: (count: number) => void;
-		/** Callback when current match index changes */
 		onCurrentMatchChange?: (index: number) => void;
-		/** Project encoded name for building subagent links */
 		projectEncoded?: string;
-		/** Session slug (short UUID) for building subagent links */
 		sessionSlug?: string;
+		sessionUuid?: string;
 	}
 
 	let {
@@ -50,40 +44,91 @@
 		onSearchMatchCount,
 		onCurrentMatchChange,
 		projectEncoded,
-		sessionSlug
+		sessionSlug,
+		sessionUuid
 	}: Props = $props();
 
-	// Auto-scroll state
-	let isUserScrolling = $state(false);
-	let userScrollTimeout: ReturnType<typeof setTimeout> | null = null;
-	let scrollRafId: number | null = null;
-	let prevEventsLength = $state(0);
-	let prevIsTailing = $state(false);
+	// ── Density toggle ────────────────────────────────────────────────
+	type Density = 'compact' | 'normal' | 'expanded';
+	let density = $state<Density>('normal');
 
-	// Popup state for event detail modal
+	// ── Turn grouping ─────────────────────────────────────────────────
+	const sessionStartTs = $derived(events[0]?.timestamp ?? new Date().toISOString());
+
+	const turns = $derived(groupIntoTurns(events, sessionStartTs, isLive));
+
+	// ── Search (simple turn-level filter) ─────────────────────────────
+	// Keep createTimelineLogic for counts + search query state
+	const timeline = createTimelineLogic(() => events, {
+		isTailingGetter: () => isTailing,
+		tailCount: 3,
+		currentAgentIdGetter: () => currentAgentId
+	});
+
+	$effect(() => {
+		if (searchQuery) timeline.setSearchQuery(searchQuery);
+	});
+
+	const activeSearch = $derived(timeline.searchQuery.trim().toLowerCase());
+
+	const filteredTurns = $derived.by<TurnGroup[]>(() => {
+		if (!activeSearch) return turns;
+		return turns.filter((turn) => {
+			const texts = [turn.prompt, turn.response, ...turn.workEvents]
+				.flatMap((ev) =>
+					ev
+						? [
+								ev.summary ?? '',
+								ev.title ?? '',
+								(ev.metadata?.full_content as string | undefined) ?? '',
+								(ev.metadata?.full_text as string | undefined) ?? '',
+								(ev.metadata?.full_thinking as string | undefined) ?? ''
+							]
+						: []
+				)
+				.join(' ')
+				.toLowerCase();
+			return texts.includes(activeSearch);
+		});
+	});
+
+	// Notify parent of search match count
+	$effect(() => { onSearchMatchCount?.(filteredTurns.length); });
+
+	// ── Session stats ──────────────────────────────────────────────────
+	const countPrompt = $derived(timeline.counts.prompt ?? 0);
+	const countTool = $derived(timeline.counts.tool_call ?? 0);
+	const countAgent = $derived(timeline.counts.subagent ?? 0);
+	const countError = $derived(timeline.counts.error ?? 0);
+
+	const sessionDuration = $derived.by(() => {
+		if (events.length < 2) return '';
+		const ms =
+			new Date(events[events.length - 1].timestamp).getTime() -
+			new Date(events[0].timestamp).getTime();
+		if (ms <= 0) return '';
+		const min = Math.floor(ms / 60000);
+		return min > 0 ? `${min}m` : `${Math.floor((ms % 60000) / 1000)}s`;
+	});
+
+	// ── Popup ─────────────────────────────────────────────────────────
 	let popupEvent = $state<TimelineEvent | null>(null);
 	const isPopupOpen = $derived(popupEvent !== null);
 	let isCopied = $state(false);
-
-	// Rendered markdown content for popup modal
 	let renderedPopupContent = $state('');
 
-	// Render markdown when popup opens or content changes
 	$effect(() => {
 		if (popupEvent) {
-			const rawContent =
-				popupEvent.metadata?.full_content ||
-				popupEvent.metadata?.full_thinking ||
-				popupEvent.metadata?.full_text ||
-				popupEvent.metadata?.result_content ||
-				popupEvent.summary ||
+			const raw =
+				(popupEvent.metadata?.full_content as string | undefined) ??
+				(popupEvent.metadata?.full_thinking as string | undefined) ??
+				(popupEvent.metadata?.full_text as string | undefined) ??
+				(popupEvent.metadata?.result_content as string | undefined) ??
+				popupEvent.summary ??
 				'';
-
-			const parsed = marked.parse(rawContent);
+			const parsed = marked.parse(raw);
 			if (parsed instanceof Promise) {
-				parsed.then((html) => {
-					renderedPopupContent = DOMPurify.sanitize(html);
-				});
+				parsed.then((html) => { renderedPopupContent = DOMPurify.sanitize(html); });
 			} else {
 				renderedPopupContent = DOMPurify.sanitize(parsed);
 			}
@@ -92,73 +137,37 @@
 
 	function openPopup(event: TimelineEvent) {
 		popupEvent = event;
-		isCopied = false; // Reset copied state when opening popup
+		isCopied = false;
 	}
-
 	function closePopup() {
 		popupEvent = null;
-		isCopied = false; // Reset copied state when closing popup
+		isCopied = false;
 	}
 
-
-	// Helper to safely clear and set scroll timeout
-	function setScrollTimeout(callback: () => void, delay: number) {
-		if (userScrollTimeout) clearTimeout(userScrollTimeout);
-		userScrollTimeout = setTimeout(callback, delay);
-	}
-
-	// Helper to scroll to last event
-	function scrollToLastEvent(behavior: ScrollBehavior = 'smooth') {
-		const lastEvent = timelineContentRef?.querySelector('[data-event-index]:last-of-type');
-		if (lastEvent) {
-			isUserScrolling = true;
-			lastEvent.scrollIntoView({ behavior, block: 'end' });
-			setScrollTimeout(() => {
-				isUserScrolling = false;
-			}, 500);
-		}
-	}
-
-	// Create timeline logic instance with tailing support and agent context
-	const timeline = createTimelineLogic(() => events, {
-		isTailingGetter: () => isTailing,
-		tailCount: 3,
-		currentAgentIdGetter: () => currentAgentId
-	});
-
-	// Pre-compute visible events (excluding gaps) for correct indexing
-	const visibleEvents = $derived(timeline.viewItems.filter((i) => !('type' in i)));
-
-	// Navigable events: visible events that have expandable/popup content
-	function isExpandable(event: TimelineEvent): boolean {
+	// Popup prev/next within all events
+	function isExpandable(ev: TimelineEvent): boolean {
 		return !!(
-			event.event_type === 'tool_call' ||
-			event.event_type === 'todo_update' ||
-			event.metadata?.full_content ||
-			event.metadata?.full_thinking ||
-			event.metadata?.full_text ||
-			event.metadata?.result_content ||
-			(event.summary && event.summary.length > 100)
+			ev.event_type === 'tool_call' ||
+			ev.event_type === 'todo_update' ||
+			ev.metadata?.full_content ||
+			ev.metadata?.full_thinking ||
+			ev.metadata?.full_text ||
+			ev.metadata?.result_content ||
+			(ev.summary && ev.summary.length > 100)
 		);
 	}
 
-	const navigableEvents = $derived(
-		(visibleEvents as TimelineEvent[]).filter(isExpandable)
-	);
-
+	const navigableEvents = $derived(events.filter(isExpandable));
 	const popupNavIndex = $derived(
 		popupEvent ? navigableEvents.findIndex((e) => e.id === popupEvent!.id) : -1
 	);
-
 	function navigatePrev() {
 		if (popupNavIndex > 0) openPopup(navigableEvents[popupNavIndex - 1]);
 	}
-
 	function navigateNext() {
 		if (popupNavIndex < navigableEvents.length - 1) openPopup(navigableEvents[popupNavIndex + 1]);
 	}
 
-	// Arrow key navigation when popup is open
 	$effect(() => {
 		if (!isPopupOpen) return;
 		function onKeyDown(e: KeyboardEvent) {
@@ -169,201 +178,215 @@
 		return () => window.removeEventListener('keydown', onKeyDown);
 	});
 
-	// Search match tracking
-	let searchMatchIds = $derived.by<string[]>(() => {
-		if (!searchQuery) return [];
-		const q = searchQuery.toLowerCase();
-		return events
-			.filter((e) => {
-				const text = [
-					e.summary,
-					e.title,
-					e.metadata?.full_content,
-					e.metadata?.full_text,
-					e.metadata?.full_thinking
-				]
-					.filter(Boolean)
-					.join(' ')
-					.toLowerCase();
-				return text.includes(q);
-			})
-			.map((e) => e.id);
-	});
-
-	let currentMatchIdx = $state(0);
-
-	// Notify parent of match count changes
-	$effect(() => {
-		onSearchMatchCount?.(searchMatchIds.length);
-		if (searchMatchIds.length === 0) {
-			currentMatchIdx = 0;
-		}
-	});
-
-	$effect(() => {
-		onCurrentMatchChange?.(currentMatchIdx);
-	});
-
-	// When search query changes, also update TimelineFilterBar's search if searchQuery is set externally
-	$effect(() => {
-		if (searchQuery) {
-			timeline.setSearchQuery(searchQuery);
-		}
-	});
-
-	// Container ref for scroll management
+	// ── Tailing ───────────────────────────────────────────────────────
+	let prevEventsLength = $state(0);
+	let prevIsTailing = $state(false);
+	let userScrollTimeout: ReturnType<typeof setTimeout> | null = null;
+	let scrollRafId: number | null = null;
 	let containerRef = $state<HTMLDivElement | null>(null);
 	let timelineContentRef = $state<HTMLDivElement | null>(null);
 
-	// Setup Cmd+K and initial scroll
+	function setScrollTimeout(cb: () => void, delay: number) {
+		if (userScrollTimeout) clearTimeout(userScrollTimeout);
+		userScrollTimeout = setTimeout(cb, delay);
+	}
+
+	function scrollToLastTurn(behavior: ScrollBehavior = 'smooth') {
+		const turnEls = timelineContentRef?.querySelectorAll('[data-turn-index]');
+		if (turnEls && turnEls.length > 0) {
+			turnEls[turnEls.length - 1].scrollIntoView({ behavior, block: 'end' });
+		}
+	}
+
+	function scrollToTurnByIndex(turnIndex: number) {
+		const el = timelineContentRef?.querySelector(`[data-turn-index="${turnIndex}"]`);
+		if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+	}
+
+	$effect(() => {
+		const newEventsArrived = isTailing && events.length > prevEventsLength && timelineContentRef;
+		const tailingJustEnabled = isTailing && !prevIsTailing && timelineContentRef;
+		if (newEventsArrived) {
+			if (scrollRafId) cancelAnimationFrame(scrollRafId);
+			scrollRafId = requestAnimationFrame(() => { scrollToLastTurn('smooth'); scrollRafId = null; });
+		} else if (tailingJustEnabled) {
+			setScrollTimeout(() => scrollToLastTurn('smooth'), 100);
+		}
+		prevEventsLength = events.length;
+		prevIsTailing = isTailing;
+		return () => {
+			if (scrollRafId) { cancelAnimationFrame(scrollRafId); scrollRafId = null; }
+		};
+	});
+
+	// ── Mount ─────────────────────────────────────────────────────────
 	onMount(() => {
-		// Register Cmd+K to focus the timeline search input
 		const unregisterCtrlK = keyboardOverrides.registerCtrlK(() => {
 			const searchEl = containerRef?.querySelector<HTMLInputElement>('[data-timeline-search]');
-			if (searchEl) {
-				searchEl.focus({ preventScroll: true });
-				searchEl.select();
-			}
+			if (searchEl) { searchEl.focus({ preventScroll: true }); searchEl.select(); }
 		});
 
-		// Initialize previous state tracking
+		// J/K navigate between turns
+		function handleJKNav(e: KeyboardEvent) {
+			if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+			if (e.metaKey || e.ctrlKey || e.altKey) return;
+			if (e.key !== 'j' && e.key !== 'k') return;
+			if (isPopupOpen) return;
+
+			const turnEls = Array.from(
+				timelineContentRef?.querySelectorAll('[data-event-type="prompt"]') ?? []
+			) as HTMLElement[];
+			if (turnEls.length === 0) return;
+
+			e.preventDefault();
+			const scrollCenter = window.scrollY + window.innerHeight / 2;
+			let nearestIdx = 0, nearestDist = Infinity;
+			turnEls.forEach((el, idx) => {
+				const rect = el.getBoundingClientRect();
+				const mid = rect.top + window.scrollY + rect.height / 2;
+				const dist = Math.abs(mid - scrollCenter);
+				if (dist < nearestDist) { nearestDist = dist; nearestIdx = idx; }
+			});
+			const dir = e.key === 'j' ? 1 : -1;
+			const target = Math.max(0, Math.min(nearestIdx + dir, turnEls.length - 1));
+			turnEls[target].scrollIntoView({ behavior: 'smooth', block: 'start' });
+		}
+
+		window.addEventListener('keydown', handleJKNav);
 		prevEventsLength = events.length;
 		prevIsTailing = isTailing;
 
-		// Initial scroll to bottom if tailing is enabled on mount
 		let initTimeout: ReturnType<typeof setTimeout> | null = null;
 		if (isTailing && timelineContentRef) {
-			initTimeout = setTimeout(() => {
-				scrollToLastEvent('auto'); // Use 'auto' for initial scroll (no animation)
-			}, 200); // Slightly longer delay for initial render
+			initTimeout = setTimeout(() => scrollToLastTurn('auto'), 200);
 		}
 
 		return () => {
 			unregisterCtrlK();
+			window.removeEventListener('keydown', handleJKNav);
 			if (initTimeout) clearTimeout(initTimeout);
 			if (userScrollTimeout) clearTimeout(userScrollTimeout);
 			if (scrollRafId) cancelAnimationFrame(scrollRafId);
 		};
 	});
-
-	// Auto-scroll to show last event when:
-	// 1. New events arrive while tailing is enabled
-	// 2. Tailing is first toggled on
-	$effect(() => {
-		const newEventsArrived =
-			isTailing && events.length > prevEventsLength && timelineContentRef;
-		const tailingJustEnabled = isTailing && !prevIsTailing && timelineContentRef;
-
-		if (newEventsArrived) {
-			// Cancel any pending RAF to avoid multiple scrolls
-			if (scrollRafId) cancelAnimationFrame(scrollRafId);
-
-			// Use requestAnimationFrame to ensure DOM has updated
-			scrollRafId = requestAnimationFrame(() => {
-				scrollToLastEvent('smooth');
-				scrollRafId = null;
-			});
-		} else if (tailingJustEnabled) {
-			// Use setTimeout to ensure DOM has fully updated after tailing state change
-			setScrollTimeout(() => {
-				scrollToLastEvent('smooth');
-			}, 100);
-		}
-
-		// Update tracking state
-		prevEventsLength = events.length;
-		prevIsTailing = isTailing;
-
-		// Cleanup function for effect
-		return () => {
-			if (scrollRafId) {
-				cancelAnimationFrame(scrollRafId);
-				scrollRafId = null;
-			}
-		};
-	});
-
-	// Auto-expand the last event when tailing is enabled
-	$effect(() => {
-		if (isTailing && events.length > 0) {
-			// Get the last event ID
-			const lastEventId = events[events.length - 1]?.id;
-			if (lastEventId && timeline.expandedId !== lastEventId) {
-				timeline.setExpandedId(lastEventId);
-			}
-		}
-	});
 </script>
 
 {#if events.length === 0}
-	<div class="rounded-lg border border-[var(--border)] bg-[var(--bg-subtle)] p-12 text-center">
-		<Brain class="mx-auto h-12 w-12 text-[var(--text-muted)]/40" />
-		<p class="mt-4 text-[var(--text-muted)]">No events in this session</p>
-	</div>
+	<p class="font-mono text-sm text-[var(--text-faint)] px-1 py-2">No events in this session</p>
 {:else}
 	<div class="relative {className}" bind:this={containerRef}>
-		<!-- Filter bar (sticky when scrolling) -->
-		<TimelineFilterBar
-			counts={timeline.counts}
-			activeFilters={timeline.effectiveFilters}
-			totalEvents={events.length}
-			matchingEvents={timeline.matchingCount}
-			onToggle={timeline.toggleFilter}
-			onClear={timeline.clearFilters}
-			searchQuery={timeline.searchQuery}
-			onSearchChange={timeline.setSearchQuery}
-			class="mb-6 sticky top-14 z-20"
-		/>
 
-		<!-- Timeline -->
-		<div class="pl-2" bind:this={timelineContentRef}>
-			{#each timeline.viewItems as item, loopIndex (item.id)}
-				{#if 'type' in item && item.type === 'gap'}
-					{@const gapItem = item}
-					<TimelineGap
-						gap={gapItem}
-						onExpand={(ids) => timeline.expandGap(gapItem, ids)}
-					/>
-				{:else if !('type' in item)}
-					{@const eventItem = item}
-					<!-- Find this event's actual position within visible events (not viewItems) -->
-					{@const visibleEventIndex = visibleEvents.findIndex(
-						(e) => e.id === eventItem.id
-					)}
-					{@const isFirstVisible = visibleEventIndex === 0}
-					{@const isLastVisible = visibleEventIndex === visibleEvents.length - 1}
-					{@const usePopup = !(isTailing && isLastVisible)}
-					<TimelineEventCard
-						event={eventItem}
-						index={visibleEventIndex}
-						isFirst={isFirstVisible}
-						isLast={isLastVisible}
-						sessionStartTime={events[0]?.timestamp}
-						isHighlighted={true}
-						hasActiveFilter={timeline.hasActiveFilter}
-						isExpanded={timeline.expandedId === item.id}
-						onToggleExpand={() => timeline.toggleExpand(visibleEventIndex, item.id)}
-						{usePopup}
-						onOpenPopup={() => openPopup(eventItem)}
-						{currentAgentId}
-						{projectPath}
-						onToggleHide={() => timeline.toggleHide(eventItem.id)}
-						{searchQuery}
-					/>
+		<!-- Search + density toggle header -->
+		<div class="flex items-center gap-2 mb-3 px-1">
+			<!-- Search input -->
+			<div class="flex-1 flex items-center gap-2 border border-[var(--border)] rounded-sm px-2.5 py-1.5 bg-[var(--bg-subtle)] min-w-0">
+				<span class="text-[13px] text-[var(--text-faint)] select-none shrink-0">⌕</span>
+				<input
+					type="text"
+					placeholder="Search events..."
+					value={timeline.searchQuery}
+					oninput={(e) => timeline.setSearchQuery((e.target as HTMLInputElement).value)}
+					data-timeline-search
+					class="flex-1 bg-transparent border-none outline-none text-[12px] font-mono
+						text-[var(--text-primary)] placeholder:text-[var(--text-faint)] min-w-0"
+				/>
+				{#if timeline.searchQuery}
+					<span class="text-[10px] font-mono text-[var(--text-muted)] shrink-0">
+						{filteredTurns.length} turn{filteredTurns.length !== 1 ? 's' : ''}
+					</span>
+					<button
+						onclick={() => timeline.setSearchQuery('')}
+						class="text-[var(--text-faint)] hover:text-[var(--text-primary)] transition-colors text-[11px] shrink-0"
+						aria-label="Clear search"
+					>✕</button>
+				{:else}
+					<span class="text-[10px] font-mono text-[var(--text-faint)] shrink-0">{events.length} events</span>
 				{/if}
+			</div>
+
+			<!-- Density toggle -->
+			<div class="flex border border-[var(--border)] rounded-sm overflow-hidden shrink-0">
+				{#each (['compact', 'normal', 'expanded'] as Density[]) as d}
+					<button
+						type="button"
+						onclick={() => (density = d)}
+						class="px-2.5 py-1 text-[10px] font-mono transition-colors
+							{density === d
+								? 'bg-[var(--text-primary)] text-[var(--bg-base)]'
+								: 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-subtle)]'}
+							{d !== 'expanded' ? 'border-r border-[var(--border)]' : ''}"
+					>
+						{d === 'compact' ? 'Compact' : d === 'normal' ? 'Normal' : 'Expanded'}
+					</button>
+				{/each}
+			</div>
+		</div>
+
+		<!-- Stats bar -->
+		<div class="flex items-center flex-wrap gap-x-0 gap-y-0.5 text-[11px] font-mono mb-4 px-1">
+			{#if countPrompt > 0}
+				<span class="text-[var(--text-muted)]">
+					<span class="text-[var(--text-primary)] opacity-80">{countPrompt}</span>&nbsp;turn{countPrompt !== 1 ? 's' : ''}
+				</span>
+			{/if}
+			{#if countTool > 0}
+				{#if countPrompt > 0}<span class="text-[var(--text-faint)] opacity-40 mx-2">·</span>{/if}
+				<span class="text-[var(--text-muted)]">
+					<span class="text-[var(--text-primary)] opacity-80">{countTool}</span>&nbsp;tools
+				</span>
+			{/if}
+			{#if countAgent > 0}
+				<span class="text-[var(--text-faint)] opacity-40 mx-2">·</span>
+				<span class="text-[var(--text-muted)]">
+					<span class="text-[var(--text-primary)] opacity-80">{countAgent}</span>&nbsp;agent{countAgent !== 1 ? 's' : ''}
+				</span>
+			{/if}
+			{#if countError > 0}
+				<span class="text-[var(--text-faint)] opacity-40 mx-2">·</span>
+				<span class="text-[var(--error)] opacity-80">{countError}&nbsp;error{countError !== 1 ? 's' : ''}</span>
+			{/if}
+			{#if sessionDuration}
+				<span class="text-[var(--text-faint)] opacity-40 mx-2">·</span>
+				<span class="text-[var(--text-faint)] opacity-60">{sessionDuration}</span>
+			{/if}
+			<span class="text-[var(--text-faint)] opacity-25 mx-2">·</span>
+			<span class="text-[var(--text-faint)] opacity-40 text-[10px]">J/K navigate turns</span>
+		</div>
+
+		<!-- Turn cards -->
+		<div bind:this={timelineContentRef}>
+			{#each filteredTurns as turn, i (turn.id)}
+				<TurnCard
+					{turn}
+					{density}
+					turnIndex={i}
+					onOpenPopup={openPopup}
+					{projectPath}
+					{projectEncoded}
+					{sessionSlug}
+					{sessionUuid}
+					searchQuery={activeSearch}
+				/>
 			{/each}
+
+			{#if filteredTurns.length === 0 && activeSearch}
+				<p class="text-[11px] font-mono text-[var(--text-faint)] text-center py-8">
+					No turns match "{activeSearch}"
+				</p>
+			{/if}
 		</div>
 
 	</div>
+
+	<!-- Minimap -->
+	<TimelineMinimap turns={filteredTurns} onScrollTo={scrollToTurnByIndex} />
 {/if}
 
 <!-- Event Detail Popup -->
 {#if popupEvent}
 	<Modal
 		open={isPopupOpen}
-		onOpenChange={(open) => {
-			if (!open) closePopup();
-		}}
+		onOpenChange={(open) => { if (!open) closePopup(); }}
 		title={popupEvent.title}
 		description={formatDate(popupEvent.timestamp)}
 		maxWidth="xl"
@@ -377,6 +400,9 @@
 			>
 				<ChevronLeft size={20} />
 			</button>
+			<span class="text-xs font-mono text-[var(--text-muted)] tabular-nums px-1 select-none">
+				{popupNavIndex + 1} / {navigableEvents.length}
+			</span>
 			<button
 				onclick={navigateNext}
 				disabled={popupNavIndex >= navigableEvents.length - 1}
@@ -421,9 +447,7 @@
 			{#if popupEvent.event_type === 'tool_call'}
 				<ToolCallDetail event={popupEvent} {projectPath} />
 			{:else if popupEvent.event_type === 'todo_update'}
-				{@const todos = Array.isArray(popupEvent.metadata?.todos)
-					? popupEvent.metadata.todos
-					: []}
+				{@const todos = Array.isArray(popupEvent.metadata?.todos) ? popupEvent.metadata.todos : []}
 				<TodoUpdateDetail
 					{todos}
 					action={popupEvent.metadata?.action as 'set' | 'merge' | undefined}
@@ -431,38 +455,26 @@
 					isExpanded={true}
 				/>
 			{:else}
-				<!-- Generic content display for prompts, thinking, responses -->
 				<div class="rounded bg-[var(--bg-muted)]/50 p-3 relative">
 					<button
-						class="
-						md-global-copy
-						float-right
-						ml-2 mb-2
-						p-1.5
-						rounded-md
-						bg-[var(--bg-base)]
-						border border-[var(--border)]
-						text-[var(--text-muted)]
-						shadow-sm
-						hover:text-[var(--text-primary)] hover:border-[var(--accent)]
-						transition-colors
-					"
+						class="md-global-copy float-right ml-2 mb-2 p-1.5 rounded-md bg-[var(--bg-base)]
+							border border-[var(--border)] text-[var(--text-muted)] shadow-sm
+							hover:text-[var(--text-primary)] hover:border-[var(--accent)] transition-colors"
 						data-tooltip={isCopied ? 'Copied!' : 'Copy entire response'}
 						aria-label={isCopied ? 'Copied!' : 'Copy entire response'}
 						onclick={(e) => {
 							e.stopPropagation();
 							const content =
-								popupEvent?.metadata?.full_content ||
-								popupEvent?.metadata?.full_thinking ||
-								popupEvent?.metadata?.full_text ||
-								popupEvent?.metadata?.result_content ||
-								popupEvent?.summary ||
-								'';
+								(popupEvent?.metadata?.full_content as string | undefined) ??
+								(popupEvent?.metadata?.full_thinking as string | undefined) ??
+								(popupEvent?.metadata?.full_text as string | undefined) ??
+								(popupEvent?.metadata?.result_content as string | undefined) ??
+								popupEvent?.summary ?? '';
 							navigator.clipboard.writeText(content);
 							isCopied = true;
 							setTimeout(() => (isCopied = false), 2000);
 						}}
-						>
+					>
 						{#if isCopied}
 							<Check size={14} class="text-[var(--success)]" />
 						{:else}
@@ -480,4 +492,3 @@
 		</div>
 	</Modal>
 {/if}
-```

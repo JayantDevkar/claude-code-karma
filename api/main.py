@@ -25,6 +25,7 @@ from routers import (  # noqa: E402
     agents,
     analytics,
     background_shells,
+    chat,
     commands,
     cron,
     docs,
@@ -172,6 +173,7 @@ app.add_middleware(
 # Include routers
 app.include_router(projects.router, prefix="/projects", tags=["projects"])
 app.include_router(sessions.router, prefix="/sessions", tags=["sessions"])
+app.include_router(chat.router, tags=["chat"])
 app.include_router(analytics.router, prefix="/analytics", tags=["analytics"])
 app.include_router(agents.router, tags=["agents"])
 app.include_router(skills.router, tags=["skills"])

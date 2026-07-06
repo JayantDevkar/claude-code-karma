@@ -115,7 +115,7 @@ def build_conversation_timeline(
             # Strip XML tags from display summary
             display_content = _strip_command_tags(content)
 
-            content_preview = cmd_summary or (display_content[:200] if display_content else "")
+            content_preview = cmd_summary or display_content or ""
             prompt_metadata: dict = {"full_content": content}
             if msg.image_attachments:
                 prompt_metadata["image_attachments"] = [
@@ -224,7 +224,7 @@ def build_conversation_timeline(
                     )
 
                 elif isinstance(block, ThinkingBlock):
-                    thinking_preview = block.thinking[:150] if block.thinking else ""
+                    thinking_preview = block.thinking if block.thinking else ""
                     events.append(
                         TimelineEvent(
                             id=f"evt-{event_counter}",
@@ -241,7 +241,7 @@ def build_conversation_timeline(
                 elif isinstance(block, TextBlock):
                     # Only include substantial text responses
                     if len(block.text) > 50:
-                        text_preview = block.text[:150]
+                        text_preview = block.text
                         word_count = len(block.text.split())
                         is_big = word_count > 100
                         resp_metadata: dict = {

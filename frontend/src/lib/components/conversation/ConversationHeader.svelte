@@ -12,10 +12,15 @@
 		Minimize2,
 		MessageCircle,
 		Monitor,
-		Copy
+		Copy,
+		Pencil,
+		Check,
+		X
 	} from 'lucide-svelte';
 	import { fade } from 'svelte/transition';
+	import { onMount } from 'svelte';
 	import PageHeader from '$lib/components/layout/PageHeader.svelte';
+	import { API_BASE } from '$lib/config';
 	import type {
 		ConversationEntity,
 		LiveSessionSummary,
@@ -260,6 +265,63 @@
 
 	// UUID is only present on main sessions (SessionDetail), not subagents.
 	let mainSessionUuid = $derived(isSubagentSession(entity) ? null : entity.uuid);
+
+	// ── Session rename ─────────────────────────────────────────────────────
+	let customName = $state<string | null>(null);
+	let isEditingName = $state(false);
+	let editNameValue = $state('');
+	let renameInputEl: HTMLInputElement | undefined = $state();
+
+	// Load custom name on mount (main sessions only)
+	onMount(() => {
+		if (!mainSessionUuid) return;
+		fetch(`${API_BASE}/sessions/${mainSessionUuid}/name`)
+			.then((r) => r.json())
+			.then((d) => { if (d.name) customName = d.name; })
+			.catch(() => {});
+	});
+
+	function startRename() {
+		editNameValue = customName ?? title;
+		isEditingName = true;
+		// Focus the input after it renders
+		setTimeout(() => renameInputEl?.select(), 10);
+	}
+
+	async function commitRename() {
+		if (!mainSessionUuid) return;
+		const trimmed = editNameValue.trim();
+		isEditingName = false;
+		if (!trimmed || trimmed === (customName ?? title)) return;
+		try {
+			await fetch(`${API_BASE}/sessions/${mainSessionUuid}/name`, {
+				method: 'PUT',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ name: trimmed }),
+			});
+			customName = trimmed;
+		} catch {
+			// silently ignore — name stays unchanged
+		}
+	}
+
+	async function clearRename() {
+		if (!mainSessionUuid) return;
+		isEditingName = false;
+		if (!customName) return;
+		try {
+			await fetch(`${API_BASE}/sessions/${mainSessionUuid}/name`, { method: 'DELETE' });
+			customName = null;
+		} catch {}
+	}
+
+	function handleRenameKeydown(e: KeyboardEvent) {
+		if (e.key === 'Enter') { e.preventDefault(); commitRename(); }
+		if (e.key === 'Escape') { isEditingName = false; }
+	}
+
+	// Effective title: custom name overrides derived title
+	let displayTitle = $derived(customName ?? title);
 </script>
 
 <!-- Agent Session Header with colored background -->
@@ -373,7 +435,65 @@
 {:else}
 	<!-- Regular Session Header -->
 	<div class="space-y-4">
-		<PageHeader {title} {breadcrumbs} {subtitle} {metadata} class="mb-0">
+		<PageHeader title={displayTitle} {breadcrumbs} {subtitle} {metadata} class="mb-0">
+			{#snippet titleContent()}
+				{#if isEditingName}
+					<!-- Inline rename input -->
+					<div class="flex items-center gap-2">
+						<input
+							bind:this={renameInputEl}
+							bind:value={editNameValue}
+							onkeydown={handleRenameKeydown}
+							onblur={commitRename}
+							class="text-2xl font-semibold tracking-tight text-[var(--text-primary)] bg-transparent border-b-2 border-[var(--accent)] outline-none w-full min-w-0"
+							style="max-width: 480px;"
+						/>
+						<button
+							type="button"
+							onclick={commitRename}
+							class="shrink-0 p-1 rounded text-[var(--success)] hover:bg-[var(--success)]/10 transition-colors"
+							title="Save name"
+						>
+							<Check size={16} strokeWidth={2.5} />
+						</button>
+						<button
+							type="button"
+							onclick={() => isEditingName = false}
+							class="shrink-0 p-1 rounded text-[var(--text-muted)] hover:bg-[var(--bg-muted)] transition-colors"
+							title="Cancel"
+						>
+							<X size={16} strokeWidth={2} />
+						</button>
+					</div>
+				{:else}
+					<!-- Normal title with pencil on hover -->
+					<div class="group flex items-center gap-2">
+						<h1 class="text-2xl font-semibold tracking-tight text-[var(--text-primary)]">
+							{displayTitle}
+						</h1>
+						{#if mainSessionUuid}
+							<button
+								type="button"
+								onclick={startRename}
+								class="opacity-0 group-hover:opacity-100 p-1 rounded text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-muted)] transition-all"
+								title="Rename session"
+							>
+								<Pencil size={14} strokeWidth={2} />
+							</button>
+							{#if customName}
+								<button
+									type="button"
+									onclick={clearRename}
+									class="opacity-0 group-hover:opacity-100 p-1 rounded text-[var(--text-faint)] hover:text-[var(--error)] hover:bg-[var(--error)]/10 transition-all"
+									title="Reset to auto-generated name"
+								>
+									<X size={12} strokeWidth={2} />
+								</button>
+							{/if}
+						{/if}
+					</div>
+				{/if}
+			{/snippet}
 			{#snippet badges()}
 				<!-- Badges Container - keeps slug and compaction badges side by side -->
 				<div class="flex items-center gap-2 flex-wrap">

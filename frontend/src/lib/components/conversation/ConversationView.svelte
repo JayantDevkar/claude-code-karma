@@ -28,6 +28,8 @@
 		AlarmClock
 	} from 'lucide-svelte';
 	import TabsTrigger from '$lib/components/ui/TabsTrigger.svelte';
+	import { ChatInput, LiveStreamPanel } from '$lib/components/chat';
+	import type { LiveEvent } from '$lib/components/chat/types';
 	import { SessionDetailSkeleton } from '$lib/components/skeleton';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import PageHeader from '$lib/components/layout/PageHeader.svelte';
@@ -40,6 +42,11 @@
 	import { SubagentGroup } from '$lib/components/subagents';
 	import { TasksTab } from '$lib/components/tasks';
 	import { PlanViewer } from '$lib/components/plan';
+	import RightDrawer from '$lib/components/ui/RightDrawer.svelte';
+	import ShellDrawer from '$lib/components/timeline/ShellDrawer.svelte';
+	import AgentDrawer from '$lib/components/timeline/AgentDrawer.svelte';
+	import DiffDrawer from '$lib/components/timeline/DiffDrawer.svelte';
+	import { drawerStore, closeDrawer } from '$lib/stores/drawer';
 	import SkillsPanel from '$lib/components/skills/SkillsPanel.svelte';
 	import CommandsPanel from '$lib/components/commands/CommandsPanel.svelte';
 	import { SessionTicketsSection } from '$lib/components/tickets';
@@ -273,6 +280,105 @@
 	let isTailing = $state(false);
 	let hasAutoEnabledTailing = $state(false);
 	const TAIL_COUNT = 3;
+
+	// ── Live stream panel state ────────────────────────────────────────────────
+	let liveEvents = $state<LiveEvent[]>([]);
+	let liveEventCounter = 0;
+
+	function clearLiveEvents() { liveEvents = []; }
+
+	function pushLiveEvent(ev: Omit<LiveEvent, 'id'>) {
+		liveEvents = [...liveEvents, { ...ev, id: String(++liveEventCounter) }];
+	}
+
+	function handleTurnStart(userText: string) {
+		clearLiveEvents();
+		pushLiveEvent({ type: 'user_prompt', content: userText });
+		pushLiveEvent({ type: 'thinking', content: '' });
+		// Auto-tail so user sees live events at the bottom
+		isTailing = true;
+		hasAutoEnabledTailing = true;
+	}
+
+	function handleStreamEvent(event: Record<string, unknown>) {
+		const type = event.type as string;
+
+		if (type === 'system' && event.subtype === 'init') {
+			// Remove thinking placeholder, it'll be re-added once we see assistant
+			liveEvents = liveEvents.filter((e) => e.type !== 'thinking');
+			pushLiveEvent({ type: 'thinking', content: '' });
+		}
+
+		if (type === 'assistant') {
+			const msg = event.message as Record<string, unknown> | undefined;
+			const content = (msg?.content as unknown[]) ?? [];
+
+			// Remove stale thinking indicator
+			liveEvents = liveEvents.filter((e) => e.type !== 'thinking');
+
+			for (const block of content) {
+				const b = block as Record<string, unknown>;
+				if (b.type === 'text' && b.text) {
+					const text = b.text as string;
+					// Merge consecutive response_text blocks
+					const last = liveEvents[liveEvents.length - 1];
+					if (last?.type === 'response_text') {
+						liveEvents = [
+							...liveEvents.slice(0, -1),
+							{ ...last, content: text }
+						];
+					} else {
+						pushLiveEvent({ type: 'response_text', content: text });
+					}
+				} else if (b.type === 'tool_use') {
+					const name = b.name as string;
+					const input = b.input as Record<string, unknown> ?? {};
+					// Format tool input for display
+					let inputStr = '';
+					if (input.command) inputStr = input.command as string;
+					else if (input.file_path) inputStr = input.file_path as string;
+					else if (input.path) inputStr = input.path as string;
+					else if (input.query) inputStr = input.query as string;
+					else inputStr = JSON.stringify(input, null, 2);
+					pushLiveEvent({ type: 'tool_call', tool_name: name, content: inputStr });
+					// Add thinking again — Claude will continue after the tool
+					pushLiveEvent({ type: 'thinking', content: '' });
+				}
+			}
+		}
+
+		if (type === 'user') {
+			const msg = event.message as Record<string, unknown> | undefined;
+			const content = (msg?.content as unknown[]) ?? [];
+			for (const block of content) {
+				const b = block as Record<string, unknown>;
+				if (b.type === 'tool_result') {
+					// Remove the thinking that was added after the tool call
+					liveEvents = liveEvents.filter((e) => e.type !== 'thinking');
+					const raw = b.content;
+					let resultStr = '';
+					if (typeof raw === 'string') resultStr = raw;
+					else if (Array.isArray(raw)) {
+						resultStr = raw
+							.map((r: Record<string, unknown>) => r.text ?? r.content ?? '')
+							.join('\n');
+					} else resultStr = JSON.stringify(raw);
+					pushLiveEvent({
+						type: 'tool_result',
+						content: resultStr.slice(0, 4000),
+						is_error: !!(b.is_error),
+					});
+					// Claude will think again after seeing the result
+					pushLiveEvent({ type: 'thinking', content: '' });
+				}
+			}
+		}
+
+		if (type === 'result') {
+			// Remove trailing thinking indicator when result arrives
+			liveEvents = liveEvents.filter((e) => e.type !== 'thinking');
+		}
+	}
 
 	// In-conversation search (Cmd+F)
 	let conversationSearchQuery = $state('');
@@ -1018,70 +1124,100 @@
 
 				<!-- Timeline Tab -->
 				<Tabs.Content value="timeline" class="animate-fade-in">
-					<div class="space-y-4">
-						<div class="flex items-start justify-between gap-4">
-							<div>
-								<h2 class="text-lg font-semibold text-[var(--text-primary)]">
-									Timeline
-								</h2>
-								<p class="text-sm text-[var(--text-muted)]">
-									{#if isTailing && timelineEvents.length > TAIL_COUNT}
-										Showing {TAIL_COUNT} of {timelineEvents.length} events
-									{:else}
-										Chronological sequence of events in this {entityLabel}
-									{/if}
-								</p>
+					<!-- Scroll content + sticky chat input wrapper -->
+					<div class="relative flex flex-col">
+						<!-- Timeline content (padded so sticky bar doesn't overlap last event) -->
+						<div class="space-y-4 pb-2">
+							<div class="flex items-start justify-between gap-4">
+								<div>
+									<h2 class="text-lg font-semibold text-[var(--text-primary)]">
+										Timeline
+									</h2>
+									<p class="text-sm text-[var(--text-muted)]">
+										{#if isTailing && timelineEvents.length > TAIL_COUNT}
+											Showing {TAIL_COUNT} of {timelineEvents.length} events
+										{:else}
+											Chronological sequence of events in this {entityLabel}
+										{/if}
+									</p>
+								</div>
+
+								{#if isCurrentlyLive && timelineEvents.length > 0}
+									<button
+										onclick={toggleTailing}
+										class="
+											inline-flex items-center gap-1.5 px-3 py-1.5
+											text-xs font-medium rounded-[var(--radius-md)] border
+											transition-all duration-150 shrink-0
+											{isTailing
+											? 'bg-[var(--success-subtle)] border-[var(--success)]/50 text-[var(--success)]'
+											: 'bg-[var(--bg-base)] border-[var(--border)] text-[var(--text-muted)] hover:border-[var(--success)]/30 hover:bg-[var(--success-subtle)]/50'}
+										"
+										title={isTailing
+											? 'Showing last 3 events - click to show all'
+											: 'Click to show only last 3 events'}
+										aria-pressed={isTailing}
+									>
+										<ArrowDown
+											size={14}
+											strokeWidth={2}
+											class={isTailing ? 'animate-pulse' : ''}
+										/>
+										<span>Tail Events</span>
+									</button>
+								{/if}
 							</div>
 
-							{#if isCurrentlyLive && timelineEvents.length > 0}
-								<button
-									onclick={toggleTailing}
-									class="
-										inline-flex items-center gap-1.5 px-3 py-1.5
-										text-xs font-medium rounded-[var(--radius-md)] border
-										transition-all duration-150 shrink-0
-										{isTailing
-										? 'bg-[var(--success-subtle)] border-[var(--success)]/50 text-[var(--success)]'
-										: 'bg-[var(--bg-base)] border-[var(--border)] text-[var(--text-muted)] hover:border-[var(--success)]/30 hover:bg-[var(--success-subtle)]/50'}
-									"
-									title={isTailing
-										? 'Showing last 3 events - click to show all'
-										: 'Click to show only last 3 events'}
-									aria-pressed={isTailing}
-								>
-									<ArrowDown
-										size={14}
-										strokeWidth={2}
-										class={isTailing ? 'animate-pulse' : ''}
-									/>
-									<span>Tail Events</span>
-								</button>
+							{#if timelineEvents.length > 0}
+								<TimelineRail
+									events={timelineEvents}
+									isLive={isCurrentlyLive || liveEvents.length > 0}
+									{isTailing}
+									onToggleTailing={toggleTailing}
+									{currentAgentId}
+									{projectPath}
+									projectEncoded={encodedName}
+									sessionSlug={sessionSlug}
+									sessionUuid={entity && isMainSession(entity) ? entity.uuid : undefined}
+									searchQuery={showConversationSearch ? conversationSearchQuery : ''}
+									onSearchMatchCount={(count) => {
+										searchMatchCount = count;
+									}}
+									onCurrentMatchChange={(idx) => {
+										currentSearchMatch = idx;
+									}}
+								/>
+							{:else if liveEvents.length === 0}
+								<EmptyState
+									icon={Clock}
+									title="No timeline events yet"
+									description="Send a message below to start chatting with Claude"
+								/>
 							{/if}
+
+							<!-- Live stream panel — inline below real events, fades out on refresh -->
+							<LiveStreamPanel
+								events={liveEvents}
+								visible={liveEvents.length > 0}
+							/>
 						</div>
 
-						{#if timelineEvents.length > 0}
-							<TimelineRail
-								events={timelineEvents}
-								isLive={isCurrentlyLive}
-								{isTailing}
-								onToggleTailing={toggleTailing}
-								{currentAgentId}
-								{projectPath}
-								projectEncoded={encodedName}
-								sessionSlug={sessionSlug}
-								searchQuery={showConversationSearch ? conversationSearchQuery : ''}
-								onSearchMatchCount={(count) => {
-									searchMatchCount = count;
+						<!-- Sticky chat input — only for main sessions with a UUID -->
+						{#if entity && isMainSession(entity) && entity.uuid}
+							<ChatInput
+								sessionUuid={entity.uuid}
+								projectPath={projectPath ?? null}
+								branch={entity.git_branches?.[0] ?? null}
+								sessionStart={entity.start_time ?? null}
+								contextTokens={entity.total_input_tokens ?? null}
+								autoFocus={activeTab === 'timeline'}
+								onTurnStart={handleTurnStart}
+								onStreamEvent={handleStreamEvent}
+								onTurnComplete={() => {
+									refreshData().then(() => {
+										setTimeout(clearLiveEvents, 500);
+									});
 								}}
-								onCurrentMatchChange={(idx) => {
-									currentSearchMatch = idx;
-								}}
-							/>
-						{:else}
-							<EmptyState
-								icon={Clock}
-								title="No timeline events available"
-								description="Timeline events will appear here as they occur"
 							/>
 						{/if}
 					</div>
@@ -1284,4 +1420,48 @@
 			<X size={14} strokeWidth={2} />
 		</button>
 	</div>
+{/if}
+
+<!-- ── Right-side drawer ───────────────────────────────────────────────── -->
+{#if $drawerStore}
+	{#if $drawerStore.kind === 'shell'}
+		{@const d = $drawerStore}
+		<RightDrawer
+			title="$ {((d.event.metadata?.tool_input as Record<string,string> | undefined)?.command ?? d.event.title ?? '').split('\n')[0].slice(0, 60)}"
+			subtitle="Bash · {d.encodedName}"
+		>
+			<ShellDrawer event={d.event} sessionUuid={d.sessionUuid} encodedName={d.encodedName} />
+		</RightDrawer>
+	{:else if $drawerStore.kind === 'agent'}
+		{@const d = $drawerStore}
+		<RightDrawer
+			title="{d.agentType ?? 'subagent'} agent"
+			subtitle="id: {d.agentId.slice(0, 16)}"
+		>
+			<AgentDrawer
+				agentId={d.agentId}
+				agentType={d.agentType}
+				parentSessionUuid={d.parentSessionUuid}
+				encodedName={d.encodedName}
+			/>
+		</RightDrawer>
+	{:else if $drawerStore.kind === 'diff'}
+		{@const d = $drawerStore}
+		<RightDrawer
+			title="Edit · {d.path.split('/').at(-1) ?? d.path}"
+			subtitle={d.path}
+		>
+			<DiffDrawer path={d.path} oldString={d.oldString} newString={d.newString} />
+		</RightDrawer>
+	{:else if $drawerStore.kind === 'file-read'}
+		{@const d = $drawerStore}
+		<RightDrawer
+			title="Read · {d.path.split('/').at(-1) ?? d.path}"
+			subtitle={d.path}
+		>
+			<div class="flex flex-col h-full font-mono text-xs">
+				<pre class="flex-1 overflow-auto p-4 text-[var(--text-secondary)] whitespace-pre-wrap break-words leading-relaxed">{d.content || '(empty)'}</pre>
+			</div>
+		</RightDrawer>
+	{/if}
 {/if}

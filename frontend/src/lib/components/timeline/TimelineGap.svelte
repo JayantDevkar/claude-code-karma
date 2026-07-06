@@ -12,11 +12,10 @@
 
 	const count = $derived(gap.events.length);
 
-	// Helper to format event name
 	function getEventName(e: TimelineEvent): string {
 		if (e.event_type === 'tool_call') {
 			const toolName = e.metadata?.tool_name || 'Tool';
-			return `Tool ${toolName}`;
+			return String(toolName);
 		}
 		if (e.event_type === 'subagent_spawn') return 'Subagent';
 		if (e.event_type === 'prompt') return 'Prompt';
@@ -25,8 +24,6 @@
 	}
 
 	function handleGapClick() {
-		// "Nearest two" logic: Reveal first 2 and last 2 events
-		// This is a good default for the "bulk" expand button
 		const events = gap.events;
 		if (events.length <= 4) {
 			onExpand(events.map((e) => e.id));
@@ -36,73 +33,63 @@
 		}
 	}
 
-	function handleItemClick(e: MouseEvent, eventId: string) {
+	function handleGroupClick(e: MouseEvent, ids: string[]) {
 		e.stopPropagation();
-		onExpand([eventId]);
+		onExpand(ids);
 	}
+
+	interface CompressedGroup {
+		name: string;
+		ids: string[];
+		count: number;
+	}
+
+	const compressedEvents = $derived.by((): CompressedGroup[] => {
+		const groups: CompressedGroup[] = [];
+		for (const event of gap.events) {
+			const name = getEventName(event);
+			const last = groups[groups.length - 1];
+			if (last && last.name === name) {
+				last.ids.push(event.id);
+				last.count++;
+			} else {
+				groups.push({ name, ids: [event.id], count: 1 });
+			}
+		}
+		return groups;
+	});
 </script>
 
-<div class="group relative flex gap-4 min-h-[32px]">
-	<!-- Left Column (Rail) -->
-	<div class="w-10 flex flex-col items-center shrink-0">
-		<!-- Dashed Line through -->
-		<div
-			class="w-px h-full border-l border-dashed border-[var(--border)] absolute left-5 top-0 bottom-0 -ml-px"
-		></div>
-
-		<!-- Interactive Node -->
+<!-- Gap: horizontal layout, no orphaned left rail -->
+<div class="py-1.5 my-0.5 px-1">
+	<div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+		<!-- Main expand button — min touch target 32px -->
 		<button
 			onclick={handleGapClick}
-			class="
-				relative z-10 mt-1.5
-				h-4 w-4
-				rounded-full
-				bg-[var(--bg-base)]
-				border border-[var(--border)]
-				flex items-center justify-center
-				text-[var(--text-muted)]
-				hover:border-[var(--accent)] hover:text-[var(--accent)] hover:scale-110
-				transition-all duration-200
-				cursor-pointer
-			"
-			title="Show context"
+			class="inline-flex items-center gap-1.5
+				min-h-[28px] px-2.5 py-1
+				font-mono text-[10px] text-[var(--text-muted)]
+				bg-[var(--bg-subtle)] border border-[var(--border)]
+				rounded hover:border-[var(--accent)]/40 hover:text-[var(--text-primary)]
+				transition-colors cursor-pointer"
+			title="Show {count} collapsed events"
 		>
-			<Plus size={10} strokeWidth={3} />
+			<Plus size={9} strokeWidth={3} />
+			··· {count}
 		</button>
-	</div>
 
-	<!-- Content -->
-	<div class="flex-1 py-1 min-w-0 flex items-start">
-		<div
-			class="
-             flex flex-wrap items-center gap-x-1 gap-y-1
-             text-xs text-[var(--text-muted)]
-             text-left
-        "
-		>
+		<!-- Compressed type groups -->
+		<span class="text-[var(--text-faint)] text-[10px] opacity-50">—</span>
+		{#each compressedEvents as group, i}
 			<button
-				onclick={handleGapClick}
-				class="font-medium bg-[var(--bg-subtle)] px-1.5 py-0.5 rounded text-[10px] border border-[var(--border)] hover:text-[var(--text-primary)] transition-colors mr-1"
+				onclick={(e) => handleGroupClick(e, group.ids)}
+				class="text-[10px] text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:underline decoration-dashed underline-offset-2 transition-colors cursor-pointer"
 			>
-				hidden ({count})
+				{group.name}{#if group.count > 1}<span class="text-[var(--text-faint)] ml-0.5">({group.count})</span>{/if}
 			</button>
-
-			{#each gap.events as event, i}
-				<button
-					onclick={(e) => handleItemClick(e, event.id)}
-					class="
-                        hover:text-[var(--text-primary)]
-                        hover:underline decoration-dashed underline-offset-2
-                        transition-colors
-                        cursor-pointer
-                    "
-				>
-					{getEventName(event)}
-				</button>
-				{#if i < gap.events.length - 1}
-					<span class="opacity-40">,</span>
-				{/if}
-			{/each}
-		</div>
+			{#if i < compressedEvents.length - 1}
+				<span class="text-[var(--text-faint)] opacity-40 text-[10px]">·</span>
+			{/if}
+		{/each}
 	</div>
 </div>

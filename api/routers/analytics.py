@@ -838,3 +838,50 @@ def verify_analytics(
         "sessions_found": len(sessions_debug),
         "sessions": sessions_debug[:20],  # Limit for readability
     }
+
+
+@router.get("/usage-limits")
+@cacheable(max_age=30, stale_while_revalidate=60, private=True)
+def get_usage_limits(request: Request):
+    """
+    Return Claude Code rate-limit data from the OMC HUD cache file.
+
+    The OMC HUD writes ~/.claude/hud/.usage-cache.json after fetching from
+    api.anthropic.com/api/oauth/usage. We read that cached file rather than
+    making our own OAuth call.
+
+    Returns:
+        five_hour_pct   - 5-hour session usage % (0-100), null if unavailable
+        weekly_pct      - weekly usage % (0-100), null if unavailable
+        five_hour_resets_at - ISO timestamp when 5h window resets, or null
+        weekly_resets_at    - ISO timestamp when weekly window resets, or null
+        cached_at           - epoch ms when OMC last refreshed the data
+    """
+    import json as _json
+
+    cache_paths = [
+        Path.home() / ".claude" / "hud" / ".usage-cache.json",
+        Path.home() / ".claude" / "plugins" / "oh-my-claudecode" / ".usage-cache.json",
+    ]
+
+    for path in cache_paths:
+        if path.exists():
+            try:
+                raw = _json.loads(path.read_text())
+                data = raw.get("data") or {}
+                return {
+                    "five_hour_pct":      data.get("fiveHourPercent"),
+                    "weekly_pct":         data.get("weeklyPercent"),
+                    "five_hour_resets_at": data.get("fiveHourResetsAt"),
+                    "weekly_resets_at":   data.get("weeklyResetsAt"),
+                    "cached_at":          raw.get("timestamp"),
+                    "error":              raw.get("error", False),
+                }
+            except Exception:
+                pass
+
+    return {
+        "five_hour_pct": None, "weekly_pct": None,
+        "five_hour_resets_at": None, "weekly_resets_at": None,
+        "cached_at": None, "error": True,
+    }

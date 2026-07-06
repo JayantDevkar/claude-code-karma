@@ -8,6 +8,7 @@
 	import { globalKeyboard } from '$lib/actions/globalKeyboard';
 	import { globalShortcuts } from '$lib/actions/globalShortcuts';
 	import { navigating } from '$app/stores';
+	import { chatVisible } from '$lib/stores/chatVisible';
 	import { registerWebMCPTools } from '$lib/webmcp';
 	import {
 		ProjectsPageSkeleton,
@@ -166,7 +167,9 @@
 				{@render children()}
 			{/if}
 		</main>
-		<CommandFooter onToggleHelp={toggleKeyboardHelp} />
+		{#if !$chatVisible}
+			<CommandFooter onToggleHelp={toggleKeyboardHelp} />
+		{/if}
 	</div>
 
 	<!-- Command Palette (global) - pass callbacks directly as props -->

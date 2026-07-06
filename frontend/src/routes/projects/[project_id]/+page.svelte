@@ -1064,7 +1064,17 @@
 				{ label: project.display_name }
 			]}
 			subtitle={project.path}
-		/>
+		>
+			{#snippet headerRight()}
+				<a
+					href="/projects/{project.encoded_name}/chat"
+					class="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[var(--accent)] text-white text-sm font-medium hover:opacity-90 active:scale-95 transition-all duration-100 shadow-sm"
+				>
+					<MessageSquare size={15} strokeWidth={2.5} />
+					New Chat
+				</a>
+			{/snippet}
+		</PageHeader>
 
 		<!-- Tab Navigation using Bits UI -->
 		{#if tabsReady}
