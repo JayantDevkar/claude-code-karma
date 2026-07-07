@@ -2,6 +2,7 @@
 	import { page } from '$app/stores';
 	import { Menu, X, ChevronDown, Settings, Info } from 'lucide-svelte';
 	import Icon from '$lib/components/icons/Icon.svelte';
+	import SyncInboxBadge from '$lib/components/sync/SyncInboxBadge.svelte';
 
 	let mobileMenuOpen = $state(false);
 	let openGroup = $state<string | null>(null);
@@ -54,6 +55,15 @@
 				{ href: '/plugins', label: 'Plugins', icon: 'plugins', color: 'violet' },
 				{ href: '/shells',  label: 'Shells',  icon: 'shells',  color: 'green'  },
 				{ href: '/memory',  label: 'Memory',  icon: 'memory',  color: 'blue'   },
+			]
+		},
+		{
+			id: 'collaborate',
+			label: 'Collaborate',
+			items: [
+				{ href: '/team',    label: 'Teams',   icon: 'teams',   color: 'cyan' },
+				{ href: '/members', label: 'Members', icon: 'members', color: 'rose' },
+				{ href: '/sync',    label: 'Sync',    icon: 'sync',    color: 'teal' },
 			]
 		},
 	];
@@ -188,8 +198,9 @@
 				{/each}
 			</nav>
 
-			<!-- Right: settings + mobile toggle -->
+			<!-- Right: sync inbox + settings + mobile toggle -->
 			<div class="flex items-center gap-1 justify-end">
+				<SyncInboxBadge />
 				<a
 					href="/about"
 					class="hidden md:flex p-2 rounded-lg hover:bg-[var(--bg-muted)] transition-colors text-[var(--text-muted)] hover:text-[var(--text-primary)]"

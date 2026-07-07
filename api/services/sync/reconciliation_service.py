@@ -71,6 +71,67 @@ class ReconciliationService:
         self.my_member_tag = my_member_tag
         self.my_device_id = my_device_id
 
+    def _project_service(self):
+        """Lazily build a ProjectService from this service's own deps.
+
+        Used by the new-project policy: when prefs say auto-accept, the
+        reconciler must run the same accept path the UI uses (folders,
+        metadata publish, event log) — not a bare DB status flip.
+        """
+        from services.sync.project_service import ProjectService
+
+        return ProjectService(
+            projects=self.projects,
+            subs=self.subs,
+            members=self.members,
+            teams=self.teams,
+            folders=self.folders,
+            metadata=self.metadata,
+            events=self.events,
+        )
+
+    async def _apply_new_project_policy(
+        self, conn: sqlite3.Connection, team_name: str, git_identity: str,
+    ) -> None:
+        """Auto-accept a freshly OFFERED subscription if this team's local
+        prefs say so ('ask' — the default — leaves it OFFERED)."""
+        try:
+            row = conn.execute(
+                "SELECT new_project_policy, default_direction FROM sync_team_prefs "
+                "WHERE team_name = ?",
+                (team_name,),
+            ).fetchone()
+        except Exception:
+            return  # prefs table missing (old DB) — behave like 'ask'
+        if row is None:
+            return
+        policy, default_direction = row[0], row[1]
+        if policy == "ask":
+            return
+        direction = (
+            SyncDirection.RECEIVE
+            if policy == "receive_only"
+            else SyncDirection(default_direction)
+        )
+        try:
+            await self._project_service().accept_subscription(
+                conn,
+                member_tag=self.my_member_tag,
+                team_name=team_name,
+                git_identity=git_identity,
+                direction=direction,
+            )
+            logger.info(
+                "new-project policy '%s': auto-accepted '%s' in team '%s' (direction=%s)",
+                policy, git_identity, team_name, direction.value,
+            )
+        except Exception as e:
+            logger.warning(
+                "new-project policy: auto-accept failed for '%s' in team '%s': %s "
+                "(subscription stays OFFERED)",
+                git_identity, team_name, e,
+            )
+
     async def run_cycle(self, conn: sqlite3.Connection) -> None:
         """Run full reconciliation for all teams."""
         # Phase 0: discover teams from Syncthing metadata folders
@@ -295,6 +356,10 @@ class ReconciliationService:
                             "phase_metadata: backfilled OFFERED subscription for member '%s' on project '%s'",
                             tag, proj.git_identity,
                         )
+                        if tag == self.my_member_tag:
+                            await self._apply_new_project_policy(
+                                conn, team.name, proj.git_identity,
+                            )
 
         # Sync subscription status + direction from peer metadata to local DB.
         # When a member changes state on their machine (accept, pause, resume,
@@ -383,6 +448,8 @@ class ReconciliationService:
                 "phase_metadata: discovered project '%s' in team '%s' — created OFFERED subscription",
                 git_id, team.name,
             )
+            # Local new-project policy may auto-accept the fresh offer
+            await self._apply_new_project_policy(conn, team.name, git_id)
 
     @staticmethod
     def _sync_peer_subscription(

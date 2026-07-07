@@ -12,8 +12,8 @@ logger = logging.getLogger(__name__)
 
 # v2-v19 are main's linear chain (tickets, git_identity, bg-shells/cron).
 # v20-v23 are the sync-v4 migrations (renumbered from 19-22 after merging main,
-# whose independent chain reached 19 in parallel).
-SCHEMA_VERSION = 23
+# whose independent chain reached 19 in parallel). v24 adds sync_team_prefs.
+SCHEMA_VERSION = 24
 
 SCHEMA_SQL = """
 -- Schema versioning
@@ -304,6 +304,19 @@ CREATE TABLE IF NOT EXISTS sync_removed_members (
     member_tag  TEXT,
     removed_at  TEXT NOT NULL DEFAULT (datetime('now')),
     PRIMARY KEY (team_name, device_id)
+);
+
+-- Local-only per-team preferences (never synced): how THIS member reacts
+-- when a new project is offered in the team. 'ask' preserves the classic
+-- opt-in flow; 'auto_accept'/'receive_only' make new offers flow with zero
+-- clicks, using default_direction ('receive_only' forces RECEIVE).
+CREATE TABLE IF NOT EXISTS sync_team_prefs (
+    team_name          TEXT PRIMARY KEY,
+    new_project_policy TEXT NOT NULL DEFAULT 'ask'
+                       CHECK(new_project_policy IN ('ask', 'auto_accept', 'receive_only')),
+    default_direction  TEXT NOT NULL DEFAULT 'both'
+                       CHECK(default_direction IN ('send', 'receive', 'both')),
+    updated_at         TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_members_device ON sync_members(device_id);
@@ -899,6 +912,20 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
                     "UPDATE sync_teams SET team_id = ? WHERE name = ?",
                     (str(_uuid.uuid4()), row[0]),
                 )
+
+        if current_version < 24:
+            logger.info("Migrating → v24: adding sync_team_prefs (local new-project policy)")
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS sync_team_prefs (
+                    team_name          TEXT PRIMARY KEY,
+                    new_project_policy TEXT NOT NULL DEFAULT 'ask'
+                                       CHECK(new_project_policy IN ('ask', 'auto_accept', 'receive_only')),
+                    default_direction  TEXT NOT NULL DEFAULT 'both'
+                                       CHECK(default_direction IN ('send', 'receive', 'both')),
+                    updated_at         TEXT NOT NULL DEFAULT (datetime('now'))
+                )
+            """)
+
         if current_version < 11:
             logger.info("Migrating → v11: adding tickets + session_tickets tables")
             conn.executescript("""

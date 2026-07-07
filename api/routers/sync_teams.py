@@ -676,3 +676,73 @@ async def update_member_settings(
             }
         }
     }
+
+
+# --- Team prefs (local-only new-project policy) -----------------------------
+
+class TeamPrefsRequest(BaseModel):
+    new_project_policy: Optional[str] = None
+    default_direction: Optional[str] = None
+
+
+_VALID_POLICIES = ("ask", "auto_accept", "receive_only")
+_VALID_DIRECTIONS = ("send", "receive", "both")
+
+
+@router.get("/teams/{name}/prefs")
+async def get_team_prefs(
+    name: str,
+    conn: sqlite3.Connection = Depends(get_read_conn),
+    config=Depends(require_config),
+):
+    """This member's local policy for new projects offered in the team.
+
+    Never synced — every member controls their own reaction to new offers.
+    """
+    validate_name(name)
+    row = conn.execute(
+        "SELECT new_project_policy, default_direction FROM sync_team_prefs "
+        "WHERE team_name = ?",
+        (name,),
+    ).fetchone()
+    if row is None:
+        return {"new_project_policy": "ask", "default_direction": "both"}
+    return {"new_project_policy": row[0], "default_direction": row[1]}
+
+
+@router.put("/teams/{name}/prefs")
+async def update_team_prefs(
+    name: str,
+    req: TeamPrefsRequest,
+    conn: sqlite3.Connection = Depends(get_conn),
+    config=Depends(require_config),
+):
+    """Update this member's local new-project policy for the team."""
+    validate_name(name)
+    if req.new_project_policy is not None and req.new_project_policy not in _VALID_POLICIES:
+        raise HTTPException(
+            400, f"Invalid policy. Use: {', '.join(_VALID_POLICIES)}"
+        )
+    if req.default_direction is not None and req.default_direction not in _VALID_DIRECTIONS:
+        raise HTTPException(
+            400, f"Invalid direction. Use: {', '.join(_VALID_DIRECTIONS)}"
+        )
+
+    current = conn.execute(
+        "SELECT new_project_policy, default_direction FROM sync_team_prefs "
+        "WHERE team_name = ?",
+        (name,),
+    ).fetchone()
+    policy = req.new_project_policy or (current[0] if current else "ask")
+    direction = req.default_direction or (current[1] if current else "both")
+    conn.execute(
+        "INSERT INTO sync_team_prefs (team_name, new_project_policy, default_direction, updated_at) "
+        "VALUES (?, ?, ?, datetime('now')) "
+        "ON CONFLICT(team_name) DO UPDATE SET "
+        "  new_project_policy = excluded.new_project_policy, "
+        "  default_direction = excluded.default_direction, "
+        "  updated_at = excluded.updated_at",
+        (name, policy, direction),
+    )
+    conn.commit()
+    return {"new_project_policy": policy, "default_direction": direction}

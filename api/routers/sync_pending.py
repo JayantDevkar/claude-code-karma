@@ -239,3 +239,74 @@ async def reject_pending_folder(
     except Exception as e:
         raise HTTPException(500, f"Failed to reject folder: {e}")
     return {"ok": True, "folder_id": folder_id}
+
+
+# --- Unified sync inbox ------------------------------------------------------
+
+@router.get("/inbox")
+async def sync_inbox(
+    config=Depends(require_config),
+    client=Depends(get_syncthing_client),
+):
+    """Every pending decision in one place, for the header badge + inbox UI.
+
+    Aggregates:
+      - pending Syncthing devices (someone wants to pair)
+      - pending karma folder offers (invitations/team folders)
+      - OFFERED subscriptions for the current member (projects to accept)
+    Each item carries enough context to act on it from the inbox.
+    """
+    from db.connection import sqlite_read
+    from routers.sync_deps import make_repos
+
+    items: list[dict] = []
+
+    try:
+        raw = await client.get_pending_devices()
+        for device_id, info in raw.items():
+            items.append({
+                "kind": "pending_device",
+                "device_id": device_id,
+                "name": info.get("name", ""),
+                "address": info.get("address", ""),
+                "time": info.get("time", ""),
+            })
+    except Exception as e:
+        logger.debug("inbox: pending devices unavailable: %s", e)
+
+    try:
+        raw = await client.get_pending_folders()
+        for folder_id, folder_data in raw.items():
+            parsed = _parse_folder_id(folder_id)
+            if parsed["folder_type"] == "unknown":
+                continue  # not a karma folder — not ours to surface
+            device_map = folder_data.get("offeredBy", folder_data)
+            for dev_id, info in device_map.items():
+                items.append({
+                    "kind": "pending_folder",
+                    "folder_id": folder_id,
+                    "label": info.get("label", folder_id),
+                    "from_device": dev_id,
+                    "from_member": parsed["from_member"],
+                    "folder_type": parsed["folder_type"],
+                    "time": info.get("time", ""),
+                })
+    except Exception as e:
+        logger.debug("inbox: pending folders unavailable: %s", e)
+
+    try:
+        repos = make_repos()
+        with sqlite_read() as conn:
+            if conn is not None:
+                subs = repos["subs"].list_for_member(conn, config.member_tag)
+                for sub in subs:
+                    if sub.status.value == "offered":
+                        items.append({
+                            "kind": "offered_subscription",
+                            "team_name": sub.team_name,
+                            "git_identity": sub.project_git_identity,
+                        })
+    except Exception as e:
+        logger.debug("inbox: offered subscriptions unavailable: %s", e)
+
+    return {"count": len(items), "items": items}

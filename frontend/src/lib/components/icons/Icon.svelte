@@ -137,4 +137,27 @@
 		<line x1="12" y1="8" x2="12" y2="20" />
 		<line x1="8" y1="20" x2="16" y2="20" />
 	</svg>
+{:else if name === 'sync'}
+	<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width={strokeWidth} stroke-linecap="round" stroke-linejoin="round">
+		<path d="M20 12 A8 8 0 0 0 6.5 6.5" />
+		<polyline points="6.5,2.5 6.5,6.5 10.5,6.5" />
+		<path d="M4 12 A8 8 0 0 0 17.5 17.5" />
+		<polyline points="17.5,21.5 17.5,17.5 13.5,17.5" />
+	</svg>
+{:else if name === 'teams'}
+	<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width={strokeWidth} stroke-linecap="round" stroke-linejoin="round">
+		<circle cx="12" cy="5" r="2.5" />
+		<circle cx="5" cy="18" r="2.5" />
+		<circle cx="19" cy="18" r="2.5" />
+		<line x1="10.5" y1="7" x2="6.5" y2="16" />
+		<line x1="13.5" y1="7" x2="17.5" y2="16" />
+		<line x1="7.5" y1="18" x2="16.5" y2="18" />
+	</svg>
+{:else if name === 'members'}
+	<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width={strokeWidth} stroke-linecap="round" stroke-linejoin="round">
+		<circle cx="9" cy="8" r="3" />
+		<path d="M3.5 20 C3.5 15.5 14.5 15.5 14.5 20" />
+		<circle cx="16.5" cy="9.5" r="2.4" />
+		<path d="M16 15.5 C19.5 15.5 21 17.5 21 20" />
+	</svg>
 {/if}

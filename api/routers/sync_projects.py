@@ -270,6 +270,50 @@ async def list_subscriptions(
     return {"subscriptions": [_sub_dict(s) for s in subs]}
 
 
+@router.post("/subscriptions/{team}/accept-all")
+async def accept_all_subscriptions(
+    team: str,
+    req: AcceptRequest | None = None,
+    conn: sqlite3.Connection = Depends(get_conn),
+    config=Depends(require_config),
+    svc=Depends(get_project_svc),
+):
+    """Accept every OFFERED subscription for the current member in a team.
+
+    Direction comes from the request body if given, else the team's local
+    prefs default_direction, else BOTH.
+    """
+    if req and req.direction:
+        direction = _parse_direction(req.direction)
+    else:
+        row = conn.execute(
+            "SELECT default_direction FROM sync_team_prefs WHERE team_name = ?",
+            (team,),
+        ).fetchone()
+        direction = SyncDirection(row[0]) if row else SyncDirection.BOTH
+
+    repos = make_repos()
+    offered = [
+        s
+        for s in repos["subs"].list_for_member(conn, config.member_tag)
+        if s.team_name == team and s.status.value == "offered"
+    ]
+    accepted, errors = [], []
+    for sub in offered:
+        try:
+            result = await svc.accept_subscription(
+                conn,
+                member_tag=config.member_tag,
+                team_name=team,
+                git_identity=sub.project_git_identity,
+                direction=direction,
+            )
+            accepted.append(_sub_dict(result))
+        except Exception as e:
+            errors.append({"git_identity": sub.project_git_identity, "error": str(e)})
+    return {"accepted": accepted, "errors": errors, "direction": direction.value}
+
+
 # --- Helpers ---------------------------------------------------------------
 
 def _parse_direction(value: str) -> SyncDirection:

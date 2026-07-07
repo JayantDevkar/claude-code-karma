@@ -89,11 +89,76 @@
 	}
 
 	function getSelectedDir(gitIdentity: string): string {
-		return selectedDirections[gitIdentity] ?? 'both';
+		return selectedDirections[gitIdentity] ?? prefs.default_direction;
 	}
 
 	function selectDir(gitIdentity: string, dir: string) {
 		selectedDirections = { ...selectedDirections, [gitIdentity]: dir };
+	}
+
+	// ── New-project policy (local prefs — how I react to new offers) ──
+	let prefs = $state<{ new_project_policy: string; default_direction: string }>({
+		new_project_policy: 'ask',
+		default_direction: 'both'
+	});
+	let acceptingAll = $state(false);
+	// Per-invitation "Customize" disclosure — the direction picker is hidden
+	// behind one click so the happy path is a single Accept.
+	let customizing = $state<Record<string, boolean>>({});
+
+	const POLICY_OPTIONS = [
+		{ value: 'ask', label: 'Ask me each time' },
+		{ value: 'auto_accept', label: 'Accept automatically' },
+		{ value: 'receive_only', label: 'Receive only, automatically' }
+	] as const;
+
+	async function loadPrefs() {
+		try {
+			const res = await fetch(
+				`${API_BASE}/sync/teams/${encodeURIComponent(teamName)}/prefs`
+			);
+			if (res.ok) prefs = await res.json();
+		} catch {
+			// defaults stand
+		}
+	}
+
+	async function savePrefs(policy?: string, direction?: string) {
+		const body: Record<string, string> = {};
+		if (policy) body.new_project_policy = policy;
+		if (direction) body.default_direction = direction;
+		try {
+			const res = await fetch(
+				`${API_BASE}/sync/teams/${encodeURIComponent(teamName)}/prefs`,
+				{
+					method: 'PUT',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify(body)
+				}
+			);
+			if (res.ok) prefs = await res.json();
+		} catch {
+			// best-effort
+		}
+	}
+
+	async function acceptAll() {
+		acceptingAll = true;
+		try {
+			const res = await fetch(
+				`${API_BASE}/sync/subscriptions/${encodeURIComponent(teamName)}/accept-all`,
+				{ method: 'POST' }
+			);
+			if (res.ok) onrefresh();
+		} catch {
+			// best-effort
+		} finally {
+			acceptingAll = false;
+		}
+	}
+
+	function toggleCustomize(gitIdentity: string) {
+		customizing = { ...customizing, [gitIdentity]: !customizing[gitIdentity] };
 	}
 
 	function directionIcon(direction: string) {
@@ -254,6 +319,7 @@
 
 	onMount(() => {
 		loadProjectStatus();
+		loadPrefs();
 	});
 </script>
 
@@ -273,12 +339,28 @@
 				<span class="px-1.5 py-0.5 text-[10px] font-bold rounded-full bg-[var(--warning)] text-white">
 					{offeredProjects.length}
 				</span>
+				{#if offeredProjects.length > 1}
+					<button
+						onclick={acceptAll}
+						disabled={acceptingAll}
+						class="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-[var(--radius-md)] bg-[var(--success)]/10 text-[var(--success)] border border-[var(--success)]/20 hover:bg-[var(--success)]/15 transition-colors disabled:opacity-50"
+					>
+						{#if acceptingAll}
+							<Loader2 size={12} class="animate-spin" />
+							Accepting…
+						{:else}
+							<CheckCircle2 size={12} />
+							Accept all ({offeredProjects.length})
+						{/if}
+					</button>
+				{/if}
 			</div>
 
 			{#each offeredProjects as project (project.git_identity)}
 				{@const info = getProjectInfo(project)}
 				{@const isActing = subscriptionActing === project.git_identity}
 				{@const dir = getSelectedDir(project.git_identity)}
+				{@const DirIcon = directionIcon(dir)}
 
 				<div class="rounded-[var(--radius-lg)] border border-[var(--warning)]/20 bg-gradient-to-b from-[var(--warning)]/[0.03] to-transparent overflow-hidden">
 					<!-- Project header -->
@@ -300,39 +382,48 @@
 							</div>
 						</div>
 
-						<p class="text-[13px] text-[var(--text-secondary)] mt-4">
-							Choose how you want to sync sessions for this project:
-						</p>
 					</div>
 
-					<!-- Direction selector — 3 option cards -->
+					<!-- Sync mode: one-line summary; picker hidden behind Customize -->
 					<div class="px-5 pb-4">
-						<div class="grid grid-cols-3 gap-2">
-							{#each DIRECTION_OPTIONS as opt}
-								{@const isSelected = dir === opt.value}
-								{@const Icon = opt.icon}
-								<button
-									onclick={() => selectDir(project.git_identity, opt.value)}
-									class="relative flex flex-col items-center gap-1.5 p-3.5 rounded-[var(--radius-md)] border-2 transition-all text-center
-										{isSelected
-											? 'border-[var(--accent)] bg-[var(--accent)]/[0.05] shadow-[0_0_0_1px_rgba(var(--accent-rgb),0.1)]'
-											: 'border-[var(--border)] hover:border-[var(--text-faint)]/40 hover:bg-[var(--bg-subtle)]'}"
-								>
-									{#if isSelected}
-										<span class="absolute top-2 right-2 w-4 h-4 rounded-full bg-[var(--accent)] flex items-center justify-center">
-											<Check size={10} class="text-white" />
-										</span>
-									{/if}
-									<Icon size={18} class={isSelected ? 'text-[var(--accent)]' : 'text-[var(--text-muted)]'} />
-									<span class="text-xs font-semibold {isSelected ? 'text-[var(--accent)]' : 'text-[var(--text-primary)]'}">
-										{opt.label}
-									</span>
-									<span class="text-[10px] leading-snug {isSelected ? 'text-[var(--accent)]/70' : 'text-[var(--text-muted)]'}">
-										{opt.desc}
-									</span>
-								</button>
-							{/each}
+						<div class="flex items-center gap-2 text-[13px] text-[var(--text-secondary)]">
+							<DirIcon size={14} class="text-[var(--text-muted)]" />
+							<span>Will sync: <span class="font-medium text-[var(--text-primary)]">{directionLabel(dir)}</span></span>
+							<button
+								onclick={() => toggleCustomize(project.git_identity)}
+								class="text-xs font-medium text-[var(--accent)] hover:underline"
+							>
+								{customizing[project.git_identity] ? 'Hide options' : 'Customize'}
+							</button>
 						</div>
+						{#if customizing[project.git_identity]}
+							<div class="grid grid-cols-3 gap-2 mt-3">
+								{#each DIRECTION_OPTIONS as opt}
+									{@const isSelected = dir === opt.value}
+									{@const Icon = opt.icon}
+									<button
+										onclick={() => selectDir(project.git_identity, opt.value)}
+										class="relative flex flex-col items-center gap-1.5 p-3.5 rounded-[var(--radius-md)] border-2 transition-all text-center
+											{isSelected
+												? 'border-[var(--accent)] bg-[var(--accent)]/[0.05] shadow-[0_0_0_1px_rgba(var(--accent-rgb),0.1)]'
+												: 'border-[var(--border)] hover:border-[var(--text-faint)]/40 hover:bg-[var(--bg-subtle)]'}"
+									>
+										{#if isSelected}
+											<span class="absolute top-2 right-2 w-4 h-4 rounded-full bg-[var(--accent)] flex items-center justify-center">
+												<Check size={10} class="text-white" />
+											</span>
+										{/if}
+										<Icon size={18} class={isSelected ? 'text-[var(--accent)]' : 'text-[var(--text-muted)]'} />
+										<span class="text-xs font-semibold {isSelected ? 'text-[var(--accent)]' : 'text-[var(--text-primary)]'}">
+											{opt.label}
+										</span>
+										<span class="text-[10px] leading-snug {isSelected ? 'text-[var(--accent)]/70' : 'text-[var(--text-muted)]'}">
+											{opt.desc}
+										</span>
+									</button>
+								{/each}
+							</div>
+						{/if}
 					</div>
 
 					<!-- Actions footer -->
@@ -365,8 +456,36 @@
 	{/if}
 
 	<!-- ═══════════════════════════════════════════════════════
-	     Active Projects — accepted / paused / declined / no-sub
+	     New-project policy — my local reaction to future offers
 	     ═══════════════════════════════════════════════════════ -->
+	<div class="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3 rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-subtle)]/50">
+		<span class="text-xs font-medium text-[var(--text-secondary)]">
+			When this team shares a new project:
+		</span>
+		<select
+			value={prefs.new_project_policy}
+			onchange={(e) => savePrefs(e.currentTarget.value)}
+			class="text-xs font-medium px-2 py-1.5 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-base)] text-[var(--text-primary)] cursor-pointer"
+		>
+			{#each POLICY_OPTIONS as opt (opt.value)}
+				<option value={opt.value}>{opt.label}</option>
+			{/each}
+		</select>
+		{#if prefs.new_project_policy === 'auto_accept'}
+			<select
+				value={prefs.default_direction}
+				onchange={(e) => savePrefs(undefined, e.currentTarget.value)}
+				class="text-xs font-medium px-2 py-1.5 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-base)] text-[var(--text-primary)] cursor-pointer"
+			>
+				{#each DIRECTION_OPTIONS as opt (opt.value)}
+					<option value={opt.value}>{opt.label}</option>
+				{/each}
+			</select>
+		{/if}
+		<span class="text-[11px] text-[var(--text-faint)]">
+			Only affects this machine — you can change any project later.
+		</span>
+	</div>
 
 	<!-- Leader: Add Projects button -->
 	{#if isLeader}

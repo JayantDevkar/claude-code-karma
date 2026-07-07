@@ -88,6 +88,30 @@
 			tint: 'var(--nav-blue-subtle)'
 		}
 	];
+
+	const collaborate = [
+		{
+			title: 'Teams',
+			href: '/team',
+			icon: 'teams',
+			color: 'var(--nav-cyan)',
+			tint: 'var(--nav-cyan-subtle)'
+		},
+		{
+			title: 'Members',
+			href: '/members',
+			icon: 'members',
+			color: 'var(--nav-rose)',
+			tint: 'var(--nav-rose-subtle)'
+		},
+		{
+			title: 'Sync',
+			href: '/sync',
+			icon: 'sync',
+			color: 'var(--nav-teal)',
+			tint: 'var(--nav-teal-subtle)'
+		}
+	];
 </script>
 
 <div class="page">
@@ -156,6 +180,19 @@
 			</div>
 			<div class="compact-grid">
 				{#each manage as item (item.href)}
+					<CompactNavItem {...item} />
+				{/each}
+			</div>
+		</section>
+
+		<!-- Collaborate -->
+		<section class="group">
+			<div class="group-header">
+				<span class="group-label">Collaborate</span>
+				<span class="group-rule"></span>
+			</div>
+			<div class="compact-grid">
+				{#each collaborate as item (item.href)}
 					<CompactNavItem {...item} />
 				{/each}
 			</div>
