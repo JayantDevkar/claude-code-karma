@@ -15,6 +15,7 @@
 		Globe
 	} from 'lucide-svelte';
 	import { marked } from 'marked';
+	import { markdownCopyButtons } from '$lib/actions/markdownCopyButtons';
 	import DOMPurify from 'isomorphic-dompurify';
 	import { formatDistanceToNow } from 'date-fns';
 	import PageHeader from '$lib/components/layout/PageHeader.svelte';
@@ -51,6 +52,8 @@
 
 	// Build breadcrumbs dynamically based on path
 	let breadcrumbs = $derived.by((): Breadcrumb[] => {
+		const project = $page.url.searchParams.get('project');
+
 		const crumbs: Breadcrumb[] = [
 			{ label: 'Dashboard', href: '/' },
 			{ label: 'Skills', href: '/skills' }
@@ -62,12 +65,15 @@
 			crumbs.push({ label: path.split(':').slice(1).join(':') });
 		} else {
 			const parts = path.split('/');
-			// Add intermediate path segments (folders)
+			// Add intermediate path segments (folders).
+			// In project context, folder segments are non-clickable — there's no
+			// project-scoped route to navigate back to, and the global /skills page
+			// ignores path/project params.
 			for (let i = 0; i < parts.length - 1; i++) {
 				const partialPath = parts.slice(0, i + 1).join('/');
 				crumbs.push({
 					label: parts[i],
-					href: `/skills?path=${partialPath}`
+					href: project ? undefined : `/skills?path=${partialPath}`
 				});
 			}
 			// Add the final file name (no href = current page)
@@ -87,6 +93,8 @@
 		try {
 			const url = new URL(`${API_BASE}/skills/content`);
 			url.searchParams.set('path', path);
+			const project = $page.url.searchParams.get('project');
+			if (project) url.searchParams.set('project', project);
 
 			const res = await fetch(url);
 			if (res.status === 404) {
@@ -181,7 +189,7 @@
 					title="Copy to clipboard"
 				>
 					{#if copied}
-						<Check size={18} class="text-green-500" />
+						<Check size={18} class="text-[var(--success)]" />
 						Copied!
 					{:else}
 						<Copy size={18} />
@@ -274,7 +282,7 @@
 						>Preview</span
 					>
 				</div>
-				<div class="p-8 markdown-preview max-w-none prose prose-slate">
+				<div class="p-8 markdown-preview max-w-none prose prose-slate" use:markdownCopyButtons={renderedContent}>
 					{@html renderedContent}
 				</div>
 			{/if}

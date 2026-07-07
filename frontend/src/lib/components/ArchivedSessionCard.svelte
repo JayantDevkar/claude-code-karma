@@ -168,10 +168,10 @@
 
 	<!-- FOOTER ZONE: Prompt count (shrink-0 keeps at bottom) -->
 	<div
-		class="px-4 py-3 bg-[rgba(184,84,80,0.06)] border-t border-[rgba(184,84,80,0.15)] flex items-center justify-between shrink-0 mt-auto"
+		class="px-4 py-3 bg-[var(--error-subtle)] border-t border-[var(--error)]/20 flex items-center justify-between shrink-0 mt-auto"
 	>
 		<!-- Left: Prompt count -->
-		<div class="flex items-center gap-1.5 text-xs text-[#B85450]">
+		<div class="flex items-center gap-1.5 text-xs text-[var(--error)]">
 			<MessageSquare size={13} strokeWidth={2} />
 			<span class="font-mono font-medium">{session.prompt_count}</span>
 			<span>{session.prompt_count === 1 ? 'prompt' : 'prompts'}</span>
@@ -179,7 +179,7 @@
 
 		<!-- Right: View hint for expandable cards -->
 		{#if isExpandable}
-			<span class="text-xs text-[#B85450]/70"> Click to view all </span>
+			<span class="text-xs text-[var(--error)]/70"> Click to view all </span>
 		{/if}
 	</div>
 </div>

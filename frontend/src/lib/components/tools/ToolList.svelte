@@ -59,7 +59,7 @@
 			<Loader2 class="animate-spin text-[var(--text-muted)]" size={32} />
 		</div>
 	{:else if error}
-		<div class="p-4 bg-red-500/10 text-red-500 rounded-lg text-sm border border-red-500/20">
+		<div class="p-4 bg-[var(--error-subtle)] text-[var(--error)] rounded-lg text-sm border border-[var(--error)]/20">
 			{error}
 		</div>
 	{:else if !overview?.servers?.length}
@@ -77,7 +77,7 @@
 			{#each overview.servers as server (server.name)}
 				{@const colorVars = getServerColorVars(server.name, server.plugin_name)}
 				<a
-					href="/tools/{encodeURIComponent(server.name)}{projectEncodedName
+					href="/mcp/{encodeURIComponent(server.name)}{projectEncodedName
 						? `?project=${encodeURIComponent(projectEncodedName)}`
 						: ''}"
 					class="group block bg-[var(--bg-base)] border border-[var(--border)] rounded-xl p-5 hover:border-[var(--accent)]/50 hover:shadow-lg transition-all duration-300 relative overflow-hidden focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2"

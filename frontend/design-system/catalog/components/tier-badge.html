@@ -1,0 +1,111 @@
+<!-- @dsCard group="Components" -->
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TierBadge</title>
+<link rel="stylesheet" href="../shared/tokens.css">
+<link rel="stylesheet" href="../shared/preview.css">
+<style>
+/*
+  TierBadge does NOT use design tokens — it reads hardcoded rgba/hex from
+  tierConfigs in src/lib/utils.ts lines 1210-1235. Values inlined verbatim:
+    very-high: bg rgba(251,191,36,.08)  · darkBg rgba(251,191,36,.12) · iconColor #f59e0b · label "Hot"
+    high:      bg rgba(34,197,94,.08)   · darkBg rgba(34,197,94,.12)  · iconColor #22c55e · label "Trending"
+    medium:    bg rgba(59,130,246,.08)  · darkBg rgba(59,130,246,.12) · iconColor #3b82f6 · label "Active"
+    low:       renders nothing (tier !== 'low' guard in TierBadge.svelte)
+*/
+.tier-badge {
+  display:inline-flex; align-items:center; gap:4px;
+  padding:4px 8px; border-radius:9999px;
+  font-size:12px; font-weight:600;
+  transition:all 300ms;
+}
+/* very-high — Flame icon */
+.tier-very-high { background:rgba(251,191,36,.08); color:#f59e0b; }
+/* high — TrendingUp icon */
+.tier-high      { background:rgba(34,197,94,.08);  color:#22c55e; }
+/* medium — Activity icon */
+.tier-medium    { background:rgba(59,130,246,.08); color:#3b82f6; }
+/* dark-mode overrides — use darkBg values */
+[data-theme="dark"] .tier-very-high { background:rgba(251,191,36,.12); }
+[data-theme="dark"] .tier-high      { background:rgba(34,197,94,.12); }
+[data-theme="dark"] .tier-medium    { background:rgba(59,130,246,.12); }
+.tier-badge svg { flex-shrink:0; }
+.note { font-size:12px; color:var(--text-muted); font-style:italic; }
+</style>
+</head>
+<body>
+<div class="ds-frame">
+<h1 class="ds-title">TierBadge</h1>
+<p class="ds-subtitle">Hardcoded tierConfigs (no tokens) · very-high · high · medium · low=nothing — src/lib/components/ui/TierBadge.svelte + src/lib/utils.ts:1210</p>
+
+<div class="ds-section">
+<p class="ds-section-label">All rendered tiers</p>
+<div class="ds-row">
+
+  <!-- very-high: Flame icon, iconColor #f59e0b -->
+  <div class="tier-badge tier-very-high" title="Hot usage tier">
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 3z"/>
+    </svg>
+    Hot
+  </div>
+
+  <!-- high: TrendingUp icon, iconColor #22c55e -->
+  <div class="tier-badge tier-high" title="Trending usage tier">
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/>
+    </svg>
+    Trending
+  </div>
+
+  <!-- medium: Activity icon, iconColor #3b82f6 -->
+  <div class="tier-badge tier-medium" title="Active usage tier">
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+    </svg>
+    Active
+  </div>
+
+</div>
+</div>
+
+<div class="ds-section">
+<p class="ds-section-label">tier="low" — renders nothing (by design)</p>
+<div class="ds-row">
+  <span class="note">TierBadge guards <code>tier !== 'low'</code> — no element is rendered for the low tier.</span>
+</div>
+</div>
+
+<div class="ds-section">
+<p class="ds-section-label">In context — usage stat rows</p>
+<div style="display:flex;flex-direction:column;gap:12px;max-width:340px;">
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--bg-base);">
+    <span style="font-size:14px;color:var(--text-primary)">Bash</span>
+    <div class="tier-badge tier-very-high" title="Hot">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 3z"/></svg>
+      Hot
+    </div>
+  </div>
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--bg-base);">
+    <span style="font-size:14px;color:var(--text-primary)">Read</span>
+    <div class="tier-badge tier-high" title="Trending">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+      Trending
+    </div>
+  </div>
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--bg-base);">
+    <span style="font-size:14px;color:var(--text-primary)">Edit</span>
+    <div class="tier-badge tier-medium" title="Active">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+      Active
+    </div>
+  </div>
+</div>
+</div>
+</div>
+<button class="ds-theme-toggle" onclick="(function(r){var d=r.getAttribute('data-theme')==='dark';r.setAttribute('data-theme',d?'light':'dark');})(document.documentElement)">Toggle theme</button>
+</body>
+</html>

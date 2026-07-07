@@ -30,9 +30,6 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-from models.usage import TokenUsage
-
-
 def _get_analytics_sqlite(
     project: Optional[str],
     start_dt: Optional[datetime],
@@ -87,10 +84,8 @@ def _get_analytics_sqlite(
         hour_totals.sort(reverse=True)
         peak_hours = [h for _, h in hour_totals[:3] if hour_totals[0][0] > 0]
 
-        # Cache hit rate
-        total_cacheable = (
-            totals["total_input"] + totals["total_cache_creation"] + totals["total_cache_read"]
-        )
+        # Cache hit rate — total_input already includes cache_creation, so don't add it again
+        total_cacheable = totals["total_input"] + totals["total_cache_read"]
         cache_hit_rate = (
             totals["total_cache_read"] / total_cacheable if total_cacheable > 0 else 0.0
         )
@@ -101,7 +96,9 @@ def _get_analytics_sqlite(
 
         return ProjectAnalytics(
             total_sessions=totals["total_sessions"],
-            total_tokens=totals["total_input"] + totals["total_output"],
+            total_tokens=totals["total_input"]
+            + totals["total_cache_read"]
+            + totals["total_output"],
             total_input_tokens=totals["total_input"],
             total_output_tokens=totals["total_output"],
             total_duration_seconds=totals["total_duration"],
@@ -552,20 +549,12 @@ def _calculate_analytics_from_sessions(
 
         # Track models used
         session_models = session.get_models_used()
-        model_count = len(session_models)
-
         for model in session_models:
             models_used[model] += 1
             models_categorized[_categorize_model(model)] += 1
-            # Calculate cost per model (split tokens evenly across models)
-            split_usage = TokenUsage(
-                input_tokens=usage.input_tokens // max(1, model_count),
-                output_tokens=usage.output_tokens // max(1, model_count),
-                cache_creation_input_tokens=usage.cache_creation_input_tokens
-                // max(1, model_count),
-                cache_read_input_tokens=usage.cache_read_input_tokens // max(1, model_count),
-            )
-            total_cost += split_usage.calculate_cost(model)
+
+        # Use per-message cost (already computed with correct model per message)
+        total_cost += session.get_total_cost()
 
         # Track tools used
         session_tools = session.get_tools_used()
@@ -610,7 +599,7 @@ def _calculate_analytics_from_sessions(
 
     return ProjectAnalytics(
         total_sessions=total_sessions,
-        total_tokens=total_input_tokens + total_output_tokens,
+        total_tokens=total_input_tokens + total_cache_read + total_output_tokens,
         total_input_tokens=total_input_tokens,
         total_output_tokens=total_output_tokens,
         total_duration_seconds=total_duration,
@@ -709,6 +698,9 @@ def _get_dashboard_stats_sqlite() -> DashboardStats | None:
                         sessions_count=result["session_count"],
                         projects_active=result["projects_active"],
                         duration_seconds=round(result["total_duration"], 1),
+                        total_tokens=result.get("total_tokens", 0),
+                        estimated_cost_usd=round(result.get("total_cost", 0.0), 4),
+                        mcp_calls=result.get("mcp_calls", 0),
                     )
             return None
     except sqlite3.Error as e:

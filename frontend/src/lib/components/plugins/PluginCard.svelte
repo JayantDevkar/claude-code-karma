@@ -55,10 +55,10 @@
 		<span
 			class="px-2.5 py-1 rounded-full text-[10px] font-semibold uppercase tracking-wider"
 			style="background-color: {plugin.is_official
-				? 'rgba(34, 197, 94, 0.1)'
-				: 'rgba(156, 163, 175, 0.1)'}; color: {plugin.is_official
-				? 'rgb(34, 197, 94)'
-				: 'rgb(156, 163, 175)'};"
+				? 'var(--success-subtle)'
+				: 'var(--bg-muted)'}; color: {plugin.is_official
+				? 'var(--success)'
+				: 'var(--text-muted)'};"
 		>
 			{plugin.is_official ? 'Official' : 'Community'}
 		</span>

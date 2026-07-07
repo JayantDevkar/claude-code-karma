@@ -1,15 +1,15 @@
 # Captain Hook - Claude Code Hooks Library
 
-Type-safe Pydantic models and complete documentation for all Claude Code hook types.
+Type-safe Pydantic models and complete documentation for all 24 Claude Code hook types.
 
 ## Overview
 
 Claude Code hooks are shell commands or LLM prompts that execute at specific points during a session. All hooks receive JSON input via **stdin**. This library provides:
 
-- **Type-safe Pydantic models** for all 10 hook types
+- **Type-safe Pydantic models** for all 24 hook types
 - **Comprehensive documentation** for each hook
 - **Forward compatibility** via `extra="allow"` configuration
-- **113 tests** ensuring reliability
+- **238 tests** ensuring reliability
 
 ## Installation
 
@@ -48,6 +48,17 @@ if isinstance(hook, PreToolUseHook):
 | [PreCompact](./docs/hooks/PreCompact-info-available.md) | Before context compaction | No | No |
 | [PermissionRequest](./docs/hooks/PermissionRequest-info-available.md) | Permission dialog shown | Yes | No |
 | [Notification](./docs/hooks/Notification-info-available.md) | System notification | No | No |
+| [InstructionsLoaded](./docs/hooks/InstructionsLoaded-info-available.md) | CLAUDE.md / rules file loaded | No | No |
+| [PermissionDenied](./docs/hooks/PermissionDenied-info-available.md) | Auto mode denied a tool call | No | Yes (retry) |
+| [Elicitation](./docs/hooks/Elicitation-info-available.md) | MCP server requests structured input | Yes | No |
+| [ElicitationResult](./docs/hooks/ElicitationResult-info-available.md) | User responds to elicitation | Yes | No |
+| [CwdChanged](./docs/hooks/CwdChanged-info-available.md) | Working directory changed | No | No |
+| [FileChanged](./docs/hooks/FileChanged-info-available.md) | External file change detected | No | No |
+| [TaskCreated](./docs/hooks/TaskCreated-info-available.md) | Agent Teams task created (experimental) | Yes | No |
+| [TaskCompleted](./docs/hooks/TaskCompleted-info-available.md) | Agent Teams task completed (experimental) | Yes | No |
+| [TeammateIdle](./docs/hooks/TeammateIdle-info-available.md) | Teammate became idle (experimental) | Yes | No |
+| [WorktreeCreate](./docs/hooks/WorktreeCreate-info-available.md) | Before git worktree creation | Yes | Yes (path via HTTP) |
+| [WorktreeRemove](./docs/hooks/WorktreeRemove-info-available.md) | After git worktree removal | No | No |
 
 ## Common Fields (All Hooks)
 
@@ -148,14 +159,19 @@ hooks:
 captain-hook/
 ├── src/captain_hook/     # Main package (modular design)
 │   ├── base.py           # BaseHook class & type definitions
-│   ├── tool_hooks.py     # PreToolUseHook, PostToolUseHook
-│   ├── user_hooks.py     # UserPromptSubmitHook, PermissionRequestHook, NotificationHook
+│   ├── tool_hooks.py     # PreToolUseHook, PostToolUseHook, PostToolUseFailureHook
+│   ├── user_hooks.py     # UserPromptSubmitHook, PermissionRequestHook, NotificationHook,
+│   │                     #   PermissionDeniedHook, ElicitationHook, ElicitationResultHook
 │   ├── session_hooks.py  # SessionStartHook, SessionEndHook
-│   ├── agent_hooks.py    # StopHook, SubagentStopHook
-│   ├── context_hooks.py  # PreCompactHook
+│   ├── agent_hooks.py    # StopHook, SubagentStartHook, SubagentStopHook
+│   ├── context_hooks.py  # PreCompactHook, InstructionsLoadedHook
+│   ├── setup_hooks.py    # SetupHook
+│   ├── fs_hooks.py       # CwdChangedHook, FileChangedHook
+│   ├── team_hooks.py     # TaskCreatedHook, TaskCompletedHook, TeammateIdleHook
+│   ├── worktree_hooks.py # WorktreeCreateHook, WorktreeRemoveHook
 │   └── outputs.py        # Response models
 ├── docs/hooks/           # Hook documentation
-├── tests/                # Test suite (113 tests)
+├── tests/                # Test suite (238 tests)
 ├── models.py             # Backward compatibility layer
 └── file_index.md         # Complete file reference
 ```
@@ -194,14 +210,28 @@ from models import parse_hook_event, PreToolUseHook
 | `BaseHook` | All | `session_id`, `transcript_path`, `cwd`, `permission_mode` |
 | `PreToolUseHook` | PreToolUse | `tool_name`, `tool_use_id`, `tool_input` |
 | `PostToolUseHook` | PostToolUse | `tool_name`, `tool_use_id`, `tool_input`, `tool_response` |
+| `PostToolUseFailureHook` | PostToolUseFailure | `tool_name`, `tool_use_id`, `tool_input`, `error` |
 | `UserPromptSubmitHook` | UserPromptSubmit | `prompt` |
-| `SessionStartHook` | SessionStart | `source` |
+| `SessionStartHook` | SessionStart | `source`, `model`, `agent_type` |
 | `SessionEndHook` | SessionEnd | `reason` |
 | `StopHook` | Stop | `stop_hook_active` |
-| `SubagentStopHook` | SubagentStop | `stop_hook_active` |
+| `SubagentStartHook` | SubagentStart | `agent_id`, `agent_type` |
+| `SubagentStopHook` | SubagentStop | `stop_hook_active`, `agent_id`, `agent_transcript_path` |
 | `PreCompactHook` | PreCompact | `trigger`, `custom_instructions` |
 | `PermissionRequestHook` | PermissionRequest | `notification_type`, `message` |
-| `NotificationHook` | Notification | `notification_type` |
+| `NotificationHook` | Notification | `notification_type`, `message` |
+| `SetupHook` | Setup | `trigger` |
+| `InstructionsLoadedHook` | InstructionsLoaded | `file_path`, `memory_type`, `load_reason`, `globs` |
+| `PermissionDeniedHook` | PermissionDenied | `tool_name`, `tool_use_id`, `reason`, `tool_input` |
+| `ElicitationHook` | Elicitation | `mcp_server`, `tool_name`, `request` |
+| `ElicitationResultHook` | ElicitationResult | `mcp_server`, `user_response` |
+| `CwdChangedHook` | CwdChanged | `old_cwd`, `new_cwd` |
+| `FileChangedHook` | FileChanged | `file_path`, `file_name` |
+| `TaskCreatedHook` | TaskCreated | `task_id`, `task_subject`, `team_name`, `teammate_name` |
+| `TaskCompletedHook` | TaskCompleted | `task_id`, `task_subject`, `team_name`, `teammate_name` |
+| `TeammateIdleHook` | TeammateIdle | `agent_id`, `agent_type`, `team_name` |
+| `WorktreeCreateHook` | WorktreeCreate | `worktree_name`, `base_ref` |
+| `WorktreeRemoveHook` | WorktreeRemove | `worktree_path`, `worktree_name` |
 
 ### Output Models
 
@@ -237,12 +267,12 @@ assert hook.new_field_2026 == "some_value"
 pytest tests/test_models.py -v
 ```
 
-113 tests covering:
+238 tests covering:
 - Base hook validation
-- All 10 hook types (parametrized)
+- All 24 hook types (parametrized)
 - Parser dispatch function
 - Forward compatibility
-- Output models
+- Output models (including the new `defer` permission decision and `PermissionDeniedOutput`)
 - JSON serialization round-trips
 
 ---

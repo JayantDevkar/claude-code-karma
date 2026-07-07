@@ -88,7 +88,7 @@
 									inline-flex items-center gap-1
 									px-1.5 py-0.5
 									text-[10px] font-bold uppercase tracking-wider
-									bg-red-500/10 text-red-600 dark:text-red-400
+									bg-[var(--error-subtle)] text-[var(--error)]
 									rounded
 								"
 								title="This hook can block execution"

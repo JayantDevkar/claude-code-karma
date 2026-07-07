@@ -138,7 +138,7 @@
 
 	{#if error}
 		<div
-			class="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-sm text-red-700 dark:text-red-400"
+			class="mb-6 p-4 bg-[var(--error-subtle)] border border-[var(--error)] rounded-lg text-sm text-[var(--error)]"
 		>
 			{error}
 			<button

@@ -6,6 +6,7 @@
 		title: string;
 		value: string | number;
 		description?: string;
+		footnote?: string;
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		icon?: any;
 		class?: string;
@@ -19,6 +20,7 @@
 		title,
 		value,
 		description,
+		footnote,
 		icon: Icon,
 		class: className = '',
 		color,
@@ -87,16 +89,11 @@
 		{className}
 	"
 >
-	<!-- Label at top with optional description on second line -->
-	<div class="mb-3">
-		<div class="text-xs uppercase tracking-wider font-semibold text-[var(--text-muted)]">
-			{title}
-		</div>
-		{#if description}
-			<div class="text-xs text-[var(--text-muted)] mt-1 font-normal tracking-normal">
-				{description}
-			</div>
-		{/if}
+	<!-- Label at top with optional description in brackets -->
+	<div class="text-xs uppercase tracking-wider font-semibold text-[var(--text-muted)] mb-3 min-h-[2rem]">
+		{title}{#if description}<span class="normal-case tracking-normal font-normal">
+				({description})</span
+			>{/if}
 	</div>
 
 	<!-- Icon + Value aligned -->
@@ -151,5 +148,9 @@
 				</span>
 			</div>
 		</div>
+	{/if}
+
+	{#if footnote}
+		<p class="mt-2 text-[10px] italic text-[var(--text-muted)] leading-snug">{footnote}</p>
 	{/if}
 </div>

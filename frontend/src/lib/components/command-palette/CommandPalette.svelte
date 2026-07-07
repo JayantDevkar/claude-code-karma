@@ -23,6 +23,7 @@
 	import { commandPalette } from '$lib/stores/commandPalette';
 	import KeyIndicator from '$lib/components/ui/KeyIndicator.svelte';
 	import type { Project } from '$lib/api-types';
+	import { projectHref } from '$lib/utils/project-url';
 	import { API_BASE } from '$lib/config';
 	import { cleanPromptText } from '$lib/utils';
 
@@ -388,10 +389,10 @@
 								<Command.Item
 									value="Tools MCP servers integrations"
 									onSelect={() =>
-										handleSelect(() => goto('/tools'), {
+										handleSelect(() => goto('/mcp'), {
 											id: 'nav-tools',
 											label: 'Tools',
-											path: '/tools',
+											path: '/mcp',
 											icon: 'zap'
 										})}
 									class="cmd-item"
@@ -521,20 +522,19 @@
 								<Command.GroupItems>
 									{#each sessions as session}
 										<Command.Item
-											value={`${getSessionLabel(session)} ${session.initial_prompt ? cleanPromptText(session.initial_prompt) : ''} ${session.project_name}`}
-											onSelect={() =>
-												handleSelect(
-													() =>
-														goto(
-															`/projects/${session.project_slug}/${session.slug}`
-														),
-													{
-														id: `session-${session.slug}`,
-														label: getSessionLabel(session),
-														path: `/projects/${session.project_slug}/${session.slug}`,
-														icon: 'session'
-													}
-												)}
+											value={`${getSessionLabel(session)} ${session.initial_prompt || ''} ${session.project_name}`}
+											onSelect={() => {
+												const href = projectHref(
+													{ slug: session.project_slug },
+													`/${session.slug}`
+												);
+												handleSelect(() => goto(href), {
+													id: `session-${session.slug}`,
+													label: getSessionLabel(session),
+													path: href,
+													icon: 'session'
+												});
+											}}
 											class="cmd-item"
 										>
 											<MessageSquare size={18} class="cmd-icon" />

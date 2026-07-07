@@ -14,6 +14,7 @@
 - [Agents](#agents)
 - [Skills](#skills)
 - [Plans](#plans)
+- [Tickets](#tickets)
 - [Settings](#settings)
 - [Additional Features](#additional-features)
 
@@ -439,6 +440,108 @@ Browse implementation plans from Claude Code plan mode sessions.
   - Created/modified times
   - Approval status
 - **Session link** — Navigate to source session
+
+---
+
+## Tickets
+
+**Routes:** `/tickets`, `/tickets/[provider]/[external_key]`
+
+Attach Claude Code sessions to tickets in Linear, Jira, or GitHub Issues
+and audit what work was done for each ticket across sessions. Karma is
+**read-only** — it stores the link and caches metadata (title, status)
+but never writes back to your ticket provider.
+
+### Three Ways to Link
+
+| Path | Where | How |
+|------|-------|-----|
+| **Dashboard paste** | Tickets section on any session page | Paste a URL or key (e.g. `LINEAR-123`, `octocat/repo#42`, full Linear/Jira/GitHub URL). Karma stores the link; if you previously linked the same ticket from another session, metadata is reused. |
+| **Slash command / skill** | Inside any Claude Code session | `/link-ticket-to-session ABC-123` or natural language ("link this session to LINEAR-42"). The agent uses your Linear/Atlassian/GitHub MCP server to fetch title + status, then POSTs the link to karma. If no MCP is installed, the link still works — just without cached title/status. |
+| **Branch-name auto-detect** | Hook fired at `SessionStart` | Opt-in hook (`ticket_branch_detector.py`) watches your git branch. Branches matching configured regex patterns (e.g. `feat/LINEAR-123-foo`) auto-create the link silently. Failures never block `SessionStart`. |
+
+See [SETUP.md → Tier 4](SETUP.md#tier-4-ticket-linking-optional)
+for installation steps.
+
+### Tickets Index (`/tickets`)
+
+- **Provider columns** — Linear / Jira / GitHub badges with brand colors
+- **Search** — Filter by external key or title substring
+- **Provider filter** — Show only Linear / Jira / GitHub tickets
+- **Project filter** — Restrict to tickets touched by sessions in a
+  specific project
+- **Session counts** — How many sessions each ticket spans
+- **Last linked** — Most recent link timestamp per ticket
+
+### Ticket Detail (`/tickets/[provider]/[external_key]`)
+
+- **Header** — Ticket key + cached title + status badge + external link
+  to provider
+- **Linked sessions list** — Every session this ticket is attached to,
+  with title, project, and timestamp
+- **Live-session enrichment** — Sessions still being written (not yet
+  indexed) are surfaced via the live-sessions tracker so you don't miss
+  in-flight work
+- **Orphan-safe** — Links to sessions that aren't in the index yet still
+  appear (e.g. just-started sessions); their fields populate as soon as
+  the indexer catches up
+- **GitHub-style keys** — Keys containing `/` and `#` (like
+  `owner/repo#42`) are URL-encoded transparently
+
+### Project Tickets Tab
+
+Every project page now has a **Tickets** tab showing every ticket touched
+by any session in that project — and **across every checkout of the same
+git repo**. This means a ticket linked from a session inside
+`claude-karma/frontend/` also shows up on the main `claude-karma`
+project's Tickets tab (and on `claude-karma/docs/design/`, any worktree,
+etc.).
+
+The aggregation key is `git_identity` (canonical `owner/repo`
+lowercase), derived at index time from each project's `git remote
+get-url origin`. For projects without a local git remote (sync-imported
+or freshly-`git init`'d), the tab falls back to per-encoded_name match.
+
+For GitHub specifically, tickets whose `external_key` starts with the
+project's `git_identity` (e.g. `octocat/repo#42` under a project with
+`git_identity=octocat/repo`) surface on the tab **even if no local
+session has linked them yet** — useful when a teammate has linked the
+ticket on a different machine.
+
+### Session Tickets Section
+
+On any session page, the Tickets section provides:
+
+- **Link input** with five UI states: idle, valid ref, fetching, linked,
+  error — clear feedback at every step
+- **Linked ticket badges** with provider color, key, title preview, and
+  status dot
+- **Unlink** action with optimistic update + undo toast (6s grace period
+  before the DELETE actually fires)
+- **External link** to open the ticket in its provider
+
+### Link Source Precedence
+
+When the same `(session, ticket)` pair is touched by multiple link paths,
+karma upgrades but never downgrades the `link_source`:
+
+```
+slash_command > dashboard > branch
+```
+
+So a branch auto-link can be upgraded to `slash_command` later, but
+re-running the branch hook won't override an explicit dashboard link.
+
+### Schema & Storage
+
+- **Tables:** `tickets` (unique on `(provider, external_key)`),
+  `session_tickets` (unique on `(session_uuid, ticket_id)` plus a
+  partial unique index on `(session_slug, ticket_id)` for resumed-session
+  dedup)
+- **Metadata cap:** 64 KB per ticket (enforced by SQL CHECK constraint)
+- **Orphan cleanup:** Background asyncio task removes
+  `session_tickets` rows whose `session_uuid` never materialized after
+  a 7-day TTL
 
 ---
 

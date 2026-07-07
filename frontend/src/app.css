@@ -5,224 +5,20 @@
 	--font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
+@import './styles/tokens.css';
+
 /* ============================================
-   DESIGN SYSTEM TOKENS
+   BRAND FONTS (self-hosted, served from /static/fonts)
+   The tokens name Inter / JetBrains Mono; load them so the app
+   renders its brand fonts without relying on locally-installed fonts.
    ============================================ */
-
-:root {
-	/* Typography */
-	--font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-	--font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-
-	/* Light Mode Colors (Cool Slate Foundation) */
-	--bg-base: #ffffff;
-	--bg-subtle: #f8fafc;
-	--bg-muted: #f1f5f9;
-
-	--text-primary: #0f172a;
-	--text-secondary: #475569;
-	--text-muted: #64748b;
-	--text-faint: #94a3b8;
-
-	--border: rgba(0, 0, 0, 0.08);
-	--border-subtle: rgba(0, 0, 0, 0.05);
-
-	/* Missing tokens (referenced but were undefined) */
-	--accent-primary: var(--accent);
-	--border-hover: rgba(0, 0, 0, 0.12);
-	--radius-xs: 2px;
-	--duration-normal: 300ms;
-
-	/* RGB values for opacity control in gradients */
-	--accent-rgb: 124, 58, 237;
-	--success-rgb: 16, 185, 129;
-	--warning-rgb: 245, 158, 11;
-	--error-rgb: 239, 68, 68;
-	--info-rgb: 59, 130, 246;
-
-	/* Accent (Violet - Claude brand) */
-	--accent: #7c3aed;
-	--accent-hover: #6d28d9;
-	--accent-subtle: rgba(124, 58, 237, 0.1);
-	--accent-muted: rgba(124, 58, 237, 0.05);
-
-	/* Semantic Colors */
-	--success: #10b981;
-	--success-subtle: rgba(16, 185, 129, 0.1);
-
-	--error: #ef4444;
-	--error-subtle: rgba(239, 68, 68, 0.1);
-
-	--warning: #f59e0b;
-	--warning-subtle: rgba(245, 158, 11, 0.1);
-
-	--info: #3b82f6;
-	--info-subtle: rgba(59, 130, 246, 0.1);
-
-	/* Model Family Colors */
-	--model-opus: #7c3aed;
-	--model-opus-subtle: rgba(124, 58, 237, 0.1);
-	--model-sonnet: #3b82f6;
-	--model-sonnet-subtle: rgba(59, 130, 246, 0.1);
-	--model-haiku: #10b981;
-	--model-haiku-subtle: rgba(16, 185, 129, 0.1);
-
-	/* Event Type Colors */
-	--event-prompt: #2563eb;
-	--event-prompt-subtle: rgba(37, 99, 235, 0.18);
-	--event-tool: #059669;
-	--event-tool-subtle: rgba(5, 150, 105, 0.18);
-	--event-subagent: #7c3aed;
-	--event-subagent-subtle: rgba(124, 58, 237, 0.18);
-	--event-thinking: #d97706;
-	--event-thinking-subtle: rgba(217, 119, 6, 0.18);
-	--event-response: #475569;
-	--event-response-subtle: rgba(71, 85, 105, 0.18);
-	--event-todo: #6d28d9;
-	--event-todo-subtle: rgba(109, 40, 217, 0.18);
-	--event-plan: #0891b2;
-	--event-plan-subtle: rgba(8, 145, 178, 0.18);
-	--event-builtin: #64748b;
-	--event-builtin-subtle: rgba(100, 116, 139, 0.18);
-	--event-command: #14b8a6;
-	--event-command-subtle: rgba(20, 184, 166, 0.18);
-
-	/* Data Visualization Palette */
-	--data-primary: var(--accent);
-	--data-secondary: var(--info);
-	--data-tertiary: var(--success);
-	--data-quaternary: var(--warning);
-	--data-quinary: var(--error);
-
-	/* Navigation Card Colors (for icon backgrounds) */
-	--nav-blue: #3b82f6;
-	--nav-blue-subtle: rgba(59, 130, 246, 0.08);
-	--nav-green: #10b981;
-	--nav-green-subtle: rgba(16, 185, 129, 0.08);
-	--nav-orange: #f97316;
-	--nav-orange-subtle: rgba(249, 115, 22, 0.08);
-	--nav-purple: #8b5cf6;
-	--nav-purple-subtle: rgba(139, 92, 246, 0.08);
-	--nav-gray: #64748b;
-	--nav-gray-subtle: rgba(100, 116, 139, 0.08);
-	--nav-red: #f43f5e;
-	--nav-red-subtle: rgba(244, 63, 94, 0.08);
-	--nav-teal: #0891b2;
-	--nav-teal-subtle: rgba(8, 145, 178, 0.1);
-	--nav-yellow: #ca8a04;
-	--nav-yellow-subtle: rgba(202, 138, 4, 0.08);
-	--nav-violet: #db2777;
-	--nav-violet-subtle: rgba(219, 39, 119, 0.1);
-	--nav-indigo: #6366f1;
-	--nav-indigo-subtle: rgba(99, 102, 241, 0.1);
-	--nav-amber: #d97706;
-	--nav-amber-subtle: rgba(217, 119, 6, 0.08);
-	--nav-rose: #f43f84;
-	--nav-rose-subtle: rgba(244, 63, 132, 0.08);
-
-	/* Live Session Status Background Tints (subtle card backgrounds) */
-	--status-starting-bg: rgba(139, 92, 246, 0.05);
-	--status-active-bg: rgba(16, 185, 129, 0.05);
-	--status-idle-bg: rgba(245, 158, 11, 0.05);
-	--status-waiting-bg: rgba(59, 130, 246, 0.05);
-	--status-stopped-bg: rgba(100, 116, 139, 0.03);
-	--status-ended-bg: rgba(148, 163, 184, 0.03);
-	--status-stale-bg: rgba(239, 68, 68, 0.05);
-
-	/* Subagent Type Colors (light mode - vibrant, high contrast) */
-	--subagent-explore: #0284c7;
-	--subagent-explore-subtle: rgba(2, 132, 199, 0.12);
-	--subagent-plan: #ca8a04;
-	--subagent-plan-subtle: rgba(202, 138, 4, 0.12);
-	--subagent-bash: #16a34a;
-	--subagent-bash-subtle: rgba(22, 163, 74, 0.12);
-	--subagent-default: #7c3aed;
-	--subagent-default-subtle: rgba(124, 58, 237, 0.12);
-	/* Claude Tax - internal overhead agents (warmup, cache priming) - rust orange */
-	--subagent-claude-tax: #c2410c;
-	--subagent-claude-tax-subtle: rgba(194, 65, 12, 0.12);
-	/* System Agents - auto-spawned by Claude Code for internal operations */
-	--subagent-acompact: #475569; /* Slate - context compaction/cleanup */
-	--subagent-acompact-subtle: rgba(71, 85, 105, 0.12);
-	--subagent-prompt-suggestion: #6366f1; /* Indigo - AI-powered suggestions */
-	--subagent-prompt-suggestion-subtle: rgba(99, 102, 241, 0.12);
-	/* OKLCH params for plugin identity colors (hue set per-plugin in JS) */
-	--plugin-l: 0.5;
-	--plugin-c: 0.14;
-	--plugin-l-subtle: 0.96;
-	--plugin-c-subtle: 0.025;
-
-	/* Scope category colors (fixed) */
-	--scope-project: #d97706;
-	--scope-project-subtle: rgba(217, 119, 6, 0.12);
-	--scope-user: #0d9488;
-	--scope-user-subtle: rgba(13, 148, 136, 0.12);
-
-	/* Team Member Colors (remote session identity) */
-	--team-coral: #f97066;
-	--team-coral-subtle: rgba(249, 112, 102, 0.1);
-	--team-rose: #f43f5e;
-	--team-rose-subtle: rgba(244, 63, 94, 0.1);
-	--team-amber: #f59e0b;
-	--team-amber-subtle: rgba(245, 158, 11, 0.1);
-	--team-cyan: #06b6d4;
-	--team-cyan-subtle: rgba(6, 182, 212, 0.1);
-	--team-pink: #ec4899;
-	--team-pink-subtle: rgba(236, 72, 153, 0.1);
-	--team-lime: #84cc16;
-	--team-lime-subtle: rgba(132, 204, 22, 0.1);
-	--team-indigo: #6366f1;
-	--team-indigo-subtle: rgba(99, 102, 241, 0.1);
-	--team-teal: #14b8a6;
-	--team-teal-subtle: rgba(20, 184, 166, 0.1);
-	--team-sky: #0ea5e9;
-	--team-sky-subtle: rgba(14, 165, 233, 0.15);
-	--team-violet: #7c3aed;
-	--team-violet-subtle: rgba(124, 58, 237, 0.15);
-	--team-emerald: #10b981;
-	--team-emerald-subtle: rgba(16, 185, 129, 0.15);
-	--team-orange: #f97316;
-	--team-orange-subtle: rgba(249, 115, 22, 0.15);
-	--team-fuchsia: #c026d3;
-	--team-fuchsia-subtle: rgba(192, 38, 211, 0.15);
-	--team-slate: #64748b;
-	--team-slate-subtle: rgba(100, 116, 139, 0.15);
-	--team-gold: #eab308;
-	--team-gold-subtle: rgba(234, 179, 8, 0.15);
-	--team-ruby: #be123c;
-	--team-ruby-subtle: rgba(190, 18, 60, 0.15);
-
-	/* Spacing (4px Grid) */
-	--spacing-1: 4px;
-	--spacing-2: 8px;
-	--spacing-3: 12px;
-	--spacing-4: 16px;
-	--spacing-5: 20px;
-	--spacing-6: 24px;
-	--spacing-8: 32px;
-	--spacing-12: 48px;
-
-	/* Border Radius (Sharp System) */
-	--radius-sm: 4px;
-	--radius-md: 6px;
-	--radius-lg: 8px;
-
-	/* Extended Shadow System */
-	--shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
-	--shadow-md: 0 2px 8px rgba(0, 0, 0, 0.08);
-	--shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.12);
-	--shadow-elevated: 0 0 0 0.5px var(--border), 0 4px 12px rgba(0, 0, 0, 0.12);
-
-	/* Animation */
-	--duration-fast: 150ms;
-	--duration-base: 200ms;
-	--ease: cubic-bezier(0.25, 1, 0.5, 1);
-
-	/* Focus Ring (Keyboard Accessibility) */
-	--focus-ring-width: 2px;
-	--focus-ring-offset: 2px;
-	--focus-ring-color: var(--accent);
-}
+@font-face { font-family: 'Inter'; font-style: normal; font-weight: 400; font-display: swap; src: url('/fonts/inter-400.woff2') format('woff2'); }
+@font-face { font-family: 'Inter'; font-style: normal; font-weight: 500; font-display: swap; src: url('/fonts/inter-500.woff2') format('woff2'); }
+@font-face { font-family: 'Inter'; font-style: normal; font-weight: 600; font-display: swap; src: url('/fonts/inter-600.woff2') format('woff2'); }
+@font-face { font-family: 'Inter'; font-style: normal; font-weight: 700; font-display: swap; src: url('/fonts/inter-700.woff2') format('woff2'); }
+@font-face { font-family: 'JetBrains Mono'; font-style: normal; font-weight: 400; font-display: swap; src: url('/fonts/jetbrains-mono-400.woff2') format('woff2'); }
+@font-face { font-family: 'JetBrains Mono'; font-style: normal; font-weight: 500; font-display: swap; src: url('/fonts/jetbrains-mono-500.woff2') format('woff2'); }
+@font-face { font-family: 'JetBrains Mono'; font-style: normal; font-weight: 600; font-display: swap; src: url('/fonts/jetbrains-mono-600.woff2') format('woff2'); }
 
 /* ============================================
    KEYBOARD ACCESSIBILITY - FOCUS SYSTEM
@@ -271,7 +67,6 @@ select:focus {
 	border-radius: var(--radius-md);
 }
 
-/* ============================================
    DARK MODE TOKENS
    ============================================ */
 
@@ -549,6 +344,7 @@ select:focus {
 	}
 }
 
+=======
 body {
 	font-family: var(--font-sans);
 	background-color: var(--bg-base);
@@ -717,6 +513,94 @@ body {
 	@apply mt-1 mb-0;
 }
 
+/* ── Markdown inline copy buttons (injected by markdownCopyButtons action) ── */
+
+/* pre needs relative positioning for the absolute code-copy button */
+.markdown-preview pre {
+	position: relative;
+}
+
+.md-copy-btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	padding: 0.25rem;
+	border-radius: 0.375rem;
+	border: 1px solid var(--border);
+	background: var(--bg-base);
+	color: var(--text-muted);
+	cursor: pointer;
+	opacity: 0;
+	transition: opacity 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+	flex-shrink: 0;
+	line-height: 1;
+}
+
+.md-copy-btn:hover {
+	color: var(--text-primary);
+	border-color: var(--accent);
+	opacity: 1;
+}
+
+.md-copy-btn--copied {
+	color: var(--success) !important;
+	opacity: 1 !important;
+}
+
+/* Code block button: always visible (no hover required) */
+.md-copy-btn--code {
+	position: absolute;
+	top: 0.5rem;
+	right: 0.5rem;
+	opacity: 1;
+}
+
+/* Section button: inline after heading text, revealed on parent hover */
+.md-copy-btn--section {
+	vertical-align: middle;
+	margin-left: 0.5rem;
+	transform: translateY(-1px);
+}
+
+/* All section copy buttons — always visible */
+.md-copy-btn--section {
+	opacity: 1;
+}
+
+
+/* ── Custom tooltip for the global "copy entire response" button ── */
+/* Uses data-tooltip attribute + ::before pseudo-element so it appears
+   instantly on hover without the OS-imposed delay of the native title attr. */
+
+.md-global-copy {
+	position: relative;
+}
+
+.md-global-copy::before {
+	content: attr(data-tooltip);
+	position: absolute;
+	right: calc(100% + 8px);
+	top: 50%;
+	transform: translateY(-50%);
+	background: var(--bg-muted);
+	color: var(--text-primary);
+	border: 1px solid var(--border);
+	border-radius: 6px;
+	padding: 3px 8px;
+	font-size: 11px;
+	font-family: inherit;
+	white-space: nowrap;
+	opacity: 0;
+	pointer-events: none;
+	transition: opacity 0.1s ease;
+	z-index: 50;
+	box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+}
+
+.md-global-copy:hover::before {
+	opacity: 1;
+}
+
 /* ============================================
    VIM-STYLE LIST NAVIGATION
    ============================================ */
@@ -878,6 +762,22 @@ body {
 	/* Disable blur effects for users who prefer reduced motion */
 	.blur-3xl {
 		filter: none !important;
+	}
+}
+
+/* Session last-opened highlight ring — fades out after mount */
+@keyframes session-highlight-fade {
+	0%   { box-shadow: 0 0 0 2px var(--accent); }
+	60%  { box-shadow: 0 0 0 2px var(--accent); }
+	100% { box-shadow: 0 0 0 2px transparent; }
+}
+.session-highlight {
+	animation: session-highlight-fade 1.8s ease-out forwards;
+}
+@media (prefers-reduced-motion: reduce) {
+	.session-highlight {
+		animation: none;
+		box-shadow: 0 0 0 2px var(--accent);
 	}
 }
 

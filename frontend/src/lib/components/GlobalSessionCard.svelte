@@ -12,6 +12,8 @@
 		Globe
 	} from 'lucide-svelte';
 	import type { SessionWithContext, LiveSessionSummary } from '$lib/api-types';
+	import { projectHrefFromSession } from '$lib/utils/project-url';
+	import { getSessionDisplayLabel } from '$lib/utils/sessionIdentifier';
 	import { statusConfig } from '$lib/live-session-config';
 	import {
 		formatRelativeTime,
@@ -34,6 +36,7 @@
 		liveSession?: LiveSessionSummary | null;
 		toolSource?: 'main' | 'subagent' | 'both';
 		subagentHref?: string;
+		highlighted?: boolean;
 	}
 
 	let {
@@ -41,7 +44,8 @@
 		compact = false,
 		liveSession = null,
 		toolSource,
-		subagentHref
+		subagentHref,
+		highlighted = false
 	}: Props = $props();
 
 	const showSubagentBadge = $derived(toolSource === 'subagent' || toolSource === 'both');
@@ -59,7 +63,9 @@
 
 	// Parse project name from encoded name to preserve hyphens (e.g., "claude-karma" not "karma")
 	const displayProjectName = $derived(
-		session.project_display_name || session.project_name || getProjectNameFromEncoded(session.project_encoded_name ?? '')
+		session.project_display_name ||
+			session.project_name ||
+			getProjectNameFromEncoded(session.project_encoded_name ?? '')
 	);
 
 	// Local formatDuration that returns null instead of '--' for card display
@@ -94,7 +100,7 @@
 			session.chain_title
 		)
 	);
-	const urlIdentifier = $derived(session.uuid.slice(0, 8));
+	const urlIdentifier = $derived(getSessionDisplayLabel(session.uuid, session.slug, displaySlug));
 	const displayPrompt = $derived(
 		getSessionDisplayPrompt(session.initial_prompt, session.session_titles)
 	);
@@ -139,7 +145,7 @@
 </script>
 
 <a
-	href="/projects/{session.project_slug || session.project_encoded_name}/{urlIdentifier}{remoteQueryParam}"
+	href={projectHrefFromSession(session, `/${urlIdentifier}${remoteQueryParam}`)}
 	aria-label="Session {displayName}, {displayProjectName}, {displayMessageCount} messages{liveStatusText}"
 	class="
 		flex flex-col h-full
@@ -151,6 +157,7 @@
 		group
 		focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-base)]
 		{hasLiveStatus && !isRecentlyEnded ? 'ring-1 ring-opacity-50' : ''}
+		{highlighted ? 'session-highlight' : ''}
 		overflow-hidden
 	"
 	style="

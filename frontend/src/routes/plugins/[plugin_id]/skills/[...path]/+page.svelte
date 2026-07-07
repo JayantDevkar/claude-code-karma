@@ -11,6 +11,7 @@
 		ChevronRight
 	} from 'lucide-svelte';
 	import { marked } from 'marked';
+	import { markdownCopyButtons } from '$lib/actions/markdownCopyButtons';
 	import DOMPurify from 'isomorphic-dompurify';
 	import { formatDistanceToNow } from 'date-fns';
 	import PageHeader from '$lib/components/layout/PageHeader.svelte';
@@ -85,7 +86,7 @@
 	<PageHeader title={filename} icon={FileText} {breadcrumbs} />
 
 	{#if data.error}
-		<div class="p-8 bg-red-500/10 text-red-500 rounded-xl text-center border border-red-500/20">
+		<div class="p-8 bg-[var(--error-subtle)] text-[var(--error)] rounded-xl text-center border border-[var(--error)]/20">
 			<p class="text-lg font-medium">{data.error}</p>
 		</div>
 	{:else if data.skill}
@@ -134,7 +135,7 @@
 						title="Copy content"
 					>
 						{#if copied}
-							<Check size={20} class="text-green-500" />
+							<Check size={20} class="text-[var(--success)]" />
 						{:else}
 							<Copy size={20} />
 						{/if}
@@ -168,6 +169,7 @@
 					</div>
 					<div
 						class="p-8 markdown-preview max-w-none prose prose-slate dark:prose-invert"
+						use:markdownCopyButtons={renderedContent}
 					>
 						{@html renderedContent}
 					</div>

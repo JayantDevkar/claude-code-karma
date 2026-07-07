@@ -11,7 +11,7 @@
 </script>
 
 <div
-	class="border border-[var(--border)] rounded-lg bg-[var(--bg-surface)] overflow-hidden {className}"
+	class="border border-[var(--border)] rounded-lg bg-[var(--bg-base)] overflow-hidden {className}"
 >
 	<div class="px-5 py-3 border-b border-[var(--border)] bg-[var(--bg-subtle)]">
 		<h2 class="text-xs font-medium text-[var(--text-secondary)] uppercase tracking-wider">

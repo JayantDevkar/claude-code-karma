@@ -26,6 +26,7 @@
 			title={stat.title}
 			value={stat.value}
 			description={stat.description}
+			footnote={stat.footnote}
 			icon={stat.icon}
 			color={stat.color}
 			tokenIn={stat.tokenIn}

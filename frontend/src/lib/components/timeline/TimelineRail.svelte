@@ -14,6 +14,7 @@
 	import ToolCallDetail from './ToolCallDetail.svelte';
 	import TodoUpdateDetail from './TodoUpdateDetail.svelte';
 	import ImageAttachments from '$lib/components/ImageAttachments.svelte';
+	import { markdownCopyButtons } from '$lib/actions/markdownCopyButtons';
 
 	interface Props {
 		events: TimelineEvent[];
@@ -434,7 +435,8 @@
 				<div class="rounded bg-[var(--bg-muted)]/50 p-3 relative">
 					<button
 						class="
-						sticky top-2 float-right
+						md-global-copy
+						float-right
 						ml-2 mb-2
 						p-1.5
 						rounded-md
@@ -444,8 +446,9 @@
 						shadow-sm
 						hover:text-[var(--text-primary)] hover:border-[var(--accent)]
 						transition-colors
-						z-10
 					"
+						data-tooltip={isCopied ? 'Copied!' : 'Copy entire response'}
+						aria-label={isCopied ? 'Copied!' : 'Copy entire response'}
 						onclick={(e) => {
 							e.stopPropagation();
 							const content =
@@ -459,8 +462,7 @@
 							isCopied = true;
 							setTimeout(() => (isCopied = false), 2000);
 						}}
-						title={isCopied ? 'Copied!' : 'Copy to clipboard'}
-					>
+						>
 						{#if isCopied}
 							<Check size={14} class="text-[var(--success)]" />
 						{:else}
@@ -470,7 +472,7 @@
 					{#if popupEvent.metadata?.image_attachments?.length}
 						<ImageAttachments attachments={popupEvent.metadata.image_attachments} />
 					{/if}
-					<div class="markdown-preview text-sm">
+					<div class="markdown-preview text-sm" use:markdownCopyButtons={renderedPopupContent}>
 						{@html renderedPopupContent}
 					</div>
 				</div>

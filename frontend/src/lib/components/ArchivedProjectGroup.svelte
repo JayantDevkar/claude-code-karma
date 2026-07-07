@@ -45,12 +45,12 @@
 			hover:bg-[var(--bg-muted)]
 			transition-colors
 			text-left
-			border-l-3 border-l-[#B85450]
+			border-l-3 border-l-[var(--error)]
 		"
 	>
 		<!-- Left: Icon + Project Name -->
 		<div class="flex items-center gap-3 min-w-0 flex-1">
-			<div class="p-1.5 rounded-md bg-[rgba(184,84,80,0.12)] text-[#B85450]">
+			<div class="p-1.5 rounded-md bg-[var(--error-subtle)] text-[var(--error)]">
 				<FolderOpen size={16} strokeWidth={2} />
 			</div>
 			<div class="min-w-0 flex-1">

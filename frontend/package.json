@@ -1,7 +1,7 @@
 {
 	"name": "frontend",
 	"private": true,
-	"version": "0.0.1",
+	"version": "0.2.0",
 	"license": "Apache-2.0",
 	"type": "module",
 	"scripts": {
@@ -15,7 +15,9 @@
 		"format": "prettier --write .",
 		"test": "vitest run",
 		"test:watch": "vitest",
-		"test:coverage": "vitest run --coverage"
+		"test:coverage": "vitest run --coverage",
+		"ds:build": "node design-system/scripts/build-catalog.mjs",
+		"ds:drift": "node design-system/scripts/drift-check.mjs"
 	},
 	"devDependencies": {
 		"@sveltejs/adapter-auto": "^7.0.0",

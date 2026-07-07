@@ -268,6 +268,7 @@
 		{
 			title: 'Total Cost',
 			value: formatCurrency(analytics.estimated_cost_usd),
+			footnote: 'Pay-as-you-go API rate — not your subscription cost',
 			icon: Zap,
 			color: 'green'
 		},
@@ -548,7 +549,7 @@
 	<!-- Page Header with Breadcrumb -->
 	<PageHeader
 		title="Analytics"
-		icon={BarChart3}
+		iconName="analytics"
 		iconColor="--nav-green"
 		breadcrumbs={[{ label: 'Dashboard', href: '/' }, { label: 'Analytics' }]}
 		subtitle="Your coding patterns and AI collaboration"

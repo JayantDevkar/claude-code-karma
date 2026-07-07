@@ -41,11 +41,21 @@ from .base import (
 # =============================================================================
 
 from .tool_hooks import PreToolUseHook, PostToolUseHook, PostToolUseFailureHook
-from .user_hooks import UserPromptSubmitHook, PermissionRequestHook, NotificationHook
+from .user_hooks import (
+    UserPromptSubmitHook,
+    PermissionRequestHook,
+    NotificationHook,
+    PermissionDeniedHook,
+    ElicitationHook,
+    ElicitationResultHook,
+)
 from .session_hooks import SessionStartHook, SessionEndHook
 from .agent_hooks import StopHook, SubagentStopHook, SubagentStartHook
-from .context_hooks import PreCompactHook
+from .context_hooks import PreCompactHook, InstructionsLoadedHook
 from .setup_hooks import SetupHook
+from .fs_hooks import CwdChangedHook, FileChangedHook
+from .team_hooks import TaskCreatedHook, TaskCompletedHook, TeammateIdleHook
+from .worktree_hooks import WorktreeCreateHook, WorktreeRemoveHook
 
 # =============================================================================
 # Output Models
@@ -56,6 +66,7 @@ from .outputs import (
     PreToolUseOutput,
     StopOutput,
     PermissionRequestOutput,
+    PermissionDeniedOutput,
 )
 
 # =============================================================================
@@ -76,6 +87,17 @@ HookEvent = Union[
     PermissionRequestHook,
     NotificationHook,
     SetupHook,
+    InstructionsLoadedHook,
+    PermissionDeniedHook,
+    ElicitationHook,
+    ElicitationResultHook,
+    CwdChangedHook,
+    FileChangedHook,
+    TaskCreatedHook,
+    TaskCompletedHook,
+    TeammateIdleHook,
+    WorktreeCreateHook,
+    WorktreeRemoveHook,
 ]
 
 # Mapping from hook_event_name to class for dynamic parsing
@@ -93,6 +115,18 @@ HOOK_TYPE_MAP: Dict[str, type[BaseHook]] = {
     "PermissionRequest": PermissionRequestHook,
     "Notification": NotificationHook,
     "Setup": SetupHook,
+    # New in v2.1.83-v2.1.92
+    "InstructionsLoaded": InstructionsLoadedHook,
+    "PermissionDenied": PermissionDeniedHook,
+    "Elicitation": ElicitationHook,
+    "ElicitationResult": ElicitationResultHook,
+    "CwdChanged": CwdChangedHook,
+    "FileChanged": FileChangedHook,
+    "TaskCreated": TaskCreatedHook,
+    "TaskCompleted": TaskCompletedHook,
+    "TeammateIdle": TeammateIdleHook,
+    "WorktreeCreate": WorktreeCreateHook,
+    "WorktreeRemove": WorktreeRemoveHook,
 }
 
 
@@ -154,11 +188,24 @@ __all__ = [
     "PermissionRequestHook",
     "NotificationHook",
     "SetupHook",
+    # New hook types (v2.1.83 - v2.1.92)
+    "InstructionsLoadedHook",
+    "PermissionDeniedHook",
+    "ElicitationHook",
+    "ElicitationResultHook",
+    "CwdChangedHook",
+    "FileChangedHook",
+    "TaskCreatedHook",
+    "TaskCompletedHook",
+    "TeammateIdleHook",
+    "WorktreeCreateHook",
+    "WorktreeRemoveHook",
     # Output Types
     "HookOutput",
     "PreToolUseOutput",
     "StopOutput",
     "PermissionRequestOutput",
+    "PermissionDeniedOutput",
     # Enums
     "PermissionMode",
     "HookEventName",

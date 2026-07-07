@@ -53,6 +53,7 @@ class AgentCache(BaseCache):
         "tasks",
         "skills_used",
         "commands_used",
+        "models_used",
     )
 
     def __init__(self) -> None:
@@ -64,6 +65,7 @@ class AgentCache(BaseCache):
         self.tasks: Optional[List["Task"]] = None
         self.skills_used: Optional[Dict[tuple, int]] = None  # {(name, source): count}
         self.commands_used: Optional[Dict[tuple, int]] = None  # {(name, source): count}
+        self.models_used: Optional[set] = None
 
     def reset(self) -> None:
         """Reset all cache values to initial state."""
@@ -74,6 +76,7 @@ class AgentCache(BaseCache):
         self.tasks = None
         self.skills_used = None
         self.commands_used = None
+        self.models_used = None
         super().reset()
 
 
@@ -216,6 +219,7 @@ class Agent(BaseModel):
         last_ts: Optional[datetime] = None
         usage = TokenUsage.zero()
         message_count = 0
+        models: set = set()
         # Skills/commands use (name, source) tuple keys for invocation tracking
         skills: Counter = Counter()  # {(name, source): count}
         commands: Counter = Counter()  # {(name, source): count}
@@ -232,6 +236,8 @@ class Agent(BaseModel):
             if isinstance(msg, AssistantMessage):
                 if msg.usage:
                     usage = usage + msg.usage
+                if msg.model:
+                    models.add(msg.model)
 
                 # Extract skills/commands from Skill tool uses
                 for block in msg.content_blocks:
@@ -249,6 +255,7 @@ class Agent(BaseModel):
         cache.end_time = last_ts
         cache.usage_summary = usage
         cache.message_count = message_count
+        cache.models_used = models
         cache.skills_used = dict(skills)
         cache.commands_used = dict(commands)
         cache.mark_loaded(self._get_file_mtime())
@@ -332,6 +339,15 @@ class Agent(BaseModel):
         """
         self._load_metadata()
         return self._get_cache().commands_used or {}
+
+    def get_models_used(self) -> set:
+        """Get set of all models seen in assistant messages (cached)."""
+        self._load_metadata()
+        return self._get_cache().models_used or set()
+
+    def get_primary_model(self) -> Optional[str]:
+        """Return the first model encountered, or None if no messages have a model."""
+        return next(iter(self.get_models_used()), None)
 
     @property
     def start_time(self) -> Optional[datetime]:

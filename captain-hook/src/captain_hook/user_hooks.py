@@ -1,12 +1,13 @@
 """
 User Interaction Hooks
 
-Hook models for user-facing events: prompt submission, permission requests, and notifications.
+Hook models for user-facing events: prompt submission, permission requests,
+notifications, denials, and MCP elicitations.
 """
 
 from __future__ import annotations
 
-from typing import Literal, Optional
+from typing import Any, Dict, Literal, Optional
 from pydantic import Field
 
 from .base import BaseHook
@@ -83,8 +84,83 @@ class NotificationHook(BaseHook):
     )
 
 
+class PermissionDeniedHook(BaseHook):
+    """Auto mode denied a tool call. Cannot block execution."""
+
+    hook_event_name: Literal["PermissionDenied"] = Field(
+        default="PermissionDenied",
+        description="Always 'PermissionDenied' for this hook type"
+    )
+
+    tool_name: str = Field(
+        ...,
+        description="Name of the tool whose call was denied"
+    )
+
+    tool_use_id: str = Field(
+        ...,
+        description="Unique identifier for the denied tool invocation"
+    )
+
+    reason: str = Field(
+        ...,
+        description="Denial reason string explaining why the tool call was rejected"
+    )
+
+    tool_input: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Original input parameters of the denied tool call"
+    )
+
+
+class ElicitationHook(BaseHook):
+    """MCP server requested structured input from user. CAN block via exit 2."""
+
+    hook_event_name: Literal["Elicitation"] = Field(
+        default="Elicitation",
+        description="Always 'Elicitation' for this hook type"
+    )
+
+    mcp_server: str = Field(
+        ...,
+        description="Name of the MCP server making the elicitation request"
+    )
+
+    tool_name: str = Field(
+        ...,
+        description="Tool that triggered the elicitation request"
+    )
+
+    request: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="The form/schema that the MCP server requested input for"
+    )
+
+
+class ElicitationResultHook(BaseHook):
+    """User responded to an MCP elicitation request. CAN block via exit 2."""
+
+    hook_event_name: Literal["ElicitationResult"] = Field(
+        default="ElicitationResult",
+        description="Always 'ElicitationResult' for this hook type"
+    )
+
+    mcp_server: str = Field(
+        ...,
+        description="Name of the MCP server that originally requested the elicitation"
+    )
+
+    user_response: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="The structured response provided by the user"
+    )
+
+
 __all__ = [
     "UserPromptSubmitHook",
     "PermissionRequestHook",
     "NotificationHook",
+    "PermissionDeniedHook",
+    "ElicitationHook",
+    "ElicitationResultHook",
 ]

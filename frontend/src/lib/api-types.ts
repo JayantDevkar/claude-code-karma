@@ -479,6 +479,7 @@ export interface StatItem {
 	title: string;
 	value: string | number;
 	description?: string;
+	footnote?: string;
 	// Using 'any' for icon to allow Lucide components which have complex signatures
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	icon?: any;
@@ -630,8 +631,9 @@ export interface SubagentState {
 	agent_type: string;
 	status: SubagentStatus;
 	transcript_path: string | null;
-	started_at: string;
+	started_at: string | null;
 	completed_at: string | null;
+	duration_ms: number | null;
 }
 
 export interface LiveSessionSummary {
@@ -1010,15 +1012,60 @@ export interface PlanStats {
 }
 
 /**
- * Response from /projects/{encoded_name}/memory endpoint.
- * Contains the project's MEMORY.md content.
+ * Type classification for a memory file (from YAML frontmatter).
  */
-export interface ProjectMemory {
+export type MemoryFileType = 'user' | 'feedback' | 'project' | 'reference';
+
+/**
+ * Per-file metadata for one entry in the memory directory.
+ * Returned in the `files` array of a ProjectMemory response.
+ */
+export interface MemoryFileMeta {
+	filename: string;
+	name: string;
+	description: string;
+	type: MemoryFileType | null;
+	word_count: number;
+	size_bytes: number;
+	modified: string;
+	linked_from_index: boolean;
+}
+
+/**
+ * The MEMORY.md index entry returned alongside files[].
+ * Contains the full content (no frontmatter expected) plus stats.
+ */
+export interface ProjectMemoryIndexEntry {
 	content: string;
 	word_count: number;
 	size_bytes: number;
 	modified: string;
 	exists: boolean;
+}
+
+/**
+ * Response from /projects/{encoded_name}/memory endpoint.
+ * Wraps the index entry plus metadata for every other *.md file
+ * in the project's memory/ directory.
+ */
+export interface ProjectMemory {
+	index: ProjectMemoryIndexEntry;
+	files: MemoryFileMeta[];
+}
+
+/**
+ * Response from /projects/{encoded_name}/memory/files/{filename} endpoint.
+ * Returns the full body content of one child memory file (frontmatter stripped).
+ */
+export interface ProjectMemoryFile {
+	filename: string;
+	name: string;
+	description: string;
+	type: MemoryFileType | null;
+	content: string;
+	word_count: number;
+	size_bytes: number;
+	modified: string;
 }
 
 // ============================================================================
@@ -1721,8 +1768,7 @@ export interface HookScriptDetail {
 
 // ============================================
 // Sync Types
-// ============================================
-
+// =====================================
 export interface SyncDetect {
 	syncthing_installed: boolean;
 	syncthing_running: boolean;
@@ -2040,4 +2086,228 @@ export interface InheritResult {
 	skill_name: string;
 	inherited_name: string;
 	scope: string;
+=======
+// Tickets (session ↔ ticket linking)
+// ============================================
+
+export type TicketProvider = 'linear' | 'jira' | 'github';
+export type TicketLinkSource = 'branch' | 'slash_command' | 'dashboard';
+
+export interface Ticket {
+	id: number;
+	provider: TicketProvider;
+	external_key: string;
+	url: string;
+	title: string | null;
+	status: string | null;
+	metadata_json: string | null;
+	metadata_updated_at: string | null;
+	first_seen_at: string;
+}
+
+export interface SessionTicketLink {
+	id: number;
+	session_uuid: string;
+	session_slug: string | null;
+	ticket_id: number;
+	link_source: TicketLinkSource;
+	linked_at: string;
+}
+
+/** Row returned from GET /sessions/{uuid}/tickets — ticket fields plus link metadata inline. */
+export interface SessionTicketRow extends Ticket {
+	link_id: number;
+	link_source: TicketLinkSource;
+	linked_at: string;
+	session_slug: string | null;
+}
+
+/** Live-session metadata attached to ticket-detail session rows when the
+ * session is currently active (not yet in the indexed `sessions` table).
+ * See api/services/ticket_session_enrichment.py. */
+export interface LiveSessionMeta {
+	status: LiveSessionState;
+	started_at: string | null;
+	last_updated: string | null;
+	cwd: string | null;
+}
+
+/** Row returned from GET /tickets/{provider}/{external_key}/sessions —
+ * a session_tickets join with sessions (LEFT JOIN), enriched with live
+ * data when the indexed `sessions` row doesn't exist yet. */
+export interface TicketDetailSessionRow {
+	link_id: number;
+	session_uuid: string;
+	session_slug: string | null;
+	link_source: TicketLinkSource;
+	linked_at: string;
+	sessions_slug: string | null;
+	project_encoded_name: string | null;
+	start_time: string | null;
+	end_time: string | null;
+	initial_prompt: string | null;
+	live: LiveSessionMeta | null;
+}
+
+/** Row returned from GET /tickets — ticket fields plus aggregate counts. */
+export interface TicketListItem {
+	id: number;
+	provider: TicketProvider;
+	external_key: string;
+	url: string;
+	title: string | null;
+	status: string | null;
+	first_seen_at: string;
+	metadata_updated_at: string | null;
+	session_count: number;
+	last_linked_at: string | null;
+}
+
+export interface CreateLinkRequest {
+	ref: string;
+	provider?: TicketProvider;
+	url?: string;
+	session_slug?: string;
+	source: TicketLinkSource;
+}
+
+export interface CreateLinkResponse {
+	link: SessionTicketLink;
+	ticket: Ticket;
+}
+
+// ============================================
+// Background Shells (v13)
+// ============================================
+
+export type ShellToolName = 'Bash' | 'Monitor' | 'Manual';
+export type ShellTerminationReason = 'kill' | 'natural' | 'timeout' | 'session_end';
+export type ShellStatusFilter = 'running' | 'closed';
+
+/** One BashOutput poll against a parent background shell. */
+export interface ShellPoll {
+	id: number;
+	shell_row_id: number;
+	polled_at: string;
+	filter_pattern: string | null;
+	output_bytes: number;
+	output_excerpt: string | null;
+	output_truncated: 0 | 1;
+	tool_use_id: string;
+}
+
+/** A single background shell or Monitor process. polls is empty in list views. */
+export interface BackgroundShell {
+	id: number;
+	session_uuid: string;
+	tool_use_id: string;
+	shell_id: string | null;
+	tool_name: ShellToolName;
+	command: string;
+	command_truncated: 0 | 1;
+	description: string | null;
+	is_persistent: 0 | 1;
+	timeout_ms: number | null;
+	spawned_at: string;
+	terminated_at: string | null;
+	terminated_by: ShellTerminationReason | null;
+	exit_code: number | null;
+	poll_count: number;
+	total_output_bytes: number;
+	last_output_at: string | null;
+	spawn_message_uuid: string | null;
+	polls?: ShellPoll[];
+	// Present on /shells global list rows only:
+	project_encoded_name?: string;
+	session_slug?: string | null;
+	project_display_name?: string | null;
+}
+
+export interface ShellsListResponse {
+	shells: BackgroundShell[];
+	count: number;
+	session_uuid?: string;
+}
+
+export interface ShellsProjectRollupRow {
+	project_encoded_name: string;
+	project_display_name: string | null;
+	shell_count: number;
+	running_count: number;
+	total_output_bytes: number;
+}
+
+export interface ShellsProjectRollupResponse {
+	projects: ShellsProjectRollupRow[];
+	count: number;
+}
+
+// ============================================
+// Cron (v13)
+// ============================================
+
+export type CronDeletionReason = 'CronDelete' | 'session_end' | 'expiry' | 'unknown';
+export type CronStateTriggerEvent =
+	| 'CronCreate'
+	| 'CronDelete'
+	| 'CronList'
+	| 'session_start';
+export type CronFireInferenceSource = 'jsonl' | 'hook';
+
+/** A scheduled cron job created via CronCreate. */
+export interface CronJob {
+	id: number;
+	session_uuid: string;
+	tool_use_id: string;
+	cron_id: string | null;
+	cron_expression: string;
+	prompt: string;
+	recurring: 0 | 1;
+	created_at: string;
+	deleted_at: string | null;
+	deleted_via: CronDeletionReason | null;
+	ttl_expires_at: string;
+	create_message_uuid: string | null;
+	fires?: CronFire[];
+	latest_state?: CronStateSnapshot | null;
+	// Present on /cron global list rows:
+	project_encoded_name?: string;
+	session_slug?: string | null;
+	project_display_name?: string | null;
+}
+
+/** A single inferred fire of a cron job. Derived on read; never persisted. */
+export interface CronFire {
+	fired_at: string;
+	triggering_message_uuid: string | null;
+	inference_confidence: number;
+	inference_source: CronFireInferenceSource;
+	outcome_excerpt: string | null;
+}
+
+/** Snapshot of Claude's in-memory cron table — written by the optional hook. */
+export interface CronStateSnapshot {
+	id: number;
+	session_uuid: string;
+	captured_at: string;
+	trigger_event: CronStateTriggerEvent;
+	payload_json: string;
+}
+
+export interface CronListResponse {
+	jobs: CronJob[];
+	count: number;
+	session_uuid?: string;
+}
+
+export interface CronProjectRollupRow {
+	project_encoded_name: string;
+	project_display_name: string | null;
+	cron_count: number;
+	active_count: number;
+}
+
+export interface CronProjectRollupResponse {
+	projects: CronProjectRollupRow[];
+	count: number;
 }

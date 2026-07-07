@@ -140,8 +140,8 @@
 	<!-- Page Header -->
 	<PageHeader
 		title="Hooks"
-		icon={Webhook}
-		iconColor="--nav-amber"
+		iconName="hooks"
+		iconColor="--nav-cyan"
 		breadcrumbs={[{ label: 'Dashboard', href: '/' }, { label: 'Hooks' }]}
 		subtitle="Hook scripts intercepting your Claude Code sessions"
 	/>
@@ -284,7 +284,7 @@
 									class="
 										px-2 py-0.5
 										text-[10px] font-semibold uppercase tracking-wider
-										bg-red-500/10 text-red-600 dark:text-red-400
+										bg-[var(--error-subtle)] text-[var(--error)]
 										rounded-full
 									"
 								>

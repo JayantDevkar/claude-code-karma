@@ -9,6 +9,7 @@ These functions work with any ConversationEntity (Session or Agent) via
 the protocol in models/conversation.py.
 """
 
+import re
 from collections import Counter
 from typing import Optional
 
@@ -63,6 +64,26 @@ def build_conversation_timeline(
 
     # Pass 1: Collect all tool results for later merging
     tool_results = collect_tool_results(conversation, extract_spawned_agent=True, parse_xml=True)
+
+    # Pass 1b: Collect taskId → subject from TaskCreate calls so TaskUpdate
+    # events can display the task description even though updates only send taskId + status.
+    #
+    # TaskCreate input has 'subject' but NO 'taskId' — the ID is assigned by the
+    # task runtime and returned in the result as "Task #N created successfully: ...".
+    # We parse it from the result content and map it to the input subject.
+    task_subjects: dict[str, str] = {}
+    for msg in conversation.iter_messages():
+        if isinstance(msg, AssistantMessage):
+            for block in msg.content_blocks:
+                if isinstance(block, ToolUseBlock) and block.name == "TaskCreate":
+                    subject = str(block.input.get("subject", ""))
+                    if not subject:
+                        continue
+                    result = tool_results.get(block.id)
+                    if result:
+                        m = re.search(r"Task #(\d+)", result.content)
+                        if m:
+                            task_subjects[m.group(1)] = subject
 
     # Pass 2: Build events with merged results
     events: list[TimelineEvent] = []
@@ -150,7 +171,7 @@ def build_conversation_timeline(
 
                     # Build complete metadata with merged result
                     metadata = _build_tool_call_metadata(
-                        block, base_metadata, result_data, subagent_info
+                        block, base_metadata, result_data, subagent_info, task_subjects
                     )
 
                     # Add agent context for subagent messages
@@ -308,6 +329,7 @@ def _build_tool_call_metadata(
     base_metadata: dict,
     result_data: Optional[ToolResultData],
     subagent_info: dict[str, Optional[str]],
+    task_subjects: Optional[dict[str, str]] = None,
 ) -> dict:
     """Build complete metadata for a tool call, merging in result if available."""
     metadata = {"tool_name": block.name, "tool_id": block.id, **base_metadata}
@@ -315,6 +337,12 @@ def _build_tool_call_metadata(
     # For Task tool, add spawning context
     if block.name in ("Task", "Agent"):
         metadata["is_spawn_task"] = True
+
+    # Annotate TaskUpdate with the subject from the matching TaskCreate
+    if block.name == "TaskUpdate" and task_subjects:
+        task_id = str(block.input.get("taskId", ""))
+        if task_id and task_id in task_subjects:
+            metadata["task_subject"] = task_subjects[task_id]
 
     if result_data is None:
         return metadata

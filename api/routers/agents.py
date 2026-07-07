@@ -32,6 +32,7 @@ from routers.agent_analytics import (
     get_agent_detail,
     get_agent_history,
 )
+from routers.projects import safely_resolve_project
 from schemas import (
     AgentCreateRequest,
     AgentDetail,
@@ -73,7 +74,8 @@ def get_settings() -> Settings:
 def get_agents_dir(
     config: Annotated[Settings, Depends(get_settings)],
     project: Annotated[
-        str | None, Query(description="Project encoded name for project-specific agents")
+        str | None,
+        Query(description="Project identifier (slug or encoded_name) for project-specific agents"),
     ] = None,
 ) -> Path:
     """
@@ -81,13 +83,14 @@ def get_agents_dir(
 
     Args:
         config: Application settings (injected)
-        project: Optional project encoded name for project-specific agents
+        project: Optional project identifier (slug or encoded_name)
 
     Returns:
         Path to agents directory (global or project-specific)
     """
     if project:
-        proj = Project.from_encoded_name(project)
+        resolved = safely_resolve_project(project) or project
+        proj = Project.from_encoded_name(resolved)
         return Path(proj.path) / ".claude" / "agents"
     return config.agents_dir
 
@@ -326,7 +329,9 @@ def get_agent_usage_trend(
 
         with sqlite_read() as conn:
             if conn is not None:
-                data = query_agent_usage_trend(conn, project=project, period=period)
+                data = query_agent_usage_trend(
+                    conn, project=safely_resolve_project(project), period=period
+                )
                 return UsageTrendResponse(
                     total=data["total"],
                     by_item=data["by_item"],

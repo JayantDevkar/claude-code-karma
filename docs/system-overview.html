@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Claude Code Karma — System Overview</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,400&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    /* Paper & ink */
+    --paper:        #f7f4ed;
+    --paper-2:      #fffdf8;
+    --ink:          #211d18;
+    --ink-soft:     #4a443b;
+    --ink-faint:    #8a8175;
+    --rule:         #e3ddd0;
+    --rule-soft:    #ece7db;
+
+    /* Accents */
+    --clay:         #bf4d2e;   /* primary — rust/terracotta */
+    --clay-deep:    #98381e;
+    --clay-wash:    #f3e2da;
+    --forest:       #3f6149;   /* secondary — muted green */
+    --forest-wash:  #e4ece4;
+    --gold:         #b8862f;   /* tertiary — ochre */
+    --gold-wash:    #f1e7d0;
+
+    --shadow:       0 1px 2px rgba(33,29,24,.06), 0 8px 24px -12px rgba(33,29,24,.18);
+
+    --maxw: 980px;
+  }
+
+  * { box-sizing: border-box; }
+
+  html { -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+
+  body {
+    margin: 0;
+    background:
+      radial-gradient(1200px 600px at 80% -10%, var(--clay-wash) 0%, transparent 55%),
+      radial-gradient(900px 500px at -10% 110%, var(--forest-wash) 0%, transparent 50%),
+      var(--paper);
+    color: var(--ink);
+    font-family: "IBM Plex Sans", system-ui, sans-serif;
+    font-size: 16px;
+    line-height: 1.65;
+  }
+
+  .wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 32px 96px; }
+
+  /* ---------- Typography ---------- */
+  h1, h2, h3, h4 { font-family: "Fraunces", Georgia, serif; font-weight: 600; line-height: 1.12; letter-spacing: -0.01em; color: var(--ink); }
+  .mono { font-family: "IBM Plex Mono", ui-monospace, monospace; }
+
+  /* ---------- Cover / masthead ---------- */
+  header.cover {
+    max-width: var(--maxw);
+    margin: 0 auto;
+    padding: 84px 32px 40px;
+  }
+  .eyebrow {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: var(--clay-deep);
+    display: flex; align-items: center; gap: 14px;
+    margin-bottom: 26px;
+  }
+  .eyebrow::after { content:""; flex:1; height:1px; background: linear-gradient(90deg, var(--clay) 0%, transparent 100%); opacity:.5; }
+
+  h1.title {
+    font-size: clamp(46px, 8vw, 82px);
+    line-height: 0.98;
+    margin: 0 0 22px;
+    font-weight: 600;
+    letter-spacing: -0.025em;
+  }
+  h1.title em { font-style: italic; color: var(--clay); font-weight: 500; }
+
+  .lede {
+    font-size: clamp(18px, 2.4vw, 22px);
+    line-height: 1.5;
+    color: var(--ink-soft);
+    max-width: 40ch;
+    margin: 0 0 34px;
+    font-weight: 400;
+  }
+  .lede strong { color: var(--ink); font-weight: 600; }
+
+  .badges { display: flex; flex-wrap: wrap; gap: 10px; }
+  .badge {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px; font-weight: 500;
+    padding: 6px 13px;
+    border-radius: 999px;
+    border: 1px solid var(--rule);
+    background: var(--paper-2);
+    color: var(--ink-soft);
+    display: inline-flex; align-items: center; gap: 7px;
+  }
+  .badge .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--clay); }
+  .badge.green .dot { background: var(--forest); }
+  .badge.gold .dot { background: var(--gold); }
+
+  /* ---------- Section scaffolding ---------- */
+  section { margin-top: 64px; }
+  .sec-head { display: flex; align-items: baseline; gap: 16px; margin-bottom: 8px; }
+  .sec-num {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 13px; font-weight: 600;
+    color: var(--clay);
+    padding-top: 6px;
+    letter-spacing: 0.05em;
+  }
+  h2 { font-size: clamp(28px, 4vw, 38px); margin: 0; }
+  .sec-sub { color: var(--ink-faint); font-size: 15px; margin: 6px 0 0; max-width: 60ch; }
+  .sec-rule { height: 2px; background: linear-gradient(90deg, var(--ink) 0%, var(--rule) 40%, transparent 100%); margin: 18px 0 30px; opacity: .85; }
+
+  p { margin: 0 0 16px; }
+  a { color: var(--clay-deep); text-decoration-color: var(--clay-wash); text-underline-offset: 3px; }
+
+  /* ---------- Principle row ---------- */
+  .principles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 8px; }
+  .principle {
+    background: var(--paper-2);
+    border: 1px solid var(--rule);
+    border-radius: 14px;
+    padding: 22px 20px;
+    box-shadow: var(--shadow);
+  }
+  .principle .icon { font-size: 22px; line-height:1; margin-bottom: 12px; display:block; }
+  .principle h4 { font-size: 17px; margin: 0 0 6px; }
+  .principle p { font-size: 14px; color: var(--ink-soft); margin: 0; line-height: 1.55; }
+
+  /* ---------- Architecture diagram ---------- */
+  .diagram {
+    background: var(--paper-2);
+    border: 1px solid var(--rule);
+    border-radius: 18px;
+    padding: 32px 28px 24px;
+    box-shadow: var(--shadow);
+  }
+  .diagram svg { width: 100%; height: auto; display: block; }
+  .diagram-legend {
+    display: flex; flex-wrap: wrap; gap: 18px 26px;
+    margin-top: 22px; padding-top: 20px; border-top: 1px dashed var(--rule);
+    font-size: 13px; color: var(--ink-soft);
+  }
+  .diagram-legend span { display: inline-flex; align-items: center; gap: 8px; }
+  .swatch { width: 14px; height: 14px; border-radius: 4px; flex: none; }
+
+  /* ---------- Feature grid ---------- */
+  .features { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+  .feature {
+    position: relative;
+    background: var(--paper-2);
+    border: 1px solid var(--rule);
+    border-left: 3px solid var(--clay);
+    border-radius: 12px;
+    padding: 20px 22px;
+    box-shadow: var(--shadow);
+  }
+  .feature.f-green { border-left-color: var(--forest); }
+  .feature.f-gold  { border-left-color: var(--gold); }
+  .feature h4 { font-size: 18px; margin: 0 0 7px; display:flex; align-items:center; gap:9px; }
+  .feature h4 .tag {
+    font-family:"IBM Plex Mono",monospace; font-size: 10.5px; font-weight: 500;
+    color: var(--ink-faint); border:1px solid var(--rule); border-radius: 5px;
+    padding: 2px 7px; letter-spacing: .03em; margin-left: auto;
+  }
+  .feature p { font-size: 14px; color: var(--ink-soft); margin: 0; line-height: 1.56; }
+
+  /* ---------- How-it-works steps ---------- */
+  .steps { counter-reset: step; display: grid; gap: 14px; }
+  .step {
+    display: grid; grid-template-columns: 46px 1fr; gap: 18px; align-items: start;
+    background: var(--paper-2); border: 1px solid var(--rule); border-radius: 12px;
+    padding: 18px 22px; box-shadow: var(--shadow);
+  }
+  .step::before {
+    counter-increment: step; content: counter(step, decimal-leading-zero);
+    font-family:"IBM Plex Mono",monospace; font-size: 15px; font-weight: 600;
+    color: #fff; background: var(--ink); border-radius: 9px;
+    width: 40px; height: 40px; display:flex; align-items:center; justify-content:center;
+  }
+  .step:nth-child(1)::before { background: var(--clay); }
+  .step:nth-child(2)::before { background: var(--clay-deep); }
+  .step:nth-child(3)::before { background: var(--gold); }
+  .step:nth-child(4)::before { background: var(--forest); }
+  .step h4 { font-size: 17px; margin: 2px 0 5px; }
+  .step p { font-size: 14px; color: var(--ink-soft); margin: 0; }
+  .step code { font-family:"IBM Plex Mono",monospace; font-size: 12.5px; background: var(--clay-wash); color: var(--clay-deep); padding: 1px 6px; border-radius: 5px; }
+
+  /* ---------- Storage table ---------- */
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; background: var(--paper-2); border: 1px solid var(--rule); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); }
+  thead th { text-align: left; font-family:"IBM Plex Mono",monospace; font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-faint); padding: 13px 18px; background: var(--paper); border-bottom: 1px solid var(--rule); }
+  tbody td { padding: 12px 18px; border-bottom: 1px solid var(--rule-soft); vertical-align: top; }
+  tbody tr:last-child td { border-bottom: none; }
+  td.path { font-family:"IBM Plex Mono",monospace; font-size: 12px; color: var(--clay-deep); white-space: nowrap; }
+  td .what { color: var(--ink); font-weight: 500; }
+
+  /* ---------- State pills ---------- */
+  .states { display:flex; flex-wrap:wrap; gap: 10px; margin-top: 16px; }
+  .state-pill { display:inline-flex; align-items:center; gap:9px; border:1px solid var(--rule); background:var(--paper-2); border-radius:999px; padding:8px 15px 8px 12px; font-size:13.5px; box-shadow: var(--shadow); }
+  .state-pill .mono { font-size:11.5px; font-weight:600; padding:2px 8px; border-radius:6px; }
+  .s-live  .mono { background:#e4ece4; color:#2f6b3f; }
+  .s-wait  .mono { background:#f1e7d0; color:#8a6418; }
+  .s-stop  .mono { background:var(--clay-wash); color:var(--clay-deep); }
+  .s-stale .mono { background:#ebe7df; color:#766c5c; }
+  .state-pill span.desc { color: var(--ink-soft); }
+
+  /* ---------- Tech stack ---------- */
+  .stack { display:grid; grid-template-columns: repeat(2,1fr); gap: 16px; }
+  .stack-col { background: var(--paper-2); border:1px solid var(--rule); border-radius: 14px; padding: 22px 24px; box-shadow: var(--shadow); }
+  .stack-col h4 { font-size: 16px; margin: 0 0 14px; display:flex; align-items:center; gap:10px; }
+  .stack-col h4::before { content:""; width:10px; height:10px; border-radius:3px; background: var(--clay); }
+  .stack-col.s2 h4::before { background: var(--forest); }
+  .chips { display:flex; flex-wrap:wrap; gap: 8px; }
+  .chip { font-family:"IBM Plex Mono",monospace; font-size: 12px; padding: 5px 11px; border-radius: 7px; background: var(--paper); border:1px solid var(--rule); color: var(--ink-soft); }
+
+  /* ---------- Code block ---------- */
+  pre {
+    font-family:"IBM Plex Mono",monospace; font-size: 13px; line-height: 1.7;
+    background: #221d18; color: #f2ece0; border-radius: 14px; padding: 22px 24px;
+    overflow-x: auto; box-shadow: var(--shadow); margin: 0;
+    border: 1px solid #000;
+  }
+  pre .c { color: #9c9384; }      /* comment */
+  pre .p { color: #e58f6b; }      /* prompt / accent */
+  pre .k { color: #9cc4a8; }      /* keyword */
+
+  /* ---------- Footer ---------- */
+  footer { max-width: var(--maxw); margin: 80px auto 0; padding: 28px 32px; border-top: 2px solid var(--ink); display:flex; flex-wrap:wrap; gap: 12px 24px; align-items:baseline; justify-content: space-between; }
+  footer .brand { font-family:"Fraunces",serif; font-weight:600; font-size: 18px; }
+  footer .meta { font-family:"IBM Plex Mono",monospace; font-size: 12px; color: var(--ink-faint); }
+
+  /* ---------- Print: Letter & A4 ---------- */
+  @media print {
+    :root { --shadow: none; }
+    @page { size: Letter; margin: 16mm 14mm; }
+    html, body {
+      background: #fff !important;
+      font-size: 10.5pt;
+    }
+    body { color: #000; }
+    .wrap, header.cover, footer { max-width: 100%; padding-left: 0; padding-right: 0; }
+    header.cover { padding-top: 0; }
+    h1.title { font-size: 40pt; }
+    .lede { font-size: 13pt; max-width: 100%; }
+    section { margin-top: 26px; }
+    /* keep blocks intact across page breaks */
+    .principle, .feature, .step, .stack-col, .diagram, table, pre, .state-pill { break-inside: avoid; page-break-inside: avoid; box-shadow: none; }
+    .sec-head, h2, h3, h4 { break-after: avoid; page-break-after: avoid; }
+    .diagram, .feature, .principle, .stack-col, .step, .state-pill, .badge, table, pre {
+      border-color: #c9c2b4 !important;
+    }
+    pre { background: #f3efe7; color: #1a1712; border-color:#c9c2b4; }
+    pre .p { color: #b14a26; } pre .c { color:#7a7264; } pre .k { color:#3f6149; }
+    a { color: #000; text-decoration: underline; }
+    .page-break { break-before: page; page-break-before: always; }
+    .no-print { display: none !important; }
+  }
+
+  @media (max-width: 720px) {
+    .principles, .features, .stack { grid-template-columns: 1fr; }
+    .wrap { padding: 0 20px 64px; }
+    header.cover { padding: 56px 20px 32px; }
+  }
+
+  /* print hint banner (screen only) */
+  .print-hint {
+    max-width: var(--maxw); margin: 24px auto 0; padding: 0 32px;
+  }
+  .print-hint .inner {
+    display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+    background: var(--forest-wash); border:1px solid #cdddcf; border-radius: 12px;
+    padding: 12px 18px; font-size: 13.5px; color: #2f5238;
+  }
+  .print-hint button {
+    margin-left:auto; font-family:"IBM Plex Mono",monospace; font-size:12px; font-weight:600;
+    background: var(--forest); color:#fff; border:none; border-radius: 8px; padding: 8px 16px; cursor:pointer;
+  }
+  .print-hint button:hover { background:#2f5238; }
+</style>
+</head>
+<body>
+
+<header class="cover">
+  <div class="eyebrow">System Overview · Local-First Observability</div>
+  <h1 class="title">Claude&nbsp;Code <em>Karma</em></h1>
+  <p class="lede">Your Claude Code sessions deserve more than a terminal. Karma turns the raw data in <strong>~/.claude/</strong> into a visual story — sessions, timelines, costs, and live activity — <strong>entirely on your machine</strong>.</p>
+  <div class="badges">
+    <span class="badge"><span class="dot"></span>Local-first</span>
+    <span class="badge green"><span class="dot"></span>No cloud · no accounts · no telemetry</span>
+    <span class="badge gold"><span class="dot"></span>Apache-2.0</span>
+    <span class="badge"><span class="dot"></span>CLI + Claude Desktop</span>
+  </div>
+</header>
+
+<div class="print-hint no-print">
+  <div class="inner">
+    🖨️ Built to print cleanly on <strong>US&nbsp;Letter</strong> and <strong>A4</strong> — page breaks and colors are tuned for paper.
+    <button onclick="window.print()">Print / Save PDF</button>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <!-- 01 · WHAT IT IS -->
+  <section id="what">
+    <div class="sec-head">
+      <span class="sec-num">01</span>
+      <h2>What it is</h2>
+    </div>
+    <div class="sec-rule"></div>
+    <p style="font-size:17px; max-width:66ch; color:var(--ink-soft);">
+      Claude Code already saves everything locally — every session, every tool call, every token — as <span class="mono" style="font-size:14px;">JSONL</span> files buried under <span class="mono" style="font-size:14px;">~/.claude/</span>. You'll never read them by hand. <strong style="color:var(--ink)">Karma reads those files and serves them through a local dashboard</strong>, so the goldmine of data you're already generating becomes browsable, searchable, and beautiful.
+    </p>
+    <div class="principles">
+      <div class="principle">
+        <span class="icon">🔒</span>
+        <h4>Stays on your machine</h4>
+        <p>The API reads your local files and indexes metadata in a local SQLite database. Nothing is ever uploaded.</p>
+      </div>
+      <div class="principle">
+        <span class="icon">🔌</span>
+        <h4>Zero instrumentation</h4>
+        <p>No SDK to wire in. It works with any session that writes to <span class="mono" style="font-size:12px">~/.claude/</span> — Claude Code CLI <em>and</em> Claude Desktop.</p>
+      </div>
+      <div class="principle">
+        <span class="icon">⚡</span>
+        <h4>Live + historical</h4>
+        <p>Optional hooks stream real-time session state, while the parser reconstructs the full history of everything that happened.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 02 · ARCHITECTURE -->
+  <section id="architecture">
+    <div class="sec-head">
+      <span class="sec-num">02</span>
+      <h2>How the pieces fit</h2>
+    </div>
+    <p class="sec-sub">A three-tier pipeline: local files → a parsing API → a reactive dashboard. An optional hooks layer feeds live state in alongside the historical read.</p>
+    <div class="sec-rule"></div>
+
+    <div class="diagram">
+      <svg viewBox="0 0 920 352" role="img" aria-label="Architecture data-flow diagram">
+        <defs>
+          <marker id="arrow" markerWidth="10" markerHeight="10" refX="7" refY="3" orient="auto" markerUnits="strokeWidth">
+            <path d="M0,0 L7,3 L0,6 Z" fill="#bf4d2e"/>
+          </marker>
+          <marker id="arrowg" markerWidth="10" markerHeight="10" refX="7" refY="3" orient="auto" markerUnits="strokeWidth">
+            <path d="M0,0 L7,3 L0,6 Z" fill="#3f6149"/>
+          </marker>
+          <style>
+            .box { fill:#fffdf8; stroke:#e3ddd0; stroke-width:1.5; }
+            .lbl { font-family:"Fraunces",serif; font-weight:600; fill:#211d18; }
+            .sub { font-family:"IBM Plex Mono",monospace; fill:#8a8175; }
+            .desc { font-family:"IBM Plex Sans",sans-serif; fill:#4a443b; }
+            .flow { stroke:#bf4d2e; stroke-width:2.2; fill:none; }
+            .flowg { stroke:#3f6149; stroke-width:2.2; fill:none; stroke-dasharray:5 4; }
+            .tier { font-family:"IBM Plex Mono",monospace; fill:#bf4d2e; font-weight:600; letter-spacing:.1em; }
+          </style>
+        </defs>
+
+          <!-- tier labels -->
+          <text class="tier" x="20" y="30" font-size="11">SOURCE</text>
+          <text class="tier" x="285" y="30" font-size="11">BACKEND · :8000</text>
+          <text class="tier" x="700" y="30" font-size="11">FRONTEND · :5173</text>
+
+          <!-- 1. Source -->
+          <rect class="box" x="20" y="60" width="210" height="120" rx="14"/>
+          <text class="lbl" x="40" y="92" font-size="18">~/.claude/</text>
+          <text class="sub" x="40" y="116" font-size="11">projects/*.jsonl</text>
+          <text class="sub" x="40" y="134" font-size="11">todos/ · debug/</text>
+          <text class="sub" x="40" y="152" font-size="11">subagents/ · tool-results/</text>
+          <text class="desc" x="40" y="172" font-size="11" font-style="italic">written by Claude Code</text>
+
+          <!-- 2. API -->
+          <rect class="box" x="285" y="60" width="330" height="240" rx="14"/>
+          <text class="lbl" x="305" y="92" font-size="18">FastAPI</text>
+          <text class="desc" x="305" y="114" font-size="12">Python · Pydantic · aiofiles</text>
+
+          <rect class="box" x="305" y="132" width="135" height="62" rx="10" fill="#f3e2da" stroke="#e6c4b5"/>
+          <text class="lbl" x="322" y="158" font-size="13">models/</text>
+          <text class="sub" x="322" y="178" font-size="10">JSONL → Pydantic</text>
+
+          <rect class="box" x="460" y="132" width="135" height="62" rx="10" fill="#e4ece4" stroke="#cdddcf"/>
+          <text class="lbl" x="477" y="158" font-size="13">routers/</text>
+          <text class="sub" x="477" y="178" font-size="10">REST endpoints</text>
+
+          <rect class="box" x="305" y="208" width="290" height="62" rx="10" fill="#f1e7d0" stroke="#e3d2a8"/>
+          <text class="lbl" x="322" y="234" font-size="13">SQLite index</text>
+          <text class="sub" x="322" y="254" font-size="10">~/.claude_karma/metadata.db</text>
+
+          <!-- 3. Frontend -->
+          <rect class="box" x="670" y="60" width="230" height="120" rx="14"/>
+          <text class="lbl" x="690" y="92" font-size="18">SvelteKit</text>
+          <text class="desc" x="690" y="114" font-size="12">Svelte 5 runes</text>
+          <text class="sub" x="690" y="136" font-size="11">Tailwind · Chart.js</text>
+          <text class="sub" x="690" y="154" font-size="11">routes/ → dashboard</text>
+          <text class="desc" x="690" y="173" font-size="11" font-style="italic">your browser</text>
+
+          <!-- Hooks layer -->
+          <rect class="box" x="670" y="232" width="230" height="98" rx="14" stroke="#3f6149" fill="#e4ece4"/>
+          <text class="lbl" x="690" y="262" font-size="16">Hooks (optional)</text>
+          <text class="sub" x="690" y="284" font-size="10.5">live_session_tracker.py</text>
+          <text class="sub" x="690" y="301" font-size="10.5">title_generator · plan_approval</text>
+          <text class="desc" x="690" y="320" font-size="10.5" font-style="italic">writes live-session state</text>
+
+          <!-- flows -->
+          <path class="flow" d="M230,120 H285" marker-end="url(#arrow)"/>
+          <path class="flow" d="M615,120 H670" marker-end="url(#arrow)"/>
+          <text class="sub" x="232" y="110" font-size="9.5">read</text>
+          <text class="sub" x="620" y="110" font-size="9.5">HTTP / JSON</text>
+
+          <!-- hooks → claude dir + frontend reads live -->
+          <path class="flowg" d="M785,232 C785,205 320,215 232,178" marker-end="url(#arrowg)"/>
+          <text class="sub" x="430" y="208" font-size="9.5" fill="#3f6149">live-sessions/*.json</text>
+        </svg>
+      <div class="diagram-legend">
+        <span><span class="swatch" style="background:#bf4d2e"></span> Primary read path (historical)</span>
+        <span><span class="swatch" style="background:#3f6149"></span> Live tracking path (hooks)</span>
+        <span><span class="swatch" style="background:#f1e7d0;border:1px solid #e3d2a8"></span> Local SQLite cache</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- 03 · WHAT IT DOES -->
+  <section id="features">
+    <div class="sec-head">
+      <span class="sec-num">03</span>
+      <h2>What it does</h2>
+    </div>
+    <p class="sec-sub">Every surface is a different lens on the same local data. Filters persist in the URL so any view is shareable and bookmarkable.</p>
+    <div class="sec-rule"></div>
+
+    <div class="features">
+      <div class="feature">
+        <h4>Sessions <span class="tag">/sessions</span></h4>
+        <p>Browse every session in one place. Full-text search across titles, prompts &amp; slugs; filter by project, branch, status, and date. Live sessions surface at the top with real-time badges.</p>
+      </div>
+      <div class="feature">
+        <h4>Session detail <span class="tag">timeline</span></h4>
+        <p>Replay exactly what happened — every prompt, tool call, thinking block and response, chronologically. Dedicated tabs for Tasks, Files, Subagents, Skills, Commands &amp; per-session Analytics.</p>
+      </div>
+      <div class="feature f-green">
+        <h4>Projects <span class="tag">/projects</span></h4>
+        <p>Workspaces organized by git repository. Stat grids for tokens, cost, duration &amp; cache hit-rate; active-branch filters; sessions grouped by recency. Aggregates across every checkout of a repo.</p>
+      </div>
+      <div class="feature f-green">
+        <h4>Analytics <span class="tag">/analytics</span></h4>
+        <p>Token usage, cost, velocity trends, cache efficiency and coding rhythm across all projects — plus work-mode distribution (exploring vs. building vs. testing) over selectable time windows.</p>
+      </div>
+      <div class="feature f-gold">
+        <h4>Agents &amp; Subagents <span class="tag">/agents</span></h4>
+        <p>Built-in, custom and plugin agents with run counts, token consumption, average duration and project breakdowns. Drill into any agent for its full session history.</p>
+      </div>
+      <div class="feature f-gold">
+        <h4>Tools &amp; Skills <span class="tag">/tools</span></h4>
+        <p>Every built-in tool and MCP integration, grouped by server with call counts. Skills grouped by plugin with context split (main vs. subagent) and complete invocation history.</p>
+      </div>
+      <div class="feature">
+        <h4>Plugins &amp; Hooks <span class="tag">/plugins</span></h4>
+        <p>Installed plugins with the agents, skills, commands, MCP tools &amp; hooks they provide. Hooks are visualized by lifecycle phase, flagging which can block execution.</p>
+      </div>
+      <div class="feature">
+        <h4>Ticket linking <span class="tag">/tickets</span></h4>
+        <p>Attach sessions to Linear, Jira &amp; GitHub issues/PRs. Link by URL, by <span class="mono" style="font-size:12px">/link-ticket</span> command, or auto-detect from branch names. Read-only — caches title/status, never writes back.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 04 · HOW IT DOES IT -->
+  <section id="how" class="page-break">
+    <div class="sec-head">
+      <span class="sec-num">04</span>
+      <h2>How it does it</h2>
+    </div>
+    <p class="sec-sub">From raw JSONL on disk to a rendered chart — the data makes four hops, and never leaves the machine.</p>
+    <div class="sec-rule"></div>
+
+    <div class="steps">
+      <div class="step">
+        <div>
+          <h4>Read local storage</h4>
+          <p>Claude Code persists each session as <code>{uuid}.jsonl</code> under a path-encoded project directory. Karma discovers projects, sessions, subagents, tool-results, todos and debug logs straight from <code>~/.claude/</code>.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div>
+          <h4>Parse into typed models</h4>
+          <p>The <code>models/</code> layer streams JSONL via <code>iter_messages()</code> (lazy loading for huge sessions) into frozen Pydantic models — <span class="mono" style="font-size:12.5px">UserMessage</span>, <span class="mono" style="font-size:12.5px">AssistantMessage</span>, summaries, agents, tool results. Compaction is detected from summary messages; related sessions are chained via leaf-uuid / slug matching.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div>
+          <h4>Index &amp; serve</h4>
+          <p>Metadata is cached in a local SQLite db (<code>~/.claude_karma/metadata.db</code>) so listings stay fast, then exposed through FastAPI <code>routers/</code> — projects, sessions, timeline, tools, analytics, live-sessions, agents, skills, tickets and more.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div>
+          <h4>Render in the browser</h4>
+          <p>The SvelteKit frontend (Svelte 5 runes — <code>$state</code>, <code>$derived</code>, <code>$effect</code>) fetches those endpoints and renders cards, timelines and Chart.js visualizations. Filter state lives in URL search params.</p>
+        </div>
+      </div>
+    </div>
+
+    <h3 style="font-size:21px; margin:38px 0 14px;">Where the data lives</h3>
+    <table>
+      <thead><tr><th>Data</th><th>Location on disk</th></tr></thead>
+      <tbody>
+        <tr><td class="what">Session transcript</td><td class="path">~/.claude/projects/{encoded-path}/{uuid}.jsonl</td></tr>
+        <tr><td class="what">Subagents</td><td class="path">…/{uuid}/subagents/agent-*.jsonl</td></tr>
+        <tr><td class="what">Tool results</td><td class="path">…/{uuid}/tool-results/toolu_*.txt</td></tr>
+        <tr><td class="what">Todos</td><td class="path">~/.claude/todos/{uuid}-*.json</td></tr>
+        <tr><td class="what">Debug logs</td><td class="path">~/.claude/debug/{uuid}.txt</td></tr>
+        <tr><td class="what">Live session state</td><td class="path">~/.claude_karma/live-sessions/{slug}.json</td></tr>
+        <tr><td class="what">Karma metadata index</td><td class="path">~/.claude_karma/metadata.db</td></tr>
+      </tbody>
+    </table>
+    <p style="font-size:13px; color:var(--ink-faint); margin-top:12px;">Path encoding: a leading <span class="mono" style="font-size:12px">/</span> becomes <span class="mono" style="font-size:12px">-</span>, and every other <span class="mono" style="font-size:12px">/</span> becomes <span class="mono" style="font-size:12px">-</span> — so <span class="mono" style="font-size:12px">/Users/me/repo</span> → <span class="mono" style="font-size:12px">-Users-me-repo</span>.</p>
+
+    <h3 style="font-size:21px; margin:38px 0 14px;">Live session tracking</h3>
+    <p style="max-width:66ch; color:var(--ink-soft);">Opt-in Claude Code hooks write small JSON state files as a session moves through its lifecycle. The dashboard polls those files to show real-time status — no daemon, no socket, just the filesystem.</p>
+    <div class="states">
+      <span class="state-pill s-live"><span class="mono">LIVE</span><span class="desc">actively running</span></span>
+      <span class="state-pill s-wait"><span class="mono">WAITING</span><span class="desc">waiting for user input</span></span>
+      <span class="state-pill s-stop"><span class="mono">STOPPED</span><span class="desc">agent finished, session open</span></span>
+      <span class="state-pill s-stale"><span class="mono">STALE</span><span class="desc">user idle 60+ seconds</span></span>
+    </div>
+  </section>
+
+  <!-- 05 · TECH STACK -->
+  <section id="stack">
+    <div class="sec-head">
+      <span class="sec-num">05</span>
+      <h2>Tech stack</h2>
+    </div>
+    <div class="sec-rule"></div>
+    <div class="stack">
+      <div class="stack-col">
+        <h4>Backend — port 8000</h4>
+        <div class="chips">
+          <span class="chip">Python 3.9+</span>
+          <span class="chip">FastAPI</span>
+          <span class="chip">Pydantic 2.x</span>
+          <span class="chip">aiofiles</span>
+          <span class="chip">SQLite</span>
+          <span class="chip">pytest</span>
+          <span class="chip">ruff</span>
+        </div>
+      </div>
+      <div class="stack-col s2">
+        <h4>Frontend — port 5173</h4>
+        <div class="chips">
+          <span class="chip">SvelteKit 2</span>
+          <span class="chip">Svelte 5 (runes)</span>
+          <span class="chip">Tailwind CSS 4</span>
+          <span class="chip">Chart.js 4</span>
+          <span class="chip">bits-ui</span>
+          <span class="chip">lucide-svelte</span>
+          <span class="chip">TypeScript</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 06 · QUICK START -->
+  <section id="start">
+    <div class="sec-head">
+      <span class="sec-num">06</span>
+      <h2>Quick start</h2>
+    </div>
+    <p class="sec-sub">Two terminals. The API parses and serves; the frontend renders. Open the dashboard at <span class="mono" style="font-size:13px">localhost:5173</span>.</p>
+    <div class="sec-rule"></div>
+<pre><span class="c"># Terminal 1 — API</span>
+<span class="k">cd</span> api
+pip install -e <span class="p">".[dev]"</span> &amp;&amp; pip install -r requirements.txt
+uvicorn main:app --reload --port <span class="p">8000</span>
+
+<span class="c"># Terminal 2 — Frontend</span>
+<span class="k">cd</span> frontend
+npm install &amp;&amp; npm run dev
+
+<span class="c"># → open http://localhost:5173</span></pre>
+  </section>
+
+</div>
+
+<footer>
+  <span class="brand">Claude&nbsp;Code Karma</span>
+  <span class="meta">Local-first · Apache-2.0 · github.com/JayantDevkar/claude-code-karma</span>
+</footer>
+
+</body>
+</html>

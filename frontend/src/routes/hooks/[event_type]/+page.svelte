@@ -173,8 +173,8 @@
 							{/if}
 							{#if registration.can_block}
 								<div class="flex items-center gap-1.5">
-									<Shield size={12} class="text-[var(--red)]" />
-									<span class="text-[var(--red)] font-medium"
+									<Shield size={12} class="text-[var(--error)]" />
+									<span class="text-[var(--error)] font-medium"
 										>Can block execution</span
 									>
 								</div>
@@ -467,7 +467,7 @@
 								</h3>
 							</div>
 							{#if relatedEvent.can_block}
-								<Shield size={12} class="text-[var(--red)]" />
+								<Shield size={12} class="text-[var(--error)]" />
 							{/if}
 						</div>
 						<div class="flex items-center gap-2 flex-wrap">

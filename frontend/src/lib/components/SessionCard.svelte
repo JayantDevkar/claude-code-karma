@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { MessageSquare, Users, Clock, Sparkles, GitBranch, Monitor, Globe } from 'lucide-svelte';
+	import { MessageSquare, Users, Clock, Sparkles, GitBranch, Monitor, Globe, Copy } from 'lucide-svelte';
 	import type { SessionSummary, LiveSessionSummary } from '$lib/api-types';
 	import { statusConfig } from '$lib/live-session-config';
 	import {
@@ -13,8 +13,10 @@
 		sessionHasTitle,
 		getSessionDisplayPrompt,
 		isRemoteSession,
-		getTeamMemberColor
+		getTeamMemberColor,
+		copyToClipboard
 	} from '$lib/utils';
+	import { getSessionUrlIdentifier } from '$lib/utils/sessionIdentifier';
 
 	interface Props {
 		session: SessionSummary;
@@ -22,6 +24,7 @@
 		showBranch?: boolean; // Hide branch when inside branch accordion
 		compact?: boolean; // Compact mode for grid view
 		liveSession?: LiveSessionSummary | null; // Live session data for real-time status
+		highlighted?: boolean;
 	}
 
 	let {
@@ -29,7 +32,8 @@
 		projectEncodedName,
 		showBranch = true,
 		compact = false,
-		liveSession = null
+		liveSession = null,
+		highlighted = false
 	}: Props = $props();
 
 	// Determine status (default to completed if not specified)
@@ -116,12 +120,8 @@
 	// Determine URL identifier:
 	// - If session is part of a chain (chain_info exists), use UUID to disambiguate
 	// - Otherwise, use slug for human-readable URLs, or UUID prefix as fallback
-	const isPartOfChain = $derived(session.chain_info !== undefined && session.chain_info !== null);
-	const urlIdentifier = $derived(
-		isPartOfChain
-			? session.uuid.slice(0, 8) // Use UUID for chain sessions to avoid ambiguity
-			: displaySlug || session.uuid.slice(0, 8)
-	);
+	// Shared with last-opened-highlight comparisons via sessionIdentifier helper.
+	const urlIdentifier = $derived(getSessionUrlIdentifier(session, liveSession));
 
 	// Remote session hint for faster API lookup
 	const remoteQueryParam = $derived(isRemote ? '?remote=1' : '');
@@ -130,6 +130,26 @@
 	const liveStatusText = $derived(
 		hasLiveStatus && liveSession?.status ? `, status: ${liveSession.status}` : ''
 	);
+
+	// Resume chip: show whenever the session isn't actively running. Historical
+	// sessions usually have no liveSession record, so the absence of liveSession
+	// implies "concluded" (any UUID can be resumed via `claude --resume`).
+	const showResumeChip = $derived(
+		!liveSession || !['active', 'idle', 'starting'].includes(liveSession.status)
+	);
+	let resumeCopied = $state(false);
+	let resumeCopyTimeout: ReturnType<typeof setTimeout> | null = null;
+
+	async function handleResumeCopy(e: MouseEvent) {
+		e.preventDefault();
+		e.stopPropagation();
+		await copyToClipboard(`claude --resume ${session.uuid}`);
+		if (resumeCopyTimeout) clearTimeout(resumeCopyTimeout);
+		resumeCopied = true;
+		resumeCopyTimeout = setTimeout(() => {
+			resumeCopied = false;
+		}, 350);
+	}
 </script>
 
 <a
@@ -145,6 +165,7 @@
 		group
 		focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-base)]
 		{hasLiveStatus && !isRecentlyEnded ? 'ring-1 ring-opacity-50' : ''}
+		{highlighted ? 'session-highlight' : ''}
 		overflow-hidden
 	"
 	style="
@@ -358,6 +379,21 @@
 						<Globe size={10} strokeWidth={2} class={teamMemberColor?.text ?? ''} />
 						<span class="font-medium text-[11px]">{remoteUserName}</span>
 					</a>
+				{/if}
+				<!-- Resume chip: only for ended sessions -->
+				{#if showResumeChip}
+					<button
+						type="button"
+						onclick={handleResumeCopy}
+						aria-label="Copy claude --resume command"
+						class="flex items-center gap-1 px-2 py-0.5 rounded-full border bg-[var(--bg-muted)] text-[var(--text-secondary)] border-[var(--border)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors cursor-pointer"
+						title="Copy: claude --resume {session.uuid}"
+					>
+						<Copy size={10} strokeWidth={2} />
+						<span class="font-mono font-medium text-[11px]">
+							{#if resumeCopied}copied!{:else}resume{/if}
+						</span>
+					</button>
 				{/if}
 				{#if session.session_source === 'desktop'}
 					<div

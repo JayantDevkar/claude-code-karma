@@ -327,7 +327,7 @@
 	}
 
 	.status-badge.blocked {
-		background: rgba(245, 158, 11, 0.1);
+		background: var(--warning-subtle);
 		color: var(--warning);
 	}
 

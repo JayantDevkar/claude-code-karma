@@ -25,6 +25,7 @@
 		Terminal
 	} from 'lucide-svelte';
 	import { formatDistanceToNow, isToday, isYesterday, isThisWeek, isThisMonth } from 'date-fns';
+	import { markdownCopyButtons } from '$lib/actions/markdownCopyButtons';
 	import { onMount, tick } from 'svelte';
 
 	import PageHeader from '$lib/components/layout/PageHeader.svelte';
@@ -566,7 +567,7 @@
 					</div>
 				{/if}
 
-				<div class="markdown-preview max-w-none prose prose-slate dark:prose-invert">
+				<div class="markdown-preview max-w-none prose prose-slate dark:prose-invert" use:markdownCopyButtons={renderedAgentContent}>
 					{@html renderedAgentContent}
 				</div>
 			{/snippet}
@@ -846,7 +847,7 @@
 								<div class="flex items-center justify-between mb-2">
 									{#if mcp}
 										<a
-											href="/tools/{encodeURIComponent(mcp.server)}/{encodeURIComponent(mcp.shortName)}"
+											href="/mcp/{encodeURIComponent(mcp.server)}/{encodeURIComponent(mcp.shortName)}"
 											class="text-sm text-[var(--accent)] font-semibold truncate max-w-[70%] hover:underline"
 											title={tool}
 										>

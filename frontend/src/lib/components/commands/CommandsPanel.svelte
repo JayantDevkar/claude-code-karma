@@ -3,6 +3,8 @@
 	import type { CommandUsage } from '$lib/api-types';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import { cleanSkillName, getCommandColorVars, getCommandCategoryColorVars, getCommandCategoryLabel } from '$lib/utils';
+	import { API_BASE } from '$lib/config';
+	import { markdownCopyButtons } from '$lib/actions/markdownCopyButtons';
 
 	interface Props {
 		commands: CommandUsage[];
@@ -134,3 +136,56 @@
 		/>
 	{/if}
 </div>
+
+<!-- Command content modal -->
+<Modal bind:open={modalOpen} title={modalTitle} maxWidth="xl">
+	{#snippet children()}
+		{#if modalLoading}
+			<div class="flex items-center justify-center gap-2 py-12 text-[var(--text-muted)]">
+				<Loader2 size={16} class="animate-spin" />
+				<span class="text-sm">Loading command content...</span>
+			</div>
+		{:else if modalError}
+			<div class="py-8 text-center text-sm text-[var(--text-muted)]">
+				{modalError}
+			</div>
+		{:else}
+			<div class="markdown-preview max-h-[70vh] overflow-y-auto pr-2 custom-scrollbar" use:markdownCopyButtons={renderedContent}>
+				{@html renderedContent}
+			</div>
+		{/if}
+	{/snippet}
+	{#snippet footer()}
+		<button
+			onclick={copyContent}
+			class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-muted)] transition-colors {copied
+				? 'text-green-500'
+				: ''}"
+		>
+			{#if copied}
+				<Check size={14} />
+				<span>Copied!</span>
+			{:else}
+				<Copy size={14} />
+				<span>Copy</span>
+			{/if}
+		</button>
+	{/snippet}
+</Modal>
+
+<style>
+	.custom-scrollbar::-webkit-scrollbar {
+		width: 6px;
+	}
+	.custom-scrollbar::-webkit-scrollbar-track {
+		background: var(--bg-subtle);
+		border-radius: 3px;
+	}
+	.custom-scrollbar::-webkit-scrollbar-thumb {
+		background: var(--border);
+		border-radius: 3px;
+	}
+	.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+		background: var(--text-muted);
+	}
+</style>

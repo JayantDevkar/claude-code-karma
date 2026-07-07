@@ -1,0 +1,126 @@
+<!-- @dsCard group="Components" -->
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ThemeToggle</title>
+<link rel="stylesheet" href="../shared/tokens.css">
+<link rel="stylesheet" href="../shared/preview.css">
+<style>
+/* mirrors ThemeToggle.svelte button classes */
+.theme-btn {
+  display:inline-flex; align-items:center; justify-content:center;
+  padding:8px; border-radius:var(--radius-md);
+  color:var(--text-muted); background:transparent;
+  border:none; cursor:pointer;
+  transition:color 200ms, background 200ms;
+  font-family:var(--font-sans);
+}
+.theme-btn:hover { color:var(--text-primary); background:var(--bg-muted); }
+.theme-btn:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+.demo-row { display:flex; gap:24px; align-items:flex-end; flex-wrap:wrap; }
+.demo-item { text-align:center; }
+.demo-label { font-size:11px; color:var(--text-faint); margin-top:8px; text-transform:uppercase; letter-spacing:.06em; }
+/* dark-background swatch to show the dark-mode button state */
+.dark-swatch {
+  display:inline-flex; padding:8px; border-radius:var(--radius-md);
+  background:#0f0f12; border:1px solid #333;
+}
+.dark-swatch .theme-btn { color:#9ca3af; }
+.dark-swatch .theme-btn:hover { color:#f3f4f6; background:rgba(255,255,255,.08); }
+/* live toggle section */
+#live-theme-area {
+  padding:20px; border-radius:var(--radius-lg); border:1px solid var(--border);
+  background:var(--bg-subtle); display:flex; align-items:center; gap:16px;
+}
+#live-theme-area p { font-size:14px; color:var(--text-secondary); margin:0; }
+</style>
+</head>
+<body>
+<div class="ds-frame">
+<h1 class="ds-title">ThemeToggle</h1>
+<p class="ds-subtitle">Sun (light) + Moon (dark) states · live toggle — src/lib/components/ui/ThemeToggle.svelte</p>
+
+<div class="ds-section">
+<p class="ds-section-label">Static states side by side</p>
+<div class="demo-row">
+
+  <!-- Light mode state: shows Sun icon -->
+  <div class="demo-item">
+    <button class="theme-btn" title="Switch to dark mode" aria-label="Switch to dark mode">
+      <!-- Sun SVG (lucide Sun 16px, strokeWidth 2) -->
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="4"/>
+        <line x1="12" y1="2" x2="12" y2="6"/>
+        <line x1="12" y1="18" x2="12" y2="22"/>
+        <line x1="4.93" y1="4.93" x2="7.76" y2="7.76"/>
+        <line x1="16.24" y1="16.24" x2="19.07" y2="19.07"/>
+        <line x1="2" y1="12" x2="6" y2="12"/>
+        <line x1="18" y1="12" x2="22" y2="12"/>
+        <line x1="4.93" y1="19.07" x2="7.76" y2="16.24"/>
+        <line x1="16.24" y1="7.76" x2="19.07" y2="4.93"/>
+      </svg>
+    </button>
+    <p class="demo-label">Light mode<br>(Sun icon)</p>
+  </div>
+
+  <!-- Dark mode state: shows Moon icon, rendered on dark swatch -->
+  <div class="demo-item">
+    <div class="dark-swatch">
+      <button class="theme-btn" title="Switch to light mode" aria-label="Switch to light mode">
+        <!-- Moon SVG (lucide Moon 16px, strokeWidth 2) -->
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+        </svg>
+      </button>
+    </div>
+    <p class="demo-label">Dark mode<br>(Moon icon)</p>
+  </div>
+
+  <!-- Hover state (light) -->
+  <div class="demo-item">
+    <button class="theme-btn" style="color:var(--text-primary);background:var(--bg-muted);" title="Hover state">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="4"/>
+        <line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/>
+        <line x1="4.93" y1="4.93" x2="7.76" y2="7.76"/><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"/>
+        <line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/>
+        <line x1="4.93" y1="19.07" x2="7.76" y2="16.24"/><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"/>
+      </svg>
+    </button>
+    <p class="demo-label">Hover state<br>(light)</p>
+  </div>
+
+</div>
+</div>
+
+<div class="ds-section">
+<p class="ds-section-label">Live toggle — flips data-theme on &lt;html&gt; (mirrors app behavior)</p>
+<div id="live-theme-area">
+  <button id="live-btn" class="theme-btn" onclick="
+    (function(){
+      var r=document.documentElement;
+      var isDark=r.getAttribute('data-theme')==='dark';
+      r.setAttribute('data-theme',isDark?'light':'dark');
+      var btn=document.getElementById('live-btn');
+      var lbl=document.getElementById('live-lbl');
+      lbl.textContent=isDark?'Currently: light':'Currently: dark';
+    })()
+  " title="Toggle theme">
+    <!-- Sun shown initially; script could swap icon but pure HTML — shows Sun always -->
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="4"/>
+      <line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/>
+      <line x1="4.93" y1="4.93" x2="7.76" y2="7.76"/><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"/>
+      <line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/>
+      <line x1="4.93" y1="19.07" x2="7.76" y2="16.24"/><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"/>
+    </svg>
+  </button>
+  <p id="live-lbl">Currently: light — click button to toggle</p>
+</div>
+</div>
+</div>
+<button class="ds-theme-toggle" onclick="(function(r){var d=r.getAttribute('data-theme')==='dark';r.setAttribute('data-theme',d?'light':'dark');})(document.documentElement)">Toggle theme</button>
+</body>
+</html>

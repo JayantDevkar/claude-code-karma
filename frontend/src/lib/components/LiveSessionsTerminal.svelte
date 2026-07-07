@@ -2,6 +2,8 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { FolderOpen, Bot, Trash2 } from 'lucide-svelte';
 	import type { LiveSessionSummary } from '$lib/api-types';
+	import { projectHrefFromSession } from '$lib/utils/project-url';
+	import { getSessionDisplayLabel } from '$lib/utils/sessionIdentifier';
 	import { statusConfig } from '$lib/live-session-config';
 	import { API_BASE } from '$lib/config';
 
@@ -120,8 +122,8 @@
 		if (!session.project_encoded_name) {
 			return '#'; // Can't link without project
 		}
-		const identifier = session.session_id.slice(0, 8);
-		return `/projects/${session.project_slug || session.project_encoded_name}/${identifier}`;
+		const identifier = getSessionDisplayLabel(session.session_id, session.slug);
+		return projectHrefFromSession(session, `/${identifier}`);
 	}
 
 	function canNavigate(session: LiveSessionSummary): boolean {
@@ -251,7 +253,9 @@
 					<div class="session-info">
 						<!-- Row 1: Session ID + Status + Agents -->
 						<div class="session-primary">
-							<span class="session-id">{session.session_id.slice(0, 8)}</span>
+							<span class="session-id"
+								>{getSessionDisplayLabel(session.session_id, session.slug)}</span
+							>
 							<span class="status-badge" style="color: {config.color}"
 								>{config.label}</span
 							>
@@ -330,7 +334,7 @@
 	.cleanup-btn:hover:not(:disabled) {
 		color: var(--error);
 		border-color: var(--error);
-		background: rgba(239, 68, 68, 0.05);
+		background: rgba(var(--error-rgb), 0.05);
 	}
 
 	.cleanup-btn:disabled {
@@ -496,7 +500,7 @@
 		gap: 3px;
 		padding: 1px 6px;
 		border-radius: 10px;
-		background: var(--nav-purple-subtle, rgba(139, 92, 246, 0.1));
+		background: var(--nav-purple-subtle, rgba(var(--accent-rgb), 0.1));
 		color: var(--nav-purple);
 		font-size: 10px;
 		font-weight: 500;

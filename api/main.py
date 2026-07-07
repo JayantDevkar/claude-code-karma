@@ -24,11 +24,14 @@ from routers import (  # noqa: E402
     admin,
     agents,
     analytics,
+    background_shells,
     commands,
+    cron,
     docs,
     history,
     hooks,
     live_sessions,
+    memory,
     plans,
     plugins,
     projects,
@@ -42,6 +45,8 @@ from routers import (  # noqa: E402
     sync_projects,
     sync_system,
     sync_teams,
+    system_cron,
+    tickets,
     tools,
 )
 from routers import settings as settings_router  # noqa: E402
@@ -193,6 +198,15 @@ async def lifespan(app: FastAPI):
             settings.reconciler_idle_threshold,
         )
 
+    # Start ticket-orphan cleanup loop (deletes session_tickets rows whose
+    # session_uuid never materialized in the sessions index after a TTL).
+    orphan_cleanup_task = None
+    if settings.use_sqlite:
+        from services.ticket_cleanup import run_ticket_orphan_cleanup
+
+        orphan_cleanup_task = asyncio.create_task(run_ticket_orphan_cleanup())
+        logger.info("Ticket orphan cleanup task started")
+
     yield
 
     # Shutdown
@@ -211,6 +225,10 @@ async def lifespan(app: FastAPI):
     if periodic_task is not None:
         periodic_task.cancel()
         logger.info("Periodic reindex task cancelled")
+
+    if orphan_cleanup_task is not None:
+        orphan_cleanup_task.cancel()
+        logger.info("Ticket orphan cleanup task cancelled")
 
     if settings.use_sqlite:
         try:
@@ -270,6 +288,14 @@ app.include_router(sync_projects.router)
 app.include_router(sync_pairing.router)
 app.include_router(sync_pending.router)
 app.include_router(admin.router)
+app.include_router(tickets.router)
+# bg-shells + cron routers are no-prefix (they span /shells, /cron,
+# /sessions/{uuid}/shells, /sessions/{uuid}/cron — two URL roots each,
+# same pattern as tickets).
+app.include_router(background_shells.router)
+app.include_router(cron.router)
+app.include_router(memory.router)
+app.include_router(system_cron.router)  # ADDITIVE: Linux crontab view at /cron/system
 
 
 @app.get("/")

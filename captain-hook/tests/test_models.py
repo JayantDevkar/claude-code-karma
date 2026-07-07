@@ -35,11 +35,24 @@ from models import (
     PermissionRequestHook,
     NotificationHook,
     SetupHook,
+    # New hook types (v2.1.83 - v2.1.92)
+    InstructionsLoadedHook,
+    PermissionDeniedHook,
+    ElicitationHook,
+    ElicitationResultHook,
+    CwdChangedHook,
+    FileChangedHook,
+    TaskCreatedHook,
+    TaskCompletedHook,
+    TeammateIdleHook,
+    WorktreeCreateHook,
+    WorktreeRemoveHook,
     # Output Types
     HookOutput,
     PreToolUseOutput,
     StopOutput,
     PermissionRequestOutput,
+    PermissionDeniedOutput,
 )
 
 
@@ -168,6 +181,139 @@ def notification_data(base_hook_data) -> Dict[str, Any]:
     }
 
 
+@pytest.fixture
+def instructions_loaded_data(base_hook_data) -> Dict[str, Any]:
+    """Valid InstructionsLoaded hook data."""
+    return {
+        **base_hook_data,
+        "hook_event_name": "InstructionsLoaded",
+        "file_path": "/Users/me/repo/CLAUDE.md",
+        "memory_type": "project",
+        "load_reason": "startup",
+        "globs": [],
+    }
+
+
+@pytest.fixture
+def permission_denied_data(base_hook_data) -> Dict[str, Any]:
+    """Valid PermissionDenied hook data."""
+    return {
+        **base_hook_data,
+        "hook_event_name": "PermissionDenied",
+        "tool_name": "Bash",
+        "tool_use_id": "tool_denied_001",
+        "reason": "Auto mode policy: dangerous command",
+        "tool_input": {"command": "rm -rf /"},
+    }
+
+
+@pytest.fixture
+def elicitation_data(base_hook_data) -> Dict[str, Any]:
+    """Valid Elicitation hook data."""
+    return {
+        **base_hook_data,
+        "hook_event_name": "Elicitation",
+        "mcp_server": "github",
+        "tool_name": "create_issue",
+        "request": {"title": "string", "body": "string"},
+    }
+
+
+@pytest.fixture
+def elicitation_result_data(base_hook_data) -> Dict[str, Any]:
+    """Valid ElicitationResult hook data."""
+    return {
+        **base_hook_data,
+        "hook_event_name": "ElicitationResult",
+        "mcp_server": "github",
+        "user_response": {"title": "Bug report", "body": "Steps to reproduce..."},
+    }
+
+
+@pytest.fixture
+def cwd_changed_data(base_hook_data) -> Dict[str, Any]:
+    """Valid CwdChanged hook data."""
+    return {
+        **base_hook_data,
+        "hook_event_name": "CwdChanged",
+        "old_cwd": "/Users/me/old_project",
+        "new_cwd": "/Users/me/new_project",
+    }
+
+
+@pytest.fixture
+def file_changed_data(base_hook_data) -> Dict[str, Any]:
+    """Valid FileChanged hook data."""
+    return {
+        **base_hook_data,
+        "hook_event_name": "FileChanged",
+        "file_path": "/Users/me/project/src/main.py",
+        "file_name": "main.py",
+    }
+
+
+@pytest.fixture
+def task_created_data(base_hook_data) -> Dict[str, Any]:
+    """Valid TaskCreated hook data."""
+    return {
+        **base_hook_data,
+        "hook_event_name": "TaskCreated",
+        "task_id": "task_001",
+        "task_subject": "Refactor auth module",
+        "task_description": "Split auth.py into smaller files",
+        "teammate_name": "Alice",
+        "team_name": "core-team",
+    }
+
+
+@pytest.fixture
+def task_completed_data(base_hook_data) -> Dict[str, Any]:
+    """Valid TaskCompleted hook data."""
+    return {
+        **base_hook_data,
+        "hook_event_name": "TaskCompleted",
+        "task_id": "task_002",
+        "task_subject": "Add tests",
+        "task_description": "Cover edge cases",
+        "teammate_name": "Bob",
+        "team_name": "core-team",
+    }
+
+
+@pytest.fixture
+def teammate_idle_data(base_hook_data) -> Dict[str, Any]:
+    """Valid TeammateIdle hook data."""
+    return {
+        **base_hook_data,
+        "hook_event_name": "TeammateIdle",
+        "agent_id": "agent_idle_001",
+        "agent_type": "Explore",
+        "team_name": "core-team",
+    }
+
+
+@pytest.fixture
+def worktree_create_data(base_hook_data) -> Dict[str, Any]:
+    """Valid WorktreeCreate hook data."""
+    return {
+        **base_hook_data,
+        "hook_event_name": "WorktreeCreate",
+        "worktree_name": "feat-auth",
+        "base_ref": "main",
+    }
+
+
+@pytest.fixture
+def worktree_remove_data(base_hook_data) -> Dict[str, Any]:
+    """Valid WorktreeRemove hook data."""
+    return {
+        **base_hook_data,
+        "hook_event_name": "WorktreeRemove",
+        "worktree_path": "/Users/me/.claude-worktrees/repo/feat-auth",
+        "worktree_name": "feat-auth",
+    }
+
+
 # =============================================================================
 # Test Data Registry (for parametrized tests)
 # =============================================================================
@@ -237,6 +383,69 @@ HOOK_TEST_DATA: Dict[str, Dict[str, Any]] = {
     "Setup": {
         "hook_event_name": "Setup",
         "trigger": "init",
+    },
+    # New in v2.1.83 - v2.1.92
+    "InstructionsLoaded": {
+        "hook_event_name": "InstructionsLoaded",
+        "file_path": "/Users/me/repo/CLAUDE.md",
+        "memory_type": "project",
+        "load_reason": "startup",
+        "globs": [],
+    },
+    "PermissionDenied": {
+        "hook_event_name": "PermissionDenied",
+        "tool_name": "Write",
+        "tool_use_id": "tool_denied_002",
+        "reason": "Auto mode policy: protected path",
+        "tool_input": {"file_path": "/etc/passwd"},
+    },
+    "Elicitation": {
+        "hook_event_name": "Elicitation",
+        "mcp_server": "linear",
+        "tool_name": "create_issue",
+        "request": {"title": "string"},
+    },
+    "ElicitationResult": {
+        "hook_event_name": "ElicitationResult",
+        "mcp_server": "linear",
+        "user_response": {"title": "Bug"},
+    },
+    "CwdChanged": {
+        "hook_event_name": "CwdChanged",
+        "old_cwd": "/Users/me/old",
+        "new_cwd": "/Users/me/new",
+    },
+    "FileChanged": {
+        "hook_event_name": "FileChanged",
+        "file_path": "/Users/me/project/file.py",
+        "file_name": "file.py",
+    },
+    "TaskCreated": {
+        "hook_event_name": "TaskCreated",
+        "task_id": "task_test_001",
+        "task_subject": "Add login flow",
+        "team_name": "frontend-team",
+    },
+    "TaskCompleted": {
+        "hook_event_name": "TaskCompleted",
+        "task_id": "task_test_002",
+        "task_subject": "Add login flow",
+        "team_name": "frontend-team",
+    },
+    "TeammateIdle": {
+        "hook_event_name": "TeammateIdle",
+        "agent_id": "agent_test_idle",
+        "agent_type": "Explore",
+    },
+    "WorktreeCreate": {
+        "hook_event_name": "WorktreeCreate",
+        "worktree_name": "feat-x",
+        "base_ref": "main",
+    },
+    "WorktreeRemove": {
+        "hook_event_name": "WorktreeRemove",
+        "worktree_path": "/Users/me/.claude-worktrees/repo/feat-x",
+        "worktree_name": "feat-x",
     },
 }
 
@@ -456,6 +665,286 @@ class TestNotificationHook:
 
 
 # =============================================================================
+# 3b. New Hook Type Tests (v2.1.83 - v2.1.92)
+# =============================================================================
+
+class TestInstructionsLoadedHook:
+    """Tests specific to InstructionsLoaded hook."""
+
+    def test_basic_instantiation(self, instructions_loaded_data):
+        """All required fields produce a valid hook."""
+        hook = InstructionsLoadedHook.model_validate(instructions_loaded_data)
+        assert hook.file_path == "/Users/me/repo/CLAUDE.md"
+        assert hook.memory_type == "project"
+        assert hook.load_reason == "startup"
+        assert hook.globs == []
+        assert hook.trigger_file_path is None
+        assert hook.parent_file_path is None
+
+    def test_round_trip_via_parser(self, instructions_loaded_data):
+        """Hook round-trips through parse_hook_event."""
+        hook = parse_hook_event(instructions_loaded_data)
+        assert isinstance(hook, InstructionsLoadedHook)
+        assert hook.hook_event_name == "InstructionsLoaded"
+
+    def test_extra_fields_preserved(self, instructions_loaded_data):
+        """Unknown fields are preserved (forward compat)."""
+        instructions_loaded_data["future_field"] = {"x": 1}
+        hook = InstructionsLoadedHook.model_validate(instructions_loaded_data)
+        assert hook.future_field == {"x": 1}
+
+    def test_with_imports(self, instructions_loaded_data):
+        """Imported CLAUDE.md files include trigger/parent paths."""
+        instructions_loaded_data["load_reason"] = "import"
+        instructions_loaded_data["trigger_file_path"] = "/Users/me/repo/CLAUDE.md"
+        instructions_loaded_data["parent_file_path"] = "/Users/me/repo/CLAUDE.md"
+        hook = InstructionsLoadedHook.model_validate(instructions_loaded_data)
+        assert hook.load_reason == "import"
+        assert hook.trigger_file_path == "/Users/me/repo/CLAUDE.md"
+
+
+class TestPermissionDeniedHook:
+    """Tests specific to PermissionDenied hook."""
+
+    def test_basic_instantiation(self, permission_denied_data):
+        """All required fields produce a valid hook."""
+        hook = PermissionDeniedHook.model_validate(permission_denied_data)
+        assert hook.tool_name == "Bash"
+        assert hook.tool_use_id == "tool_denied_001"
+        assert "dangerous" in hook.reason
+        assert hook.tool_input["command"] == "rm -rf /"
+
+    def test_round_trip_via_parser(self, permission_denied_data):
+        """Hook round-trips through parse_hook_event."""
+        hook = parse_hook_event(permission_denied_data)
+        assert isinstance(hook, PermissionDeniedHook)
+        assert hook.hook_event_name == "PermissionDenied"
+
+    def test_extra_fields_preserved(self, permission_denied_data):
+        """Unknown fields are preserved (forward compat)."""
+        permission_denied_data["denial_id"] = "den_xyz"
+        hook = PermissionDeniedHook.model_validate(permission_denied_data)
+        assert hook.denial_id == "den_xyz"
+
+
+class TestElicitationHook:
+    """Tests specific to Elicitation hook."""
+
+    def test_basic_instantiation(self, elicitation_data):
+        """All required fields produce a valid hook."""
+        hook = ElicitationHook.model_validate(elicitation_data)
+        assert hook.mcp_server == "github"
+        assert hook.tool_name == "create_issue"
+        assert hook.request == {"title": "string", "body": "string"}
+
+    def test_round_trip_via_parser(self, elicitation_data):
+        """Hook round-trips through parse_hook_event."""
+        hook = parse_hook_event(elicitation_data)
+        assert isinstance(hook, ElicitationHook)
+        assert hook.hook_event_name == "Elicitation"
+
+    def test_extra_fields_preserved(self, elicitation_data):
+        """Unknown fields are preserved (forward compat)."""
+        elicitation_data["request_id"] = "elicit_123"
+        hook = ElicitationHook.model_validate(elicitation_data)
+        assert hook.request_id == "elicit_123"
+
+
+class TestElicitationResultHook:
+    """Tests specific to ElicitationResult hook."""
+
+    def test_basic_instantiation(self, elicitation_result_data):
+        """All required fields produce a valid hook."""
+        hook = ElicitationResultHook.model_validate(elicitation_result_data)
+        assert hook.mcp_server == "github"
+        assert hook.user_response["title"] == "Bug report"
+
+    def test_round_trip_via_parser(self, elicitation_result_data):
+        """Hook round-trips through parse_hook_event."""
+        hook = parse_hook_event(elicitation_result_data)
+        assert isinstance(hook, ElicitationResultHook)
+        assert hook.hook_event_name == "ElicitationResult"
+
+    def test_extra_fields_preserved(self, elicitation_result_data):
+        """Unknown fields are preserved (forward compat)."""
+        elicitation_result_data["request_id"] = "elicit_456"
+        hook = ElicitationResultHook.model_validate(elicitation_result_data)
+        assert hook.request_id == "elicit_456"
+
+
+class TestCwdChangedHook:
+    """Tests specific to CwdChanged hook."""
+
+    def test_basic_instantiation(self, cwd_changed_data):
+        """All required fields produce a valid hook."""
+        hook = CwdChangedHook.model_validate(cwd_changed_data)
+        assert hook.old_cwd == "/Users/me/old_project"
+        assert hook.new_cwd == "/Users/me/new_project"
+
+    def test_round_trip_via_parser(self, cwd_changed_data):
+        """Hook round-trips through parse_hook_event."""
+        hook = parse_hook_event(cwd_changed_data)
+        assert isinstance(hook, CwdChangedHook)
+        assert hook.hook_event_name == "CwdChanged"
+
+    def test_extra_fields_preserved(self, cwd_changed_data):
+        """Unknown fields are preserved (forward compat)."""
+        cwd_changed_data["change_source"] = "cd_command"
+        hook = CwdChangedHook.model_validate(cwd_changed_data)
+        assert hook.change_source == "cd_command"
+
+
+class TestFileChangedHook:
+    """Tests specific to FileChanged hook."""
+
+    def test_basic_instantiation(self, file_changed_data):
+        """All required fields produce a valid hook."""
+        hook = FileChangedHook.model_validate(file_changed_data)
+        assert hook.file_path == "/Users/me/project/src/main.py"
+        assert hook.file_name == "main.py"
+
+    def test_round_trip_via_parser(self, file_changed_data):
+        """Hook round-trips through parse_hook_event."""
+        hook = parse_hook_event(file_changed_data)
+        assert isinstance(hook, FileChangedHook)
+        assert hook.hook_event_name == "FileChanged"
+
+    def test_extra_fields_preserved(self, file_changed_data):
+        """Unknown fields are preserved (forward compat)."""
+        file_changed_data["change_type"] = "modified"
+        hook = FileChangedHook.model_validate(file_changed_data)
+        assert hook.change_type == "modified"
+
+
+class TestTaskCreatedHook:
+    """Tests specific to TaskCreated hook."""
+
+    def test_basic_instantiation(self, task_created_data):
+        """All required fields produce a valid hook."""
+        hook = TaskCreatedHook.model_validate(task_created_data)
+        assert hook.task_id == "task_001"
+        assert hook.task_subject == "Refactor auth module"
+        assert hook.team_name == "core-team"
+        assert hook.teammate_name == "Alice"
+
+    def test_round_trip_via_parser(self, task_created_data):
+        """Hook round-trips through parse_hook_event."""
+        hook = parse_hook_event(task_created_data)
+        assert isinstance(hook, TaskCreatedHook)
+        assert hook.hook_event_name == "TaskCreated"
+
+    def test_extra_fields_preserved(self, task_created_data):
+        """Unknown fields are preserved (forward compat)."""
+        task_created_data["priority"] = "high"
+        hook = TaskCreatedHook.model_validate(task_created_data)
+        assert hook.priority == "high"
+
+    def test_optional_fields_default_none(self, task_created_data):
+        """Optional fields default to None when omitted."""
+        del task_created_data["task_description"]
+        del task_created_data["teammate_name"]
+        hook = TaskCreatedHook.model_validate(task_created_data)
+        assert hook.task_description is None
+        assert hook.teammate_name is None
+
+
+class TestTaskCompletedHook:
+    """Tests specific to TaskCompleted hook."""
+
+    def test_basic_instantiation(self, task_completed_data):
+        """All required fields produce a valid hook."""
+        hook = TaskCompletedHook.model_validate(task_completed_data)
+        assert hook.task_id == "task_002"
+        assert hook.task_subject == "Add tests"
+        assert hook.team_name == "core-team"
+
+    def test_round_trip_via_parser(self, task_completed_data):
+        """Hook round-trips through parse_hook_event."""
+        hook = parse_hook_event(task_completed_data)
+        assert isinstance(hook, TaskCompletedHook)
+        assert hook.hook_event_name == "TaskCompleted"
+
+    def test_extra_fields_preserved(self, task_completed_data):
+        """Unknown fields are preserved (forward compat)."""
+        task_completed_data["completion_time_ms"] = 12345
+        hook = TaskCompletedHook.model_validate(task_completed_data)
+        assert hook.completion_time_ms == 12345
+
+
+class TestTeammateIdleHook:
+    """Tests specific to TeammateIdle hook."""
+
+    def test_basic_instantiation(self, teammate_idle_data):
+        """All required fields produce a valid hook."""
+        hook = TeammateIdleHook.model_validate(teammate_idle_data)
+        assert hook.agent_id == "agent_idle_001"
+        assert hook.agent_type == "Explore"
+        assert hook.team_name == "core-team"
+
+    def test_round_trip_via_parser(self, teammate_idle_data):
+        """Hook round-trips through parse_hook_event."""
+        hook = parse_hook_event(teammate_idle_data)
+        assert isinstance(hook, TeammateIdleHook)
+        assert hook.hook_event_name == "TeammateIdle"
+
+    def test_extra_fields_preserved(self, teammate_idle_data):
+        """Unknown fields are preserved (forward compat)."""
+        teammate_idle_data["idle_seconds"] = 30
+        hook = TeammateIdleHook.model_validate(teammate_idle_data)
+        assert hook.idle_seconds == 30
+
+    def test_optional_team_name(self, teammate_idle_data):
+        """team_name is optional."""
+        del teammate_idle_data["team_name"]
+        hook = TeammateIdleHook.model_validate(teammate_idle_data)
+        assert hook.team_name is None
+
+
+class TestWorktreeCreateHook:
+    """Tests specific to WorktreeCreate hook."""
+
+    def test_basic_instantiation(self, worktree_create_data):
+        """All required fields produce a valid hook."""
+        hook = WorktreeCreateHook.model_validate(worktree_create_data)
+        assert hook.worktree_name == "feat-auth"
+        assert hook.base_ref == "main"
+
+    def test_round_trip_via_parser(self, worktree_create_data):
+        """Hook round-trips through parse_hook_event."""
+        hook = parse_hook_event(worktree_create_data)
+        assert isinstance(hook, WorktreeCreateHook)
+        assert hook.hook_event_name == "WorktreeCreate"
+
+    def test_extra_fields_preserved(self, worktree_create_data):
+        """Unknown fields are preserved (forward compat)."""
+        worktree_create_data["requested_path"] = "/tmp/wt"
+        hook = WorktreeCreateHook.model_validate(worktree_create_data)
+        assert hook.requested_path == "/tmp/wt"
+
+
+class TestWorktreeRemoveHook:
+    """Tests specific to WorktreeRemove hook."""
+
+    def test_basic_instantiation(self, worktree_remove_data):
+        """All required fields produce a valid hook."""
+        hook = WorktreeRemoveHook.model_validate(worktree_remove_data)
+        assert hook.worktree_path == "/Users/me/.claude-worktrees/repo/feat-auth"
+        assert hook.worktree_name == "feat-auth"
+
+    def test_round_trip_via_parser(self, worktree_remove_data):
+        """Hook round-trips through parse_hook_event."""
+        hook = parse_hook_event(worktree_remove_data)
+        assert isinstance(hook, WorktreeRemoveHook)
+        assert hook.hook_event_name == "WorktreeRemove"
+
+    def test_extra_fields_preserved(self, worktree_remove_data):
+        """Unknown fields are preserved (forward compat)."""
+        worktree_remove_data["removed_at"] = "2026-04-06T12:00:00Z"
+        hook = WorktreeRemoveHook.model_validate(worktree_remove_data)
+        assert hook.removed_at == "2026-04-06T12:00:00Z"
+
+
+# =============================================================================
 # 4. Parser Function Tests
 # =============================================================================
 
@@ -618,6 +1107,51 @@ class TestHookOutputModels:
         })
         assert output.hook_specific_output.future_field == "future_value"
 
+    def test_pre_tool_use_output_defer(self):
+        """PreToolUseOutput supports the new 'defer' decision (headless -p --resume)."""
+        output = PreToolUseOutput.model_validate({
+            "hookSpecificOutput": {
+                "permissionDecision": "defer",
+                "permissionDecisionReason": "Awaiting headless resume",
+            }
+        })
+        assert output.hook_specific_output.permission_decision == "defer"
+
+    def test_pre_tool_use_output_ask(self):
+        """PreToolUseOutput supports the 'ask' decision."""
+        output = PreToolUseOutput.model_validate({
+            "hookSpecificOutput": {
+                "permissionDecision": "ask",
+            }
+        })
+        assert output.hook_specific_output.permission_decision == "ask"
+
+    def test_permission_denied_output_default(self):
+        """PermissionDeniedOutput defaults retry to False."""
+        output = PermissionDeniedOutput.model_validate({
+            "hookSpecificOutput": {}
+        })
+        assert output.hook_specific_output.retry is False
+
+    def test_permission_denied_output_retry(self):
+        """PermissionDeniedOutput can request retry."""
+        output = PermissionDeniedOutput.model_validate({
+            "hookSpecificOutput": {
+                "retry": True,
+            }
+        })
+        assert output.hook_specific_output.retry is True
+
+    def test_permission_denied_output_extra_fields(self):
+        """PermissionDeniedOutput accepts extra fields."""
+        output = PermissionDeniedOutput.model_validate({
+            "hookSpecificOutput": {
+                "retry": True,
+                "future_field": "value",
+            }
+        })
+        assert output.hook_specific_output.future_field == "value"
+
 
 # =============================================================================
 # 7. HOOK_TYPE_MAP Registry Tests
@@ -627,7 +1161,7 @@ class TestHookTypeMap:
     """Tests for the HOOK_TYPE_MAP registry."""
 
     def test_all_hooks_registered(self):
-        """All 13 hook types are in the registry."""
+        """All 24 hook types are in the registry."""
         expected_hooks = {
             "PreToolUse",
             "PostToolUse",
@@ -642,8 +1176,21 @@ class TestHookTypeMap:
             "PermissionRequest",
             "Notification",
             "Setup",
+            # New in v2.1.83 - v2.1.92
+            "InstructionsLoaded",
+            "PermissionDenied",
+            "Elicitation",
+            "ElicitationResult",
+            "CwdChanged",
+            "FileChanged",
+            "TaskCreated",
+            "TaskCompleted",
+            "TeammateIdle",
+            "WorktreeCreate",
+            "WorktreeRemove",
         }
         assert set(HOOK_TYPE_MAP.keys()) == expected_hooks
+        assert len(HOOK_TYPE_MAP) == 24
 
     def test_registry_values_are_classes(self):
         """All registry values are BaseHook subclasses."""

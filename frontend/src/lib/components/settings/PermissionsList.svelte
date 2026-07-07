@@ -49,7 +49,7 @@
 					{#if !disabled}
 						<button
 							onclick={() => handleRemove(perm)}
-							class="hover:text-red-500 transition-colors p-0.5 -mr-0.5"
+							class="hover:text-[var(--error)] transition-colors p-0.5 -mr-0.5"
 							title="Remove permission"
 						>
 							<X size={12} />
@@ -75,7 +75,7 @@
 				onclick={handleAdd}
 				disabled={!newPermission.trim()}
 				class="
-					px-3 py-2 bg-[var(--accent)] text-white rounded-md text-sm font-medium
+					px-3 py-2 bg-[var(--accent)] text-[var(--bg-base)] rounded-md text-sm font-medium
 					hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed
 					transition-opacity flex items-center gap-1.5
 				"

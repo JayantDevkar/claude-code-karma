@@ -5,6 +5,7 @@
 	import { FileText } from 'lucide-svelte';
 	import type { PlanDetail } from '$lib/api-types';
 	import Card from '$lib/components/ui/Card.svelte';
+	import { markdownCopyButtons } from '$lib/actions/markdownCopyButtons';
 
 	interface Props {
 		plan: PlanDetail;
@@ -61,7 +62,7 @@
 
 {#if embedded}
 	<!-- Embedded mode: just the markdown content, no wrapper -->
-	<div class="markdown-preview max-w-none prose prose-slate dark:prose-invert">
+	<div class="markdown-preview max-w-none prose prose-slate dark:prose-invert" use:markdownCopyButtons={renderedContent}>
 		{@html renderedContent}
 	</div>
 {:else}
@@ -85,7 +86,7 @@
 		</div>
 
 		<!-- Markdown Content -->
-		<div class="p-6 md:p-8 markdown-preview max-w-none prose prose-slate dark:prose-invert">
+		<div class="p-6 md:p-8 markdown-preview max-w-none prose prose-slate dark:prose-invert" use:markdownCopyButtons={renderedContent}>
 			{@html renderedContent}
 		</div>
 	</Card>
