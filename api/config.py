@@ -60,6 +60,13 @@ class Settings(BaseSettings):
         description="Stale-while-revalidate duration for agent usage",
     )
 
+    # Syncthing REST API (override per-instance for multi-peer local testing:
+    # CLAUDE_KARMA_SYNCTHING_URL=http://localhost:8386)
+    syncthing_url: str = Field(
+        default="http://localhost:8384",
+        description="Base URL of the local Syncthing REST API",
+    )
+
     # SQLite metadata index
     use_sqlite: bool = Field(
         default=True,

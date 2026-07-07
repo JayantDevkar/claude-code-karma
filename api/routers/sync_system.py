@@ -20,6 +20,8 @@ from routers.sync_deps import (
     validate_name,
 )
 
+from config import settings as app_settings
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/sync", tags=["sync-system"])
@@ -103,7 +105,7 @@ async def sync_init(req: InitRequest):
             503, "Cannot read Syncthing API key. Is Syncthing installed?"
         )
 
-    client = SyncthingClient(api_url="http://localhost:8384", api_key=api_key)
+    client = SyncthingClient(api_url=app_settings.syncthing_url, api_key=api_key)
     try:
         status = await client.get_system_status()
     except Exception:
@@ -207,7 +209,7 @@ async def sync_detect():
                 "version": None,
             }
 
-        client = SyncthingClient(api_url="http://localhost:8384", api_key=api_key)
+        client = SyncthingClient(api_url=app_settings.syncthing_url, api_key=api_key)
         status = await client.get_system_status()
         return {
             "syncthing_installed": syncthing_installed,
@@ -246,7 +248,7 @@ async def sync_reset(options: Optional[ResetOptions] = None):
         api_key = read_local_api_key()
         if api_key:
             client = SyncthingClient(
-                api_url="http://localhost:8384", api_key=api_key
+                api_url=app_settings.syncthing_url, api_key=api_key
             )
             # Remove all karma-* folders
             try:

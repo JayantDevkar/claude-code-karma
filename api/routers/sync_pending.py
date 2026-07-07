@@ -32,7 +32,8 @@ async def get_syncthing_client(config=Depends(require_config)):
     from services.syncthing.client import SyncthingClient
 
     api_key = config.syncthing.api_key if config.syncthing else ""
-    return SyncthingClient(api_url="http://localhost:8384", api_key=api_key)
+    from config import settings as app_settings
+    return SyncthingClient(api_url=app_settings.syncthing_url, api_key=api_key)
 
 
 async def get_folder_mgr(config=Depends(require_config)):

@@ -235,7 +235,7 @@ class ReconciliationTimer:
 
             api_key = config.syncthing.api_key if config.syncthing else ""
             client = SyncthingClient(
-                api_url="http://localhost:8384", api_key=api_key,
+                api_url=app_settings.syncthing_url, api_key=api_key,
             )
             devices = DeviceManager(client)
             folders = FolderManager(client, karma_base=app_settings.karma_base)
@@ -611,7 +611,7 @@ class WatcherManager:
                 )
                 if api_key:
                     self._event_listener = SyncthingEventListener(
-                        api_url="http://localhost:8384",
+                        api_url=app_settings.syncthing_url,
                         api_key=api_key,
                         on_trigger=self._metadata_timer.trigger,
                     )

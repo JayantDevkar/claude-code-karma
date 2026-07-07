@@ -100,7 +100,8 @@ def make_managers(config: Any):
     from services.sync.metadata_service import MetadataService
 
     api_key = config.syncthing.api_key if config.syncthing else ""
-    client = SyncthingClient(api_url="http://localhost:8384", api_key=api_key)
+    from config import settings as app_settings
+    client = SyncthingClient(api_url=app_settings.syncthing_url, api_key=api_key)
     devices = DeviceManager(client)
     folders = FolderManager(client, karma_base=app_settings.karma_base)
     metadata = MetadataService(

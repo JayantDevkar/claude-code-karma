@@ -22,6 +22,7 @@ from db.queries import (
     query_member_total_sessions,
     query_resolve_project,
 )
+from config import settings as app_settings
 from routers.sync_deps import get_optional_config, get_read_conn, make_repos
 
 logger = logging.getLogger(__name__)
@@ -43,7 +44,7 @@ def _get_connections(config: Any) -> dict:
         import httpx
         api_key = config.syncthing.api_key or ""
         resp = httpx.get(
-            "http://localhost:8384/rest/system/connections",
+            f"{app_settings.syncthing_url}/rest/system/connections",
             headers={"X-API-Key": api_key},
             timeout=5.0,
         )
@@ -61,7 +62,7 @@ def _get_device_stats(config: Any) -> dict:
         import httpx
         api_key = config.syncthing.api_key or ""
         resp = httpx.get(
-            "http://localhost:8384/rest/stats/device",
+            f"{app_settings.syncthing_url}/rest/stats/device",
             headers={"X-API-Key": api_key},
             timeout=5.0,
         )
