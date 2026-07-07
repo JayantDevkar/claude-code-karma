@@ -221,7 +221,6 @@ CREATE TABLE IF NOT EXISTS projects (
     project_path TEXT,
     slug TEXT,
     display_name TEXT,
-    git_identity TEXT,
     session_count INTEGER DEFAULT 0,
     last_activity TEXT,
     -- git_identity: canonical `owner/repo` lowercase, derived from
@@ -842,7 +841,15 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             logger.info(
                 "Migrating → v21: normalize remote_user_id from bare user_id to member_tag"
             )
-            conn.execute("""
+            # Guard for the minimum-fixture schema test (only schema_version
+            # seeded): sessions may not exist. Production always has it.
+            _tables = {
+                r[0] for r in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                ).fetchall()
+            }
+            if "sessions" in _tables:
+                conn.execute("""
                 UPDATE sessions SET remote_user_id = (
                     SELECT m.member_tag FROM sync_members m
                     WHERE m.user_id = sessions.remote_user_id

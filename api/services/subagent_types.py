@@ -96,7 +96,7 @@ def get_all_subagent_metadata(
     # Phase 2.5: Match unmatched agents by prompt content
     # Fallback for running agents where no tool_result exists yet.
     # Compares each unmatched agent's initial prompt against Task input prompts.
-    unmatched_agent_files = [f for f in agent_files if f.stem.removeprefix("agent-") not in result]
+    unmatched_agent_files = [f for f in agent_files if f.stem.removeprefix("agent-") not in types]
     if unmatched_agent_files:
         prompt_to_type = _extract_task_prompt_types(jsonl_path)
         if prompt_to_type:
@@ -106,7 +106,7 @@ def get_all_subagent_metadata(
                 if agent_prompt:
                     key = _normalize_key(agent_prompt)
                     if key in prompt_to_type:
-                        result[agent_id] = prompt_to_type[key]
+                        types[agent_id] = prompt_to_type[key]
 
     # Phase 3: Classify remaining by ID prefix
     for agent_file in agent_files:
