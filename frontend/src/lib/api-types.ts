@@ -1768,7 +1768,8 @@ export interface HookScriptDetail {
 
 // ============================================
 // Sync Types
-// =====================================
+// ============================================
+
 export interface SyncDetect {
 	syncthing_installed: boolean;
 	syncthing_running: boolean;
@@ -2086,7 +2087,9 @@ export interface InheritResult {
 	skill_name: string;
 	inherited_name: string;
 	scope: string;
-=======
+}
+
+// ============================================
 // Tickets (session ↔ ticket linking)
 // ============================================
 

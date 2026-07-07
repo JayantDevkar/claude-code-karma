@@ -7,6 +7,12 @@
 
 @import './styles/tokens.css';
 
+/* Compat alias: sync-era components use bare var(--radius) for control
+   corners; the token scale only defines the sized variants. */
+:root {
+	--radius: var(--radius-md);
+}
+
 /* ============================================
    BRAND FONTS (self-hosted, served from /static/fonts)
    The tokens name Inter / JetBrains Mono; load them so the app
