@@ -12,6 +12,7 @@ import asyncio
 import logging
 import sqlite3
 import threading
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
@@ -125,41 +126,81 @@ class RemoteSessionWatcher(FileSystemEventHandler):
 
 
 class ReconciliationTimer:
-    """Periodic timer that runs v4 3-phase reconciliation every N seconds.
+    """Runs v4 reconciliation on demand (event-triggered) with a periodic fallback.
 
     Uses ReconciliationService.run_cycle() which handles:
       Phase 1 (metadata): member/project discovery, removal signals, auto-leave
       Phase 2 (mesh pair): ensure Syncthing devices are paired
       Phase 3 (device lists): declarative folder device-list sync
 
-    H1 fix preserved: dedicated SQLite connection per timer thread.
+    A single worker thread waits on an Event with `interval` as timeout:
+      - trigger(reason) sets the event -> reconcile runs within DEBOUNCE_SECS
+        (bursts of Syncthing events coalesce into one cycle)
+      - if nothing triggers for `interval` seconds, a fallback sweep runs,
+        so the old 60s behaviour is preserved when the event stream is down
+
+    H1 fix preserved: dedicated SQLite connection per worker thread.
     """
+
+    DEBOUNCE_SECS = 2.0
 
     def __init__(self, config_data: dict, interval: float = 60.0):
         self._config_data = config_data
         self._interval = interval
-        self._timer: Optional[threading.Timer] = None
         self._running = False
+        self._wake = threading.Event()
+        self._thread: Optional[threading.Thread] = None
+        self._reasons_lock = threading.Lock()
+        self._pending_reasons: list[str] = []
+        # Status (read by WatcherManager.status() for the UI)
+        self.last_run_at: Optional[str] = None
+        self.last_run_reason: Optional[str] = None
+        self.last_run_ok: Optional[bool] = None
+        self.runs_total: int = 0
 
     def start(self):
-        self._running = True
-        self._schedule()
-        logger.info("Reconciliation timer started (interval=%ds)", self._interval)
-
-    def _schedule(self):
-        if not self._running:
+        if self._running:
             return
-        self._timer = threading.Timer(self._interval, self._run)
-        self._timer.daemon = True
-        self._timer.start()
+        self._running = True
+        self._thread = threading.Thread(
+            target=self._loop, daemon=True, name="reconciliation"
+        )
+        self._thread.start()
+        logger.info(
+            "Reconciliation worker started (fallback interval=%ds)", self._interval
+        )
 
-    def _run(self):
-        try:
-            self._reconcile()
-        except Exception as e:
-            logger.warning("Reconciliation cycle failed: %s", e)
-        finally:
-            self._schedule()
+    def trigger(self, reason: str = "event"):
+        """Request an immediate reconcile (thread-safe, debounced)."""
+        with self._reasons_lock:
+            self._pending_reasons.append(reason)
+        self._wake.set()
+
+    def _loop(self):
+        while self._running:
+            triggered = self._wake.wait(timeout=self._interval)
+            if not self._running:
+                return
+            if triggered:
+                # Debounce: let a burst of Syncthing events coalesce
+                time.sleep(self.DEBOUNCE_SECS)
+                self._wake.clear()
+                with self._reasons_lock:
+                    reasons = self._pending_reasons or ["event"]
+                    self._pending_reasons = []
+                reason = ",".join(sorted(set(reasons)))
+            else:
+                reason = "interval"
+            try:
+                self._reconcile()
+                self.last_run_ok = True
+            except Exception as e:
+                self.last_run_ok = False
+                logger.warning("Reconciliation cycle failed (%s): %s", reason, e)
+            finally:
+                self.runs_total += 1
+                self.last_run_at = datetime.now(timezone.utc).isoformat()
+                self.last_run_reason = reason
 
     def _reconcile(self):
         """Run ReconciliationService.run_cycle() with a dedicated connection."""
@@ -232,10 +273,139 @@ class ReconciliationTimer:
 
     def stop(self):
         self._running = False
-        if self._timer is not None:
-            self._timer.cancel()
-            self._timer = None
-        logger.info("Reconciliation timer stopped")
+        self._wake.set()  # unblock the worker so it can exit
+        self._thread = None
+        logger.info("Reconciliation worker stopped")
+
+
+class SyncthingEventListener:
+    """Long-polls Syncthing's /rest/events API and triggers reconciliation.
+
+    This is what makes sync feel instant: instead of waiting for the next
+    60s sweep, pending devices/folders, connections, and metadata arrivals
+    trigger a reconcile within seconds of Syncthing seeing them.
+
+    Event -> reason mapping (everything else is ignored):
+      PendingDevicesChanged  -> a peer wants to pair with us
+      PendingFoldersChanged  -> a peer offered us a folder
+      DeviceConnected        -> a teammate came online (their state may be stale here)
+      ConfigSaved            -> folders/devices changed (accept, share, ...)
+      ItemFinished           -> a file landed; only karma-meta--* folders matter
+                                (member state files / removal signals arrived)
+      FolderCompletion       -> only karma-meta--* folders (metadata fully synced)
+
+    Runs in a daemon thread using the sync `requests` client (long-poll is a
+    blocking call; no need for an event loop here). Reconnects with backoff.
+    """
+
+    EVENT_TYPES = (
+        "PendingDevicesChanged",
+        "PendingFoldersChanged",
+        "DeviceConnected",
+        "ConfigSaved",
+        "ItemFinished",
+        "FolderCompletion",
+    )
+    POLL_TIMEOUT_SECS = 55
+    ERROR_BACKOFF_SECS = 5.0
+
+    def __init__(self, api_url: str, api_key: str, on_trigger):
+        self._api_url = api_url.rstrip("/")
+        self._api_key = api_key
+        self._on_trigger = on_trigger  # callable(reason: str)
+        self._running = False
+        self._thread: Optional[threading.Thread] = None
+        # Status (read by WatcherManager.status() for the UI)
+        self.connected: bool = False
+        self.last_event_at: Optional[str] = None
+        self.events_seen: int = 0
+
+    @property
+    def is_running(self) -> bool:
+        return self._running
+
+    def start(self):
+        if self._running:
+            return
+        self._running = True
+        self._thread = threading.Thread(
+            target=self._loop, daemon=True, name="syncthing-events"
+        )
+        self._thread.start()
+        logger.info("Syncthing event listener started: %s", self._api_url)
+
+    def stop(self):
+        self._running = False
+        self._thread = None
+        self.connected = False
+        logger.info("Syncthing event listener stopped")
+
+    # ------------------------------------------------------------------
+
+    def _reason_for(self, event: dict) -> Optional[str]:
+        etype = event.get("type")
+        data = event.get("data") or {}
+        if etype in ("ItemFinished", "FolderCompletion"):
+            folder = data.get("folder", "")
+            if folder.startswith("karma-meta--"):
+                return f"{etype}:{folder}"
+            return None
+        if etype in self.EVENT_TYPES:
+            return etype
+        return None
+
+    def _loop(self):
+        import requests
+
+        last_id = 0
+        first_poll = True
+        while self._running:
+            try:
+                params = {
+                    "since": last_id,
+                    "timeout": self.POLL_TIMEOUT_SECS,
+                    "events": ",".join(self.EVENT_TYPES),
+                }
+                if first_poll:
+                    # Position at the newest buffered event instead of
+                    # replaying history from before we started.
+                    params["limit"] = 1
+                resp = requests.get(
+                    f"{self._api_url}/rest/events",
+                    params=params,
+                    headers={"X-API-Key": self._api_key},
+                    timeout=self.POLL_TIMEOUT_SECS + 10,
+                )
+                resp.raise_for_status()
+                self.connected = True
+                events = resp.json() or []
+                if first_poll:
+                    first_poll = False
+                    if events:
+                        last_id = events[-1].get("id", 0)
+                    continue
+
+                reasons = []
+                for event in events:
+                    last_id = max(last_id, event.get("id", 0))
+                    reason = self._reason_for(event)
+                    if reason:
+                        reasons.append(reason)
+                if reasons:
+                    self.events_seen += len(reasons)
+                    self.last_event_at = datetime.now(timezone.utc).isoformat()
+                    logger.debug("Syncthing events -> reconcile: %s", reasons)
+                    try:
+                        self._on_trigger(reasons[0] if len(reasons) == 1 else "burst")
+                    except Exception as e:
+                        logger.warning("Event trigger failed: %s", e)
+            except Exception as e:
+                if self._running:
+                    if self.connected:
+                        logger.warning("Syncthing event stream lost: %s", e)
+                    self.connected = False
+                    first_poll = True  # re-position after reconnect
+                    time.sleep(self.ERROR_BACKOFF_SECS)
 
 
 class WatcherManager:
@@ -250,6 +420,7 @@ class WatcherManager:
         self._projects_watched: list[str] = []
         self._remote_watcher: Optional[RemoteSessionWatcher] = None
         self._metadata_timer: Optional[ReconciliationTimer] = None
+        self._event_listener: Optional[SyncthingEventListener] = None
 
     @property
     def is_running(self) -> bool:
@@ -265,6 +436,25 @@ class WatcherManager:
             "remote_watcher_running": (
                 self._remote_watcher is not None
                 and self._remote_watcher.is_running
+            ),
+            "reconciliation": (
+                {
+                    "last_run_at": self._metadata_timer.last_run_at,
+                    "last_run_reason": self._metadata_timer.last_run_reason,
+                    "last_run_ok": self._metadata_timer.last_run_ok,
+                    "runs_total": self._metadata_timer.runs_total,
+                }
+                if self._metadata_timer is not None
+                else None
+            ),
+            "event_listener": (
+                {
+                    "connected": self._event_listener.connected,
+                    "last_event_at": self._event_listener.last_event_at,
+                    "events_seen": self._event_listener.events_seen,
+                }
+                if self._event_listener is not None
+                else None
             ),
         }
 
@@ -398,13 +588,40 @@ class WatcherManager:
             t = threading.Thread(target=_initial_sync, daemon=True, name="initial-sync")
             t.start()
 
-        # Start metadata reconciliation timer (~60s periodic)
+        # Start reconciliation worker (event-triggered + 60s fallback sweep)
         if self._metadata_timer is None:
             try:
                 self._metadata_timer = ReconciliationTimer(config_data)
                 self._metadata_timer.start()
             except Exception as e:
                 logger.warning("Failed to start metadata reconciliation timer: %s", e)
+
+        # Start Syncthing event listener so reconciliation reacts within
+        # seconds (pending devices/folders, connections, metadata arrivals)
+        # instead of waiting for the fallback sweep.
+        if self._event_listener is None and self._metadata_timer is not None:
+            try:
+                from models.sync_config import SyncConfig
+
+                sync_config = SyncConfig.load()
+                api_key = (
+                    sync_config.syncthing.api_key
+                    if sync_config and sync_config.syncthing
+                    else ""
+                )
+                if api_key:
+                    self._event_listener = SyncthingEventListener(
+                        api_url="http://localhost:8384",
+                        api_key=api_key,
+                        on_trigger=self._metadata_timer.trigger,
+                    )
+                    self._event_listener.start()
+                else:
+                    logger.info(
+                        "Syncthing event listener not started: no API key configured"
+                    )
+            except Exception as e:
+                logger.warning("Failed to start Syncthing event listener: %s", e)
 
         # Start remote session watcher (for incoming Syncthing files)
         if self._remote_watcher is None or not self._remote_watcher.is_running:
@@ -451,6 +668,13 @@ class WatcherManager:
                 w.stop()
             except Exception as e:
                 logger.warning("Error stopping watcher: %s", e)
+
+        if self._event_listener is not None:
+            try:
+                self._event_listener.stop()
+            except Exception as e:
+                logger.warning("Error stopping event listener: %s", e)
+            self._event_listener = None
 
         if self._metadata_timer is not None:
             try:
