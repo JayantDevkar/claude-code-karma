@@ -1783,11 +1783,27 @@ export interface SyncDetect {
 	version?: string | null;
 }
 
+export interface SyncWatcherStatus {
+	running: boolean;
+	reconciliation: {
+		last_run_at: string | null;
+		last_run_reason: string | null;
+		last_run_ok: boolean | null;
+		runs_total: number;
+	} | null;
+	event_listener: {
+		connected: boolean;
+		last_event_at: string | null;
+		events_seen: number;
+	} | null;
+}
+
 export interface SyncStatusResponse {
 	configured: boolean;
 	user_id?: string;
 	machine_tag?: string;
 	member_tag?: string;
+	watcher?: SyncWatcherStatus | null;
 	syncthing?: {
 		installed: boolean;
 		running: boolean;

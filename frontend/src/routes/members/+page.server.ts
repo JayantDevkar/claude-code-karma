@@ -8,6 +8,8 @@ interface MemberListItem {
 	machine_tag: string;
 	device_id: string;
 	connected: boolean;
+	connection_type: 'direct' | 'relay' | null;
+	last_seen: string | null;
 	is_you: boolean;
 	team_count: number;
 	teams: string[];

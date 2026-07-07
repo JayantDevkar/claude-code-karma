@@ -53,6 +53,36 @@ def _get_connections(config: Any) -> dict:
         return {}
 
 
+def _get_device_stats(config: Any) -> dict:
+    """Fetch Syncthing per-device stats (lastSeen).  Returns {} on any error."""
+    if config is None or not getattr(config, "syncthing", None):
+        return {}
+    try:
+        import httpx
+        api_key = config.syncthing.api_key or ""
+        resp = httpx.get(
+            "http://localhost:8384/rest/stats/device",
+            headers={"X-API-Key": api_key},
+            timeout=5.0,
+        )
+        resp.raise_for_status()
+        return resp.json() or {}
+    except Exception:
+        return {}
+
+
+def _connection_quality(conn_entry: dict) -> str | None:
+    """Classify a Syncthing connection: 'direct' | 'relay' | None (offline).
+
+    Relayed connections are the usual culprit behind hours-late invites, so
+    the UI surfaces them distinctly instead of a flat online/offline dot.
+    """
+    if not conn_entry.get("connected", False):
+        return None
+    ctype = (conn_entry.get("type") or "").lower()
+    return "relay" if "relay" in ctype else "direct"
+
+
 def _event_dict(e, idx: int = 0) -> dict:
     return {
         "id": idx,
@@ -115,21 +145,30 @@ async def list_members(
                     "_machine_tag": m.machine_tag,
                 }
 
-    # Fetch connection status once
+    # Fetch connection status + per-device stats once
     connections = await asyncio.to_thread(_get_connections, config)
+    device_stats = await asyncio.to_thread(_get_device_stats, config)
 
     result = []
     for entry in members_by_device.values():
         tag = entry["_member_tag"]
         did = entry["device_id"]
         is_you = tag == my_member_tag
-        connected = is_you or bool(connections.get(did, {}).get("connected", False))
+        conn_entry = connections.get(did, {})
+        connected = is_you or bool(conn_entry.get("connected", False))
+        quality = "direct" if is_you else _connection_quality(conn_entry)
+        last_seen = (device_stats.get(did) or {}).get("lastSeen")
+        # Syncthing uses a zero-value timestamp for never-seen devices
+        if last_seen and last_seen.startswith("1970"):
+            last_seen = None
         result.append({
             "name": entry["name"],
             "device_id": did or "",
             "member_tag": tag,
             "machine_tag": entry.get("_machine_tag", ""),
             "connected": connected,
+            "connection_type": quality,
+            "last_seen": last_seen,
             "is_you": is_you,
             "team_count": len(entry["teams"]),
             "teams": entry["teams"],

@@ -234,6 +234,17 @@
 			{:else if projectStatuses.length > 0}
 				<p class="text-xs text-[var(--success)] mt-0.5">All sessions in sync</p>
 			{/if}
+			{#if status?.watcher?.event_listener?.connected}
+				<p class="text-xs text-[var(--text-muted)] mt-0.5" title="Reconciliation reacts to Syncthing events within seconds">
+					<span class="text-[var(--success)] font-medium">Live</span>
+					— reacting to sync events instantly
+				</p>
+			{:else if status?.watcher?.reconciliation}
+				<p class="text-xs text-[var(--text-muted)] mt-0.5" title="Event stream unavailable — falling back to a periodic check">
+					<span class="text-[var(--warning)] font-medium">Polling</span>
+					— checking every 60s (event stream down)
+				</p>
+			{/if}
 		</div>
 		<button
 			onclick={syncAllNow}

@@ -133,7 +133,7 @@ async def lifespan(app: FastAPI):
             config = SyncConfig.load()
             if config and config.member_tag:
                 from db.connection import get_writer_db
-                from services.watcher_manager import WatcherManager
+                from services.watcher_singleton import get_watcher_manager
 
                 db = get_writer_db()
 
@@ -160,22 +160,25 @@ async def lifespan(app: FastAPI):
                     if projects_dict:
                         teams_dict[tname] = {"projects": projects_dict}
 
-                if teams_dict:
-                    config_data = {
-                        "teams": teams_dict,
-                        "user_id": config.user_id,
-                        "machine_id": config.machine_id,
-                        "device_id": (
-                            config.syncthing.device_id if config.syncthing else ""
-                        ),
-                        "member_tag": config.member_tag,
-                    }
-                    session_watcher_mgr = WatcherManager()
-                    session_watcher_mgr.start_all(config_data)
-                    logger.info(
-                        "Session packager started for %d team(s)",
-                        len(teams_dict),
-                    )
+                # Start even with zero teams/projects: a fresh joiner needs
+                # the reconciliation worker + event listener running to
+                # discover its first team at all — this was the root cause
+                # of "invites never arrive" on newly initialized machines.
+                config_data = {
+                    "teams": teams_dict,
+                    "user_id": config.user_id,
+                    "machine_id": config.machine_id,
+                    "device_id": (
+                        config.syncthing.device_id if config.syncthing else ""
+                    ),
+                    "member_tag": config.member_tag,
+                }
+                session_watcher_mgr = get_watcher_manager()
+                session_watcher_mgr.start_all(config_data)
+                logger.info(
+                    "Sync worker started: %d team(s), reconciliation + event listener",
+                    len(teams_dict),
+                )
         except Exception as e:
             logger.warning(
                 "Session packager failed to start (non-critical): %s", e

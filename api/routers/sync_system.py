@@ -56,6 +56,16 @@ async def sync_status(
     repos = make_repos()
     teams = repos["teams"].list_all(conn)
 
+    # Live pipeline health (reconciliation worker + Syncthing event stream)
+    # so the UI can show "live" vs "polling fallback" instead of guessing.
+    watcher = None
+    try:
+        from services.watcher_singleton import get_watcher_manager
+
+        watcher = get_watcher_manager().status()
+    except Exception:
+        pass
+
     return {
         "configured": True,
         "user_id": config.user_id,
@@ -63,6 +73,7 @@ async def sync_status(
         "machine_tag": config.machine_tag,
         "member_tag": config.member_tag,
         "device_id": config.syncthing.device_id if config.syncthing else None,
+        "watcher": watcher,
         "teams": [
             {
                 "name": t.name,

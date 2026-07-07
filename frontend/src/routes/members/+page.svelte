@@ -35,6 +35,17 @@
 		{ title: 'Offline', value: data.total - onlineCount, icon: WifiOff, color: 'gray' },
 		{ title: 'Teams', value: uniqueTeams, icon: Users, color: 'purple' }
 	]);
+
+	function formatLastSeen(iso: string): string {
+		const then = new Date(iso).getTime();
+		if (Number.isNaN(then)) return 'unknown';
+		const mins = Math.floor((Date.now() - then) / 60_000);
+		if (mins < 1) return 'just now';
+		if (mins < 60) return `${mins}m ago`;
+		const hours = Math.floor(mins / 60);
+		if (hours < 24) return `${hours}h ago`;
+		return `${Math.floor(hours / 24)}d ago`;
+	}
 </script>
 
 {#if isPageLoading}
@@ -173,6 +184,14 @@
 						{/if}
 						{#if member.connected || member.is_you}
 							<Wifi size={12} class="text-[var(--success)] shrink-0" />
+							{#if member.connection_type === 'relay'}
+								<span
+									class="shrink-0 px-1.5 py-0.5 text-[10px] font-medium rounded bg-[var(--warning)]/10 text-[var(--warning)] border border-[var(--warning)]/20"
+									title="Connected via a Syncthing relay — sync works but can be slow. A VPN (e.g. Tailscale) or direct connection is faster."
+								>
+									relay
+								</span>
+							{/if}
 						{:else}
 							<WifiOff size={12} class="text-[var(--text-muted)] shrink-0" />
 						{/if}
@@ -181,6 +200,10 @@
 						{member.team_count} team{member.team_count !== 1 ? 's' : ''}
 						<span class="mx-1">&middot;</span>
 						{member.device_id.slice(0, 7)}...
+						{#if !member.connected && !member.is_you && member.last_seen}
+							<span class="mx-1">&middot;</span>
+							last seen {formatLastSeen(member.last_seen)}
+						{/if}
 					</div>
 				</div>
 			</a>
