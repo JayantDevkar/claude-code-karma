@@ -66,6 +66,11 @@ class Settings(BaseSettings):
         default="http://localhost:8384",
         description="Base URL of the local Syncthing REST API",
     )
+    sync_removed_unpair_grace_seconds: int = Field(
+        default=900,
+        description="How long removed members' devices stay paired so the "
+        "removal signal can sync to them before the device is unpaired.",
+    )
 
     # SQLite metadata index
     use_sqlite: bool = Field(

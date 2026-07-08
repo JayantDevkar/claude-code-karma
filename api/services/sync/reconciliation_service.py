@@ -145,6 +145,72 @@ class ReconciliationService:
             await self.phase_mesh_pair(conn, team)
             await self.phase_device_lists(conn, team)
 
+        try:
+            await self.cleanup_removed_devices(conn)
+        except Exception as exc:
+            logger.warning("cleanup_removed_devices failed (non-fatal): %s", exc)
+
+        try:
+            await self.cleanup_dissolved_metadata(conn)
+        except Exception as exc:
+            logger.warning("cleanup_dissolved_metadata failed (non-fatal): %s", exc)
+
+    async def cleanup_dissolved_metadata(self, conn: sqlite3.Connection) -> None:
+        """Delete metadata folders of dissolved teams after a grace period.
+
+        dissolve_team() keeps the metadata folder syncing so the dissolution
+        signals inside it can reach every member. Once the grace period has
+        passed, the folder itself is removed from Syncthing config here.
+        """
+        from config import settings as app_settings
+
+        grace = getattr(app_settings, "sync_removed_unpair_grace_seconds", 900)
+        rows = conn.execute(
+            "SELECT e.team_name FROM sync_events e "
+            "JOIN sync_teams t ON t.name = e.team_name AND t.status = 'dissolved' "
+            "WHERE e.event_type = 'team_dissolved' "
+            "GROUP BY e.team_name "
+            "HAVING MAX(e.created_at) < datetime('now', ?)",
+            (f"-{int(grace)} seconds",),
+        ).fetchall()
+        for (team_name,) in rows:
+            await self.folders.cleanup_team_folders([], [], team_name, conn=conn)
+            logger.info(
+                "cleanup: deleted metadata folder for dissolved team '%s' (grace passed)",
+                team_name,
+            )
+
+    async def cleanup_removed_devices(self, conn: sqlite3.Connection) -> None:
+        """Unpair devices of REMOVED members after a grace period.
+
+        remove_member() deliberately keeps the device paired so the removal
+        signal can still sync to the removed machine (unpairing immediately
+        severs the metadata channel and the member never auto-leaves). This
+        sweep does the hard cleanup once the signal has had time to deliver,
+        skipping devices that still belong to another alive team.
+        """
+        from config import settings as app_settings
+
+        grace = getattr(app_settings, "sync_removed_unpair_grace_seconds", 900)
+        rows = conn.execute(
+            "SELECT DISTINCT device_id FROM sync_removed_members "
+            "WHERE removed_at < datetime('now', ?)",
+            (f"-{int(grace)} seconds",),
+        ).fetchall()
+        for (device_id,) in rows:
+            if not device_id or device_id == self.my_device_id:
+                continue
+            alive = [
+                m for m in self.members.get_by_device(conn, device_id)
+                if m.status.value != "removed"
+            ]
+            if alive:
+                continue
+            try:
+                await self.devices.unpair(device_id)
+            except Exception as exc:
+                logger.debug("cleanup: unpair %s skipped: %s", device_id, exc)
+
     async def phase_team_discovery(self, conn: sqlite3.Connection) -> None:
         """Phase 0: Discover teams from karma-meta--* folders in Syncthing config.
 
@@ -573,22 +639,35 @@ class ReconciliationService:
                         sub.member_tag, project.folder_suffix, member.device_id,
                     )
 
-            # Compute desired device set: members with send|both direction
+            # Compute device sets per role.
             # IMPORTANT: filter by current team to prevent cross-team data leaks.
             # list_accepted_for_suffix() returns subs from ALL teams sharing
             # the same folder_suffix — we must only include THIS team's members.
-            desired: set[str] = set()
+            #
+            # An outbox folder must sync to: its owner + every member whose
+            # direction includes RECEIVE. The previous code used the SENDER
+            # set for every folder, so receive-only members were never added
+            # to anyone's outbox and could not receive at all.
+            receivers: set[str] = set()
+            sender_device: dict[str, str] = {}  # member_tag -> device_id
             for sub in accepted:
                 if sub.team_name != team.name:
                     continue
+                member = self.members.get(conn, sub.team_name, sub.member_tag)
+                if not (member and member.is_active):
+                    continue
+                if sub.direction in (SyncDirection.RECEIVE, SyncDirection.BOTH):
+                    receivers.add(member.device_id)
                 if sub.direction in (SyncDirection.SEND, SyncDirection.BOTH):
-                    member = self.members.get(conn, sub.team_name, sub.member_tag)
-                    if member and member.is_active:
-                        desired.add(member.device_id)
+                    sender_device[sub.member_tag] = member.device_id
 
             # Apply declaratively to all outbox folders with this suffix
             for m in team_members:
                 folder_id = build_outbox_folder_id(m.member_tag, project.folder_suffix)
+                owner_device = sender_device.get(m.member_tag)
+                if owner_device is None:
+                    continue  # member isn't sending — folder not managed here
+                desired = receivers | {owner_device}
                 await self.folders.set_folder_devices(folder_id, desired)
 
     async def _auto_leave(self, conn: sqlite3.Connection, team) -> None:

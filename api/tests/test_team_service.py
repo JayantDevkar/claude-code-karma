@@ -188,7 +188,10 @@ class TestRemoveMember:
         assert service.members.was_removed(conn, "t", "DEV-A")
 
     @pytest.mark.asyncio
-    async def test_unpairing_happens_when_no_other_teams(self, service, conn, mock_devices):
+    async def test_no_immediate_unpair_on_removal(self, service, conn, mock_devices):
+        """remove_member keeps the device paired so the removal signal can
+        still sync to the removed machine; the grace-period cleanup in
+        reconciliation does the unpair later."""
         await service.create_team(
             conn, name="t", leader_member_tag="j.m", leader_device_id="DEV-L",
         )
@@ -199,7 +202,7 @@ class TestRemoveMember:
         await service.remove_member(
             conn, team_name="t", by_device="DEV-L", member_tag="a.l",
         )
-        mock_devices.unpair.assert_called_once_with("DEV-A")
+        mock_devices.unpair.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_writes_removal_signal_to_metadata(self, service, conn, mock_metadata):

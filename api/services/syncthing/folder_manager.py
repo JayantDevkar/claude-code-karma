@@ -280,12 +280,15 @@ class FolderManager:
         member_tags: List[str],
         team_name: str,
         conn: Optional[sqlite3.Connection] = None,
+        keep_metadata: bool = False,
     ) -> None:
         """Delete all outbox folders for this team plus the metadata folder.
 
         If ``conn`` is provided, each outbox folder is checked against other
         teams' subscriptions before deletion.  Folders still needed by another
-        team are skipped.  The metadata folder (team-scoped) is always deleted.
+        team are skipped.  The metadata folder (team-scoped) is deleted unless
+        ``keep_metadata`` is set — dissolution keeps it alive briefly so the
+        removal signals inside it can still sync to members.
 
         When ``conn`` is None the legacy behaviour is preserved: all matching
         folders are deleted unconditionally.
@@ -298,7 +301,8 @@ class FolderManager:
 
             # Metadata folder is always team-scoped — safe to delete
             if fid == meta_id:
-                await self._client.delete_config_folder(fid)
+                if not keep_metadata:
+                    await self._client.delete_config_folder(fid)
                 continue
 
             # Check each outbox folder

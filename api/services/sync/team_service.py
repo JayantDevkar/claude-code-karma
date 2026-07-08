@@ -185,21 +185,18 @@ class TeamService:
             team_name, member_tag, removed_by=team.leader_member_tag, team_id=team.team_id,
         )
 
-        # Remove device from all team folder device lists
+        # Remove device from PROJECT folder device lists (stops data flow now).
+        # The metadata folder and the device pairing are deliberately kept:
+        # unpairing here deletes the device from Syncthing config, which
+        # severs the metadata channel before the removal signal can sync —
+        # the removed machine then never learns it was removed and never
+        # auto-leaves. Reconciliation hard-cleans (unpairs) the device after
+        # a grace period instead (see cleanup_removed_devices).
         projects = self.projects.list_for_team(conn, team_name)
         suffixes = [p.folder_suffix for p in projects if p.status.value == "shared"]
         all_members = self.members.list_for_team(conn, team_name)
         tags = [m.member_tag for m in all_members]
         await self.folders.remove_device_from_team_folders(suffixes, tags, removed.device_id)
-
-        # Unpair only if device not in any other team (ADDED or ACTIVE)
-        other_memberships = self.members.get_by_device(conn, removed.device_id)
-        alive_others = [
-            m for m in other_memberships
-            if m.team_name != team_name and m.status != MemberStatus.REMOVED
-        ]
-        if not alive_others:
-            await self.devices.unpair(removed.device_id)
 
         self.events.log(conn, SyncEvent(
             event_type=SyncEventType.member_removed,
@@ -288,18 +285,18 @@ class TeamService:
                         member.member_tag, e,
                     )
 
-        # Cleanup Syncthing folders for all projects + members
+        # Cleanup Syncthing PROJECT folders, but keep the metadata folder and
+        # device pairings alive: deleting/unpairing now severs the channel
+        # that carries the dissolution signals, so members would never learn
+        # the team dissolved and never auto-leave. Reconciliation deletes the
+        # metadata folder after a grace period (cleanup_dissolved_metadata);
+        # members' own auto-leave unpairs from their side.
         projects = self.projects.list_for_team(conn, team_name)
         suffixes = [p.folder_suffix for p in projects]
         tags = [m.member_tag for m in members]
-        await self.folders.cleanup_team_folders(suffixes, tags, team_name, conn=conn)
-
-        # Unpair devices for non-leader members not shared with other teams
-        for member in members:
-            if member.member_tag != team.leader_member_tag:
-                others = self.members.get_by_device(conn, member.device_id)
-                if len([o for o in others if o.team_name != team_name]) == 0:
-                    await self.devices.unpair(member.device_id)
+        await self.folders.cleanup_team_folders(
+            suffixes, tags, team_name, conn=conn, keep_metadata=True,
+        )
 
         # Soft-delete: persist dissolved status for audit trail
         self.teams.save(conn, dissolved)

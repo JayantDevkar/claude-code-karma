@@ -64,6 +64,7 @@ def mock_folders():
     m.set_folder_devices = AsyncMock()
     m.cleanup_team_folders = AsyncMock()
     m.ensure_outbox_folder = AsyncMock()
+    m.ensure_inbox_folder = AsyncMock()
     m.get_configured_folders = AsyncMock(return_value=[])
     return m
 
@@ -143,34 +144,82 @@ class TestPhase3FolderRecovery:
     """Phase 3 should ensure outbox folders exist before setting device lists."""
 
     @pytest.mark.asyncio
-    async def test_ensure_outbox_called_for_accepted_both_sub(
+    async def test_ensure_outbox_called_for_my_own_sub(
         self, conn, mock_metadata, mock_devices, mock_folders
     ):
-        """Active member with ACCEPTED/BOTH subscription triggers ensure_outbox_folder."""
+        """MY ACCEPTED send|both subscription triggers MY outbox recovery."""
         team = seed_team(conn)
-        seed_member(conn, PEER_TAG, device_id=PEER_DEVICE)
+        seed_member(conn, MY_TAG, device_id=MY_DEVICE)
         seed_project(conn)
-        seed_subscription(conn, PEER_TAG, direction=SyncDirection.BOTH)
+        seed_subscription(conn, MY_TAG, direction=SyncDirection.BOTH)
 
         service = make_service(mock_metadata, mock_devices, mock_folders)
         await service.phase_device_lists(conn, team)
 
-        mock_folders.ensure_outbox_folder.assert_any_call(PEER_TAG, SUFFIX)
+        mock_folders.ensure_outbox_folder.assert_any_call(MY_TAG, SUFFIX)
+        mock_folders.ensure_inbox_folder.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_ensure_outbox_called_for_accepted_send_sub(
+    async def test_peer_sub_triggers_inbox_not_outbox(
         self, conn, mock_metadata, mock_devices, mock_folders
     ):
-        """Active member with ACCEPTED/SEND subscription triggers ensure_outbox_folder."""
+        """A TEAMMATE's send sub must create MY receiveonly inbox for their
+        outbox — never a sendonly outbox under their tag (which would block
+        the inbox and silently stop all receiving)."""
         team = seed_team(conn)
+        seed_member(conn, MY_TAG, device_id=MY_DEVICE)
         seed_member(conn, PEER_TAG, device_id=PEER_DEVICE)
         seed_project(conn)
+        seed_subscription(conn, MY_TAG, direction=SyncDirection.RECEIVE)
         seed_subscription(conn, PEER_TAG, direction=SyncDirection.SEND)
 
         service = make_service(mock_metadata, mock_devices, mock_folders)
         await service.phase_device_lists(conn, team)
 
-        mock_folders.ensure_outbox_folder.assert_any_call(PEER_TAG, SUFFIX)
+        mock_folders.ensure_inbox_folder.assert_any_call(PEER_TAG, SUFFIX, PEER_DEVICE)
+        mock_folders.ensure_outbox_folder.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_no_inbox_when_i_do_not_receive(
+        self, conn, mock_metadata, mock_devices, mock_folders
+    ):
+        """If MY direction is send-only, teammates' outboxes get no inbox here."""
+        team = seed_team(conn)
+        seed_member(conn, MY_TAG, device_id=MY_DEVICE)
+        seed_member(conn, PEER_TAG, device_id=PEER_DEVICE)
+        seed_project(conn)
+        seed_subscription(conn, MY_TAG, direction=SyncDirection.SEND)
+        seed_subscription(conn, PEER_TAG, direction=SyncDirection.BOTH)
+
+        service = make_service(mock_metadata, mock_devices, mock_folders)
+        await service.phase_device_lists(conn, team)
+
+        mock_folders.ensure_inbox_folder.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_receive_only_member_included_in_outbox_devices(
+        self, conn, mock_metadata, mock_devices, mock_folders
+    ):
+        """Receive-only members must appear in senders' outbox device lists —
+        the old sender-only device set meant they could never receive."""
+        team = seed_team(conn)
+        seed_member(conn, MY_TAG, device_id=MY_DEVICE)
+        seed_member(conn, PEER_TAG, device_id=PEER_DEVICE)
+        seed_project(conn)
+        seed_subscription(conn, MY_TAG, direction=SyncDirection.SEND)
+        seed_subscription(conn, PEER_TAG, direction=SyncDirection.RECEIVE)
+
+        service = make_service(mock_metadata, mock_devices, mock_folders)
+        await service.phase_device_lists(conn, team)
+
+        # My outbox folder must list the receive-only peer + me
+        from services.syncthing.folder_manager import build_outbox_folder_id
+        my_folder = build_outbox_folder_id(MY_TAG, SUFFIX)
+        calls = {
+            c.args[0]: c.args[1] for c in mock_folders.set_folder_devices.call_args_list
+        }
+        assert my_folder in calls
+        assert calls[my_folder] == {MY_DEVICE, PEER_DEVICE}
 
     @pytest.mark.asyncio
     async def test_ensure_outbox_not_called_for_receive_only(
@@ -214,17 +263,17 @@ class TestPhase3FolderRecovery:
         team_a = seed_team(conn, name="team-a")
         team_b = seed_team(conn, name="team-b", leader_tag="lb.srv", leader_device="DEV-LB")
 
-        # Member active in both teams
-        seed_member(conn, PEER_TAG, team_name="team-a", device_id=PEER_DEVICE)
-        seed_member(conn, PEER_TAG, team_name="team-b", device_id=PEER_DEVICE)
+        # I am active in both teams
+        seed_member(conn, MY_TAG, team_name="team-a", device_id=MY_DEVICE)
+        seed_member(conn, MY_TAG, team_name="team-b", device_id=MY_DEVICE)
 
         # Same git identity shared in both teams (same folder_suffix)
         seed_project(conn, team_name="team-a")
         seed_project(conn, team_name="team-b")
 
         # ACCEPTED/BOTH in both teams
-        seed_subscription(conn, PEER_TAG, team_name="team-a", direction=SyncDirection.BOTH)
-        seed_subscription(conn, PEER_TAG, team_name="team-b", direction=SyncDirection.BOTH)
+        seed_subscription(conn, MY_TAG, team_name="team-a", direction=SyncDirection.BOTH)
+        seed_subscription(conn, MY_TAG, team_name="team-b", direction=SyncDirection.BOTH)
 
         service = make_service(mock_metadata, mock_devices, mock_folders)
 
@@ -236,7 +285,7 @@ class TestPhase3FolderRecovery:
         # but the team_name filter ensures only team-a's sub triggers recovery)
         calls = mock_folders.ensure_outbox_folder.call_args_list
         assert len(calls) == 1
-        assert calls[0].args == (PEER_TAG, SUFFIX)
+        assert calls[0].args == (MY_TAG, SUFFIX)
 
     @pytest.mark.asyncio
     async def test_ensure_outbox_called_before_set_folder_devices(
@@ -244,9 +293,9 @@ class TestPhase3FolderRecovery:
     ):
         """ensure_outbox_folder is called BEFORE set_folder_devices for the same project."""
         team = seed_team(conn)
-        seed_member(conn, PEER_TAG, device_id=PEER_DEVICE)
+        seed_member(conn, MY_TAG, device_id=MY_DEVICE)
         seed_project(conn)
-        seed_subscription(conn, PEER_TAG, direction=SyncDirection.BOTH)
+        seed_subscription(conn, MY_TAG, direction=SyncDirection.BOTH)
 
         # Track call order
         call_order = []

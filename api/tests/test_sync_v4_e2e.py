@@ -191,8 +191,9 @@ class TestFullE2EFlow:
             member_tag="ayush.laptop",
         )
         assert removed.status == MemberStatus.REMOVED
-        # Device not in other teams — should be unpaired
-        stack["devices"].unpair.assert_called_once_with("DEV-A")
+        # Device stays paired at removal so the removal signal can still
+        # sync; the grace-period cleanup unpairs later (cleanup_removed_devices).
+        stack["devices"].unpair.assert_not_called()
 
         # Verify removal signal written to metadata folder
         meta = metadata_service_from_stack(stack)
