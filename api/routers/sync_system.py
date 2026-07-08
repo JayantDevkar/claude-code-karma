@@ -116,6 +116,16 @@ async def sync_init(req: InitRequest):
     config = SyncConfig(user_id=req.user_id, syncthing=syncthing_settings)
     config.save()
 
+    # Start the sync worker NOW — without this, a freshly initialized machine
+    # has no reconciliation loop until the API restarts and never discovers
+    # the team it was invited to.
+    try:
+        from services.sync_bootstrap import start_sync_worker
+
+        start_sync_worker()
+    except Exception as e:
+        logger.warning("Sync worker failed to start after init: %s", e)
+
     return {
         "ok": True,
         "user_id": config.user_id,

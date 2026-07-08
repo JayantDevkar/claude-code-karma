@@ -377,7 +377,24 @@ class ReconciliationService:
                     continue
                 local_sub = self.subs.get(conn, tag, team.name, git_id)
                 if local_sub is None:
-                    continue
+                    # Peer publishes a subscription we have no row for — e.g.
+                    # the leader's own auto-ACCEPTED sub, which share_project
+                    # only writes on the leader's machine. Without a local
+                    # row, Phase 3 device lists exclude that member and the
+                    # folder never syncs. Create it and let the transition
+                    # logic below mirror the peer's state.
+                    if self.projects.get(conn, team.name, git_id) is None:
+                        continue  # project not discovered yet — next cycle
+                    local_sub = Subscription(
+                        member_tag=tag,
+                        team_name=team.name,
+                        project_git_identity=git_id,
+                    )
+                    self.subs.save(conn, local_sub)
+                    logger.info(
+                        "phase_metadata: created subscription row for peer %s/%s from metadata",
+                        tag, git_id,
+                    )
                 try:
                     updated = self._sync_peer_subscription(
                         local_sub, peer_status, peer_direction,
@@ -520,17 +537,41 @@ class ReconciliationService:
 
             accepted = self.subs.list_accepted_for_suffix(conn, project.folder_suffix)
 
-            # Ensure outbox folders exist for members with send|both subs
-            # in THIS team (recovery from accidental deletion)
+            # Ensure folders exist declaratively (recovery from deletion or
+            # missed accept-time creation). Folder direction depends on WHOSE
+            # outbox it is on THIS machine:
+            #   my own send|both sub      -> my sendonly outbox
+            #   teammate's send|both sub  -> my receiveonly inbox mirroring
+            #                                their outbox ID (only if my sub
+            #                                is receive|both)
+            # The old code created sendonly outboxes for EVERY member's tag
+            # on EVERY machine, which then blocked inbox creation (folder ID
+            # already taken) — receivers silently never got data.
+            my_sub = next(
+                (
+                    s for s in accepted
+                    if s.team_name == team.name and s.member_tag == self.my_member_tag
+                ),
+                None,
+            )
             for sub in accepted:
                 if sub.team_name != team.name:
                     continue
-                if sub.direction in (SyncDirection.SEND, SyncDirection.BOTH):
-                    member = self.members.get(conn, sub.team_name, sub.member_tag)
-                    if member and member.is_active:
-                        await self.folders.ensure_outbox_folder(
-                            sub.member_tag, project.folder_suffix,
-                        )
+                if sub.direction not in (SyncDirection.SEND, SyncDirection.BOTH):
+                    continue
+                member = self.members.get(conn, sub.team_name, sub.member_tag)
+                if not (member and member.is_active):
+                    continue
+                if sub.member_tag == self.my_member_tag:
+                    await self.folders.ensure_outbox_folder(
+                        sub.member_tag, project.folder_suffix,
+                    )
+                elif my_sub is not None and my_sub.direction in (
+                    SyncDirection.RECEIVE, SyncDirection.BOTH,
+                ):
+                    await self.folders.ensure_inbox_folder(
+                        sub.member_tag, project.folder_suffix, member.device_id,
+                    )
 
             # Compute desired device set: members with send|both direction
             # IMPORTANT: filter by current team to prevent cross-team data leaks.

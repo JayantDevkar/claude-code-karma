@@ -125,63 +125,22 @@ async def lifespan(app: FastAPI):
                 "Remote session watcher failed to start (non-critical): %s", e
             )
 
-    # Start session packager (packages local sessions into Syncthing outbox)
+    # Start sync worker (reconciliation + event listener + session packager).
+    # Starts even with zero teams/projects: a fresh joiner needs the
+    # reconciliation loop running to discover its first team at all — this
+    # was the root cause of "invites never arrive" on newly initialized
+    # machines. /sync/init calls the same bootstrap for post-startup init.
     session_watcher_mgr = None
     if settings.use_sqlite:
         try:
-            from models.sync_config import SyncConfig
-            config = SyncConfig.load()
-            if config and config.member_tag:
-                from db.connection import get_writer_db
-                from services.watcher_singleton import get_watcher_manager
+            from services.sync_bootstrap import start_sync_worker
+            from services.watcher_singleton import get_watcher_manager
 
-                db = get_writer_db()
-
-                from db.queries import resolve_encoded_name
-
-                # Build config_data from sync DB tables
-                teams_rows = db.execute(
-                    "SELECT name FROM sync_teams WHERE status = 'active'"
-                ).fetchall()
-                teams_dict = {}
-                for (tname,) in teams_rows:
-                    proj_rows = db.execute(
-                        "SELECT git_identity, encoded_name, folder_suffix "
-                        "FROM sync_projects WHERE team_name = ? AND status = 'shared'",
-                        (tname,),
-                    ).fetchall()
-                    projects_dict = {}
-                    for git_id, enc_name, _fsuffix in proj_rows:
-                        local_enc = resolve_encoded_name(db, git_id) or enc_name or git_id
-                        projects_dict[git_id] = {
-                            "encoded_name": local_enc,
-                            "path": "",
-                        }
-                    if projects_dict:
-                        teams_dict[tname] = {"projects": projects_dict}
-
-                # Start even with zero teams/projects: a fresh joiner needs
-                # the reconciliation worker + event listener running to
-                # discover its first team at all — this was the root cause
-                # of "invites never arrive" on newly initialized machines.
-                config_data = {
-                    "teams": teams_dict,
-                    "user_id": config.user_id,
-                    "machine_id": config.machine_id,
-                    "device_id": (
-                        config.syncthing.device_id if config.syncthing else ""
-                    ),
-                    "member_tag": config.member_tag,
-                }
+            if start_sync_worker():
                 session_watcher_mgr = get_watcher_manager()
-                session_watcher_mgr.start_all(config_data)
-                logger.info(
-                    "Sync worker started: %d team(s), reconciliation + event listener",
-                    len(teams_dict),
-                )
         except Exception as e:
             logger.warning(
-                "Session packager failed to start (non-critical): %s", e
+                "Sync worker failed to start (non-critical): %s", e
             )
 
     # Start live session reconciler

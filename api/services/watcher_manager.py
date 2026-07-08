@@ -601,6 +601,7 @@ class WatcherManager:
         # instead of waiting for the fallback sweep.
         if self._event_listener is None and self._metadata_timer is not None:
             try:
+                from config import settings as app_settings
                 from models.sync_config import SyncConfig
 
                 sync_config = SyncConfig.load()
