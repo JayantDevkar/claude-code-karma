@@ -21,11 +21,18 @@
 	let { onaccepted }: Props = $props();
 
 	// ── State ──────────────────────────────────────────────────────────────
+	// No loading/skeleton state on purpose: invitations are exceptional
+	// content, so the card renders nothing until data actually exists.
+	// A skeleton here promised content that usually never came, and a hung
+	// fetch (API mid-restart) left it frozen on screen forever.
 	let invitations = $state<Invitation[]>([]);
-	let loading = $state(true);
-	let firstLoadDone = $state(false);
 	let acceptingId = $state<string | null>(null);
 	let dismissingId = $state<string | null>(null);
+
+	// Bounded fetch — a hung request must never wedge this card's state.
+	function tfetch(url: string, init?: RequestInit) {
+		return fetch(url, { ...init, signal: AbortSignal.timeout(10_000) });
+	}
 
 	// ── Correlation logic ──────────────────────────────────────────────────
 	function buildInvitations(
@@ -131,9 +138,9 @@
 	async function fetchPending() {
 		try {
 			const [devicesRes, foldersRes, teamsRes] = await Promise.all([
-				fetch(`${API_BASE}/sync/pending-devices`).catch(() => null),
-				fetch(`${API_BASE}/sync/pending`).catch(() => null),
-				fetch(`${API_BASE}/sync/teams?include_dissolved=true`).catch(() => null)
+				tfetch(`${API_BASE}/sync/pending-devices`).catch(() => null),
+				tfetch(`${API_BASE}/sync/pending`).catch(() => null),
+				tfetch(`${API_BASE}/sync/teams?include_dissolved=true`).catch(() => null)
 			]);
 
 			const devices = devicesRes?.ok ? (await devicesRes.json()).devices ?? [] : [];
@@ -153,10 +160,7 @@
 			invitations = buildInvitations(devices, folders)
 				.filter(inv => !inv.team_name || !knownTeams.has(inv.team_name));
 		} catch {
-			// Non-critical — silently ignore
-		} finally {
-			loading = false;
-			firstLoadDone = true;
+			// Non-critical — silently ignore; the 15s poll retries
 		}
 	}
 
@@ -167,7 +171,7 @@
 			let acceptedTeams: string[] = [];
 
 			// Try accepting as a pending device first (auto-accepts karma-meta-- folders)
-			const devRes = await fetch(`${API_BASE}/sync/pending-devices/${encodeURIComponent(inv.device_id)}/accept`, {
+			const devRes = await tfetch(`${API_BASE}/sync/pending-devices/${encodeURIComponent(inv.device_id)}/accept`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ name: '' })
@@ -179,7 +183,7 @@
 			} else if (inv.team_name) {
 				// Device already accepted — accept the pending meta folder directly
 				const folderId = `karma-meta--${inv.team_name}`;
-				const folderRes = await fetch(`${API_BASE}/sync/pending/accept/${encodeURIComponent(folderId)}`, {
+				const folderRes = await tfetch(`${API_BASE}/sync/pending/accept/${encodeURIComponent(folderId)}`, {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json' }
 				});
@@ -195,10 +199,10 @@
 				let teamFound = false;
 				for (let attempt = 0; attempt < 4; attempt++) {
 					// Trigger reconciliation (accepts pending folders + bootstraps team)
-					await fetch(`${API_BASE}/sync/reconcile`, { method: 'POST' }).catch(() => {});
+					await tfetch(`${API_BASE}/sync/reconcile`, { method: 'POST' }).catch(() => {});
 
 					// Check if team exists now
-					const teamRes = await fetch(`${API_BASE}/sync/teams/${encodeURIComponent(teamName)}`).catch(() => null);
+					const teamRes = await tfetch(`${API_BASE}/sync/teams/${encodeURIComponent(teamName)}`).catch(() => null);
 					if (teamRes?.ok) {
 						teamFound = true;
 						break;
@@ -227,7 +231,7 @@
 	async function dismissInvitation(inv: Invitation) {
 		dismissingId = inv.device_id;
 		try {
-			await fetch(`${API_BASE}/sync/pending-devices/${encodeURIComponent(inv.device_id)}`, {
+			await tfetch(`${API_BASE}/sync/pending-devices/${encodeURIComponent(inv.device_id)}`, {
 				method: 'DELETE'
 			});
 			await fetchPending();
@@ -257,22 +261,7 @@
 	});
 </script>
 
-{#if loading && !firstLoadDone}
-	<!-- Skeleton loading state -->
-	<div class="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-subtle)] p-5">
-		<div class="flex items-center gap-3 mb-4">
-			<div class="w-10 h-10 rounded-full bg-[var(--bg-muted)] animate-pulse"></div>
-			<div class="flex-1 space-y-2">
-				<div class="h-4 w-48 rounded bg-[var(--bg-muted)] animate-pulse"></div>
-				<div class="h-3 w-36 rounded bg-[var(--bg-muted)] animate-pulse"></div>
-			</div>
-		</div>
-		<div class="space-y-2">
-			<div class="h-3 w-full rounded bg-[var(--bg-muted)] animate-pulse"></div>
-			<div class="h-3 w-3/4 rounded bg-[var(--bg-muted)] animate-pulse"></div>
-		</div>
-	</div>
-{:else if invitations.length > 0}
+{#if invitations.length > 0}
 	{#each invitations as inv (inv.device_id)}
 		{@const isAccepting = acceptingId === inv.device_id}
 		{@const isDismissing = dismissingId === inv.device_id}
