@@ -25,6 +25,7 @@
 	import type { Project } from '$lib/api-types';
 	import { projectHref } from '$lib/utils/project-url';
 	import { API_BASE } from '$lib/config';
+	import { cleanPromptText } from '$lib/utils';
 
 	interface Props {
 		onToggleTheme?: () => void;
@@ -191,7 +192,7 @@
 	function getSessionLabel(s: SessionItem): string {
 		return (
 			s.title ||
-			(s.initial_prompt ? s.initial_prompt.slice(0, 60) : (s.slug || '').slice(0, 8))
+			(s.initial_prompt ? cleanPromptText(s.initial_prompt).slice(0, 60) : (s.slug || '').slice(0, 8))
 		);
 	}
 	// Handle keydown to ensure Escape always closes

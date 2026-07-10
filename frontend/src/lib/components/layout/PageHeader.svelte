@@ -5,6 +5,7 @@
 	interface Breadcrumb {
 		label: string;
 		href?: string;
+		tooltip?: string;
 	}
 
 	interface MetadataItem {
@@ -60,7 +61,10 @@
 						{crumb.label}
 					</a>
 				{:else}
-					<span class="text-[var(--text-primary)] font-medium">{crumb.label}</span>
+					<span
+						class="text-[var(--text-primary)] font-medium"
+						title={crumb.tooltip ?? undefined}
+					>{crumb.label}</span>
 				{/if}
 			{/each}
 		</div>

@@ -3,7 +3,7 @@
 	import SkeletonText from './SkeletonText.svelte';
 </script>
 
-<div class="max-w-[1400px] mx-auto">
+<div>
 	<!-- Header -->
 	<div class="flex items-center gap-3 mb-6">
 		<SkeletonBox width="48px" height="48px" rounded="lg" />

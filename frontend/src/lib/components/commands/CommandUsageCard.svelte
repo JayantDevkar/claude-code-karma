@@ -13,6 +13,10 @@
 		description?: string | null;
 		last_used?: string | null;
 		session_count?: number;
+		remote_count?: number;
+		local_count?: number;
+		remote_user_ids?: string[];
+		is_remote_only?: boolean;
 	}
 
 	interface Props {
@@ -66,6 +70,8 @@
 	description={command.description}
 	lastUsed={command.last_used}
 	sessionCount={command.session_count ?? null}
+	isRemoteOnly={command.is_remote_only ?? false}
+	remoteUserIds={command.remote_user_ids ?? []}
 	class={className}
 >
 	{#snippet icon()}

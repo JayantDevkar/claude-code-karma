@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { MessageSquare, Users, Clock, Sparkles, GitBranch, Monitor, Copy } from 'lucide-svelte';
+	import { MessageSquare, Users, Clock, Sparkles, GitBranch, Monitor, Globe, Copy } from 'lucide-svelte';
 	import type { SessionSummary, LiveSessionSummary } from '$lib/api-types';
 	import { statusConfig } from '$lib/live-session-config';
 	import {
@@ -12,6 +12,8 @@
 		getSessionDisplayName,
 		sessionHasTitle,
 		getSessionDisplayPrompt,
+		isRemoteSession,
+		getTeamMemberColor,
 		copyToClipboard
 	} from '$lib/utils';
 	import { getSessionUrlIdentifier } from '$lib/utils/sessionIdentifier';
@@ -38,6 +40,13 @@
 	const status = $derived(session.status || (session.duration_seconds ? 'completed' : 'active'));
 
 	const modelColor = $derived(getModelColor(session.models_used));
+
+	// Remote session handling
+	const isRemote = $derived(isRemoteSession(session));
+	const teamMemberColor = $derived(
+		session.remote_user_id ? getTeamMemberColor(session.remote_user_id) : null
+	);
+	const remoteUserName = $derived(session.remote_user_id ?? null);
 
 	// Local formatDuration that returns null instead of '--' for card display
 	function formatDuration(seconds?: number) {
@@ -76,11 +85,13 @@
 	// - Recently ended (≤45 min) → model color
 	// - Old sessions → faint gray
 	const leftBorderColor = $derived(
-		hasLiveStatus
-			? isRecentlyEnded
-				? modelColorConfig[modelColor].border // Recently ended → model
-				: (liveStatusConfig?.color ?? modelColorConfig[modelColor].border) // Active → status
-			: 'var(--text-faint)' // Old → faint
+		isRemote && teamMemberColor
+			? teamMemberColor.border // Remote → team member color
+			: hasLiveStatus
+				? isRecentlyEnded
+					? modelColorConfig[modelColor].border // Recently ended → model
+					: (liveStatusConfig?.color ?? modelColorConfig[modelColor].border) // Active → status
+				: 'var(--text-faint)' // Old → faint
 	);
 
 	// Ring color for live sessions (used for subtle ring highlight)
@@ -112,6 +123,9 @@
 	// Shared with last-opened-highlight comparisons via sessionIdentifier helper.
 	const urlIdentifier = $derived(getSessionUrlIdentifier(session, liveSession));
 
+	// Remote session hint for faster API lookup
+	const remoteQueryParam = $derived(isRemote ? '?remote=1' : '');
+
 	// Build live status text for accessibility
 	const liveStatusText = $derived(
 		hasLiveStatus && liveSession?.status ? `, status: ${liveSession.status}` : ''
@@ -139,7 +153,7 @@
 </script>
 
 <a
-	href="/projects/{projectEncodedName}/{urlIdentifier}"
+	href="/projects/{projectEncodedName}/{urlIdentifier}{remoteQueryParam}"
 	aria-label="Session {displayName}, {displayMessageCount} messages{liveStatusText}"
 	class="
 		flex flex-col h-full
@@ -228,13 +242,25 @@
 					{displayPrompt}
 				</p>
 			{/if}
-			{#if session.session_source === 'desktop'}
-				<div
-					class="flex items-center gap-0.5 mt-1 text-[10px] text-[var(--text-muted)]"
-					title="Claude Desktop session"
-				>
-					<Monitor size={10} strokeWidth={2} />
-					<span>Desktop</span>
+			{#if isRemote || session.session_source === 'desktop'}
+				<div class="flex items-center gap-2 mt-1 text-[10px] text-[var(--text-muted)]">
+					{#if isRemote && remoteUserName}
+						<a
+							href="/members/{encodeURIComponent(remoteUserName)}"
+							class="flex items-center gap-0.5 hover:underline"
+							title="Remote session from {remoteUserName}"
+							onclick={(e) => e.stopPropagation()}
+						>
+							<Globe size={10} strokeWidth={2} class={teamMemberColor?.text ?? ''} />
+							<span>{remoteUserName}</span>
+						</a>
+					{/if}
+					{#if session.session_source === 'desktop'}
+						<div class="flex items-center gap-0.5" title="Claude Desktop session">
+							<Monitor size={10} strokeWidth={2} />
+							<span>Desktop</span>
+						</div>
+					{/if}
 				</div>
 			{/if}
 		</div>
@@ -343,6 +369,17 @@
 
 			<!-- Badges -->
 			<div class="flex items-center gap-1.5 shrink-0">
+				{#if isRemote && remoteUserName}
+					<a
+						href="/members/{encodeURIComponent(remoteUserName)}"
+						class="flex items-center gap-1 px-2 py-0.5 rounded-full border {teamMemberColor?.badge ?? ''} hover:opacity-80 transition-opacity"
+						title="Remote session from {remoteUserName}"
+						onclick={(e) => e.stopPropagation()}
+					>
+						<Globe size={10} strokeWidth={2} class={teamMemberColor?.text ?? ''} />
+						<span class="font-medium text-[11px]">{remoteUserName}</span>
+					</a>
+				{/if}
 				<!-- Resume chip: only for ended sessions -->
 				{#if showResumeChip}
 					<button

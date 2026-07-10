@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { ChevronDown, Copy, Check } from 'lucide-svelte';
 	import type { ArchivedPrompt } from '$lib/api-types';
+	import { copyToClipboard } from '$lib/utils';
 
 	interface Props {
 		prompt: ArchivedPrompt;
@@ -30,15 +31,13 @@
 		});
 	}
 
-	async function copyToClipboard() {
-		try {
-			await navigator.clipboard.writeText(prompt.display);
+	async function handleCopy() {
+		const success = await copyToClipboard(prompt.display);
+		if (success) {
 			copied = true;
 			setTimeout(() => {
 				copied = false;
 			}, 2000);
-		} catch (err) {
-			console.error('Failed to copy:', err);
 		}
 	}
 
@@ -88,13 +87,13 @@
 							size={12}
 							class="transition-transform {expanded ? 'rotate-180' : ''}"
 						/>
-						<span>{expanded ? 'Less' : 'More'}</span>
+						<span>{expanded ? 'Show less' : 'Show more'}</span>
 					</button>
 				{/if}
 			</div>
 			<!-- Copy Button -->
 			<button
-				onclick={copyToClipboard}
+				onclick={handleCopy}
 				class="
 					shrink-0 p-1.5 rounded-md
 					text-[var(--text-muted)]

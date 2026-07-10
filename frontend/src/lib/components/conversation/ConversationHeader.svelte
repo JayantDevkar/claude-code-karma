@@ -12,6 +12,7 @@
 		Minimize2,
 		MessageCircle,
 		Monitor,
+		Globe,
 		Copy
 	} from 'lucide-svelte';
 	import { fade } from 'svelte/transition';
@@ -34,6 +35,8 @@
 		getEffectiveSubagentType,
 		getSessionDisplayName,
 		sessionHasTitle,
+		isRemoteSession,
+		getTeamMemberColor,
 		copyToClipboard
 	} from '$lib/utils';
 
@@ -56,6 +59,13 @@
 		liveStatus,
 		isRefreshing = false
 	}: Props = $props();
+
+	// Remote session handling (works for both main sessions and subagent sessions)
+	const isRemote = $derived(isRemoteSession(entity));
+	const teamMemberColor = $derived(
+		entity.remote_user_id ? getTeamMemberColor(entity.remote_user_id) : null
+	);
+	const remoteUserName = $derived(entity.remote_user_id ?? null);
 
 	// Debounced refresh indicator - ensures minimum visibility duration
 	const MIN_DISPLAY_MS = 600;
@@ -173,6 +183,10 @@
 
 	let subtitle = $derived.by(() => {
 		if (isSubagentSession(entity)) {
+			// Show display_name as subtitle when available, with type as fallback
+			if (entity.display_name) {
+				return entity.display_name;
+			}
 			return getSubagentTypeDisplayName(effectiveSubagentType);
 		}
 		return `#${entity.uuid?.slice(0, 8)}`;
@@ -293,6 +307,21 @@
 								{getSubagentTypeDisplayName(effectiveSubagentType)}
 							</span>
 						</a>
+					{/if}
+					{#if isRemote && remoteUserName}
+						<div
+							class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border {teamMemberColor?.badge ?? ''}"
+							title="Remote session from {remoteUserName}"
+						>
+							<Globe
+								size={12}
+								strokeWidth={2}
+								class={teamMemberColor?.text ?? ''}
+							/>
+							<span class="text-xs font-medium {teamMemberColor?.text ?? ''}"
+								>{remoteUserName}</span
+							>
+						</div>
 					{/if}
 				{/snippet}
 				{#snippet headerRight()}
@@ -418,6 +447,22 @@
 									<span class="opacity-70">×{compactionCount}</span>
 								{/if}
 							</span>
+						</div>
+					{/if}
+					<!-- Remote Badge (if session is from a team member) -->
+					{#if isRemote && remoteUserName}
+						<div
+							class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border {teamMemberColor?.badge ?? ''}"
+							title="Remote session from {remoteUserName}"
+						>
+							<Globe
+								size={12}
+								strokeWidth={2}
+								class={teamMemberColor?.text ?? ''}
+							/>
+							<span class="text-xs font-medium {teamMemberColor?.text ?? ''}"
+								>{remoteUserName}</span
+							>
 						</div>
 					{/if}
 					<!-- Desktop Badge (if session is from Claude Desktop) -->

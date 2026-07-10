@@ -10,7 +10,10 @@ import sqlite3
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 19
+# v2-v19 are main's linear chain (tickets, git_identity, bg-shells/cron).
+# v20-v23 are the sync-v4 migrations (renumbered from 19-22 after merging main,
+# whose independent chain reached 19 in parallel). v24 adds sync_team_prefs.
+SCHEMA_VERSION = 24
 
 SCHEMA_SQL = """
 -- Schema versioning
@@ -47,12 +50,17 @@ CREATE TABLE IF NOT EXISTS sessions (
     jsonl_size INTEGER DEFAULT 0,
     session_source TEXT,
     source_encoded_name TEXT,
+    source TEXT DEFAULT 'local',
+    remote_user_id TEXT,
+    remote_machine_id TEXT,
     indexed_at TEXT DEFAULT (datetime('now')),
     -- Per-session flag set to 1 when a session needs the bg-shells/cron
     -- extraction pass (v13). Cleared by the indexer after processing.
     -- Avoids touching jsonl_mtime which other consumers depend on.
     needs_shell_cron_reindex INTEGER NOT NULL DEFAULT 1
 );
+
+CREATE INDEX IF NOT EXISTS idx_sessions_source ON sessions(source);
 
 CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_encoded_name);
 CREATE INDEX IF NOT EXISTS idx_sessions_start ON sessions(start_time DESC);
@@ -138,6 +146,7 @@ CREATE TABLE IF NOT EXISTS subagent_invocations (
     session_uuid TEXT NOT NULL,
     agent_id TEXT NOT NULL,
     subagent_type TEXT,
+    agent_display_name TEXT,
     input_tokens INTEGER DEFAULT 0,
     output_tokens INTEGER DEFAULT 0,
     cost_usd REAL DEFAULT 0,
@@ -226,6 +235,114 @@ CREATE TABLE IF NOT EXISTS projects (
 CREATE INDEX IF NOT EXISTS idx_projects_git_identity ON projects(git_identity);
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_slug ON projects(slug);
+
+-- Sync v4 tables (added in schema v19)
+CREATE TABLE IF NOT EXISTS sync_teams (
+    name              TEXT PRIMARY KEY,
+    leader_device_id  TEXT NOT NULL,
+    leader_member_tag TEXT NOT NULL,
+    team_id           TEXT NOT NULL DEFAULT '',
+    status            TEXT NOT NULL DEFAULT 'active'
+                      CHECK(status IN ('active', 'dissolved')),
+    created_at        TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS sync_members (
+    team_name    TEXT NOT NULL REFERENCES sync_teams(name) ON DELETE CASCADE,
+    member_tag   TEXT NOT NULL,
+    device_id    TEXT NOT NULL,
+    user_id      TEXT NOT NULL,
+    machine_tag  TEXT NOT NULL,
+    status       TEXT NOT NULL DEFAULT 'added'
+                 CHECK(status IN ('added', 'active', 'removed')),
+    added_at     TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at   TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (team_name, member_tag)
+);
+
+CREATE TABLE IF NOT EXISTS sync_projects (
+    team_name     TEXT NOT NULL REFERENCES sync_teams(name) ON DELETE CASCADE,
+    git_identity  TEXT NOT NULL,
+    encoded_name  TEXT,
+    folder_suffix TEXT NOT NULL,
+    status        TEXT NOT NULL DEFAULT 'shared'
+                  CHECK(status IN ('shared', 'removed')),
+    shared_at     TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (team_name, git_identity)
+);
+
+CREATE TABLE IF NOT EXISTS sync_subscriptions (
+    member_tag           TEXT NOT NULL,
+    team_name            TEXT NOT NULL,
+    project_git_identity TEXT NOT NULL,
+    status               TEXT NOT NULL DEFAULT 'offered'
+                         CHECK(status IN ('offered', 'accepted', 'paused', 'declined')),
+    direction            TEXT NOT NULL DEFAULT 'both'
+                         CHECK(direction IN ('receive', 'send', 'both')),
+    updated_at           TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (member_tag, team_name, project_git_identity),
+    FOREIGN KEY (team_name, member_tag)
+        REFERENCES sync_members(team_name, member_tag) ON DELETE CASCADE,
+    FOREIGN KEY (team_name, project_git_identity)
+        REFERENCES sync_projects(team_name, git_identity) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS sync_events (
+    id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_type           TEXT NOT NULL,
+    team_name            TEXT,
+    member_tag           TEXT,
+    project_git_identity TEXT,
+    session_uuid         TEXT,
+    detail               TEXT,
+    created_at           TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS sync_removed_members (
+    team_name   TEXT NOT NULL REFERENCES sync_teams(name) ON DELETE CASCADE,
+    device_id   TEXT NOT NULL,
+    member_tag  TEXT,
+    removed_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (team_name, device_id)
+);
+
+-- Local-only per-team preferences (never synced): how THIS member reacts
+-- when a new project is offered in the team. 'ask' preserves the classic
+-- opt-in flow; 'auto_accept'/'receive_only' make new offers flow with zero
+-- clicks, using default_direction ('receive_only' forces RECEIVE).
+CREATE TABLE IF NOT EXISTS sync_team_prefs (
+    team_name          TEXT PRIMARY KEY,
+    new_project_policy TEXT NOT NULL DEFAULT 'ask'
+                       CHECK(new_project_policy IN ('ask', 'auto_accept', 'receive_only')),
+    default_direction  TEXT NOT NULL DEFAULT 'both'
+                       CHECK(default_direction IN ('send', 'receive', 'both')),
+    updated_at         TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_members_device ON sync_members(device_id);
+CREATE INDEX IF NOT EXISTS idx_members_status ON sync_members(team_name, status);
+CREATE INDEX IF NOT EXISTS idx_projects_suffix ON sync_projects(folder_suffix);
+CREATE INDEX IF NOT EXISTS idx_projects_git ON sync_projects(git_identity);
+CREATE INDEX IF NOT EXISTS idx_subs_member ON sync_subscriptions(member_tag);
+CREATE INDEX IF NOT EXISTS idx_subs_status ON sync_subscriptions(status);
+CREATE INDEX IF NOT EXISTS idx_subs_project ON sync_subscriptions(project_git_identity);
+CREATE INDEX IF NOT EXISTS idx_events_type ON sync_events(event_type);
+CREATE INDEX IF NOT EXISTS idx_events_team ON sync_events(team_name);
+CREATE INDEX IF NOT EXISTS idx_events_time ON sync_events(created_at);
+
+-- Skill definitions (custom skills, user commands, remote plugin skills)
+CREATE TABLE IF NOT EXISTS skill_definitions (
+    skill_name TEXT NOT NULL,
+    source_user_id TEXT NOT NULL DEFAULT '__local__',
+    source_machine_id TEXT,
+    category TEXT,
+    content TEXT,
+    base_directory TEXT,
+    description TEXT,
+    extracted_from_session TEXT,
+    updated_at TEXT,
+    PRIMARY KEY (skill_name, source_user_id)
+);
 """
 
 # Ticket tables — extracted into a separate constant so they can be applied
@@ -627,6 +744,187 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             conn.execute("DELETE FROM subagent_commands")
             # Nudge mtime to force re-index of all sessions
             conn.execute("UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1")
+
+        # ---- sync v4 migrations (v20-v23, renumbered from 19-22 after main merge) ----
+
+        if current_version < 20:
+            logger.info(
+                "Migrating → v20: sync v4 — drop all old sync tables, recreate with clean-slate schema"
+            )
+            # Drop all sync tables — both v3 names and v4 names (order matters for FKs)
+            conn.execute("DROP TABLE IF EXISTS sync_subscriptions")
+            conn.execute("DROP TABLE IF EXISTS sync_rejected_folders")
+            conn.execute("DROP TABLE IF EXISTS sync_settings")
+            conn.execute("DROP TABLE IF EXISTS sync_removed_members")
+            conn.execute("DROP TABLE IF EXISTS sync_events")
+            conn.execute("DROP TABLE IF EXISTS sync_team_projects")
+            conn.execute("DROP TABLE IF EXISTS sync_projects")
+            conn.execute("DROP TABLE IF EXISTS sync_members")
+            conn.execute("DROP TABLE IF EXISTS sync_teams")
+
+            # Recreate with v4 schema
+            conn.execute("""
+                CREATE TABLE sync_teams (
+                    name              TEXT PRIMARY KEY,
+                    leader_device_id  TEXT NOT NULL,
+                    leader_member_tag TEXT NOT NULL,
+                    team_id           TEXT NOT NULL DEFAULT '',
+                    status            TEXT NOT NULL DEFAULT 'active'
+                                      CHECK(status IN ('active', 'dissolved')),
+                    created_at        TEXT NOT NULL DEFAULT (datetime('now'))
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE sync_members (
+                    team_name    TEXT NOT NULL REFERENCES sync_teams(name) ON DELETE CASCADE,
+                    member_tag   TEXT NOT NULL,
+                    device_id    TEXT NOT NULL,
+                    user_id      TEXT NOT NULL,
+                    machine_tag  TEXT NOT NULL,
+                    status       TEXT NOT NULL DEFAULT 'added'
+                                 CHECK(status IN ('added', 'active', 'removed')),
+                    added_at     TEXT NOT NULL DEFAULT (datetime('now')),
+                    updated_at   TEXT NOT NULL DEFAULT (datetime('now')),
+                    PRIMARY KEY (team_name, member_tag)
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE sync_projects (
+                    team_name     TEXT NOT NULL REFERENCES sync_teams(name) ON DELETE CASCADE,
+                    git_identity  TEXT NOT NULL,
+                    encoded_name  TEXT,
+                    folder_suffix TEXT NOT NULL,
+                    status        TEXT NOT NULL DEFAULT 'shared'
+                                  CHECK(status IN ('shared', 'removed')),
+                    shared_at     TEXT NOT NULL DEFAULT (datetime('now')),
+                    PRIMARY KEY (team_name, git_identity)
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE sync_subscriptions (
+                    member_tag           TEXT NOT NULL,
+                    team_name            TEXT NOT NULL,
+                    project_git_identity TEXT NOT NULL,
+                    status               TEXT NOT NULL DEFAULT 'offered'
+                                         CHECK(status IN ('offered', 'accepted', 'paused', 'declined')),
+                    direction            TEXT NOT NULL DEFAULT 'both'
+                                         CHECK(direction IN ('receive', 'send', 'both')),
+                    updated_at           TEXT NOT NULL DEFAULT (datetime('now')),
+                    PRIMARY KEY (member_tag, team_name, project_git_identity),
+                    FOREIGN KEY (team_name, member_tag)
+                        REFERENCES sync_members(team_name, member_tag) ON DELETE CASCADE,
+                    FOREIGN KEY (team_name, project_git_identity)
+                        REFERENCES sync_projects(team_name, git_identity) ON DELETE CASCADE
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE sync_events (
+                    id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+                    event_type           TEXT NOT NULL,
+                    team_name            TEXT,
+                    member_tag           TEXT,
+                    project_git_identity TEXT,
+                    session_uuid         TEXT,
+                    detail               TEXT,
+                    created_at           TEXT NOT NULL DEFAULT (datetime('now'))
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE sync_removed_members (
+                    team_name   TEXT NOT NULL REFERENCES sync_teams(name) ON DELETE CASCADE,
+                    device_id   TEXT NOT NULL,
+                    member_tag  TEXT,
+                    removed_at  TEXT NOT NULL DEFAULT (datetime('now')),
+                    PRIMARY KEY (team_name, device_id)
+                )
+            """)
+            # Indexes
+            conn.execute("CREATE INDEX idx_members_device ON sync_members(device_id)")
+            conn.execute("CREATE INDEX idx_members_status ON sync_members(team_name, status)")
+            conn.execute("CREATE INDEX idx_projects_suffix ON sync_projects(folder_suffix)")
+            conn.execute("CREATE INDEX idx_projects_git ON sync_projects(git_identity)")
+            conn.execute("CREATE INDEX idx_subs_member ON sync_subscriptions(member_tag)")
+            conn.execute("CREATE INDEX idx_subs_status ON sync_subscriptions(status)")
+            conn.execute("CREATE INDEX idx_subs_project ON sync_subscriptions(project_git_identity)")
+            conn.execute("CREATE INDEX idx_events_type ON sync_events(event_type)")
+            conn.execute("CREATE INDEX idx_events_team ON sync_events(team_name)")
+            conn.execute("CREATE INDEX idx_events_time ON sync_events(created_at)")
+
+        if current_version < 21:
+            logger.info(
+                "Migrating → v21: normalize remote_user_id from bare user_id to member_tag"
+            )
+            # Guard for the minimum-fixture schema test (only schema_version
+            # seeded): sessions may not exist. Production always has it.
+            _tables = {
+                r[0] for r in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                ).fetchall()
+            }
+            if "sessions" in _tables:
+                conn.execute("""
+                UPDATE sessions SET remote_user_id = (
+                    SELECT m.member_tag FROM sync_members m
+                    WHERE m.user_id = sessions.remote_user_id
+                    LIMIT 1
+                ) WHERE source = 'remote'
+                  AND remote_user_id IS NOT NULL
+                  AND remote_user_id NOT LIKE '%.%'
+                  AND EXISTS (
+                      SELECT 1 FROM sync_members m
+                      WHERE m.user_id = sessions.remote_user_id
+                  )
+            """)
+
+        if current_version < 22:
+            logger.info(
+                "Migrating → v22: adding skill_definitions table and projects.git_identity column"
+            )
+            conn.executescript("""
+                CREATE TABLE IF NOT EXISTS skill_definitions (
+                    skill_name TEXT NOT NULL,
+                    source_user_id TEXT NOT NULL DEFAULT '__local__',
+                    source_machine_id TEXT,
+                    category TEXT,
+                    content TEXT,
+                    base_directory TEXT,
+                    description TEXT,
+                    extracted_from_session TEXT,
+                    updated_at TEXT,
+                    PRIMARY KEY (skill_name, source_user_id)
+                );
+            """)
+            try:
+                conn.execute("ALTER TABLE projects ADD COLUMN git_identity TEXT")
+            except sqlite3.OperationalError:
+                pass  # Column already exists
+
+        if current_version < 23:
+            logger.info("Migrating → v23: adding team_id (incarnation UUID) to sync_teams")
+            try:
+                conn.execute("ALTER TABLE sync_teams ADD COLUMN team_id TEXT NOT NULL DEFAULT ''")
+            except sqlite3.OperationalError:
+                pass  # Column already exists
+            # Backfill existing teams with a UUID so they participate in incarnation checks
+            import uuid as _uuid
+            for row in conn.execute("SELECT name FROM sync_teams WHERE team_id = '' OR team_id IS NULL").fetchall():
+                conn.execute(
+                    "UPDATE sync_teams SET team_id = ? WHERE name = ?",
+                    (str(_uuid.uuid4()), row[0]),
+                )
+
+        if current_version < 24:
+            logger.info("Migrating → v24: adding sync_team_prefs (local new-project policy)")
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS sync_team_prefs (
+                    team_name          TEXT PRIMARY KEY,
+                    new_project_policy TEXT NOT NULL DEFAULT 'ask'
+                                       CHECK(new_project_policy IN ('ask', 'auto_accept', 'receive_only')),
+                    default_direction  TEXT NOT NULL DEFAULT 'both'
+                                       CHECK(default_direction IN ('send', 'receive', 'both')),
+                    updated_at         TEXT NOT NULL DEFAULT (datetime('now'))
+                )
+            """)
 
         if current_version < 11:
             logger.info("Migrating → v11: adding tickets + session_tickets tables")

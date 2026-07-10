@@ -18,6 +18,7 @@
 			| 'violet'
 			| 'indigo'
 			| 'amber'
+			| 'rose'
 			| 'cyan';
 		disabled?: boolean;
 	}
@@ -120,6 +121,14 @@
 			gradient:
 				'linear-gradient(135deg, var(--nav-amber-subtle) 0%, rgba(217, 119, 6, 0.15) 100%)',
 			glow: '0 4px 20px -2px rgba(217, 119, 6, 0.25)'
+		},
+		rose: {
+			text: 'var(--nav-rose)',
+			bg: 'var(--nav-rose-subtle)',
+			border: 'var(--nav-rose)',
+			gradient:
+				'linear-gradient(135deg, var(--nav-rose-subtle) 0%, rgba(244, 63, 132, 0.15) 100%)',
+			glow: '0 4px 20px -2px rgba(244, 63, 132, 0.25)'
 		},
 		cyan: {
 			text: 'var(--nav-cyan)',

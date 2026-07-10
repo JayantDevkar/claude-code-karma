@@ -7,6 +7,12 @@
 
 @import './styles/tokens.css';
 
+/* Compat alias: sync-era components use bare var(--radius) for control
+   corners; the token scale only defines the sized variants. */
+:root {
+	--radius: var(--radius-md);
+}
+
 /* ============================================
    BRAND FONTS (self-hosted, served from /static/fonts)
    The tokens name Inter / JetBrains Mono; load them so the app
@@ -67,6 +73,284 @@ select:focus {
 	border-radius: var(--radius-md);
 }
 
+   DARK MODE TOKENS
+   ============================================ */
+
+:root[data-theme='dark'] {
+	/* Background (dark slate) */
+	--bg-base: #0f1419;
+	--bg-subtle: #1a1f26;
+	--bg-muted: #242b35;
+
+	/* Text (soft off-white, easier on eyes) */
+	--text-primary: #e2e8f0;
+	--text-secondary: #a1a1aa;
+	--text-muted: #71717a;
+	--text-faint: #52525b;
+
+	/* Borders (white-based for dark bg) */
+	--border: rgba(255, 255, 255, 0.08);
+	--border-subtle: rgba(255, 255, 255, 0.05);
+	--border-hover: rgba(255, 255, 255, 0.15);
+
+	/* Accent (lighter for dark mode) */
+	--accent: #a78bfa;
+	--accent-hover: #c4b5fd;
+	--accent-subtle: rgba(167, 139, 250, 0.15);
+	--accent-muted: rgba(167, 139, 250, 0.08);
+	--accent-primary: var(--accent);
+
+	/* RGB values for dark mode */
+	--accent-rgb: 167, 139, 250;
+	--success-rgb: 52, 211, 153;
+	--warning-rgb: 251, 191, 36;
+	--error-rgb: 248, 113, 113;
+	--info-rgb: 96, 165, 250;
+
+	/* Semantic (adjusted for contrast) */
+	--success: #34d399;
+	--success-subtle: rgba(52, 211, 153, 0.15);
+	--error: #f87171;
+	--error-subtle: rgba(248, 113, 113, 0.15);
+	--warning: #fbbf24;
+	--warning-subtle: rgba(251, 191, 36, 0.15);
+	--info: #60a5fa;
+	--info-subtle: rgba(96, 165, 250, 0.15);
+
+	/* Model Colors (lighter for dark mode) */
+	--model-opus: #a78bfa;
+	--model-opus-subtle: rgba(167, 139, 250, 0.2);
+	--model-sonnet: #60a5fa;
+	--model-sonnet-subtle: rgba(96, 165, 250, 0.2);
+	--model-haiku: #34d399;
+	--model-haiku-subtle: rgba(52, 211, 153, 0.2);
+
+	/* Event Colors (lighter) */
+	--event-prompt: #60a5fa;
+	--event-prompt-subtle: rgba(96, 165, 250, 0.32);
+	--event-tool: #34d399;
+	--event-tool-subtle: rgba(52, 211, 153, 0.32);
+	--event-subagent: #a78bfa;
+	--event-subagent-subtle: rgba(167, 139, 250, 0.32);
+	--event-thinking: #fbbf24;
+	--event-thinking-subtle: rgba(251, 191, 36, 0.32);
+	--event-response: #94a3b8;
+	--event-response-subtle: rgba(148, 163, 184, 0.32);
+	--event-todo: #a78bfa;
+	--event-todo-subtle: rgba(167, 139, 250, 0.32);
+	--event-plan: #22d3ee;
+	--event-plan-subtle: rgba(34, 211, 238, 0.32);
+	--event-builtin: #94a3b8;
+	--event-builtin-subtle: rgba(148, 163, 184, 0.32);
+	--event-command: #2dd4bf;
+	--event-command-subtle: rgba(45, 212, 191, 0.32);
+
+	/* Navigation Colors */
+	--nav-blue: #60a5fa;
+	--nav-blue-subtle: rgba(96, 165, 250, 0.15);
+	--nav-green: #34d399;
+	--nav-green-subtle: rgba(52, 211, 153, 0.15);
+	--nav-orange: #fb923c;
+	--nav-orange-subtle: rgba(251, 146, 60, 0.15);
+	--nav-purple: #a78bfa;
+	--nav-purple-subtle: rgba(167, 139, 250, 0.15);
+	--nav-gray: #94a3b8;
+	--nav-gray-subtle: rgba(148, 163, 184, 0.15);
+	--nav-red: #fb7185;
+	--nav-red-subtle: rgba(251, 113, 133, 0.15);
+	--nav-teal: #22d3ee;
+	--nav-teal-subtle: rgba(34, 211, 238, 0.18);
+	--nav-yellow: #fbbf24;
+	--nav-yellow-subtle: rgba(251, 191, 36, 0.15);
+	--nav-violet: #f472b6;
+	--nav-violet-subtle: rgba(244, 114, 182, 0.18);
+	--nav-indigo: #818cf8;
+	--nav-indigo-subtle: rgba(129, 140, 248, 0.18);
+	--nav-amber: #fbbf24;
+	--nav-amber-subtle: rgba(251, 191, 36, 0.15);
+	--nav-rose: #fb7199;
+	--nav-rose-subtle: rgba(251, 113, 153, 0.15);
+
+	/* Live Session Status Background Tints (dark mode - slightly higher opacity) */
+	--status-starting-bg: rgba(167, 139, 250, 0.08);
+	--status-active-bg: rgba(52, 211, 153, 0.08);
+	--status-idle-bg: rgba(251, 191, 36, 0.08);
+	--status-waiting-bg: rgba(96, 165, 250, 0.08);
+	--status-stopped-bg: rgba(148, 163, 184, 0.05);
+	--status-ended-bg: rgba(148, 163, 184, 0.04);
+	--status-stale-bg: rgba(248, 113, 113, 0.08);
+
+	/* Team Member Colors (dark mode - lighter for contrast) */
+	--team-coral: #fca5a1;
+	--team-coral-subtle: rgba(252, 165, 161, 0.15);
+	--team-rose: #fb7185;
+	--team-rose-subtle: rgba(251, 113, 133, 0.15);
+	--team-amber: #fbbf24;
+	--team-amber-subtle: rgba(251, 191, 36, 0.15);
+	--team-cyan: #22d3ee;
+	--team-cyan-subtle: rgba(34, 211, 238, 0.15);
+	--team-pink: #f472b6;
+	--team-pink-subtle: rgba(244, 114, 182, 0.15);
+	--team-lime: #a3e635;
+	--team-lime-subtle: rgba(163, 230, 53, 0.15);
+	--team-indigo: #818cf8;
+	--team-indigo-subtle: rgba(129, 140, 248, 0.15);
+	--team-teal: #2dd4bf;
+	--team-teal-subtle: rgba(45, 212, 191, 0.15);
+	--team-sky: #38bdf8;
+	--team-sky-subtle: rgba(56, 189, 248, 0.1);
+	--team-violet: #8b5cf6;
+	--team-violet-subtle: rgba(139, 92, 246, 0.1);
+	--team-emerald: #34d399;
+	--team-emerald-subtle: rgba(52, 211, 153, 0.1);
+	--team-orange: #fb923c;
+	--team-orange-subtle: rgba(251, 146, 60, 0.1);
+	--team-fuchsia: #d946ef;
+	--team-fuchsia-subtle: rgba(217, 70, 239, 0.1);
+	--team-slate: #94a3b8;
+	--team-slate-subtle: rgba(148, 163, 184, 0.1);
+	--team-gold: #facc15;
+	--team-gold-subtle: rgba(250, 204, 21, 0.1);
+	--team-ruby: #e11d48;
+	--team-ruby-subtle: rgba(225, 29, 72, 0.1);
+
+	/* Shadows (deeper for dark mode) */
+	--shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+	--shadow-md: 0 2px 8px rgba(0, 0, 0, 0.4);
+	--shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.5);
+	--shadow-elevated: 0 0 0 0.5px var(--border), 0 4px 12px rgba(0, 0, 0, 0.4);
+
+	/* OKLCH params for plugin identity colors (dark mode) */
+	--plugin-l: 0.75;
+	--plugin-c: 0.13;
+	--plugin-l-subtle: 0.23;
+	--plugin-c-subtle: 0.04;
+
+	/* Scope category colors (dark mode) */
+	--scope-project: #fbbf24;
+	--scope-project-subtle: rgba(251, 191, 36, 0.2);
+	--scope-user: #2dd4bf;
+	--scope-user-subtle: rgba(45, 212, 191, 0.2);
+}
+
+/* System preference fallback */
+@media (prefers-color-scheme: dark) {
+	:root:not([data-theme='light']) {
+		--bg-base: #0f1419;
+		--bg-subtle: #1a1f26;
+		--bg-muted: #242b35;
+		--text-primary: #e2e8f0;
+		--text-secondary: #a1a1aa;
+		--text-muted: #71717a;
+		--text-faint: #52525b;
+		--border: rgba(255, 255, 255, 0.08);
+		--border-subtle: rgba(255, 255, 255, 0.05);
+		--border-hover: rgba(255, 255, 255, 0.15);
+		--accent: #a78bfa;
+		--accent-hover: #c4b5fd;
+		--accent-subtle: rgba(167, 139, 250, 0.15);
+		--accent-muted: rgba(167, 139, 250, 0.08);
+		--accent-primary: var(--accent);
+		--success: #34d399;
+		--success-subtle: rgba(52, 211, 153, 0.15);
+		--error: #f87171;
+		--error-subtle: rgba(248, 113, 113, 0.15);
+		--warning: #fbbf24;
+		--warning-subtle: rgba(251, 191, 36, 0.15);
+		--info: #60a5fa;
+		--info-subtle: rgba(96, 165, 250, 0.15);
+		--model-opus: #a78bfa;
+		--model-opus-subtle: rgba(167, 139, 250, 0.2);
+		--model-sonnet: #60a5fa;
+		--model-sonnet-subtle: rgba(96, 165, 250, 0.2);
+		--model-haiku: #34d399;
+		--model-haiku-subtle: rgba(52, 211, 153, 0.2);
+		--event-prompt: #60a5fa;
+		--event-prompt-subtle: rgba(96, 165, 250, 0.25);
+		--event-tool: #34d399;
+		--event-tool-subtle: rgba(52, 211, 153, 0.25);
+		--event-subagent: #a78bfa;
+		--event-subagent-subtle: rgba(167, 139, 250, 0.25);
+		--event-thinking: #fbbf24;
+		--event-thinking-subtle: rgba(251, 191, 36, 0.25);
+		--event-response: #94a3b8;
+		--event-response-subtle: rgba(148, 163, 184, 0.25);
+		--event-todo: #a78bfa;
+		--event-todo-subtle: rgba(167, 139, 250, 0.25);
+		--event-plan: #22d3ee;
+		--event-plan-subtle: rgba(34, 211, 238, 0.25);
+		--event-builtin: #94a3b8;
+		--event-builtin-subtle: rgba(148, 163, 184, 0.25);
+		--event-command: #2dd4bf;
+		--event-command-subtle: rgba(45, 212, 191, 0.25);
+		--nav-blue: #60a5fa;
+		--nav-blue-subtle: rgba(96, 165, 250, 0.15);
+		--nav-green: #34d399;
+		--nav-green-subtle: rgba(52, 211, 153, 0.15);
+		--nav-orange: #fb923c;
+		--nav-orange-subtle: rgba(251, 146, 60, 0.15);
+		--nav-purple: #a78bfa;
+		--nav-purple-subtle: rgba(167, 139, 250, 0.15);
+		--nav-gray: #94a3b8;
+		--nav-gray-subtle: rgba(148, 163, 184, 0.15);
+		--nav-red: #fb7185;
+		--nav-red-subtle: rgba(251, 113, 133, 0.15);
+		--nav-teal: #22d3ee;
+		--nav-teal-subtle: rgba(34, 211, 238, 0.18);
+		--nav-yellow: #fbbf24;
+		--nav-yellow-subtle: rgba(251, 191, 36, 0.15);
+		--nav-violet: #f472b6;
+		--nav-violet-subtle: rgba(244, 114, 182, 0.18);
+		--nav-indigo: #818cf8;
+		--nav-indigo-subtle: rgba(129, 140, 248, 0.18);
+		--nav-amber: #fbbf24;
+		--nav-amber-subtle: rgba(251, 191, 36, 0.15);
+		--nav-rose: #fb7199;
+		--nav-rose-subtle: rgba(251, 113, 153, 0.15);
+		/* Live Session Status Background Tints (dark mode) */
+		--status-starting-bg: rgba(167, 139, 250, 0.08);
+		--status-active-bg: rgba(52, 211, 153, 0.08);
+		--status-idle-bg: rgba(251, 191, 36, 0.08);
+		--status-waiting-bg: rgba(96, 165, 250, 0.08);
+		--status-stopped-bg: rgba(148, 163, 184, 0.05);
+		--status-ended-bg: rgba(148, 163, 184, 0.04);
+		--status-stale-bg: rgba(248, 113, 113, 0.08);
+		/* Subagent Type Colors (dark mode - lighter for contrast) */
+		--subagent-explore: #22d3ee;
+		--subagent-explore-subtle: rgba(34, 211, 238, 0.2);
+		--subagent-plan: #fbbf24;
+		--subagent-plan-subtle: rgba(251, 191, 36, 0.2);
+		--subagent-bash: #34d399;
+		--subagent-bash-subtle: rgba(52, 211, 153, 0.2);
+		--subagent-default: #a78bfa;
+		--subagent-default-subtle: rgba(167, 139, 250, 0.2);
+		/* Claude Tax - internal overhead agents (warmup, cache priming) - rust orange */
+		--subagent-claude-tax: #fb923c;
+		--subagent-claude-tax-subtle: rgba(251, 146, 60, 0.2);
+		/* System Agents - auto-spawned by Claude Code for internal operations (dark mode) */
+		--subagent-acompact: #94a3b8; /* Slate - context compaction/cleanup */
+		--subagent-acompact-subtle: rgba(148, 163, 184, 0.2);
+		--subagent-prompt-suggestion: #a5b4fc; /* Indigo - AI-powered suggestions */
+		--subagent-prompt-suggestion-subtle: rgba(165, 180, 252, 0.2);
+		/* OKLCH params for plugin identity colors (dark mode) */
+		--plugin-l: 0.75;
+		--plugin-c: 0.13;
+		--plugin-l-subtle: 0.23;
+		--plugin-c-subtle: 0.04;
+
+		/* Scope category colors (dark mode) */
+		--scope-project: #fbbf24;
+		--scope-project-subtle: rgba(251, 191, 36, 0.2);
+		--scope-user: #2dd4bf;
+		--scope-user-subtle: rgba(45, 212, 191, 0.2);
+		--shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+		--shadow-md: 0 2px 8px rgba(0, 0, 0, 0.4);
+		--shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.5);
+		--shadow-elevated: 0 0 0 0.5px var(--border), 0 4px 12px rgba(0, 0, 0, 0.4);
+	}
+}
+
+=======
 body {
 	font-family: var(--font-sans);
 	background-color: var(--bg-base);

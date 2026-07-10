@@ -60,6 +60,18 @@ class Settings(BaseSettings):
         description="Stale-while-revalidate duration for agent usage",
     )
 
+    # Syncthing REST API (override per-instance for multi-peer local testing:
+    # CLAUDE_KARMA_SYNCTHING_URL=http://localhost:8386)
+    syncthing_url: str = Field(
+        default="http://localhost:8384",
+        description="Base URL of the local Syncthing REST API",
+    )
+    sync_removed_unpair_grace_seconds: int = Field(
+        default=900,
+        description="How long removed members' devices stay paired so the "
+        "removal signal can sync to them before the device is unpaired.",
+    )
+
     # SQLite metadata index
     use_sqlite: bool = Field(
         default=True,
@@ -97,7 +109,7 @@ class Settings(BaseSettings):
     )
     cors_allow_credentials: bool = Field(default=True, description="Allow credentials in CORS")
     cors_allow_methods: List[str] = Field(
-        default=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        default=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         description="Allowed HTTP methods for CORS",
     )
     cors_allow_headers: List[str] = Field(

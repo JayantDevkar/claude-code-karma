@@ -126,7 +126,7 @@
 	}
 </script>
 
-<div class="max-w-2xl mx-auto px-6 pb-12">
+<div class="max-w-2xl lg:max-w-3xl xl:max-w-4xl mx-auto px-4 sm:px-6 pb-12">
 	<!-- Page Header with Breadcrumb -->
 	<PageHeader
 		title="Settings"

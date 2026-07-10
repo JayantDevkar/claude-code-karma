@@ -37,6 +37,7 @@
 		SearchScope,
 		SearchScopeSelection,
 		SessionStatusFilter,
+		SessionSourceFilter,
 		SearchDateRange,
 		SearchFilters,
 		LiveSubStatus,
@@ -187,6 +188,7 @@
 	// svelte-ignore state_referenced_locally
 	let selectedStatus = $state<SessionStatusFilter>(data.filters.status || 'all');
 	let selectedDateRange = $state<SearchDateRange>('all');
+	let selectedSource = $state<SessionSourceFilter>('all');
 	let selectedLiveSubStatuses = $state<LiveSubStatus[]>([...ALL_LIVE_SUB_STATUSES]);
 	let showFiltersDropdown = $state(false);
 	let isMobile = $state(false);
@@ -795,7 +797,8 @@
 			dateRange: selectedDateRange,
 			customStart: undefined, // Add if custom date support needed
 			customEnd: undefined,
-			liveSubStatuses: selectedLiveSubStatuses
+			liveSubStatuses: selectedLiveSubStatuses,
+			source: selectedSource
 		};
 
 		const params = buildFilterUrlParams(window.location.href, {
@@ -920,6 +923,12 @@
 		reloadSessions({ page: 1 });
 	}
 
+	// Source filter change
+	function handleSourceChange(source: SessionSourceFilter) {
+		selectedSource = source;
+		reloadSessions({ page: 1 });
+	}
+
 	// Live sub-status filter change - client-side only
 	function handleLiveSubStatusChange(statuses: LiveSubStatus[]) {
 		selectedLiveSubStatuses = statuses;
@@ -943,6 +952,10 @@
 			case 'liveSubStatuses':
 				selectedLiveSubStatuses = [...ALL_LIVE_SUB_STATUSES];
 				break;
+			case 'source':
+				selectedSource = 'all';
+				reloadSessions({ page: 1 });
+				break;
 			case 'query':
 				handleTokensChange([]);
 				break;
@@ -954,6 +967,7 @@
 		scopeSelection = { ...DEFAULT_SCOPE_SELECTION };
 		selectedStatus = 'all';
 		selectedDateRange = 'all';
+		selectedSource = 'all';
 		selectedLiveSubStatuses = [...ALL_LIVE_SUB_STATUSES];
 
 		// Clear search tokens and re-fetch original sessions
@@ -1120,6 +1134,8 @@
 					onLiveSubStatusChange={handleLiveSubStatusChange}
 					{liveStatusCounts}
 					completedCount={contextualTotal}
+					source={selectedSource}
+					onSourceChange={handleSourceChange}
 				/>
 			{/if}
 		</div>
@@ -1140,6 +1156,8 @@
 				onLiveSubStatusChange={handleLiveSubStatusChange}
 				{liveStatusCounts}
 				completedCount={contextualTotal}
+				source={selectedSource}
+				onSourceChange={handleSourceChange}
 			/>
 		{/if}
 

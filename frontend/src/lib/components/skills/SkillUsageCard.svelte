@@ -14,6 +14,10 @@
 		session_count?: number;
 		category?: SkillCategory;
 		description?: string | null;
+		remote_count?: number;
+		local_count?: number;
+		remote_user_ids?: string[];
+		is_remote_only?: boolean;
 	}
 
 	interface Props {
@@ -60,6 +64,8 @@
 	lastUsed={skill.last_used}
 	sessionCount={skill.session_count ?? null}
 	{neverUsed}
+	isRemoteOnly={skill.is_remote_only ?? false}
+	remoteUserIds={skill.remote_user_ids ?? []}
 	class={className}
 >
 	{#snippet icon()}

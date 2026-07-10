@@ -156,7 +156,7 @@
 	<!-- Content -->
 	{#if isLoading}
 		<!-- Loading Skeleton -->
-		<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+		<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
 			{#each Array(6) as _}
 				<SkeletonPluginCard />
 			{/each}
@@ -188,7 +188,7 @@
 			<p class="text-sm text-[var(--text-muted)] mt-1">Try adjusting your search or filter</p>
 		</div>
 	{:else}
-		<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 stagger-children">
+		<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 stagger-children">
 			{#each filteredPlugins as plugin (plugin.name)}
 				<PluginCard {plugin} {usageLoaded} />
 			{/each}

@@ -4,12 +4,13 @@
 	import type {
 		SearchScopeSelection,
 		SessionStatusFilter,
+		SessionSourceFilter,
 		SearchDateRange,
 		LiveSubStatus,
 		LiveStatusCounts
 	} from '$lib/api-types';
 	import { ALL_LIVE_SUB_STATUSES } from '$lib/api-types';
-	import { SCOPE_CHECKBOX_OPTIONS, DATE_RANGE_OPTIONS } from '$lib/search';
+	import { SCOPE_CHECKBOX_OPTIONS, DATE_RANGE_OPTIONS, SOURCE_OPTIONS } from '$lib/search';
 	import { statusConfig } from '$lib/live-session-config';
 
 	interface Props {
@@ -29,6 +30,10 @@
 		completedCount?: number;
 		/** Variant for different visual styles */
 		variant?: 'desktop' | 'mobile';
+		/** Current source filter */
+		source?: SessionSourceFilter;
+		/** Callback when source filter changes */
+		onSourceChange?: (source: SessionSourceFilter) => void;
 	}
 
 	let {
@@ -42,7 +47,9 @@
 		onLiveSubStatusChange,
 		liveStatusCounts,
 		completedCount,
-		variant = 'desktop'
+		variant = 'desktop',
+		source = 'all',
+		onSourceChange
 	}: Props = $props();
 
 	// Toggle a scope checkbox
@@ -249,6 +256,30 @@
 		</button>
 	</div>
 </div>
+
+<!-- Source Filter Section -->
+{#if onSourceChange}
+	<div class="filter-section">
+		<div class="filter-label">Source</div>
+		<div class="flex gap-2">
+			{#each SOURCE_OPTIONS as option}
+				<button
+					type="button"
+					onclick={() => onSourceChange(option.value)}
+					class="status-button {isMobile ? 'mobile' : 'desktop'}"
+					class:selected={source === option.value}
+				>
+					<span class="radio" class:checked={source === option.value}>
+						{#if source === option.value}
+							<span class="radio-dot"></span>
+						{/if}
+					</span>
+					<span>{option.label}</span>
+				</button>
+			{/each}
+		</div>
+	</div>
+{/if}
 
 <!-- Date Range Section -->
 <div class="filter-section no-border">

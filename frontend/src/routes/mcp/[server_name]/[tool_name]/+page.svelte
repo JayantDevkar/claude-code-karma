@@ -33,7 +33,7 @@
 	import FiltersBottomSheet from '$lib/components/FiltersBottomSheet.svelte';
 	import ActiveFilterChips from '$lib/components/ActiveFilterChips.svelte';
 	import { getServerColorVars, getServerChartHex } from '$lib/utils/mcp';
-	import { getProjectNameFromEncoded } from '$lib/utils';
+	import { getProjectNameFromEncoded, toSessionWithContext } from '$lib/utils';
 	import {
 		DEFAULT_FILTERS,
 		DEFAULT_SCOPE_SELECTION,
@@ -50,7 +50,6 @@
 	} from '$lib/search';
 	import type {
 		StatItem,
-		McpSessionSummary,
 		SessionWithContext,
 		SearchFilters,
 		SearchScopeSelection
@@ -209,27 +208,6 @@
 				]
 			: []
 	);
-
-	// Convert McpSessionSummary to SessionWithContext
-	function toSessionWithContext(s: McpSessionSummary): SessionWithContext {
-		return {
-			uuid: s.uuid,
-			slug: s.slug ?? '',
-			message_count: s.message_count,
-			start_time: s.start_time ?? '',
-			end_time: s.end_time ?? undefined,
-			duration_seconds: s.duration_seconds ?? undefined,
-			models_used: s.models_used,
-			subagent_count: s.subagent_count,
-			has_todos: false,
-			initial_prompt: s.initial_prompt ?? undefined,
-			git_branches: s.git_branches,
-			session_titles: s.session_titles,
-			project_encoded_name: s.project_encoded_name ?? undefined,
-			project_path: s.project_encoded_name ?? '',
-			project_name: s.project_display_name || getProjectNameFromEncoded(s.project_encoded_name ?? '')
-		};
-	}
 
 	// Sessions as SessionWithContext for filtering
 	let sessionsAsContext = $derived<SessionWithContext[]>(

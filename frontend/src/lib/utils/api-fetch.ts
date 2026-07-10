@@ -21,6 +21,27 @@ export interface ApiError {
 export type ApiResponse<T> = ApiResult<T> | ApiError;
 
 /**
+ * Default request timeout. API calls are local and normally resolve in
+ * milliseconds; anything past this means the server is hung or mid-restart.
+ * Without a bound, a hung request blocks SvelteKit's server `load` forever
+ * and freezes all navigation.
+ */
+export const FETCH_TIMEOUT_MS = 10_000;
+
+/**
+ * Drop-in replacement for client-side `fetch` that enforces FETCH_TIMEOUT_MS.
+ * Components polling the API must use this instead of raw fetch: a request
+ * that never settles (API mid-restart) otherwise wedges loading flags forever
+ * — skeletons freeze on screen and spinners never stop.
+ * A caller-provided signal is respected alongside the timeout.
+ */
+export function boundedFetch(url: string, init?: RequestInit): Promise<Response> {
+	const signals = [AbortSignal.timeout(FETCH_TIMEOUT_MS)];
+	if (init?.signal) signals.push(init.signal as AbortSignal);
+	return fetch(url, { ...init, signal: AbortSignal.any(signals) });
+}
+
+/**
  * Safely fetch JSON from an API endpoint.
  *
  * Unlike raw fetch, this:
@@ -34,7 +55,7 @@ export type ApiResponse<T> = ApiResult<T> | ApiError;
  */
 export async function safeFetch<T>(fetchFn: typeof fetch, url: string): Promise<ApiResponse<T>> {
 	try {
-		const response = await fetchFn(url);
+		const response = await fetchFn(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
 
 		if (!response.ok) {
 			// Try to get error detail from response body

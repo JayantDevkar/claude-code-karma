@@ -87,6 +87,7 @@ def process_subagent_data(subagent: Any) -> dict:
     from collections import Counter
 
     from models import AssistantMessage, ToolUseBlock, UserMessage
+    from utils import extract_prompt_from_content
 
     tool_counts: Counter = Counter()
     initial_prompt = None
@@ -95,8 +96,10 @@ def process_subagent_data(subagent: Any) -> dict:
     for msg in subagent.iter_messages():
         message_count += 1
         if isinstance(msg, UserMessage):
-            if initial_prompt is None:
-                initial_prompt = msg.content[:5000] if msg.content else None
+            if initial_prompt is None and msg.content:
+                prompt = extract_prompt_from_content(msg.content)
+                if prompt:
+                    initial_prompt = prompt[:5000]
         elif isinstance(msg, AssistantMessage):
             for block in msg.content_blocks:
                 if isinstance(block, ToolUseBlock):

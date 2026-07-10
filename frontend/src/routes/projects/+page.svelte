@@ -226,7 +226,7 @@
 						<div class="flex-1"></div>
 						<SkeletonBox width="50px" height="20px" rounded="full" />
 					</div>
-					<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 pl-4">
+					<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 pl-4">
 						{#each Array(3) as _}
 							<SkeletonBox height="140px" rounded="md" />
 						{/each}
@@ -497,7 +497,7 @@
 
 			<!-- Single Git Projects (Flat Grid) -->
 			{#if filteredGrouped.singleGitProjects.length > 0}
-				<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+				<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
 					{#each filteredGrouped.singleGitProjects as project (project.encoded_name)}
 						<ProjectCard {project} variant="default" hideGitBadge={true} />
 					{/each}
@@ -518,7 +518,7 @@
 				</span>
 			</h2>
 
-			<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+			<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
 				{#each filteredGrouped.otherProjects as project (project.encoded_name)}
 					<ProjectCard {project} variant="default" />
 				{/each}

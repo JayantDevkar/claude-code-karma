@@ -22,6 +22,32 @@ from .cli_js import (
 logger = logging.getLogger(__name__)
 
 _custom_skill_cache: TTLCache[str, bool] = TTLCache(maxsize=128, ttl=60)
+_inherited_skill_cache: TTLCache[str, bool] = TTLCache(maxsize=128, ttl=60)
+
+
+def _is_inherited_skill(name: str) -> bool:
+    """Check if a name corresponds to an inherited plugin skill on disk.
+
+    Inherited skills live at ~/.claude/skills/{name}/SKILL.md and contain
+    an ``inherited_from:`` key in their YAML frontmatter.  Only the first
+    512 bytes are read to avoid loading large skill files.
+    """
+    if name in _inherited_skill_cache:
+        return _inherited_skill_cache[name]
+
+    from config import settings
+
+    skill_file = settings.skills_dir / name / "SKILL.md"
+    if not skill_file.is_file():
+        _inherited_skill_cache[name] = False
+        return False
+    try:
+        head = skill_file.read_text(encoding="utf-8", errors="ignore")[:512]
+        result = head.startswith("---") and "inherited_from:" in head
+    except OSError:
+        result = False
+    _inherited_skill_cache[name] = result
+    return result
 
 
 def _is_custom_skill(name: str) -> bool:
@@ -277,6 +303,29 @@ def is_plugin_skill(name: str) -> bool:
     return _is_plugin_skill(name)
 
 
+def is_plugin_installed_locally(name: str) -> bool:
+    """Check if a plugin directory exists in the local plugins cache.
+
+    Unlike ``is_plugin_skill`` this does NOT return True for colon-containing
+    names — it only checks the filesystem for the directory.
+
+    Args:
+        name: Plugin name (e.g. 'superpowers', 'oh-my-claudecode').
+    """
+    return _is_plugin_skill(name)
+
+
+def is_custom_skill_local(name: str) -> bool:
+    """Check if a custom skill file exists on disk.
+
+    Looks for:
+      - ~/.claude/skills/{name}/SKILL.md
+      - ~/.claude/skills/{name}/skill.md
+      - ~/.claude/skills/{name}.md
+    """
+    return _is_custom_skill(name)
+
+
 def classify_invocation(name: str, *, source: str = "") -> str:
     """Classify a command/skill invocation name into one of 6 categories.
 
@@ -319,6 +368,8 @@ def classify_invocation(name: str, *, source: str = "") -> str:
         return "builtin_command"
     if ":" in name:
         return _classify_colon_name(name)
+    if _is_inherited_skill(name):
+        return "inherited_skill"
     if _is_custom_skill(name):
         return "custom_skill"
     if _is_plugin_skill(name):

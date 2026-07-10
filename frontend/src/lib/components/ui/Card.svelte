@@ -6,9 +6,10 @@
 		padding?: 'none' | 'sm' | 'md' | 'lg';
 		children: Snippet;
 		class?: string;
+		style?: string;
 	}
 
-	let { variant = 'default', padding = 'md', children, class: className = '' }: Props = $props();
+	let { variant = 'default', padding = 'md', children, class: className = '', style = '' }: Props = $props();
 
 	const variantClasses = {
 		default: 'border border-[var(--border)] bg-[var(--bg-base)]',
@@ -25,6 +26,6 @@
 	};
 </script>
 
-<div class="rounded-lg {variantClasses[variant]} {paddingClasses[padding]} {className}">
+<div class="rounded-lg {variantClasses[variant]} {paddingClasses[padding]} {className}" {style}>
 	{@render children()}
 </div>

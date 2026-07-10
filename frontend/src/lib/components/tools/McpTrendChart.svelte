@@ -16,7 +16,8 @@
 		registerChartDefaults,
 		createResponsiveConfig,
 		createCommonScaleConfig,
-		getThemeColors
+		getThemeColors,
+		onThemeChange
 	} from '$lib/components/charts/chartConfig';
 
 	Chart.register(
@@ -142,11 +143,15 @@
 		});
 	}
 
+	let cleanupTheme: (() => void) | null = null;
+
 	onMount(() => {
 		if (sortedTrend.length > 0) createChart();
+		cleanupTheme = onThemeChange(() => createChart());
 	});
 
 	onDestroy(() => {
+		cleanupTheme?.();
 		chart?.destroy();
 	});
 

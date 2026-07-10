@@ -8,7 +8,8 @@
 		createResponsiveConfig,
 		chartColorPalette,
 		getChartColor,
-		getThemeColors
+		getThemeColors,
+		onThemeChange
 	} from './chartConfig';
 
 	// Register Chart.js components
@@ -55,7 +56,11 @@
 	// Total for percentage calculation
 	let total = $derived(allEntries.reduce((sum, [, count]) => sum + count, 0));
 
-	onMount(() => {
+	function createDoughnutChart() {
+		chart?.destroy();
+		chart = null;
+		if (!canvas) return;
+
 		registerChartDefaults();
 		const colors = getThemeColors();
 
@@ -77,7 +82,7 @@
 				plugins: {
 					...createResponsiveConfig().plugins,
 					legend: {
-						display: false // We'll use custom legend
+						display: false
 					},
 					tooltip: {
 						...createResponsiveConfig().plugins.tooltip,
@@ -98,9 +103,17 @@
 				cutout: '65%'
 			}
 		});
+	}
+
+	let cleanupTheme: (() => void) | null = null;
+
+	onMount(() => {
+		createDoughnutChart();
+		cleanupTheme = onThemeChange(() => createDoughnutChart());
 	});
 
 	onDestroy(() => {
+		cleanupTheme?.();
 		chart?.destroy();
 	});
 

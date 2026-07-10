@@ -1,27 +1,52 @@
 import { Chart } from 'chart.js';
 
 /**
- * Register global Chart.js defaults for consistent styling across all charts
- * Should be called once during app initialization or in each chart component's onMount
+ * Get theme colors from CSS custom properties.
+ * Chart.js renders on <canvas> via the Canvas 2D API, which does NOT support
+ * CSS variable strings. Always resolve variables to actual color values before
+ * passing them to Chart.js.
+ * @returns Object containing commonly used theme colors as resolved hex/rgb values
  */
-export function registerChartDefaults() {
-	Chart.defaults.font.family = 'JetBrains Mono, monospace';
-	Chart.defaults.color = 'var(--text-secondary)';
+export function getThemeColors() {
+	const style = getComputedStyle(document.documentElement);
+	return {
+		primary: style.getPropertyValue('--accent').trim(),
+		text: style.getPropertyValue('--text-primary').trim(),
+		textSecondary: style.getPropertyValue('--text-secondary').trim(),
+		textMuted: style.getPropertyValue('--text-muted').trim(),
+		textFaint: style.getPropertyValue('--text-faint').trim(),
+		border: style.getPropertyValue('--border').trim(),
+		bgBase: style.getPropertyValue('--bg-base').trim(),
+		bgMuted: style.getPropertyValue('--bg-muted').trim(),
+		bgSubtle: style.getPropertyValue('--bg-subtle').trim()
+	};
 }
 
 /**
- * Create a responsive chart configuration with common options
+ * Register global Chart.js defaults for consistent styling across all charts.
+ * Must be called from onMount (needs DOM access to resolve CSS variables).
+ */
+export function registerChartDefaults() {
+	const colors = getThemeColors();
+	Chart.defaults.font.family = 'JetBrains Mono, monospace';
+	Chart.defaults.color = colors.textSecondary;
+}
+
+/**
+ * Create a responsive chart configuration with common options.
+ * All colors are resolved from CSS custom properties at call time.
  * @param maintainAspectRatio - Whether to maintain aspect ratio (default: false for better container fitting)
  * @returns Base configuration object that can be spread into chart options
  */
 export function createResponsiveConfig(maintainAspectRatio = false) {
+	const colors = getThemeColors();
 	return {
 		responsive: true,
 		maintainAspectRatio,
 		plugins: {
 			legend: {
 				labels: {
-					color: 'var(--text-secondary)',
+					color: colors.textSecondary,
 					font: {
 						family: 'JetBrains Mono, monospace',
 						size: 11
@@ -29,10 +54,10 @@ export function createResponsiveConfig(maintainAspectRatio = false) {
 				}
 			},
 			tooltip: {
-				backgroundColor: 'var(--bg-base)', // High contrast background
-				titleColor: 'var(--text-primary)',
-				bodyColor: 'var(--text-secondary)',
-				borderColor: 'var(--border)',
+				backgroundColor: colors.bgBase,
+				titleColor: colors.text,
+				bodyColor: colors.textSecondary,
+				borderColor: colors.border,
 				borderWidth: 1,
 				padding: 10,
 				cornerRadius: 8,
@@ -50,37 +75,20 @@ export function createResponsiveConfig(maintainAspectRatio = false) {
 }
 
 /**
- * Get theme colors from CSS custom properties
- * Useful for dynamic color assignment based on current theme
- * @returns Object containing commonly used theme colors
- */
-export function getThemeColors() {
-	const style = getComputedStyle(document.documentElement);
-	return {
-		primary: style.getPropertyValue('--accent').trim(),
-		text: style.getPropertyValue('--text-primary').trim(),
-		textSecondary: style.getPropertyValue('--text-secondary').trim(),
-		textMuted: style.getPropertyValue('--text-muted').trim(),
-		border: style.getPropertyValue('--border').trim(),
-		bgBase: style.getPropertyValue('--bg-base').trim(),
-		bgMuted: style.getPropertyValue('--bg-muted').trim(),
-		bgSubtle: style.getPropertyValue('--bg-subtle').trim()
-	};
-}
-
-/**
- * Create common scale configuration for line charts
+ * Create common scale configuration for line charts.
+ * All colors are resolved from CSS custom properties at call time.
  * @returns Scale configuration object for x and y axes
  */
 export function createCommonScaleConfig() {
+	const colors = getThemeColors();
 	return {
 		x: {
 			grid: {
-				color: 'rgba(128, 128, 128, 0.1)', // Subtle grid lines works in light and dark
+				color: 'rgba(128, 128, 128, 0.1)', // Neutral gray works in both themes
 				drawOnChartArea: false
 			},
 			ticks: {
-				color: 'var(--text-muted)',
+				color: colors.textMuted,
 				font: {
 					family: 'JetBrains Mono, monospace',
 					size: 10
@@ -92,10 +100,10 @@ export function createCommonScaleConfig() {
 			beginAtZero: true,
 			grace: '20%',
 			grid: {
-				color: 'rgba(128, 128, 128, 0.1)' // Subtle grid lines
+				color: 'rgba(128, 128, 128, 0.1)'
 			},
 			ticks: {
-				color: 'var(--text-muted)',
+				color: colors.textMuted,
 				font: {
 					family: 'JetBrains Mono, monospace',
 					size: 10
@@ -104,6 +112,26 @@ export function createCommonScaleConfig() {
 			}
 		}
 	};
+}
+
+/**
+ * Watch for theme changes (data-theme attribute on <html>) and invoke callback.
+ * Returns a cleanup function to disconnect the observer.
+ * Use in onMount/onDestroy to recreate charts with updated colors.
+ */
+export function onThemeChange(callback: () => void): () => void {
+	const observer = new MutationObserver((mutations) => {
+		for (const mutation of mutations) {
+			if (mutation.type === 'attributes' && mutation.attributeName === 'data-theme') {
+				callback();
+			}
+		}
+	});
+	observer.observe(document.documentElement, {
+		attributes: true,
+		attributeFilter: ['data-theme']
+	});
+	return () => observer.disconnect();
 }
 
 /**

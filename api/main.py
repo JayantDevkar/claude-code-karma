@@ -35,9 +35,16 @@ from routers import (  # noqa: E402
     plans,
     plugins,
     projects,
+    remote_sessions,
     sessions,
     skills,
     subagent_sessions,
+    sync_members,
+    sync_pairing,
+    sync_pending,
+    sync_projects,
+    sync_system,
+    sync_teams,
     system_cron,
     tickets,
     tools,
@@ -98,6 +105,44 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning(f"SQLite indexing failed to start (non-critical): {e}")
 
+    # Start remote session watcher (monitors incoming Syncthing files).
+    # Watches the karma base dir to catch files in both legacy remote-sessions/
+    # and v4 karma-out--* inbox folders.
+    remote_watcher = None
+    if settings.use_sqlite:
+        try:
+            from services.watcher_manager import RemoteSessionWatcher
+
+            remote_watcher = RemoteSessionWatcher(
+                watch_dir=settings.karma_base,
+            )
+            remote_watcher.start()
+            logger.info(
+                "Remote session watcher started: %s", settings.karma_base
+            )
+        except Exception as e:
+            logger.warning(
+                "Remote session watcher failed to start (non-critical): %s", e
+            )
+
+    # Start sync worker (reconciliation + event listener + session packager).
+    # Starts even with zero teams/projects: a fresh joiner needs the
+    # reconciliation loop running to discover its first team at all — this
+    # was the root cause of "invites never arrive" on newly initialized
+    # machines. /sync/init calls the same bootstrap for post-startup init.
+    session_watcher_mgr = None
+    if settings.use_sqlite:
+        try:
+            from services.sync_bootstrap import start_sync_worker
+            from services.watcher_singleton import get_watcher_manager
+
+            if start_sync_worker():
+                session_watcher_mgr = get_watcher_manager()
+        except Exception as e:
+            logger.warning(
+                "Sync worker failed to start (non-critical): %s", e
+            )
+
     # Start live session reconciler
     reconciler_task = None
     if settings.reconciler_enabled:
@@ -127,6 +172,14 @@ async def lifespan(app: FastAPI):
     yield
 
     # Shutdown
+    if remote_watcher is not None:
+        remote_watcher.stop()
+        logger.info("Remote session watcher stopped")
+
+    if session_watcher_mgr is not None:
+        session_watcher_mgr.stop()
+        logger.info("Session packager stopped")
+
     if reconciler_task is not None:
         reconciler_task.cancel()
         logger.info("Session reconciler cancelled")
@@ -189,6 +242,13 @@ app.include_router(
     prefix="/agents",
     tags=["subagent-sessions"],
 )
+app.include_router(remote_sessions.router, prefix="/remote", tags=["remote"])
+app.include_router(sync_system.router)
+app.include_router(sync_members.router)
+app.include_router(sync_teams.router)
+app.include_router(sync_projects.router)
+app.include_router(sync_pairing.router)
+app.include_router(sync_pending.router)
 app.include_router(admin.router)
 app.include_router(tickets.router)
 # bg-shells + cron routers are no-prefix (they span /shells, /cron,

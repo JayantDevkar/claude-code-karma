@@ -303,6 +303,7 @@ def _get_agent_history_sqlite(
                     session_uuid=row["session_uuid"],
                     project_encoded_name=row["project_encoded_name"],
                     project_display_name=project_display_name,
+                    display_name=row.get("agent_display_name"),
                     invoked_at=_parse_iso(row["started_at"]),
                     duration_seconds=row["duration_seconds"],
                     input_tokens=row["input_tokens"],
