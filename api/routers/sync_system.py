@@ -162,9 +162,14 @@ async def trigger_package(
         conn, team_name=team_name, git_identity=git_identity,
     )
 
+    import asyncio
+
     results = []
     for proj in projects:
-        result = svc.package_project(
+        # Packaging copies session files synchronously; run it off the event
+        # loop so the API (and the whole UI) keeps responding meanwhile.
+        result = await asyncio.to_thread(
+            svc.package_project,
             conn,
             team_name=proj["team_name"],
             git_identity=proj["git_identity"],

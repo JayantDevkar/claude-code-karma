@@ -81,7 +81,16 @@ class PackagingService:
             if git_identity and project.git_identity != git_identity:
                 continue
 
-            enc = project.encoded_name or ""
+            # sync_projects.encoded_name is the SHARER's machine-specific
+            # path (propagated via metadata) — never valid on other machines.
+            # Resolve the git identity against the LOCAL project index first.
+            from db.queries import resolve_encoded_name
+
+            enc = (
+                resolve_encoded_name(conn, project.git_identity)
+                or project.encoded_name
+                or ""
+            )
             key = (enc, s.team_name)
             if key in seen:
                 continue
