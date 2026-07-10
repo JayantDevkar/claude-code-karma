@@ -102,3 +102,18 @@ service — the sim runs isolated instances with their own homes/ports).
   the 6 known issues in his v4 status report (auto-commit transactionality,
   metadata TOCTOU, per-request HTTP connections, folder-suffix collision).
 - PR #45 can be reopened from this branch once Ayush reviews.
+
+## Update 2026-07-10: REAL two-machine test — 16/16 PASS
+
+`scripts/sync_real_test.py` ran the full lifecycle between the Mac mini (alice)
+and the MacBook Air (bob, Intel, macOS 14.8, driven over SSH + LAN HTTP) with
+isolated fake HOMEs on both machines — real user data untouched. Direct TCP
+(tcp-client, no relay), mini dialing outbound only (mini firewall enabled and
+undisturbed). Latencies matched the localhost sim: pairing 6.6s, team discovery
+11s, policy auto-accept 16.7s, session transfer mini→Air 10.2s (+6.4s to index),
+Air→mini 12s. Event listeners live on both ends.
+
+Air prep (zero-sudo, create-only): repo cloned to ~/karma-sync-test/repo with
+the branch fetched from a git bundle, uv-managed Python 3.12 venv, standalone
+Syncthing 2.1.2 binary in ~/karma-sync-test/bin. Remaining untested: cross-
+internet relay behavior (both machines were on one LAN) and reset→rejoin.
