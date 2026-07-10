@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { boundedFetch } from '$lib/utils/api-fetch';
 	import { onMount } from 'svelte';
 	import { Inbox } from 'lucide-svelte';
 	import { API_BASE } from '$lib/config';
@@ -8,7 +9,7 @@
 
 	async function poll() {
 		try {
-			const resp = await fetch(`${API_BASE}/sync/inbox`);
+			const resp = await boundedFetch(`${API_BASE}/sync/inbox`);
 			if (resp.status === 400 || resp.status === 404) {
 				// Sync not initialized on this machine — stay hidden
 				configured = false;

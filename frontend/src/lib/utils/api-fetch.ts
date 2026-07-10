@@ -29,6 +29,19 @@ export type ApiResponse<T> = ApiResult<T> | ApiError;
 export const FETCH_TIMEOUT_MS = 10_000;
 
 /**
+ * Drop-in replacement for client-side `fetch` that enforces FETCH_TIMEOUT_MS.
+ * Components polling the API must use this instead of raw fetch: a request
+ * that never settles (API mid-restart) otherwise wedges loading flags forever
+ * — skeletons freeze on screen and spinners never stop.
+ * A caller-provided signal is respected alongside the timeout.
+ */
+export function boundedFetch(url: string, init?: RequestInit): Promise<Response> {
+	const signals = [AbortSignal.timeout(FETCH_TIMEOUT_MS)];
+	if (init?.signal) signals.push(init.signal as AbortSignal);
+	return fetch(url, { ...init, signal: AbortSignal.any(signals) });
+}
+
+/**
  * Safely fetch JSON from an API endpoint.
  *
  * Unlike raw fetch, this:

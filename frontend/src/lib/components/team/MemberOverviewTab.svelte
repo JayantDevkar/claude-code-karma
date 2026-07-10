@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { boundedFetch } from '$lib/utils/api-fetch';
 	import { onMount, onDestroy } from 'svelte';
 	import {
 		Chart,
@@ -37,7 +38,7 @@
 	async function syncNow() {
 		syncing = true;
 		try {
-			await fetch(`${API_BASE}/sync/package`, { method: 'POST' }).catch(() => null);
+			await boundedFetch(`${API_BASE}/sync/package`, { method: 'POST' }).catch(() => null);
 			await invalidateAll();
 		} finally {
 			syncing = false;

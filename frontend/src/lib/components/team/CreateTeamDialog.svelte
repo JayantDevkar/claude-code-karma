@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { boundedFetch } from '$lib/utils/api-fetch';
 	import Modal from '$lib/components/ui/Modal.svelte';
 	import { API_BASE } from '$lib/config';
 	import { Loader2 } from 'lucide-svelte';
@@ -23,7 +24,7 @@
 		error = null;
 
 		try {
-			const res = await fetch(`${API_BASE}/sync/teams`, {
+			const res = await boundedFetch(`${API_BASE}/sync/teams`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ name: teamName })

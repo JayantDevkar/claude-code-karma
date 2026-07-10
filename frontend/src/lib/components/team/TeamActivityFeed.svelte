@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { boundedFetch } from '$lib/utils/api-fetch';
 	import { Loader2 } from 'lucide-svelte';
 	import type { SyncEvent, SyncTeamMember } from '$lib/api-types';
 	import { formatSyncEvent, syncEventColor, isSyncEventWarning, SYNC_EVENT_META } from '$lib/utils/sync-events';
@@ -55,7 +56,7 @@
 			const params = buildParams();
 			if (append) params.set('offset', String(offset));
 
-			const res = await fetch(
+			const res = await boundedFetch(
 				`${API_BASE}/sync/teams/${encodeURIComponent(teamName)}/activity?${params}`
 			);
 			if (res.ok) {

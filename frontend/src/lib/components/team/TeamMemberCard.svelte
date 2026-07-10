@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { boundedFetch } from '$lib/utils/api-fetch';
 	import { API_BASE } from '$lib/config';
 	import { Trash2, Loader2, Wifi, WifiOff } from 'lucide-svelte';
 	import type { SyncTeamMember, SyncDevice } from '$lib/api-types';
@@ -33,7 +34,7 @@
 
 		try {
 			const tag = member.member_tag || member.name || '';
-			const res = await fetch(
+			const res = await boundedFetch(
 				`${API_BASE}/sync/teams/${encodeURIComponent(teamName)}/members/${encodeURIComponent(tag)}`,
 				{ method: 'DELETE' }
 			);

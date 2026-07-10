@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { boundedFetch } from '$lib/utils/api-fetch';
 	import { Users, Loader2, WifiOff, Clock, DollarSign, FileText, Wrench, ChevronDown, ChevronUp } from 'lucide-svelte';
 	import { API_BASE } from '$lib/config';
 	import type { RemoteSessionUser, StatItem } from '$lib/api-types';
@@ -25,7 +26,7 @@
 		loading = true;
 		error = null;
 		try {
-			const res = await fetch(
+			const res = await boundedFetch(
 				`${API_BASE}/projects/${encodeURIComponent(projectEncodedName)}/remote-sessions`
 			);
 			if (res.ok) {

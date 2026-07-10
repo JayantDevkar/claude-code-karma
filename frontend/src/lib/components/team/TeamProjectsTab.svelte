@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { boundedFetch } from '$lib/utils/api-fetch';
 	import { onMount } from 'svelte';
 	import { API_BASE } from '$lib/config';
 	import {
@@ -126,7 +127,7 @@
 
 	async function loadPrefs() {
 		try {
-			const res = await fetch(
+			const res = await boundedFetch(
 				`${API_BASE}/sync/teams/${encodeURIComponent(teamName)}/prefs`
 			);
 			if (res.ok) prefs = await res.json();
@@ -140,7 +141,7 @@
 		if (policy) body.new_project_policy = policy;
 		if (direction) body.default_direction = direction;
 		try {
-			const res = await fetch(
+			const res = await boundedFetch(
 				`${API_BASE}/sync/teams/${encodeURIComponent(teamName)}/prefs`,
 				{
 					method: 'PUT',
@@ -169,7 +170,7 @@
 	async function acceptAll() {
 		acceptingAll = true;
 		try {
-			const res = await fetch(
+			const res = await boundedFetch(
 				`${API_BASE}/sync/subscriptions/${encodeURIComponent(teamName)}/accept-all`,
 				{ method: 'POST' }
 			);
@@ -221,7 +222,7 @@
 	async function handleRemoveProject(gitIdentity: string) {
 		removeProjectError = null;
 		try {
-			const res = await fetch(
+			const res = await boundedFetch(
 				`${API_BASE}/sync/teams/${encodeURIComponent(teamName)}/projects/${encodeURIComponent(gitIdentity)}`,
 				{ method: 'DELETE' }
 			);
@@ -242,7 +243,7 @@
 		try {
 			const url = `${API_BASE}/sync/subscriptions/${encodeURIComponent(teamName)}/${encodeURIComponent(gitIdentity)}/${action}`;
 			const body = action === 'accept' ? JSON.stringify({ direction }) : undefined;
-			const res = await fetch(url, {
+			const res = await boundedFetch(url, {
 				method: 'POST',
 				headers: body ? { 'Content-Type': 'application/json' } : {},
 				body
@@ -260,7 +261,7 @@
 	async function handleDirectionChange(gitIdentity: string, newDirection: string) {
 		directionActing = gitIdentity;
 		try {
-			const res = await fetch(
+			const res = await boundedFetch(
 				`${API_BASE}/sync/subscriptions/${encodeURIComponent(teamName)}/${encodeURIComponent(gitIdentity)}/direction`,
 				{
 					method: 'PATCH',
@@ -299,7 +300,7 @@
 
 	async function loadProjectStatus() {
 		try {
-			const res = await fetch(
+			const res = await boundedFetch(
 				`${API_BASE}/sync/teams/${encodeURIComponent(teamName)}/project-status`
 			).catch(() => null);
 			if (res?.ok) {
@@ -327,7 +328,7 @@
 		syncingProject = gitIdentity;
 		syncError = null;
 		try {
-			const res = await fetch(
+			const res = await boundedFetch(
 				`${API_BASE}/sync/package?team_name=${encodeURIComponent(teamName)}&git_identity=${encodeURIComponent(gitIdentity)}`,
 				{ method: 'POST' }
 			);
@@ -345,7 +346,7 @@
 		syncingAll = true;
 		syncError = null;
 		try {
-			const res = await fetch(
+			const res = await boundedFetch(
 				`${API_BASE}/sync/package?team_name=${encodeURIComponent(teamName)}`,
 				{ method: 'POST' }
 			);
@@ -366,7 +367,7 @@
 
 	async function loadTransfers() {
 		try {
-			const res = await fetch(
+			const res = await boundedFetch(
 				`${API_BASE}/sync/teams/${encodeURIComponent(teamName)}/transfer-status`
 			);
 			if (!res.ok) return;

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { boundedFetch } from '$lib/utils/api-fetch';
 	import { untrack } from 'svelte';
 	import { FolderGit2, ArrowUp, ArrowDown, CheckCircle2, Loader2, Users, RotateCcw, Clock, RefreshCw, ChevronDown, Copy, CheckCircle, Monitor } from 'lucide-svelte';
 	import type { SyncDetect, SyncStatusResponse, SyncProjectStatus, SyncEvent } from '$lib/api-types';
@@ -70,7 +71,7 @@
 	async function loadMemberStats() {
 		if (!membersLoaded) membersLoading = true;
 		try {
-			const devicesRes = await fetch(`${API_BASE}/sync/devices`).catch(() => null);
+			const devicesRes = await boundedFetch(`${API_BASE}/sync/devices`).catch(() => null);
 			if (devicesRes?.ok) {
 				const devData = await devicesRes.json();
 				const devices = devData.devices ?? [];
@@ -89,7 +90,7 @@
 	async function loadProjectStatus() {
 		try {
 			if (!teamName) { projectStatusLoading = false; return; }
-			const res = await fetch(
+			const res = await boundedFetch(
 				`${API_BASE}/sync/teams/${encodeURIComponent(teamName)}/project-status`
 			).catch(() => null);
 			if (res?.ok) {
@@ -110,8 +111,8 @@
 		try {
 			// Package sessions + reconcile devices in parallel
 			await Promise.all([
-				fetch(`${API_BASE}/sync/package`, { method: 'POST' }).catch(() => null),
-				fetch(`${API_BASE}/sync/reconcile`, { method: 'POST' }).catch(() => null),
+				boundedFetch(`${API_BASE}/sync/package`, { method: 'POST' }).catch(() => null),
+				boundedFetch(`${API_BASE}/sync/reconcile`, { method: 'POST' }).catch(() => null),
 			]);
 			await loadProjectStatus();
 		} finally {
@@ -131,7 +132,7 @@
 		try {
 			const url = new URL(`${API_BASE}/sync/teams/${encodeURIComponent(teamName)}/activity`, window.location.origin);
 			url.searchParams.set('limit', '8');
-			const res = await fetch(url.toString()).catch(() => null);
+			const res = await boundedFetch(url.toString()).catch(() => null);
 			if (res?.ok) {
 				const data = await res.json();
 				recentEvents = data.events ?? [];
@@ -170,7 +171,7 @@
 		resetting = true;
 		resetResult = null;
 		try {
-			const res = await fetch(`${API_BASE}/sync/reset`, {
+			const res = await boundedFetch(`${API_BASE}/sync/reset`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ uninstall_syncthing: uninstallSyncthing })

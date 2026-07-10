@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { boundedFetch } from '$lib/utils/api-fetch';
 	import { Loader2 } from 'lucide-svelte';
 	import { isToday, isYesterday, isThisWeek, isThisMonth } from 'date-fns';
 	import type { SyncEvent, MemberProfile } from '$lib/api-types';
@@ -82,7 +83,7 @@
 			if (filterType) params.set('event_type', filterType);
 			if (append) params.set('offset', String(offset));
 
-			const res = await fetch(
+			const res = await boundedFetch(
 				`${API_BASE}/sync/members/${encodeURIComponent(profile.user_id)}/activity?${params}`
 			);
 			if (res.ok) {

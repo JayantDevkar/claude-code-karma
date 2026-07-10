@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { boundedFetch } from '$lib/utils/api-fetch';
 	import { browser } from '$app/environment';
 	import {
 		Layers,
@@ -116,7 +117,7 @@
 				params.set('source', 'remote');
 				params.set('user', profile.member_tag);
 			}
-			const res = await fetch(`${API_BASE}/sessions/all?${params}`);
+			const res = await boundedFetch(`${API_BASE}/sessions/all?${params}`);
 			if (!res.ok) {
 				error = `Failed to load sessions (${res.status})`;
 				return;

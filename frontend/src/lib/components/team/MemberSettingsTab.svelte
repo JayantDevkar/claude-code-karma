@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { boundedFetch } from '$lib/utils/api-fetch';
 	import { onMount } from 'svelte';
 	import { API_BASE } from '$lib/config';
 	import {
@@ -92,7 +93,7 @@
 		teamStates[idx].loading = true;
 		teamStates[idx].error = null;
 		try {
-			const res = await fetch(
+			const res = await boundedFetch(
 				`${API_BASE}/sync/teams/${encodeURIComponent(teamName)}/members/${encodeURIComponent(profile.device_id)}/settings`
 			);
 			if (!res.ok) {
@@ -118,7 +119,7 @@
 		teamStates[idx].saving = true;
 
 		try {
-			const res = await fetch(
+			const res = await boundedFetch(
 				`${API_BASE}/sync/teams/${encodeURIComponent(state.teamName)}/members/${encodeURIComponent(profile.device_id)}/settings`,
 				{
 					method: 'PATCH',
@@ -146,7 +147,7 @@
 		teamStates[idx].saving = true;
 
 		try {
-			const res = await fetch(
+			const res = await boundedFetch(
 				`${API_BASE}/sync/teams/${encodeURIComponent(state.teamName)}/members/${encodeURIComponent(profile.device_id)}/settings`,
 				{
 					method: 'PATCH',

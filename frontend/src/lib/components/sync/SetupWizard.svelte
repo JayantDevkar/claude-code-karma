@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { boundedFetch } from '$lib/utils/api-fetch';
 	import {
 		CheckCircle,
 		XCircle,
@@ -110,7 +111,7 @@
 		checkingAgain = true;
 		checkError = null;
 		try {
-			const res = await fetch(`${API_BASE}/sync/detect`);
+			const res = await boundedFetch(`${API_BASE}/sync/detect`);
 			if (res.ok) {
 				detect = await res.json();
 			} else {
@@ -136,15 +137,15 @@
 		initializing = true;
 		initError = null;
 		try {
-			const res = await fetch(`${API_BASE}/sync/init`, {
+			const res = await boundedFetch(`${API_BASE}/sync/init`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ user_id: machineName.trim() })
 			});
 			if (res.ok) {
 				const [dRes, sRes] = await Promise.all([
-					fetch(`${API_BASE}/sync/detect`),
-					fetch(`${API_BASE}/sync/status`)
+					boundedFetch(`${API_BASE}/sync/detect`),
+					boundedFetch(`${API_BASE}/sync/status`)
 				]);
 				if (dRes.ok) detect = await dRes.json();
 				if (sRes.ok) status = await sRes.json();

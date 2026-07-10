@@ -2,6 +2,7 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { Fingerprint, Loader2, X } from 'lucide-svelte';
 	import { API_BASE } from '$lib/config';
+	import { boundedFetch } from '$lib/utils/api-fetch';
 	import { formatRelativeTime } from '$lib/utils';
 
 	interface Invitation {
@@ -28,11 +29,6 @@
 	let invitations = $state<Invitation[]>([]);
 	let acceptingId = $state<string | null>(null);
 	let dismissingId = $state<string | null>(null);
-
-	// Bounded fetch — a hung request must never wedge this card's state.
-	function tfetch(url: string, init?: RequestInit) {
-		return fetch(url, { ...init, signal: AbortSignal.timeout(10_000) });
-	}
 
 	// ── Correlation logic ──────────────────────────────────────────────────
 	function buildInvitations(
@@ -138,9 +134,9 @@
 	async function fetchPending() {
 		try {
 			const [devicesRes, foldersRes, teamsRes] = await Promise.all([
-				tfetch(`${API_BASE}/sync/pending-devices`).catch(() => null),
-				tfetch(`${API_BASE}/sync/pending`).catch(() => null),
-				tfetch(`${API_BASE}/sync/teams?include_dissolved=true`).catch(() => null)
+				boundedFetch(`${API_BASE}/sync/pending-devices`).catch(() => null),
+				boundedFetch(`${API_BASE}/sync/pending`).catch(() => null),
+				boundedFetch(`${API_BASE}/sync/teams?include_dissolved=true`).catch(() => null)
 			]);
 
 			const devices = devicesRes?.ok ? (await devicesRes.json()).devices ?? [] : [];
@@ -171,7 +167,7 @@
 			let acceptedTeams: string[] = [];
 
 			// Try accepting as a pending device first (auto-accepts karma-meta-- folders)
-			const devRes = await tfetch(`${API_BASE}/sync/pending-devices/${encodeURIComponent(inv.device_id)}/accept`, {
+			const devRes = await boundedFetch(`${API_BASE}/sync/pending-devices/${encodeURIComponent(inv.device_id)}/accept`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ name: '' })
@@ -183,7 +179,7 @@
 			} else if (inv.team_name) {
 				// Device already accepted — accept the pending meta folder directly
 				const folderId = `karma-meta--${inv.team_name}`;
-				const folderRes = await tfetch(`${API_BASE}/sync/pending/accept/${encodeURIComponent(folderId)}`, {
+				const folderRes = await boundedFetch(`${API_BASE}/sync/pending/accept/${encodeURIComponent(folderId)}`, {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json' }
 				});
@@ -199,10 +195,10 @@
 				let teamFound = false;
 				for (let attempt = 0; attempt < 4; attempt++) {
 					// Trigger reconciliation (accepts pending folders + bootstraps team)
-					await tfetch(`${API_BASE}/sync/reconcile`, { method: 'POST' }).catch(() => {});
+					await boundedFetch(`${API_BASE}/sync/reconcile`, { method: 'POST' }).catch(() => {});
 
 					// Check if team exists now
-					const teamRes = await tfetch(`${API_BASE}/sync/teams/${encodeURIComponent(teamName)}`).catch(() => null);
+					const teamRes = await boundedFetch(`${API_BASE}/sync/teams/${encodeURIComponent(teamName)}`).catch(() => null);
 					if (teamRes?.ok) {
 						teamFound = true;
 						break;
@@ -231,7 +227,7 @@
 	async function dismissInvitation(inv: Invitation) {
 		dismissingId = inv.device_id;
 		try {
-			await tfetch(`${API_BASE}/sync/pending-devices/${encodeURIComponent(inv.device_id)}`, {
+			await boundedFetch(`${API_BASE}/sync/pending-devices/${encodeURIComponent(inv.device_id)}`, {
 				method: 'DELETE'
 			});
 			await fetchPending();

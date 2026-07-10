@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { boundedFetch } from '$lib/utils/api-fetch';
 	import Modal from '$lib/components/ui/Modal.svelte';
 	import { API_BASE } from '$lib/config';
 	import { Loader2, FolderSync } from 'lucide-svelte';
@@ -54,7 +55,7 @@
 					// Use git remote URL as git_identity (machine-independent);
 					// fall back to encoded_name for non-git projects
 					const gitIdentity = project?.git_remote_url || encodedName;
-					const res = await fetch(
+					const res = await boundedFetch(
 						`${API_BASE}/sync/teams/${encodeURIComponent(teamName)}/projects`,
 						{
 							method: 'POST',

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { boundedFetch } from '$lib/utils/api-fetch';
 	import { onMount } from 'svelte';
 	import { Fingerprint, Loader2, Copy, CheckCircle, Check } from 'lucide-svelte';
 	import { copyToClipboard } from '$lib/utils';
@@ -18,7 +19,7 @@
 
 	async function loadPairingCode() {
 		try {
-			const res = await fetch(`${API_BASE}/sync/pairing/code`);
+			const res = await boundedFetch(`${API_BASE}/sync/pairing/code`);
 			if (res.ok) {
 				const data = await res.json();
 				pairingCode = data.code;

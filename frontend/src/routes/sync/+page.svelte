@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { boundedFetch } from '$lib/utils/api-fetch';
 	import { onMount, onDestroy } from 'svelte';
 	import { RefreshCw } from 'lucide-svelte';
 	import type { SyncDetect, SyncStatusResponse } from '$lib/api-types';
@@ -39,8 +40,8 @@
 		abortController = new AbortController();
 		try {
 			const [detectRes, statusRes] = await Promise.all([
-				fetch(`${API_BASE}/sync/detect`, { signal: abortController.signal }),
-				fetch(`${API_BASE}/sync/status`, { signal: abortController.signal })
+				boundedFetch(`${API_BASE}/sync/detect`, { signal: abortController.signal }),
+				boundedFetch(`${API_BASE}/sync/status`, { signal: abortController.signal })
 			]);
 			if (detectRes.ok) syncDetect = await detectRes.json();
 			if (statusRes.ok) syncStatus = await statusRes.json();

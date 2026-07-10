@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { boundedFetch } from '$lib/utils/api-fetch';
 	import { API_BASE } from '$lib/config';
 	import { Trash2, Loader2, UserPlus } from 'lucide-svelte';
 	import type { SyncTeamMember } from '$lib/api-types';
@@ -29,7 +30,7 @@
 		addError = null;
 
 		try {
-			const res = await fetch(
+			const res = await boundedFetch(
 				`${API_BASE}/sync/teams/${encodeURIComponent(teamName)}/members`,
 				{
 					method: 'POST',
@@ -79,7 +80,7 @@
 		removing = true;
 
 		try {
-			const res = await fetch(
+			const res = await boundedFetch(
 				`${API_BASE}/sync/teams/${encodeURIComponent(teamName)}/members/${encodeURIComponent(tag)}`,
 				{ method: 'DELETE' }
 			);

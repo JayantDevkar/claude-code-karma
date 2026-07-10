@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { boundedFetch } from '$lib/utils/api-fetch';
 	import PageHeader from '$lib/components/layout/PageHeader.svelte';
 	import { Tabs } from 'bits-ui';
 	import TabsTrigger from '$lib/components/ui/TabsTrigger.svelte';
@@ -62,8 +63,8 @@
 	async function fetchTeamData(signal?: AbortSignal) {
 		const teamNameEnc = encodeURIComponent(data.teamName);
 		const [teamRes, activityRes] = await Promise.all([
-			fetch(`${API_BASE}/sync/teams/${teamNameEnc}`, { signal }),
-			fetch(`${API_BASE}/sync/teams/${teamNameEnc}/activity?limit=20`, { signal })
+			boundedFetch(`${API_BASE}/sync/teams/${teamNameEnc}`, { signal }),
+			boundedFetch(`${API_BASE}/sync/teams/${teamNameEnc}/activity?limit=20`, { signal })
 		]);
 
 		if (teamRes.ok) {
@@ -88,7 +89,7 @@
 			retryCount++;
 			try {
 				// Trigger reconciliation to pick up freshly synced metadata
-				await fetch(`${API_BASE}/sync/reconcile`, { method: 'POST' }).catch(() => {});
+				await boundedFetch(`${API_BASE}/sync/reconcile`, { method: 'POST' }).catch(() => {});
 				await fetchTeamData();
 			} catch { /* ignore */ }
 			if (!team && retryCount < 10) {
@@ -150,7 +151,7 @@
 			const url = isLeader
 				? `${API_BASE}/sync/teams/${encodeURIComponent(data.teamName)}`
 				: `${API_BASE}/sync/teams/${encodeURIComponent(data.teamName)}/leave`;
-			const res = await fetch(url, { method: isLeader ? 'DELETE' : 'POST' });
+			const res = await boundedFetch(url, { method: isLeader ? 'DELETE' : 'POST' });
 			if (res.ok) {
 				window.location.href = '/team';
 			} else {
