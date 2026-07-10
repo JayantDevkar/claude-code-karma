@@ -6,10 +6,18 @@
 	import { Contact, Wifi, WifiOff, AlertTriangle, Users, Search, X } from 'lucide-svelte';
 	import type { StatItem } from '$lib/api-types';
 	import { navigating } from '$app/stores';
+	import { invalidateAll } from '$app/navigation';
+	import { onMount } from 'svelte';
 	import { listNavigation } from '$lib/actions/listNavigation';
 	import { getTeamMemberColor, getTeamMemberHexColor } from '$lib/utils';
 
 	let { data } = $props();
+
+	// Live refresh: membership/projects change server-side (reconciliation)
+	onMount(() => {
+		const interval = setInterval(() => invalidateAll(), 10_000);
+		return () => clearInterval(interval);
+	});
 
 	let isPageLoading = $derived(!!$navigating && $navigating.to?.route.id === '/members');
 

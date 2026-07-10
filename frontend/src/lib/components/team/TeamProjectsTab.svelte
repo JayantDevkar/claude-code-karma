@@ -67,10 +67,22 @@
 	// Look up human-readable project info from allProjects.
 	// Matches by git_identity (remote URL) first for cross-machine matching,
 	// then falls back to encoded_name for same-machine or non-git projects.
+	// Reduce a raw remote URL (https://host/Owner/Repo.git, git@host:Owner/Repo)
+	// to canonical lowercase owner/repo — must mirror the API's normalization.
+	function normalizeGitId(raw: string | null | undefined): string | null {
+		if (!raw) return null;
+		let s = raw.trim().replace(/\.git$/i, '');
+		const scp = s.match(/^[^@]+@[^:]+:(.+)$/);
+		const url = s.match(/^[a-z]+:\/\/(?:[^@/]+@)?[^/]+\/(.+)$/i);
+		if (scp) s = scp[1];
+		else if (url) s = url[1];
+		return s.toLowerCase();
+	}
+
 	function getProjectInfo(project: SyncTeamProject): { displayName: string; path: string; localEncodedName?: string } {
-		const gitId = project.git_identity;
-		// Try matching by git remote URL (works across machines)
-		const remoteMatch = allProjects.find(p => p.git_remote_url && p.git_remote_url === gitId);
+		const gitId = normalizeGitId(project.git_identity) ?? project.git_identity;
+		// Try matching by normalized git identity (works across machines)
+		const remoteMatch = allProjects.find(p => normalizeGitId(p.git_remote_url) === gitId);
 		if (remoteMatch) {
 			return { displayName: remoteMatch.name, path: remoteMatch.path, localEncodedName: remoteMatch.encoded_name };
 		}
@@ -136,7 +148,19 @@
 					body: JSON.stringify(body)
 				}
 			);
-			if (res.ok) prefs = await res.json();
+			if (res.ok) {
+				prefs = await res.json();
+				// Sweep-with-confirm: a new auto policy only affects FUTURE
+				// offers by design — ask before applying it to pending ones.
+				if (
+					policy && policy !== 'ask' && offeredProjects.length > 0 &&
+					confirm(
+						`Also accept ${offeredProjects.length} pending invitation${offeredProjects.length === 1 ? '' : 's'} with this policy?`
+					)
+				) {
+					await acceptAll();
+				}
+			}
 		} catch {
 			// best-effort
 		}
@@ -264,6 +288,14 @@
 	let projectStatuses = $state<SyncProjectStatus[]>([]);
 	let syncingProject = $state<string | null>(null);
 	let syncingAll = $state(false);
+	let syncError = $state<string | null>(null);
+
+	function extractPackageError(data: unknown): string | null {
+		const results = (data as { packaged?: { error?: string; git_identity?: string }[] })?.packaged ?? [];
+		const failed = results.filter((r) => r.error);
+		if (failed.length === 0) return null;
+		return failed.map((r) => `${r.git_identity}: ${r.error}`).join(' · ');
+	}
 
 	async function loadProjectStatus() {
 		try {
@@ -293,12 +325,17 @@
 
 	async function syncProject(gitIdentity: string) {
 		syncingProject = gitIdentity;
+		syncError = null;
 		try {
-			await fetch(
+			const res = await fetch(
 				`${API_BASE}/sync/package?team_name=${encodeURIComponent(teamName)}&git_identity=${encodeURIComponent(gitIdentity)}`,
 				{ method: 'POST' }
 			);
+			if (!res.ok) syncError = `Sync failed (${res.status})`;
+			else syncError = extractPackageError(await res.json());
 			await loadProjectStatus();
+		} catch {
+			syncError = 'Sync failed — API unreachable';
 		} finally {
 			syncingProject = null;
 		}
@@ -306,20 +343,45 @@
 
 	async function syncAllTeam() {
 		syncingAll = true;
+		syncError = null;
 		try {
-			await fetch(
+			const res = await fetch(
 				`${API_BASE}/sync/package?team_name=${encodeURIComponent(teamName)}`,
 				{ method: 'POST' }
 			);
+			if (!res.ok) syncError = `Sync failed (${res.status})`;
+			else syncError = extractPackageError(await res.json());
 			await loadProjectStatus();
+		} catch {
+			syncError = 'Sync failed — API unreachable';
 		} finally {
 			syncingAll = false;
 		}
 	}
 
+	// ── Live transfer progress (Syncthing folder completion) ──
+	interface Transfer { folder_id: string; member_tag: string; direction: string; completion: number; need_bytes: number; state: string }
+	let transfers = $state<Transfer[]>([]);
+	let syncingLive = $state(false);
+
+	async function loadTransfers() {
+		try {
+			const res = await fetch(
+				`${API_BASE}/sync/teams/${encodeURIComponent(teamName)}/transfer-status`
+			);
+			if (!res.ok) return;
+			const data = await res.json();
+			transfers = data.transfers ?? [];
+			syncingLive = !!data.syncing;
+		} catch { /* keep last */ }
+	}
+
 	onMount(() => {
 		loadProjectStatus();
 		loadPrefs();
+		loadTransfers();
+		const t = setInterval(loadTransfers, 3000);
+		return () => clearInterval(t);
 	});
 </script>
 
@@ -504,6 +566,30 @@
 
 	{#if removeProjectError}
 		<p class="text-xs text-[var(--error)]" aria-live="polite">{removeProjectError}</p>
+	{/if}
+
+	{#if syncError}
+		<p class="text-xs text-[var(--error)] px-1" aria-live="polite">⚠ {syncError}</p>
+	{/if}
+
+	{#if syncingLive}
+		<div class="space-y-2 px-1" aria-live="polite">
+			{#each transfers.filter((t) => t.completion < 100) as t (t.folder_id)}
+				<div class="flex items-center gap-3 text-xs text-[var(--text-secondary)]">
+					<Loader2 size={12} class="animate-spin text-[var(--accent)] shrink-0" />
+					<span class="shrink-0 font-medium">
+						{t.direction === 'outgoing' ? 'Sending' : 'Receiving'} · {t.member_tag.split('.')[0]}
+					</span>
+					<div class="flex-1 h-1.5 rounded-full bg-[var(--bg-muted)] overflow-hidden">
+						<div
+							class="h-full rounded-full bg-[var(--accent)] transition-all duration-500"
+							style="width: {t.completion}%"
+						></div>
+					</div>
+					<span class="shrink-0 tabular-nums">{t.completion}%</span>
+				</div>
+			{/each}
+		</div>
 	{/if}
 
 	<!-- Active Projects header -->

@@ -6,11 +6,18 @@
 	import PendingInvitationCard from '$lib/components/sync/PendingInvitationCard.svelte';
 	import { Users, Plus, ArrowRight, FolderSync, Contact, Crown, UserPlus } from 'lucide-svelte';
 	import { goto, invalidateAll } from '$app/navigation';
+	import { onMount } from 'svelte';
 	import { listNavigation } from '$lib/actions/listNavigation';
 	import type { StatItem } from '$lib/api-types';
 	import PairingCodeCard from '$lib/components/shared/PairingCodeCard.svelte';
 
 	let { data } = $props();
+
+	// Live refresh: membership/projects change server-side (reconciliation)
+	onMount(() => {
+		const interval = setInterval(() => invalidateAll(), 10_000);
+		return () => clearInterval(interval);
+	});
 
 	let showCreateDialog = $state(false);
 

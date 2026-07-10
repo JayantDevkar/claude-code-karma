@@ -746,3 +746,64 @@ async def update_team_prefs(
     )
     conn.commit()
     return {"new_project_policy": policy, "default_direction": direction}
+
+
+# --- Live transfer status (progress bars) ------------------------------------
+
+@router.get("/teams/{name}/transfer-status")
+async def team_transfer_status(
+    name: str,
+    conn: sqlite3.Connection = Depends(get_read_conn),
+    config=Depends(require_config),
+):
+    """Per-folder transfer progress for a team's projects, from Syncthing.
+
+    completion = 100 means idle/in sync; < 100 means bytes are moving —
+    the UI renders a progress bar so 'Sync Now' visibly does something.
+    """
+    from config import settings as app_settings
+    from services.syncthing.client import SyncthingClient
+    from services.syncthing.folder_manager import parse_outbox_id
+
+    repos = make_repos()
+    suffixes = {
+        p.folder_suffix
+        for p in repos["projects"].list_for_team(conn, name)
+        if p.status.value == "shared"
+    }
+    if not suffixes:
+        return {"transfers": [], "syncing": False}
+
+    api_key = config.syncthing.api_key if config.syncthing else ""
+    client = SyncthingClient(api_url=app_settings.syncthing_url, api_key=api_key)
+    transfers = []
+    try:
+        folders = await client.get_config_folders()
+        for folder in folders:
+            fid = folder["id"]
+            parsed = parse_outbox_id(fid)
+            if not parsed or parsed[1] not in suffixes:
+                continue
+            member_tag, suffix = parsed
+            try:
+                status = await client.get_folder_status(fid)
+            except Exception:
+                continue
+            global_bytes = status.get("globalBytes", 0) or 0
+            need_bytes = status.get("needBytes", 0) or 0
+            in_sync = max(global_bytes - need_bytes, 0)
+            completion = 100.0 if global_bytes == 0 else round(in_sync / global_bytes * 100, 1)
+            transfers.append({
+                "folder_id": fid,
+                "member_tag": member_tag,
+                "folder_suffix": suffix,
+                "direction": "outgoing" if member_tag == config.member_tag else "incoming",
+                "completion": completion,
+                "need_bytes": need_bytes,
+                "global_bytes": global_bytes,
+                "state": status.get("state", ""),
+            })
+    except Exception as e:
+        logger.debug("transfer-status unavailable: %s", e)
+    syncing = any(t["completion"] < 100 or t["state"] in ("syncing", "scanning") for t in transfers)
+    return {"transfers": transfers, "syncing": syncing}
