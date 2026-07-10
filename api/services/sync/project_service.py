@@ -63,6 +63,15 @@ class ProjectService:
         if not git_identity:
             raise ValueError("git_identity is required (git-only projects)")
 
+        # Normalize URL-shaped identities (https://github.com/Owner/Repo.git,
+        # git@host:Owner/Repo, ...) to canonical lowercase owner/repo. The UI
+        # sends the raw remote URL; a raw URL poisons the folder suffix with
+        # ':' and '/' and never matches the indexer's normalized identities on
+        # other machines — receivers then can't resolve the project at all.
+        from services.git_identity import normalize_git_url
+
+        git_identity = normalize_git_url(git_identity) or git_identity.lower()
+
         project = SharedProject(
             team_name=team_name,
             git_identity=git_identity,
