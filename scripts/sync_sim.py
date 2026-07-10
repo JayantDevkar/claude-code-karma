@@ -34,9 +34,10 @@ API_DIR = REPO / "api"
 BASE = Path(os.environ.get("SYNC_SIM_BASE", "/tmp/karma-sync-sim"))
 PYTHON = os.environ.get("SYNC_SIM_PYTHON", sys.executable)
 
-GUI_PORT0 = 8590      # Syncthing GUI/REST per peer: 8590, 8591, ...
-SYNC_PORT0 = 22190    # Syncthing data listen per peer
-API_PORT0 = 8190      # karma API per peer
+# Base ports (env-overridable so the sim can run beside a live stack)
+GUI_PORT0 = int(os.environ.get("SYNC_SIM_GUI_PORT", 8590))   # Syncthing GUI/REST
+SYNC_PORT0 = int(os.environ.get("SYNC_SIM_SYNC_PORT", 22190))  # Syncthing data
+API_PORT0 = int(os.environ.get("SYNC_SIM_API_PORT", 8190))   # karma API
 
 _T0 = time.monotonic()
 
@@ -264,12 +265,18 @@ class Peer:
                     self.st_request("PUT", f"/rest/config/devices/{dev['deviceID']}", dev)
 
 
-def boot_peers(names: list[str], steps: StepTimer) -> list[Peer]:
+def boot_peers(names: list[str], steps: StepTimer, seeds: dict | None = None) -> list[Peer]:
+    """seeds: {peer_index: [(encoded_name, prompt), ...]} — seeded BEFORE the
+    APIs boot so the startup indexer records them (cross-machine encoded_name
+    resolution reads the local project index)."""
     if BASE.exists():
         shutil.rmtree(BASE)
     peers = [Peer(i, name) for i, name in enumerate(names)]
     for p in peers:
         p.setup_dirs()
+        p.seeded = {}
+        for encoded, prompt in (seeds or {}).get(p.index, []):
+            p.seeded[encoded] = p.seed_session(encoded, prompt)
         p.start_syncthing()
     for p in peers:
         steps.wait_for(
@@ -326,7 +333,16 @@ def join_member(leader: Peer, joiner: Peer, team: str, steps: StepTimer):
 
 def scenario_two() -> bool:
     steps = StepTimer()
-    peers = boot_peers(["alice", "bob"], steps)
+    # Deliberately DIFFERENT local paths for the same project on each peer —
+    # identical paths let a leader-encoded_name leak through packaging
+    # unnoticed (bug found in the real two-machine walkthrough).
+    ALICE_DIR = "-Users-alicehome-work-demo-app"
+    BOB_DIR = "-Users-bobhome-code-demo-app"
+    peers = boot_peers(
+        ["alice", "bob"], steps,
+        seeds={0: [(ALICE_DIR, "Build the demo app")],
+               1: [(BOB_DIR, "Fix the demo app tests")]},
+    )
     alice, bob = peers
     try:
         # 1. Alice creates a team
@@ -341,12 +357,19 @@ def scenario_two() -> bool:
                 {"new_project_policy": "auto_accept", "default_direction": "both"})
         steps.check("bob set new-project policy = auto_accept", True)
 
-        # 4. Alice seeds a session and shares the project
-        encoded = "-Users-sim-demo-app"
-        session_uuid = alice.seed_session(encoded, "Build the demo app")
+        # 4. Alice shares using the RAW git URL (what the UI sends) —
+        #    the API must normalize it to owner/repo
+        encoded = ALICE_DIR
+        session_uuid = alice.seeded[ALICE_DIR]
         alice.api("POST", "/sync/teams/mesh-crew/projects",
-                  {"git_identity": "sim/demo-app", "encoded_name": encoded})
-        steps.check("alice shared project sim/demo-app", True)
+                  {"git_identity": "https://github.com/Sim/Demo-App.git",
+                   "encoded_name": encoded})
+        projects = alice.api("GET", "/sync/teams/mesh-crew/projects")["projects"]
+        steps.check(
+            "raw URL normalized to sim/demo-app on share",
+            any(pr["git_identity"] == "sim/demo-app" for pr in projects),
+            json.dumps(projects),
+        )
 
         # 5. Bob's subscription should appear AND be auto-accepted (policy)
         def bob_auto_accepted():
@@ -379,9 +402,17 @@ def scenario_two() -> bool:
         steps.wait_for("bob indexed alice's session (remote-sessions API)",
                        bob_indexed, timeout=180, interval=3)
 
-        # 7. Reverse direction: bob seeds + packages, alice receives
-        bob_session = bob.seed_session(encoded, "Fix the demo app tests")
-        bob.api("POST", "/sync/package?team_name=mesh-crew")
+        # 7. Reverse direction: bob packages from HIS OWN directory (regression
+        #    guard: packaging must resolve the identity to the LOCAL encoded
+        #    name, not the leader's)
+        bob_session = bob.seeded[BOB_DIR]
+        pkg = bob.api("POST", "/sync/package?team_name=mesh-crew")
+        steps.check(
+            "bob packaged from his own dir (local encoded_name resolution)",
+            any(r.get("sessions_packaged", 0) > 0 and not r.get("error")
+                for r in pkg.get("packaged", [])),
+            json.dumps(pkg),
+        )
         steps.wait_for(
             "alice received bob's session (both directions work)",
             lambda: any(alice.home.joinpath(".claude_karma").rglob(f"{bob_session}.jsonl")),
