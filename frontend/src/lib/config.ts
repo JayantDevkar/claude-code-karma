@@ -2,23 +2,39 @@
  * Centralized configuration for Claude Code Karma frontend.
  *
  * API Base URL:
- * - Uses PUBLIC_API_URL environment variable if set
- * - Falls back to http://localhost:8000 for local development
+ * - Browser: Uses PUBLIC_API_URL env var, or `/api` (for Caddy reverse proxy)
+ * - SSR: Uses INTERNAL_API_URL env var (e.g. `http://api:8000` in Docker),
+ *   or falls back to `http://localhost:8000` for local development
  *
- * To configure in production:
- * - Set PUBLIC_API_URL in your .env file
- * - Or set it in your deployment environment
+ * Local dev: Set PUBLIC_API_URL=http://localhost:8000 in .env
+ * Docker: INTERNAL_API_URL is set via docker-compose environment
  */
 
 /**
  * API base URL for all backend requests.
+ *
+ * Two contexts need different URLs:
+ * - Browser: relative `/api` (routed by Caddy) or PUBLIC_API_URL for local dev
+ * - SSR (Node server): Docker internal `http://api:8000` via INTERNAL_API_URL
+ *
  * @example
  * ```ts
  * import { API_BASE } from '$lib/config';
  * const response = await fetch(`${API_BASE}/projects`);
  * ```
  */
-export const API_BASE = import.meta.env.PUBLIC_API_URL || 'http://localhost:8000';
+const SERVER_API = (() => {
+	try {
+		return process.env.INTERNAL_API_URL || 'http://localhost:8000';
+	} catch {
+		return 'http://localhost:8000';
+	}
+})();
+
+export const API_BASE =
+	typeof window !== 'undefined'
+		? (import.meta.env.PUBLIC_API_URL || `${window.location.origin}/api`)
+		: SERVER_API;
 
 /**
  * API request timeout in milliseconds (default: 30 seconds)

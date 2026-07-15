@@ -1,0 +1,5 @@
+services:
+  api:
+    volumes:
+      - ~/.claude:/root/.claude:rw
+      - karma-data:/root/.claude_karma
