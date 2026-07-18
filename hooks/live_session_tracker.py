@@ -125,8 +125,9 @@ def resolve_terminal() -> Dict[str, Any]:
     - ``TERM_PROGRAM`` / ``TERM_SESSION_ID`` → macOS terminal apps (osascript)
     - ``WINDOWID``               → Linux X11 window (xdotool/wmctrl)
 
-    ``pid`` is the hook's parent (Claude Code), not the terminal itself, so
-    it's captured for diagnostics only — window focus relies on the env vars.
+    ``pid`` is the hook's parent — the live ``claude`` process. It is not the
+    terminal, but while the session runs its tty identifies the exact tab,
+    which the API uses for per-window focus on macOS.
     All fields are best-effort; missing ones stay ``None``.
     """
     env = os.environ

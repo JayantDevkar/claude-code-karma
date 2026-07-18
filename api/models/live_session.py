@@ -129,7 +129,7 @@ class TerminalInfo(BaseModel):
         None, description="X11 window id (WINDOWID) for Linux window managers"
     )
     pid: Optional[int] = Field(
-        None, description="Parent PID at SessionStart (diagnostics only, not the terminal)"
+        None, description="PID of the claude process (used to resolve its tty for exact-tab focus)"
     )
 
 

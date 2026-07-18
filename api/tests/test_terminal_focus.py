@@ -165,7 +165,9 @@ def test_focus_macos_unknown_program_uses_raw_name(monkeypatch):
 def test_focus_linux_prefers_xdotool(monkeypatch):
     monkeypatch.setattr(terminal_focus.sys, "platform", "linux")
     monkeypatch.setattr(
-        terminal_focus.shutil, "which", lambda name: "/usr/bin/xdotool" if name == "xdotool" else None
+        terminal_focus.shutil,
+        "which",
+        lambda name: "/usr/bin/xdotool" if name == "xdotool" else None,
     )
 
     captured = {}
@@ -206,3 +208,107 @@ def test_focus_linux_no_tools(monkeypatch):
     monkeypatch.setattr(terminal_focus.shutil, "which", lambda name: None)
     result = terminal_focus.focus_terminal({"window_id": "123"})
     assert result["focused"] is False
+
+
+# ---------------------------------------------------------------------------
+# macOS exact-tab focus (pid → tty → AppleScript tab match)
+# ---------------------------------------------------------------------------
+
+
+def _fake_run_factory(tty="ttys006", tab_stdout="13387", record=None):
+    """_run stub routing ps / tab-script / activate calls."""
+
+    def fake_run(cmd):
+        if record is not None:
+            record.append(cmd)
+        if cmd[0] == "ps":
+            return _FakeCompleted(stdout=f"{tty}\n")
+        if cmd[0] == "osascript" and "tty of" in cmd[-1]:
+            return _FakeCompleted(stdout=f"{tab_stdout}\n")
+        return _FakeCompleted(returncode=0)
+
+    return fake_run
+
+
+def test_tty_for_pid_parses_ps(monkeypatch):
+    monkeypatch.setattr(terminal_focus, "_run", _fake_run_factory())
+    assert terminal_focus._tty_for_pid(91314) == "/dev/ttys006"
+
+
+def test_tty_for_pid_no_controlling_tty(monkeypatch):
+    monkeypatch.setattr(terminal_focus, "_run", _fake_run_factory(tty="??"))
+    assert terminal_focus._tty_for_pid(91314) is None
+
+
+def test_tty_for_pid_dead_process(monkeypatch):
+    def boom(cmd):
+        raise subprocess.SubprocessError("no such process")
+
+    monkeypatch.setattr(terminal_focus, "_run", boom)
+    assert terminal_focus._tty_for_pid(99999) is None
+
+
+def test_focus_macos_exact_tab(monkeypatch):
+    monkeypatch.setattr(terminal_focus.sys, "platform", "darwin")
+    monkeypatch.setattr(terminal_focus.shutil, "which", lambda name: "/usr/bin/osascript")
+    calls = []
+    monkeypatch.setattr(terminal_focus, "_run", _fake_run_factory(record=calls))
+
+    result = terminal_focus.focus_terminal({"term_program": "Apple_Terminal", "pid": 91314})
+    assert result["focused"] is True
+    assert result["method"] == "osascript-tab"
+    assert "/dev/ttys006" in result["detail"]
+    assert "13387" in result["detail"]
+    tab_script = next(c[-1] for c in calls if c[0] == "osascript")
+    assert '"Terminal"' in tab_script
+    assert '"/dev/ttys006"' in tab_script
+
+
+def test_focus_macos_iterm_targets_iterm2(monkeypatch):
+    monkeypatch.setattr(terminal_focus.sys, "platform", "darwin")
+    monkeypatch.setattr(terminal_focus.shutil, "which", lambda name: "/usr/bin/osascript")
+    calls = []
+    monkeypatch.setattr(terminal_focus, "_run", _fake_run_factory(record=calls))
+
+    result = terminal_focus.focus_terminal({"term_program": "iTerm.app", "pid": 91314})
+    assert result["method"] == "osascript-tab"
+    tab_script = next(c[-1] for c in calls if c[0] == "osascript")
+    assert '"iTerm2"' in tab_script
+    assert "sessions of t" in tab_script
+
+
+def test_focus_macos_tab_not_found_falls_back_to_activate(monkeypatch):
+    monkeypatch.setattr(terminal_focus.sys, "platform", "darwin")
+    monkeypatch.setattr(terminal_focus.shutil, "which", lambda name: "/usr/bin/osascript")
+    calls = []
+    monkeypatch.setattr(terminal_focus, "_run", _fake_run_factory(tab_stdout="", record=calls))
+
+    result = terminal_focus.focus_terminal({"term_program": "Apple_Terminal", "pid": 91314})
+    assert result["focused"] is True
+    assert result["method"] == "osascript"
+    activate = [
+        c for c in calls if c[0] == "osascript" and "activate" in c[-1] and "tty" not in c[-1]
+    ]
+    assert activate, "expected fallback to plain app activation"
+
+
+def test_focus_macos_unsupported_app_skips_tab_script(monkeypatch):
+    monkeypatch.setattr(terminal_focus.sys, "platform", "darwin")
+    monkeypatch.setattr(terminal_focus.shutil, "which", lambda name: "/usr/bin/osascript")
+    calls = []
+    monkeypatch.setattr(terminal_focus, "_run", _fake_run_factory(record=calls))
+
+    result = terminal_focus.focus_terminal({"term_program": "WezTerm", "pid": 91314})
+    assert result["method"] == "osascript"
+    assert not any("tty of" in c[-1] for c in calls if c[0] == "osascript")
+
+
+def test_focus_macos_no_pid_keeps_activate_behavior(monkeypatch):
+    monkeypatch.setattr(terminal_focus.sys, "platform", "darwin")
+    monkeypatch.setattr(terminal_focus.shutil, "which", lambda name: "/usr/bin/osascript")
+    calls = []
+    monkeypatch.setattr(terminal_focus, "_run", _fake_run_factory(record=calls))
+
+    result = terminal_focus.focus_terminal({"term_program": "Apple_Terminal"})
+    assert result["method"] == "osascript"
+    assert not any(c[0] == "ps" for c in calls)

@@ -974,7 +974,7 @@ class TerminalInfo(BaseModel):
     term_program: Optional[str] = Field(None, description="Terminal app (TERM_PROGRAM)")
     term_session_id: Optional[str] = Field(None, description="Terminal session id (TERM_SESSION_ID)")
     window_id: Optional[str] = Field(None, description="X11 window id (WINDOWID)")
-    pid: Optional[int] = Field(None, description="Parent PID at SessionStart (diagnostics)")
+    pid: Optional[int] = Field(None, description="claude PID (tty lookup for exact-tab focus)")
 
 
 class TerminalFocusResult(BaseModel):

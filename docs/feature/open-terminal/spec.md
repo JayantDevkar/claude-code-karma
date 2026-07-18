@@ -43,7 +43,8 @@ Two pieces are required, neither of which existed before this feature:
 | Target | Mechanism | Works on |
 |--------|-----------|----------|
 | tmux | `tmux select-window` / `select-pane` (+ `switch-client`) | any host OS |
-| macOS terminal apps | `osascript` → `tell application "<app>" to activate` | macOS |
+| Terminal.app / iTerm2 exact tab | pid → `ps -o tty=` → AppleScript tab match by tty | macOS |
+| other macOS terminal apps | `osascript` → `tell application "<app>" to activate` | macOS |
 | Linux X11 windows | `xdotool windowactivate` → fallback `wmctrl -i -a` | Linux (X11) |
 
 Everything is **best-effort**: a missing tool or identifier yields a
@@ -53,9 +54,11 @@ Everything is **best-effort**: a missing tool or identifier yields a
 
 - **Wayland** window focus (no reliable, generally-available CLI equivalent to
   `xdotool`/`wmctrl`).
-- **Pinpointing a specific macOS window/tab** by `TERM_SESSION_ID` — we activate
-  the terminal *application*, not the exact iTerm/Terminal.app tab. (tmux does
-  select the exact pane.)
+- **Per-tab focus in macOS terminals other than Terminal.app / iTerm2.** For
+  those two, the captured `pid` (the live `claude` process) is resolved to its
+  tty at click time and AppleScript selects the exact window/tab; other apps
+  fall back to activating the *application*. (tmux always selects the exact
+  pane.)
 - **Remote sessions.** Focus only makes sense when the API and the terminal
   share a machine, which is Karma's normal local deployment.
 - **Retrofitting existing sessions.** Terminal identity is captured at
@@ -93,10 +96,13 @@ the user's shell (hooks run with that same environment).
 | `term_program` | `TERM_PROGRAM` | macOS app to activate (e.g. `iTerm.app`) |
 | `term_session_id` | `TERM_SESSION_ID` | reserved for future per-window focus |
 | `window_id` | `WINDOWID` | Linux X11 window activation |
-| `pid` | `os.getppid()` | diagnostics only (this is Claude Code, **not** the terminal) |
+| `pid` | `os.getppid()` | tty lookup for exact-tab focus (this is the `claude` process, **not** the terminal) |
 
-`pid` is intentionally **not** used for focus — the hook's parent is Claude
-Code, not the terminal emulator. The env vars are the reliable signal.
+`pid` is the hook's parent — the live `claude` process. While the session is
+running (the only time the button shows), `ps -o tty= -p <pid>` yields the tty
+of the tab it runs in, which Terminal.app and iTerm2 can select exactly via
+AppleScript. If the lookup or tab match fails, focus falls back to activating
+the application.
 
 ---
 
@@ -199,8 +205,8 @@ Verification: full API suite passes (`pytest`); `frontend` type-checks
 
 ## Future work
 
-- Per-window/tab focus on macOS via `TERM_SESSION_ID` (iTerm2 has a scripting
-  API to select a session by id).
+- Per-tab focus for more macOS terminals (WezTerm/kitty/Ghostty expose CLIs
+  or scripting that could match by tty like Terminal.app/iTerm2 do today).
 - Wayland support if/when a reliable focus CLI is broadly available.
 - Expose the button in more surfaces (e.g. the live-sessions list / home page
   cards), reusing the same endpoint.

@@ -85,10 +85,92 @@ def _focus_tmux(pane: str) -> Dict[str, Any]:
         return {"focused": False, "method": "tmux", "detail": str(exc)}
 
 
-def _focus_macos(term_program: str) -> Dict[str, Any]:
-    """Bring the macOS terminal application to the foreground."""
+# Per-app AppleScript to select the exact tab owning a tty. Keyed by
+# TERM_PROGRAM so we never `tell` (and thereby launch) an app the session
+# isn't actually running in. `{tty}` is substituted with e.g. /dev/ttys006.
+_MAC_TAB_SCRIPTS: Dict[str, str] = {
+    "Apple_Terminal": (
+        'tell application "Terminal"\n'
+        "    repeat with w in windows\n"
+        "        repeat with t in tabs of w\n"
+        '            if tty of t is "{tty}" then\n'
+        "                set selected of t to true\n"
+        "                set index of w to 1\n"
+        "                activate\n"
+        "                return id of w\n"
+        "            end if\n"
+        "        end repeat\n"
+        "    end repeat\n"
+        '    return ""\n'
+        "end tell"
+    ),
+    "iTerm.app": (
+        'tell application "iTerm2"\n'
+        "    repeat with w in windows\n"
+        "        repeat with t in tabs of w\n"
+        "            repeat with s in sessions of t\n"
+        '                if tty of s is "{tty}" then\n'
+        "                    select s\n"
+        "                    select t\n"
+        "                    select w\n"
+        "                    activate\n"
+        "                    return id of w\n"
+        "                end if\n"
+        "            end repeat\n"
+        "        end repeat\n"
+        "    end repeat\n"
+        '    return ""\n'
+        "end tell"
+    ),
+}
+
+
+def _tty_for_pid(pid: int) -> Optional[str]:
+    """Resolve the tty a live process is attached to, e.g. '/dev/ttys006'."""
+    try:
+        res = _run(["ps", "-o", "tty=", "-p", str(pid)])
+        tty = res.stdout.strip()
+        if res.returncode == 0 and tty and tty not in ("??", "-"):
+            return tty if tty.startswith("/dev/") else f"/dev/{tty}"
+    except (subprocess.SubprocessError, OSError):
+        pass
+    return None
+
+
+def _focus_macos_tab(term_program: str, tty: str) -> Optional[Dict[str, Any]]:
+    """Select the exact window/tab owning ``tty``; None means fall back."""
+    script = _MAC_TAB_SCRIPTS.get(term_program)
+    if not script:
+        return None
+    try:
+        res = _run(["osascript", "-e", script.format(tty=tty)])
+        window_id = res.stdout.strip()
+        if res.returncode == 0 and window_id:
+            return {
+                "focused": True,
+                "method": "osascript-tab",
+                "detail": f"selected {term_program} tab on {tty} (window id {window_id})",
+            }
+    except (subprocess.SubprocessError, OSError):
+        pass
+    return None
+
+
+def _focus_macos(term_program: str, pid: Optional[int] = None) -> Dict[str, Any]:
+    """Bring the macOS terminal to the foreground, exact tab when possible.
+
+    The session's captured pid is the live ``claude`` process; while the
+    session is running its tty identifies the exact tab, which the supported
+    apps can select via AppleScript. Anything else falls back to activating
+    the application.
+    """
     if not shutil.which("osascript"):
         return {"focused": False, "method": "osascript", "detail": "osascript not found"}
+    tty = _tty_for_pid(pid) if pid else None
+    if tty:
+        exact = _focus_macos_tab(term_program, tty)
+        if exact:
+            return exact
     app = _MAC_APP_NAMES.get(term_program, term_program)
     try:
         res = _run(["osascript", "-e", f'tell application "{app}" to activate'])
@@ -161,7 +243,9 @@ def focus_terminal(terminal: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     tmux_result = _focus_tmux(tmux_pane) if tmux_pane else None
 
     if sys.platform == "darwin" and terminal.get("term_program"):
-        gui_result: Optional[Dict[str, Any]] = _focus_macos(terminal["term_program"])
+        gui_result: Optional[Dict[str, Any]] = _focus_macos(
+            terminal["term_program"], pid=terminal.get("pid")
+        )
     elif sys.platform.startswith("linux") and terminal.get("window_id"):
         gui_result = _focus_linux(str(terminal["window_id"]))
     else:
