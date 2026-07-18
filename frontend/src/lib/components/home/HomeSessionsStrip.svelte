@@ -151,12 +151,15 @@
 				{#each recent as session (session.session_id)}
 					{@const config = statusConfig[session.status]}
 					{@const canLink = canNavigate(session)}
-					<svelte:element
-						this={canLink ? 'a' : 'div'}
-						href={canLink ? sessionUrl(session) : undefined}
-						class="row"
-						class:clickable={canLink}
-					>
+					<!-- Stretched link keeps the row navigable without nesting the button in an <a>. -->
+					<div class="row" class:clickable={canLink}>
+						{#if canLink}
+							<a
+								class="row-link"
+								href={sessionUrl(session)}
+								aria-label={`Open session ${getSessionDisplayLabel(session.session_id, session.slug)}`}
+							></a>
+						{/if}
 						<span class="left">
 							<span
 								class="dot"
@@ -174,7 +177,7 @@
 								<TerminalFocusButton sessionId={session.session_id} />
 							{/if}
 						</span>
-					</svelte:element>
+					</div>
 				{/each}
 			{/if}
 		</div>
@@ -249,6 +252,13 @@
 		color: inherit;
 		border-radius: var(--radius-sm, 4px);
 		padding: 1px 0;
+		position: relative;
+	}
+
+	.row-link {
+		position: absolute;
+		inset: 0;
+		border-radius: inherit;
 	}
 
 	.row.clickable:hover {
