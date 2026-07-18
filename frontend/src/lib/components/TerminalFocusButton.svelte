@@ -111,13 +111,21 @@
 		min-width: 5.5rem;
 	}
 
+	/* Teal chip — ties into the "$ live-sessions" terminal motif (see agent-badge). */
 	.focus-btn.icon {
 		padding: 4px;
+		color: var(--nav-teal, #0891b2);
+		background: var(--nav-teal-subtle, rgba(8, 145, 178, 0.1));
 	}
 
 	.focus-btn:hover:not(:disabled) {
 		color: var(--accent);
 		border-color: var(--border);
+	}
+
+	.focus-btn.icon:hover:not(:disabled) {
+		color: var(--nav-teal, #0891b2);
+		border-color: var(--nav-teal, #0891b2);
 	}
 
 	/* Rows already hover to --bg-muted; only the label variant adds its own bg. */
@@ -136,6 +144,14 @@
 
 	.focus-btn.err {
 		color: var(--error);
+	}
+
+	.focus-btn.icon.ok {
+		background: var(--success-subtle);
+	}
+
+	.focus-btn.icon.err {
+		background: var(--error-subtle);
 	}
 
 	.sr-only {
