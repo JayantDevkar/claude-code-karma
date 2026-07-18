@@ -646,6 +646,26 @@ export interface LiveSessionSummary {
 	subagents: Record<string, SubagentState>;
 	active_subagent_count: number;
 	total_subagent_count: number;
+	// Terminal focus ("open terminal" button)
+	terminal?: TerminalInfo | null;
+	can_focus_terminal?: boolean;
+}
+
+/** Terminal/pane identity captured for a live session (for window focus). */
+export interface TerminalInfo {
+	tmux: boolean;
+	tmux_pane: string | null;
+	term_program: string | null;
+	term_session_id: string | null;
+	window_id: string | null;
+	pid: number | null;
+}
+
+/** Result of attempting to focus a session's terminal window/pane. */
+export interface TerminalFocusResult {
+	focused: boolean;
+	method: string;
+	detail: string;
 }
 
 // ============================================
