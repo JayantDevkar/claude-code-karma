@@ -9,6 +9,7 @@
 	} from '$lib/api-types';
 	import { projectHrefFromSession } from '$lib/utils/project-url';
 	import { statusConfig } from '$lib/live-session-config';
+	import TerminalFocusButton from '$lib/components/TerminalFocusButton.svelte';
 	import { API_BASE } from '$lib/config';
 
 	interface Props {
@@ -339,7 +340,12 @@
 			role="button"
 			tabindex={0}
 			onclick={() => (collapsed = !collapsed)}
-			onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); collapsed = !collapsed; } }}
+			onkeydown={(e) => {
+				if (e.key === 'Enter' || e.key === ' ') {
+					e.preventDefault();
+					collapsed = !collapsed;
+				}
+			}}
 			class="live-header w-full"
 			aria-expanded={!collapsed}
 		>
@@ -467,6 +473,9 @@
 										>
 									</div>
 								</div>
+								{#if session.can_focus_terminal}
+									<TerminalFocusButton sessionId={session.session_id} />
+								{/if}
 							</svelte:element>
 						{/each}
 					</div>

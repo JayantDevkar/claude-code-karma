@@ -12,12 +12,11 @@
 		Minimize2,
 		MessageCircle,
 		Monitor,
-		Copy,
-		SquareArrowOutUpRight
+		Copy
 	} from 'lucide-svelte';
 	import { fade } from 'svelte/transition';
-	import { API_BASE } from '$lib/config';
 	import PageHeader from '$lib/components/layout/PageHeader.svelte';
+	import TerminalFocusButton from '$lib/components/TerminalFocusButton.svelte';
 	import type {
 		ConversationEntity,
 		LiveSessionSummary,
@@ -262,39 +261,6 @@
 
 	// UUID is only present on main sessions (SessionDetail), not subagents.
 	let mainSessionUuid = $derived(isSubagentSession(entity) ? null : entity.uuid);
-
-	// "Open terminal" — asks the local API to raise the terminal window/pane
-	// this live session is running in. Only shown when the backend reports it
-	// captured a focusable terminal identity (can_focus_terminal).
-	let focusingTerminal = $state(false);
-	let focusFeedback = $state<'idle' | 'ok' | 'err'>('idle');
-	let focusTitle = $state('Bring the terminal window running this session to the front');
-	let focusTimeout: ReturnType<typeof setTimeout> | null = null;
-
-	async function handleFocusTerminal() {
-		if (!liveStatus || focusingTerminal) return;
-		focusingTerminal = true;
-		try {
-			const res = await fetch(
-				`${API_BASE}/live-sessions/${liveStatus.session_id}/focus-terminal`,
-				{ method: 'POST' }
-			);
-			const data = await res.json().catch(() => null);
-			const ok = res.ok && data?.focused === true;
-			focusFeedback = ok ? 'ok' : 'err';
-			if (data?.detail) focusTitle = data.detail;
-		} catch {
-			focusFeedback = 'err';
-			focusTitle = 'Could not reach the API to focus the terminal.';
-		} finally {
-			focusingTerminal = false;
-			if (focusTimeout) clearTimeout(focusTimeout);
-			focusTimeout = setTimeout(() => {
-				focusFeedback = 'idle';
-				focusTitle = 'Bring the terminal window running this session to the front';
-			}, 2000);
-		}
-	}
 </script>
 
 <!-- Agent Session Header with colored background -->
@@ -510,23 +476,7 @@
 					{/if}
 					{#if liveStatus && liveStatus.status !== 'ended' && liveStatus.can_focus_terminal}
 						<!-- Open (focus) the terminal window running this live session -->
-						<button
-							type="button"
-							onclick={handleFocusTerminal}
-							disabled={focusingTerminal}
-							aria-label="Open the terminal window running this session"
-							class="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs text-[var(--text-muted)] hover:text-[var(--accent)] hover:bg-[var(--bg-muted)] border border-transparent hover:border-[var(--border)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-							title={focusTitle}
-						>
-							<SquareArrowOutUpRight size={11} strokeWidth={2} />
-							{#if focusFeedback === 'ok'}
-								<span>opened!</span>
-							{:else if focusFeedback === 'err'}
-								<span>failed</span>
-							{:else}
-								<span>terminal</span>
-							{/if}
-						</button>
+						<TerminalFocusButton sessionId={liveStatus.session_id} variant="label" />
 					{/if}
 					{#if mainSessionUuid}
 						<!-- Copy session ID -->

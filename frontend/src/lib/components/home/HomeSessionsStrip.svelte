@@ -4,6 +4,7 @@
 	import { projectHrefFromSession } from '$lib/utils/project-url';
 	import { getSessionDisplayLabel } from '$lib/utils/sessionIdentifier';
 	import { statusConfig } from '$lib/live-session-config';
+	import TerminalFocusButton from '$lib/components/TerminalFocusButton.svelte';
 	import { API_BASE } from '$lib/config';
 
 	// How many recent sessions to surface in the strip.
@@ -118,9 +119,15 @@
 			<span class="cmd">$ live-sessions</span>
 			<div class="meta">
 				<span class="legend">
-					<span class="legend-item"><span class="dot" style="background: var(--success)"></span>active</span>
-					<span class="legend-item"><span class="dot" style="background: var(--warning)"></span>idle</span>
-					<span class="legend-item"><span class="dot" style="background: var(--error)"></span>stale</span>
+					<span class="legend-item"
+						><span class="dot" style="background: var(--success)"></span>active</span
+					>
+					<span class="legend-item"
+						><span class="dot" style="background: var(--warning)"></span>idle</span
+					>
+					<span class="legend-item"
+						><span class="dot" style="background: var(--error)"></span>stale</span
+					>
 				</span>
 				<span class="count">
 					{#if loading}
@@ -156,10 +163,17 @@
 								class:pulse={config.pulse}
 								style="background: {config.color}"
 							></span>
-							<span class="id">{getSessionDisplayLabel(session.session_id, session.slug)}</span>
+							<span class="id"
+								>{getSessionDisplayLabel(session.session_id, session.slug)}</span
+							>
 							<span class="project" title={session.cwd}>{projectName(session)}</span>
 						</span>
-						<span class="time">{formatDuration(session.duration_seconds)}</span>
+						<span class="right">
+							<span class="time">{formatDuration(session.duration_seconds)}</span>
+							{#if session.can_focus_terminal}
+								<TerminalFocusButton sessionId={session.session_id} />
+							{/if}
+						</span>
 					</svelte:element>
 				{/each}
 			{/if}
@@ -298,6 +312,13 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+	}
+
+	.right {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		flex-shrink: 0;
 	}
 
 	.time {

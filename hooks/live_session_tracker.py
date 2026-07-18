@@ -372,9 +372,10 @@ def write_state(
             "source": source or existing.get("source"),
             "claude_model": claude_model or existing.get("claude_model"),
             "agent_type": agent_type or existing.get("agent_type"),
-            # Terminal identity is resolved once at SessionStart and preserved
-            # across later hook updates (env is stable for the session's life).
-            "terminal": terminal if terminal is not None else existing.get("terminal"),
+            # SessionStart resolves terminal identity fresh; any other event
+            # backfills it for sessions that predate terminal tracking (env
+            # and parent pid are identical on every hook invocation).
+            "terminal": terminal or existing.get("terminal") or resolve_terminal(),
         }
 
         # Pending permission text is sticky until cleared by a non-WAITING transition.

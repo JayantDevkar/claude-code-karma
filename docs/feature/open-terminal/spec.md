@@ -61,9 +61,10 @@ Everything is **best-effort**: a missing tool or identifier yields a
   pane.)
 - **Remote sessions.** Focus only makes sense when the API and the terminal
   share a machine, which is Karma's normal local deployment.
-- **Retrofitting existing sessions.** Terminal identity is captured at
-  SessionStart, so only sessions started after this ships are focusable. Older
-  live sessions simply don't show the button.
+- ~~Retrofitting existing sessions.~~ Now handled: SessionStart resolves the
+  identity fresh, and any other hook event **backfills** it when missing (the
+  env and parent pid are identical on every hook invocation), so sessions that
+  predate the feature become focusable on their next activity.
 
 ---
 
