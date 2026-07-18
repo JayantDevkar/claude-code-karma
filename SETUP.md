@@ -420,6 +420,22 @@ curl http://localhost:8000/live-sessions 2>/dev/null | python3 -m json.tool
 
 **Note:** SubagentStart and SubagentStop events require Claude Code 2.1.19+. On older versions, subagent tracking won't work, but everything else will.
 
+### Open Terminal Button (comes free with Tier 2)
+
+Once the tracker hook is installed, live sessions show a `>_` button (session page, home strip, `/sessions`) that raises the terminal window the session runs in. No extra setup — the hook captures the terminal identity, and the local API shells out to the OS window manager.
+
+| Terminal | Focus behavior |
+|----------|----------------|
+| macOS Terminal.app / iTerm2 | Exact window and tab |
+| tmux (any OS) | Exact pane |
+| Other macOS terminals (WezTerm, kitty, Ghostty, …) | App raised, not the specific tab |
+| Linux (X11) | Exact window via `xdotool` or `wmctrl` (install one) |
+| Wayland / remote sessions | Not supported |
+
+**macOS permission:** the first click may trigger an Automation prompt ("Python"/your API process wants to control "Terminal"). If it was denied, the button reports `failed` — re-enable under **System Settings → Privacy & Security → Automation**.
+
+Sessions started before this feature gain the button automatically after their next activity (the hook backfills terminal identity on any event). Details: [docs/feature/open-terminal/spec.md](./docs/feature/open-terminal/spec.md).
+
 ---
 
 ## Tier 3: Smart Titles (Optional)

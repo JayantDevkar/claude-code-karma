@@ -131,7 +131,7 @@ Real-time state tracked in `~/.claude_karma/live-sessions/{slug}.json` via Claud
 | `/sessions` | Session data, timeline, tools, file activity |
 | `/analytics` | Project/session analytics, usage stats |
 | `/agents` | Agent listing and subagent sessions |
-| `/live-sessions` | Real-time session state |
+| `/live-sessions` | Real-time session state (+ `POST /live-sessions/{id}/focus-terminal` to raise the session's terminal window) |
 | `/history` | File history snapshots |
 | `/settings` | User preferences |
 | `/skills` | Skill usage tracking |

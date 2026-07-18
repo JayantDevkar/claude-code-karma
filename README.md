@@ -38,7 +38,7 @@ It works with both **Claude Code CLI** and **Claude Desktop** (Claude Code mode)
 
 ### Session Browser
 
-Browse all your Claude Code sessions in one place. Search by title, prompt, or slug. Filter by project. See live sessions at the top with real-time status badges.
+Browse all your Claude Code sessions in one place. Search by title, prompt, or slug. Filter by project. See live sessions at the top with real-time status badges — and a `>_` button that raises the terminal window a live session is running in.
 
 <p align="center">
   <img src="docs/screenshots/sessions.png" alt="Session Browser" width="100%" />
@@ -237,6 +237,7 @@ Then browse:
 - **Command Palette** — Quick navigation with `Ctrl+K` / `Cmd+K`
 - **Full-text Search** — Search across session titles, prompts, and slugs
 - **Live Sessions** — Real-time monitoring via Claude Code hooks
+- **Open Terminal** — One click brings the terminal running a live session to the front (exact tab for macOS Terminal/iTerm2, exact pane in tmux)
 
 ## Quick Start
 
@@ -291,6 +292,8 @@ claude-code-karma/
 ## Live Session Tracking
 
 Enable real-time session monitoring by installing Claude Code hooks. See [SETUP.md](./SETUP.md#live-sessions-tracking-optional) for setup instructions.
+
+Live sessions also get an **"open terminal"** button (on the session page, the home strip, and `/sessions`) that raises the terminal window the session is running in — Karma runs locally, so the API can ask the OS window manager directly. macOS Terminal.app and iTerm2 get the exact window/tab, tmux gets the exact pane, other macOS terminals are raised app-level, and Linux needs X11 with `xdotool` or `wmctrl`. Design details in [docs/feature/open-terminal/spec.md](./docs/feature/open-terminal/spec.md).
 
 | State | Meaning |
 |-------|---------|
@@ -349,6 +352,7 @@ Enable real-time session monitoring by installing Claude Code hooks. See [SETUP.
 | `GET /agents/{name}` | Agent details |
 | `GET /skills` | List all skills |
 | `GET /live-sessions` | Real-time session state |
+| `POST /live-sessions/{id}/focus-terminal` | Raise the session's terminal window |
 
 ### Tickets
 
