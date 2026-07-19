@@ -84,10 +84,10 @@ Each session page has dedicated tabs that break down different aspects of what h
   <img src="docs/screenshots/session-skills.png" alt="Session Skills" width="100%" />
 </p>
 
-**Commands** — Slash commands used during the session, showing built-in and plugin commands with usage counts.
+**Shells** — Long-running background shells spawned during the session, with live status, the command each one ran, and runtime.
 
 <p align="center">
-  <img src="docs/screenshots/session-commands.png" alt="Session Commands" width="100%" />
+  <img src="docs/screenshots/session-shells.png" alt="Session Shells" width="100%" />
 </p>
 
 **Analytics** — Per-session cost breakdown, token usage, cache hit rates, tool distribution with a donut chart, and a ranked list of every tool used.
@@ -112,9 +112,9 @@ Track your token usage, costs, velocity trends, cache hit rates, and coding rhyt
   <img src="docs/screenshots/analytics.png" alt="Analytics Dashboard" width="100%" />
 </p>
 
-### Tools
+### Tools & MCP
 
-See every tool Claude Code uses — built-in ones like Read, Edit, and Bash, plus any MCP integrations you've added. Grouped by server with call counts and session coverage. Switch to the Usage Analytics tab for activity trends and top tools over time.
+See every tool Claude Code uses — built-in ones like Read, Edit, and Bash, plus any MCP integrations you've added (the **MCP** page in the nav). Grouped by server with call counts and session coverage. Switch to the Usage Analytics tab for activity trends and top tools over time.
 
 <p align="center">
   <img src="docs/screenshots/tools.png" alt="Tools Browser" width="100%" />
