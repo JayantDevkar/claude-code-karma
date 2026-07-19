@@ -55,7 +55,7 @@ def _run(cmd: list[str]) -> subprocess.CompletedProcess:
 
 def _applescript_str(value: str) -> str:
     """Escape a value for safe embedding inside a double-quoted AppleScript string."""
-    return value.replace("\\", "\\\\").replace('"', '\\"')
+    return value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\r", "\\r")
 
 
 def can_focus(terminal: Optional[Dict[str, Any]]) -> bool:

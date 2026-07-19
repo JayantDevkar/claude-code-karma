@@ -171,7 +171,7 @@ def test_focus_macos_escapes_applescript_injection(monkeypatch):
     monkeypatch.setattr(terminal_focus, "_run", fake_run)
     terminal_focus.focus_terminal({"term_program": 'Evil" \n do shell script "id'})
     script = captured["cmd"][-1]
-    assert script == 'tell application "Evil\\" \n do shell script \\"id" to activate'
+    assert script == 'tell application "Evil\\" \\n do shell script \\"id" to activate'
 
 
 # ---------------------------------------------------------------------------
@@ -340,3 +340,7 @@ def test_focus_macos_no_pid_keeps_activate_behavior(monkeypatch):
     result = terminal_focus.focus_terminal({"term_program": "Apple_Terminal"})
     assert result["method"] == "osascript"
     assert not any(c[0] == "ps" for c in calls)
+
+
+def test_applescript_str_escapes_control_characters():
+    assert terminal_focus._applescript_str('a"b\\c\nd\re') == 'a\\"b\\\\c\\nd\\re'
