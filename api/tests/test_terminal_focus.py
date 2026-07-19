@@ -272,9 +272,7 @@ def test_tty_for_pid_recycled_pid_rejected(monkeypatch):
 
 
 def test_tty_for_pid_accepts_full_claude_path(monkeypatch):
-    monkeypatch.setattr(
-        terminal_focus, "_run", _fake_run_factory(comm="/usr/local/bin/claude")
-    )
+    monkeypatch.setattr(terminal_focus, "_run", _fake_run_factory(comm="/usr/local/bin/claude"))
     assert terminal_focus._tty_for_pid(91314) == "/dev/ttys006"
 
 
