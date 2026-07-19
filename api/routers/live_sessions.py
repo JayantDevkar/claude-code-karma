@@ -54,7 +54,8 @@ from models.live_session import (
 )
 from models.project import Project
 from routers.projects import safely_resolve_project
-from schemas import LiveSessionsResponse, LiveSessionSummary
+from schemas import LiveSessionsResponse, LiveSessionSummary, TerminalFocusResult
+from services.terminal_focus import can_focus, focus_terminal
 
 logger = logging.getLogger(__name__)
 
@@ -183,6 +184,10 @@ def state_to_summary(
             for agent_id, s in state.subagents.items()
         }
 
+    # Terminal identity (for the "open terminal" button). can_focus reflects
+    # whether the *host running the API* has an identifier it could act on.
+    terminal_dict = state.terminal.model_dump() if state.terminal else None
+
     return LiveSessionSummary(
         session_id=state.session_id,
         state=state.state.value,
@@ -206,6 +211,8 @@ def state_to_summary(
         subagents=subagents_dict,
         active_subagent_count=state.active_subagent_count,
         total_subagent_count=state.total_subagent_count,
+        terminal=terminal_dict,
+        can_focus_terminal=can_focus(terminal_dict),
     )
 
 
@@ -507,6 +514,61 @@ def get_live_session(
         )
 
     return state_to_summary(state)
+
+
+def _reject_cross_origin(request: Request, config: Settings) -> None:
+    """CSRF guard for state-changing endpoints.
+
+    Browsers always send an ``Origin`` header on cross-site POSTs, so any
+    origin outside the CORS allowlist is a foreign web page poking the local
+    API. Requests without an Origin (curl, same-host tools) are allowed.
+    """
+    origin = request.headers.get("origin")
+    if origin and origin not in config.cors_origins:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                f"Origin not allowed: {origin}. If this is your karma frontend, "
+                "add it to cors_origins (CLAUDE_KARMA_CORS_ORIGINS)."
+            ),
+        )
+
+
+@router.post("/{session_id}/focus-terminal", response_model=TerminalFocusResult)
+def focus_session_terminal(
+    session_id: str,
+    request: Request,
+    config: Annotated[Settings, Depends(get_settings)],
+) -> TerminalFocusResult:
+    """Raise the terminal window/pane this session is running in.
+
+    Karma runs locally on the same machine as the tracked terminals, so this
+    shells out to OS window managers (tmux / osascript / xdotool / wmctrl).
+    The attempt is best-effort: a 200 with ``focused=false`` means we knew the
+    method but couldn't complete it (e.g. tool missing). Returns 404 if the
+    session isn't tracked, 400 if no terminal identity was captured, 403 for
+    cross-origin browser requests.
+    """
+    _reject_cross_origin(request, config)
+    state = load_live_session(session_id)
+    if state is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Live session not found: {session_id}",
+        )
+
+    terminal_dict = state.terminal.model_dump() if state.terminal else None
+    if not terminal_dict:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "No terminal information was captured for this session. "
+                "It may predate terminal tracking, or was started without a TTY."
+            ),
+        )
+
+    result = focus_terminal(terminal_dict)
+    return TerminalFocusResult(**result)
 
 
 # Threshold for allowing cleanup (5 minutes)

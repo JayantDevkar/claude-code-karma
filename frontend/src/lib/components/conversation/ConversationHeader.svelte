@@ -16,6 +16,7 @@
 	} from 'lucide-svelte';
 	import { fade } from 'svelte/transition';
 	import PageHeader from '$lib/components/layout/PageHeader.svelte';
+	import TerminalFocusButton from '$lib/components/TerminalFocusButton.svelte';
 	import type {
 		ConversationEntity,
 		LiveSessionSummary,
@@ -472,6 +473,10 @@
 								{config.label}
 							</span>
 						</div>
+					{/if}
+					{#if liveStatus && liveStatus.status !== 'ended' && liveStatus.can_focus_terminal}
+						<!-- Open (focus) the terminal window running this live session -->
+						<TerminalFocusButton sessionId={liveStatus.session_id} variant="label" />
 					{/if}
 					{#if mainSessionUuid}
 						<!-- Copy session ID -->

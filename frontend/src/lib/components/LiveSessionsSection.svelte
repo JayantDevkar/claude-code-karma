@@ -9,6 +9,7 @@
 	} from '$lib/api-types';
 	import { projectHrefFromSession } from '$lib/utils/project-url';
 	import { statusConfig } from '$lib/live-session-config';
+	import TerminalFocusButton from '$lib/components/TerminalFocusButton.svelte';
 	import { API_BASE } from '$lib/config';
 
 	interface Props {
@@ -339,7 +340,12 @@
 			role="button"
 			tabindex={0}
 			onclick={() => (collapsed = !collapsed)}
-			onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); collapsed = !collapsed; } }}
+			onkeydown={(e) => {
+				if (e.key === 'Enter' || e.key === ' ') {
+					e.preventDefault();
+					collapsed = !collapsed;
+				}
+			}}
 			class="live-header w-full"
 			aria-expanded={!collapsed}
 		>
@@ -420,12 +426,15 @@
 						{#each filteredSessions as session (session.session_id)}
 							{@const config = statusConfig[session.status]}
 							{@const canLink = canNavigate(session)}
-							<svelte:element
-								this={canLink ? 'a' : 'div'}
-								href={canLink ? getSessionUrl(session) : undefined}
-								class="session-row"
-								class:clickable={canLink}
-							>
+							<!-- Stretched link keeps the row navigable without nesting the button in an <a>. -->
+							<div class="session-row" class:clickable={canLink}>
+								{#if canLink}
+									<a
+										class="row-link"
+										href={getSessionUrl(session)}
+										aria-label={`Open session ${getDisplayName(session)}`}
+									></a>
+								{/if}
 								<!-- Status Dot -->
 								<span
 									class="status-dot"
@@ -467,7 +476,10 @@
 										>
 									</div>
 								</div>
-							</svelte:element>
+								{#if session.can_focus_terminal}
+									<TerminalFocusButton sessionId={session.session_id} />
+								{/if}
+							</div>
 						{/each}
 					</div>
 				{/if}
@@ -618,6 +630,12 @@
 		color: inherit;
 		transition: background var(--duration-fast);
 		border-bottom: 1px solid var(--border-subtle);
+		position: relative;
+	}
+
+	.row-link {
+		position: absolute;
+		inset: 0;
 	}
 
 	.session-row:last-child {
@@ -629,7 +647,7 @@
 		cursor: pointer;
 	}
 
-	.session-row.clickable:focus-visible {
+	.row-link:focus-visible {
 		outline: 2px solid var(--accent);
 		outline-offset: -2px;
 	}

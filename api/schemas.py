@@ -966,6 +966,25 @@ class ProjectMemoryFileResponse(BaseModel):
 # =============================================================================
 
 
+class TerminalInfo(BaseModel):
+    """Terminal/pane identity captured for a live session (for window focus)."""
+
+    tmux: bool = Field(False, description="Whether the session runs inside tmux")
+    tmux_pane: Optional[str] = Field(None, description="tmux pane id (TMUX_PANE)")
+    term_program: Optional[str] = Field(None, description="Terminal app (TERM_PROGRAM)")
+    term_session_id: Optional[str] = Field(None, description="Terminal session id (TERM_SESSION_ID)")
+    window_id: Optional[str] = Field(None, description="X11 window id (WINDOWID)")
+    pid: Optional[int] = Field(None, description="claude PID (tty lookup for exact-tab focus)")
+
+
+class TerminalFocusResult(BaseModel):
+    """Result of attempting to focus a session's terminal window/pane."""
+
+    focused: bool = Field(..., description="Whether the terminal was successfully raised")
+    method: str = Field(..., description="Focus method attempted (tmux, osascript, xdotool, ...)")
+    detail: str = Field(..., description="Human-readable detail about the attempt")
+
+
 class LiveSessionSummary(BaseModel):
     """Summary of a live session for list display."""
 
@@ -1018,6 +1037,15 @@ class LiveSessionSummary(BaseModel):
     session_ids: List[str] = Field(
         default_factory=list,
         description="All session UUIDs that have been part of this slug's lifecycle (for resumed sessions)",
+    )
+
+    # Terminal focus ("open terminal" button)
+    terminal: Optional[TerminalInfo] = Field(
+        None, description="Terminal/pane identity captured for this session"
+    )
+    can_focus_terminal: bool = Field(
+        False,
+        description="Whether the server can attempt to raise this session's terminal window",
     )
 
 

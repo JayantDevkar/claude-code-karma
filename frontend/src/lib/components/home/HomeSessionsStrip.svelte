@@ -4,6 +4,7 @@
 	import { projectHrefFromSession } from '$lib/utils/project-url';
 	import { getSessionDisplayLabel } from '$lib/utils/sessionIdentifier';
 	import { statusConfig } from '$lib/live-session-config';
+	import TerminalFocusButton from '$lib/components/TerminalFocusButton.svelte';
 	import { API_BASE } from '$lib/config';
 
 	// How many recent sessions to surface in the strip.
@@ -118,9 +119,15 @@
 			<span class="cmd">$ live-sessions</span>
 			<div class="meta">
 				<span class="legend">
-					<span class="legend-item"><span class="dot" style="background: var(--success)"></span>active</span>
-					<span class="legend-item"><span class="dot" style="background: var(--warning)"></span>idle</span>
-					<span class="legend-item"><span class="dot" style="background: var(--error)"></span>stale</span>
+					<span class="legend-item"
+						><span class="dot" style="background: var(--success)"></span>active</span
+					>
+					<span class="legend-item"
+						><span class="dot" style="background: var(--warning)"></span>idle</span
+					>
+					<span class="legend-item"
+						><span class="dot" style="background: var(--error)"></span>stale</span
+					>
 				</span>
 				<span class="count">
 					{#if loading}
@@ -144,23 +151,33 @@
 				{#each recent as session (session.session_id)}
 					{@const config = statusConfig[session.status]}
 					{@const canLink = canNavigate(session)}
-					<svelte:element
-						this={canLink ? 'a' : 'div'}
-						href={canLink ? sessionUrl(session) : undefined}
-						class="row"
-						class:clickable={canLink}
-					>
+					<!-- Stretched link keeps the row navigable without nesting the button in an <a>. -->
+					<div class="row" class:clickable={canLink}>
+						{#if canLink}
+							<a
+								class="row-link"
+								href={sessionUrl(session)}
+								aria-label={`Open session ${getSessionDisplayLabel(session.session_id, session.slug)}`}
+							></a>
+						{/if}
 						<span class="left">
 							<span
 								class="dot"
 								class:pulse={config.pulse}
 								style="background: {config.color}"
 							></span>
-							<span class="id">{getSessionDisplayLabel(session.session_id, session.slug)}</span>
+							<span class="id"
+								>{getSessionDisplayLabel(session.session_id, session.slug)}</span
+							>
 							<span class="project" title={session.cwd}>{projectName(session)}</span>
 						</span>
-						<span class="time">{formatDuration(session.duration_seconds)}</span>
-					</svelte:element>
+						<span class="right">
+							<span class="time">{formatDuration(session.duration_seconds)}</span>
+							{#if session.status !== 'ended' && session.can_focus_terminal}
+								<TerminalFocusButton sessionId={session.session_id} />
+							{/if}
+						</span>
+					</div>
 				{/each}
 			{/if}
 		</div>
@@ -235,6 +252,13 @@
 		color: inherit;
 		border-radius: var(--radius-sm, 4px);
 		padding: 1px 0;
+		position: relative;
+	}
+
+	.row-link {
+		position: absolute;
+		inset: 0;
+		border-radius: inherit;
 	}
 
 	.row.clickable:hover {
@@ -298,6 +322,13 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+	}
+
+	.right {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		flex-shrink: 0;
 	}
 
 	.time {

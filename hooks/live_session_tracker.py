@@ -32,6 +32,7 @@ hook (older files with a populated slug remain readable).
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import traceback
@@ -111,6 +112,38 @@ def resolve_git_root(cwd: str) -> Optional[str]:
     except (subprocess.TimeoutExpired, OSError):
         pass
     return None
+
+
+def resolve_terminal() -> Dict[str, Any]:
+    """Capture the terminal/pane a session is running in from the environment.
+
+    Claude Code spawns hooks with the terminal's environment inherited, so
+    the same env vars the user's shell sees are visible here. We record the
+    identifiers the API later uses to raise the right window/pane:
+
+    - ``TMUX`` / ``TMUX_PANE``   → running inside tmux (works on any OS)
+    - ``TERM_PROGRAM`` / ``TERM_SESSION_ID`` → macOS terminal apps (osascript)
+    - ``WINDOWID``               → Linux X11 window (xdotool/wmctrl)
+
+    ``pid`` is the hook's parent — the live ``claude`` process. It is not the
+    terminal, but while the session runs its tty identifies the exact tab,
+    which the API uses for per-window focus on macOS.
+    All fields are best-effort; missing ones stay ``None``.
+    """
+    env = os.environ
+    tmux_pane = env.get("TMUX_PANE") or None
+    try:
+        pid: Optional[int] = os.getppid()
+    except OSError:
+        pid = None
+    return {
+        "tmux": bool(env.get("TMUX")),
+        "tmux_pane": tmux_pane,
+        "term_program": env.get("TERM_PROGRAM") or None,
+        "term_session_id": env.get("TERM_SESSION_ID") or None,
+        "window_id": env.get("WINDOWID") or None,
+        "pid": pid,
+    }
 
 
 def write_state_atomic(path: Path, update_fn: Callable[[dict], dict]) -> None:
@@ -307,6 +340,7 @@ def write_state(
     agent_type: Optional[str] = None,
     last_notification_message: Optional[str] = None,
     pending_permission_message: Optional[str] = None,
+    terminal: Optional[Dict[str, Any]] = None,
 ) -> None:
     """Write session state to disk under an exclusive lock.
 
@@ -338,6 +372,10 @@ def write_state(
             "source": source or existing.get("source"),
             "claude_model": claude_model or existing.get("claude_model"),
             "agent_type": agent_type or existing.get("agent_type"),
+            # SessionStart resolves terminal identity fresh; any other event
+            # backfills it for sessions that predate terminal tracking (env
+            # and parent pid are identical on every hook invocation).
+            "terminal": terminal or existing.get("terminal") or resolve_terminal(),
         }
 
         # Pending permission text is sticky until cleared by a non-WAITING transition.
@@ -416,6 +454,7 @@ def _handle_event(data: Dict[str, Any]) -> None:
             source=source,
             claude_model=model,
             agent_type=agent_type,
+            terminal=resolve_terminal(),
         )
 
     elif hook_name == "UserPromptSubmit":

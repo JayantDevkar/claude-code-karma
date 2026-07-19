@@ -158,6 +158,7 @@ Project (entry point)
 | GET | `/sessions/{uuid}/subagents` | Subagent activity |
 | GET | `/analytics/projects/{encoded_name}` | Project analytics |
 | GET | `/live-sessions` | Real-time session state |
+| POST | `/live-sessions/{id}/focus-terminal` | Raise the session's terminal window |
 | GET | `/agents` | Agent listing |
 | GET | `/skills` | Skill usage |
 | GET | `/history` | File history |

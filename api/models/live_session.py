@@ -107,6 +107,32 @@ class SubagentState(BaseModel):
     )
 
 
+class TerminalInfo(BaseModel):
+    """Identity of the terminal/pane a session is running in.
+
+    Captured by ``hooks/live_session_tracker.py`` at SessionStart from the
+    inherited environment. Used by the ``/live-sessions/{id}/focus-terminal``
+    endpoint to raise the correct window/pane on the local machine.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="allow")
+
+    tmux: bool = Field(False, description="Whether the session runs inside tmux")
+    tmux_pane: Optional[str] = Field(None, description="tmux pane id (TMUX_PANE), e.g. '%3'")
+    term_program: Optional[str] = Field(
+        None, description="Terminal application (TERM_PROGRAM), e.g. 'iTerm.app'"
+    )
+    term_session_id: Optional[str] = Field(
+        None, description="Terminal session id (TERM_SESSION_ID)"
+    )
+    window_id: Optional[str] = Field(
+        None, description="X11 window id (WINDOWID) for Linux window managers"
+    )
+    pid: Optional[int] = Field(
+        None, description="PID of the claude process (used to resolve its tty for exact-tab focus)"
+    )
+
+
 class LiveSessionState(BaseModel):
     """
     State of a currently running Claude Code session.
@@ -168,6 +194,11 @@ class LiveSessionState(BaseModel):
     )
     last_notification_message: Optional[str] = Field(
         None, description="Last Notification or PermissionRequest message text"
+    )
+
+    # Terminal identity (resolved at SessionStart) — powers "open terminal"
+    terminal: Optional[TerminalInfo] = Field(
+        None, description="Terminal/pane the session runs in (for window focus)"
     )
 
     # Subagent tracking
