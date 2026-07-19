@@ -161,19 +161,28 @@ POST /live-sessions/{session_id}/focus-terminal  →  TerminalFocusResult
 - `LiveSessionSummary` gains optional `terminal` and `can_focus_terminal`.
 - New `TerminalInfo` and `TerminalFocusResult` interfaces.
 
-### UI — `frontend/src/lib/components/conversation/ConversationHeader.svelte`
+### UI — `frontend/src/lib/components/TerminalFocusButton.svelte`
 
-- A "terminal" action button in the regular-session `headerRight` slot,
-  alongside the existing "Copy session ID" / "resume" buttons.
-- **Visibility gate:** `liveStatus && liveStatus.status !== 'ended' &&
-  liveStatus.can_focus_terminal`.
-- On click, `POST`s to the focus endpoint and shows transient feedback
-  (`opened!` / `failed`), with the backend's `detail` in the tooltip.
-- Data source: the `liveStatus` object already polled by `ConversationView` —
-  no extra wiring needed.
+A shared component with two variants, used on three surfaces:
 
-Not added to the subagent-session header variant (subagents don't own a
-terminal).
+- **`label` variant** — the session-detail header (`ConversationHeader.svelte`),
+  a "terminal" action button alongside "Copy session ID" / "resume", with text
+  feedback (`opened!` / `failed`).
+- **`icon` variant** — a teal-chip `>_` button on the home live-sessions strip
+  (`HomeSessionsStrip.svelte`) and the `/sessions` live section rows
+  (`LiveSessionsSection.svelte`). Rows use a stretched-link pattern (the row
+  link is an absolutely-positioned sibling, never a button ancestor).
+- **Visibility gate on every surface:** session not ended **and**
+  `can_focus_terminal` (the lists pre-filter or check status explicitly).
+- On click, `POST`s to the focus endpoint (10s abort timeout); feedback swaps
+  the glyph to check/X, announces via `aria-live`, and puts the backend's
+  `detail` in the tooltip.
+- Data source: the summaries already polled by `ConversationView` and the two
+  list surfaces — no extra wiring.
+
+The button also renders on a subagent's page when the parent session is live
+and focusable — it targets the parent session's terminal (subagents don't own
+one of their own).
 
 ---
 
@@ -209,5 +218,6 @@ Verification: full API suite passes (`pytest`); `frontend` type-checks
 - Per-tab focus for more macOS terminals (WezTerm/kitty/Ghostty expose CLIs
   or scripting that could match by tty like Terminal.app/iTerm2 do today).
 - Wayland support if/when a reliable focus CLI is broadly available.
-- Expose the button in more surfaces (e.g. the live-sessions list / home page
-  cards), reusing the same endpoint.
+- ~~Expose the button in more surfaces~~ — shipped: home live-sessions strip
+  and the `/sessions` live section reuse the same endpoint via
+  `TerminalFocusButton.svelte`.

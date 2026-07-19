@@ -647,7 +647,7 @@
 		cursor: pointer;
 	}
 
-	.session-row.clickable:focus-visible {
+	.row-link:focus-visible {
 		outline: 2px solid var(--accent);
 		outline-offset: -2px;
 	}

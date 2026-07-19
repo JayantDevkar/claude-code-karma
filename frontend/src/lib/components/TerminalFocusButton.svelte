@@ -13,8 +13,10 @@
 	let announcement = $state('');
 	let resetTimeout: ReturnType<typeof setTimeout> | null = null;
 	let abort: AbortController | null = null;
+	let destroyed = false;
 
 	$effect(() => () => {
+		destroyed = true;
 		if (resetTimeout) clearTimeout(resetTimeout);
 		abort?.abort();
 	});
@@ -40,14 +42,18 @@
 			title = 'Could not reach the API to focus the terminal.';
 		} finally {
 			clearTimeout(abortTimer);
-			busy = false;
-			announcement = feedback === 'ok' ? 'Terminal focused' : 'Could not focus the terminal';
-			if (resetTimeout) clearTimeout(resetTimeout);
-			resetTimeout = setTimeout(() => {
-				feedback = 'idle';
-				title = IDLE_TITLE;
-				announcement = '';
-			}, 2000);
+			// Skip feedback scheduling when the fetch was aborted by teardown.
+			if (!destroyed) {
+				busy = false;
+				announcement =
+					feedback === 'ok' ? 'Terminal focused' : 'Could not focus the terminal';
+				if (resetTimeout) clearTimeout(resetTimeout);
+				resetTimeout = setTimeout(() => {
+					feedback = 'idle';
+					title = IDLE_TITLE;
+					announcement = '';
+				}, 2000);
+			}
 		}
 	}
 </script>

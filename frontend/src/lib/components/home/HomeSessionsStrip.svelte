@@ -173,7 +173,7 @@
 						</span>
 						<span class="right">
 							<span class="time">{formatDuration(session.duration_seconds)}</span>
-							{#if session.can_focus_terminal}
+							{#if session.status !== 'ended' && session.can_focus_terminal}
 								<TerminalFocusButton sessionId={session.session_id} />
 							{/if}
 						</span>
