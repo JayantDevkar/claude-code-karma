@@ -54,10 +54,16 @@ def client(tmp_path, monkeypatch):
 
     monkeypatch.setattr(live_model, "get_live_sessions_dir", lambda: live_dir)
 
+    from config import Settings
     from routers import live_sessions
 
     app = FastAPI()
     app.include_router(live_sessions.router, prefix="/live-sessions")
+    # Pin CORS origins so a developer's CLAUDE_KARMA_CORS_ORIGINS env can't
+    # change the outcome of the origin-guard tests.
+    app.dependency_overrides[live_sessions.get_settings] = lambda: Settings(
+        cors_origins=["http://localhost:5173"]
+    )
 
     client = TestClient(app)
     client.live_dir = live_dir  # type: ignore[attr-defined]
@@ -147,3 +153,39 @@ def test_focus_terminal_no_terminal_info_400(client):
 def test_focus_terminal_missing_session_404(client):
     res = client.post("/live-sessions/does-not-exist/focus-terminal")
     assert res.status_code == 404
+
+
+def test_focus_terminal_cross_origin_403(client, monkeypatch):
+    """CSRF guard: a foreign web page's Origin is rejected before any focus attempt."""
+    _write_session(client.live_dir, "sess-csrf", {"tmux_pane": "%2"})
+
+    from routers import live_sessions
+
+    def unexpected_focus(terminal):
+        raise AssertionError("focus_terminal must not run for a rejected origin")
+
+    monkeypatch.setattr(live_sessions, "focus_terminal", unexpected_focus)
+
+    res = client.post(
+        "/live-sessions/sess-csrf/focus-terminal",
+        headers={"Origin": "https://evil.example"},
+    )
+    assert res.status_code == 403
+
+
+def test_focus_terminal_allowed_origin_ok(client, monkeypatch):
+    _write_session(client.live_dir, "sess-origin", {"tmux_pane": "%2"})
+
+    from routers import live_sessions
+
+    monkeypatch.setattr(
+        live_sessions,
+        "focus_terminal",
+        lambda terminal: {"focused": True, "method": "tmux", "detail": "ok"},
+    )
+
+    res = client.post(
+        "/live-sessions/sess-origin/focus-terminal",
+        headers={"Origin": "http://localhost:5173"},
+    )
+    assert res.status_code == 200

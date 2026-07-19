@@ -41,9 +41,21 @@ _MAC_APP_NAMES: Dict[str, str] = {
 
 _TIMEOUT_SECONDS = 5
 
+# Process names the captured pid may legitimately resolve to (the claude CLI,
+# or node/bun when the CLI runs under a JS runtime). Anything else means the
+# pid was recycled by the OS after the session died — its tty must not be
+# trusted. A recycled pid landing on another claude/node/bun process can still
+# slip through; a name check can't tell "our claude" from "a claude".
+_CLAUDE_PROCESS_NAMES = ("claude", "node", "bun")
+
 
 def _run(cmd: list[str]) -> subprocess.CompletedProcess:
     return subprocess.run(cmd, capture_output=True, text=True, timeout=_TIMEOUT_SECONDS)
+
+
+def _applescript_str(value: str) -> str:
+    """Escape a value for safe embedding inside a double-quoted AppleScript string."""
+    return value.replace("\\", "\\\\").replace('"', '\\"')
 
 
 def can_focus(terminal: Optional[Dict[str, Any]]) -> bool:
@@ -126,11 +138,22 @@ _MAC_TAB_SCRIPTS: Dict[str, str] = {
 
 
 def _tty_for_pid(pid: int) -> Optional[str]:
-    """Resolve the tty a live process is attached to, e.g. '/dev/ttys006'."""
+    """Resolve the tty the live claude process is attached to, e.g. '/dev/ttys006'.
+
+    The pid was captured at SessionStart; if the OS has since recycled it for
+    an unrelated process, its tty would point at the wrong tab, so the process
+    name is verified before the tty is trusted.
+    """
     try:
-        res = _run(["ps", "-o", "tty=", "-p", str(pid)])
-        tty = res.stdout.strip()
-        if res.returncode == 0 and tty and tty not in ("??", "-"):
+        res = _run(["ps", "-o", "tty=,comm=", "-p", str(pid)])
+        # comm is a full path on macOS and may contain spaces; tty never does.
+        parts = res.stdout.strip().split(None, 1)
+        if res.returncode != 0 or len(parts) < 2:
+            return None
+        tty, comm = parts
+        if comm.rsplit("/", 1)[-1] not in _CLAUDE_PROCESS_NAMES:
+            return None
+        if tty and tty not in ("??", "-"):
             return tty if tty.startswith("/dev/") else f"/dev/{tty}"
     except (subprocess.SubprocessError, OSError):
         pass
@@ -143,7 +166,7 @@ def _focus_macos_tab(term_program: str, tty: str) -> Optional[Dict[str, Any]]:
     if not script:
         return None
     try:
-        res = _run(["osascript", "-e", script.format(tty=tty)])
+        res = _run(["osascript", "-e", script.format(tty=_applescript_str(tty))])
         window_id = res.stdout.strip()
         if res.returncode == 0 and window_id:
             return {
@@ -173,7 +196,7 @@ def _focus_macos(term_program: str, pid: Optional[int] = None) -> Dict[str, Any]
             return exact
     app = _MAC_APP_NAMES.get(term_program, term_program)
     try:
-        res = _run(["osascript", "-e", f'tell application "{app}" to activate'])
+        res = _run(["osascript", "-e", f'tell application "{_applescript_str(app)}" to activate'])
         return {
             "focused": res.returncode == 0,
             "method": "osascript",

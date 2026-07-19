@@ -157,6 +157,23 @@ def test_focus_macos_unknown_program_uses_raw_name(monkeypatch):
     assert 'tell application "SomeNewTerm" to activate' in captured["cmd"][-1]
 
 
+def test_focus_macos_escapes_applescript_injection(monkeypatch):
+    # A quote in TERM_PROGRAM must not break out of the AppleScript string.
+    monkeypatch.setattr(terminal_focus.sys, "platform", "darwin")
+    monkeypatch.setattr(terminal_focus.shutil, "which", lambda name: "/usr/bin/osascript")
+
+    captured = {}
+
+    def fake_run(cmd):
+        captured["cmd"] = cmd
+        return _FakeCompleted(returncode=0)
+
+    monkeypatch.setattr(terminal_focus, "_run", fake_run)
+    terminal_focus.focus_terminal({"term_program": 'Evil" \n do shell script "id'})
+    script = captured["cmd"][-1]
+    assert script == 'tell application "Evil\\" \n do shell script \\"id" to activate'
+
+
 # ---------------------------------------------------------------------------
 # Linux
 # ---------------------------------------------------------------------------
@@ -215,14 +232,14 @@ def test_focus_linux_no_tools(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def _fake_run_factory(tty="ttys006", tab_stdout="13387", record=None):
+def _fake_run_factory(tty="ttys006", comm="claude", tab_stdout="13387", record=None):
     """_run stub routing ps / tab-script / activate calls."""
 
     def fake_run(cmd):
         if record is not None:
             record.append(cmd)
         if cmd[0] == "ps":
-            return _FakeCompleted(stdout=f"{tty}\n")
+            return _FakeCompleted(stdout=f"{tty} {comm}\n")
         if cmd[0] == "osascript" and "tty of" in cmd[-1]:
             return _FakeCompleted(stdout=f"{tab_stdout}\n")
         return _FakeCompleted(returncode=0)
@@ -246,6 +263,19 @@ def test_tty_for_pid_dead_process(monkeypatch):
 
     monkeypatch.setattr(terminal_focus, "_run", boom)
     assert terminal_focus._tty_for_pid(99999) is None
+
+
+def test_tty_for_pid_recycled_pid_rejected(monkeypatch):
+    # The pid now belongs to some other process → its tty must not be trusted.
+    monkeypatch.setattr(terminal_focus, "_run", _fake_run_factory(comm="vim"))
+    assert terminal_focus._tty_for_pid(91314) is None
+
+
+def test_tty_for_pid_accepts_full_claude_path(monkeypatch):
+    monkeypatch.setattr(
+        terminal_focus, "_run", _fake_run_factory(comm="/usr/local/bin/claude")
+    )
+    assert terminal_focus._tty_for_pid(91314) == "/dev/ttys006"
 
 
 def test_focus_macos_exact_tab(monkeypatch):

@@ -516,6 +516,24 @@ def get_live_session(
     return state_to_summary(state)
 
 
+def _reject_cross_origin(request: Request, config: Settings) -> None:
+    """CSRF guard for state-changing endpoints.
+
+    Browsers always send an ``Origin`` header on cross-site POSTs, so any
+    origin outside the CORS allowlist is a foreign web page poking the local
+    API. Requests without an Origin (curl, same-host tools) are allowed.
+    """
+    origin = request.headers.get("origin")
+    if origin and origin not in config.cors_origins:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                f"Origin not allowed: {origin}. If this is your karma frontend, "
+                "add it to cors_origins (CLAUDE_KARMA_CORS_ORIGINS)."
+            ),
+        )
+
+
 @router.post("/{session_id}/focus-terminal", response_model=TerminalFocusResult)
 def focus_session_terminal(
     session_id: str,
@@ -528,8 +546,10 @@ def focus_session_terminal(
     shells out to OS window managers (tmux / osascript / xdotool / wmctrl).
     The attempt is best-effort: a 200 with ``focused=false`` means we knew the
     method but couldn't complete it (e.g. tool missing). Returns 404 if the
-    session isn't tracked, 400 if no terminal identity was captured.
+    session isn't tracked, 400 if no terminal identity was captured, 403 for
+    cross-origin browser requests.
     """
+    _reject_cross_origin(request, config)
     state = load_live_session(session_id)
     if state is None:
         raise HTTPException(
