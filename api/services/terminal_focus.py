@@ -19,6 +19,7 @@ The terminal identifiers come from
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
@@ -58,16 +59,32 @@ def _applescript_str(value: str) -> str:
     return value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\r", "\\r")
 
 
+def _pid_alive(pid: int) -> bool:
+    """Whether a process with this pid still exists (signal 0 probe)."""
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except OSError:
+        return True  # exists but owned by someone else
+
+
 def can_focus(terminal: Optional[Dict[str, Any]]) -> bool:
     """Whether we have an identifier we could plausibly focus on this host.
 
     tmux panes are focusable on any OS; GUI-window focus depends on the host
-    the API is running on (which is the same machine as the terminal).
+    the API is running on (which is the same machine as the terminal). A dead
+    captured pid means the session's window can no longer be located, so the
+    button is withheld (killed/crashed sessions linger as STALE state files).
     """
     if not terminal:
         return False
     if terminal.get("tmux_pane"):
         return True
+    pid = terminal.get("pid")
+    if pid and not _pid_alive(pid):
+        return False
     if sys.platform == "darwin" and terminal.get("term_program"):
         return True
     if sys.platform.startswith("linux") and terminal.get("window_id"):
@@ -100,20 +117,31 @@ def _focus_tmux(pane: str) -> Dict[str, Any]:
 # Per-app AppleScript to select the exact tab owning a tty. Keyed by
 # TERM_PROGRAM so we never `tell` (and thereby launch) an app the session
 # isn't actually running in. `{tty}` is substituted with e.g. /dev/ttys006.
+# Terminal.app silently ignores `set index`/`set frontmost`, so a non-front
+# window is raised via a miniaturize cycle (the only permission-free raise;
+# AXRaise would require an Accessibility grant).
 _MAC_TAB_SCRIPTS: Dict[str, str] = {
     "Apple_Terminal": (
         'tell application "Terminal"\n'
+        "    set matchedId to 0\n"
         "    repeat with w in windows\n"
         "        repeat with t in tabs of w\n"
         '            if tty of t is "{tty}" then\n'
         "                set selected of t to true\n"
-        "                set index of w to 1\n"
-        "                activate\n"
-        "                return id of w\n"
+        "                set matchedId to id of w\n"
+        "                exit repeat\n"
         "            end if\n"
         "        end repeat\n"
+        "        if matchedId is not 0 then exit repeat\n"
         "    end repeat\n"
-        '    return ""\n'
+        '    if matchedId is 0 then return ""\n'
+        "    activate\n"
+        "    if id of front window is not matchedId then\n"
+        "        set miniaturized of window id matchedId to true\n"
+        "        delay 0.4\n"
+        "        set miniaturized of window id matchedId to false\n"
+        "    end if\n"
+        "    return matchedId\n"
         "end tell"
     ),
     "iTerm.app": (
@@ -189,8 +217,16 @@ def _focus_macos(term_program: str, pid: Optional[int] = None) -> Dict[str, Any]
     """
     if not shutil.which("osascript"):
         return {"focused": False, "method": "osascript", "detail": "osascript not found"}
-    tty = _tty_for_pid(pid) if pid else None
-    if tty:
+    if pid:
+        tty = _tty_for_pid(pid)
+        if tty is None:
+            # Dead/recycled pid: the window can't be located, and blindly
+            # activating the app would raise an arbitrary window.
+            return {
+                "focused": False,
+                "method": "osascript-tab",
+                "detail": "Could not locate the session's terminal window (its process is gone or has no tty).",
+            }
         exact = _focus_macos_tab(term_program, tty)
         if exact:
             return exact

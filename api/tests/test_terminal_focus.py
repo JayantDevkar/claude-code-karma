@@ -344,3 +344,51 @@ def test_focus_macos_no_pid_keeps_activate_behavior(monkeypatch):
 
 def test_applescript_str_escapes_control_characters():
     assert terminal_focus._applescript_str('a"b\\c\nd\re') == 'a\\"b\\\\c\\nd\\re'
+
+
+# ---------------------------------------------------------------------------
+# Window raise + dead-session lifecycle
+# ---------------------------------------------------------------------------
+
+
+def test_terminal_app_script_raises_via_miniaturize_cycle():
+    # Terminal.app ignores `set index`/`set frontmost`; the script must use
+    # the miniaturize cycle and only when the window isn't already front.
+    script = terminal_focus._MAC_TAB_SCRIPTS["Apple_Terminal"]
+    assert "set miniaturized" in script
+    assert "if id of front window is not matchedId" in script
+    assert "set index" not in script
+
+
+def test_focus_macos_dead_pid_fails_instead_of_wrong_window(monkeypatch):
+    monkeypatch.setattr(terminal_focus.sys, "platform", "darwin")
+    monkeypatch.setattr(terminal_focus.shutil, "which", lambda name: "/usr/bin/osascript")
+
+    calls = []
+
+    def fake_run(cmd):
+        calls.append(cmd)
+        if cmd[0] == "ps":
+            return _FakeCompleted(returncode=1)  # process gone
+        return _FakeCompleted(returncode=0)
+
+    monkeypatch.setattr(terminal_focus, "_run", fake_run)
+    result = terminal_focus.focus_terminal({"term_program": "Apple_Terminal", "pid": 424242})
+    assert result["focused"] is False
+    assert "Could not locate" in result["detail"]
+    # No blind app activation of an arbitrary window.
+    assert not any(c[0] == "osascript" for c in calls)
+
+
+def test_can_focus_dead_pid_hides_button(monkeypatch):
+    monkeypatch.setattr(terminal_focus.sys, "platform", "darwin")
+    monkeypatch.setattr(terminal_focus, "_pid_alive", lambda pid: False)
+    assert terminal_focus.can_focus({"term_program": "Apple_Terminal", "pid": 1234}) is False
+    # tmux panes can outlive the process; stay focusable.
+    assert terminal_focus.can_focus({"tmux_pane": "%1", "pid": 1234}) is True
+
+
+def test_can_focus_alive_pid(monkeypatch):
+    monkeypatch.setattr(terminal_focus.sys, "platform", "darwin")
+    monkeypatch.setattr(terminal_focus, "_pid_alive", lambda pid: True)
+    assert terminal_focus.can_focus({"term_program": "Apple_Terminal", "pid": 1234}) is True
