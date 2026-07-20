@@ -60,7 +60,9 @@ def _applescript_str(value: str) -> str:
 
 
 def _pid_alive(pid: int) -> bool:
-    """Whether a process with this pid still exists (signal 0 probe)."""
+    """Whether a process with this pid still exists (POSIX signal-0 probe)."""
+    if os.name != "posix":
+        return True  # os.kill(pid, 0) TERMINATES processes on Windows — never probe there
     try:
         os.kill(pid, 0)
         return True
@@ -82,11 +84,9 @@ def can_focus(terminal: Optional[Dict[str, Any]]) -> bool:
         return False
     if terminal.get("tmux_pane"):
         return True
-    pid = terminal.get("pid")
-    if pid and not _pid_alive(pid):
-        return False
     if sys.platform == "darwin" and terminal.get("term_program"):
-        return True
+        pid = terminal.get("pid")
+        return _pid_alive(pid) if pid else True
     if sys.platform.startswith("linux") and terminal.get("window_id"):
         return True
     return False

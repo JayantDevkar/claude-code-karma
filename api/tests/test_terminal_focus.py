@@ -392,3 +392,25 @@ def test_can_focus_alive_pid(monkeypatch):
     monkeypatch.setattr(terminal_focus.sys, "platform", "darwin")
     monkeypatch.setattr(terminal_focus, "_pid_alive", lambda pid: True)
     assert terminal_focus.can_focus({"term_program": "Apple_Terminal", "pid": 1234}) is True
+
+
+def test_can_focus_never_probes_pid_on_non_macos(monkeypatch):
+    # os.kill(pid, 0) terminates processes on Windows; the probe must be
+    # unreachable on platforms whose branches can't return True anyway.
+    def boom(pid):
+        raise AssertionError("pid probe must not run here")
+
+    monkeypatch.setattr(terminal_focus, "_pid_alive", boom)
+    monkeypatch.setattr(terminal_focus.sys, "platform", "win32")
+    assert terminal_focus.can_focus({"term_program": "Apple_Terminal", "pid": 1234}) is False
+    monkeypatch.setattr(terminal_focus.sys, "platform", "linux")
+    assert terminal_focus.can_focus({"window_id": "123", "pid": 1234}) is True
+
+
+def test_pid_alive_short_circuits_off_posix(monkeypatch):
+    def boom(pid, sig):
+        raise AssertionError("os.kill must not run off POSIX")
+
+    monkeypatch.setattr(terminal_focus.os, "kill", boom)
+    monkeypatch.setattr(terminal_focus.os, "name", "nt")
+    assert terminal_focus._pid_alive(1234) is True
