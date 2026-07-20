@@ -131,6 +131,16 @@ class TerminalInfo(BaseModel):
     pid: Optional[int] = Field(
         None, description="PID of the claude process (used to resolve its tty for exact-tab focus)"
     )
+    tty: Optional[str] = Field(
+        None,
+        description="Controlling tty captured while the process was alive, e.g. '/dev/ttys006'",
+    )
+    iterm_session_id: Optional[str] = Field(
+        None, description="iTerm2 session id (ITERM_SESSION_ID), e.g. 'w0t2p0:UUID'"
+    )
+    bundle_id: Optional[str] = Field(
+        None, description="macOS bundle id of the spawning app (__CFBundleIdentifier)"
+    )
 
 
 class LiveSessionState(BaseModel):

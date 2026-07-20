@@ -79,8 +79,9 @@ if HAS_PYDANTIC:
 
     class StopHook(_BaseHook):
         hook_event_name: str = Field("Stop")
+        # A missing field means no stop hook is running — a natural stop.
         stop_hook_active: bool = Field(
-            True,
+            False,
             description="True if already continuing from a previous Stop hook",
         )
 

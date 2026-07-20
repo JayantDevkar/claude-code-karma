@@ -160,6 +160,30 @@ def delete_state(session_id: str) -> bool:
     return False
 
 
+def _iter_state_files():
+    """Yield ``(path, data)`` for every readable state file; skips malformed ones."""
+    live_dir = get_live_sessions_dir()
+    if not live_dir.exists():
+        return
+    for path in live_dir.glob("*.json"):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                yield path, json.load(f)
+        except (OSError, json.JSONDecodeError):
+            continue
+
+
+def _parse_timestamp(value: Any) -> Optional[datetime]:
+    """Parse an ISO timestamp from state JSON; None when missing/invalid."""
+    if not value:
+        return None
+    try:
+        ts = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return None
+    return ts.replace(tzinfo=timezone.utc) if ts.tzinfo is None else ts
+
+
 def purge_old_files(
     *,
     ended_max_age_sec: int = 600,
@@ -173,32 +197,15 @@ def purge_old_files(
 
     Returns the number of files deleted.
     """
-    live_dir = get_live_sessions_dir()
-    if not live_dir.exists():
-        return 0
-
     now = datetime.now(timezone.utc)
     deleted = 0
 
-    for path in live_dir.glob("*.json"):
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-        except (OSError, json.JSONDecodeError):
-            continue
-
+    for path, data in _iter_state_files():
         state = data.get("state")
-        updated_at = data.get("updated_at")
-        if not state or not updated_at:
-            continue
         if state not in ("ENDED", "STARTING"):
             continue
-
-        try:
-            ts = datetime.fromisoformat(str(updated_at).replace("Z", "+00:00"))
-            if ts.tzinfo is None:
-                ts = ts.replace(tzinfo=timezone.utc)
-        except ValueError:
+        ts = _parse_timestamp(data.get("updated_at"))
+        if ts is None:
             continue
 
         max_age = ended_max_age_sec if state == "ENDED" else starting_max_age_sec
@@ -223,6 +230,85 @@ def purge_old_files(
     return deleted
 
 
+# States that mean "the session is (supposedly) still going".
+_NON_TERMINAL_STATES = ("LIVE", "WAITING", "STOPPED", "STALE", "STARTING")
+
+# Files younger than this are never reaped — protects freshly-written state
+# from racing its own hook events (and pathological clock skew).
+_REAP_MIN_AGE_SEC = 30
+
+# Non-terminal files with no captured pid can't be probed; end them once
+# they've been silent this long (dead sessions used to linger forever).
+_PIDLESS_MAX_AGE_SEC = 24 * 3600
+
+
+def reap_dead_sessions() -> int:
+    """Mark non-terminal sessions whose claude process is gone as ENDED.
+
+    Sessions killed without a SessionEnd hook (SIGKILL, crash, closed
+    terminal window) previously lingered in STOPPED/STALE/WAITING forever —
+    no cleanup path covered those states. The captured pid gives direct
+    evidence: dead, or recycled onto a non-claude process, means the session
+    is over. Pid-less legacy files fall back to a 24h silence threshold.
+
+    Marks ENDED (end_reason="process_died") rather than deleting, so the
+    normal ENDED display window and ``purge_old_files`` lifecycle apply.
+    Runs from the reconciler background timer. Returns sessions reaped.
+    """
+    # Deferred import: services.terminal_focus owns the pid probing logic.
+    from services.terminal_focus import pid_is_live_claude
+
+    now = datetime.now(timezone.utc)
+    reaped = 0
+
+    for path, data in _iter_state_files():
+        if data.get("state") not in _NON_TERMINAL_STATES:
+            continue
+
+        ts = _parse_timestamp(data.get("updated_at"))
+        if ts is None:
+            continue
+        age_sec = (now - ts).total_seconds()
+        if age_sec < _REAP_MIN_AGE_SEC:
+            continue
+
+        pid = (data.get("terminal") or {}).get("pid")
+        if pid:
+            # Probing only works on the machine the session ran on; both the
+            # API and the hooks run locally, so that's always this host.
+            if pid_is_live_claude(pid):
+                continue
+            reason = "process_died"
+        elif age_sec > _PIDLESS_MAX_AGE_SEC:
+            reason = "reaped_stale"
+        else:
+            continue
+
+        session_id = data.get("session_id") or path.stem
+        # Write to the exact file we probed (legacy slug-named files would
+        # otherwise get a fresh session_id-named file and linger unreaped).
+        _write_under_lock(
+            path,
+            {
+                "session_id": session_id,
+                "state": "ENDED",
+                "end_reason": reason,
+                "last_hook": "Reaper",
+                "updated_at": _now_iso(),
+            },
+        )
+        reaped += 1
+        logger.info(
+            "reap_dead_sessions: ended %s (state=%s reason=%s pid=%s)",
+            session_id,
+            data.get("state"),
+            reason,
+            pid,
+        )
+
+    return reaped
+
+
 def find_state_file_for(identifier: str) -> Optional[Path]:
     """Locate the state file for a slug, session_id, or filename stem.
 
@@ -233,16 +319,7 @@ def find_state_file_for(identifier: str) -> Optional[Path]:
     if direct.exists():
         return direct
 
-    live_dir = get_live_sessions_dir()
-    if not live_dir.exists():
-        return None
-
-    for path in live_dir.glob("*.json"):
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-        except (OSError, json.JSONDecodeError):
-            continue
+    for path, data in _iter_state_files():
         if (
             data.get("session_id") == identifier
             or data.get("slug") == identifier
@@ -272,5 +349,6 @@ __all__ = [
     "delete_state",
     "delete_by_identifier",
     "purge_old_files",
+    "reap_dead_sessions",
     "find_state_file_for",
 ]

@@ -659,6 +659,12 @@ export interface TerminalInfo {
 	term_session_id: string | null;
 	window_id: string | null;
 	pid: number | null;
+	/** Controlling tty captured while the process was alive, e.g. '/dev/ttys006'. */
+	tty: string | null;
+	/** iTerm2 session id (ITERM_SESSION_ID), e.g. 'w0t2p0:UUID'. */
+	iterm_session_id: string | null;
+	/** macOS bundle id of the spawning app (__CFBundleIdentifier). */
+	bundle_id: string | null;
 }
 
 /** Result of attempting to focus a session's terminal window/pane. */
