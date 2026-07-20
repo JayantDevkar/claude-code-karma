@@ -138,3 +138,133 @@ def test_reconciler_mark_uses_store(tmp_live_dir: Path):
     with patch("services.session_reconciler.live_session_store.mark_ended") as mock_ended:
         _mark_session_ended(state_file, {"session_id": "sess-r"}, end_reason="x")
         mock_ended.assert_called_once_with("sess-r", end_reason="x", last_hook="Reconciler")
+
+
+# ---------------------------------------------------------------------------
+# reap_dead_sessions
+# ---------------------------------------------------------------------------
+
+
+def _iso_ago(seconds: int) -> str:
+    return (datetime.now(timezone.utc) - timedelta(seconds=seconds)).isoformat()
+
+
+def _write_raw(live_dir: Path, name: str, **fields) -> Path:
+    path = live_dir / f"{name}.json"
+    path.write_text(json.dumps(fields))
+    return path
+
+
+def _mock_liveness(monkeypatch, alive: bool):
+    """The reaper defers its import, so patch the source module attribute."""
+    from services import terminal_focus
+
+    monkeypatch.setattr(terminal_focus, "pid_is_live_claude", lambda pid: alive)
+
+
+def test_reap_ends_nonterminal_sessions_with_dead_pid(tmp_live_dir: Path, monkeypatch):
+    _mock_liveness(monkeypatch, alive=False)
+    for state in ("LIVE", "WAITING", "STOPPED", "STALE", "STARTING"):
+        _write_raw(
+            tmp_live_dir,
+            f"dead-{state.lower()}",
+            session_id=f"dead-{state.lower()}",
+            state=state,
+            updated_at=_iso_ago(300),
+            terminal={"pid": 4242},
+        )
+
+    assert live_session_store.reap_dead_sessions() == 5
+    for state in ("LIVE", "WAITING", "STOPPED", "STALE", "STARTING"):
+        data = json.loads((tmp_live_dir / f"dead-{state.lower()}.json").read_text())
+        assert data["state"] == "ENDED"
+        assert data["end_reason"] == "process_died"
+        assert data["last_hook"] == "Reaper"
+
+
+def test_reap_spares_live_pid_and_ended_files(tmp_live_dir: Path, monkeypatch):
+    _mock_liveness(monkeypatch, alive=True)
+    _write_raw(
+        tmp_live_dir,
+        "alive",
+        session_id="alive",
+        state="LIVE",
+        updated_at=_iso_ago(300),
+        terminal={"pid": 4242},
+    )
+    _write_raw(
+        tmp_live_dir,
+        "done",
+        session_id="done",
+        state="ENDED",
+        updated_at=_iso_ago(9999),
+        terminal={"pid": 4242},
+    )
+    assert live_session_store.reap_dead_sessions() == 0
+    assert json.loads((tmp_live_dir / "alive.json").read_text())["state"] == "LIVE"
+    assert json.loads((tmp_live_dir / "done.json").read_text())["state"] == "ENDED"
+
+
+def test_reap_spares_freshly_written_files(tmp_live_dir: Path, monkeypatch):
+    # A file younger than the min age is never reaped, even with a dead pid —
+    # protects a just-started session from racing its own hook events.
+    _mock_liveness(monkeypatch, alive=False)
+    _write_raw(
+        tmp_live_dir,
+        "fresh",
+        session_id="fresh",
+        state="LIVE",
+        updated_at=_iso_ago(5),
+        terminal={"pid": 4242},
+    )
+    assert live_session_store.reap_dead_sessions() == 0
+
+
+def test_reap_pidless_files_use_age_fallback(tmp_live_dir: Path, monkeypatch):
+    def boom(pid):
+        raise AssertionError("no pid probe for pid-less files")
+
+    from services import terminal_focus
+
+    monkeypatch.setattr(terminal_focus, "pid_is_live_claude", boom)
+    _write_raw(
+        tmp_live_dir,
+        "ancient",
+        session_id="ancient",
+        state="STOPPED",
+        updated_at=_iso_ago(25 * 3600),
+    )
+    _write_raw(
+        tmp_live_dir,
+        "recent",
+        session_id="recent",
+        state="STOPPED",
+        updated_at=_iso_ago(3600),
+    )
+    assert live_session_store.reap_dead_sessions() == 1
+    assert json.loads((tmp_live_dir / "ancient.json").read_text())["end_reason"] == "reaped_stale"
+    assert json.loads((tmp_live_dir / "recent.json").read_text())["state"] == "STOPPED"
+
+
+def test_reap_updates_legacy_slug_named_file_in_place(tmp_live_dir: Path, monkeypatch):
+    # Legacy files are named by slug, not session_id; the reaper must update
+    # that exact file rather than minting a session_id-named sibling.
+    _mock_liveness(monkeypatch, alive=False)
+    _write_raw(
+        tmp_live_dir,
+        "my-slug",
+        session_id="uuid-123",
+        state="STALE",
+        updated_at=_iso_ago(300),
+        terminal={"pid": 4242},
+    )
+    assert live_session_store.reap_dead_sessions() == 1
+    assert json.loads((tmp_live_dir / "my-slug.json").read_text())["state"] == "ENDED"
+    assert not (tmp_live_dir / "uuid-123.json").exists()
+
+
+def test_reap_skips_malformed_files(tmp_live_dir: Path, monkeypatch):
+    _mock_liveness(monkeypatch, alive=False)
+    (tmp_live_dir / "garbage.json").write_text("{not json")
+    _write_raw(tmp_live_dir, "no-ts", session_id="no-ts", state="LIVE")
+    assert live_session_store.reap_dead_sessions() == 0

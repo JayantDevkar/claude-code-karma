@@ -168,6 +168,13 @@ async def run_session_reconciler(check_interval: int = 60, idle_threshold: int =
             if count > 0:
                 logger.info("Reconciler: ended %d stuck session(s)", count)
 
+            try:
+                reaped = await asyncio.to_thread(live_session_store.reap_dead_sessions)
+                if reaped:
+                    logger.info("Reconciler: reaped %d dead session(s)", reaped)
+            except Exception as e:  # noqa: BLE001 - best-effort reap
+                logger.warning("Reconciler: reap_dead_sessions error: %s", e)
+
             tick += 1
             if tick % purge_every_n == 0:
                 try:

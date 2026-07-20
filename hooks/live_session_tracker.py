@@ -114,6 +114,25 @@ def resolve_git_root(cwd: str) -> Optional[str]:
     return None
 
 
+def _tty_of_pid(pid: Optional[int]) -> Optional[str]:
+    """Resolve a process's controlling tty via ``ps``, e.g. '/dev/ttys006'."""
+    if not pid:
+        return None
+    try:
+        result = subprocess.run(
+            ["ps", "-o", "tty=", "-p", str(pid)],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        tty = result.stdout.strip()
+        if result.returncode == 0 and tty and tty not in ("??", "-"):
+            return tty if tty.startswith("/dev/") else f"/dev/{tty}"
+    except (subprocess.SubprocessError, OSError):
+        pass
+    return None
+
+
 def resolve_terminal() -> Dict[str, Any]:
     """Capture the terminal/pane a session is running in from the environment.
 
@@ -123,11 +142,15 @@ def resolve_terminal() -> Dict[str, Any]:
 
     - ``TMUX`` / ``TMUX_PANE``   → running inside tmux (works on any OS)
     - ``TERM_PROGRAM`` / ``TERM_SESSION_ID`` → macOS terminal apps (osascript)
+    - ``ITERM_SESSION_ID``       → iTerm2 tab/session UUID (survives pid death)
+    - ``__CFBundleIdentifier``   → exact macOS app that spawned the shell
     - ``WINDOWID``               → Linux X11 window (xdotool/wmctrl)
 
-    ``pid`` is the hook's parent — the live ``claude`` process. It is not the
-    terminal, but while the session runs its tty identifies the exact tab,
-    which the API uses for per-window focus on macOS.
+    ``pid`` is the hook's parent — the live ``claude`` process. ``tty`` is
+    that process's controlling terminal, resolved NOW while the process is
+    alive; the API prefers it over a click-time pid→tty lookup so tab
+    matching survives pid death and recycling. Inside tmux the tty is the
+    tmux server's pty (not a GUI tab) — the API detects that via ``tmux``.
     All fields are best-effort; missing ones stay ``None``.
     """
     env = os.environ
@@ -141,9 +164,19 @@ def resolve_terminal() -> Dict[str, Any]:
         "tmux_pane": tmux_pane,
         "term_program": env.get("TERM_PROGRAM") or None,
         "term_session_id": env.get("TERM_SESSION_ID") or None,
+        "iterm_session_id": env.get("ITERM_SESSION_ID") or None,
+        "bundle_id": env.get("__CFBundleIdentifier") or None,
         "window_id": env.get("WINDOWID") or None,
         "pid": pid,
+        "tty": _tty_of_pid(pid),
     }
+
+
+def _terminal_for(existing_terminal: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """Keep a current-format terminal dict; (re-)resolve legacy or missing ones."""
+    if existing_terminal and "tty" in existing_terminal:
+        return existing_terminal
+    return resolve_terminal()
 
 
 def write_state_atomic(path: Path, update_fn: Callable[[dict], dict]) -> None:
@@ -341,16 +374,22 @@ def write_state(
     last_notification_message: Optional[str] = None,
     pending_permission_message: Optional[str] = None,
     terminal: Optional[Dict[str, Any]] = None,
+    skip_if_current_state: Optional[str] = None,
 ) -> None:
     """Write session state to disk under an exclusive lock.
 
     Files are always keyed by ``session_id``. Preserves ``started_at``,
     ``subagents``, and previously-resolved fields across updates.
+    ``skip_if_current_state`` makes the write a no-op when the on-disk state
+    matches — checked inside the lock, so racing hooks can't interleave
+    between a read and this write.
     """
     now = datetime.now(timezone.utc).isoformat()
     target_path = get_state_path(session_id)
 
     def update_fn(existing: dict) -> dict:
+        if skip_if_current_state and existing.get("state") == skip_if_current_state:
+            return existing
         # NB: keep `slug` writable so legacy callers don't lose it, but we
         # never SET it here — the field stays whatever it was (usually None).
         new_data = {
@@ -372,10 +411,8 @@ def write_state(
             "source": source or existing.get("source"),
             "claude_model": claude_model or existing.get("claude_model"),
             "agent_type": agent_type or existing.get("agent_type"),
-            # SessionStart resolves terminal identity fresh; any other event
-            # backfills it for sessions that predate terminal tracking (env
-            # and parent pid are identical on every hook invocation).
-            "terminal": terminal or existing.get("terminal") or resolve_terminal(),
+            # Non-SessionStart events backfill legacy/missing captures via _terminal_for.
+            "terminal": terminal or _terminal_for(existing.get("terminal")),
         }
 
         # Pending permission text is sticky until cleared by a non-WAITING transition.
@@ -475,14 +512,14 @@ def _handle_event(data: Dict[str, Any]) -> None:
                 last_notification_message=message,
             )
         elif notification_type == "idle_prompt":
-            _, existing = read_existing_state(session_id)
-            if existing.get("state") != "WAITING":
-                write_state(
-                    session_id,
-                    "STALE",
-                    data,
-                    last_notification_message=message,
-                )
+            # WAITING outranks STALE; the check runs inside the write lock.
+            write_state(
+                session_id,
+                "STALE",
+                data,
+                last_notification_message=message,
+                skip_if_current_state="WAITING",
+            )
 
     elif hook_name == "PermissionRequest":
         # Permission requests are essentially a richer WAITING signal.
@@ -497,7 +534,9 @@ def _handle_event(data: Dict[str, Any]) -> None:
 
     elif hook_name == "Stop":
         # Only mark STOPPED if agent finished naturally (not forced continue).
-        if not _get(hook, "stop_hook_active", True):
+        # A missing stop_hook_active field means no stop hook is running —
+        # that's a natural stop, so the default must be False.
+        if not _get(hook, "stop_hook_active", False):
             write_state(session_id, "STOPPED", data)
 
     elif hook_name == "SubagentStart":

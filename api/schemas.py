@@ -975,6 +975,9 @@ class TerminalInfo(BaseModel):
     term_session_id: Optional[str] = Field(None, description="Terminal session id (TERM_SESSION_ID)")
     window_id: Optional[str] = Field(None, description="X11 window id (WINDOWID)")
     pid: Optional[int] = Field(None, description="claude PID (tty lookup for exact-tab focus)")
+    tty: Optional[str] = Field(None, description="Controlling tty captured while alive")
+    iterm_session_id: Optional[str] = Field(None, description="iTerm2 session id (ITERM_SESSION_ID)")
+    bundle_id: Optional[str] = Field(None, description="macOS app bundle id (__CFBundleIdentifier)")
 
 
 class TerminalFocusResult(BaseModel):
