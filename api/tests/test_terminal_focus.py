@@ -42,13 +42,19 @@ def _fake_run_factory(
     record=None,
     app_running=True,
     target_name="claude-karma — claude — 142×43",
+    target_bounds="0,69,1728,1117",
     se_names=None,
+    se_geometries=None,
     se_rc=0,
     front_ids=None,
 ):
     """_run stub routing ps / is-running probes / raise / verify / SE scripts."""
     window_id = tab_stdout.split()[0] if tab_stdout.split() else ""
     names = se_names if se_names is not None else (target_name,)
+    # SE reports position+size; default to geometry matching target_bounds.
+    x1, y1, x2, y2 = (int(v) for v in target_bounds.split(","))
+    matching_geo = f"{x1},{y1},{x2 - x1},{y2 - y1}"
+    geos = se_geometries if se_geometries is not None else (matching_geo,) * len(names)
     fronts = list(front_ids) if front_ids is not None else [window_id]
     state = {"verify": 0}
 
@@ -64,7 +70,8 @@ def _fake_run_factory(
             if script.endswith("is running"):
                 return _FakeCompleted(stdout="true\n" if app_running else "false\n")
             if "System Events" in script:
-                return _FakeCompleted(returncode=se_rc, stdout="\n".join(names) + "\n")
+                lines = [f"{g}|{n}" for g, n in zip(geos, names)]
+                return _FakeCompleted(returncode=se_rc, stdout="\n".join(lines) + "\n")
             if "sessions of t" in script:  # iTerm2 one-shot scripts
                 return _FakeCompleted(stdout=f"{tab_stdout}\n")
             if "tty of t is" in script:  # Terminal.app raise script
@@ -72,7 +79,7 @@ def _fake_run_factory(
             if "front window" in script:  # Terminal.app verify script
                 i = min(state["verify"], len(fronts) - 1)
                 state["verify"] += 1
-                return _FakeCompleted(stdout=f"{fronts[i]}\n{target_name}\n")
+                return _FakeCompleted(stdout=f"{fronts[i]}\n{target_bounds}\n{target_name}\n")
         return _FakeCompleted(returncode=0)
 
     return fake_run
@@ -759,6 +766,46 @@ def test_terminal_app_se_unavailable_trusts_zorder(monkeypatch):
 
     result = terminal_focus.focus_terminal(_APPLE_TERM)
     assert result["focused"] is True
+
+
+def test_terminal_app_space_probe_requires_matching_geometry(monkeypatch):
+    # Titles are not unique — every uncustomized idle tab is "-zsh — 80×24".
+    # A same-titled window at a DIFFERENT position/size on the current Space
+    # must not fake visibility for a target sitting on another Space
+    # (review finding: title-only matching produced false focused=true).
+    _macos_tab_env(monkeypatch)
+    monkeypatch.setattr(
+        terminal_focus,
+        "_run",
+        _fake_run_factory(
+            target_name="-zsh — 80×24",
+            target_bounds="0,69,1728,1117",
+            se_names=("-zsh — 80×24",),
+            se_geometries=("100,200,800,600",),
+        ),
+    )
+
+    result = terminal_focus.focus_terminal(_APPLE_TERM)
+    assert result["focused"] is False
+    assert "another desktop" in result["detail"]
+
+
+def test_terminal_app_space_probe_ignores_phantom_windows(monkeypatch):
+    # System Events lists phantom AXUnknown windows (empty title, menu-bar
+    # sized) for Terminal; they must never satisfy the visibility probe.
+    _macos_tab_env(monkeypatch)
+    monkeypatch.setattr(
+        terminal_focus,
+        "_run",
+        _fake_run_factory(
+            se_names=("", "some other session — 80×24"),
+            se_geometries=("0,0,1728,33", "100,200,800,600"),
+        ),
+    )
+
+    result = terminal_focus.focus_terminal(_APPLE_TERM)
+    assert result["focused"] is False
+    assert "another desktop" in result["detail"]
 
 
 def test_terminal_app_name_match_ignores_unstable_glyphs(monkeypatch):

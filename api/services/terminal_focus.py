@@ -323,22 +323,33 @@ _MAC_TAB_SCRIPTS: Dict[str, str] = {
 
 # Raise verification, run as a SEPARATE osascript process — reads from the
 # script that mutated the order are stale (measured both false negatives and
-# false positives live). Returns "<front id>\n<target window name>".
+# false positives live). Returns "<front id>\n<x1,y1,x2,y2>\n<target name>";
+# the name goes last so a pathological linefeed in a title can't shift the
+# machine-parsed fields.
 _TERMINAL_VERIFY_SCRIPT = (
     'tell application "Terminal"\n'
-    "    return (id of front window as text) & linefeed & (name of window id {window_id})\n"
+    "    set b to bounds of window id {window_id}\n"
+    "    return (id of front window as text) & linefeed & "
+    '(item 1 of b as text) & "," & (item 2 of b as text) & "," & '
+    '(item 3 of b as text) & "," & (item 4 of b as text) & linefeed & '
+    "(name of window id {window_id})\n"
     "end tell"
 )
 
 # System Events only enumerates windows on the CURRENT Space — exactly the
 # probe needed to tell "raised where the user can see it" from "topped the
-# z-order on another desktop". Requires Accessibility permission; failure is
-# treated as unknown and z-order is trusted.
+# z-order on another desktop". Emits "<x>,<y>,<w>,<h>|<name>" per window:
+# titles are not unique (every idle tab is "-zsh — 80×24"), so visibility
+# requires the geometry to match too. Requires Accessibility permission;
+# failure is treated as unknown and z-order is trusted.
 _SE_WINDOW_NAMES_SCRIPT = (
     'tell application "System Events" to tell process "Terminal"\n'
     '    set out to ""\n'
     "    repeat with w in windows\n"
-    "        set out to out & (name of w) & linefeed\n"
+    "        set p to position of w\n"
+    "        set s to size of w\n"
+    '        set out to out & (item 1 of p as text) & "," & (item 2 of p as text) & "," & '
+    '(item 1 of s as text) & "," & (item 2 of s as text) & "|" & (name of w) & linefeed\n'
     "    end repeat\n"
     "    return out\n"
     "end tell"
@@ -445,33 +456,67 @@ def _sanitize_title(title: str) -> str:
     return re.sub(r"\s+", " ", re.sub(r"[^ -~]", "", title)).strip()
 
 
-def _window_on_current_space(target_name: str) -> Optional[bool]:
-    """Whether a window with this title is on the user's current Space; None = unknown."""
+def _window_on_current_space(
+    target_name: str, target_bounds: Optional[Tuple[int, int, int, int]]
+) -> Optional[bool]:
+    """Whether THIS window (title + exact geometry) is on the current Space; None = unknown.
+
+    Titles alone are ambiguous — two idle tabs share "-zsh — 80×24" — so a
+    match also requires the System Events position/size to equal the bounds
+    Terminal reported for the exact window id (coordinate systems agree:
+    verified live, SE position = x1,y1 and size = x2-x1,y2-y1).
+    """
     target = _sanitize_title(target_name)
-    if not target:
+    if not target or target_bounds is None:
         return None
+    x1, y1, x2, y2 = target_bounds
+    target_geo = (x1, y1, x2 - x1, y2 - y1)
     try:
         res = _run(["osascript", "-e", _SE_WINDOW_NAMES_SCRIPT])
     except (subprocess.SubprocessError, OSError):
         return None
     if res.returncode != 0:
         return None  # likely no Accessibility permission
-    names = [_sanitize_title(line) for line in res.stdout.splitlines()]
-    return target in [n for n in names if n]
+    for line in res.stdout.splitlines():
+        geo_part, sep, name_part = line.partition("|")
+        if not sep or _sanitize_title(name_part) != target:
+            continue
+        try:
+            geo = tuple(int(v) for v in geo_part.split(","))
+        except ValueError:
+            continue
+        if geo == target_geo:
+            return True
+    return False
 
 
-def _terminal_front_and_name(window_id: str) -> Tuple[Optional[str], str]:
-    """Fresh-process read of Terminal's front window id and the target's title."""
+def _parse_bounds(csv: str) -> Optional[Tuple[int, int, int, int]]:
+    """Parse the verify script's "x1,y1,x2,y2" line; None when malformed."""
+    parts = csv.split(",")
+    if len(parts) != 4:
+        return None
+    try:
+        x1, y1, x2, y2 = (int(v) for v in parts)
+    except ValueError:
+        return None
+    return x1, y1, x2, y2
+
+
+def _terminal_verify_state(
+    window_id: str,
+) -> Tuple[Optional[str], Optional[Tuple[int, int, int, int]], str]:
+    """Fresh-process read of Terminal's front id plus the target's bounds and title."""
     try:
         res = _run(["osascript", "-e", _TERMINAL_VERIFY_SCRIPT.format(window_id=window_id)])
     except (subprocess.SubprocessError, OSError):
-        return None, ""
+        return None, None, ""
     if res.returncode != 0:
-        return None, ""
+        return None, None, ""
     lines = res.stdout.splitlines()
     front = lines[0].strip() if lines else None
-    name = lines[1] if len(lines) > 1 else ""
-    return front, name
+    bounds = _parse_bounds(lines[1]) if len(lines) > 1 else None
+    name = "\n".join(lines[2:]) if len(lines) > 2 else ""
+    return front, bounds, name
 
 
 def _focus_terminal_app_tab(tty: str) -> Optional[Dict[str, Any]]:
@@ -487,10 +532,10 @@ def _focus_terminal_app_tab(tty: str) -> Optional[Dict[str, Any]]:
         if res.returncode != 0 or not window_id:
             return None  # no tab owns this tty — let the caller fall back
         time.sleep(_RAISE_SETTLE_SECONDS)
-        front, name = _terminal_front_and_name(window_id)
+        front, bounds, name = _terminal_verify_state(window_id)
         if front != window_id:
             continue  # settle race — reorder didn't take yet; try again
-        if _window_on_current_space(name) is False:
+        if _window_on_current_space(name, bounds) is False:
             return {
                 "focused": False,
                 "method": "osascript-tab",
