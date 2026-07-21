@@ -720,9 +720,7 @@ def test_terminal_app_raise_retries_after_stale_front(monkeypatch):
 def test_terminal_app_raise_gives_up_honestly_after_retries(monkeypatch):
     _macos_tab_env(monkeypatch)
     calls = []
-    monkeypatch.setattr(
-        terminal_focus, "_run", _fake_run_factory(record=calls, front_ids=["999"])
-    )
+    monkeypatch.setattr(terminal_focus, "_run", _fake_run_factory(record=calls, front_ids=["999"]))
 
     result = terminal_focus.focus_terminal(_APPLE_TERM)
     assert result["focused"] is False

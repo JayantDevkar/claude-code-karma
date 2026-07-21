@@ -336,7 +336,7 @@ _TERMINAL_VERIFY_SCRIPT = (
 # treated as unknown and z-order is trusted.
 _SE_WINDOW_NAMES_SCRIPT = (
     'tell application "System Events" to tell process "Terminal"\n'
-    "    set out to \"\"\n"
+    '    set out to ""\n'
     "    repeat with w in windows\n"
     "        set out to out & (name of w) & linefeed\n"
     "    end repeat\n"
