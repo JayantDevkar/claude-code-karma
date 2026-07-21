@@ -6,16 +6,18 @@
 
 ## What You'll Get
 
-Claude Code Karma installs in **4 progressive tiers**. Start with the core dashboard, then add live monitoring, smart titles, and ticket-linking workflows as needed.
+Claude Code Karma installs in **4 progressive tiers**. Tier 1 alone is a read-only history viewer — it shows you what's already sitting in `~/.claude/projects/*.jsonl`. **Tier 2 is what makes it Karma:** live, real-time visibility into every session as it happens. That's the core feature and the reason this dashboard is worth having open instead of just reading JSONL files by hand. Tiers 3–4 are polish on top of that.
 
 | Tier | Components | Dashboard Features | Installation Time |
 |------|-----------|-------------------|-------------------|
 | **1: Core Dashboard** | API + Frontend | Browse projects, view sessions, analytics, **`/tickets` page** (works empty) | ~5 min |
-| **2: Live Monitoring** | + Live Tracker Hook | Real-time session indicators, recently ended | +2 min |
+| **2: Live Monitoring** ⭐ | + Live Tracker Hook | Real-time session indicators, recently ended, Open Terminal button | +2 min |
 | **3: Smart Titles** | + Title Generator Hook | Human-readable session names | +2 min |
 | **4: Auto-Link Tickets** | + `link-ticket-to-session` skill, optional branch hook | Slash command + natural-language linking, optional auto-link from git branch name | +2 min |
 
-**You can stop after Tier 1.** Tiers 2–4 are optional enhancements installed independently. Tier 4 only adds *workflows* for creating links; the ticket pages themselves (`/tickets`, project Tickets tab, session Tickets section) all work in Tier 1 — you can paste a URL on any session page without any hooks or skills installed.
+⭐ = Karma's core feature — install through Tier 2 by default.
+
+**Install through Tier 2 unless the user specifically asked only for historical browsing.** Tier 1 by itself doesn't do anything Tier 2 doesn't also do; Tier 2 just adds the live tracking on top. Tiers 3 and 4 are genuinely optional: Tier 3 auto-titles sessions, and Tier 4 only adds *workflows* for creating ticket links — the ticket pages themselves (`/tickets`, project Tickets tab, session Tickets section) all work in Tier 1, you can paste a URL on any session page without any hooks or skills installed.
 
 ---
 
@@ -217,11 +219,11 @@ Open http://localhost:5173 in your browser. You should see the Claude Code Karma
 
 > **Agent notes:** If any core feature fails, check API health (`curl http://localhost:8000/health`) and browser console for errors. Do NOT proceed to Tier 2 until core works.
 
-**You can stop here.** The full historical dashboard works. Proceed to Tier 2 only if you want real-time monitoring.
+**This is the read-only historical view.** It works, but it's not what Karma is for. Continue to Tier 2 below — it's the core feature: live session tracking as sessions actually run, not just a record of what already happened.
 
 ---
 
-## Tier 2: Live Monitoring (Recommended)
+## Tier 2: Live Monitoring (Core Feature)
 
 Adds real-time session tracking — see which Claude Code sessions are active, waiting, idle, or recently ended.
 

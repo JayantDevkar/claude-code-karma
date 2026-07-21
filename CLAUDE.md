@@ -25,6 +25,8 @@ npm install && npm run dev
 
 Open http://localhost:5173 to view the dashboard.
 
+**This is Tier 1 only — a read-only historical viewer.** Karma's core feature is live session tracking (Tier 2 in [SETUP.md](./SETUP.md#tier-2-live-monitoring-core-feature)); install through Tier 2 by default unless the user explicitly wants only historical browsing.
+
 ## Repository Structure
 
 This is a monorepo with all components in a single repository:
