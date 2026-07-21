@@ -16,6 +16,15 @@ which stores the claude process's tty (and iTerm session id / app bundle id)
 *while the process is alive*. Focus prefers those stored identifiers over a
 click-time pid lookup, so tab matching survives pid death and recycling.
 
+Terminal.app raising is racy: ``set index to 1`` genuinely fails ~40% of the
+time right after other window reordering (the window server needs ~0.3–0.5s
+to settle), and window-order reads *inside the mutating script* return stale
+values in both directions. The raise is therefore retried with settle
+delays and verified from a separate ``osascript`` process. ``activate`` also
+never switches macOS Spaces when the app already has a window on the current
+Space — a cross-Space window can top the z-order while staying invisible, so
+Space visibility is probed via System Events and reported honestly.
+
 Everything is best-effort and honest: if a window genuinely could not be
 raised, the result says ``focused=False`` with a human-readable reason
 instead of raising — or worse, raising the wrong window.
@@ -24,6 +33,7 @@ instead of raising — or worse, raising the wrong window.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -263,12 +273,12 @@ _TAB_SCRIPT_APPS: Dict[str, str] = {
 }
 
 # Per-app AppleScript to select the exact tab owning a tty. `{tty}` is
-# substituted with e.g. /dev/ttys006. Terminal.app ignores `set frontmost`,
-# but `set index to 1` reorders reliably (windows parked on other Spaces
-# silently ignore `set miniaturized`, which is why index comes first and the
-# miniaturize cycle is only a fallback). The outcome is VERIFIED: the script
-# reports "raised" only when the matched window really is frontmost after
-# the attempts; anything else reports "selected" so the API stays honest.
+# substituted with e.g. /dev/ttys006. Terminal.app's script only selects and
+# raises (`set index to 1` + activate) and returns the matched window id —
+# NO in-script verification (order reads are stale within the mutating
+# script) and NO miniaturize fallback (programmatic un-miniaturize restores
+# the window to the BACK of the z-order, burying what was just raised).
+# Verification happens in Python via a separate osascript process.
 _MAC_TAB_SCRIPTS: Dict[str, str] = {
     "Apple_Terminal": (
         'tell application "Terminal"\n'
@@ -288,19 +298,7 @@ _MAC_TAB_SCRIPTS: Dict[str, str] = {
         "        set index of window id matchedId to 1\n"
         "    end try\n"
         "    activate\n"
-        "    if id of front window is not matchedId then\n"
-        "        try\n"
-        "            set miniaturized of window id matchedId to true\n"
-        "            delay 0.4\n"
-        "            set miniaturized of window id matchedId to false\n"
-        "            delay 0.2\n"
-        "        end try\n"
-        "    end if\n"
-        "    if id of front window is matchedId then\n"
-        '        return (matchedId as text) & " raised"\n'
-        "    else\n"
-        '        return (matchedId as text) & " selected"\n'
-        "    end if\n"
+        "    return matchedId as text\n"
         "end tell"
     ),
     "iTerm.app": (
@@ -322,6 +320,45 @@ _MAC_TAB_SCRIPTS: Dict[str, str] = {
         "end tell"
     ),
 }
+
+# Raise verification, run as a SEPARATE osascript process — reads from the
+# script that mutated the order are stale (measured both false negatives and
+# false positives live). Returns "<front id>\n<x1,y1,x2,y2>\n<target name>";
+# the name goes last so a pathological linefeed in a title can't shift the
+# machine-parsed fields.
+_TERMINAL_VERIFY_SCRIPT = (
+    'tell application "Terminal"\n'
+    "    set b to bounds of window id {window_id}\n"
+    "    return (id of front window as text) & linefeed & "
+    '(item 1 of b as text) & "," & (item 2 of b as text) & "," & '
+    '(item 3 of b as text) & "," & (item 4 of b as text) & linefeed & '
+    "(name of window id {window_id})\n"
+    "end tell"
+)
+
+# System Events only enumerates windows on the CURRENT Space — exactly the
+# probe needed to tell "raised where the user can see it" from "topped the
+# z-order on another desktop". Emits "<x>,<y>,<w>,<h>|<name>" per window:
+# titles are not unique (every idle tab is "-zsh — 80×24"), so visibility
+# requires the geometry to match too. Requires Accessibility permission;
+# failure is treated as unknown and z-order is trusted.
+_SE_WINDOW_NAMES_SCRIPT = (
+    'tell application "System Events" to tell process "Terminal"\n'
+    '    set out to ""\n'
+    "    repeat with w in windows\n"
+    "        set p to position of w\n"
+    "        set s to size of w\n"
+    '        set out to out & (item 1 of p as text) & "," & (item 2 of p as text) & "," & '
+    '(item 1 of s as text) & "," & (item 2 of s as text) & "|" & (name of w) & linefeed\n'
+    "    end repeat\n"
+    "    return out\n"
+    "end tell"
+)
+
+# Post-churn, the first raise reliably fails; ~0.45s of settle almost always
+# lands it (measured 9/10, nearly all on the third attempt).
+_RAISE_ATTEMPTS = 3
+_RAISE_SETTLE_SECONDS = 0.15
 
 # Same shape, but matches an iTerm2 session by its unique id (the UUID from
 # ITERM_SESSION_ID). Survives pid death and recycling entirely.
@@ -414,6 +451,116 @@ def _parse_tab_result(
     }
 
 
+def _sanitize_title(title: str) -> str:
+    """Reduce a window title to stable ASCII (spinner glyphs animate between reads)."""
+    return re.sub(r"\s+", " ", re.sub(r"[^ -~]", "", title)).strip()
+
+
+def _window_on_current_space(
+    target_name: str, target_bounds: Optional[Tuple[int, int, int, int]]
+) -> Optional[bool]:
+    """Whether THIS window (title + exact geometry) is on the current Space; None = unknown.
+
+    Titles alone are ambiguous — two idle tabs share "-zsh — 80×24" — so a
+    match also requires the System Events position/size to equal the bounds
+    Terminal reported for the exact window id (coordinate systems agree:
+    verified live, SE position = x1,y1 and size = x2-x1,y2-y1).
+    """
+    target = _sanitize_title(target_name)
+    if not target or target_bounds is None:
+        return None
+    x1, y1, x2, y2 = target_bounds
+    target_geo = (x1, y1, x2 - x1, y2 - y1)
+    try:
+        res = _run(["osascript", "-e", _SE_WINDOW_NAMES_SCRIPT])
+    except (subprocess.SubprocessError, OSError):
+        return None
+    if res.returncode != 0:
+        return None  # likely no Accessibility permission
+    for line in res.stdout.splitlines():
+        geo_part, sep, name_part = line.partition("|")
+        if not sep or _sanitize_title(name_part) != target:
+            continue
+        try:
+            geo = tuple(int(v) for v in geo_part.split(","))
+        except ValueError:
+            continue
+        if geo == target_geo:
+            return True
+    return False
+
+
+def _parse_bounds(csv: str) -> Optional[Tuple[int, int, int, int]]:
+    """Parse the verify script's "x1,y1,x2,y2" line; None when malformed."""
+    parts = csv.split(",")
+    if len(parts) != 4:
+        return None
+    try:
+        x1, y1, x2, y2 = (int(v) for v in parts)
+    except ValueError:
+        return None
+    return x1, y1, x2, y2
+
+
+def _terminal_verify_state(
+    window_id: str,
+) -> Tuple[Optional[str], Optional[Tuple[int, int, int, int]], str]:
+    """Fresh-process read of Terminal's front id plus the target's bounds and title."""
+    try:
+        res = _run(["osascript", "-e", _TERMINAL_VERIFY_SCRIPT.format(window_id=window_id)])
+    except (subprocess.SubprocessError, OSError):
+        return None, None, ""
+    if res.returncode != 0:
+        return None, None, ""
+    lines = res.stdout.splitlines()
+    front = lines[0].strip() if lines else None
+    bounds = _parse_bounds(lines[1]) if len(lines) > 1 else None
+    name = "\n".join(lines[2:]) if len(lines) > 2 else ""
+    return front, bounds, name
+
+
+def _focus_terminal_app_tab(tty: str) -> Optional[Dict[str, Any]]:
+    """Raise the Terminal.app window owning ``tty``: retry, verify, report honestly."""
+    script = _MAC_TAB_SCRIPTS["Apple_Terminal"]
+    window_id = ""
+    for _ in range(_RAISE_ATTEMPTS):
+        try:
+            res = _run(["osascript", "-e", script.format(tty=_applescript_str(tty))])
+        except (subprocess.SubprocessError, OSError):
+            return None
+        window_id = res.stdout.strip()
+        if res.returncode != 0 or not window_id:
+            return None  # no tab owns this tty — let the caller fall back
+        time.sleep(_RAISE_SETTLE_SECONDS)
+        front, bounds, name = _terminal_verify_state(window_id)
+        if front != window_id:
+            continue  # settle race — reorder didn't take yet; try again
+        if _window_on_current_space(name, bounds) is False:
+            return {
+                "focused": False,
+                "method": "osascript-tab",
+                "detail": (
+                    f"selected the Apple_Terminal tab on {tty} (window id {window_id}), "
+                    "but the window is on another desktop or full screen — macOS won't "
+                    "switch Spaces automatically; find it via Mission Control"
+                ),
+            }
+        return {
+            "focused": True,
+            "method": "osascript-tab",
+            "detail": f"selected Apple_Terminal tab on {tty} (window id {window_id})",
+        }
+    return {
+        "focused": False,
+        "method": "osascript-tab",
+        "detail": (
+            f"selected the Apple_Terminal tab on {tty} (window id {window_id}), "
+            f"but its window could not be raised after {_RAISE_ATTEMPTS} attempts — "
+            "try clicking again"
+        ),
+    }
+
+
 def _focus_macos_tab(term_program: str, tty: str) -> Optional[Dict[str, Any]]:
     """Select the exact window/tab owning ``tty``; None means fall back."""
     script = _MAC_TAB_SCRIPTS.get(term_program)
@@ -422,6 +569,8 @@ def _focus_macos_tab(term_program: str, tty: str) -> Optional[Dict[str, Any]]:
     app = _TAB_SCRIPT_APPS[term_program]
     if not _app_is_running(f'application "{_applescript_str(app)}"'):
         return None
+    if term_program == "Apple_Terminal":
+        return _focus_terminal_app_tab(tty)
     try:
         res = _run(["osascript", "-e", script.format(tty=_applescript_str(tty))])
         return _parse_tab_result(res, term_program, tty)
