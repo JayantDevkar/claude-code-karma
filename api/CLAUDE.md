@@ -176,7 +176,7 @@ pytest -k "test_usage"             # Tests matching pattern
 
 ## Dependencies
 
-- **Python 3.9+**
+- **Python 3.10+**
 - **FastAPI** - Web framework
 - **Pydantic 2.x** - Data validation
 - **aiofiles** - Async file I/O

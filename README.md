@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://www.apache.org/licenses/LICENSE-2.0"><img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg" alt="License: Apache-2.0" /></a>
-  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.9+-blue.svg" alt="Python 3.9+" /></a>
+  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.10+-blue.svg" alt="Python 3.10+" /></a>
   <a href="https://nodejs.org/"><img src="https://img.shields.io/badge/Node-18+-green.svg" alt="Node 18+" /></a>
   <a href="https://kit.svelte.dev/"><img src="https://img.shields.io/badge/SvelteKit-2-FF3E00.svg" alt="SvelteKit 2" /></a>
 </p>
@@ -306,7 +306,7 @@ Live sessions also get an **"open terminal"** button (on the session page, the h
 ## Technology Stack
 
 ### Backend
-- **Python 3.9+** with **FastAPI** and **Pydantic 2.x**
+- **Python 3.10+** with **FastAPI** and **Pydantic 2.x**
 - **SQLite** for metadata indexing
 - **pytest** for testing, **ruff** for linting
 

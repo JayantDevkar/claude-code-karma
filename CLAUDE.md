@@ -210,7 +210,7 @@ hook = parse_hook_event(json_data)
 ## Tech Stack
 
 ### Backend
-- **Python 3.9+**
+- **Python 3.10+** (hook scripts alone run on 3.9+)
 - **FastAPI** - Web framework
 - **Pydantic 2.x** - Data validation
 - **aiofiles** - Async file I/O

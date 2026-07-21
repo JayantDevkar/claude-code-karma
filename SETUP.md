@@ -27,7 +27,7 @@ Verify you have the required tools:
 
 ```bash
 # Required
-python3 --version    # 3.9+
+python3 --version    # 3.10+ (API requires 3.10; hook scripts alone run on 3.9+)
 node --version       # 18+
 npm --version        # 7+
 git --version        # any version
@@ -1035,7 +1035,7 @@ Run through this after setup to confirm everything works.
 **Symptom:** `uvicorn main:app` fails or hangs
 
 ```bash
-# Check Python version (must be 3.9+)
+# Check Python version (API requires 3.10+)
 python3 --version
 
 # Verify requirements installed
