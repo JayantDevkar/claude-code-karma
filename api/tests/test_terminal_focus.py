@@ -41,8 +41,16 @@ def _fake_run_factory(
     tab_stdout="13387 raised",
     record=None,
     app_running=True,
+    target_name="claude-karma — claude — 142×43",
+    se_names=None,
+    se_rc=0,
+    front_ids=None,
 ):
-    """_run stub routing ps / is-running probes / tab scripts / activation."""
+    """_run stub routing ps / is-running probes / raise / verify / SE scripts."""
+    window_id = tab_stdout.split()[0] if tab_stdout.split() else ""
+    names = se_names if se_names is not None else (target_name,)
+    fronts = list(front_ids) if front_ids is not None else [window_id]
+    state = {"verify": 0}
 
     def fake_run(cmd):
         if record is not None:
@@ -55,8 +63,16 @@ def _fake_run_factory(
             script = cmd[-1]
             if script.endswith("is running"):
                 return _FakeCompleted(stdout="true\n" if app_running else "false\n")
-            if "tty of" in script or "id of s is" in script:
+            if "System Events" in script:
+                return _FakeCompleted(returncode=se_rc, stdout="\n".join(names) + "\n")
+            if "sessions of t" in script:  # iTerm2 one-shot scripts
                 return _FakeCompleted(stdout=f"{tab_stdout}\n")
+            if "tty of t is" in script:  # Terminal.app raise script
+                return _FakeCompleted(stdout=f"{window_id}\n")
+            if "front window" in script:  # Terminal.app verify script
+                i = min(state["verify"], len(fronts) - 1)
+                state["verify"] += 1
+                return _FakeCompleted(stdout=f"{fronts[i]}\n{target_name}\n")
         return _FakeCompleted(returncode=0)
 
     return fake_run
@@ -190,14 +206,22 @@ def _tmux_run_factory(
     switch_ok=True,
     gui_tab_stdout="42 raised",
 ):
+    gui_window_id = gui_tab_stdout.split()[0] if gui_tab_stdout.split() else ""
+
     def fake_run(cmd):
         record.append(cmd)
         if cmd[0] == "osascript":
             script = cmd[-1]
             if script.endswith("is running"):
                 return _FakeCompleted(stdout="true\n")
-            if "tty of" in script:
+            if "System Events" in script:
+                return _FakeCompleted(stdout="tmux window\n")
+            if "sessions of t" in script:
                 return _FakeCompleted(stdout=f"{gui_tab_stdout}\n")
+            if "tty of t is" in script:
+                return _FakeCompleted(stdout=f"{gui_window_id}\n")
+            if "front window" in script:
+                return _FakeCompleted(stdout=f"{gui_window_id}\ntmux window\n")
             return _FakeCompleted()
         if cmd[0] != "tmux":
             return _FakeCompleted()
@@ -637,38 +661,123 @@ def test_focus_macos_no_pid_keeps_activate_behavior(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_terminal_app_script_raises_index_first_with_verified_fallback():
-    # `set index to 1` is the raise that works (windows on other Spaces
-    # ignore `set miniaturized`); the cycle stays as fallback, and the
-    # script must VERIFY the outcome instead of assuming it.
-    script = terminal_focus._MAC_TAB_SCRIPTS["Apple_Terminal"]
-    assert "set index of window id matchedId to 1" in script
-    assert script.index("set index") < script.index("activate")
-    assert "set miniaturized" in script
-    assert "if id of front window is not matchedId" in script
-    assert '" raised"' in script
-    assert '" selected"' in script
-
-
-def test_focus_macos_fullscreen_selected_not_raised_is_honest(monkeypatch):
-    # Fullscreen windows can't be miniaturized: the tab gets selected but the
-    # window stays buried. The result must say focused=false, and must NOT
-    # fall through to app activation (which would raise a different window).
+def _macos_tab_env(monkeypatch):
     monkeypatch.setattr(terminal_focus.sys, "platform", "darwin")
     monkeypatch.setattr(terminal_focus.shutil, "which", lambda name: "/usr/bin/osascript")
     monkeypatch.setattr(terminal_focus, "pid_is_live_claude", lambda pid: True)
+    monkeypatch.setattr(terminal_focus.time, "sleep", lambda s: None)
+
+
+_APPLE_TERM = {"term_program": "Apple_Terminal", "pid": 91314, "tty": "/dev/ttys006"}
+
+
+def test_terminal_app_raise_script_has_no_miniaturize_or_inline_verify():
+    # Terminal.app's window-order reads are stale within the mutating script
+    # (both false negatives and false positives were measured live), and the
+    # miniaturize cycle restores windows to the BACK of the z-order — burying
+    # the window it just raised. The raise script must only select + raise.
+    script = terminal_focus._MAC_TAB_SCRIPTS["Apple_Terminal"]
+    assert "set index of window id matchedId to 1" in script
+    assert script.index("set index") < script.index("activate")
+    assert "miniaturized" not in script
+    assert "front window" not in script
+
+
+def test_terminal_app_verify_runs_in_separate_osascript(monkeypatch):
+    _macos_tab_env(monkeypatch)
+    calls = []
+    monkeypatch.setattr(terminal_focus, "_run", _fake_run_factory(record=calls))
+
+    result = terminal_focus.focus_terminal(_APPLE_TERM)
+    assert result["focused"] is True
+    assert result["method"] == "osascript-tab"
+    assert "/dev/ttys006" in result["detail"]
+    assert "13387" in result["detail"]
+    scripts = [c[-1] for c in calls if c[0] == "osascript"]
+    raises = [s for s in scripts if "set index" in s]
+    verifies = [s for s in scripts if "front window" in s]
+    assert raises and verifies
+    # Fresh-process verification: no script both mutates order and reads it.
+    assert all("front window" not in s for s in raises)
+    assert all("set index" not in s for s in verifies)
+
+
+def test_terminal_app_raise_retries_after_stale_front(monkeypatch):
+    _macos_tab_env(monkeypatch)
     calls = []
     monkeypatch.setattr(
-        terminal_focus, "_run", _fake_run_factory(tab_stdout="13387 selected", record=calls)
+        terminal_focus,
+        "_run",
+        _fake_run_factory(record=calls, front_ids=["999", "999", "13387"]),
     )
 
-    result = terminal_focus.focus_terminal(
-        {"term_program": "Apple_Terminal", "tty": "/dev/ttys006", "pid": 91314}
+    result = terminal_focus.focus_terminal(_APPLE_TERM)
+    assert result["focused"] is True
+    raises = [c[-1] for c in calls if c[0] == "osascript" and "set index" in c[-1]]
+    assert len(raises) == 3
+
+
+def test_terminal_app_raise_gives_up_honestly_after_retries(monkeypatch):
+    _macos_tab_env(monkeypatch)
+    calls = []
+    monkeypatch.setattr(
+        terminal_focus, "_run", _fake_run_factory(record=calls, front_ids=["999"])
     )
+
+    result = terminal_focus.focus_terminal(_APPLE_TERM)
     assert result["focused"] is False
     assert result["method"] == "osascript-tab"
-    assert "full screen" in result["detail"]
+    assert "could not be raised" in result["detail"]
+    raises = [c[-1] for c in calls if c[0] == "osascript" and "set index" in c[-1]]
+    assert len(raises) == 3
+    # Honest failure — never a blind app activation of some other window.
     assert not any("to activate" in c[-1] for c in calls if c[0] == "osascript")
+
+
+def test_terminal_app_cross_space_window_reported_honestly(monkeypatch):
+    # z-order top but invisible: System Events (current Space only) can't see
+    # the window — activate won't switch Spaces, so the user sees nothing.
+    _macos_tab_env(monkeypatch)
+    calls = []
+    monkeypatch.setattr(
+        terminal_focus,
+        "_run",
+        _fake_run_factory(record=calls, se_names=("some other window — zsh — 80×24",)),
+    )
+
+    result = terminal_focus.focus_terminal(_APPLE_TERM)
+    assert result["focused"] is False
+    assert result["method"] == "osascript-tab"
+    assert "another desktop" in result["detail"]
+    # Retrying can't move a window across Spaces — one attempt only.
+    raises = [c[-1] for c in calls if c[0] == "osascript" and "set index" in c[-1]]
+    assert len(raises) == 1
+
+
+def test_terminal_app_se_unavailable_trusts_zorder(monkeypatch):
+    # No Accessibility permission → Space visibility unknown → trust z-order.
+    _macos_tab_env(monkeypatch)
+    monkeypatch.setattr(terminal_focus, "_run", _fake_run_factory(se_rc=1))
+
+    result = terminal_focus.focus_terminal(_APPLE_TERM)
+    assert result["focused"] is True
+
+
+def test_terminal_app_name_match_ignores_unstable_glyphs(monkeypatch):
+    # Titles embed an animated spinner + unicode dashes; the Space-visibility
+    # name match must survive the glyph ticking between the two reads.
+    _macos_tab_env(monkeypatch)
+    monkeypatch.setattr(
+        terminal_focus,
+        "_run",
+        _fake_run_factory(
+            target_name="claude-karma — ⠐ Debug session — 142×43",
+            se_names=("claude-karma — ⠋ Debug session — 142×43",),
+        ),
+    )
+
+    result = terminal_focus.focus_terminal(_APPLE_TERM)
+    assert result["focused"] is True
 
 
 def test_focus_macos_dead_pid_fails_instead_of_wrong_window(monkeypatch):
