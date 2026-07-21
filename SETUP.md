@@ -6,16 +6,18 @@
 
 ## What You'll Get
 
-Claude Code Karma installs in **4 progressive tiers**. Start with the core dashboard, then add live monitoring, smart titles, and ticket-linking workflows as needed.
+Claude Code Karma installs in **4 progressive tiers**. Tier 1 alone is a read-only history viewer — it shows you what's already sitting in `~/.claude/projects/*.jsonl`. **Tier 2 is what makes it Karma:** live, real-time visibility into every session as it happens. That's the core feature and the reason this dashboard is worth having open instead of just reading JSONL files by hand. Tiers 3–4 are polish on top of that.
 
 | Tier | Components | Dashboard Features | Installation Time |
 |------|-----------|-------------------|-------------------|
 | **1: Core Dashboard** | API + Frontend | Browse projects, view sessions, analytics, **`/tickets` page** (works empty) | ~5 min |
-| **2: Live Monitoring** | + Live Tracker Hook | Real-time session indicators, recently ended | +2 min |
+| **2: Live Monitoring** ⭐ | + Live Tracker Hook | Real-time session indicators, recently ended, Open Terminal button | +2 min |
 | **3: Smart Titles** | + Title Generator Hook | Human-readable session names | +2 min |
 | **4: Auto-Link Tickets** | + `link-ticket-to-session` skill, optional branch hook | Slash command + natural-language linking, optional auto-link from git branch name | +2 min |
 
-**You can stop after Tier 1.** Tiers 2–4 are optional enhancements installed independently. Tier 4 only adds *workflows* for creating links; the ticket pages themselves (`/tickets`, project Tickets tab, session Tickets section) all work in Tier 1 — you can paste a URL on any session page without any hooks or skills installed.
+⭐ = Karma's core feature — install through Tier 2 by default.
+
+**Install through Tier 2 unless the user specifically asked only for historical browsing.** Tier 1 by itself doesn't do anything Tier 2 doesn't also do; Tier 2 just adds the live tracking on top. Tiers 3 and 4 are genuinely optional: Tier 3 auto-titles sessions, and Tier 4 only adds *workflows* for creating ticket links — the ticket pages themselves (`/tickets`, project Tickets tab, session Tickets section) all work in Tier 1, you can paste a URL on any session page without any hooks or skills installed.
 
 ---
 
@@ -25,7 +27,7 @@ Verify you have the required tools:
 
 ```bash
 # Required
-python3 --version    # 3.9+
+python3 --version    # 3.10+ (API requires 3.10; hook scripts alone run on 3.9+)
 node --version       # 18+
 npm --version        # 7+
 git --version        # any version
@@ -39,7 +41,8 @@ claude --version     # Claude CLI (any version)
 
 | Tool | Minimum | Required? | Why |
 |------|---------|-----------|-----|
-| Python | 3.9+ | Yes | API backend runs on Python |
+| Python (hooks) | 3.9+ | Yes | Hook scripts (Tiers 2-4) run fine on 3.9+ |
+| Python (API) | 3.10+ | Yes | API backend uses newer type-hint syntax; crashes on import under 3.9 |
 | Node.js | 18+ | Yes | Frontend build system |
 | npm | 7+ | Yes | Frontend package manager |
 | Git | Any | Yes | Clone repository |
@@ -217,11 +220,11 @@ Open http://localhost:5173 in your browser. You should see the Claude Code Karma
 
 > **Agent notes:** If any core feature fails, check API health (`curl http://localhost:8000/health`) and browser console for errors. Do NOT proceed to Tier 2 until core works.
 
-**You can stop here.** The full historical dashboard works. Proceed to Tier 2 only if you want real-time monitoring.
+**This is the read-only historical view.** It works, but it's not what Karma is for. Continue to Tier 2 below — it's the core feature: live session tracking as sessions actually run, not just a record of what already happened.
 
 ---
 
-## Tier 2: Live Monitoring (Recommended)
+## Tier 2: Live Monitoring (Core Feature)
 
 Adds real-time session tracking — see which Claude Code sessions are active, waiting, idle, or recently ended.
 
@@ -254,7 +257,7 @@ chmod +x ~/.claude/hooks/live_session_tracker.py
 ls -la ~/.claude/hooks/live_session_tracker.py
 ```
 
-> **Agent notes:** Confirm symlink or copy succeeded. Script must be executable. Test with: `python3 ~/.claude/hooks/live_session_tracker.py < /dev/null` (should exit cleanly, may print help).
+> **Agent notes:** Confirm symlink or copy succeeded. Script must be executable. Test with: `python3 ~/.claude/hooks/live_session_tracker.py < /dev/null` — a silent exit 0 is success, not a failure; the script prints nothing on a clean run.
 
 ---
 
@@ -263,7 +266,7 @@ ls -la ~/.claude/hooks/live_session_tracker.py
 **What:** Register the tracker to listen for Claude Code events.
 **Why:** Tells Claude Code to call the tracker when sessions start, change state, or end.
 
-The tracker needs **8 of Claude Code's 13 hook events** registered in `~/.claude/settings.json`:
+The tracker needs **8 of Claude Code's 24 hook events** registered in `~/.claude/settings.json`:
 
 | Hook Event | Tracks |
 |-----------|--------|
@@ -397,7 +400,17 @@ ls ~/.claude_karma/live-sessions/
 **What:** Confirm the tracker is working in real-time.
 **Why:** Live indicators won't show up unless the tracker is being called by Claude Code.
 
-**Test:**
+**Headless/agent verification (no live Claude Code session required) — do this first:** this is the only method that works in a sandbox, CI, or any environment without an interactive Claude Code session.
+```bash
+# Fire a synthetic SessionStart event and confirm it flows through the whole pipeline
+echo '{"hook_event_name":"SessionStart","session_id":"verify-1","cwd":"'"$PWD"'","transcript_path":"/tmp/verify.jsonl"}' \
+  | python3 ~/.claude/hooks/live_session_tracker.py
+ls ~/.claude_karma/live-sessions/
+curl -s http://localhost:8000/live-sessions | python3 -m json.tool
+```
+A working pipeline shows the state file created and the session appearing in the API response.
+
+**Interactive verification (real usage on your actual machine):**
 1. Start a new Claude Code session (or resume an existing one)
 2. Check for state file: `ls ~/.claude_karma/live-sessions/`
 3. Refresh the dashboard at http://localhost:5173
@@ -416,7 +429,7 @@ watch -n1 'ls -la ~/.claude_karma/live-sessions/'
 curl http://localhost:8000/live-sessions 2>/dev/null | python3 -m json.tool
 ```
 
-> **Agent notes:** If no live sessions appear, check: 1) hook is in settings.json, 2) Claude Code is actually running, 3) state files in ~/.claude_karma/live-sessions/ are being created/updated.
+> **Agent notes:** In a headless/sandboxed/CI environment, use the synthetic-event test above — there's no live Claude Code session to wait for. On a real machine with no live sessions appearing, check: 1) hook is in settings.json, 2) Claude Code is actually running, 3) state files in ~/.claude_karma/live-sessions/ are being created/updated.
 
 **Note:** SubagentStart and SubagentStop events require Claude Code 2.1.19+. On older versions, subagent tracking won't work, but everything else will.
 
@@ -655,7 +668,6 @@ chmod +x hooks/ticket_branch_detector.py
   "hooks": {
     "SessionStart": [
       {
-        "matcher": ".*",
         "hooks": [
           { "type": "command", "command": "python3 ~/.claude/hooks/ticket_branch_detector.py" }
         ]
@@ -1023,7 +1035,7 @@ Run through this after setup to confirm everything works.
 **Symptom:** `uvicorn main:app` fails or hangs
 
 ```bash
-# Check Python version (must be 3.9+)
+# Check Python version (API requires 3.10+)
 python3 --version
 
 # Verify requirements installed

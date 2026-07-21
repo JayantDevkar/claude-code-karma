@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://www.apache.org/licenses/LICENSE-2.0"><img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg" alt="License: Apache-2.0" /></a>
-  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.9+-blue.svg" alt="Python 3.9+" /></a>
+  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.10+-blue.svg" alt="Python 3.10+" /></a>
   <a href="https://nodejs.org/"><img src="https://img.shields.io/badge/Node-18+-green.svg" alt="Node 18+" /></a>
   <a href="https://kit.svelte.dev/"><img src="https://img.shields.io/badge/SvelteKit-2-FF3E00.svg" alt="SvelteKit 2" /></a>
 </p>
@@ -258,7 +258,7 @@ npm install && npm run dev
 
 Open **http://localhost:5173** to view the dashboard.
 
-For detailed setup including live session tracking, see [SETUP.md](./SETUP.md).
+**This only gets you the historical dashboard.** Karma's core feature — live session tracking as sessions actually run — needs one more step, [Tier 2 in SETUP.md](./SETUP.md#tier-2-live-monitoring-core-feature). Install through Tier 2 by default; the rest of SETUP.md's tiers are optional polish on top.
 
 ## How It Works
 
@@ -291,7 +291,7 @@ claude-code-karma/
 
 ## Live Session Tracking
 
-Enable real-time session monitoring by installing Claude Code hooks. See [SETUP.md](./SETUP.md#live-sessions-tracking-optional) for setup instructions.
+This is Karma's core feature — without it, Karma is just a historical viewer. Enable real-time session monitoring by installing Claude Code hooks. See [Tier 2 in SETUP.md](./SETUP.md#tier-2-live-monitoring-core-feature) for setup instructions.
 
 Live sessions also get an **"open terminal"** button (on the session page, the home strip, and `/sessions`) that raises the terminal window the session is running in — Karma runs locally, so the API can ask the OS window manager directly. macOS Terminal.app and iTerm2 get the exact window/tab, tmux gets the exact pane, other macOS terminals are raised app-level, and Linux needs X11 with `xdotool` or `wmctrl`. Design details in [docs/feature/open-terminal/spec.md](./docs/feature/open-terminal/spec.md).
 
@@ -306,7 +306,7 @@ Live sessions also get an **"open terminal"** button (on the session page, the h
 ## Technology Stack
 
 ### Backend
-- **Python 3.9+** with **FastAPI** and **Pydantic 2.x**
+- **Python 3.10+** with **FastAPI** and **Pydantic 2.x**
 - **SQLite** for metadata indexing
 - **pytest** for testing, **ruff** for linting
 

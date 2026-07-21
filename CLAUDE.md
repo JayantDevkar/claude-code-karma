@@ -25,6 +25,8 @@ npm install && npm run dev
 
 Open http://localhost:5173 to view the dashboard.
 
+**This is Tier 1 only — a read-only historical viewer.** Karma's core feature is live session tracking (Tier 2 in [SETUP.md](./SETUP.md#tier-2-live-monitoring-core-feature)); install through Tier 2 by default unless the user explicitly wants only historical browsing.
+
 ## Repository Structure
 
 This is a monorepo with all components in a single repository:
@@ -187,7 +189,7 @@ Project (entry point)
 
 ## Captain Hook
 
-Type-safe Pydantic models for Claude Code's 10 hook types:
+Type-safe Pydantic models for Claude Code's 24 hook types (see `captain-hook/CLAUDE.md` for the full list). Karma's own hooks only use 8 of them:
 
 | Hook | Fires | Can Block? |
 |------|-------|------------|
@@ -208,7 +210,7 @@ hook = parse_hook_event(json_data)
 ## Tech Stack
 
 ### Backend
-- **Python 3.9+**
+- **Python 3.10+** (hook scripts alone run on 3.9+)
 - **FastAPI** - Web framework
 - **Pydantic 2.x** - Data validation
 - **aiofiles** - Async file I/O

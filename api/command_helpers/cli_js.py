@@ -5,6 +5,8 @@ Locates Claude Code's cli.js binary, extracts command names/descriptions,
 and resolves full prompt templates for bundled skills.
 """
 
+from __future__ import annotations
+
 import logging
 import re
 import shutil
