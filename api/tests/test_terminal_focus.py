@@ -825,6 +825,100 @@ def test_terminal_app_name_match_ignores_unstable_glyphs(monkeypatch):
     assert result["focused"] is True
 
 
+def test_terminal_app_sleeps_between_raise_and_verify(monkeypatch):
+    # The settle delay IS the churn fix — without it the first verify reads
+    # mid-reorder state (measured: raises land on attempt 3, ~0.45s in).
+    # Deleting the sleep must not pass silently.
+    _macos_tab_env(monkeypatch)
+    sleeps = []
+    monkeypatch.setattr(terminal_focus.time, "sleep", sleeps.append)
+    monkeypatch.setattr(
+        terminal_focus,
+        "_run",
+        _fake_run_factory(front_ids=["999", "999", "13387"]),
+    )
+
+    result = terminal_focus.focus_terminal(_APPLE_TERM)
+    assert result["focused"] is True
+    # One settle before each of the three verifies, wired to the constant.
+    assert sleeps == [terminal_focus._RAISE_SETTLE_SECONDS] * 3
+
+
+def test_terminal_app_truncated_verify_output_trusts_zorder(monkeypatch):
+    # Verify output missing the bounds/name lines → visibility unknown →
+    # trust the z-order match rather than inventing a cross-Space failure.
+    _macos_tab_env(monkeypatch)
+
+    def fake_run(cmd):
+        script = cmd[-1]
+        if script.endswith("is running"):
+            return _FakeCompleted(stdout="true\n")
+        if "tty of t is" in script:
+            return _FakeCompleted(stdout="13387\n")
+        if "front window" in script:
+            return _FakeCompleted(stdout="13387\n")  # front id only
+        return _FakeCompleted()
+
+    monkeypatch.setattr(terminal_focus, "_run", fake_run)
+    result = terminal_focus.focus_terminal(_APPLE_TERM)
+    assert result["focused"] is True
+    assert result["method"] == "osascript-tab"
+
+
+def test_terminal_app_verify_error_retries_then_fails_honestly(monkeypatch):
+    # The window closing between raise and verify makes the verify script
+    # error (returncode != 0); that must count as "not raised" and retry,
+    # ending in the honest failure — never a claimed success.
+    _macos_tab_env(monkeypatch)
+    calls = []
+
+    def fake_run(cmd):
+        calls.append(cmd)
+        script = cmd[-1]
+        if script.endswith("is running"):
+            return _FakeCompleted(stdout="true\n")
+        if "tty of t is" in script:
+            return _FakeCompleted(stdout="13387\n")
+        if "front window" in script:
+            return _FakeCompleted(returncode=1, stderr="Invalid index. (-1719)")
+        return _FakeCompleted()
+
+    monkeypatch.setattr(terminal_focus, "_run", fake_run)
+    result = terminal_focus.focus_terminal(_APPLE_TERM)
+    assert result["focused"] is False
+    assert "could not be raised" in result["detail"]
+    raises = [c[-1] for c in calls if c[0] == "osascript" and "set index" in c[-1]]
+    assert len(raises) == 3
+
+
+def test_terminal_app_midloop_raise_error_falls_back_to_activate(monkeypatch):
+    # A raise-script SubprocessError mid-retry (Terminal briefly wedged)
+    # abandons the exact-tab path for the guarded app-activation fallback —
+    # it must neither crash nor claim an osascript-tab success.
+    _macos_tab_env(monkeypatch)
+    calls = []
+    state = {"raises": 0}
+
+    def fake_run(cmd):
+        calls.append(cmd)
+        script = cmd[-1]
+        if script.endswith("is running"):
+            return _FakeCompleted(stdout="true\n")
+        if "tty of t is" in script:
+            state["raises"] += 1
+            if state["raises"] == 2:
+                raise subprocess.TimeoutExpired(cmd, 5)
+            return _FakeCompleted(stdout="13387\n")
+        if "front window" in script:
+            return _FakeCompleted(stdout="999\n0,69,1728,1117\nother\n")
+        return _FakeCompleted()
+
+    monkeypatch.setattr(terminal_focus, "_run", fake_run)
+    result = terminal_focus.focus_terminal(_APPLE_TERM)
+    assert result["method"] == "osascript"
+    assert any("to activate" in c[-1] for c in calls if c[0] == "osascript")
+
+
 def test_focus_macos_dead_pid_fails_instead_of_wrong_window(monkeypatch):
     monkeypatch.setattr(terminal_focus.sys, "platform", "darwin")
     monkeypatch.setattr(terminal_focus.shutil, "which", lambda name: "/usr/bin/osascript")
