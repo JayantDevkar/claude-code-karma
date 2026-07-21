@@ -189,7 +189,7 @@ Project (entry point)
 
 ## Captain Hook
 
-Type-safe Pydantic models for Claude Code's 10 hook types:
+Type-safe Pydantic models for Claude Code's 24 hook types (see `captain-hook/CLAUDE.md` for the full list). Karma's own hooks only use 8 of them:
 
 | Hook | Fires | Can Block? |
 |------|-------|------------|

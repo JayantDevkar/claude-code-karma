@@ -41,7 +41,8 @@ claude --version     # Claude CLI (any version)
 
 | Tool | Minimum | Required? | Why |
 |------|---------|-----------|-----|
-| Python | 3.9+ | Yes | API backend runs on Python |
+| Python (hooks) | 3.9+ | Yes | Hook scripts (Tiers 2-4) run fine on 3.9+ |
+| Python (API) | 3.10+ | Yes | API backend uses newer type-hint syntax; crashes on import under 3.9 |
 | Node.js | 18+ | Yes | Frontend build system |
 | npm | 7+ | Yes | Frontend package manager |
 | Git | Any | Yes | Clone repository |
@@ -256,7 +257,7 @@ chmod +x ~/.claude/hooks/live_session_tracker.py
 ls -la ~/.claude/hooks/live_session_tracker.py
 ```
 
-> **Agent notes:** Confirm symlink or copy succeeded. Script must be executable. Test with: `python3 ~/.claude/hooks/live_session_tracker.py < /dev/null` (should exit cleanly, may print help).
+> **Agent notes:** Confirm symlink or copy succeeded. Script must be executable. Test with: `python3 ~/.claude/hooks/live_session_tracker.py < /dev/null` — a silent exit 0 is success, not a failure; the script prints nothing on a clean run.
 
 ---
 
@@ -265,7 +266,7 @@ ls -la ~/.claude/hooks/live_session_tracker.py
 **What:** Register the tracker to listen for Claude Code events.
 **Why:** Tells Claude Code to call the tracker when sessions start, change state, or end.
 
-The tracker needs **8 of Claude Code's 13 hook events** registered in `~/.claude/settings.json`:
+The tracker needs **8 of Claude Code's 24 hook events** registered in `~/.claude/settings.json`:
 
 | Hook Event | Tracks |
 |-----------|--------|
@@ -399,7 +400,17 @@ ls ~/.claude_karma/live-sessions/
 **What:** Confirm the tracker is working in real-time.
 **Why:** Live indicators won't show up unless the tracker is being called by Claude Code.
 
-**Test:**
+**Headless/agent verification (no live Claude Code session required) — do this first:** this is the only method that works in a sandbox, CI, or any environment without an interactive Claude Code session.
+```bash
+# Fire a synthetic SessionStart event and confirm it flows through the whole pipeline
+echo '{"hook_event_name":"SessionStart","session_id":"verify-1","cwd":"'"$PWD"'","transcript_path":"/tmp/verify.jsonl"}' \
+  | python3 ~/.claude/hooks/live_session_tracker.py
+ls ~/.claude_karma/live-sessions/
+curl -s http://localhost:8000/live-sessions | python3 -m json.tool
+```
+A working pipeline shows the state file created and the session appearing in the API response.
+
+**Interactive verification (real usage on your actual machine):**
 1. Start a new Claude Code session (or resume an existing one)
 2. Check for state file: `ls ~/.claude_karma/live-sessions/`
 3. Refresh the dashboard at http://localhost:5173
@@ -418,7 +429,7 @@ watch -n1 'ls -la ~/.claude_karma/live-sessions/'
 curl http://localhost:8000/live-sessions 2>/dev/null | python3 -m json.tool
 ```
 
-> **Agent notes:** If no live sessions appear, check: 1) hook is in settings.json, 2) Claude Code is actually running, 3) state files in ~/.claude_karma/live-sessions/ are being created/updated.
+> **Agent notes:** In a headless/sandboxed/CI environment, use the synthetic-event test above — there's no live Claude Code session to wait for. On a real machine with no live sessions appearing, check: 1) hook is in settings.json, 2) Claude Code is actually running, 3) state files in ~/.claude_karma/live-sessions/ are being created/updated.
 
 **Note:** SubagentStart and SubagentStop events require Claude Code 2.1.19+. On older versions, subagent tracking won't work, but everything else will.
 
@@ -657,7 +668,6 @@ chmod +x hooks/ticket_branch_detector.py
   "hooks": {
     "SessionStart": [
       {
-        "matcher": ".*",
         "hooks": [
           { "type": "command", "command": "python3 ~/.claude/hooks/ticket_branch_detector.py" }
         ]
