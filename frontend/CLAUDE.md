@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Claude Code Karma Frontend** — SvelteKit + Svelte 5 web interface for monitoring and analyzing Claude Code sessions. Connects to the FastAPI backend on port 8000.
+**Claude Code Karma Frontend** — SvelteKit + Svelte 5 web interface for monitoring and analyzing Claude Code sessions. Connects to the FastAPI backend on port 8020.
 
 ## Quick Start
 
@@ -20,7 +20,7 @@ npm run dev
 
 ```bash
 # Development
-npm run dev              # Start dev server (port 5173)
+npm run dev              # Start dev server (port 5180)
 npm run build            # Production build
 npm run preview          # Preview production build
 
@@ -92,7 +92,7 @@ frontend/
 ```
 ~/.claude/projects/{encoded-path}/{uuid}.jsonl
     ↓
-FastAPI Backend (port 8000)
+FastAPI Backend (port 8020)
     ↓
 SvelteKit load functions (+page.server.ts)
     ↓
@@ -153,7 +153,7 @@ Filters and view state persisted via URL search params for shareable links.
 
 ## API Integration
 
-Backend runs on `http://localhost:8000`. Key endpoints:
+Backend runs on `http://localhost:8020`. Key endpoints:
 
 | Endpoint                                 | Description             |
 | ---------------------------------------- | ----------------------- |

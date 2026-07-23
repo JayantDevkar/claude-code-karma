@@ -52,8 +52,8 @@ Claude Code Karma is a monorepo with all components in a single repository:
 
 | Directory | Description | Port |
 |-----------|-------------|------|
-| `api/` | FastAPI backend — parses JSONL, serves REST endpoints | 8000 |
-| `frontend/` | SvelteKit dashboard — visualizes session data | 5173 |
+| `api/` | FastAPI backend — parses JSONL, serves REST endpoints | 8020 |
+| `frontend/` | SvelteKit dashboard — visualizes session data | 5180 |
 | `captain-hook/` | Pydantic library — type-safe models for Claude Code hooks | — |
 
 A `hooks/` directory contains production hook scripts that integrate with Claude Code for live tracking and automation.

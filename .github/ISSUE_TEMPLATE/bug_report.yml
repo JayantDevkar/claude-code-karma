@@ -38,8 +38,8 @@ body:
       label: Steps to Reproduce
       description: How can we reproduce this issue?
       placeholder: |
-        1. Start the API with `uvicorn main:app --reload --port 8000`
-        2. Navigate to http://localhost:5173/projects
+        1. Start the API with `uvicorn main:app --reload --port 8020`
+        2. Navigate to http://localhost:5180/projects
         3. Click on a project with 100+ sessions
         4. See error in browser console
     validations:

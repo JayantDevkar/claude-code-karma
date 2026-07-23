@@ -249,23 +249,48 @@ cd claude-code-karma
 # Start API (Terminal 1)
 cd api
 pip install -e ".[dev]" && pip install -r requirements.txt
-uvicorn main:app --reload --port 8000
+uvicorn main:app --reload --port 8020
 
 # Start Frontend (Terminal 2)
 cd frontend
 npm install && npm run dev
 ```
 
-Open **http://localhost:5173** to view the dashboard.
+Open **http://localhost:5180** to view the dashboard.
 
 **This only gets you the historical dashboard.** Karma's core feature — live session tracking as sessions actually run — needs one more step, [Tier 2 in SETUP.md](./SETUP.md#tier-2-live-monitoring-core-feature). Install through Tier 2 by default; the rest of SETUP.md's tiers are optional polish on top.
+
+## Desktop App (macOS & Windows)
+
+Two terminals every time gets old. Install a desktop icon that starts both servers for you and opens the dashboard:
+
+```bash
+python3 scripts/install_karma_app.py           # macOS: /Applications/Karma.app
+                                               # Windows: a Desktop shortcut
+python3 scripts/install_karma_app.py --dock    # macOS: also pin it to the Dock
+python3 scripts/install_karma_app.py --uninstall
+```
+
+Click the icon and Karma starts whichever servers aren't already running, then opens the dashboard. Because the first launch after a reboot has to compile the frontend, a splash window appears within about a second and shows progress — API, then frontend — so the click never looks like it did nothing.
+
+Nothing is hardcoded: the installer works out your repo location from its own path and finds a Python interpreter on the machine, so a clone anywhere works.
+
+**Optional: start at login.**
+
+```bash
+python3 scripts/install_karma_app.py --autostart
+```
+
+This adds a launchd agent (macOS) or a Startup-folder entry (Windows) so the servers are already up when you log in. Worth it if you also install Karma from your browser's **Install app** button — a browser-installed PWA is only a window and cannot start servers by itself, so `--autostart` is what makes that icon work on its own.
+
+> **Windows notes.** SmartScreen may warn the first time, and Windows will show a firewall prompt when the servers first bind their ports — allow it for private networks. The shortcut runs via `pythonw.exe`, so no console window flashes.
 
 ## How It Works
 
 Claude Code already saves everything locally — sessions, tool calls, token counts — as JSONL files in `~/.claude/`. Claude Code Karma simply reads those files and serves them through a local dashboard.
 
 ```
-~/.claude/projects/  →  FastAPI (port 8000)  →  SvelteKit (port 5173)
+~/.claude/projects/  →  FastAPI (port 8020)  →  SvelteKit (port 5180)
    your data              parses & serves          visualizes it
 ```
 
@@ -275,11 +300,11 @@ Nothing leaves your machine. The API reads your local files, indexes metadata in
 
 ```
 claude-code-karma/
-├── api/                    # FastAPI backend (Python) — port 8000
+├── api/                    # FastAPI backend (Python) — port 8020
 │   ├── models/             # Pydantic models for Claude Code data
 │   ├── routers/            # API endpoints
 │   └── services/           # Business logic
-├── frontend/               # SvelteKit frontend (Svelte 5) — port 5173
+├── frontend/               # SvelteKit frontend (Svelte 5) — port 5180
 │   ├── src/routes/         # Pages
 │   └── src/lib/            # Components and utilities
 ├── captain-hook/           # Pydantic library for Claude Code hooks

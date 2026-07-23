@@ -30,7 +30,7 @@ from typing import Optional, Tuple
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # Config
-API_BASE = os.environ.get("CLAUDE_KARMA_API", "http://localhost:8000")
+API_BASE = os.environ.get("CLAUDE_KARMA_API", "http://localhost:8020")
 HAIKU_MODEL = "claude-haiku-4-5-20251001"
 MAX_PROMPT_LENGTH = 500
 MAX_RESPONSE_LENGTH = 300

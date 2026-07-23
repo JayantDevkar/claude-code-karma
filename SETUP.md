@@ -75,7 +75,7 @@ All three files must exist.
 
 ### Step 2: Start the API
 
-**What:** Launch the FastAPI backend on port 8000.
+**What:** Launch the FastAPI backend on port 8020.
 **Why:** Parses Claude Code sessions and serves the REST API that the frontend consumes.
 
 **Working directory:** `cd api`
@@ -95,18 +95,18 @@ pip install -r requirements.txt
 
 **Start the server:**
 ```bash
-uvicorn main:app --reload --port 8000
+uvicorn main:app --reload --port 8020
 ```
 
 **On first startup, the API will:**
 1. Create `~/.claude_karma/` directory
 2. Create `~/.claude_karma/metadata.db` (SQLite metadata index)
 3. Start background thread to index all sessions from `~/.claude/projects/`
-4. Become available at `http://localhost:8000`
+4. Become available at `http://localhost:8020`
 
 **Verify:**
 ```bash
-curl http://localhost:8000/health
+curl http://localhost:8020/health
 ```
 
 Expected response:
@@ -131,7 +131,7 @@ The `session_count` should match the number of Claude Code sessions you have. If
 
 **To disable SQLite** (slower but functional):
 ```bash
-CLAUDE_KARMA_USE_SQLITE=false uvicorn main:app --reload --port 8000
+CLAUDE_KARMA_USE_SQLITE=false uvicorn main:app --reload --port 8020
 ```
 
 > **Agent notes:** Check health endpoint returns `session_count > 0`. If 0, user may not have any Claude Code sessions yet. Ask them to create a test session first.
@@ -140,7 +140,7 @@ CLAUDE_KARMA_USE_SQLITE=false uvicorn main:app --reload --port 8000
 
 ### Step 3: Start the Frontend
 
-**What:** Launch the SvelteKit frontend on port 5173.
+**What:** Launch the SvelteKit frontend on port 5180.
 **Why:** Provides the web dashboard UI that connects to the API.
 
 **In a second terminal**, run:
@@ -155,20 +155,20 @@ npm install
 npm run dev
 ```
 
-The frontend starts at **http://localhost:5173** and automatically connects to the API at `http://localhost:8000`.
+The frontend starts at **http://localhost:5180** and automatically connects to the API at `http://localhost:8020`.
 
 **Custom API URL** (if API runs on a different host/port):
 ```bash
-PUBLIC_API_URL=http://your-api-host:8000 npm run dev
+PUBLIC_API_URL=http://your-api-host:8020 npm run dev
 ```
 
 Or create `frontend/.env`:
 ```
-PUBLIC_API_URL=http://localhost:8000
+PUBLIC_API_URL=http://localhost:8020
 ```
 
 **Verify:**
-Open http://localhost:5173 in your browser. You should see the Claude Code Karma home page with navigation cards (Projects, Analytics, Agents, etc.).
+Open http://localhost:5180 in your browser. You should see the Claude Code Karma home page with navigation cards (Projects, Analytics, Agents, etc.).
 
 > **Agent notes:** Confirm browser loads homepage. Check browser console for any errors. If CORS errors appear, verify API is running and accessible.
 
@@ -218,7 +218,7 @@ Open http://localhost:5173 in your browser. You should see the Claude Code Karma
 2. Click a project — you should see sessions with stats
 3. Click a session — you should see the conversation
 
-> **Agent notes:** If any core feature fails, check API health (`curl http://localhost:8000/health`) and browser console for errors. Do NOT proceed to Tier 2 until core works.
+> **Agent notes:** If any core feature fails, check API health (`curl http://localhost:8020/health`) and browser console for errors. Do NOT proceed to Tier 2 until core works.
 
 **This is the read-only historical view.** It works, but it's not what Karma is for. Continue to Tier 2 below — it's the core feature: live session tracking as sessions actually run, not just a record of what already happened.
 
@@ -406,14 +406,14 @@ ls ~/.claude_karma/live-sessions/
 echo '{"hook_event_name":"SessionStart","session_id":"verify-1","cwd":"'"$PWD"'","transcript_path":"/tmp/verify.jsonl"}' \
   | python3 ~/.claude/hooks/live_session_tracker.py
 ls ~/.claude_karma/live-sessions/
-curl -s http://localhost:8000/live-sessions | python3 -m json.tool
+curl -s http://localhost:8020/live-sessions | python3 -m json.tool
 ```
 A working pipeline shows the state file created and the session appearing in the API response.
 
 **Interactive verification (real usage on your actual machine):**
 1. Start a new Claude Code session (or resume an existing one)
 2. Check for state file: `ls ~/.claude_karma/live-sessions/`
-3. Refresh the dashboard at http://localhost:5173
+3. Refresh the dashboard at http://localhost:5180
 4. You should see a "Live Sessions" section on the home page
 5. Active sessions should have a green pulsing indicator
 
@@ -426,7 +426,7 @@ python3 -c "import json; d=json.load(open('$HOME/.claude/settings.json')); print
 watch -n1 'ls -la ~/.claude_karma/live-sessions/'
 
 # 3. Verify API is reading the state files
-curl http://localhost:8000/live-sessions 2>/dev/null | python3 -m json.tool
+curl http://localhost:8020/live-sessions 2>/dev/null | python3 -m json.tool
 ```
 
 > **Agent notes:** In a headless/sandboxed/CI environment, use the synthetic-event test above — there's no live Claude Code session to wait for. On a real machine with no live sessions appearing, check: 1) hook is in settings.json, 2) Claude Code is actually running, 3) state files in ~/.claude_karma/live-sessions/ are being created/updated.
@@ -448,6 +448,68 @@ Once the tracker hook is installed, live sessions show a `>_` button (session pa
 **macOS permission:** the first click may trigger an Automation prompt ("Python"/your API process wants to control "Terminal"). If it was denied, the button reports `failed` — re-enable under **System Settings → Privacy & Security → Automation**.
 
 Sessions started before this feature gain the button automatically after their next activity (the hook backfills terminal identity on any event). Details: [docs/feature/open-terminal/spec.md](./docs/feature/open-terminal/spec.md).
+
+---
+
+## Desktop App (macOS & Windows, Recommended)
+
+Do this once Tier 1 works. It removes the two-terminal ritual: Karma gets a
+desktop icon that starts both servers itself, and optionally starts them at
+login so the dashboard is simply always there.
+
+Linux is not supported yet — keep starting the servers manually.
+
+### Step A: Install
+
+**From the dashboard (humans):** open **Settings → Desktop App → Install**.
+
+**From the command line (agents and automation):**
+
+```bash
+# From the repository root
+python3 scripts/install_karma_app.py --dock --autostart
+```
+
+| Flag | Effect |
+|------|--------|
+| _(none)_ | macOS: `/Applications/Karma.app`. Windows: a Desktop shortcut. |
+| `--dock` | macOS only: pin it to the Dock, replacing any older Karma tile. |
+| `--autostart` | Start the servers at login (launchd / Startup folder). |
+| `--user` | macOS only: install to `~/Applications` when `/Applications` is not writable. |
+| `--uninstall` | Remove the app, its Dock tile and any login item. |
+
+Nothing is hardcoded — the repo location comes from the script's own path and a
+Python interpreter is discovered on the machine, so a clone anywhere works.
+
+### Step B: Verify
+
+```bash
+# Stop both servers first, then:
+python3 scripts/karma_desktop/launcher.py --no-open
+# Expect: "OK: Karma is ready at http://localhost:5180"
+```
+
+Then click the icon. On the first launch of the day the frontend has to
+compile, so a splash window appears within about a second and shows progress
+(API, then frontend) rather than leaving the click looking dead.
+
+> **Agent notes:** `--autostart` is the flag that matters for unattended setup —
+> with it, `http://localhost:5180` works after any reboot with no clicking at
+> all. On macOS the user is *notified* afterwards that a background item was
+> added (System Settings → General → Login Items), where they can switch it off;
+> it is opt-out, not a blocking prompt. Windows adds a Startup entry silently.
+> Verify with `curl -s http://localhost:5180 -o /dev/null -w '%{http_code}'`
+> after a logout/login cycle.
+
+### Step C: Optional — install as a browser app
+
+With the servers running, Chrome's address bar offers **Install app**. That
+gives Karma its own window and icon.
+
+Worth understanding: a browser-installed app is **only a window**. It cannot
+start the servers — no web page can spawn local processes. It works on its own
+only when `--autostart` is enabled, or when you launch via the desktop icon
+above.
 
 ---
 
@@ -560,7 +622,7 @@ grep -A15 '"SessionEnd"' ~/.claude/settings.json
 **Test (after ending a Claude Code session):**
 ```bash
 # After a session ends, check for title
-curl http://localhost:8000/projects | python3 -c "
+curl http://localhost:8020/projects | python3 -c "
 import sys, json
 for p in json.load(sys.stdin)['projects']:
     for s in p.get('recent_sessions', []):
@@ -580,7 +642,7 @@ This generates titles for all sessions created before the hook was installed. Re
 **Verify backfill:**
 ```bash
 # Check project detail for newly titled sessions
-curl http://localhost:8000/projects/YOUR-PROJECT-NAME | python3 -m json.tool | grep -A2 '"title"'
+curl http://localhost:8020/projects/YOUR-PROJECT-NAME | python3 -m json.tool | grep -A2 '"title"'
 ```
 
 > **Agent notes:** If backfill fails, check: 1) API is running, 2) Claude CLI is installed (`which claude`), 3) API has permission to read sessions. Backfill is optional; it's fine if some sessions have no title.
@@ -603,7 +665,7 @@ Links Claude Code sessions to tickets in Linear / Jira / GitHub Issues, so the k
 - Karma is read-only — it never writes to Linear/Jira/GitHub.
 - Metadata (title, status) comes from the agent's MCP servers, not from karma's backend, so karma never needs provider credentials.
 - The skill works **without** any MCP — the link is created either way; without an MCP installed, the cached title/status is just blank until refreshed.
-- The skill honors a `KARMA_API_URL` env var for users running the API on a non-default port or remote host. Default fallback: `http://localhost:8000`.
+- The skill honors a `KARMA_API_URL` env var for users running the API on a non-default port or remote host. Default fallback: `http://localhost:8020`.
 
 ### Step 11: Install the Skill (Recommended)
 
@@ -693,7 +755,7 @@ The hook is silent on every failure (no git, no match, karma unreachable) — it
 
 1. Create or check out a branch matching your pattern (e.g. `feat/LINEAR-123-test`)
 2. Start a new Claude Code session in that working directory
-3. After `SessionStart` fires, hit `curl http://localhost:8000/sessions/<session-uuid>/tickets` — you should see a link with `"link_source":"branch"`
+3. After `SessionStart` fires, hit `curl http://localhost:8020/sessions/<session-uuid>/tickets` — you should see a link with `"link_source":"branch"`
 4. Errors during detection land in `~/.claude_karma/logs/ticket_branch_detector.log` (silent on success)
 
 > **Agent notes:** If the skill is installed but doesn't trigger, ensure `~/.claude/skills/link-ticket-to-session/SKILL.md` exists and is readable. If the branch hook doesn't link, check the log file and confirm `branch_detect_enabled: true` in the config.
@@ -864,7 +926,7 @@ All variables use the `CLAUDE_KARMA_` prefix. Set via shell, `.env` file in `api
 
 ```bash
 # Start with custom settings
-CLAUDE_KARMA_LOG_LEVEL=DEBUG uvicorn main:app --reload --port 8000
+CLAUDE_KARMA_LOG_LEVEL=DEBUG uvicorn main:app --reload --port 8020
 ```
 
 **Core:**
@@ -912,7 +974,7 @@ CLAUDE_KARMA_LOG_LEVEL=DEBUG uvicorn main:app --reload --port 8000
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `CLAUDE_KARMA_CORS_ORIGINS` | `["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:3001", "http://127.0.0.1:3001"]` | CORS allowed origins (JSON array) |
+| `CLAUDE_KARMA_CORS_ORIGINS` | `["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:5180", "http://127.0.0.1:5180", "http://localhost:3001", "http://127.0.0.1:3001"]` | CORS allowed origins (JSON array) |
 | `CLAUDE_KARMA_CORS_ALLOW_CREDENTIALS` | `true` | Allow credentials in CORS |
 | `CLAUDE_KARMA_CORS_ALLOW_METHODS` | `["GET","POST","PUT","DELETE","OPTIONS"]` | Allowed HTTP methods |
 | `CLAUDE_KARMA_CORS_ALLOW_HEADERS` | `["Content-Type","Authorization"]` | Allowed request headers |
@@ -921,18 +983,18 @@ CLAUDE_KARMA_LOG_LEVEL=DEBUG uvicorn main:app --reload --port 8000
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `PUBLIC_API_URL` | `http://localhost:8000` | FastAPI backend URL |
+| `PUBLIC_API_URL` | `http://localhost:8020` | FastAPI backend URL |
 
 Set via shell or `frontend/.env`:
 ```bash
-PUBLIC_API_URL=http://your-api-host:8000 npm run dev
+PUBLIC_API_URL=http://your-api-host:8020 npm run dev
 ```
 
 ### Hook Scripts
 
 | Variable | Default | Used By | Description |
 |----------|---------|---------|-------------|
-| `CLAUDE_KARMA_API` | `http://localhost:8000` | Title generator | API base URL for POSTing titles |
+| `CLAUDE_KARMA_API` | `http://localhost:8020` | Title generator | API base URL for POSTing titles |
 
 ---
 
@@ -990,10 +1052,10 @@ Run through this after setup to confirm everything works.
 
 ### Tier 1: Core Dashboard
 
-- [ ] API health: `curl http://localhost:8000/health` returns `{"status": "healthy", ...}`
+- [ ] API health: `curl http://localhost:8020/health` returns `{"status": "healthy", ...}`
 - [ ] API has sessions: health response shows `session_count > 0`
-- [ ] API projects endpoint: `curl http://localhost:8000/projects` returns JSON list
-- [ ] Frontend loads: Browser at http://localhost:5173 shows home page
+- [ ] API projects endpoint: `curl http://localhost:8020/projects` returns JSON list
+- [ ] Frontend loads: Browser at http://localhost:5180 shows home page
 - [ ] Projects visible: Clicking "Projects" shows your Claude Code projects
 - [ ] Project detail works: Clicking a project shows sessions with stats
 - [ ] Session detail works: Clicking a session shows conversation
@@ -1020,7 +1082,7 @@ Run through this after setup to confirm everything works.
 ### Tier 4: Auto-Link Tickets
 
 - [ ] Skill installed: `ls ~/.claude/skills/link-ticket-to-session/SKILL.md`
-- [ ] Skill triggers: `/link-ticket-to-session <ref>` in a session posts a link visible at `http://localhost:8000/sessions/<uuid>/tickets`
+- [ ] Skill triggers: `/link-ticket-to-session <ref>` in a session posts a link visible at `http://localhost:8020/sessions/<uuid>/tickets`
 - [ ] Branch hook installed (optional): `ls ~/.claude/hooks/ticket_branch_detector.py`
 - [ ] Branch hook registered (optional): `grep "ticket_branch_detector" ~/.claude/settings.json`
 - [ ] Branch config exists (optional): `cat ~/.claude_karma/config.json | grep branch_detect_enabled`
@@ -1041,9 +1103,9 @@ python3 --version
 # Verify requirements installed
 cd api && pip install -r requirements.txt
 
-# Check port 8000 is free
-lsof -ti:8000
-# If in use, kill with: lsof -ti:8000 | xargs kill -9
+# Check port 8020 is free
+lsof -ti:8020
+# If in use, kill with: lsof -ti:8020 | xargs kill -9
 
 # Check for syntax errors
 python3 -c "import main" 2>&1 | head -20
@@ -1051,7 +1113,7 @@ python3 -c "import main" 2>&1 | head -20
 
 ### Frontend Won't Start
 
-**Symptom:** `npm run dev` fails or port 5173 in use
+**Symptom:** `npm run dev` fails or port 5180 in use
 
 ```bash
 # Check Node version (must be 18+)
@@ -1060,8 +1122,8 @@ node --version
 # Clear node_modules and reinstall
 cd frontend && rm -rf node_modules package-lock.json && npm install
 
-# Check port 5173 is free
-lsof -ti:5173
+# Check port 5180 is free
+lsof -ti:5180
 ```
 
 ### Empty Projects List
@@ -1082,11 +1144,11 @@ If `~/.claude/projects/` is empty, use Claude Code to create a test session firs
 
 **Symptom:** Console shows "Access to XMLHttpRequest blocked by CORS"
 
-The API allows `http://localhost:5173` by default. If frontend runs elsewhere:
+The API allows `http://localhost:5180` by default. If frontend runs elsewhere:
 
 ```bash
-CLAUDE_KARMA_CORS_ORIGINS='["http://localhost:5173","http://localhost:3000"]' \
-  uvicorn main:app --reload --port 8000
+CLAUDE_KARMA_CORS_ORIGINS='["http://localhost:5180","http://localhost:3000"]' \
+  uvicorn main:app --reload --port 8020
 ```
 
 ### Live Sessions Not Appearing
@@ -1101,7 +1163,7 @@ grep -c "SessionStart" ~/.claude/settings.json
 watch -n1 'ls -la ~/.claude_karma/live-sessions/'
 
 # 3. Check API sees live sessions
-curl http://localhost:8000/live-sessions 2>/dev/null | python3 -m json.tool
+curl http://localhost:8020/live-sessions 2>/dev/null | python3 -m json.tool
 
 # 4. Test hook manually
 echo '{"hook_event_name":"SessionStart","session_id":"test","cwd":"/tmp"}' \
@@ -1117,7 +1179,7 @@ echo '{"hook_event_name":"SessionStart","session_id":"test","cwd":"/tmp"}' \
 ls ~/.claude/hooks/session_title_generator.py
 
 # 2. Verify API is running (required for this hook)
-curl http://localhost:8000/health
+curl http://localhost:8020/health
 
 # 3. Check Claude CLI available (optional, for Haiku titles)
 which claude
@@ -1141,13 +1203,13 @@ ls -la ~/.claude_karma/metadata.db
 touch ~/.claude_karma/test.txt && rm ~/.claude_karma/test.txt
 
 # 3. Force reindex (API must be running)
-curl -X POST http://localhost:8000/admin/reindex
+curl -X POST http://localhost:8020/admin/reindex
 
 # 3b. Rebuild full-text search index
-curl -X POST http://localhost:8000/admin/rebuild-fts
+curl -X POST http://localhost:8020/admin/rebuild-fts
 
 # 3c. Reclaim disk space
-curl -X POST http://localhost:8000/admin/vacuum
+curl -X POST http://localhost:8020/admin/vacuum
 
 # 4. Nuclear option: delete and rebuild
 rm ~/.claude_karma/metadata.db*
@@ -1185,7 +1247,7 @@ cd api && pip install -r requirements.txt
 cd frontend && npm install
 
 # Reindex SQLite if schema changed (always safe — incremental + idempotent)
-curl -X POST http://localhost:8000/admin/reindex
+curl -X POST http://localhost:8020/admin/reindex
 ```
 
 ### Schema Migrations

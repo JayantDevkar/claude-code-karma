@@ -363,17 +363,17 @@ interface PluginInstallation {
 
 ```bash
 # Test Phase 2: Tasks
-curl http://localhost:8000/sessions/{session-uuid}/tasks | jq
+curl http://localhost:8020/sessions/{session-uuid}/tasks | jq
 
 # Test Phase 3: Plans
-curl http://localhost:8000/plans | jq
-curl http://localhost:8000/plans/stats | jq
-curl http://localhost:8000/plans/{slug} | jq
+curl http://localhost:8020/plans | jq
+curl http://localhost:8020/plans/stats | jq
+curl http://localhost:8020/plans/{slug} | jq
 
 # Test Phase 4: Plugins
-curl http://localhost:8000/plugins | jq
-curl http://localhost:8000/plugins/stats | jq
-curl "http://localhost:8000/plugins/github%40claude-plugins-official" | jq
+curl http://localhost:8020/plugins | jq
+curl http://localhost:8020/plugins/stats | jq
+curl "http://localhost:8020/plugins/github%40claude-plugins-official" | jq
 ```
 
 ---

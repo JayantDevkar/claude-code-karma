@@ -1,0 +1,48 @@
+name: Desktop Launcher
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/**'
+      - '.github/workflows/desktop-launcher.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/**'
+      - '.github/workflows/desktop-launcher.yml'
+
+jobs:
+  test:
+    name: ${{ matrix.os }} / Python ${{ matrix.python-version }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # All three desktop platforms: the installer generates a .app on macOS,
+        # a .lnk on Windows, and must at minimum import cleanly on Linux.
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ['3.10', '3.12']
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install test dependencies
+        run: python -m pip install --upgrade pip pytest
+
+      - name: Run desktop launcher tests
+        run: python -m pytest scripts/tests/ -v
+
+      # The launcher and installer use only the standard library, so a clean
+      # interpreter with nothing installed must still be able to import them.
+      - name: Verify no third-party imports are required
+        run: |
+          python -c "import sys; sys.path.insert(0, 'scripts'); import karma_desktop.launcher, karma_desktop.core, karma_desktop.splash; print('stdlib-only import OK')"
+
+      - name: Verify installer CLI runs
+        run: python scripts/install_karma_app.py --help

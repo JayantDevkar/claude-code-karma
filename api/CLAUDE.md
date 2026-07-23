@@ -14,14 +14,14 @@ pip install -e ".[dev]"
 pip install -r requirements.txt
 
 # Run API server
-uvicorn main:app --reload --port 8000
+uvicorn main:app --reload --port 8020
 ```
 
 ## Commands
 
 ```bash
 # Development
-uvicorn main:app --reload --port 8000      # Run dev server
+uvicorn main:app --reload --port 8020      # Run dev server
 
 # Testing
 pytest                                      # Run all tests

@@ -704,7 +704,7 @@ Configure your Claude Code environment.
 - **Icons:** lucide-svelte
 - **Date Handling:** date-fns
 - **Markdown:** marked + isomorphic-dompurify
-- **Backend:** FastAPI (Python) on port 8000
+- **Backend:** FastAPI (Python) on port 8020
 - **Real-time:** Polling (3s for live sessions, 30s for historical)
 
 ---

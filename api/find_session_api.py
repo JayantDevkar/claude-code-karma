@@ -2,7 +2,7 @@ import json
 import urllib.request
 
 # Get all projects
-projects_url = "http://localhost:8000/projects"
+projects_url = "http://localhost:8020/projects"
 try:
     with urllib.request.urlopen(projects_url) as response:
         projects = json.loads(response.read().decode())
@@ -17,7 +17,7 @@ try:
         print(f"Checking project: {encoded_name}")
 
         # Get project details (limit 5 sessions per project to be fast)
-        p_url = f"http://localhost:8000/projects/{encoded_name}?limit=5"
+        p_url = f"http://localhost:8020/projects/{encoded_name}?limit=5"
         try:
             with urllib.request.urlopen(p_url) as p_response:
                 p_data = json.loads(p_response.read().decode())
@@ -25,7 +25,7 @@ try:
 
                 for session in sessions:
                     uuid = session["uuid"]
-                    detail_url = f"http://localhost:8000/sessions/{uuid}"
+                    detail_url = f"http://localhost:8020/sessions/{uuid}"
                     try:
                         with urllib.request.urlopen(detail_url) as s_response:
                             s_data = json.loads(s_response.read().decode())

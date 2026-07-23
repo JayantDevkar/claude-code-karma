@@ -88,6 +88,10 @@ class Settings(BaseSettings):
         default=[
             "http://localhost:3000",
             "http://127.0.0.1:3000",
+            "http://localhost:5180",
+            "http://127.0.0.1:5180",
+            # Vite's own default, kept so a plain `npm run dev` without the
+            # karma port flags still reaches the API.
             "http://localhost:5173",
             "http://127.0.0.1:5173",
             "http://localhost:3001",

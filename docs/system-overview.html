@@ -369,8 +369,8 @@
 
           <!-- tier labels -->
           <text class="tier" x="20" y="30" font-size="11">SOURCE</text>
-          <text class="tier" x="285" y="30" font-size="11">BACKEND · :8000</text>
-          <text class="tier" x="700" y="30" font-size="11">FRONTEND · :5173</text>
+          <text class="tier" x="285" y="30" font-size="11">BACKEND · :8020</text>
+          <text class="tier" x="700" y="30" font-size="11">FRONTEND · :5180</text>
 
           <!-- 1. Source -->
           <rect class="box" x="20" y="60" width="210" height="120" rx="14"/>
@@ -545,7 +545,7 @@
     <div class="sec-rule"></div>
     <div class="stack">
       <div class="stack-col">
-        <h4>Backend — port 8000</h4>
+        <h4>Backend — port 8020</h4>
         <div class="chips">
           <span class="chip">Python 3.9+</span>
           <span class="chip">FastAPI</span>
@@ -557,7 +557,7 @@
         </div>
       </div>
       <div class="stack-col s2">
-        <h4>Frontend — port 5173</h4>
+        <h4>Frontend — port 5180</h4>
         <div class="chips">
           <span class="chip">SvelteKit 2</span>
           <span class="chip">Svelte 5 (runes)</span>
@@ -577,18 +577,18 @@
       <span class="sec-num">06</span>
       <h2>Quick start</h2>
     </div>
-    <p class="sec-sub">Two terminals. The API parses and serves; the frontend renders. Open the dashboard at <span class="mono" style="font-size:13px">localhost:5173</span>.</p>
+    <p class="sec-sub">Two terminals. The API parses and serves; the frontend renders. Open the dashboard at <span class="mono" style="font-size:13px">localhost:5180</span>.</p>
     <div class="sec-rule"></div>
 <pre><span class="c"># Terminal 1 — API</span>
 <span class="k">cd</span> api
 pip install -e <span class="p">".[dev]"</span> &amp;&amp; pip install -r requirements.txt
-uvicorn main:app --reload --port <span class="p">8000</span>
+uvicorn main:app --reload --port <span class="p">8020</span>
 
 <span class="c"># Terminal 2 — Frontend</span>
 <span class="k">cd</span> frontend
 npm install &amp;&amp; npm run dev
 
-<span class="c"># → open http://localhost:5173</span></pre>
+<span class="c"># → open http://localhost:5180</span></pre>
   </section>
 
 </div>

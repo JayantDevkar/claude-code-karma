@@ -3,7 +3,7 @@
  *
  * API Base URL:
  * - Uses PUBLIC_API_URL environment variable if set
- * - Falls back to http://localhost:8000 for local development
+ * - Falls back to http://localhost:8020 for local development
  *
  * To configure in production:
  * - Set PUBLIC_API_URL in your .env file
@@ -18,7 +18,7 @@
  * const response = await fetch(`${API_BASE}/projects`);
  * ```
  */
-export const API_BASE = import.meta.env.PUBLIC_API_URL || 'http://localhost:8000';
+export const API_BASE = import.meta.env.PUBLIC_API_URL || 'http://localhost:8020';
 
 /**
  * API request timeout in milliseconds (default: 30 seconds)

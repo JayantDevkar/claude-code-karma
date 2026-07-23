@@ -10,7 +10,7 @@
 
 This document defines the systematic test plan for verifying changes implemented across all API and UI/UX phases. Tests are organized by agent type:
 
-- **API Tests** - HTTP requests against `localhost:8000`
+- **API Tests** - HTTP requests against `localhost:8020`
 - **Browser Tests** - Playwright actions against `localhost:3000`
 - **Integration Tests** - End-to-end flows spanning both servers
 
@@ -22,7 +22,7 @@ This document defines the systematic test plan for verifying changes implemented
 
 ```bash
 # Start servers
-pnpm dev:api    # localhost:8000
+pnpm dev:api    # localhost:8020
 pnpm dev:web    # localhost:3000
 
 # Install test dependencies
@@ -41,7 +41,7 @@ pnpm add -D @playwright/test
 
 ---
 
-# API Phase Tests (localhost:8000)
+# API Phase Tests (localhost:8020)
 
 ## API Phase 1: Model-Level Caching
 
@@ -65,10 +65,10 @@ async def test_session_metadata_cached():
     # Act
     async with httpx.AsyncClient() as client:
         # First request - should load metadata
-        r1 = await client.get(f"http://localhost:8000/sessions/{session_uuid}")
+        r1 = await client.get(f"http://localhost:8020/sessions/{session_uuid}")
 
         # Second request - should use cache
-        r2 = await client.get(f"http://localhost:8000/sessions/{session_uuid}")
+        r2 = await client.get(f"http://localhost:8020/sessions/{session_uuid}")
 
     # Assert
     assert r1.status_code == 200
@@ -976,7 +976,7 @@ test('empty states are contextual', async ({ page }) => {
 ```typescript
 test('session data displays correctly from API', async ({ page }) => {
   // Get session data from API
-  const apiResponse = await fetch('http://localhost:8000/sessions/test-uuid');
+  const apiResponse = await fetch('http://localhost:8020/sessions/test-uuid');
   const sessionData = await apiResponse.json();
 
   // Navigate to session page
@@ -1238,7 +1238,7 @@ export default defineConfig({
   webServer: [
     {
       command: 'pnpm dev:api',
-      url: 'http://localhost:8000',
+      url: 'http://localhost:8020',
       reuseExistingServer: !process.env.CI,
     },
     {
