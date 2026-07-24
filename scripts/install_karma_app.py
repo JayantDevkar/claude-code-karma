@@ -61,6 +61,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Also start the servers at login (launchd / Startup folder).",
     )
     parser.add_argument(
+        "--no-autostart",
+        action="store_true",
+        help="Stop starting the servers at login, leaving the icon in place.",
+    )
+    parser.add_argument(
         "--user",
         action="store_true",
         help="macOS only: install to ~/Applications instead of /Applications.",
@@ -105,8 +110,17 @@ def main(argv: list[str] | None = None) -> int:
                 else "Could not update the Dock; drag the app there manually."
             )
         if args.autostart:
+            backend.install_autostart(repo, python, args.web_port, args.api_port)
+            print(f"Autostart enabled: {backend.agent_path()}")
             print(
-                f"Autostart enabled: {backend.install_autostart(repo, python, args.web_port, args.api_port)}"
+                "macOS will notify you a background item was added; you can turn "
+                "it off under System Settings > General > Login Items."
+            )
+        elif args.no_autostart:
+            print(
+                "Autostart disabled."
+                if backend.uninstall_autostart()
+                else "Autostart was not enabled."
             )
 
     elif sys.platform == "win32":
@@ -122,8 +136,16 @@ def main(argv: list[str] | None = None) -> int:
         lnk = backend.install_app(repo, python, args.web_port, args.api_port)
         print(f"Installed {lnk}")
         if args.autostart:
+            entry = backend.install_autostart(
+                repo, python, args.web_port, args.api_port
+            )
+            print(f"Autostart enabled: {entry}")
+            print("Windows lists this under Task Manager > Startup.")
+        elif args.no_autostart:
             print(
-                f"Autostart enabled: {backend.install_autostart(repo, python, args.web_port, args.api_port)}"
+                "Autostart disabled."
+                if backend.uninstall_autostart()
+                else "Autostart was not enabled."
             )
         if args.dock:
             print(

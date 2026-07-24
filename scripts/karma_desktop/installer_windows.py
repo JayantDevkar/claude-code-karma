@@ -112,6 +112,25 @@ def install_app(repo: Path, python: Path, web_port: int, api_port: int) -> Path:
     )
 
 
+def autostart_enabled() -> bool:
+    """Whether Karma is registered to start at logon.
+
+    Read from disk rather than from a stored preference: Task Manager's Startup
+    tab can disable the entry independently of us, so the filesystem is the only
+    answer that cannot go stale.
+    """
+    return (startup_dir() / SHORTCUT_NAME).exists()
+
+
+def uninstall_autostart() -> bool:
+    """Stop Karma starting at logon. True if an entry was actually removed."""
+    entry = startup_dir() / SHORTCUT_NAME
+    if not entry.exists():
+        return False
+    entry.unlink()
+    return True
+
+
 def install_autostart(repo: Path, python: Path, web_port: int, api_port: int) -> Path:
     """Put a headless copy of the launcher in the Startup folder."""
     icon = repo / "frontend" / "static" / "icons" / "karma.ico"

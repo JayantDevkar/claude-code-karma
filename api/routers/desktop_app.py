@@ -92,6 +92,16 @@ class InstallResult(BaseModel):
     install_path: Optional[str] = None
 
 
+class AutostartRequest(BaseModel):
+    enabled: bool = Field(description="Whether Karma should start at login.")
+
+
+class AutostartResult(BaseModel):
+    ok: bool
+    enabled: bool
+    messages: List[str]
+
+
 def _macos_app_paths() -> List[Path]:
     return [Path("/Applications/Karma.app"), Path.home() / "Applications" / "Karma.app"]
 
@@ -110,14 +120,14 @@ def _status_sync() -> DesktopAppStatus:
             if candidate.exists():
                 installed, install_path = True, str(candidate)
                 break
-        autostart = mac.agent_path().exists()
+        autostart = mac.autostart_enabled()
     elif sys.platform == "win32":
         from karma_desktop import installer_windows as win  # noqa: PLC0415
 
         shortcut = win.desktop_dir() / win.SHORTCUT_NAME
         if shortcut.exists():
             installed, install_path = True, str(shortcut)
-        autostart = (win.startup_dir() / win.SHORTCUT_NAME).exists()
+        autostart = win.autostart_enabled()
 
     return DesktopAppStatus(
         supported=supported,
@@ -180,6 +190,57 @@ def _install_sync(body: InstallRequest) -> InstallResult:
     )
 
 
+def _set_autostart_sync(enabled: bool) -> AutostartResult:
+    """Enable or disable start-at-login.
+
+    Deliberately independent of installing the desktop icon: someone using the
+    browser-installed app wants the servers up at login but has no use for a
+    second icon.
+    """
+    installer, core = _load_installer()
+    repo = core.repo_root()
+    python = installer.stable_python()
+    messages: List[str] = []
+
+    if sys.platform == "darwin":
+        from karma_desktop import installer_macos as backend  # noqa: PLC0415
+
+        login_items_hint = (
+            "macOS will notify you that a background item was added. You can "
+            "also switch it off under System Settings > General > Login Items."
+        )
+    elif sys.platform == "win32":
+        from karma_desktop import installer_windows as backend  # noqa: PLC0415
+
+        login_items_hint = (
+            "Windows lists this under Task Manager > Startup, where it can also be disabled."
+        )
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail=f"No autostart support for {sys.platform} yet.",
+        )
+
+    if enabled:
+        backend.install_autostart(repo, python, core.WEB_PORT, core.API_PORT)
+        messages.append("Karma will now start at login.")
+        messages.append(login_items_hint)
+    else:
+        removed = backend.uninstall_autostart()
+        messages.append(
+            "Karma will no longer start at login."
+            if removed
+            else "Karma was not set to start at login."
+        )
+        messages.append(
+            "Servers already running were left alone; close them if you want them stopped now."
+        )
+
+    # Report what is actually on disk rather than what was requested, so a
+    # partial failure can never be reported as success.
+    return AutostartResult(ok=True, enabled=backend.autostart_enabled(), messages=messages)
+
+
 def _uninstall_sync() -> InstallResult:
     _load_installer()
     if sys.platform == "darwin":
@@ -221,6 +282,22 @@ async def install(request: Request, body: InstallRequest) -> InstallResult:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Install failed: {exc}",
+        ) from exc
+
+
+@router.put("/autostart", response_model=AutostartResult)
+async def set_autostart(request: Request, body: AutostartRequest) -> AutostartResult:
+    """Turn start-at-login on or off."""
+    _require_local(request)
+    try:
+        return await run_in_thread(_set_autostart_sync, body.enabled)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Setting autostart failed")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Could not change the autostart setting: {exc}",
         ) from exc
 
 

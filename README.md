@@ -275,13 +275,18 @@ Click the icon and Karma starts whichever servers aren't already running, then o
 
 Nothing is hardcoded: the installer works out your repo location from its own path and finds a Python interpreter on the machine, so a clone anywhere works.
 
-**Optional: start at login.**
+**Optional: start at login.** Toggle it in **Settings → Desktop App**, or:
 
 ```bash
-python3 scripts/install_karma_app.py --autostart
+python3 scripts/install_karma_app.py --autostart      # on
+python3 scripts/install_karma_app.py --no-autostart   # off
 ```
 
-This adds a launchd agent (macOS) or a Startup-folder entry (Windows) so the servers are already up when you log in. Worth it if you also install Karma from your browser's **Install app** button — a browser-installed PWA is only a window and cannot start servers by itself, so `--autostart` is what makes that icon work on its own.
+This adds a launchd agent (macOS) or a Startup-folder entry (Windows) so the servers are already up when you log in — the dashboard is simply always there, with no icon to click first. It costs roughly **150–350 MB** of memory and almost no CPU while idle.
+
+It's also what makes a browser-installed Karma work on its own: a PWA is only a window and cannot start servers, so with autostart you never need the launcher icon at all.
+
+macOS notifies you that a background item was added and lists it under **System Settings → General → Login Items**; Windows shows it in **Task Manager → Startup**. Karma reads that state back from disk, so turning it off there is reflected in the dashboard too.
 
 > **Windows notes.** SmartScreen may warn the first time, and Windows will show a firewall prompt when the servers first bind their ports — allow it for private networks. The shortcut runs via `pythonw.exe`, so no console window flashes.
 

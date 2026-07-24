@@ -181,6 +181,17 @@ def agent_path() -> Path:
     return Path.home() / "Library" / "LaunchAgents" / f"{AGENT_LABEL}.plist"
 
 
+def autostart_enabled() -> bool:
+    """Whether Karma is registered to start at login.
+
+    Read from disk rather than from a stored preference. macOS lists the agent
+    under System Settings -> General -> Login Items, where the user can disable
+    it without going through us; deriving the answer from the filesystem means
+    the UI can never disagree with what the system actually does.
+    """
+    return agent_path().exists()
+
+
 def install_autostart(repo: Path, python: Path, web_port: int, api_port: int) -> Path:
     """Install a launchd agent that starts the servers at login."""
     plist_path = agent_path()
@@ -215,6 +226,20 @@ def install_autostart(repo: Path, python: Path, web_port: int, api_port: int) ->
     return plist_path
 
 
+def uninstall_autostart() -> bool:
+    """Stop Karma starting at login. True if an agent was actually removed.
+
+    Unloading before deleting matters: a plist removed while still loaded
+    leaves launchd holding the job until the next logout.
+    """
+    plist_path = agent_path()
+    if not plist_path.exists():
+        return False
+    subprocess.run(["launchctl", "unload", str(plist_path)], capture_output=True)
+    plist_path.unlink(missing_ok=True)
+    return True
+
+
 def uninstall(app_dirs: list[Path]) -> list[str]:
     """Remove the bundle, Dock tile and launchd agent. Returns what was removed."""
     removed = []
@@ -225,9 +250,7 @@ def uninstall(app_dirs: list[Path]) -> list[str]:
             removed.append(str(app))
 
     plist_path = agent_path()
-    if plist_path.exists():
-        subprocess.run(["launchctl", "unload", str(plist_path)], capture_output=True)
-        plist_path.unlink()
+    if uninstall_autostart():
         removed.append(str(plist_path))
 
     try:

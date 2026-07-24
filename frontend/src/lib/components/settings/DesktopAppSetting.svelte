@@ -55,7 +55,8 @@
 			const res = await fetch(`${API_BASE}/desktop-app/install`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ dock: pinToDock, autostart })
+				// Autostart is its own toggle below, not part of installing the icon.
+				body: JSON.stringify({ dock: pinToDock, autostart: false })
 			});
 			const body = await res.json();
 			if (!res.ok) throw new Error(body.detail ?? 'Install failed');
@@ -63,6 +64,30 @@
 			await loadStatus();
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Install failed.';
+		} finally {
+			busy = false;
+		}
+	}
+
+	async function setAutostart(enabled: boolean) {
+		busy = true;
+		error = null;
+		messages = [];
+		try {
+			const res = await fetch(`${API_BASE}/desktop-app/autostart`, {
+				method: 'PUT',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ enabled })
+			});
+			const body = await res.json();
+			if (!res.ok) throw new Error(body.detail ?? 'Could not change the setting');
+			messages = body.messages ?? [];
+			// Trust the server's reading of the filesystem over the click, so the
+			// toggle snaps back if the change did not actually take effect.
+			autostart = body.enabled;
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Could not change the setting.';
+			await loadStatus();
 		} finally {
 			busy = false;
 		}
@@ -157,15 +182,14 @@
 
 	<SettingItem
 		title="Start Karma at login"
-		description="Keeps the servers running from the moment you log in, so a browser-installed Karma window works on its own. Uses a little memory in the background."
+		description="Brings the servers up when you log in, so the dashboard is simply always there — a browser-installed Karma window then works on its own, with no icon to click first. Costs roughly 150–350 MB of memory in the background and almost no CPU."
+		saving={busy}
 	>
 		{#snippet control()}
 			<Switch
 				checked={autostart}
-				onCheckedChange={(v) => {
-					autostart = v;
-					if (status?.installed) install();
-				}}
+				disabled={busy}
+				onCheckedChange={(v) => setAutostart(v)}
 			/>
 		{/snippet}
 	</SettingItem>

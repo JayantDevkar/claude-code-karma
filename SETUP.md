@@ -475,6 +475,7 @@ python3 scripts/install_karma_app.py --dock --autostart
 | _(none)_ | macOS: `/Applications/Karma.app`. Windows: a Desktop shortcut. |
 | `--dock` | macOS only: pin it to the Dock, replacing any older Karma tile. |
 | `--autostart` | Start the servers at login (launchd / Startup folder). |
+| `--no-autostart` | Stop starting at login, leaving the icon in place. |
 | `--user` | macOS only: install to `~/Applications` when `/Applications` is not writable. |
 | `--uninstall` | Remove the app, its Dock tile and any login item. |
 
@@ -498,8 +499,20 @@ compile, so a splash window appears within about a second and shows progress
 > all. On macOS the user is *notified* afterwards that a background item was
 > added (System Settings → General → Login Items), where they can switch it off;
 > it is opt-out, not a blocking prompt. Windows adds a Startup entry silently.
-> Verify with `curl -s http://localhost:5180 -o /dev/null -w '%{http_code}'`
-> after a logout/login cycle.
+> Always tell the user you enabled it, and that it costs roughly 150–350 MB of
+> memory in the background. It is reversible at any time from
+> **Settings → Desktop App**, or with `--no-autostart`.
+
+**Turning autostart off later:**
+
+```bash
+python3 scripts/install_karma_app.py --no-autostart
+```
+
+or flip the switch in **Settings → Desktop App**. Either way the state is read
+back from disk, so the dashboard always reflects what the system is actually
+doing — including a change you made in macOS Login Items directly. Servers that
+are already running keep running; disabling only stops the *next* login.
 
 ### Step C: Optional — install as a browser app
 

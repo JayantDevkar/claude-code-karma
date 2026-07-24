@@ -284,6 +284,74 @@ def test_builds_app_bundle_with_correct_stub(tmp_path):
     assert info["LSUIElement"] is True
 
 
+# --------------------------------------------------------------------------
+# Autostart must be symmetric
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="launchd is macOS-only")
+def test_autostart_round_trips(tmp_path, monkeypatch):
+    """Enabling then disabling must leave no login item behind.
+
+    Regression test: the first version only ever *added* the agent, so turning
+    the toggle off silently did nothing and Karma still started at login.
+    """
+    from karma_desktop import installer_macos as mac
+
+    fake_agent = tmp_path / "com.claudecodekarma.servers.plist"
+    monkeypatch.setattr(mac, "agent_path", lambda: fake_agent)
+    # Never talk to the real launchd from a test.
+    monkeypatch.setattr(mac.subprocess, "run", lambda *a, **k: None)
+
+    assert mac.autostart_enabled() is False
+
+    mac.install_autostart(REPO, Path(sys.executable), 5180, 8020)
+    assert fake_agent.exists()
+    assert mac.autostart_enabled() is True
+
+    assert mac.uninstall_autostart() is True
+    assert not fake_agent.exists()
+    assert mac.autostart_enabled() is False
+
+    # Disabling twice is not an error, it is simply a no-op.
+    assert mac.uninstall_autostart() is False
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="launchd is macOS-only")
+def test_autostart_plist_runs_the_launcher_headless(tmp_path, monkeypatch):
+    """The login item must not try to open a window at login."""
+    import plistlib
+
+    from karma_desktop import installer_macos as mac
+
+    fake_agent = tmp_path / "agent.plist"
+    monkeypatch.setattr(mac, "agent_path", lambda: fake_agent)
+    monkeypatch.setattr(mac.subprocess, "run", lambda *a, **k: None)
+
+    mac.install_autostart(REPO, Path(sys.executable), 5180, 8020)
+    payload = plistlib.loads(fake_agent.read_bytes())
+
+    assert payload["Label"] == mac.AGENT_LABEL
+    assert payload["RunAtLoad"] is True
+    # KeepAlive must stay off: the launcher exits once the servers are up, so
+    # relaunching it forever would be a restart loop.
+    assert payload["KeepAlive"] is False
+    assert "--no-open" in payload["ProgramArguments"]
+    assert "--quiet" in payload["ProgramArguments"]
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Startup folder is Windows-only")
+def test_windows_autostart_round_trips(tmp_path, monkeypatch):
+    monkeypatch.setattr(win, "startup_dir", lambda: tmp_path)
+
+    assert win.autostart_enabled() is False
+    win.install_autostart(REPO, Path(sys.executable), 5180, 8020)
+    assert win.autostart_enabled() is True
+    assert win.uninstall_autostart() is True
+    assert win.autostart_enabled() is False
+    assert win.uninstall_autostart() is False
+
+
 @pytest.mark.skipif(sys.platform != "darwin", reason="macOS bundle layout")
 def test_app_bundle_handles_repo_paths_with_spaces(tmp_path):
     """Quoting in the stub must survive a repo path containing spaces."""
