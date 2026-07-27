@@ -494,14 +494,15 @@ Then click the icon. On the first launch of the day the frontend has to
 compile, so a splash window appears within about a second and shows progress
 (API, then frontend) rather than leaving the click looking dead.
 
-> **Agent notes:** `--autostart` is the flag that matters for unattended setup —
-> with it, `http://localhost:5180` works after any reboot with no clicking at
-> all. On macOS the user is *notified* afterwards that a background item was
-> added (System Settings → General → Login Items), where they can switch it off;
-> it is opt-out, not a blocking prompt. Windows adds a Startup entry silently.
-> Always tell the user you enabled it, and that it costs roughly 150–350 MB of
-> memory in the background. It is reversible at any time from
-> **Settings → Desktop App**, or with `--no-autostart`.
+> **Agent notes:** Installing the icon is safe to do on your own. Autostart is
+> **a decision for the user — ask before enabling it, do not enable it by
+> default.** It trades ~150–350 MB of idle memory for the dashboard always
+> being up at `http://localhost:5180` after any reboot, with no icon to click.
+> If the user says yes, add `--autostart`; then tell them macOS notifies them a
+> background item was added (System Settings → General → Login Items) — it is
+> opt-out, not a blocking prompt — and Windows adds a Startup entry silently.
+> It is reversible any time from **Settings → Desktop App** or with
+> `--no-autostart`.
 
 **Turning autostart off later:**
 
