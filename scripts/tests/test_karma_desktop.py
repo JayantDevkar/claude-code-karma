@@ -7,6 +7,7 @@ on every runner in the CI matrix.
 
 from __future__ import annotations
 
+import plistlib
 import re
 import socket
 import subprocess
@@ -315,6 +316,54 @@ def test_autostart_round_trips(tmp_path, monkeypatch):
 
     # Disabling twice is not an error, it is simply a no-op.
     assert mac.uninstall_autostart() is False
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="Dock is macOS-only")
+def test_unpin_only_removes_the_launcher_bundle(monkeypatch):
+    """Unpinning must target the launcher by bundle id, never a user's PWA tile.
+
+    Autostart enables unpin; if it matched on the word "Karma" it would also
+    strip a browser-installed PWA tile the user pinned on purpose.
+    """
+    import types
+
+    from karma_desktop import installer_macos as mac
+
+    dock = {
+        "persistent-apps": [
+            {
+                "tile-data": {
+                    "file-label": "Safari",
+                    "bundle-identifier": "com.apple.Safari",
+                }
+            },
+            {"tile-data": {"file-label": "Karma", "bundle-identifier": mac.BUNDLE_ID}},
+            {
+                "tile-data": {
+                    "file-label": "Claude Code Karma",
+                    "bundle-identifier": "com.google.Chrome.app.abc",
+                }
+            },
+        ]
+    }
+
+    monkeypatch.setattr(
+        mac.subprocess,
+        "run",
+        lambda *a, **k: types.SimpleNamespace(stdout=plistlib.dumps(dock)),
+    )
+    written = {}
+
+    def capture(plist):
+        written["p"] = plist
+        return True
+
+    monkeypatch.setattr(mac, "_write_dock", capture)
+
+    assert mac.unpin_from_dock() is True
+    labels = [a["tile-data"]["file-label"] for a in written["p"]["persistent-apps"]]
+    # Launcher gone; Safari and the user's browser PWA tile untouched.
+    assert labels == ["Safari", "Claude Code Karma"]
 
 
 @pytest.mark.skipif(sys.platform != "darwin", reason="launchd is macOS-only")

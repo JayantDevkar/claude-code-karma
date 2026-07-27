@@ -125,13 +125,6 @@ def add_to_dock(app: Path) -> bool:
     if not url.endswith("/"):
         url += "/"
 
-    def _is_karma_tile(tile: dict) -> bool:
-        td = tile.get("tile-data", {})
-        haystack = (td.get("file-label") or "") + (
-            td.get("file-data", {}).get("_CFURLString") or ""
-        )
-        return core.APP_NAME.lower() in haystack.lower()
-
     # Any existing Karma tile is replaced -- including the browser-installed
     # PWA shim, which looks identical but cannot start the servers. Leaving
     # both pinned is the single most confusing outcome for a user.
@@ -154,7 +147,23 @@ def add_to_dock(app: Path) -> bool:
         },
     )
     plist["persistent-apps"] = apps
+    return _write_dock(plist)
 
+
+def _is_karma_tile(tile: dict) -> bool:
+    td = tile.get("tile-data", {})
+    haystack = (td.get("file-label") or "") + (
+        td.get("file-data", {}).get("_CFURLString") or ""
+    )
+    return core.APP_NAME.lower() in haystack.lower()
+
+
+def _write_dock(plist: dict) -> bool:
+    """Persist a modified Dock plist and restart the Dock.
+
+    SIGKILL, not SIGTERM: the Dock rewrites its in-memory state back on a
+    graceful termination, silently reverting whatever was just imported.
+    """
     tmp = Path(
         subprocess.run(["mktemp"], capture_output=True, text=True).stdout.strip()
     )
@@ -170,6 +179,37 @@ def add_to_dock(app: Path) -> bool:
         return False
     finally:
         tmp.unlink(missing_ok=True)
+
+
+def unpin_from_dock() -> bool:
+    """Remove the launcher's Dock tile. True if a tile was actually removed.
+
+    Used when autostart is enabled: the servers then come up at login, so the
+    launcher never needs clicking, and a pinned launcher tile only competes
+    with the browser-installed PWA icon the user actually wants. This matches
+    only the launcher's own bundle id, so it never touches a PWA tile the user
+    pinned themselves.
+    """
+    try:
+        raw = subprocess.run(
+            ["defaults", "export", "com.apple.dock", "-"],
+            capture_output=True,
+            check=True,
+        ).stdout
+        plist = plistlib.loads(raw)
+    except (subprocess.SubprocessError, OSError, plistlib.InvalidFileException):
+        return False
+
+    apps = plist.get("persistent-apps", [])
+    kept = [
+        a
+        for a in apps
+        if (a.get("tile-data", {}).get("bundle-identifier") or "") != BUNDLE_ID
+    ]
+    if len(kept) == len(apps):
+        return False
+    plist["persistent-apps"] = kept
+    return _write_dock(plist)
 
 
 # --------------------------------------------------------------------------

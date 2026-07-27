@@ -225,6 +225,13 @@ def _set_autostart_sync(enabled: bool) -> AutostartResult:
         backend.install_autostart(repo, python, core.WEB_PORT, core.API_PORT)
         messages.append("Karma will now start at login.")
         messages.append(login_items_hint)
+        # With the servers up at login, the launcher never needs clicking, so a
+        # pinned launcher tile only competes with the PWA icon the user pins.
+        if sys.platform == "darwin" and backend.unpin_from_dock():
+            messages.append(
+                "Unpinned the launcher from the Dock — install Karma from your "
+                "browser's address bar (Install app) and pin that instead."
+            )
     else:
         removed = backend.uninstall_autostart()
         messages.append(

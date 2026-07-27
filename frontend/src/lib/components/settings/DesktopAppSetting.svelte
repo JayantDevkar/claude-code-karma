@@ -169,10 +169,10 @@
 		{/snippet}
 	</SettingItem>
 
-	{#if isMac}
+	{#if isMac && !autostart}
 		<SettingItem
-			title="Pin to the Dock"
-			description="Replaces any existing Karma tile so there is only ever one icon to click. Restarts the Dock."
+			title="Pin the launcher to the Dock"
+			description="Adds one Karma tile you click to start the servers. Only useful without autostart — with autostart on, pin the browser-installed Karma instead, since the servers are already running."
 		>
 			{#snippet control()}
 				<Switch checked={pinToDock} onCheckedChange={(v) => (pinToDock = v)} />

@@ -103,19 +103,29 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         print(f"Installed {app}")
 
-        if args.dock:
+        if args.dock and not args.autostart:
             print(
                 "Pinned to the Dock."
                 if backend.add_to_dock(app)
                 else "Could not update the Dock; drag the app there manually."
             )
+        elif args.dock and args.autostart:
+            print(
+                "Skipped pinning the launcher: with autostart on the servers "
+                "come up at login, so pin the browser-installed PWA instead."
+            )
         if args.autostart:
             backend.install_autostart(repo, python, args.web_port, args.api_port)
             print(f"Autostart enabled: {backend.agent_path()}")
+            # A pinned launcher only competes with the PWA icon once autostart
+            # is doing the server-starting job.
+            if backend.unpin_from_dock():
+                print("Unpinned the launcher from the Dock.")
             print(
                 "macOS will notify you a background item was added; you can turn "
                 "it off under System Settings > General > Login Items."
             )
+            print("Pin Karma from your browser's address bar (Install app).")
         elif args.no_autostart:
             print(
                 "Autostart disabled."
