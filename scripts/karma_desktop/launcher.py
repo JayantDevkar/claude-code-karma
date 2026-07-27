@@ -13,6 +13,8 @@ Run directly for a headless check::
 from __future__ import annotations
 
 import argparse
+import contextlib
+import os
 import shutil
 import subprocess
 import sys
@@ -55,24 +57,28 @@ def _fail(message: str, quiet: bool) -> int:
         print(f"FAIL: {message}", file=sys.stderr)
         return 1
     if sys.platform == "darwin":
+        # message can contain a path read from a third-party process (lsof), so
+        # it must be quoted as an AppleScript literal, never spliced into source.
         subprocess.run(
             [
                 "/usr/bin/osascript",
                 "-e",
-                f'display alert "Karma" message "{message}" as critical',
+                f'display alert "Karma" message {_osa_quote(message)} as critical',
             ],
             capture_output=True,
         )
     else:
+        # Same for PowerShell: a single-quoted literal so $ and $(...) in the
+        # message cannot expand or execute. CREATE_NO_WINDOW keeps the error
+        # path from flashing a console under pythonw.
+        script = (
+            "Add-Type -AssemblyName PresentationFramework;"
+            f"[System.Windows.MessageBox]::Show({_ps_quote(message)}, 'Karma')"
+        )
         subprocess.run(
-            [
-                "powershell",
-                "-NoProfile",
-                "-Command",
-                "Add-Type -AssemblyName PresentationFramework;"
-                f'[System.Windows.MessageBox]::Show("{message}", "Karma")',
-            ],
+            ["powershell", "-NoProfile", "-Command", script],
             capture_output=True,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
     return 1
 
@@ -112,18 +118,26 @@ def _chrome_command() -> list[str] | None:
         if found:
             return [found]
     if sys.platform == "win32":
-        import os
-
-        for base in (
+        # Edge ships on every stock Windows install; searching only for Chrome
+        # meant the common case silently fell through to a plain browser tab
+        # instead of the advertised app-mode window.
+        relative = (
+            ("Google", "Chrome", "Application", "chrome.exe"),
+            ("Microsoft", "Edge", "Application", "msedge.exe"),
+            ("BraveSoftware", "Brave-Browser", "Application", "brave.exe"),
+        )
+        bases = (
             os.environ.get("PROGRAMFILES", r"C:\Program Files"),
             os.environ.get("PROGRAMFILES(X86)", r"C:\Program Files (x86)"),
             os.environ.get("LOCALAPPDATA", ""),
-        ):
+        )
+        for base in bases:
             if not base:
                 continue
-            exe = Path(base) / "Google" / "Chrome" / "Application" / "chrome.exe"
-            if exe.is_file():
-                return [str(exe)]
+            for parts in relative:
+                exe = Path(base).joinpath(*parts)
+                if exe.is_file():
+                    return [str(exe)]
     return None
 
 
@@ -309,6 +323,39 @@ def _preflight(root: Path, need_api: bool, need_web: bool) -> str | None:
     return None
 
 
+@contextlib.contextmanager
+def _spawn_lock():
+    """Best-effort cross-launch lock around the server-spawn critical section.
+
+    Uses an exclusively-created lock file; a stale one (from a crashed launch)
+    is taken over after a minute. On any error the lock is skipped rather than
+    blocking the launch -- correctness of the servers doesn't depend on it, it
+    only avoids a double-spawn race.
+    """
+    lock = core.log_dir() / "launch.lock"
+    acquired = False
+    try:
+        try:
+            fd = os.open(str(lock), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+            os.close(fd)
+            acquired = True
+        except FileExistsError:
+            import time
+
+            if lock.exists() and time.time() - lock.stat().st_mtime > 60:
+                acquired = True  # stale; proceed and let the winner-by-bind sort it out
+    except OSError:
+        pass
+    try:
+        yield
+    finally:
+        if acquired:
+            try:
+                lock.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+
 def _claim_port(root: Path, port: int, label: str) -> str | None:
     """Check whether ``port`` is free, ours, or held by an unrelated project.
 
@@ -370,10 +417,17 @@ def main(argv: list[str] | None = None) -> int:
     if problem:
         return _fail(problem, headless or args.quiet)
 
-    if not api_up:
-        start_api(root, args.api_port)
-    if not web_up:
-        start_web(root, args.web_port)
+    # Serialise the spawn so two near-simultaneous launches (an impatient
+    # double-click, or a Dock click while launchd's RunAtLoad is still working)
+    # don't both start servers and race for the port. Whoever loses the lock
+    # skips spawning and falls through to wait for the winner's servers.
+    with _spawn_lock():
+        api_up = core.port_is_up(args.api_port)
+        web_up = core.port_is_up(args.web_port)
+        if not api_up:
+            start_api(root, args.api_port)
+        if not web_up:
+            start_web(root, args.web_port)
 
     # A cold start compiles the frontend (~1-2 min); tell the user so the click
     # does not look dead. Only when something actually has to boot, and only

@@ -118,7 +118,16 @@
 	}
 </script>
 
-{#if status && !status.supported}
+{#if status === null}
+	<SettingItem
+		title="Desktop app"
+		description="Checking desktop app status…"
+	>
+		{#snippet control()}
+			<Loader2 size={14} class="animate-spin text-[var(--text-muted)]" />
+		{/snippet}
+	</SettingItem>
+{:else if !status?.supported}
 	<SettingItem
 		title="Desktop app"
 		description="Only macOS and Windows have a desktop launcher so far. You can still start Karma from the command line."
@@ -179,10 +188,10 @@
 	{#if isMac && !autostart}
 		<SettingItem
 			title="Pin the launcher to the Dock"
-			description="Adds one Karma tile you click to start the servers. Only useful without autostart — with autostart on, pin the browser-installed Karma instead, since the servers are already running."
+			description="Adds one Karma tile you click to start the servers. Only useful without autostart — with autostart on, pin the browser-installed Karma instead, since the servers are already running. Note: pinning briefly restarts the Dock."
 		>
 			{#snippet control()}
-				<Switch checked={pinToDock} onCheckedChange={(v) => (pinToDock = v)} />
+				<Switch bind:checked={pinToDock} />
 			{/snippet}
 		</SettingItem>
 	{/if}
@@ -193,11 +202,7 @@
 		saving={busy}
 	>
 		{#snippet control()}
-			<Switch
-				checked={autostart}
-				disabled={busy}
-				onCheckedChange={(v) => setAutostart(v)}
-			/>
+			<Switch bind:checked={autostart} disabled={busy} onCheckedChange={(v) => setAutostart(v)} />
 		{/snippet}
 	</SettingItem>
 {/if}

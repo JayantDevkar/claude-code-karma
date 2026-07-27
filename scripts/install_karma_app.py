@@ -25,22 +25,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from karma_desktop import core  # noqa: E402
 
-
-def stable_python() -> Path:
-    """A Python interpreter the shortcut can rely on long-term.
-
-    The launcher only uses the standard library, so any Python 3 works. What
-    matters is picking one that will still exist later — so if the installer
-    is being run from inside a virtualenv, resolve to the interpreter that
-    venv was built from rather than the venv itself, which may be deleted.
-    """
-    if sys.prefix != sys.base_prefix:
-        base = Path(sys.base_prefix) / (
-            "python.exe" if sys.platform == "win32" else "bin/python3"
-        )
-        if base.is_file():
-            return base
-    return Path(sys.executable).resolve()
+# Kept as a module-level name for backwards compatibility; the implementation
+# now lives in karma_desktop.core so the API can reach it without importing
+# this CLI script into the long-lived server process.
+stable_python = core.stable_python
 
 
 def main(argv: list[str] | None = None) -> int:

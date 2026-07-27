@@ -34,15 +34,24 @@ from karma_desktop import installer_windows as win  # noqa: E402
 # ever appear in the shipped sources again.
 FORBIDDEN = [
     re.compile(r"/Users/[a-zA-Z0-9._-]+"),  # a macOS home directory
-    re.compile(r"C:\\\\Users\\\\(?!First )"),  # a Windows profile
+    # A real Windows profile path has single backslashes (C:\Users\bob). The
+    # earlier r"C:\\\\Users\\\\" matched two literal backslashes -- a path only
+    # written that way in a non-raw string -- so real hardcoded paths sailed
+    # straight through. \\ in a raw string is one literal backslash in regex.
+    re.compile(r"C:\\Users\\(?!First )"),  # a Windows profile
     re.compile(r"/home/[a-zA-Z0-9._-]+"),  # a Linux home directory
     re.compile(r"Python\.framework/Versions/3\.\d+"),  # a pinned interpreter
     re.compile(r"My-Github"),  # a personal repo folder
 ]
 
-SHIPPED = sorted(p for p in (SCRIPTS / "karma_desktop").glob("*.py")) + [
-    SCRIPTS / "install_karma_app.py"
-]
+# The endpoint that drives the installer lives in api/, not scripts/, so scan
+# it too -- it is just as capable of hardcoding a path.
+_API_ROUTER = SCRIPTS.parent / "api" / "routers" / "desktop_app.py"
+SHIPPED = (
+    sorted(p for p in (SCRIPTS / "karma_desktop").glob("*.py"))
+    + [SCRIPTS / "install_karma_app.py"]
+    + ([_API_ROUTER] if _API_ROUTER.is_file() else [])
+)
 
 
 @pytest.mark.parametrize("path", SHIPPED, ids=lambda p: p.name)

@@ -102,18 +102,20 @@ def port_owner_cwd(port: int) -> Optional[str]:
         ).stdout.split()
         if not pids:
             return None
-        out = subprocess.run(
-            [lsof, "-a", "-p", pids[0], "-d", "cwd", "-Fn"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        ).stdout
+        # A port can have several matching pids (a reloader parent + worker, or
+        # IPv4/IPv6 sockets); return the first cwd we can resolve.
+        for pid in pids:
+            out = subprocess.run(
+                [lsof, "-a", "-p", pid, "-d", "cwd", "-Fn"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            ).stdout
+            for line in out.splitlines():
+                if line.startswith("n"):
+                    return line[1:]
     except (OSError, subprocess.SubprocessError):
         return None
-
-    for line in out.splitlines():
-        if line.startswith("n"):
-            return line[1:]
     return None
 
 
@@ -142,6 +144,23 @@ def find_venv_bin(root: Path, exe: str) -> Optional[Path]:
     return None
 
 
+def stable_python() -> Path:
+    """A Python interpreter the generated shortcut can rely on long-term.
+
+    The launcher only uses the standard library, so any Python 3 works. What
+    matters is picking one that will still exist later -- so if the installer
+    is being run from inside a virtualenv, resolve to the interpreter that venv
+    was built from rather than the venv itself, which may be deleted.
+    """
+    if sys.prefix != sys.base_prefix:
+        base = Path(sys.base_prefix) / (
+            "python.exe" if sys.platform == "win32" else "bin/python3"
+        )
+        if base.is_file():
+            return base
+    return Path(sys.executable).resolve()
+
+
 def login_shell() -> Optional[str]:
     """The user's interactive shell, used to recover their real PATH.
 
@@ -167,6 +186,24 @@ def _quote(args: Sequence[str]) -> str:
     return " ".join(shlex.quote(a) for a in args)
 
 
+_LOG_CAP_BYTES = 10 * 1024 * 1024  # keep launcher-managed logs from growing forever
+
+
+def _cap_log(log_path: Path) -> None:
+    """Truncate a server log that has grown past the cap.
+
+    api.log / web.log have no rotation; over many launches they grow without
+    bound. A hard truncate keeps the newest run's output and drops history --
+    fine for a diagnostic log.
+    """
+    try:
+        if log_path.is_file() and log_path.stat().st_size > _LOG_CAP_BYTES:
+            with open(log_path, "wb") as fh:
+                fh.write(b"[log truncated: exceeded size cap]\n")
+    except OSError:
+        pass
+
+
 def spawn_detached(
     args: Sequence[str],
     cwd: Path,
@@ -179,24 +216,33 @@ def spawn_detached(
     dashboard is open, but the servers keep running.
     """
     log_path.parent.mkdir(parents=True, exist_ok=True)
+    _cap_log(log_path)
+    # The child inherits a dup of this fd, so the parent closes its own copy
+    # once Popen has taken it -- leaving it open leaks a handle per call.
     handle = open(log_path, "ab")
+    try:
+        popen_kwargs = {
+            "cwd": str(cwd),
+            "stdout": handle,
+            "stderr": subprocess.STDOUT,
+            "stdin": subprocess.DEVNULL,
+        }
 
-    popen_kwargs = {
-        "cwd": str(cwd),
-        "stdout": handle,
-        "stderr": subprocess.STDOUT,
-        "stdin": subprocess.DEVNULL,
-    }
+        if sys.platform == "win32":
+            # Detach from this console and never flash a window.
+            popen_kwargs["creationflags"] = (
+                subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS  # type: ignore[attr-defined]
+            )
+            return subprocess.Popen(list(args), **popen_kwargs)
 
-    if sys.platform == "win32":
-        # Detach from this console and never flash a window.
-        popen_kwargs["creationflags"] = (
-            subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS  # type: ignore[attr-defined]
-        )
+        popen_kwargs["start_new_session"] = True
+        shell = login_shell() if use_login_shell else None
+        if shell:
+            # Force the working directory *after* the login shell's profile
+            # runs: a .zprofile/.bash_profile with `cd ~` would otherwise move
+            # the process out of <repo>/api before uvicorn's `main:app` import.
+            command = f"cd {_quote([str(cwd)])} && {_quote(args)}"
+            return subprocess.Popen([shell, "-lc", command], **popen_kwargs)
         return subprocess.Popen(list(args), **popen_kwargs)
-
-    popen_kwargs["start_new_session"] = True
-    shell = login_shell() if use_login_shell else None
-    if shell:
-        return subprocess.Popen([shell, "-lc", _quote(args)], **popen_kwargs)
-    return subprocess.Popen(list(args), **popen_kwargs)
+    finally:
+        handle.close()

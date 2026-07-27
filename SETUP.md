@@ -993,7 +993,7 @@ CLAUDE_KARMA_LOG_LEVEL=DEBUG uvicorn main:app --reload --port 8020
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `CLAUDE_KARMA_CORS_ORIGINS` | `["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:5180", "http://127.0.0.1:5180", "http://localhost:3001", "http://127.0.0.1:3001"]` | CORS allowed origins (JSON array) |
+| `CLAUDE_KARMA_CORS_ORIGINS` | `["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:5180", "http://127.0.0.1:5180", "http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:3001", "http://127.0.0.1:3001"]` | CORS allowed origins (JSON array) |
 | `CLAUDE_KARMA_CORS_ALLOW_CREDENTIALS` | `true` | Allow credentials in CORS |
 | `CLAUDE_KARMA_CORS_ALLOW_METHODS` | `["GET","POST","PUT","DELETE","OPTIONS"]` | Allowed HTTP methods |
 | `CLAUDE_KARMA_CORS_ALLOW_HEADERS` | `["Content-Type","Authorization"]` | Allowed request headers |

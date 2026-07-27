@@ -206,7 +206,29 @@ def add_to_dock(app: Path) -> bool:
         },
     )
     plist["persistent-apps"] = apps
-    return _write_dock(plist)
+    if not _write_dock(plist):
+        return False
+    # Confirm the tile actually materialised rather than assuming the write
+    # implies a pinned icon; the docstring's book-bookmark regeneration is left
+    # to the Dock, so verify against the persisted domain.
+    return _dock_has_bundle(BUNDLE_ID)
+
+
+def _dock_has_bundle(bundle_id: str) -> bool:
+    """Whether a persistent-app tile with ``bundle_id`` is in the Dock domain."""
+    try:
+        raw = subprocess.run(
+            ["defaults", "export", "com.apple.dock", "-"],
+            capture_output=True,
+            check=True,
+        ).stdout
+        plist = plistlib.loads(raw)
+    except (subprocess.SubprocessError, OSError, plistlib.InvalidFileException):
+        return False
+    return any(
+        (a.get("tile-data", {}).get("bundle-identifier") or "") == bundle_id
+        for a in plist.get("persistent-apps", [])
+    )
 
 
 # Exact labels the browser gives a Karma PWA shim. Matched exactly, never as a
@@ -238,11 +260,12 @@ def _write_dock(plist: dict) -> bool:
     SIGKILL, not SIGTERM: the Dock rewrites its in-memory state back on a
     graceful termination, silently reverting whatever was just imported.
     """
-    tmp = Path(
-        subprocess.run(["mktemp"], capture_output=True, text=True).stdout.strip()
-    )
+    import tempfile
+
+    fd, tmp_name = tempfile.mkstemp(suffix=".plist")
+    tmp = Path(tmp_name)
     try:
-        with open(tmp, "wb") as fh:
+        with os.fdopen(fd, "wb") as fh:
             plistlib.dump(plist, fh)
         subprocess.run(["defaults", "import", "com.apple.dock", str(tmp)], check=True)
         time.sleep(1)
@@ -386,14 +409,22 @@ def uninstall_autostart() -> bool:
 
 
 def uninstall(app_dirs: list[Path]) -> list[str]:
-    """Remove the bundle, Dock tile and launchd agent. Returns what was removed."""
+    """Remove the bundle, Dock tile and launchd agent. Returns what was removed.
+
+    Each step is independent: a permission error deleting the bundle must not
+    prevent the login item and Dock tile from also being cleaned up (otherwise
+    "Remove" could 500 while leaving the login item installed).
+    """
     removed = []
     for d in app_dirs:
         app = d / f"{core.APP_NAME}.app"
         # Only ever delete our own launcher, never a same-named vendor app.
         if app.exists() and _is_our_bundle(app):
-            shutil.rmtree(app)
-            removed.append(str(app))
+            try:
+                shutil.rmtree(app)
+                removed.append(str(app))
+            except OSError:
+                pass
 
     plist_path = agent_path()
     if uninstall_autostart():

@@ -30,15 +30,19 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS_DIR = REPO_ROOT / "scripts"
 
 
-def _load_installer():
-    """Import the shared installer package from the repo's scripts directory."""
+def _load_core():
+    """Import the installer package's core module from scripts/.
+
+    Only the package is imported, never the ``install_karma_app`` CLI script --
+    keeping the CLI's argparse/entry-point surface out of the long-lived server
+    process. ``sys.path`` is extended once and left in place (idempotent).
+    """
     if str(SCRIPTS_DIR) not in sys.path:
         sys.path.insert(0, str(SCRIPTS_DIR))
     try:
-        import install_karma_app  # noqa: PLC0415
         from karma_desktop import core  # noqa: PLC0415
 
-        return install_karma_app, core
+        return core
     except ImportError as exc:  # pragma: no cover - depends on checkout layout
         raise HTTPException(
             status_code=status.HTTP_501_NOT_IMPLEMENTED,
@@ -146,7 +150,7 @@ def _macos_app_paths() -> List[Path]:
 
 
 def _status_sync() -> DesktopAppStatus:
-    installer, core = _load_installer()
+    core = _load_core()
     supported = sys.platform in ("darwin", "win32")
     installed = False
     install_path: Optional[str] = None
@@ -181,9 +185,9 @@ def _status_sync() -> DesktopAppStatus:
 
 
 def _install_sync(body: InstallRequest) -> InstallResult:
-    installer, core = _load_installer()
+    core = _load_core()
     repo = core.repo_root()
-    python = installer.stable_python()
+    python = core.stable_python()
     messages: List[str] = []
 
     if sys.platform == "darwin":
@@ -254,9 +258,9 @@ def _set_autostart_sync(enabled: bool) -> AutostartResult:
     browser-installed app wants the servers up at login but has no use for a
     second icon.
     """
-    installer, core = _load_installer()
+    core = _load_core()
     repo = core.repo_root()
-    python = installer.stable_python()
+    python = core.stable_python()
     messages: List[str] = []
 
     if sys.platform == "darwin":
@@ -318,7 +322,7 @@ def _set_autostart_sync(enabled: bool) -> AutostartResult:
 
 
 def _uninstall_sync() -> InstallResult:
-    _load_installer()
+    _load_core()
     if sys.platform == "darwin":
         from karma_desktop import installer_macos as mac  # noqa: PLC0415
 
