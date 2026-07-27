@@ -67,19 +67,19 @@ project = Project.from_path("/Users/me/my-project")
 project = Project.from_encoded_name("-Users-me-my-project")
 
 # Properties
-project.path              # "/Users/me/my-project"
-project.encoded_name      # "-Users-me-my-project"
-project.project_dir       # Path to ~/.claude/projects/-Users-me-my-project
-project.exists            # bool
-project.session_count     # int
-project.agent_count       # int
+project.path  # "/Users/me/my-project"
+project.encoded_name  # "-Users-me-my-project"
+project.project_dir  # Path to ~/.claude/projects/-Users-me-my-project
+project.exists  # bool
+project.session_count  # int
+project.agent_count  # int
 
 # Methods
-project.list_sessions()   # List[Session]
-project.list_agents()     # List[Agent] (standalone)
-project.get_session(uuid) # Optional[Session]
-project.get_agent(id)     # Optional[Agent]
-project.get_all_subagents() # List[Agent] (across all sessions)
+project.list_sessions()  # List[Session]
+project.list_agents()  # List[Agent] (standalone)
+project.get_session(uuid)  # Optional[Session]
+project.get_agent(id)  # Optional[Agent]
+project.get_all_subagents()  # List[Agent] (across all sessions)
 ```
 
 ### Session
@@ -92,38 +92,38 @@ from models import Session
 session = project.list_sessions()[0]
 
 # Properties
-session.uuid              # Session UUID
-session.jsonl_path        # Path to JSONL file
-session.exists            # bool
-session.message_count     # int
-session.start_time        # Optional[datetime]
-session.end_time          # Optional[datetime]
+session.uuid  # Session UUID
+session.jsonl_path  # Path to JSONL file
+session.exists  # bool
+session.message_count  # int
+session.start_time  # Optional[datetime]
+session.end_time  # Optional[datetime]
 session.duration_seconds  # Optional[float]
 
 # Resource checks
-session.has_debug_log     # bool
+session.has_debug_log  # bool
 session.has_file_history  # bool
-session.has_subagents     # bool
+session.has_subagents  # bool
 session.has_tool_results  # bool
 
 # Message access (lazy-loaded)
-session.iter_messages()          # Iterator[Message]
-session.list_messages()          # List[Message]
-session.iter_user_messages()     # Iterator[UserMessage]
-session.iter_assistant_messages() # Iterator[AssistantMessage]
+session.iter_messages()  # Iterator[Message]
+session.list_messages()  # List[Message]
+session.iter_user_messages()  # Iterator[UserMessage]
+session.iter_assistant_messages()  # Iterator[AssistantMessage]
 
 # Related resources
-session.list_subagents()    # List[Agent]
-session.list_tool_results() # List[ToolResult]
-session.list_todos()        # List[TodoItem]
-session.read_debug_log()    # Optional[str]
+session.list_subagents()  # List[Agent]
+session.list_tool_results()  # List[ToolResult]
+session.list_todos()  # List[TodoItem]
+session.read_debug_log()  # Optional[str]
 
 # Analytics
-session.get_usage_summary() # TokenUsage (aggregated)
-session.get_models_used()   # Set[str]
-session.get_tools_used()    # Counter[str]
+session.get_usage_summary()  # TokenUsage (aggregated)
+session.get_models_used()  # Set[str]
+session.get_tools_used()  # Counter[str]
 session.get_git_branches()  # Set[str]
-session.get_working_directories() # Set[str]
+session.get_working_directories()  # Set[str]
 ```
 
 ### Agent
@@ -140,20 +140,20 @@ agents = project.list_agents()
 subagents = session.list_subagents()
 
 # Properties
-agent.agent_id            # Short hex ID (e.g., "a5793c3")
-agent.jsonl_path          # Path to JSONL file
-agent.is_subagent         # bool
-agent.parent_session_uuid # Optional[str]
-agent.slug                # Optional[str] (e.g., "eager-puzzling-fairy")
-agent.exists              # bool
-agent.message_count       # int
-agent.start_time          # Optional[datetime]
-agent.end_time            # Optional[datetime]
+agent.agent_id  # Short hex ID (e.g., "a5793c3")
+agent.jsonl_path  # Path to JSONL file
+agent.is_subagent  # bool
+agent.parent_session_uuid  # Optional[str]
+agent.slug  # Optional[str] (e.g., "eager-puzzling-fairy")
+agent.exists  # bool
+agent.message_count  # int
+agent.start_time  # Optional[datetime]
+agent.end_time  # Optional[datetime]
 
 # Methods
-agent.iter_messages()     # Iterator[Message]
-agent.list_messages()     # List[Message]
-agent.get_usage_summary() # TokenUsage
+agent.iter_messages()  # Iterator[Message]
+agent.list_messages()  # List[Message]
+agent.get_usage_summary()  # TokenUsage
 ```
 
 ### Messages
@@ -165,27 +165,27 @@ from models import UserMessage, AssistantMessage, FileHistorySnapshot
 
 for msg in session.iter_messages():
     # Common fields
-    msg.uuid           # str
-    msg.timestamp      # datetime
-    msg.parent_uuid    # Optional[str] (for threading)
-    msg.session_id     # Optional[str]
-    msg.is_sidechain   # bool
-    msg.cwd            # Optional[str]
-    msg.git_branch     # Optional[str]
-    msg.version        # Optional[str]
-    
+    msg.uuid  # str
+    msg.timestamp  # datetime
+    msg.parent_uuid  # Optional[str] (for threading)
+    msg.session_id  # Optional[str]
+    msg.is_sidechain  # bool
+    msg.cwd  # Optional[str]
+    msg.git_branch  # Optional[str]
+    msg.version  # Optional[str]
+
     if isinstance(msg, UserMessage):
-        msg.content    # str
+        msg.content  # str
         msg.user_type  # Optional[str]
-        
+
     elif isinstance(msg, AssistantMessage):
-        msg.model          # Optional[str] (e.g., "claude-opus-4-5-20251101")
-        msg.content_blocks # List[ContentBlock]
-        msg.usage          # Optional[TokenUsage]
-        msg.stop_reason    # Optional[str]
-        msg.text_content   # str (concatenated text blocks)
-        msg.tool_calls     # List[ToolUseBlock]
-        msg.tool_names     # List[str]
+        msg.model  # Optional[str] (e.g., "claude-opus-4-5-20251101")
+        msg.content_blocks  # List[ContentBlock]
+        msg.usage  # Optional[TokenUsage]
+        msg.stop_reason  # Optional[str]
+        msg.text_content  # str (concatenated text blocks)
+        msg.tool_calls  # List[ToolUseBlock]
+        msg.tool_names  # List[str]
 ```
 
 ### Content Blocks
@@ -218,16 +218,16 @@ from models import TokenUsage
 
 usage = session.get_usage_summary()
 
-usage.input_tokens                # int
-usage.output_tokens               # int
-usage.cache_creation_input_tokens # int
-usage.cache_read_input_tokens     # int
-usage.service_tier                # Optional[str]
+usage.input_tokens  # int
+usage.output_tokens  # int
+usage.cache_creation_input_tokens  # int
+usage.cache_read_input_tokens  # int
+usage.service_tier  # Optional[str]
 
 # Computed properties
-usage.total_input    # input_tokens + cache_read_input_tokens
-usage.total_tokens   # total_input + output_tokens
-usage.cache_hit_rate # float (0.0 - 1.0)
+usage.total_input  # input_tokens + cache_read_input_tokens
+usage.total_tokens  # total_input + output_tokens
+usage.cache_hit_rate  # float (0.0 - 1.0)
 
 # Aggregation
 total = TokenUsage.zero()
@@ -245,12 +245,12 @@ from models import ToolResult
 
 for result in session.list_tool_results():
     result.tool_use_id  # str (toolu_xxx)
-    result.path         # Path
-    result.exists       # bool
-    result.size_bytes   # int
-    
-    content = result.read_content()      # str (raises if missing)
-    content = result.read_content_safe() # Optional[str]
+    result.path  # Path
+    result.exists  # bool
+    result.size_bytes  # int
+
+    content = result.read_content()  # str (raises if missing)
+    content = result.read_content_safe()  # Optional[str]
 ```
 
 ### TodoItem
@@ -261,8 +261,8 @@ Session todo list items:
 from models import TodoItem
 
 for todo in session.list_todos():
-    todo.content      # str
-    todo.status       # "pending" | "in_progress" | "completed"
+    todo.content  # str
+    todo.status  # "pending" | "in_progress" | "completed"
     todo.active_form  # Optional[str]
 ```
 
@@ -286,10 +286,7 @@ print(f"Cache hit rate: {total.cache_hit_rate:.1%}")
 ### Find Sessions by Model
 
 ```python
-opus_sessions = [
-    s for s in project.list_sessions()
-    if "opus" in str(s.get_models_used())
-]
+opus_sessions = [s for s in project.list_sessions() if "opus" in str(s.get_models_used())]
 ```
 
 ### Extract All Tool Calls
@@ -309,10 +306,7 @@ for session in project.list_sessions():
 ```python
 from datetime import datetime
 
-sessions = sorted(
-    project.list_sessions(),
-    key=lambda s: s.start_time or datetime.min
-)
+sessions = sorted(project.list_sessions(), key=lambda s: s.start_time or datetime.min)
 
 for s in sessions:
     start = s.start_time.strftime("%Y-%m-%d %H:%M") if s.start_time else "?"
