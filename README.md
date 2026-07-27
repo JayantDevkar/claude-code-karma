@@ -286,7 +286,7 @@ This adds a launchd agent (macOS) or a Startup-folder entry (Windows) so the ser
 
 It's also what makes a browser-installed Karma work on its own: a PWA is only a window and cannot start servers, so with autostart you never need the launcher icon at all.
 
-macOS notifies you that a background item was added and lists it under **System Settings → General → Login Items**; Windows shows it in **Task Manager → Startup**. Karma reads that state back from disk, so turning it off there is reflected in the dashboard too.
+macOS notifies you that a background item was added and lists it under **System Settings → General → Login Items**; Windows shows it in **Task Manager → Startup**. You can disable it there at any time. Note that the dashboard's toggle reflects whether the login item is *installed*, not whether the OS currently has it enabled — if you switch it off in Login Items / Task Manager, the shortcut stays on disk and the toggle still reads on. Use those system settings, or the Remove button, to be sure.
 
 > **Windows notes.** SmartScreen may warn the first time, and Windows will show a firewall prompt when the servers first bind their ports — allow it for private networks. The shortcut runs via `pythonw.exe`, so no console window flashes.
 

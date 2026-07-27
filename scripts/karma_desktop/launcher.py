@@ -30,8 +30,27 @@ API_TIMEOUT = 90
 WEB_TIMEOUT = 240
 
 
+def _log(message: str) -> None:
+    """Append a line to the launcher log. Never raises.
+
+    The autostart path runs under ``pythonw`` (Windows) or a launchd job with
+    no terminal, where ``sys.stdout``/``sys.stderr`` are None and ``print`` is
+    a silent no-op. Without this, a failed autostart leaves nothing at all to
+    inspect -- the user just finds Karma missing after login. The macOS agent
+    additionally redirects to autostart.log, but this covers every platform.
+    """
+    try:
+        from datetime import datetime
+
+        with open(core.log_dir() / "launcher.log", "a", encoding="utf-8") as fh:
+            fh.write(f"{datetime.now().isoformat(timespec='seconds')} {message}\n")
+    except OSError:
+        pass
+
+
 def _fail(message: str, quiet: bool) -> int:
     """Report a startup failure, using a GUI alert when there is no terminal."""
+    _log(f"FAIL: {message}")
     if quiet or sys.platform not in ("darwin", "win32"):
         print(f"FAIL: {message}", file=sys.stderr)
         return 1
@@ -320,6 +339,7 @@ def main(argv: list[str] | None = None) -> int:
             headless or args.quiet,
         )
 
+    _log(f"OK: servers ready at {url} (headless={headless})")
     if headless:
         print(f"OK: Karma is ready at {url}")
         return 0

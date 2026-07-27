@@ -263,6 +263,52 @@ def test_pythonw_preferred_when_present():
     assert chosen.name in ("pythonw.exe", Path(sys.executable).name)
 
 
+def test_ps_quote_neutralises_expansion_and_quotes():
+    """PowerShell single-quoting must make $ and $(...) inert and escape '."""
+    assert win._ps_quote(r"C:\dev\proj$1") == r"'C:\dev\proj$1'"
+    assert win._ps_quote("a$(rm -rf)b") == "'a$(rm -rf)b'"
+    assert win._ps_quote("O'Brien") == "'O''Brien'"
+
+
+def test_build_script_single_quotes_every_path(tmp_path):
+    """A repo path with $ and () must never reach a double-quoted PS string.
+
+    Regression: lnk/target/workdir/icon were substituted into double-quoted
+    strings, where $(...) executes and " breaks out -- an injection through any
+    path. Only the arguments field was quoted correctly.
+    """
+    target = Path(r"C:\dev\proj$(whoami)\pythonw.exe")
+    workdir = Path(r"C:\dev\proj$(whoami)")
+    lnk = tmp_path / "Karma.lnk"
+    script = win._build_script(
+        lnk, target, arguments='"x.py" --web-port 5180', workdir=workdir, icon=None
+    )
+    # The dangerous path appears only inside single quotes, never double.
+    assert f"$sc.TargetPath = '{target}'" in script
+    assert f"$sc.WorkingDirectory = '{workdir}'" in script
+    assert '"C:\\dev\\proj$(whoami)\\pythonw.exe"' not in script
+    # One line, so -Command's newline handling is never a factor.
+    assert "\n" not in script
+
+
+def test_known_folder_falls_back_without_registry(monkeypatch, tmp_path):
+    """Off Windows (no winreg) the fallback path is used, not invented."""
+    fallback = tmp_path / "Desktop"
+    fallback.mkdir()
+    # On non-Windows winreg import fails inside _known_folder -> fallback.
+    assert win._known_folder("Desktop", fallback) == fallback
+
+
+def test_log_writes_even_without_a_terminal(monkeypatch, tmp_path):
+    """Failures must be inspectable under pythonw where print is a no-op."""
+    from karma_desktop import core, launcher
+
+    monkeypatch.setattr(core, "log_dir", lambda: tmp_path)
+    launcher._log("FAIL: something broke")
+    logged = (tmp_path / "launcher.log").read_text()
+    assert "FAIL: something broke" in logged
+
+
 # --------------------------------------------------------------------------
 # Destructive-operation safety (macOS)
 # --------------------------------------------------------------------------

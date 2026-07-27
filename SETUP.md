@@ -511,10 +511,14 @@ looks dead.
 python3 scripts/install_karma_app.py --no-autostart
 ```
 
-or flip the switch in **Settings → Desktop App**. Either way the state is read
-back from disk, so the dashboard always reflects what the system is actually
-doing — including a change you made in macOS Login Items directly. Servers that
-are already running keep running; disabling only stops the *next* login.
+or flip the switch in **Settings → Desktop App**. Either removes the login
+item. The dashboard toggle reflects whether the item is *installed*, not
+whether the OS currently has it enabled: disabling it in **macOS Login Items**
+or **Windows Task Manager → Startup** leaves the file on disk (the OS records
+the disable elsewhere), so the toggle still reads on. To be certain it's gone,
+disable it from those system settings or use `--no-autostart` / the Remove
+button. Servers already running keep running; disabling only stops the *next*
+login.
 
 ### Step C: Optional — install as a browser app
 

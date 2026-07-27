@@ -257,12 +257,15 @@ def agent_path() -> Path:
 
 
 def autostart_enabled() -> bool:
-    """Whether Karma is registered to start at login.
+    """Whether the launchd login item is *installed*.
 
-    Read from disk rather than from a stored preference. macOS lists the agent
-    under System Settings -> General -> Login Items, where the user can disable
-    it without going through us; deriving the answer from the filesystem means
-    the UI can never disagree with what the system actually does.
+    This reports the presence of the agent plist, not whether macOS will run
+    it at login. On Ventura and later the user can disable the item under
+    System Settings -> General -> Login Items; that records a disabled state in
+    the system's background-items database while the plist file stays on disk,
+    and there is no reliable, non-root way to read that state. So a True result
+    means "we installed it", not "it is guaranteed to run at login" -- do not
+    claim the two are the same.
     """
     return agent_path().exists()
 

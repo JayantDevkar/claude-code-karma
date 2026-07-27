@@ -17,39 +17,56 @@ from . import core
 
 SHORTCUT_NAME = f"{core.APP_NAME}.lnk"
 
-# Creating a .lnk needs the Windows shell COM object. PowerShell can reach it
-# without any third-party package, which keeps the installer dependency-free.
-_PS_CREATE = r"""
-$ErrorActionPreference = 'Stop'
-$shell = New-Object -ComObject WScript.Shell
-$sc = $shell.CreateShortcut("{lnk}")
-$sc.TargetPath = "{target}"
-$sc.Arguments = '{arguments}'
-$sc.WorkingDirectory = "{workdir}"
-$sc.Description = 'Start Claude Code Karma and open the dashboard'
-{icon}
-$sc.Save()
-"""
+
+def _ps_quote(value: object) -> str:
+    """Quote a value as a PowerShell single-quoted literal.
+
+    Single-quoted PowerShell strings do not expand ``$var`` or ``$(...)``, so a
+    path containing ``$`` or ``()`` is inert and cannot execute; only an
+    embedded single quote needs doubling. The previous template substituted
+    paths into *double*-quoted strings, where ``$(...)`` runs and ``"`` breaks
+    out -- an injection through any repo/profile path.
+    """
+    return "'" + str(value).replace("'", "''") + "'"
+
+
+def _known_folder(reg_name: str, fallback: Path) -> Path:
+    """Resolve a Windows shell folder from the registry, OneDrive-aware.
+
+    ``HKCU\\...\\Explorer\\Shell Folders`` holds the *current, expanded* path for
+    'Desktop', 'Startup', etc. With OneDrive Known Folder Move (the default on
+    most consumer Windows) this points at the OneDrive location, while the
+    legacy ``%USERPROFILE%\\Desktop`` often lingers as a stale folder or
+    junction -- so probing the profile path first drops shortcuts where the
+    user never sees them. The registry is the authoritative source.
+    """
+    try:
+        import winreg  # noqa: PLC0415 - Windows-only stdlib
+
+        key = r"Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders"
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key) as handle:
+            value, _ = winreg.QueryValueEx(handle, reg_name)
+        resolved = Path(os.path.expandvars(value))
+        if resolved.is_dir():
+            return resolved
+    except (OSError, ImportError, ValueError):
+        pass
+    return fallback
 
 
 def desktop_dir() -> Path:
-    """The user's Desktop, honouring a redirected (OneDrive) profile."""
-    userprofile = os.environ.get("USERPROFILE")
-    if userprofile:
-        for candidate in (
-            Path(userprofile) / "Desktop",
-            Path(userprofile) / "OneDrive" / "Desktop",
-        ):
-            if candidate.is_dir():
-                return candidate
-    return Path.home() / "Desktop"
+    """The user's real Desktop, honouring OneDrive Known Folder Move."""
+    userprofile = os.environ.get("USERPROFILE", str(Path.home()))
+    return _known_folder("Desktop", Path(userprofile) / "Desktop")
 
 
 def startup_dir() -> Path:
     """The per-user Startup folder, whose contents run at logon."""
-    appdata = os.environ.get("APPDATA")
-    base = Path(appdata) if appdata else Path.home() / "AppData" / "Roaming"
-    return base / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup"
+    appdata = os.environ.get("APPDATA", str(Path.home() / "AppData" / "Roaming"))
+    fallback = (
+        Path(appdata) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup"
+    )
+    return _known_folder("Startup", fallback)
 
 
 def pythonw_for(python: Path) -> Path:
@@ -63,6 +80,29 @@ def pythonw_for(python: Path) -> Path:
     return candidate if candidate.is_file() else python
 
 
+def _build_script(
+    lnk: Path, target: Path, arguments: str, workdir: Path, icon: Path | None
+) -> str:
+    """Build the .lnk-creating PowerShell, every value single-quoted.
+
+    One line with ``;`` separators rather than embedded newlines, so it is not
+    at the mercy of how ``-Command`` handles multi-line input.
+    """
+    lines = [
+        "$ErrorActionPreference = 'Stop'",
+        "$shell = New-Object -ComObject WScript.Shell",
+        f"$sc = $shell.CreateShortcut({_ps_quote(lnk)})",
+        f"$sc.TargetPath = {_ps_quote(target)}",
+        f"$sc.Arguments = {_ps_quote(arguments)}",
+        f"$sc.WorkingDirectory = {_ps_quote(workdir)}",
+        "$sc.Description = 'Start Claude Code Karma and open the dashboard'",
+    ]
+    if icon is not None and icon.is_file():
+        lines.append(f"$sc.IconLocation = {_ps_quote(icon)}")
+    lines.append("$sc.Save()")
+    return "; ".join(lines)
+
+
 def create_shortcut(
     lnk: Path,
     target: Path,
@@ -72,19 +112,7 @@ def create_shortcut(
 ) -> Path:
     """Write a .lnk via the WScript.Shell COM object."""
     lnk.parent.mkdir(parents=True, exist_ok=True)
-    icon_line = ""
-    if icon is not None and icon.is_file():
-        icon_line = f'$sc.IconLocation = "{icon}"'
-
-    script = _PS_CREATE.format(
-        lnk=str(lnk),
-        target=str(target),
-        # Single-quoted in PowerShell, so escape embedded single quotes only;
-        # this keeps paths containing spaces intact.
-        arguments=arguments.replace("'", "''"),
-        workdir=str(workdir),
-        icon=icon_line,
-    )
+    script = _build_script(lnk, target, arguments, workdir, icon)
     subprocess.run(
         ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script],
         check=True,
@@ -113,11 +141,13 @@ def install_app(repo: Path, python: Path, web_port: int, api_port: int) -> Path:
 
 
 def autostart_enabled() -> bool:
-    """Whether Karma is registered to start at logon.
+    """Whether the Startup entry is *installed*.
 
-    Read from disk rather than from a stored preference: Task Manager's Startup
-    tab can disable the entry independently of us, so the filesystem is the only
-    answer that cannot go stale.
+    This reports the presence of the shortcut, not whether Windows will
+    actually run it: Task Manager's Startup tab can disable the entry (a flag
+    under ``StartupApproved`` in the registry) while the ``.lnk`` stays on disk,
+    and that disabled flag is not read here. So a True result means "we put it
+    there", not "it is guaranteed to run at logon".
     """
     return (startup_dir() / SHORTCUT_NAME).exists()
 
