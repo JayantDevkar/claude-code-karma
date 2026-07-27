@@ -3,6 +3,7 @@ to the Dock, optionally started at login by launchd."""
 
 from __future__ import annotations
 
+import os
 import plistlib
 import shutil
 import subprocess
@@ -53,30 +54,13 @@ def _is_our_bundle(app: Path) -> bool:
         return False
 
 
-def install_app(
-    repo: Path,
-    python: Path,
-    app_dir: Path,
-    web_port: int,
-    api_port: int,
-) -> Path:
-    """Create ``<app_dir>/Karma.app`` and return its path.
-
-    Refuses to overwrite an existing ``Karma.app`` that is not ours. "Karma" is
-    not a rare product name, and blindly ``rmtree``-ing whatever sits at that
-    path would delete an unrelated vendor's app.
-    """
-    app = app_dir / f"{core.APP_NAME}.app"
-    if app.exists():
-        if not _is_our_bundle(app):
-            raise FileExistsError(
-                f"{app} already exists and is not the Karma launcher "
-                f"(bundle id != {BUNDLE_ID}). Refusing to overwrite it."
-            )
-        shutil.rmtree(app)
-
-    macos = app / "Contents" / "MacOS"
-    resources = app / "Contents" / "Resources"
+def _build_bundle(
+    dest: Path, repo: Path, python: Path, web_port: int, api_port: int
+) -> None:
+    """Write a complete .app bundle at ``dest``. All the fallible I/O lives here
+    so it can be done off to the side and swapped in atomically."""
+    macos = dest / "Contents" / "MacOS"
+    resources = dest / "Contents" / "Resources"
     macos.mkdir(parents=True)
     resources.mkdir(parents=True)
 
@@ -113,8 +97,55 @@ def install_app(
     }
     if icon_name:
         info["CFBundleIconFile"] = icon_name
-    with open(app / "Contents" / "Info.plist", "wb") as fh:
+    with open(dest / "Contents" / "Info.plist", "wb") as fh:
         plistlib.dump(info, fh)
+
+
+def install_app(
+    repo: Path,
+    python: Path,
+    app_dir: Path,
+    web_port: int,
+    api_port: int,
+) -> Path:
+    """Create ``<app_dir>/Karma.app`` atomically and return its path.
+
+    Refuses to overwrite an existing ``Karma.app`` that is not ours -- "Karma"
+    is not a rare product name, and blindly ``rmtree``-ing whatever sits there
+    would delete an unrelated vendor's app.
+
+    The bundle is built in a temp directory beside the target and swapped in
+    with directory renames, so a failure partway through (permission denied on
+    the write, disk full, a symlink in the way) never leaves a destroyed or
+    half-written bundle at the target that ``status`` would then report as
+    "installed".
+    """
+    app = app_dir / f"{core.APP_NAME}.app"
+    if app.exists() and not _is_our_bundle(app):
+        raise FileExistsError(
+            f"{app} already exists and is not the Karma launcher "
+            f"(bundle id != {BUNDLE_ID}). Refusing to overwrite it."
+        )
+
+    tmp = app_dir / f".{core.APP_NAME}.app.tmp.{os.getpid()}"
+    backup = app_dir / f".{core.APP_NAME}.app.bak.{os.getpid()}"
+    shutil.rmtree(tmp, ignore_errors=True)
+    try:
+        _build_bundle(tmp, repo, python, web_port, api_port)
+        # Move the old bundle aside, swing the new one in, then drop the old.
+        # If the swap fails, the original is restored, so the target is never
+        # left broken.
+        if app.exists():
+            os.replace(app, backup)
+        try:
+            os.replace(tmp, app)
+        except OSError:
+            if backup.exists():
+                os.replace(backup, app)
+            raise
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+        shutil.rmtree(backup, ignore_errors=True)
 
     # Nudge LaunchServices so the icon appears without a logout.
     subprocess.run(["touch", str(app)], capture_output=True)
@@ -321,8 +352,22 @@ def install_autostart(repo: Path, python: Path, web_port: int, api_port: int) ->
     with open(plist_path, "wb") as fh:
         plistlib.dump(payload, fh)
 
+    # launchctl load/unload is the legacy interface (bootstrap/bootout gui/$UID
+    # is the modern one), but it still works on macOS 13-15. It only activates
+    # the agent for *this* session; loginwindow loads the plist from disk at the
+    # next login regardless, so a load failure now does not mean it won't run at
+    # login -- but it can flag a malformed plist, so don't swallow it.
     subprocess.run(["launchctl", "unload", str(plist_path)], capture_output=True)
-    subprocess.run(["launchctl", "load", str(plist_path)], capture_output=True)
+    load = subprocess.run(["launchctl", "load", str(plist_path)], capture_output=True)
+    if load.returncode != 0:
+        try:
+            with open(logs / "autostart.log", "a", encoding="utf-8") as fh:
+                fh.write(
+                    "launchctl load returned "
+                    f"{load.returncode}: {load.stderr.decode(errors='replace').strip()}\n"
+                )
+        except OSError:
+            pass
     return plist_path
 
 
@@ -354,34 +399,10 @@ def uninstall(app_dirs: list[Path]) -> list[str]:
     if uninstall_autostart():
         removed.append(str(plist_path))
 
-    try:
-        raw = subprocess.run(
-            ["defaults", "export", "com.apple.dock", "-"],
-            capture_output=True,
-            check=True,
-        ).stdout
-        plist = plistlib.loads(raw)
-        before = len(plist.get("persistent-apps", []))
-        plist["persistent-apps"] = [
-            a
-            for a in plist.get("persistent-apps", [])
-            if BUNDLE_ID not in (a.get("tile-data", {}).get("bundle-identifier") or "")
-        ]
-        if len(plist["persistent-apps"]) != before:
-            tmp = Path(
-                subprocess.run(
-                    ["mktemp"], capture_output=True, text=True
-                ).stdout.strip()
-            )
-            with open(tmp, "wb") as fh:
-                plistlib.dump(plist, fh)
-            subprocess.run(
-                ["defaults", "import", "com.apple.dock", str(tmp)], check=True
-            )
-            subprocess.run(["killall", "-9", "Dock"], capture_output=True)
-            tmp.unlink(missing_ok=True)
-            removed.append("Dock tile")
-    except (subprocess.SubprocessError, OSError, plistlib.InvalidFileException):
-        pass
+    # Removing the launcher's Dock tile goes through the same _write_dock path
+    # as pin/unpin -- one implementation, so the killall-9 timing that makes the
+    # write actually land can't drift out of sync between two copies.
+    if unpin_from_dock():
+        removed.append("Dock tile")
 
     return removed

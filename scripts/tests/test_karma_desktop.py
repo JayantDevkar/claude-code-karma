@@ -11,6 +11,7 @@ import plistlib
 import re
 import socket
 import subprocess
+import types
 import sys
 from pathlib import Path
 
@@ -462,7 +463,11 @@ def test_autostart_round_trips(tmp_path, monkeypatch):
     fake_agent = tmp_path / "com.claudecodekarma.servers.plist"
     monkeypatch.setattr(mac, "agent_path", lambda: fake_agent)
     # Never talk to the real launchd from a test.
-    monkeypatch.setattr(mac.subprocess, "run", lambda *a, **k: None)
+    monkeypatch.setattr(
+        mac.subprocess,
+        "run",
+        lambda *a, **k: types.SimpleNamespace(returncode=0, stderr=b""),
+    )
 
     assert mac.autostart_enabled() is False
 
@@ -535,7 +540,11 @@ def test_autostart_plist_runs_the_launcher_headless(tmp_path, monkeypatch):
 
     fake_agent = tmp_path / "agent.plist"
     monkeypatch.setattr(mac, "agent_path", lambda: fake_agent)
-    monkeypatch.setattr(mac.subprocess, "run", lambda *a, **k: None)
+    monkeypatch.setattr(
+        mac.subprocess,
+        "run",
+        lambda *a, **k: types.SimpleNamespace(returncode=0, stderr=b""),
+    )
 
     mac.install_autostart(REPO, Path(sys.executable), 5180, 8020)
     payload = plistlib.loads(fake_agent.read_bytes())
@@ -587,3 +596,89 @@ def test_app_bundle_handles_repo_paths_with_spaces(tmp_path):
         ).returncode
         == 0
     )
+
+
+# --------------------------------------------------------------------------
+# Server start: no dev-mode reload, and fail fast on a missing toolchain
+# --------------------------------------------------------------------------
+
+
+def test_start_api_does_not_enable_reload(tmp_path, monkeypatch):
+    """An autostart/login server must not run uvicorn --reload.
+
+    Regression: --reload doubles the process count and, without watchfiles,
+    StatReload polls the tree continuously -- steady CPU on an idle laptop.
+    """
+    from karma_desktop import core, launcher
+
+    monkeypatch.setattr(core, "find_venv_bin", lambda root, exe: None)
+    captured = {}
+    monkeypatch.setattr(
+        core, "spawn_detached", lambda args, **k: captured.setdefault("args", args)
+    )
+    launcher.start_api(tmp_path, 8020)
+    assert "--reload" not in captured["args"]
+    assert "uvicorn" in captured["args"][0]
+
+
+def test_preflight_flags_missing_frontend_deps(tmp_path):
+    """A fresh clone with no node_modules gets an instant, accurate error."""
+    from karma_desktop import launcher
+
+    (tmp_path / "frontend").mkdir()
+    msg = launcher._preflight(tmp_path, need_api=False, need_web=True)
+    assert msg is not None and "npm install" in msg
+
+
+def test_preflight_flags_missing_uvicorn(tmp_path, monkeypatch):
+    from karma_desktop import core, launcher
+
+    monkeypatch.setattr(core, "find_venv_bin", lambda root, exe: None)
+    monkeypatch.setattr(launcher, "_has_command", lambda name: False)
+    msg = launcher._preflight(tmp_path, need_api=True, need_web=False)
+    assert msg is not None and "uvicorn" in msg
+
+
+def test_preflight_clean_when_nothing_needed(tmp_path):
+    from karma_desktop import launcher
+
+    assert launcher._preflight(tmp_path, need_api=False, need_web=False) is None
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="macOS bundle layout")
+def test_failed_reinstall_preserves_the_existing_bundle(tmp_path, monkeypatch):
+    """A build failure during reinstall must not destroy the working bundle.
+
+    Regression: install_app deleted the old bundle before writing the new one,
+    so a mid-write failure left a broken /Applications/Karma.app that status
+    then reported as installed.
+    """
+    from karma_desktop import installer_macos as mac
+
+    app = mac.install_app(REPO, Path(sys.executable), tmp_path, 5180, 8020)
+    original = (app / "Contents" / "MacOS" / "Karma").read_text()
+
+    def boom(*a, **k):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(mac, "_build_bundle", boom)
+    with pytest.raises(OSError):
+        mac.install_app(REPO, Path(sys.executable), tmp_path, 5180, 8020)
+
+    assert app.is_dir(), "the working bundle must survive a failed reinstall"
+    assert (app / "Contents" / "MacOS" / "Karma").read_text() == original
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="Dock is macOS-only")
+def test_uninstall_removes_dock_tile_through_write_dock(tmp_path, monkeypatch):
+    """uninstall() must reuse the single Dock-write path, not a second copy."""
+    from karma_desktop import installer_macos as mac
+
+    called = {}
+    monkeypatch.setattr(
+        mac, "unpin_from_dock", lambda: called.setdefault("unpin", True) or True
+    )
+    monkeypatch.setattr(mac, "uninstall_autostart", lambda: False)
+    removed = mac.uninstall([tmp_path])  # no app on disk; only the Dock path runs
+    assert called.get("unpin") is True
+    assert "Dock tile" in removed

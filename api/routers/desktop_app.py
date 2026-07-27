@@ -210,11 +210,22 @@ def _install_sync(body: InstallRequest) -> InstallResult:
             )
         messages.append(f"Installed {app}")
 
-        if body.dock:
+        # Pinning the launcher only makes sense when autostart is off. With
+        # autostart on the servers are already up at login, so the launcher is
+        # never clicked and its tile would just fight the PWA icon -- so skip
+        # the pin (and unpin any stale launcher tile) in that state, regardless
+        # of what the request asked for.
+        if body.dock and not mac.autostart_enabled():
             if mac.add_to_dock(app):
                 messages.append("Pinned to the Dock.")
             else:
                 messages.append("Could not update the Dock; drag the app there manually.")
+        elif body.dock and mac.autostart_enabled():
+            mac.unpin_from_dock()
+            messages.append(
+                "Autostart is on, so the launcher was not pinned; pin the "
+                "browser-installed Karma instead."
+            )
         if body.autostart:
             mac.install_autostart(repo, python, core.WEB_PORT, core.API_PORT)
             messages.append("Karma will now start at login.")
@@ -285,12 +296,24 @@ def _set_autostart_sync(enabled: bool) -> AutostartResult:
             if removed
             else "Karma was not set to start at login."
         )
+        # Autostart-on had unpinned the launcher (the PWA was the icon). Turning
+        # it off means the PWA can no longer start the servers, so restore the
+        # launcher tile if the app is installed -- otherwise disabling autostart
+        # could leave the Dock with no working Karma icon at all.
+        if sys.platform == "darwin":
+            for candidate in _macos_app_paths():
+                if candidate.exists():
+                    if backend.add_to_dock(candidate):
+                        messages.append("Re-pinned the launcher to the Dock.")
+                    break
         messages.append(
             "Servers already running were left alone; close them if you want them stopped now."
         )
 
-    # Report what is actually on disk rather than what was requested, so a
-    # partial failure can never be reported as success.
+    # ``enabled`` reflects whether the login item is installed on disk -- which
+    # is what determines login behaviour. It does not assert that launchctl
+    # accepted it this session, nor whether the OS has since disabled it in
+    # Login Items (see autostart_enabled()); those are not readable here.
     return AutostartResult(ok=True, enabled=backend.autostart_enabled(), messages=messages)
 
 

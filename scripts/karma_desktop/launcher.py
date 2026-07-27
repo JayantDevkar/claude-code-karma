@@ -230,20 +230,27 @@ def _ps_quote(text: str) -> str:
 
 
 def start_api(root: Path, port: int) -> None:
-    """Start uvicorn, preferring a karma virtualenv over the ambient PATH."""
+    """Start uvicorn, preferring a karma virtualenv over the ambient PATH.
+
+    No ``--reload``: this launcher runs Karma to *use* it, often as a login
+    item. Dev-mode reload doubles the process count (reloader parent + worker)
+    and, without watchfiles, falls back to StatReload, which polls the tree
+    continuously -- steady CPU and disk for no benefit here. Developers run
+    ``uvicorn --reload`` themselves.
+    """
     venv_uvicorn = core.find_venv_bin(root, "uvicorn")
     if venv_uvicorn:
         # A venv binary already points at its own interpreter, so no login
         # shell is needed to find it.
         core.spawn_detached(
-            [str(venv_uvicorn), "main:app", "--reload", "--port", str(port)],
+            [str(venv_uvicorn), "main:app", "--port", str(port)],
             cwd=root / "api",
             log_path=core.log_dir() / "api.log",
             use_login_shell=False,
         )
         return
     core.spawn_detached(
-        ["uvicorn", "main:app", "--reload", "--port", str(port)],
+        ["uvicorn", "main:app", "--port", str(port)],
         cwd=root / "api",
         log_path=core.log_dir() / "api.log",
     )
@@ -256,6 +263,50 @@ def start_web(root: Path, port: int) -> None:
         cwd=root / "frontend",
         log_path=core.log_dir() / "web.log",
     )
+
+
+def _has_command(name: str) -> bool:
+    """Whether ``name`` resolves in the same environment the servers run in.
+
+    Servers are launched through a login shell (GUI processes get a minimal
+    PATH), so a plain ``shutil.which`` here would false-negative on a tool that
+    is really on the user's PATH. Probe through the login shell to match.
+    """
+    shell = core.login_shell()
+    if shell:
+        result = subprocess.run(
+            [shell, "-lc", f"command -v {name}"],
+            capture_output=True,
+        )
+        return result.returncode == 0
+    return shutil.which(name) is not None
+
+
+def _preflight(root: Path, need_api: bool, need_web: bool) -> str | None:
+    """Fast, accurate error for a missing toolchain, instead of a 4-minute wait.
+
+    ``start_web`` runs ``npm run dev`` and ``start_api`` runs uvicorn; with no
+    check, a missing npm/node/node_modules or uvicorn just prints
+    "command not found" into a log nobody reads while the launcher waits out the
+    full ~4-minute port timeout.
+    """
+    if need_api:
+        if core.find_venv_bin(root, "uvicorn") is None and not _has_command("uvicorn"):
+            return (
+                "uvicorn is not installed. In the repo's api/ folder run:\n"
+                "  pip install -e '.[dev]' && pip install -r requirements.txt"
+            )
+    if need_web:
+        if not (root / "frontend" / "node_modules").is_dir():
+            return (
+                "The frontend's dependencies are not installed. Run:\n"
+                "  cd frontend && npm install"
+            )
+        if not _has_command("npm"):
+            return (
+                "npm was not found. Install Node.js (which includes npm) and try again."
+            )
+    return None
 
 
 def _claim_port(root: Path, port: int, label: str) -> str | None:
@@ -313,6 +364,11 @@ def main(argv: list[str] | None = None) -> int:
         problem = _claim_port(root, port, label)
         if problem:
             return _fail(problem, headless or args.quiet)
+
+    # Fail fast on a missing toolchain rather than waiting out the port timeout.
+    problem = _preflight(root, need_api=not api_up, need_web=not web_up)
+    if problem:
+        return _fail(problem, headless or args.quiet)
 
     if not api_up:
         start_api(root, args.api_port)

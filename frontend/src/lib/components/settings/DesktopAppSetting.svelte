@@ -33,6 +33,13 @@
 	let isMac = $derived(status?.platform === 'darwin');
 	let placeName = $derived(isMac ? 'Dock' : 'Desktop');
 
+	// Pinning the launcher only makes sense without autostart. When autostart is
+	// on the servers come up at login and the PWA is the icon, so a reinstall
+	// must not re-pin the launcher the autostart flow deliberately removed.
+	$effect(() => {
+		if (autostart) pinToDock = false;
+	});
+
 	async function loadStatus() {
 		try {
 			const res = await fetch(`${API_BASE}/desktop-app/status`);
