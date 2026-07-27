@@ -143,7 +143,9 @@ def find_session_by_message_uuid(message_uuid: str) -> Optional[SessionLookupRes
     return None
 
 
-def _find_session_jsonl(projects_dir: Path, encoded_name: str, session_uuid: str) -> Optional[Path]:
+def _find_session_jsonl(
+    projects_dir: Path, encoded_name: str, session_uuid: str
+) -> Optional[Path]:
     """
     Find a session JSONL file, searching the project dir and its worktree dirs.
 

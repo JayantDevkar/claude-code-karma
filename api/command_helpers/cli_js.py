@@ -181,14 +181,7 @@ def _find_cli_js_path() -> Path | None:
         try:
             resolved = Path(claude_bin).resolve()
             # npm global: .../bin/claude → .../lib/node_modules/@anthropic-ai/claude-code/cli.js
-            cli_js = (
-                resolved.parent.parent
-                / "lib"
-                / "node_modules"
-                / "@anthropic-ai"
-                / "claude-code"
-                / "cli.js"
-            )
+            cli_js = resolved.parent.parent / "lib" / "node_modules" / "@anthropic-ai" / "claude-code" / "cli.js"
             if cli_js.is_file():
                 return cli_js
             # Direct symlink to cli.js (e.g., Homebrew)
@@ -217,22 +210,10 @@ _CLI_JS_COMMAND_RE = re.compile(r'name:"([a-zA-Z][a-zA-Z0-9_-]*)",description:"(
 # Names to skip — these are tool definitions, pyright flags, or non-command entries
 _CLI_JS_SKIP_NAMES: frozenset[str] = frozenset(
     {
-        "javascript_tool",
-        "read_page",
-        "form_input",
-        "navigate",
-        "resize_window",
-        "gif_creator",
-        "upload_image",
-        "get_page_text",
-        "update_plan",
-        "read_console_messages",
-        "read_network_requests",
-        "shortcuts_list",
-        "shortcuts_execute",
-        "switch_browser",
-        "sharp",
-        "pyright",
+        "javascript_tool", "read_page", "form_input", "navigate", "resize_window",
+        "gif_creator", "upload_image", "get_page_text", "update_plan",
+        "read_console_messages", "read_network_requests", "shortcuts_list",
+        "shortcuts_execute", "switch_browser", "sharp", "pyright",
     }
 )
 
@@ -417,9 +398,13 @@ def _extract_template_literal(content: str, backtick_pos: int) -> str | None:
 
 
 # Regex for simple var assignments:  var X="VALUE"  or  X="VALUE"
-_VAR_ASSIGN_STR_RE = re.compile(r"(?:var\s+)?([a-zA-Z_$][a-zA-Z0-9_$]*)=\"([^\"]*)\"")
+_VAR_ASSIGN_STR_RE = re.compile(
+    r"(?:var\s+)?([a-zA-Z_$][a-zA-Z0-9_$]*)=\"([^\"]*)\""
+)
 # Regex for numeric var assignments:  var X=NUMBER
-_VAR_ASSIGN_NUM_RE = re.compile(r"(?:var\s+)?([a-zA-Z_$][a-zA-Z0-9_$]*)=(\d+)(?=[,;\s})])")
+_VAR_ASSIGN_NUM_RE = re.compile(
+    r"(?:var\s+)?([a-zA-Z_$][a-zA-Z0-9_$]*)=(\d+)(?=[,;\s})])"
+)
 # Regex for ${VARNAME} references (simple identifiers only, not function calls)
 _TEMPLATE_VAR_RE = re.compile(r"\$\{([a-zA-Z_$][a-zA-Z0-9_$]*)\}")
 # Regex for ${func(...)} patterns (function calls in template expressions)
@@ -528,7 +513,7 @@ def _extract_bundled_skill_prompts(cli_js_path: Path) -> dict[str, str]:
             text = resolved.lstrip()
             end = text.find("---", 3)
             if end != -1:
-                resolved = text[end + 3 :].lstrip("\n")
+                resolved = text[end + 3:].lstrip("\n")
 
         prompts[skill_name] = resolved.strip()
 

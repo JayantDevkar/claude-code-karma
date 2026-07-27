@@ -44,9 +44,7 @@ def _tz_date(col: str = "s.start_time") -> str:
 
 # Allowlist for SQL fragments interpolated into _query_per_item_trend.
 # Prevents future callers from accidentally passing user input.
-_ALLOWED_ITEM_COLS = frozenset(
-    {"sc.command_name", "sk.skill_name", "st.tool_name", "si.subagent_type"}
-)
+_ALLOWED_ITEM_COLS = frozenset({"sc.command_name", "sk.skill_name", "st.tool_name", "si.subagent_type"})
 
 
 def _query_per_item_trend(
@@ -656,9 +654,7 @@ def _query_item_detail(
     param_name = "item"
     item_param = {param_name: item_value}
 
-    mention_exclusion = (
-        f"AND {alias}.invocation_source != 'text_detection'" if track_mentions else ""
-    )
+    mention_exclusion = f"AND {alias}.invocation_source != 'text_detection'" if track_mentions else ""
 
     # Main session stats
     main_row = conn.execute(
@@ -714,12 +710,7 @@ def _query_item_detail(
             item_param,
         ).fetchone()[0]
 
-        if (
-            main_calls == 0
-            and sub_calls == 0
-            and mentioned_calls == 0
-            and command_triggered_calls == 0
-        ):
+        if main_calls == 0 and sub_calls == 0 and mentioned_calls == 0 and command_triggered_calls == 0:
             return None
     else:
         if main_calls == 0 and sub_calls == 0:

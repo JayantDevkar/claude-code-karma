@@ -24,11 +24,11 @@ InvocationCategory = Literal[
 ]
 
 # Categories that go into session_skills table
-_SKILL_CATEGORIES: frozenset[str] = frozenset({"bundled_skill", "plugin_skill", "custom_skill"})
-# Categories that go into session_commands table
-_COMMAND_CATEGORIES: frozenset[str] = frozenset(
-    {"builtin_command", "user_command", "plugin_command"}
+_SKILL_CATEGORIES: frozenset[str] = frozenset(
+    {"bundled_skill", "plugin_skill", "custom_skill"}
 )
+# Categories that go into session_commands table
+_COMMAND_CATEGORIES: frozenset[str] = frozenset({"builtin_command", "user_command", "plugin_command"})
 
 
 def is_skill_category(kind: str) -> bool:

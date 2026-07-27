@@ -927,7 +927,9 @@ def get_tool_summary(block, working_dirs: list[str] | None = None) -> tuple[str,
         mcp_tool = tool_input.get("toolName", "")
         # Capture the actual MCP tool arguments (everything except server/toolName)
         mcp_args = {
-            k: v for k, v in tool_input.items() if k not in ("server", "toolName") and v is not None
+            k: v
+            for k, v in tool_input.items()
+            if k not in ("server", "toolName") and v is not None
         }
         summary = f"{server}/{mcp_tool}" if server and mcp_tool else None
         metadata = {"server": server, "tool": mcp_tool}
