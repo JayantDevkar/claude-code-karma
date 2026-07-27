@@ -1,8 +1,9 @@
 """Runtime entry point for the Karma desktop icon.
 
 Invoked by the generated macOS ``.app`` or Windows Desktop shortcut. Starts
-whichever karma servers are not already running, shows a splash window while
-the frontend compiles, then opens the dashboard.
+whichever karma servers are not already running, posts a "starting" desktop
+notification so a cold start never looks like a dead click, then opens the
+dashboard once the servers answer.
 
 Run directly for a headless check::
 
@@ -15,15 +16,14 @@ import argparse
 import shutil
 import subprocess
 import sys
-import tempfile
 import webbrowser
 from pathlib import Path
 
 if __package__ in (None, ""):  # invoked as a plain script by the .app / .lnk
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-    from karma_desktop import core, splash
+    from karma_desktop import core
 else:
-    from . import core, splash
+    from . import core
 
 # A cold vite build on this repo is slow; the API is comparatively instant.
 API_TIMEOUT = 90
@@ -63,10 +63,26 @@ def _fail(message: str, quiet: bool) -> int:
 # --------------------------------------------------------------------------
 
 
+_MACOS_BROWSERS = ("Google Chrome", "Microsoft Edge", "Brave Browser", "Chromium")
+
+
 def _chrome_command() -> list[str] | None:
-    """Command to open a Chrome/Edge app-mode window, if one is installed."""
+    """Command prefix for a Chromium app-mode window, or None if none is found.
+
+    On macOS the previous version returned a Chrome command unconditionally,
+    with no check that Chrome exists. On a Safari/Firefox/Edge-only Mac that
+    ``open -na "Google Chrome"`` fails, the error is swallowed, and nothing
+    opens. Now every branch confirms the browser is actually installed, so
+    ``open_window`` can fall back to the default browser when there is no
+    Chromium family browser at all.
+    """
     if sys.platform == "darwin":
-        return ["open", "-na", "Google Chrome", "--args"]
+        for name in _MACOS_BROWSERS:
+            if (Path("/Applications") / f"{name}.app").is_dir() or (
+                Path.home() / "Applications" / f"{name}.app"
+            ).is_dir():
+                return ["open", "-na", name, "--args"]
+        return None
     candidates = (
         ["google-chrome", "chrome", "chromium", "microsoft-edge", "msedge"]
         if sys.platform != "win32"
@@ -112,7 +128,13 @@ def _installed_pwa() -> Path | None:
 
 
 def open_window(url: str) -> None:
-    """Open the dashboard, preferring an app-style window over a browser tab."""
+    """Open the dashboard, preferring an app-style window, then any browser.
+
+    Order: an installed Karma PWA (its own icon + title-bar controls), then a
+    Chromium app-mode window, then the OS default browser. Every branch is
+    guarded by an existence check so a machine without Chrome still gets a
+    window rather than a silently-swallowed failure.
+    """
     pwa = _installed_pwa()
     if pwa is not None:
         subprocess.run(["open", str(pwa)], capture_output=True)
@@ -125,23 +147,62 @@ def open_window(url: str) -> None:
             stderr=subprocess.DEVNULL,
         )
         return
+    # No Chromium browser: hand the URL to whatever the OS default is.
+    if sys.platform == "darwin":
+        subprocess.Popen(
+            ["open", url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
+        return
     webbrowser.open(url)
 
 
-def close_splash_window(port: int) -> None:
-    """Close the macOS splash window, matched by URL so only ours is touched."""
-    if sys.platform != "darwin":
-        return
-    script = f"""
-tell application "Google Chrome"
-  repeat with w in (every window)
-    try
-      if (URL of active tab of w) contains ":{port}" then close w
-    end try
-  end repeat
-end tell
-"""
-    subprocess.run(["/usr/bin/osascript", "-e", script], capture_output=True)
+def notify(message: str) -> None:
+    """Best-effort "Karma is starting" desktop notification. Never raises.
+
+    Replaces the old splash window: it tells the user a slow cold start is
+    under way without standing up an HTTP server, a throwaway port, and an
+    AppleScript teardown just to show one line of text.
+    """
+    try:
+        if sys.platform == "darwin":
+            subprocess.Popen(
+                [
+                    "/usr/bin/osascript",
+                    "-e",
+                    f'display notification {_osa_quote(message)} with title "Karma"',
+                ],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        elif sys.platform == "win32":
+            # A NotifyIcon balloon needs no third-party module. Run it detached
+            # so the launcher does not block on the balloon's dwell time.
+            ps = (
+                "Add-Type -AssemblyName System.Windows.Forms;"
+                "$n=New-Object System.Windows.Forms.NotifyIcon;"
+                "$n.Icon=[System.Drawing.SystemIcons]::Information;"
+                "$n.Visible=$true;"
+                f"$n.ShowBalloonTip(4000,'Karma',{_ps_quote(message)},"
+                "[System.Windows.Forms.ToolTipIcon]::Info);"
+                "Start-Sleep -Seconds 5;$n.Dispose()"
+            )
+            subprocess.Popen(
+                ["powershell", "-NoProfile", "-WindowStyle", "Hidden", "-Command", ps],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+    except OSError:
+        pass
+
+
+def _osa_quote(text: str) -> str:
+    """Quote a string as an AppleScript literal."""
+    return '"' + text.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def _ps_quote(text: str) -> str:
+    """Quote a string as a PowerShell single-quoted literal."""
+    return "'" + text.replace("'", "''") + "'"
 
 
 # --------------------------------------------------------------------------
@@ -239,65 +300,32 @@ def main(argv: list[str] | None = None) -> int:
     if not web_up:
         start_web(root, args.web_port)
 
-    # Only worth a splash when something actually has to boot.
-    httpd = None
+    # A cold start compiles the frontend (~1-2 min); tell the user so the click
+    # does not look dead. Only when something actually has to boot, and only
+    # when we are the interactive launcher (headless autostart stays silent).
     cold = not (api_up and web_up)
     if cold and not headless:
-        httpd = _start_splash(args.api_port, args.web_port)
+        notify("Starting servers — the dashboard will open in a moment.")
 
-    try:
-        if not core.wait_for_port(args.api_port, API_TIMEOUT):
-            return _fail(
-                f"The API did not start on port {args.api_port}. "
-                f"Check {core.log_dir() / 'api.log'}",
-                headless or args.quiet,
-            )
-        if not core.wait_for_port(args.web_port, WEB_TIMEOUT):
-            return _fail(
-                f"The frontend did not start on port {args.web_port}. "
-                f"Check {core.log_dir() / 'web.log'}",
-                headless or args.quiet,
-            )
-
-        if headless:
-            print(f"OK: Karma is ready at {url}")
-            return 0
-
-        if httpd is not None and sys.platform == "win32":
-            # The splash redirected itself; give it a moment to load the
-            # dashboard before the splash server goes away.
-            import time
-
-            time.sleep(3)
-        else:
-            open_window(url)
-            if httpd is not None:
-                import time
-
-                time.sleep(2)
-                close_splash_window(httpd.server_address[1])
-        return 0
-    finally:
-        if httpd is not None:
-            httpd.shutdown()
-            httpd.server_close()
-
-
-def _start_splash(api_port: int, web_port: int):
-    """Serve and open the splash page; returns the server, or None on failure."""
-    try:
-        tmp = Path(tempfile.mkdtemp(prefix="karma-splash-"))
-        (tmp / "index.html").write_text(
-            splash.render(api_port, web_port, redirect=sys.platform == "win32"),
-            encoding="utf-8",
+    if not core.wait_for_port(args.api_port, API_TIMEOUT):
+        return _fail(
+            f"The API did not start on port {args.api_port}. "
+            f"Check {core.log_dir() / 'api.log'}",
+            headless or args.quiet,
         )
-        httpd = splash.serve(tmp, core.SPLASH_PORT)
-    except OSError:
-        # The splash is a nicety; never let it block the actual launch.
-        return None
-    # SPLASH_PORT is 0, so read back the port the OS actually assigned.
-    open_window(f"http://localhost:{httpd.server_address[1]}/")
-    return httpd
+    if not core.wait_for_port(args.web_port, WEB_TIMEOUT):
+        return _fail(
+            f"The frontend did not start on port {args.web_port}. "
+            f"Check {core.log_dir() / 'web.log'}",
+            headless or args.quiet,
+        )
+
+    if headless:
+        print(f"OK: Karma is ready at {url}")
+        return 0
+
+    open_window(url)
+    return 0
 
 
 if __name__ == "__main__":

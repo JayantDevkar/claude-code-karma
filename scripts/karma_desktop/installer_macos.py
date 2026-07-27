@@ -35,6 +35,16 @@ def _shq(path: Path | str) -> str:
     return shlex.quote(str(path))
 
 
+def _is_our_bundle(app: Path) -> bool:
+    """True only if ``app``'s Info.plist carries our bundle identifier."""
+    info = app / "Contents" / "Info.plist"
+    try:
+        with open(info, "rb") as fh:
+            return plistlib.load(fh).get("CFBundleIdentifier") == BUNDLE_ID
+    except (OSError, plistlib.InvalidFileException):
+        return False
+
+
 def install_app(
     repo: Path,
     python: Path,
@@ -42,9 +52,19 @@ def install_app(
     web_port: int,
     api_port: int,
 ) -> Path:
-    """Create ``<app_dir>/Karma.app`` and return its path."""
+    """Create ``<app_dir>/Karma.app`` and return its path.
+
+    Refuses to overwrite an existing ``Karma.app`` that is not ours. "Karma" is
+    not a rare product name, and blindly ``rmtree``-ing whatever sits at that
+    path would delete an unrelated vendor's app.
+    """
     app = app_dir / f"{core.APP_NAME}.app"
     if app.exists():
+        if not _is_our_bundle(app):
+            raise FileExistsError(
+                f"{app} already exists and is not the Karma launcher "
+                f"(bundle id != {BUNDLE_ID}). Refusing to overwrite it."
+            )
         shutil.rmtree(app)
 
     macos = app / "Contents" / "MacOS"
@@ -79,8 +99,8 @@ def install_app(
         "CFBundlePackageType": "APPL",
         "CFBundleVersion": "1.0",
         "CFBundleShortVersionString": "1.0",
-        # Agent app: the splash window is the user-visible feedback, so the
-        # bundle itself never needs a Dock tile of its own.
+        # Agent app: a "starting" notification is the user-visible feedback, so
+        # the bundle itself never needs a Dock tile of its own.
         "LSUIElement": True,
     }
     if icon_name:
@@ -128,11 +148,11 @@ def add_to_dock(app: Path) -> bool:
     # Any existing Karma tile is replaced -- including the browser-installed
     # PWA shim, which looks identical but cannot start the servers. Leaving
     # both pinned is the single most confusing outcome for a user.
-    existing = [i for i, a in enumerate(apps) if _is_karma_tile(a)]
+    existing = [i for i, a in enumerate(apps) if _is_replaceable_karma_tile(a)]
     # Reuse the first one's slot so the icon stays where muscle memory expects
     # it; appending would drop it at the far right of the Dock.
     insert_at = existing[0] if existing else len(apps)
-    apps = [a for a in apps if not _is_karma_tile(a)]
+    apps = [a for a in apps if not _is_replaceable_karma_tile(a)]
 
     apps.insert(
         insert_at,
@@ -150,12 +170,27 @@ def add_to_dock(app: Path) -> bool:
     return _write_dock(plist)
 
 
-def _is_karma_tile(tile: dict) -> bool:
+# Exact labels the browser gives a Karma PWA shim. Matched exactly, never as a
+# substring, so "karma-tools" or a repo path containing "karma" is never hit.
+_PWA_LABELS = {"Karma", "Claude Code Karma"}
+_BROWSER_APP_PREFIXES = ("com.google.Chrome.app.", "com.microsoft.edgemac.app.")
+
+
+def _is_replaceable_karma_tile(tile: dict) -> bool:
+    """True for a tile install may replace: our own launcher, or a Karma PWA.
+
+    Matched by bundle identifier and *exact* label only. The previous version
+    matched the substring "karma" anywhere in the tile's file URL, which is a
+    full ``file:///...`` path -- so any app under a directory containing
+    "karma" (including a checkout of this repo) would be silently unpinned.
+    """
     td = tile.get("tile-data", {})
-    haystack = (td.get("file-label") or "") + (
-        td.get("file-data", {}).get("_CFURLString") or ""
-    )
-    return core.APP_NAME.lower() in haystack.lower()
+    bundle = td.get("bundle-identifier") or ""
+    label = td.get("file-label") or ""
+    if bundle == BUNDLE_ID:  # our launcher
+        return True
+    # A browser-installed Karma PWA: exact Karma label AND a browser app id.
+    return label in _PWA_LABELS and bundle.startswith(_BROWSER_APP_PREFIXES)
 
 
 def _write_dock(plist: dict) -> bool:
@@ -285,7 +320,8 @@ def uninstall(app_dirs: list[Path]) -> list[str]:
     removed = []
     for d in app_dirs:
         app = d / f"{core.APP_NAME}.app"
-        if app.exists():
+        # Only ever delete our own launcher, never a same-named vendor app.
+        if app.exists() and _is_our_bundle(app):
             shutil.rmtree(app)
             removed.append(str(app))
 

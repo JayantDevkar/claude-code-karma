@@ -23,13 +23,6 @@ from typing import Optional, Sequence
 WEB_PORT = 5180
 API_PORT = 8020
 
-# The splash server takes whatever port the OS hands out (bind to 0) rather
-# than a fixed one. A fixed 5181 would sit squarely in vite's auto-increment
-# path -- vite walks 5174, 5175, ... when its own port is busy -- making it the
-# most collision-prone of the three ports for anyone running several projects.
-# Nothing needs to predict this port: the launcher opens the URL itself.
-SPLASH_PORT = 0
-
 APP_NAME = "Karma"
 
 

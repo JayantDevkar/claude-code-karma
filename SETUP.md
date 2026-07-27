@@ -491,8 +491,9 @@ python3 scripts/karma_desktop/launcher.py --no-open
 ```
 
 Then click the icon. On the first launch of the day the frontend has to
-compile, so a splash window appears within about a second and shows progress
-(API, then frontend) rather than leaving the click looking dead.
+compile (a minute or two), so a "Starting Karma…" desktop notification appears
+right away and the dashboard opens once the servers answer — the click never
+looks dead.
 
 > **Agent notes:** Installing the icon is safe to do on your own. Autostart is
 > **a decision for the user — ask before enabling it, do not enable it by

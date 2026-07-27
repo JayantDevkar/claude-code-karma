@@ -94,6 +94,9 @@ def main(argv: list[str] | None = None) -> int:
             app = backend.install_app(
                 repo, python, app_dir, args.web_port, args.api_port
             )
+        except FileExistsError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
         except PermissionError:
             print(
                 f"No permission to write to {app_dir}. "
@@ -178,7 +181,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     print(
         "\nClick the icon to start Karma. First launch compiles the frontend "
-        "and can take a minute or two; a splash window shows progress."
+        "and can take a minute or two; a desktop notification confirms it's starting."
     )
     return 0
 

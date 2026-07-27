@@ -20,7 +20,7 @@ SCRIPTS = Path(__file__).resolve().parents[1]
 REPO = SCRIPTS.parent
 sys.path.insert(0, str(SCRIPTS))
 
-from karma_desktop import core, splash  # noqa: E402
+from karma_desktop import core  # noqa: E402
 from karma_desktop import installer_windows as win  # noqa: E402
 
 
@@ -77,16 +77,6 @@ def test_brand_ports_are_fixed():
     assert core.API_PORT == 8020
 
 
-def test_splash_port_is_os_assigned():
-    """The splash must not squat a fixed port.
-
-    A fixed splash port would sit in vite's auto-increment path (5174, 5175,
-    ...), making it the most collision-prone port of the three for anyone
-    running several projects at once.
-    """
-    assert core.SPLASH_PORT == 0
-
-
 def test_port_is_up_detects_a_live_listener():
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
@@ -125,56 +115,80 @@ def test_wait_for_port_times_out_without_a_listener():
 
 
 # --------------------------------------------------------------------------
-# Splash
+# Window opening: prefer PWA, then Chromium app-mode, then default browser
 # --------------------------------------------------------------------------
 
 
-def test_splash_substitutes_every_placeholder():
-    html = splash.render(1234, 5678)
-    assert "__API_PORT__" not in html
-    assert "__WEB_PORT__" not in html
-    assert "__HANDOFF__" not in html
-    assert "const API = 1234, WEB = 5678;" in html
+def test_open_window_prefers_the_installed_pwa(monkeypatch):
+    from karma_desktop import launcher
+
+    monkeypatch.setattr(launcher, "_installed_pwa", lambda: Path("/fake/Karma.app"))
+    calls = {}
+    monkeypatch.setattr(
+        launcher.subprocess, "run", lambda *a, **k: calls.__setitem__("run", a[0])
+    )
+    launcher.open_window("http://localhost:5180/")
+    assert calls.get("run") == ["open", "/fake/Karma.app"]
 
 
-def test_splash_handoff_modes_differ():
-    """Redirect mode navigates itself; close mode waits to be closed."""
-    redirecting = splash.render(1, 2, redirect=True)
-    closing = splash.render(1, 2, redirect=False)
-    assert "location.replace" in redirecting
-    assert "location.replace" not in closing
-    assert "Ready" in closing
+def test_open_window_uses_chromium_app_mode_when_no_pwa(monkeypatch):
+    from karma_desktop import launcher
+
+    monkeypatch.setattr(launcher, "_installed_pwa", lambda: None)
+    monkeypatch.setattr(launcher, "_chrome_command", lambda: ["chrome-bin"])
+    calls = {}
+    monkeypatch.setattr(
+        launcher.subprocess, "Popen", lambda cmd, **k: calls.__setitem__("popen", cmd)
+    )
+    launcher.open_window("http://localhost:5180/")
+    assert calls["popen"] == ["chrome-bin", "--app=http://localhost:5180/"]
 
 
-def test_splash_server_serves_the_page_on_an_assigned_port(tmp_path):
-    """Serving with port=0 must yield a real, reachable port."""
-    import urllib.request
+def test_open_window_falls_back_when_no_chromium_browser(monkeypatch):
+    """A Mac with no Chromium browser must still open *something*.
 
-    (tmp_path / "index.html").write_text(splash.render(1, 2), encoding="utf-8")
-    httpd = splash.serve(tmp_path)
-    try:
-        port = httpd.server_address[1]
-        assert port > 0, "OS must assign a concrete port"
-        assert port not in (core.WEB_PORT, core.API_PORT)
-        assert core.wait_for_port(port, seconds=5)
-        body = urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=5).read()
-        assert b"Starting Karma" in body
-    finally:
-        httpd.shutdown()
-        httpd.server_close()
+    Regression: the darwin branch always returned a Chrome command, so on a
+    Chrome-less Mac it failed silently and no window opened at all.
+    """
+    from karma_desktop import launcher
+
+    monkeypatch.setattr(launcher, "_installed_pwa", lambda: None)
+    monkeypatch.setattr(launcher, "_chrome_command", lambda: None)
+    calls = {}
+    monkeypatch.setattr(
+        launcher.subprocess, "Popen", lambda cmd, **k: calls.__setitem__("popen", cmd)
+    )
+    monkeypatch.setattr(
+        launcher.webbrowser, "open", lambda u: calls.__setitem__("web", u)
+    )
+
+    launcher.open_window("http://localhost:5180/")
+    if sys.platform == "darwin":
+        assert calls["popen"] == ["open", "http://localhost:5180/"]
+    else:
+        assert calls.get("web") == "http://localhost:5180/"
 
 
-def test_two_splash_servers_do_not_collide(tmp_path):
-    """Concurrent launches must not fight over one fixed splash port."""
-    (tmp_path / "index.html").write_text(splash.render(1, 2), encoding="utf-8")
-    first = splash.serve(tmp_path)
-    second = splash.serve(tmp_path)
-    try:
-        assert first.server_address[1] != second.server_address[1]
-    finally:
-        for httpd in (first, second):
-            httpd.shutdown()
-            httpd.server_close()
+@pytest.mark.skipif(sys.platform != "darwin", reason="Chromium detection is per-OS")
+def test_chrome_command_none_without_a_browser(monkeypatch):
+    """With no Chromium browser bundle present, _chrome_command returns None."""
+    from karma_desktop import launcher
+
+    # Ask for a browser name that cannot exist, so neither /Applications nor
+    # ~/Applications resolves it.
+    monkeypatch.setattr(launcher, "_MACOS_BROWSERS", ("No Such Browser 4b2c",))
+    assert launcher._chrome_command() is None
+
+
+def test_notify_never_raises(monkeypatch):
+    """notify() is best-effort; a missing tool must not crash the launch."""
+    from karma_desktop import launcher
+
+    def boom(*a, **k):
+        raise OSError("no such tool")
+
+    monkeypatch.setattr(launcher.subprocess, "Popen", boom)
+    launcher.notify("hello")  # must not raise
 
 
 # --------------------------------------------------------------------------
@@ -247,6 +261,56 @@ def test_pythonw_preferred_when_present():
     """pythonw avoids a console window flashing on every launch."""
     chosen = win.pythonw_for(Path(sys.executable))
     assert chosen.name in ("pythonw.exe", Path(sys.executable).name)
+
+
+# --------------------------------------------------------------------------
+# Destructive-operation safety (macOS)
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="macOS bundle layout")
+def test_install_app_refuses_to_overwrite_a_foreign_bundle(tmp_path):
+    """A same-named app from another vendor must never be rmtree'd."""
+    from karma_desktop import installer_macos as mac
+
+    contents = tmp_path / "Karma.app" / "Contents"
+    contents.mkdir(parents=True)
+    with open(contents / "Info.plist", "wb") as fh:
+        plistlib.dump({"CFBundleIdentifier": "com.someoneelse.karma"}, fh)
+    marker = contents / "keep-me.txt"
+    marker.write_text("not ours")
+
+    with pytest.raises(FileExistsError):
+        mac.install_app(REPO, Path(sys.executable), tmp_path, 5180, 8020)
+    assert marker.exists(), "foreign bundle must be left completely intact"
+
+
+def test_dock_matcher_ignores_apps_whose_path_merely_contains_karma():
+    """The Dock matcher must not sweep up unrelated apps by path substring.
+
+    Regression: matching "karma" anywhere in the tile's file URL deleted any
+    app living under a directory containing "karma" — e.g. a checkout of this
+    very repo, or ~/Projects/karma-tools/SomeApp.app.
+    """
+    from karma_desktop import installer_macos as mac
+
+    unrelated = {
+        "tile-data": {
+            "file-label": "SomeApp",
+            "bundle-identifier": "com.vendor.someapp",
+            "file-data": {"_CFURLString": "file:///Users/me/karma-tools/SomeApp.app/"},
+        }
+    }
+    launcher_tile = {"tile-data": {"bundle-identifier": mac.BUNDLE_ID}}
+    pwa_tile = {
+        "tile-data": {
+            "file-label": "Claude Code Karma",
+            "bundle-identifier": "com.google.Chrome.app.ncciflbl",
+        }
+    }
+    assert mac._is_replaceable_karma_tile(unrelated) is False
+    assert mac._is_replaceable_karma_tile(launcher_tile) is True
+    assert mac._is_replaceable_karma_tile(pwa_tile) is True
 
 
 # --------------------------------------------------------------------------

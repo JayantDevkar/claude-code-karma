@@ -271,7 +271,7 @@ python3 scripts/install_karma_app.py --dock    # macOS: also pin it to the Dock
 python3 scripts/install_karma_app.py --uninstall
 ```
 
-Click the icon and Karma starts whichever servers aren't already running, then opens the dashboard. Because the first launch after a reboot has to compile the frontend, a splash window appears within about a second and shows progress — API, then frontend — so the click never looks like it did nothing.
+Click the icon and Karma starts whichever servers aren't already running, then opens the dashboard. The first launch after a reboot has to compile the frontend (a minute or two), so it posts a "Starting Karma…" desktop notification straight away — the click never looks like it did nothing — and opens the dashboard once the servers answer.
 
 Nothing is hardcoded: the installer works out your repo location from its own path and finds a Python interpreter on the machine, so a clone anywhere works.
 

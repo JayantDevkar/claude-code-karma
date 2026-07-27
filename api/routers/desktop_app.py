@@ -151,14 +151,21 @@ def _install_sync(body: InstallRequest) -> InstallResult:
         from karma_desktop import installer_macos as mac  # noqa: PLC0415
 
         # Prefer /Applications, but fall back to the user's own folder rather
-        # than failing when the volume is not writable.
+        # than failing when the volume is not writable. A FileExistsError
+        # (a foreign Karma.app is in the way) is a real conflict, not a
+        # permissions problem, so it must not trigger the fallback.
         app_dir = Path("/Applications")
         try:
             app = mac.install_app(repo, python, app_dir, core.WEB_PORT, core.API_PORT)
+        except FileExistsError as exc:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
         except (PermissionError, OSError):
             app_dir = Path.home() / "Applications"
             app_dir.mkdir(parents=True, exist_ok=True)
-            app = mac.install_app(repo, python, app_dir, core.WEB_PORT, core.API_PORT)
+            try:
+                app = mac.install_app(repo, python, app_dir, core.WEB_PORT, core.API_PORT)
+            except FileExistsError as exc:
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
             messages.append(
                 "No permission to write to /Applications; installed to ~/Applications instead."
             )
