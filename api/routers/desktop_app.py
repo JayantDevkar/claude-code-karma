@@ -361,7 +361,7 @@ async def install(request: Request, body: InstallRequest) -> InstallResult:
         logger.exception("Desktop app install failed")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Install failed: {exc}",
+            detail="Install failed. See the server logs for details.",
         ) from exc
 
 
@@ -377,7 +377,7 @@ async def set_autostart(request: Request, body: AutostartRequest) -> AutostartRe
         logger.exception("Setting autostart failed")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Could not change the autostart setting: {exc}",
+            detail="Could not change the autostart setting. See the server logs for details.",
         ) from exc
 
 
@@ -393,5 +393,5 @@ async def uninstall(request: Request) -> InstallResult:
         logger.exception("Desktop app uninstall failed")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Uninstall failed: {exc}",
+            detail="Uninstall failed. See the server logs for details.",
         ) from exc

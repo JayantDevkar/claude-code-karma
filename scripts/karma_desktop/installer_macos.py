@@ -147,9 +147,28 @@ def install_app(
         shutil.rmtree(tmp, ignore_errors=True)
         shutil.rmtree(backup, ignore_errors=True)
 
-    # Nudge LaunchServices so the icon appears without a logout.
-    subprocess.run(["touch", str(app)], capture_output=True)
+    _refresh_launch_services(app)
     return app
+
+
+_LSREGISTER = (
+    "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/"
+    "LaunchServices.framework/Versions/A/Support/lsregister"
+)
+
+
+def _refresh_launch_services(app: Path) -> None:
+    """Get LaunchServices to notice the new bundle so its icon repaints.
+
+    ``lsregister -f`` is the actual LaunchServices refresh; a bare ``touch`` on
+    the bundle mtime does not reliably repaint the icon. Both are best-effort --
+    the icon settles on its own eventually -- so failures are ignored. Absolute
+    paths, matching the rest of this module, so a stripped PATH can't break it.
+    """
+    if Path(_LSREGISTER).exists():
+        subprocess.run([_LSREGISTER, "-f", str(app)], capture_output=True)
+    else:
+        subprocess.run(["/usr/bin/touch", str(app)], capture_output=True)
 
 
 # --------------------------------------------------------------------------
@@ -369,6 +388,13 @@ def install_autostart(repo: Path, python: Path, web_port: int, api_port: int) ->
         # The launcher exits once the servers are up; it is not the thing to
         # keep alive, so KeepAlive stays off to avoid a restart loop.
         "KeepAlive": False,
+        # A login-time `npm run dev` compile is heavy; run it as a background
+        # task with low-priority I/O and a lower niceness so it yields to the
+        # rest of login (Finder, menu bar, the user's own apps) rather than
+        # competing at default priority.
+        "ProcessType": "Background",
+        "LowPriorityIO": True,
+        "Nice": 5,
         "StandardOutPath": str(logs / "autostart.log"),
         "StandardErrorPath": str(logs / "autostart.log"),
     }

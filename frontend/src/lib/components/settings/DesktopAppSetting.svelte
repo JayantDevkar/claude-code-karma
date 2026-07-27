@@ -101,6 +101,15 @@
 	}
 
 	async function uninstall() {
+		// One click otherwise removes the app bundle, its Dock tile and the
+		// login item together, so confirm first.
+		if (
+			!confirm(
+				'Remove the Karma desktop app? This deletes the app, its Dock tile and any login item.'
+			)
+		) {
+			return;
+		}
 		busy = true;
 		error = null;
 		messages = [];
