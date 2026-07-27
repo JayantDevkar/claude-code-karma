@@ -244,12 +244,7 @@ def get_cron_for_session(
             (session_uuid,),
         ).fetchone()
         if row:
-            jsonl_path = (
-                claude_projects_dir
-                / _PROJECTS_SUBDIR
-                / row[0]
-                / f"{session_uuid}.jsonl"
-            )
+            jsonl_path = claude_projects_dir / _PROJECTS_SUBDIR / row[0] / f"{session_uuid}.jsonl"
             if jsonl_path.exists():
                 # Read JSONL once and infer fires for all jobs in a single pass.
                 fires_by_job = infer_cron_fires_bulk(jsonl_path, jobs)
@@ -333,6 +328,7 @@ def get_cron_global(
     if include_fires and claude_projects_dir is not None:
         # Group by session so we read each JSONL file exactly once.
         from collections import defaultdict
+
         by_session: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
         for j in rows:
             by_session[j["session_uuid"]].append(j)
@@ -341,17 +337,8 @@ def get_cron_global(
             snap = get_latest_cron_state(conn, session_uuid)
             enc = jobs[0].get("project_encoded_name")
             if enc:
-                jsonl_path = (
-                    claude_projects_dir
-                    / _PROJECTS_SUBDIR
-                    / enc
-                    / f"{session_uuid}.jsonl"
-                )
-                fires_map = (
-                    infer_cron_fires_bulk(jsonl_path, jobs)
-                    if jsonl_path.exists()
-                    else {}
-                )
+                jsonl_path = claude_projects_dir / _PROJECTS_SUBDIR / enc / f"{session_uuid}.jsonl"
+                fires_map = infer_cron_fires_bulk(jsonl_path, jobs) if jsonl_path.exists() else {}
             else:
                 fires_map = {}
             for j in jobs:
@@ -482,12 +469,14 @@ def infer_cron_fires_bulk(
         if not scheduled:
             continue
 
-        job_metas.append({
-            "tool_use_id": j["tool_use_id"],
-            "created_at": created_at,
-            "end": end,
-            "scheduled": scheduled,
-        })
+        job_metas.append(
+            {
+                "tool_use_id": j["tool_use_id"],
+                "created_at": created_at,
+                "end": end,
+                "scheduled": scheduled,
+            }
+        )
 
         if created_at < scan_start:
             scan_start = created_at
@@ -524,11 +513,13 @@ def infer_cron_fires_bulk(
                             if isinstance(t, str) and t.strip():
                                 excerpt = t[:500]
                                 break
-                assistant_turns.append({
-                    "uuid": obj.get("uuid"),
-                    "ts": ts,
-                    "excerpt": excerpt,
-                })
+                assistant_turns.append(
+                    {
+                        "uuid": obj.get("uuid"),
+                        "ts": ts,
+                        "excerpt": excerpt,
+                    }
+                )
     except OSError as e:
         logger.debug("cannot read JSONL for fire inference: %s", e)
         return result
@@ -542,8 +533,7 @@ def infer_cron_fires_bulk(
         claimed_turns: set = set()
         fires: List[Dict[str, Any]] = []
         relevant_turns = [
-            t for t in assistant_turns
-            if meta["created_at"] <= t["ts"] <= meta["end"]
+            t for t in assistant_turns if meta["created_at"] <= t["ts"] <= meta["end"]
         ]
         for s_time in meta["scheduled"]:
             best_turn = None
@@ -563,13 +553,15 @@ def infer_cron_fires_bulk(
             if confidence < FIRE_CONFIDENCE_FLOOR:
                 continue
             claimed_turns.add(best_turn["uuid"])
-            fires.append({
-                "fired_at": best_turn["ts"].isoformat().replace("+00:00", "Z"),
-                "triggering_message_uuid": best_turn["uuid"],
-                "inference_confidence": round(confidence, 3),
-                "inference_source": "jsonl",
-                "outcome_excerpt": best_turn["excerpt"],
-            })
+            fires.append(
+                {
+                    "fired_at": best_turn["ts"].isoformat().replace("+00:00", "Z"),
+                    "triggering_message_uuid": best_turn["uuid"],
+                    "inference_confidence": round(confidence, 3),
+                    "inference_source": "jsonl",
+                    "outcome_excerpt": best_turn["excerpt"],
+                }
+            )
         result[meta["tool_use_id"]] = fires
 
     return result

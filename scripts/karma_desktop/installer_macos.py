@@ -25,7 +25,15 @@ _STUB = """#!/bin/bash
 if [ "$(sysctl -n sysctl.proc_translated 2>/dev/null)" = "1" ]; then
   exec arch -arm64 "$0" "$@"
 fi
-exec {python} {launcher} --web-port {web_port} --api-port {api_port} "$@"
+LAUNCHER={launcher}
+# The repo may have moved, been renamed, or (if it was a git worktree) pruned.
+# Without this check the app would exec a missing file and die instantly with
+# no window and no message -- a permanently dead icon.
+if [ ! -f "$LAUNCHER" ]; then
+  /usr/bin/osascript -e 'display alert "Karma" message "Karma cannot find its files -- the project folder was moved or removed. Reinstall the desktop app from the dashboard (Settings -> Desktop App), or drag this app to the Trash." as critical' >/dev/null 2>&1
+  exit 1
+fi
+exec {python} "$LAUNCHER" --web-port {web_port} --api-port {api_port} "$@"
 """
 
 
@@ -270,6 +278,27 @@ def autostart_enabled() -> bool:
     return agent_path().exists()
 
 
+def _autostart_command(
+    plist_path: Path, python: Path, launcher: Path, web_port: int, api_port: int
+) -> list[str]:
+    """launchd ProgramArguments that self-heal when the repo is gone.
+
+    If the launcher no longer exists (repo moved / deleted / worktree pruned),
+    the agent unloads and deletes *itself* instead of failing at every login
+    forever -- otherwise the user is left with a phantom login item that only a
+    manual ``rm ~/Library/LaunchAgents/...`` can clear, because the dashboard
+    that could remove it died with the repo.
+    """
+    script = (
+        f"if [ ! -f {_shq(launcher)} ]; then "
+        f"/bin/launchctl unload {_shq(plist_path)} 2>/dev/null; "
+        f"/bin/rm -f {_shq(plist_path)}; exit 0; fi; "
+        f"exec {_shq(python)} {_shq(launcher)} --no-open --quiet "
+        f"--web-port {web_port} --api-port {api_port}"
+    )
+    return ["/bin/bash", "-c", script]
+
+
 def install_autostart(repo: Path, python: Path, web_port: int, api_port: int) -> Path:
     """Install a launchd agent that starts the servers at login."""
     plist_path = agent_path()
@@ -279,16 +308,9 @@ def install_autostart(repo: Path, python: Path, web_port: int, api_port: int) ->
 
     payload = {
         "Label": AGENT_LABEL,
-        "ProgramArguments": [
-            str(python),
-            str(launcher),
-            "--no-open",
-            "--quiet",
-            "--web-port",
-            str(web_port),
-            "--api-port",
-            str(api_port),
-        ],
+        "ProgramArguments": _autostart_command(
+            plist_path, python, launcher, web_port, api_port
+        ),
         "RunAtLoad": True,
         # The launcher exits once the servers are up; it is not the thing to
         # keep alive, so KeepAlive stays off to avoid a restart loop.

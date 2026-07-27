@@ -388,11 +388,61 @@ def test_builds_app_bundle_with_correct_stub(tmp_path):
     assert "--api-port 8020" in body
     assert "launcher.py" in body
     assert "proc_translated" in body, "Rosetta guard must survive"
+    # Repo-moved guard: the stub must check the launcher exists and alert.
+    assert '[ ! -f "$LAUNCHER" ]' in body
+    assert "osascript" in body
 
     info = plistlib.loads((app / "Contents" / "Info.plist").read_bytes())
     assert info["CFBundleIdentifier"] == mac.BUNDLE_ID
     assert info["CFBundleExecutable"] == "Karma"
     assert info["LSUIElement"] is True
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="stub is a macOS bash script")
+def test_stub_alerts_and_exits_when_launcher_is_missing(tmp_path, monkeypatch):
+    """A moved/deleted repo must produce an alert and a non-zero exit, not a
+    silent instant death."""
+    from karma_desktop import installer_macos as mac
+
+    app = mac.install_app(REPO, Path(sys.executable), tmp_path, 5180, 8020)
+    stub = app / "Contents" / "MacOS" / "Karma"
+
+    # The stub redirects osascript to /dev/null, so a marker file (not stdout)
+    # is what survives to prove the alert fired.
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    marker = tmp_path / "alerted"
+    (fake_bin / "osascript").write_text(f"#!/bin/bash\ntouch {marker}\nexit 0\n")
+    (fake_bin / "osascript").chmod(0o755)
+
+    body = stub.read_text().replace("/usr/bin/osascript", str(fake_bin / "osascript"))
+    # Break the launcher reference so the repo-moved guard fires.
+    body = body.replace("LAUNCHER=", "LAUNCHER=/no/such/launcher.py #")
+    stub.write_text(body)
+
+    result = subprocess.run(["/bin/bash", str(stub)], capture_output=True, text=True)
+    assert marker.exists(), "the missing-repo guard must show an alert"
+    assert result.returncode == 1
+
+
+def test_autostart_command_self_heals_when_launcher_missing():
+    """The launchd command must unload+delete itself if the launcher is gone,
+    rather than failing at every login forever."""
+    from karma_desktop import installer_macos as mac
+
+    cmd = mac._autostart_command(
+        Path("/agents/karma.plist"),
+        Path("/py/python3"),
+        Path("/repo/launcher.py"),
+        5180,
+        8020,
+    )
+    assert cmd[0] == "/bin/bash" and cmd[1] == "-c"
+    script = cmd[2]
+    assert "launchctl unload" in script
+    assert "rm -f" in script
+    assert "/agents/karma.plist" in script
+    assert "--no-open --quiet" in script
 
 
 # --------------------------------------------------------------------------
@@ -495,8 +545,11 @@ def test_autostart_plist_runs_the_launcher_headless(tmp_path, monkeypatch):
     # KeepAlive must stay off: the launcher exits once the servers are up, so
     # relaunching it forever would be a restart loop.
     assert payload["KeepAlive"] is False
-    assert "--no-open" in payload["ProgramArguments"]
-    assert "--quiet" in payload["ProgramArguments"]
+    # ProgramArguments is now a bash self-heal wrapper; the flags live in the
+    # script string it runs.
+    script = payload["ProgramArguments"][2]
+    assert "--no-open" in script
+    assert "--quiet" in script
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Startup folder is Windows-only")

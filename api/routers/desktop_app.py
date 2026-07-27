@@ -49,15 +49,54 @@ def _load_installer():
         ) from exc
 
 
-def _require_local(request: Request) -> None:
-    """Reject anything that is not a loopback caller.
+_LOOPBACK_PEERS = frozenset({"127.0.0.1", "::1"})
+_LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+# A page from another origin carries "cross-site"; our own dashboard on another
+# localhost port carries "same-site"; a user-initiated request (curl, the
+# address bar) carries no such header at all. Everything but a genuine
+# cross-site request is allowed.
+_ALLOWED_FETCH_SITES = frozenset({"same-origin", "same-site", "none"})
 
-    This endpoint writes an executable application bundle and can register a
-    login item, so it must never be reachable from another machine even if
-    someone exposes the API beyond localhost.
+
+def _require_local(request: Request) -> None:
+    """Guard a code-execution endpoint against remote and cross-site callers.
+
+    This endpoint writes an executable bundle and can register a login item, so
+    the guarantee has to hold even when the API is put behind a reverse proxy
+    or a browser on another site tries to reach it. Three independent checks,
+    none of which relies on the user-tunable CORS allowlist:
+
+    1. ``Sec-Fetch-Site`` -- browser-set and not forgeable from page script.
+       A cross-site request (a random website you visited) is rejected outright,
+       which is the real CSRF defence; CORS merely happened to block it before.
+    2. ``Origin`` -- when present it must be a loopback origin. This is what
+       stops DNS rebinding, where a rebound page looks same-origin to
+       Sec-Fetch-Site but still carries its real, non-local Origin.
+    3. The TCP peer must be loopback. Kept as defence in depth, but not relied
+       on alone: behind a same-host proxy every remote request presents as
+       127.0.0.1.
     """
-    host = request.client.host if request.client else None
-    if host not in ("127.0.0.1", "::1", "localhost"):
+    fetch_site = request.headers.get("sec-fetch-site")
+    if fetch_site is not None and fetch_site not in _ALLOWED_FETCH_SITES:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This action must originate from the Karma dashboard on this machine.",
+        )
+
+    origin = request.headers.get("origin")
+    if origin:
+        from urllib.parse import urlparse  # noqa: PLC0415
+
+        if urlparse(origin).hostname not in _LOOPBACK_HOSTS:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="This action must originate from the Karma dashboard on this machine.",
+            )
+
+    peer = request.client.host if request.client else None
+    if peer and peer.startswith("::ffff:"):  # IPv4-mapped IPv6 on a dual-stack bind
+        peer = peer[len("::ffff:") :]
+    if peer not in _LOOPBACK_PEERS:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="The desktop installer can only be used from this machine.",

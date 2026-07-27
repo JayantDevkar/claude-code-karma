@@ -289,15 +289,17 @@ def extract_shells_and_cron(
                         if raw:
                             excerpt, trunc = _truncate(raw, OUTPUT_EXCERPT_MAX_BYTES)
                             ob = len(raw.encode("utf-8", errors="replace"))
-                            polls.append({
-                                "_parent_tool_use_id": synthetic_tu,
-                                "polled_at": ts,
-                                "filter_pattern": None,
-                                "output_bytes": ob,
-                                "output_excerpt": excerpt,
-                                "output_truncated": 1 if trunc else 0,
-                                "tool_use_id": f"manual_poll:{task_id}",
-                            })
+                            polls.append(
+                                {
+                                    "_parent_tool_use_id": synthetic_tu,
+                                    "polled_at": ts,
+                                    "filter_pattern": None,
+                                    "output_bytes": ob,
+                                    "output_excerpt": excerpt,
+                                    "output_truncated": 1 if trunc else 0,
+                                    "tool_use_id": f"manual_poll:{task_id}",
+                                }
+                            )
                             row = shells_by_tool_use[synthetic_tu]
                             row["poll_count"] = 1
                             row["total_output_bytes"] = ob
@@ -481,15 +483,17 @@ def extract_shells_and_cron(
                     if parent is not None:
                         excerpt, excerpt_trunc = _truncate(text, OUTPUT_EXCERPT_MAX_BYTES)
                         output_bytes = len(text.encode("utf-8", errors="replace"))
-                        polls.append({
-                            "_parent_tool_use_id": parent_tu,
-                            "polled_at": poll_info["polled_at"],
-                            "filter_pattern": None,
-                            "output_bytes": output_bytes,
-                            "output_excerpt": excerpt if output_bytes else None,
-                            "output_truncated": 1 if excerpt_trunc else 0,
-                            "tool_use_id": poll_info["tool_use_id"],
-                        })
+                        polls.append(
+                            {
+                                "_parent_tool_use_id": parent_tu,
+                                "polled_at": poll_info["polled_at"],
+                                "filter_pattern": None,
+                                "output_bytes": output_bytes,
+                                "output_excerpt": excerpt if output_bytes else None,
+                                "output_truncated": 1 if excerpt_trunc else 0,
+                                "tool_use_id": poll_info["tool_use_id"],
+                            }
+                        )
                         parent["poll_count"] += 1
                         parent["total_output_bytes"] += output_bytes
                         parent["last_output_at"] = poll_info["polled_at"]
@@ -507,15 +511,17 @@ def extract_shells_and_cron(
                     excerpt, excerpt_trunc = _truncate(text, OUTPUT_EXCERPT_MAX_BYTES)
                     output_bytes = len(text.encode("utf-8", errors="replace"))
 
-                    polls.append({
-                        "_parent_tool_use_id": parent_tu,  # resolved to FK at write time
-                        "polled_at": poll["polled_at"],
-                        "filter_pattern": poll["filter_pattern"],
-                        "output_bytes": output_bytes,
-                        "output_excerpt": excerpt if output_bytes else None,
-                        "output_truncated": 1 if excerpt_trunc else 0,
-                        "tool_use_id": poll["tool_use_id"],
-                    })
+                    polls.append(
+                        {
+                            "_parent_tool_use_id": parent_tu,  # resolved to FK at write time
+                            "polled_at": poll["polled_at"],
+                            "filter_pattern": poll["filter_pattern"],
+                            "output_bytes": output_bytes,
+                            "output_excerpt": excerpt if output_bytes else None,
+                            "output_truncated": 1 if excerpt_trunc else 0,
+                            "tool_use_id": poll["tool_use_id"],
+                        }
+                    )
 
                     # Update parent aggregates
                     parent["poll_count"] += 1
@@ -656,15 +662,18 @@ def persist_shells_and_cron(
             if parent_id is None:
                 # Shouldn't happen (we just upserted), but be defensive.
                 continue
-            conn.execute(_UPSERT_POLL_SQL, {
-                "shell_row_id": parent_id,
-                "polled_at": p["polled_at"],
-                "filter_pattern": p["filter_pattern"],
-                "output_bytes": p["output_bytes"],
-                "output_excerpt": p["output_excerpt"],
-                "output_truncated": p["output_truncated"],
-                "tool_use_id": p["tool_use_id"],
-            })
+            conn.execute(
+                _UPSERT_POLL_SQL,
+                {
+                    "shell_row_id": parent_id,
+                    "polled_at": p["polled_at"],
+                    "filter_pattern": p["filter_pattern"],
+                    "output_bytes": p["output_bytes"],
+                    "output_excerpt": p["output_excerpt"],
+                    "output_truncated": p["output_truncated"],
+                    "tool_use_id": p["tool_use_id"],
+                },
+            )
 
     for c in crons:
         conn.execute(_UPSERT_CRON_SQL, c)
@@ -707,7 +716,10 @@ def sync_cron_state_snapshots(conn: sqlite3.Connection, karma_dir: Path) -> int:
             captured_at = _normalize_ts(obj.get("captured_at"))
             trigger_event = obj.get("trigger_event")
             if not captured_at or trigger_event not in {
-                "CronCreate", "CronDelete", "CronList", "session_start"
+                "CronCreate",
+                "CronDelete",
+                "CronList",
+                "session_start",
             }:
                 continue
 
