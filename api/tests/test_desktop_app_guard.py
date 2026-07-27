@@ -77,3 +77,16 @@ def test_non_loopback_peer_rejected():
 
 def test_no_client_rejected():
     _rejected(peer=None)
+
+
+def test_proxied_public_host_rejected():
+    """A non-browser client through a same-host proxy on a public domain sends
+    no Sec-Fetch-Site and no Origin, and presents a loopback peer -- the Host
+    header is the only thing that gives it away."""
+    _rejected({"host": "karma.example.com"})
+
+
+def test_loopback_host_allowed():
+    _allowed({"host": "localhost:8020"})
+    _allowed({"host": "127.0.0.1:8020"})
+    _allowed({"host": "[::1]:8020"})

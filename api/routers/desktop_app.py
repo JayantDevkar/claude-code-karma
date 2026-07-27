@@ -63,23 +63,45 @@ _ALLOWED_FETCH_SITES = frozenset({"same-origin", "same-site", "none"})
 
 
 def _require_local(request: Request) -> None:
-    """Guard a code-execution endpoint against remote and cross-site callers.
+    """Guard this code-execution endpoint against remote and cross-site callers.
 
-    This endpoint writes an executable bundle and can register a login item, so
-    the guarantee has to hold even when the API is put behind a reverse proxy
-    or a browser on another site tries to reach it. Three independent checks,
-    none of which relies on the user-tunable CORS allowlist:
+    Honest scope: this is a **localhost-only** endpoint, not an authenticated
+    one. It writes an executable bundle and can register a login item, so it
+    must only ever be reachable from this machine. The checks below defend that
+    boundary against the realistic browser attacks and the ordinary
+    reverse-proxy setup -- but a non-browser client reaching a proxy that
+    rewrites the Host to a loopback value cannot be told apart from a genuine
+    local caller. Do not expose this API beyond localhost; that is the actual
+    guarantee, and no header check can substitute for it.
 
-    1. ``Sec-Fetch-Site`` -- browser-set and not forgeable from page script.
-       A cross-site request (a random website you visited) is rejected outright,
-       which is the real CSRF defence; CORS merely happened to block it before.
-    2. ``Origin`` -- when present it must be a loopback origin. This is what
-       stops DNS rebinding, where a rebound page looks same-origin to
-       Sec-Fetch-Site but still carries its real, non-local Origin.
-    3. The TCP peer must be loopback. Kept as defence in depth, but not relied
-       on alone: behind a same-host proxy every remote request presents as
-       127.0.0.1.
+    Four checks, none relying on the user-tunable CORS allowlist:
+
+    1. ``Host`` -- when present it must be a loopback host. A request through a
+       proxy on a public domain (``curl https://karma.example.com/...``) carries
+       ``Host: karma.example.com`` and is rejected. This is the check that
+       covers non-browser callers the Sec-Fetch/Origin checks miss.
+    2. ``Sec-Fetch-Site`` -- browser-set, not forgeable from page script. A
+       genuine cross-site request (a random website) is rejected; CORS merely
+       happened to block it before.
+    3. ``Origin`` -- when present it must be a loopback origin. Stops DNS
+       rebinding, where a rebound page looks same-origin to Sec-Fetch-Site but
+       still carries its real, non-local Origin.
+    4. The TCP peer must be loopback. Defence in depth; not relied on alone,
+       since behind a same-host proxy every request presents as 127.0.0.1.
     """
+    from urllib.parse import urlsplit  # noqa: PLC0415
+
+    host = request.headers.get("host")
+    if host:
+        # urlsplit needs a scheme to populate .hostname; strips the port and
+        # unwraps [::1] for us.
+        hostname = urlsplit(f"//{host}").hostname
+        if hostname not in _LOOPBACK_HOSTS:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="The desktop installer can only be used from this machine.",
+            )
+
     fetch_site = request.headers.get("sec-fetch-site")
     if fetch_site is not None and fetch_site not in _ALLOWED_FETCH_SITES:
         raise HTTPException(
@@ -88,14 +110,11 @@ def _require_local(request: Request) -> None:
         )
 
     origin = request.headers.get("origin")
-    if origin:
-        from urllib.parse import urlparse  # noqa: PLC0415
-
-        if urlparse(origin).hostname not in _LOOPBACK_HOSTS:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="This action must originate from the Karma dashboard on this machine.",
-            )
+    if origin and urlsplit(origin).hostname not in _LOOPBACK_HOSTS:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This action must originate from the Karma dashboard on this machine.",
+        )
 
     peer = request.client.host if request.client else None
     if peer and peer.startswith("::ffff:"):  # IPv4-mapped IPv6 on a dual-stack bind

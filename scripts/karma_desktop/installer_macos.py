@@ -3,17 +3,40 @@ to the Dock, optionally started at login by launchd."""
 
 from __future__ import annotations
 
+import contextlib
+import fcntl
 import os
 import plistlib
 import shutil
 import subprocess
 import time
+import uuid
 from pathlib import Path
 
 from . import core
 
 BUNDLE_ID = "com.claudecodekarma.launcher"
 AGENT_LABEL = "com.claudecodekarma.servers"
+
+
+@contextlib.contextmanager
+def _install_lock():
+    """Serialise installs across threads and processes.
+
+    An exclusive ``flock`` held for the duration of the install, so two
+    concurrent callers (two Settings tabs, or the dashboard and the CLI at
+    once) take turns rather than racing the atomic swap. flock is advisory but
+    all install paths go through this one function, and it is released when the
+    handle closes even if the process dies.
+    """
+    lock_path = core.log_dir() / "install.lock"
+    with open(lock_path, "w") as fh:
+        fcntl.flock(fh, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(fh, fcntl.LOCK_UN)
+
 
 # The bundle executable is a thin shell stub; all real logic stays in the repo
 # so that pulling new commits updates the launcher with no reinstall.
@@ -119,36 +142,44 @@ def install_app(
     the write, disk full, a symlink in the way) never leaves a destroyed or
     half-written bundle at the target that ``status`` would then report as
     "installed".
+
+    Concurrency-safe: the API runs installs on a shared thread pool inside one
+    process, and a CLI install can run at the same time. Temp/backup paths are
+    per-call unique (not just per-pid, which collides between threads), and an
+    exclusive file lock serialises the whole install so two callers can't race
+    the swap and end up with no bundle at all.
     """
-    app = app_dir / f"{core.APP_NAME}.app"
-    if app.exists() and not _is_our_bundle(app):
-        raise FileExistsError(
-            f"{app} already exists and is not the Karma launcher "
-            f"(bundle id != {BUNDLE_ID}). Refusing to overwrite it."
-        )
+    with _install_lock():
+        app = app_dir / f"{core.APP_NAME}.app"
+        if app.exists() and not _is_our_bundle(app):
+            raise FileExistsError(
+                f"{app} already exists and is not the Karma launcher "
+                f"(bundle id != {BUNDLE_ID}). Refusing to overwrite it."
+            )
 
-    tmp = app_dir / f".{core.APP_NAME}.app.tmp.{os.getpid()}"
-    backup = app_dir / f".{core.APP_NAME}.app.bak.{os.getpid()}"
-    shutil.rmtree(tmp, ignore_errors=True)
-    try:
-        _build_bundle(tmp, repo, python, web_port, api_port)
-        # Move the old bundle aside, swing the new one in, then drop the old.
-        # If the swap fails, the original is restored, so the target is never
-        # left broken.
-        if app.exists():
-            os.replace(app, backup)
-        try:
-            os.replace(tmp, app)
-        except OSError:
-            if backup.exists():
-                os.replace(backup, app)
-            raise
-    finally:
+        uniq = f"{os.getpid()}-{uuid.uuid4().hex[:8]}"
+        tmp = app_dir / f".{core.APP_NAME}.app.tmp.{uniq}"
+        backup = app_dir / f".{core.APP_NAME}.app.bak.{uniq}"
         shutil.rmtree(tmp, ignore_errors=True)
-        shutil.rmtree(backup, ignore_errors=True)
+        try:
+            _build_bundle(tmp, repo, python, web_port, api_port)
+            # Move the old bundle aside, swing the new one in, then drop the old.
+            # If the swap fails, the original is restored, so the target is
+            # never left broken.
+            if app.exists():
+                os.replace(app, backup)
+            try:
+                os.replace(tmp, app)
+            except OSError:
+                if backup.exists():
+                    os.replace(backup, app)
+                raise
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+            shutil.rmtree(backup, ignore_errors=True)
 
-    _refresh_launch_services(app)
-    return app
+        _refresh_launch_services(app)
+        return app
 
 
 _LSREGISTER = (

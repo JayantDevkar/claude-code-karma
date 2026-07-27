@@ -301,12 +301,18 @@ def test_build_script_single_quotes_every_path(tmp_path):
     assert "\n" not in script
 
 
-def test_known_folder_falls_back_without_registry(monkeypatch, tmp_path):
-    """Off Windows (no winreg) the fallback path is used, not invented."""
+def test_known_folder_falls_back_when_lookup_fails(tmp_path):
+    """The fallback is used when the registry can't answer, on every platform.
+
+    A nonexistent value name makes the lookup fail deterministically: off
+    Windows the winreg import fails; on Windows QueryValueEx raises for the
+    missing value. Both land on the fallback. (The earlier version asked for
+    "Desktop", which resolves fine on a real Windows runner and returned the
+    system path, not the fallback -- so it went red on both Windows CI legs.)
+    """
     fallback = tmp_path / "Desktop"
     fallback.mkdir()
-    # On non-Windows winreg import fails inside _known_folder -> fallback.
-    assert win._known_folder("Desktop", fallback) == fallback
+    assert win._known_folder("NoSuchShellFolder_zzz", fallback) == fallback
 
 
 def test_log_writes_even_without_a_terminal(monkeypatch, tmp_path):
@@ -691,3 +697,39 @@ def test_uninstall_removes_dock_tile_through_write_dock(tmp_path, monkeypatch):
     removed = mac.uninstall([tmp_path])  # no app on disk; only the Dock path runs
     assert called.get("unpin") is True
     assert "Dock tile" in removed
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="macOS bundle layout")
+def test_concurrent_installs_never_destroy_the_bundle(tmp_path):
+    """Two installs racing in one process must leave exactly one good bundle.
+
+    Regression: temp/backup paths were per-pid, so two threads shared them --
+    one thread's cleanup could delete the other's moved-aside bundle and leave
+    no Karma.app at all. Per-call unique paths plus the install lock fix it.
+    """
+    import threading
+
+    from karma_desktop import installer_macos as mac
+
+    errors = []
+
+    def worker():
+        try:
+            for _ in range(3):
+                mac.install_app(REPO, Path(sys.executable), tmp_path, 5180, 8020)
+        except Exception as exc:  # noqa: BLE001 - surface any race failure
+            errors.append(exc)
+
+    threads = [threading.Thread(target=worker) for _ in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert not errors, f"concurrent installs raised: {errors}"
+    app = tmp_path / "Karma.app"
+    assert app.is_dir(), "a good bundle must exist after concurrent installs"
+    assert mac._is_our_bundle(app)
+    # No stray temp/backup dirs left behind.
+    leftovers = list(tmp_path.glob(".Karma.app.*"))
+    assert leftovers == [], f"temp dirs left behind: {leftovers}"
