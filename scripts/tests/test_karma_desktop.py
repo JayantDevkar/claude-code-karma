@@ -509,33 +509,43 @@ def test_unpin_only_removes_the_launcher_bundle(monkeypatch):
 
     from karma_desktop import installer_macos as mac
 
-    dock = {
-        "persistent-apps": [
-            {
-                "tile-data": {
-                    "file-label": "Safari",
-                    "bundle-identifier": "com.apple.Safari",
-                }
-            },
-            {"tile-data": {"file-label": "Karma", "bundle-identifier": mac.BUNDLE_ID}},
-            {
-                "tile-data": {
-                    "file-label": "Claude Code Karma",
-                    "bundle-identifier": "com.google.Chrome.app.abc",
-                }
-            },
-        ]
+    # Stateful so the post-write verification (_dock_has_bundle re-exports the
+    # domain) sees the launcher actually removed, not the original state.
+    state = {
+        "dock": {
+            "persistent-apps": [
+                {
+                    "tile-data": {
+                        "file-label": "Safari",
+                        "bundle-identifier": "com.apple.Safari",
+                    }
+                },
+                {
+                    "tile-data": {
+                        "file-label": "Karma",
+                        "bundle-identifier": mac.BUNDLE_ID,
+                    }
+                },
+                {
+                    "tile-data": {
+                        "file-label": "Claude Code Karma",
+                        "bundle-identifier": "com.google.Chrome.app.abc",
+                    }
+                },
+            ]
+        }
     }
 
     monkeypatch.setattr(
         mac.subprocess,
         "run",
-        lambda *a, **k: types.SimpleNamespace(stdout=plistlib.dumps(dock)),
+        lambda *a, **k: types.SimpleNamespace(stdout=plistlib.dumps(state["dock"])),
     )
     written = {}
 
     def capture(plist):
         written["p"] = plist
+        state["dock"] = plist  # the write "lands", so verification sees it gone
         return True
 
     monkeypatch.setattr(mac, "_write_dock", capture)
@@ -879,3 +889,58 @@ def test_windows_boot_script_forwards_args_when_repo_present(tmp_path, monkeypat
         timeout=30,
     )
     assert marker.read_text() == "--web-port 5180 --no-open"
+
+
+# --------------------------------------------------------------------------
+# Windows shortcut ownership: uninstall must not delete a foreign .lnk
+# --------------------------------------------------------------------------
+
+
+def test_is_our_shortcut_only_matches_our_own(monkeypatch, tmp_path):
+    lnk = tmp_path / "Karma.lnk"
+    # Unreadable -> treated as not ours (conservative, like _is_our_bundle).
+    monkeypatch.setattr(win, "_read_shortcut", lambda p: {})
+    assert win._is_our_shortcut(lnk) is False
+    # A different app's shortcut that merely shares the name.
+    monkeypatch.setattr(
+        win,
+        "_read_shortcut",
+        lambda p: {"description": "Some other app", "arguments": ""},
+    )
+    assert win._is_our_shortcut(lnk) is False
+    # Ours, by description.
+    monkeypatch.setattr(
+        win,
+        "_read_shortcut",
+        lambda p: {"description": win._SHORTCUT_DESCRIPTION, "arguments": ""},
+    )
+    assert win._is_our_shortcut(lnk) is True
+    # Ours, by boot-script reference in the arguments.
+    monkeypatch.setattr(
+        win,
+        "_read_shortcut",
+        lambda p: {
+            "description": "x",
+            "arguments": r'"C:\x\boot_startup.py" --no-open',
+        },
+    )
+    assert win._is_our_shortcut(lnk) is True
+
+
+def test_uninstall_leaves_a_foreign_shortcut(monkeypatch, tmp_path):
+    """A same-named shortcut we didn't create must survive uninstall."""
+    startup = tmp_path / "startup"
+    stub = tmp_path / "stub"
+    startup.mkdir()
+    stub.mkdir()
+    monkeypatch.setattr(win, "desktop_dir", lambda: tmp_path)
+    monkeypatch.setattr(win, "startup_dir", lambda: startup)
+    monkeypatch.setattr(win, "stub_dir", lambda: stub)
+    monkeypatch.setattr(win, "_is_our_shortcut", lambda p: False)
+
+    foreign = tmp_path / win.SHORTCUT_NAME
+    foreign.write_text("not ours")
+    removed = win.uninstall()
+
+    assert foreign.exists(), "a foreign shortcut must not be deleted"
+    assert str(foreign) not in removed

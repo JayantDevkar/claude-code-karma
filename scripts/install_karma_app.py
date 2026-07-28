@@ -103,6 +103,14 @@ def main(argv: list[str] | None = None) -> int:
                 if backend.add_to_dock(app)
                 else "Could not update the Dock; drag the app there manually."
             )
+        elif args.dock and args.autostart:
+            # The two don't compose: with autostart on the launcher is never
+            # clicked, so it isn't pinned. Say so rather than silently drop
+            # --dock (matches the dashboard's override message).
+            print(
+                "Note: --dock was ignored because --autostart is on; the "
+                "launcher is not pinned. Pin the browser-installed Karma instead."
+            )
         if args.autostart:
             backend.install_autostart(repo, python, args.web_port, args.api_port)
             print(f"Autostart enabled: {backend.agent_path()}")

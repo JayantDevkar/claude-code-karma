@@ -466,8 +466,8 @@ Linux is not supported yet — keep starting the servers manually.
 **From the command line (agents and automation):**
 
 ```bash
-# From the repository root
-python3 scripts/install_karma_app.py --dock --autostart
+# From the repository root — installs the icon and pins it to the Dock
+python3 scripts/install_karma_app.py --dock
 ```
 
 | Flag | Effect |
@@ -478,6 +478,12 @@ python3 scripts/install_karma_app.py --dock --autostart
 | `--no-autostart` | Stop starting at login, leaving the icon in place. |
 | `--user` | macOS only: install to `~/Applications` when `/Applications` is not writable. |
 | `--uninstall` | Remove the app, its Dock tile and any login item. |
+
+> `--dock` and `--autostart` do **not** combine: with autostart on the servers
+> already come up at login, so the launcher is never clicked and is left
+> unpinned (you pin the browser-installed Karma instead). Passing both pins
+> nothing — `--autostart` wins. Enable autostart on its own, and only after
+> asking the user (see the note below).
 
 Nothing is hardcoded — the repo location comes from the script's own path and a
 Python interpreter is discovered on the machine, so a clone anywhere works.

@@ -141,3 +141,13 @@ def test_disabling_autostart_does_not_repin_the_dock(monkeypatch):
     result = da._set_autostart_sync(False)
     assert pinned["called"] is False
     assert result.enabled is False
+
+
+def test_load_core_appends_scripts_without_shadowing():
+    """scripts/ must go to the END of sys.path, so its implicit ``tests``
+    namespace package can't outrank api/tests for the process's lifetime."""
+    import routers.desktop_app as da
+
+    da._load_core()
+    assert str(da.SCRIPTS_DIR) in sys.path
+    assert sys.path[0] != str(da.SCRIPTS_DIR)

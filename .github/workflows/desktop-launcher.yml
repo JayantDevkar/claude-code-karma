@@ -3,20 +3,23 @@ name: Desktop Launcher
 on:
   push:
     branches: [main]
-    paths:
+    paths: &desktop_paths
       - 'scripts/**'
       - 'api/routers/desktop_app.py'
       - 'api/tests/test_desktop_app_guard.py'
+      # The feature also depends on the port pin, the CORS entry, the router
+      # registration and the PWA manifest link -- a change to any of these can
+      # break the desktop app, so they must trigger this workflow too.
+      - 'api/main.py'
+      - 'api/config.py'
+      - 'frontend/vite.config.ts'
+      - 'frontend/src/app.html'
+      - 'frontend/static/**'
       - 'frontend/src/lib/components/settings/DesktopAppSetting.svelte'
       - '.github/workflows/desktop-launcher.yml'
   pull_request:
     branches: [main]
-    paths:
-      - 'scripts/**'
-      - 'api/routers/desktop_app.py'
-      - 'api/tests/test_desktop_app_guard.py'
-      - 'frontend/src/lib/components/settings/DesktopAppSetting.svelte'
-      - '.github/workflows/desktop-launcher.yml'
+    paths: *desktop_paths
 
 jobs:
   test:
@@ -28,6 +31,13 @@ jobs:
         # a .lnk on Windows, and must at minimum import cleanly on Linux.
         os: [ubuntu-latest, windows-latest, macos-latest]
         python-version: ['3.10', '3.12']
+        # The launcher/installer are meant to run on the oldest interpreter the
+        # project still claims (3.9, for the hook scripts). One 3.9 leg enforces
+        # that -- is_relative_to, str.startswith(tuple) and the __future__
+        # annotations must all keep working there.
+        include:
+          - os: ubuntu-latest
+            python-version: '3.9'
     runs-on: ${{ matrix.os }}
 
     steps:

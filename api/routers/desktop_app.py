@@ -35,10 +35,17 @@ def _load_core():
 
     Only the package is imported, never the ``install_karma_app`` CLI script --
     keeping the CLI's argparse/entry-point surface out of the long-lived server
-    process. ``sys.path`` is extended once and left in place (idempotent).
+    process.
+
+    ``scripts/`` is *appended* to ``sys.path``, not inserted at the front, and
+    only once. Inserting at position 0 would give ``scripts/`` higher import
+    precedence than the app itself for the entire life of the server process --
+    and ``scripts/`` contains an implicit namespace package ``tests`` that would
+    then shadow ``api/tests`` and any like-named third-party package. Appending
+    keeps ``karma_desktop`` importable without reordering everything else.
     """
     if str(SCRIPTS_DIR) not in sys.path:
-        sys.path.insert(0, str(SCRIPTS_DIR))
+        sys.path.append(str(SCRIPTS_DIR))
     try:
         from karma_desktop import core  # noqa: PLC0415
 
@@ -73,6 +80,13 @@ def _require_local(request: Request) -> None:
     rewrites the Host to a loopback value cannot be told apart from a genuine
     local caller. Do not expose this API beyond localhost; that is the actual
     guarantee, and no header check can substitute for it.
+
+    Also explicit, because ``same-site`` is deliberately allowed (the real
+    dashboard on :5180 calling the API on :8020 is same-site, not same-origin):
+    *any* page served from *any* loopback port -- including another local dev
+    server you happen to be running -- is same-site to this API and passes this
+    guard. On a single-user machine that is an accepted trade-off, but it does
+    mean the boundary is "anything local", not "only the Karma dashboard".
 
     Four checks, none relying on the user-tunable CORS allowlist:
 
@@ -370,7 +384,16 @@ def _uninstall_sync() -> InstallResult:
 
 @router.get("/status", response_model=DesktopAppStatus)
 async def get_status(request: Request) -> DesktopAppStatus:
-    """Whether the desktop launcher is installed on this machine."""
+    """Whether the desktop launcher is installed on this machine.
+
+    Read-only, but note it returns local paths (``repo_root``, ``install_path``)
+    that include the username, and it is a GET -- which browsers send with no
+    ``Origin`` header. Any local page that is same-site to this API (see
+    ``_require_local``) can therefore read this status. That is the same
+    "anything local" surface the mutating verbs sit behind, minus the Origin
+    check they get for free; the leak is low-value on a single-user machine but
+    is real, so this endpoint carries nothing more sensitive than paths.
+    """
     _require_local(request)
     return await run_in_thread(_status_sync)
 

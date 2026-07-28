@@ -33,12 +33,12 @@ The frontend follows a layered architecture pattern with clear separation of con
 │  (/src/lib/)         │  Header, Cards, Lists, Viewers        │
 ├──────────────────────┼───────────────────────────────────────┤
 │  API Layer           │  fetch() calls to backend             │
-│  (inline)            │  REST endpoints on localhost:8000     │
+│  (inline)            │  REST endpoints on localhost:8020     │
 └──────────────────────┴───────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
-│                   Backend (FastAPI :8000)                    │
+│                   Backend (FastAPI :8020)                    │
 │         Parses local ~/.claude logs and session data         │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -143,7 +143,7 @@ The frontend follows a layered architecture pattern with clear separation of con
 
 - **Node.js** 18.x or higher (tested with v22.13.0)
 - **npm** 9.x or higher
-- **Backend API** running on `http://localhost:8000` (see root SETUP.md)
+- **Backend API** running on `http://localhost:8020` (see root SETUP.md)
 
 ### Installation
 
@@ -158,7 +158,7 @@ npm run dev
 npm run dev -- --open
 ```
 
-The app runs at `http://localhost:5173`
+The app runs at `http://localhost:5180`
 
 ### Available Scripts
 
@@ -317,7 +317,7 @@ Date range filter with preset buttons and custom date picker.
 ```typescript
 // projects/+page.ts
 export async function load({ fetch }) {
-	const response = await fetch('http://localhost:8000/projects');
+	const response = await fetch('http://localhost:8020/projects');
 	const projects = await response.json();
 	return { projects };
 }
@@ -328,7 +328,7 @@ export async function load({ fetch }) {
 ```typescript
 // Used for session detail to keep API calls server-side
 export async function load({ params, fetch }) {
-	const res = await fetch(`http://localhost:8000/sessions/${params.session_slug}`);
+	const res = await fetch(`http://localhost:8020/sessions/${params.session_slug}`);
 	return { session: await res.json() };
 }
 ```
@@ -342,7 +342,7 @@ export async function load({ params, fetch }) {
 	let data = $state([]);
 
 	onMount(async () => {
-		const res = await fetch('http://localhost:8000/agents');
+		const res = await fetch('http://localhost:8020/agents');
 		data = await res.json();
 	});
 </script>
@@ -574,7 +574,7 @@ The `.markdown-preview` class in `app.css` provides consistent styling for rende
 
 ### Backend Endpoints
 
-The frontend communicates with a FastAPI backend on `http://localhost:8000`:
+The frontend communicates with a FastAPI backend on `http://localhost:8020`:
 
 | Endpoint                            | Method   | Description                       |
 | ----------------------------------- | -------- | --------------------------------- |
@@ -594,7 +594,7 @@ The frontend communicates with a FastAPI backend on `http://localhost:8000`:
 ```typescript
 export async function load({ fetch, params }) {
 	// Use the provided fetch for SSR compatibility
-	const res = await fetch(`http://localhost:8000/projects/${params.id}`);
+	const res = await fetch(`http://localhost:8020/projects/${params.id}`);
 	return { project: await res.json() };
 }
 ```
@@ -603,7 +603,7 @@ export async function load({ fetch, params }) {
 
 ```typescript
 async function saveAgent() {
-	const res = await fetch(`http://localhost:8000/agents/${name}`, {
+	const res = await fetch(`http://localhost:8020/agents/${name}`, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify({ content })

@@ -389,7 +389,12 @@ def _unpin_from_dock_locked() -> bool:
     if len(kept) == len(apps):
         return False
     plist["persistent-apps"] = kept
-    return _write_dock(plist)
+    if not _write_dock(plist):
+        return False
+    # Symmetric with add_to_dock: confirm the tile is actually gone from the
+    # persisted domain rather than trusting the import. If the Dock reverted the
+    # write, report failure so uninstall() doesn't claim a tile it left behind.
+    return not _dock_has_bundle(BUNDLE_ID)
 
 
 # --------------------------------------------------------------------------

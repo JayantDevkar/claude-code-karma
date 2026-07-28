@@ -25,6 +25,11 @@ from . import core
 
 SHORTCUT_NAME = f"{core.APP_NAME}.lnk"
 
+# Written into every shortcut we create and checked before deleting one, so
+# uninstall never removes an unrelated Karma.lnk a user or another app placed
+# on the Desktop -- the Windows counterpart of installer_macos._is_our_bundle.
+_SHORTCUT_DESCRIPTION = "Start Claude Code Karma and open the dashboard"
+
 # Boot script that survives the repo being moved/deleted. Values are embedded
 # with ``repr`` so Windows paths (backslashes, spaces) are inert Python
 # literals and can never be misread as escapes. MODE is "desktop" (show an
@@ -169,7 +174,7 @@ def _build_script(
         f"$sc.TargetPath = {_ps_quote(target)}",
         f"$sc.Arguments = {_ps_quote(arguments)}",
         f"$sc.WorkingDirectory = {_ps_quote(workdir)}",
-        "$sc.Description = 'Start Claude Code Karma and open the dashboard'",
+        f"$sc.Description = {_ps_quote(_SHORTCUT_DESCRIPTION)}",
     ]
     if icon is not None and icon.is_file():
         lines.append(f"$sc.IconLocation = {_ps_quote(icon)}")
@@ -263,12 +268,51 @@ def install_autostart(repo: Path, python: Path, web_port: int, api_port: int) ->
     )
 
 
+def _read_shortcut(lnk: Path) -> dict:
+    """Read a .lnk's Description and Arguments. Empty dict on any failure."""
+    script = (
+        f"$s=(New-Object -ComObject WScript.Shell).CreateShortcut({_ps_quote(lnk)});"
+        '"$($s.Description)|$($s.Arguments)"'
+    )
+    try:
+        out = subprocess.run(
+            ["powershell", "-NoProfile", "-Command", script],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+    except (subprocess.SubprocessError, OSError):
+        return {}
+    description, _, arguments = out.partition("|")
+    return {"description": description, "arguments": arguments}
+
+
+def _is_our_shortcut(lnk: Path) -> bool:
+    """True only for a shortcut this installer created.
+
+    Identified by our fixed Description string, or by arguments that reference
+    one of our boot scripts -- both are set only by ``create_shortcut`` here. If
+    the shortcut can't be read we treat it as *not* ours and leave it, the same
+    conservative stance ``_is_our_bundle`` takes on macOS.
+    """
+    fields = _read_shortcut(lnk)
+    if not fields:
+        return False
+    if fields.get("description") == _SHORTCUT_DESCRIPTION:
+        return True
+    args = fields.get("arguments", "")
+    return "boot_desktop.py" in args or "boot_startup.py" in args
+
+
 def uninstall() -> list[str]:
     removed = []
+    # Only remove a .lnk we actually created, never a same-named shortcut the
+    # user (or another app) put on the Desktop or in Startup.
     for path in (desktop_dir() / SHORTCUT_NAME, startup_dir() / SHORTCUT_NAME):
-        if path.exists():
+        if path.exists() and _is_our_shortcut(path):
             path.unlink()
             removed.append(str(path))
+    # The boot scripts live in our own stub dir, so they are unambiguously ours.
     for boot in ("boot_desktop.py", "boot_startup.py"):
         path = stub_dir() / boot
         if path.exists():

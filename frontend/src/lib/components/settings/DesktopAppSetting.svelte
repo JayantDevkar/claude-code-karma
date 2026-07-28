@@ -24,6 +24,7 @@
 	}
 
 	let status = $state<DesktopAppStatus | null>(null);
+	let statusFailed = $state(false);
 	let busy = $state(false);
 	let messages = $state<string[]>([]);
 	let error = $state<string | null>(null);
@@ -41,12 +42,17 @@
 	});
 
 	async function loadStatus() {
+		statusFailed = false;
 		try {
 			const res = await fetch(`${API_BASE}/desktop-app/status`);
 			if (!res.ok) throw new Error(`HTTP ${res.status}`);
 			status = await res.json();
 			autostart = status?.autostart_enabled ?? false;
 		} catch (e) {
+			// Mark the check as failed so the UI shows an error with a retry,
+			// rather than sitting on the "Checking…" spinner forever (which is
+			// what a null status with no failure flag would render).
+			statusFailed = true;
 			error = 'Could not check desktop app status.';
 			console.error(e);
 		}
@@ -127,7 +133,22 @@
 	}
 </script>
 
-{#if status === null}
+{#if statusFailed}
+	<SettingItem
+		title="Desktop app"
+		description="Couldn’t reach the API to check the desktop app status. Make sure the Karma API is running, then retry."
+	>
+		{#snippet control()}
+			<button
+				class="px-3 py-1.5 text-xs rounded-md border border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-subtle)] disabled:opacity-50"
+				onclick={loadStatus}
+				disabled={busy}
+			>
+				Retry
+			</button>
+		{/snippet}
+	</SettingItem>
+{:else if status === null}
 	<SettingItem
 		title="Desktop app"
 		description="Checking desktop app status…"
