@@ -24,6 +24,22 @@ sys.path.insert(0, str(SCRIPTS))
 from karma_desktop import core  # noqa: E402
 from karma_desktop import installer_windows as win  # noqa: E402
 
+
+@pytest.fixture(autouse=True)
+def _no_lsregister(monkeypatch):
+    """Keep install_app out of the host's LaunchServices database.
+
+    _refresh_launch_services shells to the real ``lsregister -f`` on the temp
+    bundle each install builds; the concurrency test alone does a dozen, which
+    leaves phantom Karma.app entries pointing into reaped /private/var/folders
+    dirs that Spotlight and Open With then surface. Stub it for every test.
+    """
+    if sys.platform == "darwin":
+        from karma_desktop import installer_macos as mac
+
+        monkeypatch.setattr(mac, "_refresh_launch_services", lambda app: None)
+
+
 # --------------------------------------------------------------------------
 # No machine-specific values may reach the repository
 # --------------------------------------------------------------------------
@@ -942,7 +958,60 @@ def test_uninstall_leaves_a_foreign_shortcut(monkeypatch, tmp_path):
 
     foreign = tmp_path / win.SHORTCUT_NAME
     foreign.write_text("not ours")
+    # A boot script backing the (foreign) Desktop shortcut must survive with it,
+    # or the shortcut becomes a silent dead icon whose repo-gone alert is gone.
+    boot = stub / "boot_desktop.py"
+    boot.write_text("# boot")
     removed = win.uninstall()
 
     assert foreign.exists(), "a foreign shortcut must not be deleted"
     assert str(foreign) not in removed
+    assert boot.exists(), "a boot script backing a surviving shortcut must be kept"
+
+
+def test_windows_install_refuses_a_foreign_shortcut(monkeypatch, tmp_path):
+    """install_app must not overwrite a same-named .lnk it didn't create."""
+    stub = tmp_path / "stub"
+    stub.mkdir()
+    monkeypatch.setattr(win, "desktop_dir", lambda: tmp_path)
+    monkeypatch.setattr(win, "stub_dir", lambda: stub)
+    monkeypatch.setattr(win, "_is_our_shortcut", lambda p: False)
+
+    foreign = tmp_path / win.SHORTCUT_NAME
+    foreign.write_text("not ours")
+    with pytest.raises(FileExistsError):
+        win.install_app(tmp_path / "repo", Path(sys.executable), 5180, 8020)
+    assert foreign.read_text() == "not ours", "the foreign shortcut must be intact"
+
+
+def test_windows_uninstall_autostart_leaves_a_foreign_entry(monkeypatch, tmp_path):
+    """The autostart toggle must be as careful as Remove: never delete a
+    same-named foreign Startup shortcut."""
+    monkeypatch.setattr(win, "startup_dir", lambda: tmp_path)
+    monkeypatch.setattr(win, "_is_our_shortcut", lambda p: False)
+
+    foreign = tmp_path / win.SHORTCUT_NAME
+    foreign.write_text("not ours")
+    assert win.uninstall_autostart() is False
+    assert foreign.exists()
+
+
+def test_stable_python_prefers_an_unversioned_interpreter():
+    """A version-pinned interpreter path breaks on the next Python upgrade, so
+    stable_python must recognise and avoid one."""
+    assert (
+        core._is_versioned_interpreter(
+            Path("/Library/Frameworks/Python.framework/Versions/3.12/bin/python3")
+        )
+        is True
+    )
+    assert (
+        core._is_versioned_interpreter(
+            Path("/opt/homebrew/opt/python@3.12/bin/python3.12")
+        )
+        is True
+    )
+    assert core._is_versioned_interpreter(Path("/usr/local/bin/python3")) is False
+    assert core._is_versioned_interpreter(Path(r"C:\Python\python.exe")) is False
+    # And the chosen interpreter actually exists on this machine.
+    assert core.stable_python().is_file()

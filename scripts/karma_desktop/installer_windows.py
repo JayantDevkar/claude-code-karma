@@ -38,7 +38,6 @@ _SHORTCUT_DESCRIPTION = "Start Claude Code Karma and open the dashboard"
 # real launcher.
 _BOOT_TEMPLATE = """import os, sys, subprocess
 LAUNCHER = {launcher!r}
-PYTHON = {python!r}
 MODE = {mode!r}
 STARTUP_LNK = {startup_lnk!r}
 if not os.path.isfile(LAUNCHER):
@@ -62,7 +61,15 @@ if not os.path.isfile(LAUNCHER):
         except Exception:
             pass
     sys.exit(1)
-sys.exit(subprocess.call([PYTHON, LAUNCHER] + sys.argv[1:]))
+# sys.executable is the interpreter running this boot script -- pythonw.exe when
+# launched from the shortcut, so re-using it (rather than a baked python.exe
+# path) keeps the launch windowless AND can never point at an interpreter that
+# was removed by an upgrade. CREATE_NO_WINDOW belts-and-braces the no-console
+# guarantee even if the shortcut somehow resolved to console python.
+sys.exit(subprocess.call(
+    [sys.executable, LAUNCHER] + sys.argv[1:],
+    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+))
 """
 
 
@@ -212,12 +219,23 @@ def _flag_arguments(boot: Path, web_port: int, api_port: int, extra: str = "") -
 
 
 def install_app(repo: Path, python: Path, web_port: int, api_port: int) -> Path:
-    """Create the Desktop shortcut (via the repo-gone-aware boot script)."""
+    """Create the Desktop shortcut (via the repo-gone-aware boot script).
+
+    Refuses to overwrite a same-named .lnk that is not ours, mirroring the macOS
+    install_app's FileExistsError on a foreign bundle; the endpoint turns that
+    into a 409 rather than silently clobbering an unrelated shortcut.
+    """
+    lnk = desktop_dir() / SHORTCUT_NAME
+    if lnk.exists() and not _is_our_shortcut(lnk):
+        raise FileExistsError(
+            f"{lnk} already exists and was not created by Karma. "
+            f"Refusing to overwrite it."
+        )
     launcher = repo / "scripts" / "karma_desktop" / "launcher.py"
     boot = _write_boot_script("boot_desktop.py", "desktop", launcher, python, None)
     icon = repo / "frontend" / "static" / "icons" / "karma.ico"
     return create_shortcut(
-        lnk=desktop_dir() / SHORTCUT_NAME,
+        lnk=lnk,
         target=pythonw_for(python),
         arguments=_flag_arguments(boot, web_port, api_port),
         workdir=repo,
@@ -238,9 +256,14 @@ def autostart_enabled() -> bool:
 
 
 def uninstall_autostart() -> bool:
-    """Stop Karma starting at logon. True if an entry was actually removed."""
+    """Stop Karma starting at logon. True if an entry was actually removed.
+
+    Only removes a Startup entry we created -- the toggle must be no less careful
+    than the Remove button (uninstall), which already checks ownership, so a
+    same-named foreign Startup shortcut is never deleted out from under the user.
+    """
     entry = startup_dir() / SHORTCUT_NAME
-    if not entry.exists():
+    if not entry.exists() or not _is_our_shortcut(entry):
         return False
     entry.unlink()
     return True
@@ -306,16 +329,22 @@ def _is_our_shortcut(lnk: Path) -> bool:
 
 def uninstall() -> list[str]:
     removed = []
-    # Only remove a .lnk we actually created, never a same-named shortcut the
-    # user (or another app) put on the Desktop or in Startup.
-    for path in (desktop_dir() / SHORTCUT_NAME, startup_dir() / SHORTCUT_NAME):
-        if path.exists() and _is_our_shortcut(path):
-            path.unlink()
-            removed.append(str(path))
-    # The boot scripts live in our own stub dir, so they are unambiguously ours.
-    for boot in ("boot_desktop.py", "boot_startup.py"):
-        path = stub_dir() / boot
-        if path.exists():
-            path.unlink()
-            removed.append(str(path))
+    # Each shortcut is paired with the boot script it runs. Only remove a .lnk we
+    # actually created, and -- crucially -- keep a boot script alive whenever its
+    # shortcut survives (foreign, or unreadable so ownership is uncertain).
+    # Deleting the boot script out from under a surviving shortcut would turn it
+    # into a silent dead icon whose own repo-gone alert we'd just removed.
+    pairs = (
+        (desktop_dir() / SHORTCUT_NAME, stub_dir() / "boot_desktop.py"),
+        (startup_dir() / SHORTCUT_NAME, stub_dir() / "boot_startup.py"),
+    )
+    for lnk, boot in pairs:
+        if lnk.exists() and not _is_our_shortcut(lnk):
+            continue  # foreign or unreadable: leave the shortcut and its boot
+        if lnk.exists():
+            lnk.unlink()
+            removed.append(str(lnk))
+        if boot.exists():
+            boot.unlink()
+            removed.append(str(boot))
     return removed

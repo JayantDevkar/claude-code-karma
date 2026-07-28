@@ -135,6 +135,7 @@ Real-time state tracked in `~/.claude_karma/live-sessions/{slug}.json` via Claud
 | `/history` | File history snapshots |
 | `/settings` | User preferences |
 | `/skills` | Skill usage tracking |
+| `/desktop-app` | Install/manage the native desktop launcher — `GET status`, `POST install`, `PUT autostart`, `DELETE install` (localhost-only) |
 
 ### Key Endpoints
 

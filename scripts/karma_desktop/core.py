@@ -7,6 +7,7 @@ that needs a platform branch lives in ``installer_macos`` / ``installer_windows`
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -144,21 +145,52 @@ def find_venv_bin(root: Path, exe: str) -> Optional[Path]:
     return None
 
 
+# A path is "version-pinned" if it names a specific minor version anywhere:
+# .../Versions/3.12/..., python@3.12, python3.12. Such a path stops existing
+# the moment that minor version is removed on upgrade.
+_VERSIONED_INTERPRETER = re.compile(r"Versions/3\.\d+|python@3\.\d+|python3\.\d+")
+
+
+def _is_versioned_interpreter(path: Path) -> bool:
+    return bool(_VERSIONED_INTERPRETER.search(str(path)))
+
+
 def stable_python() -> Path:
     """A Python interpreter the generated shortcut can rely on long-term.
 
-    The launcher only uses the standard library, so any Python 3 works. What
-    matters is picking one that will still exist later -- so if the installer
-    is being run from inside a virtualenv, resolve to the interpreter that venv
-    was built from rather than the venv itself, which may be deleted.
+    The launcher only uses the standard library, so *any* Python 3 works -- what
+    matters is picking one that still exists after an interpreter upgrade. The
+    trap is ``Path(sys.executable).resolve()``: on python.org and Homebrew that
+    follows the ``python3`` symlink straight into ``.../Versions/3.12/...``,
+    which the stub then bakes in and which breaks the day 3.12 is removed.
+
+    So prefer an *unversioned* interpreter -- ``/usr/local/bin/python3``,
+    ``/opt/homebrew/bin/python3``, ``py``/``python.exe`` -- whose symlink the
+    distribution repoints across upgrades. Candidates, best first: the venv's
+    base interpreter, then ``python3``/``python`` on PATH, then this very
+    interpreter; the first one that both exists and is not version-pinned wins,
+    falling back to whatever exists if all of them are pinned.
     """
+    candidates: list[Path] = []
     if sys.prefix != sys.base_prefix:
-        base = Path(sys.base_prefix) / (
-            "python.exe" if sys.platform == "win32" else "bin/python3"
+        candidates.append(
+            Path(sys.base_prefix)
+            / ("python.exe" if sys.platform == "win32" else "bin/python3")
         )
-        if base.is_file():
-            return base
-    return Path(sys.executable).resolve()
+    names = (
+        ("python.exe", "python") if sys.platform == "win32" else ("python3", "python")
+    )
+    for name in names:
+        found = shutil.which(name)
+        if found:
+            candidates.append(Path(found))
+    candidates.append(Path(sys.executable))
+
+    existing = [c for c in candidates if c.is_file()]
+    for candidate in existing:
+        if not _is_versioned_interpreter(candidate):
+            return candidate
+    return existing[0] if existing else Path(sys.executable)
 
 
 def login_shell() -> Optional[str]:
@@ -233,7 +265,15 @@ def spawn_detached(
             popen_kwargs["creationflags"] = (
                 subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS  # type: ignore[attr-defined]
             )
-            return subprocess.Popen(list(args), **popen_kwargs)
+            # CreateProcess only appends ".exe" to a bare name; it does NOT walk
+            # PATHEXT. Node ships "npm" as npm.cmd (no npm.exe), so Popen(["npm",
+            # ...]) raises WinError 2. Resolve through shutil.which (which does
+            # honour PATHEXT) so the real npm.cmd / npx.cmd is launched. Without
+            # this the frontend never starts and, under pythonw, does so with no
+            # error anywhere.
+            resolved = shutil.which(args[0])
+            win_args = [resolved, *args[1:]] if resolved else list(args)
+            return subprocess.Popen(win_args, **popen_kwargs)
 
         popen_kwargs["start_new_session"] = True
         shell = login_shell() if use_login_shell else None

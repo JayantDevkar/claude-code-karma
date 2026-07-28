@@ -165,6 +165,7 @@ Project (entry point)
 | GET | `/skills` | Skill usage |
 | GET | `/history` | File history |
 | GET | `/settings` | User preferences |
+| GET/POST/PUT/DELETE | `/desktop-app/{status,install,autostart}` | Install/manage the native desktop launcher (localhost-only) |
 
 ## Frontend Routes
 

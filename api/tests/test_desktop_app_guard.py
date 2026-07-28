@@ -61,6 +61,27 @@ def test_ipv6_loopback_peer_allowed():
     _allowed(peer="::1")
 
 
+def test_loopback_cross_site_pairing_allowed():
+    """127.0.0.1 and localhost are different *sites*, so the dashboard on one
+    calling the API on the other is Sec-Fetch-Site: cross-site -- but it is
+    legitimate loopback traffic (both are supported, CORS-allowed entry points),
+    and a loopback Origin vouches for it. It must be allowed, not 403'd."""
+    _allowed(
+        {
+            "host": "localhost:8020",
+            "origin": "http://127.0.0.1:5180",
+            "sec-fetch-site": "cross-site",
+        }
+    )
+    _allowed(
+        {
+            "host": "127.0.0.1:8020",
+            "origin": "http://localhost:5180",
+            "sec-fetch-site": "cross-site",
+        }
+    )
+
+
 def test_cross_site_request_rejected():
     """A random website's request carries Sec-Fetch-Site: cross-site.
 

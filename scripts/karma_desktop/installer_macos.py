@@ -62,6 +62,7 @@ if [ "$(sysctl -n sysctl.proc_translated 2>/dev/null)" = "1" ]; then
   exec arch -arm64 "$0" "$@"
 fi
 LAUNCHER={launcher}
+PYTHON={python}
 # The repo may have moved, been renamed, or (if it was a git worktree) pruned.
 # Without this check the app would exec a missing file and die instantly with
 # no window and no message -- a permanently dead icon.
@@ -69,7 +70,13 @@ if [ ! -f "$LAUNCHER" ]; then
   /usr/bin/osascript -e 'display alert "Karma" message "Karma cannot find its files -- the project folder was moved or removed. Reinstall the desktop app from the dashboard (Settings -> Desktop App), or drag this app to the Trash." as critical' >/dev/null 2>&1
   exit 1
 fi
-exec {python} "$LAUNCHER" --web-port {web_port} --api-port {api_port} "$@"
+# The baked interpreter can vanish across a Python upgrade even when the repo is
+# fine. Check it too, so that also surfaces an alert instead of a silent death.
+if [ ! -x "$PYTHON" ]; then
+  /usr/bin/osascript -e 'display alert "Karma" message "Karma cannot find its Python interpreter -- it may have been removed by a system or Python update. Reinstall the desktop app from the dashboard (Settings -> Desktop App)." as critical' >/dev/null 2>&1
+  exit 1
+fi
+exec "$PYTHON" "$LAUNCHER" --web-port {web_port} --api-port {api_port} "$@"
 """
 
 

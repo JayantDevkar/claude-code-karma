@@ -96,7 +96,9 @@ def _require_local(request: Request) -> None:
        covers non-browser callers the Sec-Fetch/Origin checks miss.
     2. ``Sec-Fetch-Site`` -- browser-set, not forgeable from page script. A
        genuine cross-site request (a random website) is rejected; CORS merely
-       happened to block it before.
+       happened to block it before. Exception: a ``cross-site`` request carrying
+       a loopback ``Origin`` is allowed, because 127.0.0.1<->localhost is
+       "cross-site" per the algorithm yet is legitimate local traffic.
     3. ``Origin`` -- when present it must be a loopback origin. Stops DNS
        rebinding, where a rebound page looks same-origin to Sec-Fetch-Site but
        still carries its real, non-local Origin.
@@ -116,15 +118,25 @@ def _require_local(request: Request) -> None:
                 detail="The desktop installer can only be used from this machine.",
             )
 
+    origin = request.headers.get("origin")
+    origin_is_loopback = bool(origin) and urlsplit(origin).hostname in _LOOPBACK_HOSTS
+
     fetch_site = request.headers.get("sec-fetch-site")
-    if fetch_site is not None and fetch_site not in _ALLOWED_FETCH_SITES:
+    # ``127.0.0.1`` and ``localhost`` are *different sites* to the same-site
+    # algorithm (neither has a registrable domain), so the dashboard on
+    # http://127.0.0.1:5180 calling the API on http://localhost:8020 -- a
+    # supported entry point, both are in the CORS allowlist -- arrives as
+    # ``cross-site``. That is legitimate loopback traffic, and a loopback Origin
+    # proves it, so only reject ``cross-site`` when no such Origin vouches for
+    # it (which is the genuine "random website" case, and the Origin-less
+    # cross-site GET).
+    if fetch_site is not None and fetch_site not in _ALLOWED_FETCH_SITES and not origin_is_loopback:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="This action must originate from the Karma dashboard on this machine.",
         )
 
-    origin = request.headers.get("origin")
-    if origin and urlsplit(origin).hostname not in _LOOPBACK_HOSTS:
+    if origin and not origin_is_loopback:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="This action must originate from the Karma dashboard on this machine.",
@@ -204,8 +216,11 @@ def _status_sync() -> DesktopAppStatus:
     elif sys.platform == "win32":
         from karma_desktop import installer_windows as win  # noqa: PLC0415
 
+        # Symmetric with the macOS branch: only a shortcut we created counts,
+        # never a same-named .lnk from another app, so Reinstall/Remove can't act
+        # on it and status can't get stuck reading "Installed".
         shortcut = win.desktop_dir() / win.SHORTCUT_NAME
-        if shortcut.exists():
+        if shortcut.exists() and win._is_our_shortcut(shortcut):
             installed, install_path = True, str(shortcut)
         autostart = win.autostart_enabled()
 
@@ -275,7 +290,10 @@ def _install_sync(body: InstallRequest) -> InstallResult:
     if sys.platform == "win32":
         from karma_desktop import installer_windows as win  # noqa: PLC0415
 
-        lnk = win.install_app(repo, python, core.WEB_PORT, core.API_PORT)
+        try:
+            lnk = win.install_app(repo, python, core.WEB_PORT, core.API_PORT)
+        except FileExistsError as exc:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
         messages.append(f"Added {lnk.name} to your Desktop.")
         if body.autostart:
             win.install_autostart(repo, python, core.WEB_PORT, core.API_PORT)

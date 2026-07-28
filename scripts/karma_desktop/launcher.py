@@ -486,25 +486,30 @@ def main(argv: list[str] | None = None) -> int:
             if not web_up:
                 start_web(root, args.web_port)
 
-    # A cold start compiles the frontend (~1-2 min); tell the user so the click
-    # does not look dead. Only when something actually has to boot, and only
-    # when we are the interactive launcher (headless autostart stays silent).
-    cold = not (api_up and web_up)
-    if cold and not headless:
-        notify("Starting servers — the dashboard will open in a moment.")
+        # The lock is held across the wait, not just the spawn. Releasing after
+        # the Popen calls (which return in milliseconds) leaves the whole ~1-2
+        # minute cold compile unguarded: a launch that arrives then finds the
+        # port not yet bound and the lock free, and spawns a *second* server set
+        # -- exactly the "Dock click while launchd's RunAtLoad is still working"
+        # race. Holding it until the ports answer makes a later launch see the
+        # lock (skip spawning, wait) and makes the 60s stale-lock reclaim
+        # reachable. The loser holds no lock, so it waits here without blocking.
+        cold = not (api_up and web_up)
+        if cold and not headless:
+            notify("Starting servers — the dashboard will open in a moment.")
 
-    if not core.wait_for_port(args.api_port, API_TIMEOUT):
-        return _fail(
-            f"The API did not start on port {args.api_port}. "
-            f"Check {core.log_dir() / 'api.log'}",
-            headless or args.quiet,
-        )
-    if not core.wait_for_port(args.web_port, WEB_TIMEOUT):
-        return _fail(
-            f"The frontend did not start on port {args.web_port}. "
-            f"Check {core.log_dir() / 'web.log'}",
-            headless or args.quiet,
-        )
+        if not core.wait_for_port(args.api_port, API_TIMEOUT):
+            return _fail(
+                f"The API did not start on port {args.api_port}. "
+                f"Check {core.log_dir() / 'api.log'}",
+                headless or args.quiet,
+            )
+        if not core.wait_for_port(args.web_port, WEB_TIMEOUT):
+            return _fail(
+                f"The frontend did not start on port {args.web_port}. "
+                f"Check {core.log_dir() / 'web.log'}",
+                headless or args.quiet,
+            )
 
     _log(f"OK: servers ready at {url} (headless={headless})")
     if headless:

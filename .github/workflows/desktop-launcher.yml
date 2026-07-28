@@ -7,6 +7,10 @@ on:
       - 'scripts/**'
       - 'api/routers/desktop_app.py'
       - 'api/tests/test_desktop_app_guard.py'
+      # ruff resolves config hierarchically, so api/pyproject.toml governs the
+      # lint/format of the endpoint files this job checks -- a change to its
+      # line-length or select set must re-run this job.
+      - 'api/pyproject.toml'
       # The feature also depends on the port pin, the CORS entry, the router
       # registration and the PWA manifest link -- a change to any of these can
       # break the desktop app, so they must trigger this workflow too.
