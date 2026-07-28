@@ -152,7 +152,9 @@ _VERSIONED_INTERPRETER = re.compile(r"Versions/3\.\d+|python@3\.\d+|python3\.\d+
 
 
 def _is_versioned_interpreter(path: Path) -> bool:
-    return bool(_VERSIONED_INTERPRETER.search(str(path)))
+    # as_posix() so the ``Versions/3.N`` pattern matches regardless of the host's
+    # path separator (str(Path(...)) yields backslashes on Windows).
+    return bool(_VERSIONED_INTERPRETER.search(path.as_posix()))
 
 
 def stable_python() -> Path:
