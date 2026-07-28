@@ -4,7 +4,6 @@ to the Dock, optionally started at login by launchd."""
 from __future__ import annotations
 
 import contextlib
-import fcntl
 import os
 import plistlib
 import shutil
@@ -14,6 +13,16 @@ import uuid
 from pathlib import Path
 
 from . import core
+
+# fcntl is POSIX-only. This whole module is macOS-only in practice, but it is
+# imported cross-platform (the stdlib-only import check, and a couple of tests
+# that don't touch the locking paths), so a hard import would crash on Windows.
+# The lock helpers below degrade to no-ops when it's unavailable -- they are
+# never actually called off macOS.
+try:
+    import fcntl
+except ModuleNotFoundError:  # pragma: no cover - only on Windows
+    fcntl = None
 
 BUNDLE_ID = "com.claudecodekarma.launcher"
 AGENT_LABEL = "com.claudecodekarma.servers"
@@ -29,6 +38,9 @@ def _install_lock():
     all install paths go through this one function, and it is released when the
     handle closes even if the process dies.
     """
+    if fcntl is None:  # non-POSIX: this path is never reached on macOS
+        yield
+        return
     lock_path = core.log_dir() / "install.lock"
     with open(lock_path, "w") as fh:
         fcntl.flock(fh, fcntl.LOCK_EX)
@@ -219,6 +231,9 @@ def _dock_lock():
     those into a serial pair. Every Dock mutation goes through ``add_to_dock``
     or ``unpin_from_dock``, and both take this lock, so the invariant holds.
     """
+    if fcntl is None:  # non-POSIX: the Dock only exists on macOS anyway
+        yield
+        return
     lock_path = core.log_dir() / "dock.lock"
     with open(lock_path, "w") as fh:
         fcntl.flock(fh, fcntl.LOCK_EX)

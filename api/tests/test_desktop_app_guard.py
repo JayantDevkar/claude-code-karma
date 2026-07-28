@@ -13,6 +13,11 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+# The desktop-app router pulls in FastAPI. The models-only test job installs no
+# web deps and collects every tests/*.py, so skip this whole module there rather
+# than failing collection with a bare ImportError.
+pytest.importorskip("fastapi")
+
 from fastapi import HTTPException  # noqa: E402
 
 from routers.desktop_app import _require_local  # noqa: E402

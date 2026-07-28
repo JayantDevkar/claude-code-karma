@@ -1,0 +1,21 @@
+# Ruff configuration for the desktop-launcher scripts.
+#
+# Without a config here, ruff lints scripts/ under its *default* rule set, which
+# grows as new ruff releases promote rules into the defaults. Because CI installs
+# ruff unpinned, that default drift silently turned a green PR red the day ruff
+# 0.16 shipped. This file pins the lint *policy* (not the version) to the same
+# narrow, opt-in set api/pyproject.toml already uses, so scripts/ and api/ agree
+# and neither moves under CI's feet.
+target-version = "py39"
+
+[lint]
+select = [
+    "E", # pycodestyle errors
+    "W", # pycodestyle warnings
+    "F", # pyflakes
+    "I", # isort
+    "B", # flake8-bugbear
+]
+ignore = [
+    "E501", # line length is the formatter's concern
+]

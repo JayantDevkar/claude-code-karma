@@ -11,8 +11,8 @@ import plistlib
 import re
 import socket
 import subprocess
-import types
 import sys
+import types
 from pathlib import Path
 
 import pytest
@@ -23,7 +23,6 @@ sys.path.insert(0, str(SCRIPTS))
 
 from karma_desktop import core  # noqa: E402
 from karma_desktop import installer_windows as win  # noqa: E402
-
 
 # --------------------------------------------------------------------------
 # No machine-specific values may reach the repository
@@ -132,13 +131,15 @@ def test_wait_for_port_times_out_without_a_listener():
 def test_open_window_prefers_the_installed_pwa(monkeypatch):
     from karma_desktop import launcher
 
-    monkeypatch.setattr(launcher, "_installed_pwa", lambda: Path("/fake/Karma.app"))
+    pwa = Path("/fake/Karma.app")
+    monkeypatch.setattr(launcher, "_installed_pwa", lambda: pwa)
     calls = {}
     monkeypatch.setattr(
         launcher.subprocess, "run", lambda *a, **k: calls.__setitem__("run", a[0])
     )
     launcher.open_window("http://localhost:5180/")
-    assert calls.get("run") == ["open", "/fake/Karma.app"]
+    # str(Path(...)) so the assertion holds on Windows too (backslash separators).
+    assert calls.get("run") == ["open", str(pwa)]
 
 
 def test_open_window_uses_chromium_app_mode_when_no_pwa(monkeypatch):
