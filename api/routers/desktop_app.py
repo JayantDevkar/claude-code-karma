@@ -178,8 +178,12 @@ def _status_sync() -> DesktopAppStatus:
     if sys.platform == "darwin":
         from karma_desktop import installer_macos as mac  # noqa: PLC0415
 
+        # Only *our* bundle counts as installed. "Karma" is not a rare product
+        # name; reporting an unrelated vendor's Karma.app as installed would let
+        # Reinstall/Remove act on it, and uninstall() already refuses to touch a
+        # foreign bundle -- so status must apply the same bundle-id check.
         for candidate in _macos_app_paths():
-            if candidate.exists():
+            if candidate.exists() and mac._is_our_bundle(candidate):
                 installed, install_path = True, str(candidate)
                 break
         autostart = mac.autostart_enabled()
@@ -320,15 +324,18 @@ def _set_autostart_sync(enabled: bool) -> AutostartResult:
             else "Karma was not set to start at login."
         )
         # Autostart-on had unpinned the launcher (the PWA was the icon). Turning
-        # it off means the PWA can no longer start the servers, so restore the
-        # launcher tile if the app is installed -- otherwise disabling autostart
-        # could leave the Dock with no working Karma icon at all.
+        # it off means the PWA can no longer start the servers -- but do NOT
+        # silently re-pin: there is no stored record that the user ever wanted a
+        # launcher tile (install offers pinning as its own opt-in switch), and
+        # forcing one back would both surprise them and restart the Dock for a
+        # setting they didn't touch. Point them at the pin control instead; it
+        # reappears in the UI as soon as autostart is off.
         if sys.platform == "darwin":
-            for candidate in _macos_app_paths():
-                if candidate.exists():
-                    if backend.add_to_dock(candidate):
-                        messages.append("Re-pinned the launcher to the Dock.")
-                    break
+            messages.append(
+                "The PWA can no longer start the servers on its own. To get a "
+                "click-to-start icon back, turn on “Pin the launcher to the "
+                "Dock” and reinstall."
+            )
         messages.append(
             "Servers already running were left alone; close them if you want them stopped now."
         )

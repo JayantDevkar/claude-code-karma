@@ -90,3 +90,54 @@ def test_loopback_host_allowed():
     _allowed({"host": "localhost:8020"})
     _allowed({"host": "127.0.0.1:8020"})
     _allowed({"host": "[::1]:8020"})
+
+
+# ---------------------------------------------------------------------------
+# macOS bundle-identity: status and autostart must not act on a foreign app
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="macOS bundle layout")
+def test_status_ignores_a_foreign_karma_bundle(tmp_path, monkeypatch):
+    """A same-named vendor Karma.app must not be reported as installed -- only a
+    bundle carrying our identifier counts, matching uninstall()'s refusal to
+    touch a foreign one."""
+    import plistlib
+
+    import routers.desktop_app as da
+
+    da._load_core()
+    from karma_desktop import installer_macos as mac
+
+    foreign = tmp_path / "Karma.app" / "Contents"
+    foreign.mkdir(parents=True)
+    with open(foreign / "Info.plist", "wb") as fh:
+        plistlib.dump({"CFBundleIdentifier": "com.someoneelse.karma"}, fh)
+
+    monkeypatch.setattr(da, "_macos_app_paths", lambda: [tmp_path / "Karma.app"])
+    monkeypatch.setattr(mac, "autostart_enabled", lambda: False)
+
+    status = da._status_sync()
+    assert status.installed is False
+    assert status.install_path is None
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="Dock is macOS-only")
+def test_disabling_autostart_does_not_repin_the_dock(monkeypatch):
+    """Turning autostart off must not silently re-pin a launcher tile (and
+    restart the Dock) the user may never have asked for."""
+    import routers.desktop_app as da
+
+    da._load_core()
+    from karma_desktop import installer_macos as mac
+
+    monkeypatch.setattr(mac, "uninstall_autostart", lambda: True)
+    monkeypatch.setattr(mac, "autostart_enabled", lambda: False)
+    pinned = {"called": False}
+    monkeypatch.setattr(
+        mac, "add_to_dock", lambda *a, **k: pinned.__setitem__("called", True) or True
+    )
+
+    result = da._set_autostart_sync(False)
+    assert pinned["called"] is False
+    assert result.enabled is False

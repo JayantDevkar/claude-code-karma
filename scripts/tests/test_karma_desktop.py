@@ -579,6 +579,7 @@ def test_autostart_plist_runs_the_launcher_headless(tmp_path, monkeypatch):
 @pytest.mark.skipif(sys.platform != "win32", reason="Startup folder is Windows-only")
 def test_windows_autostart_round_trips(tmp_path, monkeypatch):
     monkeypatch.setattr(win, "startup_dir", lambda: tmp_path)
+    monkeypatch.setattr(win, "stub_dir", lambda: tmp_path)
 
     assert win.autostart_enabled() is False
     win.install_autostart(REPO, Path(sys.executable), 5180, 8020)
@@ -733,3 +734,148 @@ def test_concurrent_installs_never_destroy_the_bundle(tmp_path):
     # No stray temp/backup dirs left behind.
     leftovers = list(tmp_path.glob(".Karma.app.*"))
     assert leftovers == [], f"temp dirs left behind: {leftovers}"
+
+
+# --------------------------------------------------------------------------
+# Spawn lock: the loser of the race must NOT spawn a second set of servers
+# --------------------------------------------------------------------------
+
+
+def test_spawn_lock_second_launch_does_not_own_spawn(monkeypatch, tmp_path):
+    """While one launch holds the lock, a second must be told it does not own
+    the spawn (yield False), so it skips starting a duplicate set of servers."""
+    from karma_desktop import launcher
+
+    monkeypatch.setattr(core, "log_dir", lambda: tmp_path)
+    with launcher._spawn_lock() as first:
+        assert first is True
+        with launcher._spawn_lock() as second:
+            assert second is False
+    # Lock released: a fresh launch owns the spawn again.
+    with launcher._spawn_lock() as third:
+        assert third is True
+
+
+def test_spawn_lock_reclaims_a_stale_lock(monkeypatch, tmp_path):
+    """A lock left by a crashed launch (older than a minute) is reclaimed, and
+    the reclaiming launch owns the spawn and cleans the lock up afterwards."""
+    import os
+    import time
+
+    from karma_desktop import launcher
+
+    monkeypatch.setattr(core, "log_dir", lambda: tmp_path)
+    lock = tmp_path / "launch.lock"
+    lock.write_text("")
+    old = time.time() - 120
+    os.utime(lock, (old, old))
+
+    with launcher._spawn_lock() as owned:
+        assert owned is True
+    assert not lock.exists()
+
+
+# --------------------------------------------------------------------------
+# PWA discovery: exact label only, and across Chrome / Edge / Brave
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="PWA bundles are macOS-only")
+def test_installed_pwa_matches_exact_label_only(monkeypatch, tmp_path):
+    """A bundle whose name merely *contains* "Karma" must be ignored; an exact
+    Karma PWA under any browser's Apps folder must be found."""
+    from karma_desktop import launcher
+
+    apps = tmp_path / "Applications" / "Edge Apps.localized"
+    apps.mkdir(parents=True)
+    (apps / "Karma Tracker.app").mkdir()  # substring only -- must not match
+
+    monkeypatch.setattr(launcher.Path, "home", classmethod(lambda cls: tmp_path))
+    assert launcher._installed_pwa() is None
+
+    (apps / "Karma.app").mkdir()  # exact label, under the Edge folder
+    assert launcher._installed_pwa() == apps / "Karma.app"
+
+
+# --------------------------------------------------------------------------
+# Port ownership: a sibling Karma checkout/worktree counts as "already ours"
+# --------------------------------------------------------------------------
+
+
+def test_claim_port_accepts_a_sibling_karma_checkout(monkeypatch, tmp_path):
+    """The port held by a *different* Karma checkout (e.g. a git worktree) must
+    read as "Karma is already running", not "another project stole the port"."""
+    from karma_desktop import launcher
+
+    root = tmp_path / "main"
+    (root / "scripts" / "karma_desktop").mkdir(parents=True)
+    worktree = tmp_path / "wt"
+    (worktree / "scripts" / "karma_desktop").mkdir(parents=True)
+    (worktree / "scripts" / "karma_desktop" / "launcher.py").write_text("")
+
+    monkeypatch.setattr(core, "port_is_up", lambda *a, **k: True)
+    monkeypatch.setattr(core, "port_owner_cwd", lambda p: str(worktree / "frontend"))
+    assert launcher._claim_port(root, 5180, "frontend") is None
+
+
+def test_claim_port_rejects_a_foreign_project(monkeypatch, tmp_path):
+    """A genuinely unrelated project on the port still produces a clear error."""
+    from karma_desktop import launcher
+
+    root = tmp_path / "main"
+    (root / "scripts" / "karma_desktop").mkdir(parents=True)
+    other = tmp_path / "someproj"
+    other.mkdir()
+
+    monkeypatch.setattr(core, "port_is_up", lambda *a, **k: True)
+    monkeypatch.setattr(core, "port_owner_cwd", lambda p: str(other))
+    msg = launcher._claim_port(root, 5180, "frontend")
+    assert msg is not None and "another project" in msg
+
+
+# --------------------------------------------------------------------------
+# Windows repo-gone safety net (the boot script)
+# --------------------------------------------------------------------------
+
+
+def test_windows_startup_boot_script_self_heals_when_repo_gone(tmp_path, monkeypatch):
+    """If the repo is gone, the Startup boot script deletes its own shortcut so
+    it stops firing at every logon, and exits non-zero."""
+    monkeypatch.setattr(win, "stub_dir", lambda: tmp_path)
+    missing_launcher = tmp_path / "gone" / "launcher.py"
+    startup_lnk = tmp_path / "Karma.lnk"
+    startup_lnk.write_text("x")
+
+    boot = win._write_boot_script(
+        "boot_startup.py",
+        "startup",
+        missing_launcher,
+        Path(sys.executable),
+        startup_lnk,
+    )
+    result = subprocess.run(
+        [sys.executable, str(boot), "--no-open"], capture_output=True, timeout=30
+    )
+    assert result.returncode == 1
+    assert not startup_lnk.exists()
+
+
+def test_windows_boot_script_forwards_args_when_repo_present(tmp_path, monkeypatch):
+    """With the launcher present, the boot script forwards its own arguments on
+    to the real launcher unchanged."""
+    monkeypatch.setattr(win, "stub_dir", lambda: tmp_path)
+    marker = tmp_path / "argv.txt"
+    launcher_py = tmp_path / "launcher.py"
+    launcher_py.write_text(
+        f"import sys\nopen(r{str(marker)!r}, 'w').write(' '.join(sys.argv[1:]))\n"
+    )
+
+    boot = win._write_boot_script(
+        "boot_desktop.py", "desktop", launcher_py, Path(sys.executable), None
+    )
+    subprocess.run(
+        [sys.executable, str(boot), "--web-port", "5180", "--no-open"],
+        check=True,
+        timeout=30,
+    )
+    assert marker.read_text() == "--web-port 5180 --no-open"

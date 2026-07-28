@@ -5,6 +5,14 @@ A Desktop shortcut is used rather than a taskbar pin on purpose — Windows
 deliberately offers no supported API for programmatic taskbar pinning, and the
 registry hacks that fake it break between releases. Desktop icons are also
 where Windows users generally expect app shortcuts to live.
+
+Both shortcuts point at a small *boot script* kept outside the repo (under
+``%LOCALAPPDATA%\\Karma``) rather than directly at the launcher inside the repo.
+That boot script is the Windows equivalent of the macOS ``.app`` stub's
+repo-gone guard: if the repo has been moved, deleted, or its git worktree
+pruned, the Desktop icon shows an explanatory alert and the Startup entry
+removes itself, instead of a bare ``pythonw missing_script.py`` that exits
+silently at every logon with no window, no console and no log.
 """
 
 from __future__ import annotations
@@ -16,6 +24,41 @@ from pathlib import Path
 from . import core
 
 SHORTCUT_NAME = f"{core.APP_NAME}.lnk"
+
+# Boot script that survives the repo being moved/deleted. Values are embedded
+# with ``repr`` so Windows paths (backslashes, spaces) are inert Python
+# literals and can never be misread as escapes. MODE is "desktop" (show an
+# alert) or "startup" (silently delete our own Startup shortcut so it stops
+# firing every logon). On success it just forwards its own arguments to the
+# real launcher.
+_BOOT_TEMPLATE = """import os, sys, subprocess
+LAUNCHER = {launcher!r}
+PYTHON = {python!r}
+MODE = {mode!r}
+STARTUP_LNK = {startup_lnk!r}
+if not os.path.isfile(LAUNCHER):
+    if MODE == "startup":
+        try:
+            if STARTUP_LNK and os.path.isfile(STARTUP_LNK):
+                os.remove(STARTUP_LNK)
+        except OSError:
+            pass
+    else:
+        try:
+            import ctypes
+            ctypes.windll.user32.MessageBoxW(
+                0,
+                "Karma cannot find its files - the project folder was moved or "
+                "removed. Reinstall the desktop app from the dashboard "
+                "(Settings > Desktop App).",
+                "Karma",
+                0x10,
+            )
+        except Exception:
+            pass
+    sys.exit(1)
+sys.exit(subprocess.call([PYTHON, LAUNCHER] + sys.argv[1:]))
+"""
 
 
 def _ps_quote(value: object) -> str:
@@ -69,6 +112,20 @@ def startup_dir() -> Path:
     return _known_folder("Startup", fallback)
 
 
+def stub_dir() -> Path:
+    """A stable, outside-the-repo home for the boot scripts.
+
+    ``%LOCALAPPDATA%\\Karma``, created on demand. It must not live in the repo:
+    the whole point of the boot script is to still exist (and explain itself)
+    after the repo is gone.
+    """
+    local = os.environ.get("LOCALAPPDATA")
+    base = Path(local) if local else Path.home() / ".karma"
+    d = base / "Karma"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
 def pythonw_for(python: Path) -> Path:
     """``pythonw.exe`` beside ``python.exe`` when it exists.
 
@@ -78,6 +135,23 @@ def pythonw_for(python: Path) -> Path:
     """
     candidate = python.with_name("pythonw.exe")
     return candidate if candidate.is_file() else python
+
+
+def _write_boot_script(
+    name: str, mode: str, launcher: Path, python: Path, startup_lnk: Path | None
+) -> Path:
+    """Write a boot script into ``stub_dir()`` and return its path."""
+    path = stub_dir() / name
+    path.write_text(
+        _BOOT_TEMPLATE.format(
+            launcher=str(launcher),
+            python=str(python),
+            mode=mode,
+            startup_lnk=str(startup_lnk) if startup_lnk else "",
+        ),
+        encoding="utf-8",
+    )
+    return path
 
 
 def _build_script(
@@ -121,20 +195,26 @@ def create_shortcut(
     return lnk
 
 
-def _launch_arguments(repo: Path, web_port: int, api_port: int, extra: str = "") -> str:
-    launcher = repo / "scripts" / "karma_desktop" / "launcher.py"
-    # Quote the script path so profiles like C:\Users\First Last survive.
-    args = f'"{launcher}" --web-port {web_port} --api-port {api_port}'
+def _flag_arguments(boot: Path, web_port: int, api_port: int, extra: str = "") -> str:
+    """Shortcut arguments: the boot script path plus launcher flags.
+
+    The launcher path is baked into the boot script, so only the flags are
+    passed here; the boot script forwards them on. The boot path is quoted so a
+    profile like ``C:\\Users\\First Last`` survives.
+    """
+    args = f'"{boot}" --web-port {web_port} --api-port {api_port}'
     return f"{args} {extra}".strip()
 
 
 def install_app(repo: Path, python: Path, web_port: int, api_port: int) -> Path:
-    """Create the Desktop shortcut and return its path."""
+    """Create the Desktop shortcut (via the repo-gone-aware boot script)."""
+    launcher = repo / "scripts" / "karma_desktop" / "launcher.py"
+    boot = _write_boot_script("boot_desktop.py", "desktop", launcher, python, None)
     icon = repo / "frontend" / "static" / "icons" / "karma.ico"
     return create_shortcut(
         lnk=desktop_dir() / SHORTCUT_NAME,
         target=pythonw_for(python),
-        arguments=_launch_arguments(repo, web_port, api_port),
+        arguments=_flag_arguments(boot, web_port, api_port),
         workdir=repo,
         icon=icon if icon.is_file() else None,
     )
@@ -162,14 +242,22 @@ def uninstall_autostart() -> bool:
 
 
 def install_autostart(repo: Path, python: Path, web_port: int, api_port: int) -> Path:
-    """Put a headless copy of the launcher in the Startup folder."""
+    """Put a headless copy of the launcher in the Startup folder.
+
+    The Startup boot script is told its own shortcut path so that, if the repo
+    is later gone, it deletes that shortcut and stops firing at every logon --
+    the Windows counterpart of the launchd agent's self-unload on macOS.
+    """
+    launcher = repo / "scripts" / "karma_desktop" / "launcher.py"
+    startup_lnk = startup_dir() / SHORTCUT_NAME
+    boot = _write_boot_script(
+        "boot_startup.py", "startup", launcher, python, startup_lnk
+    )
     icon = repo / "frontend" / "static" / "icons" / "karma.ico"
     return create_shortcut(
-        lnk=startup_dir() / SHORTCUT_NAME,
+        lnk=startup_lnk,
         target=pythonw_for(python),
-        arguments=_launch_arguments(
-            repo, web_port, api_port, extra="--no-open --quiet"
-        ),
+        arguments=_flag_arguments(boot, web_port, api_port, extra="--no-open --quiet"),
         workdir=repo,
         icon=icon if icon.is_file() else None,
     )
@@ -178,6 +266,11 @@ def install_autostart(repo: Path, python: Path, web_port: int, api_port: int) ->
 def uninstall() -> list[str]:
     removed = []
     for path in (desktop_dir() / SHORTCUT_NAME, startup_dir() / SHORTCUT_NAME):
+        if path.exists():
+            path.unlink()
+            removed.append(str(path))
+    for boot in ("boot_desktop.py", "boot_startup.py"):
+        path = stub_dir() / boot
         if path.exists():
             path.unlink()
             removed.append(str(path))

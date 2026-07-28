@@ -12,8 +12,8 @@ and caches title/status for display, but never writes back to the ticket
 provider. You fetch metadata via the user's already-configured MCP server.
 
 Karma's API URL comes from `KARMA_API_URL` (set by users on non-default
-ports/hosts) with `http://localhost:8000` as fallback. Inline
-`${KARMA_API_URL:-http://localhost:8000}` in **every** curl below — bash
+ports/hosts) with `http://localhost:8020` as fallback. Inline
+`${KARMA_API_URL:-http://localhost:8020}` in **every** curl below — bash
 variables don't persist across separate Bash tool calls, so a top-of-script
 assignment would be empty by the time the next curl runs.
 
@@ -101,7 +101,7 @@ The `url` field should be the URL you actually have — `/pull/N` for PRs,
 the path segment; the UI uses it to distinguish PRs from issues.
 
 ```bash
-curl -s -X POST "${KARMA_API_URL:-http://localhost:8000}/sessions/${CLAUDE_SESSION_ID}/tickets" \
+curl -s -X POST "${KARMA_API_URL:-http://localhost:8020}/sessions/${CLAUDE_SESSION_ID}/tickets" \
      -H 'Content-Type: application/json' \
      -d '{"ref":"<key>","provider":"<provider>","url":"<url>","source":"slash_command"}'
 ```
@@ -112,7 +112,7 @@ URL field carries the issue/PR distinction.
 ## Step 5 — PUT the metadata (only if Step 3 succeeded)
 
 ```bash
-curl -s -X PUT "${KARMA_API_URL:-http://localhost:8000}/tickets/<provider>/<key>" \
+curl -s -X PUT "${KARMA_API_URL:-http://localhost:8020}/tickets/<provider>/<key>" \
      -H 'Content-Type: application/json' \
      -d '{"title":"<title>","status":"<status>"}'
 ```
@@ -138,7 +138,7 @@ just attached:
   `link_source` if previously set by branch-detect or dashboard. Order:
   `slash_command > dashboard > branch`.
 - If the API is unreachable, tell the user
-  `karma not running at ${KARMA_API_URL:-http://localhost:8000}` so they
+  `karma not running at ${KARMA_API_URL:-http://localhost:8020}` so they
   see what was tried. Don't silently succeed.
 - GitHub issues and PRs sharing `#N` means a single karma row (one
   `(provider, external_key)` pair) covers both views of that number.

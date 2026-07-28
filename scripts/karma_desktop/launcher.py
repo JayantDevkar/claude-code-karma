@@ -141,21 +141,33 @@ def _chrome_command() -> list[str] | None:
     return None
 
 
+# The exact bundle names a browser gives a Karma PWA shim, and the (localised)
+# folders browsers keep their installed PWAs in. Matched *exactly*, never as a
+# substring: globbing "*Karma*.app" would open an unrelated app like
+# "Karma Tracker.app" and return without ever trying the real dashboard URL --
+# the same substring-matching mistake installer_macos._is_replaceable_karma_tile
+# was hardened against.
+_PWA_APP_STEMS = {"Karma", "Claude Code Karma"}
+_PWA_FOLDER_PREFIXES = ("Chrome Apps", "Edge Apps", "Brave Apps")
+
+
 def _installed_pwa() -> Path | None:
-    """The Chrome-installed Karma PWA bundle on macOS, if the user added it.
+    """A browser-installed Karma PWA bundle on macOS, if the user added one.
 
     Preferred when present: it carries Karma's own Dock icon and has the
-    back/refresh title-bar controls that a bare app-mode window lacks.
+    back/refresh title-bar controls that a bare app-mode window lacks. Chrome,
+    Edge and Brave each keep PWAs under their own localised "* Apps" folder.
     """
     if sys.platform != "darwin":
         return None
-    # macOS localises this folder name, so match on the prefix.
     apps = Path.home() / "Applications"
     if not apps.is_dir():
         return None
     for child in apps.iterdir():
-        if child.name.startswith("Chrome Apps"):
-            for app in child.glob("*Karma*.app"):
+        if not child.is_dir() or not child.name.startswith(_PWA_FOLDER_PREFIXES):
+            continue
+        for app in child.glob("*.app"):
+            if app.stem in _PWA_APP_STEMS:
                 return app
     return None
 
@@ -325,15 +337,24 @@ def _preflight(root: Path, need_api: bool, need_web: bool) -> str | None:
 
 @contextlib.contextmanager
 def _spawn_lock():
-    """Best-effort cross-launch lock around the server-spawn critical section.
+    """Cross-launch lock around the server-spawn critical section.
 
-    Uses an exclusively-created lock file; a stale one (from a crashed launch)
-    is taken over after a minute. On any error the lock is skipped rather than
-    blocking the launch -- correctness of the servers doesn't depend on it, it
-    only avoids a double-spawn race.
+    Yields ``True`` to the launch that owns the spawn and ``False`` to one that
+    lost the race -- the loser must skip spawning and fall through to wait for
+    the winner's servers, so two near-simultaneous launches never both start a
+    set of servers and fight for the port.
+
+    Uses an exclusively-created lock file. A stale one (from a crashed launch)
+    is reclaimed after a minute by unlinking and re-creating it exclusively, so
+    only one of several waiting launches wins the takeover; a launch that loses
+    that race yields ``False`` rather than deleting the winner's live lock in
+    its ``finally``. On any unexpected error the lock is skipped (yields
+    ``True``) rather than blocking the launch -- a rare double-spawn is a far
+    milder failure than never starting at all.
     """
     lock = core.log_dir() / "launch.lock"
     acquired = False
+    owned = True  # default to spawning if the lock machinery itself fails
     try:
         try:
             fd = os.open(str(lock), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
@@ -342,18 +363,47 @@ def _spawn_lock():
         except FileExistsError:
             import time
 
-            if lock.exists() and time.time() - lock.stat().st_mtime > 60:
-                acquired = True  # stale; proceed and let the winner-by-bind sort it out
+            owned = False  # another launch holds the lock: don't spawn
+            try:
+                if time.time() - lock.stat().st_mtime > 60:
+                    # Stale lock from a crashed launch. Reclaim it atomically so
+                    # exactly one waiter wins; a loser of this race falls through
+                    # as a non-owner and won't unlink the winner's fresh lock.
+                    lock.unlink(missing_ok=True)
+                    fd = os.open(str(lock), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+                    os.close(fd)
+                    acquired = True
+                    owned = True
+            except (OSError, FileExistsError):
+                pass
     except OSError:
         pass
     try:
-        yield
+        yield owned
     finally:
         if acquired:
             try:
                 lock.unlink(missing_ok=True)
             except OSError:
                 pass
+
+
+def _is_karma_checkout(path: Path) -> bool:
+    """Whether ``path`` (a server's cwd) sits inside any Karma checkout.
+
+    The port owner's cwd is ``<checkout>/frontend`` or ``<checkout>/api``, so
+    walk up looking for this package. A second git worktree -- or a separate
+    clone -- of Karma running on the port then counts as "Karma is already
+    here", not "another project stole the port". Without this, installing from
+    the main checkout and then having the ports served by a sibling worktree
+    made the launcher refuse to start, reporting its *own* servers as a foreign
+    project (``is_relative_to`` is false across worktrees of the same repo).
+    """
+    marker = Path("scripts") / "karma_desktop" / "launcher.py"
+    for base in (path, *path.parents):
+        if (base / marker).is_file():
+            return True
+    return False
 
 
 def _claim_port(root: Path, port: int, label: str) -> str | None:
@@ -365,10 +415,16 @@ def _claim_port(root: Path, port: int, label: str) -> str | None:
         return None
     cwd = core.port_owner_cwd(port)
     if cwd is None:
-        # Not inspectable (or Windows): a live port is assumed to be karma's.
+        # Not inspectable (Windows has no dependency-free way to read a foreign
+        # process's cwd, so port_owner_cwd returns None there): a live port is
+        # assumed to be karma's rather than blocking the launch. The worst case
+        # is opening a window onto whoever holds the port, never data loss.
         return None
     try:
-        owned_by_karma = Path(cwd).resolve().is_relative_to(root.resolve())
+        cwd_path = Path(cwd).resolve()
+        owned_by_karma = cwd_path.is_relative_to(root.resolve()) or _is_karma_checkout(
+            cwd_path
+        )
     except (OSError, ValueError):
         return None
     if owned_by_karma:
@@ -421,13 +477,14 @@ def main(argv: list[str] | None = None) -> int:
     # double-click, or a Dock click while launchd's RunAtLoad is still working)
     # don't both start servers and race for the port. Whoever loses the lock
     # skips spawning and falls through to wait for the winner's servers.
-    with _spawn_lock():
-        api_up = core.port_is_up(args.api_port)
-        web_up = core.port_is_up(args.web_port)
-        if not api_up:
-            start_api(root, args.api_port)
-        if not web_up:
-            start_web(root, args.web_port)
+    with _spawn_lock() as own_spawn:
+        if own_spawn:
+            api_up = core.port_is_up(args.api_port)
+            web_up = core.port_is_up(args.web_port)
+            if not api_up:
+                start_api(root, args.api_port)
+            if not web_up:
+                start_web(root, args.web_port)
 
     # A cold start compiles the frontend (~1-2 min); tell the user so the click
     # does not look dead. Only when something actually has to boot, and only

@@ -207,7 +207,34 @@ def _refresh_launch_services(app: Path) -> None:
 # --------------------------------------------------------------------------
 
 
+@contextlib.contextmanager
+def _dock_lock():
+    """Serialise the Dock read-modify-write across threads and processes.
+
+    ``defaults export`` -> mutate -> ``defaults import`` replaces the *whole*
+    ``com.apple.dock`` domain, so two overlapping mutations (install pinning
+    while an autostart toggle unpins, both on the API's shared thread pool)
+    would each export the same starting state and the second import would drop
+    the first's change. An exclusive ``flock`` held for the full cycle turns
+    those into a serial pair. Every Dock mutation goes through ``add_to_dock``
+    or ``unpin_from_dock``, and both take this lock, so the invariant holds.
+    """
+    lock_path = core.log_dir() / "dock.lock"
+    with open(lock_path, "w") as fh:
+        fcntl.flock(fh, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(fh, fcntl.LOCK_UN)
+
+
 def add_to_dock(app: Path) -> bool:
+    """Pin ``app`` to the Dock under the Dock lock (see ``_add_to_dock_locked``)."""
+    with _dock_lock():
+        return _add_to_dock_locked(app)
+
+
+def _add_to_dock_locked(app: Path) -> bool:
     """Pin ``app`` to the Dock, replacing any previous Karma tile.
 
     Two non-obvious details, both learned the hard way:
@@ -329,6 +356,12 @@ def _write_dock(plist: dict) -> bool:
 
 
 def unpin_from_dock() -> bool:
+    """Remove the launcher's Dock tile under the Dock lock."""
+    with _dock_lock():
+        return _unpin_from_dock_locked()
+
+
+def _unpin_from_dock_locked() -> bool:
     """Remove the launcher's Dock tile. True if a tile was actually removed.
 
     Used when autostart is enabled: the servers then come up at login, so the
