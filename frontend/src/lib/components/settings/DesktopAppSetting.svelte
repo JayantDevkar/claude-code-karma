@@ -110,7 +110,7 @@
 		// One click otherwise removes the app bundle, its Dock tile and the
 		// login item together, so confirm first.
 		if (
-			!confirm(
+			!window.confirm(
 				'Remove the Karma desktop app? This deletes the app, its Dock tile and any login item.'
 			)
 		) {
