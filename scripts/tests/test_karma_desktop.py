@@ -784,9 +784,10 @@ def test_spawn_lock_second_launch_does_not_own_spawn(monkeypatch, tmp_path):
         assert third is True
 
 
-def test_spawn_lock_reclaims_a_stale_lock(monkeypatch, tmp_path):
-    """A lock left by a crashed launch (older than a minute) is reclaimed, and
-    the reclaiming launch owns the spawn and cleans the lock up afterwards."""
+def test_spawn_lock_does_not_reclaim_a_live_lock_mid_coldstart(monkeypatch, tmp_path):
+    """A lock held into a legitimate cold start (well past the old 60s but below
+    the real hold time) must NOT be seen as stale and reclaimed -- doing so would
+    spawn the very duplicate the lock prevents."""
     import os
     import time
 
@@ -794,13 +795,50 @@ def test_spawn_lock_reclaims_a_stale_lock(monkeypatch, tmp_path):
 
     monkeypatch.setattr(core, "log_dir", lambda: tmp_path)
     lock = tmp_path / "launch.lock"
-    lock.write_text("")
+    lock.write_bytes(b"held-by-a-live-launch")
+    # 120s in: past the old 60s threshold, but a cold vite compile can hold the
+    # lock far longer, so this must still read as owned-by-another, not stale.
     old = time.time() - 120
+    os.utime(lock, (old, old))
+
+    with launcher._spawn_lock() as owned:
+        assert owned is False  # not stale -> we are the loser, we don't spawn
+    # And we must not have deleted the live holder's lock.
+    assert lock.read_bytes() == b"held-by-a-live-launch"
+
+
+def test_spawn_lock_reclaims_a_crashed_lock(monkeypatch, tmp_path):
+    """A lock older than the whole cold-start budget is from a crashed launch;
+    it is reclaimed, owned, and cleaned up."""
+    import os
+    import time
+
+    from karma_desktop import launcher
+
+    monkeypatch.setattr(core, "log_dir", lambda: tmp_path)
+    lock = tmp_path / "launch.lock"
+    lock.write_bytes(b"crashed")
+    old = time.time() - (launcher._STALE_LOCK_SECONDS + 60)
     os.utime(lock, (old, old))
 
     with launcher._spawn_lock() as owned:
         assert owned is True
     assert not lock.exists()
+
+
+def test_spawn_lock_finally_does_not_delete_a_reclaimed_lock(monkeypatch, tmp_path):
+    """If ownership moves to another launch while we hold, our finally must not
+    unlink the lock by path -- only if it still carries our token."""
+    from karma_desktop import launcher
+
+    monkeypatch.setattr(core, "log_dir", lambda: tmp_path)
+    lock = tmp_path / "launch.lock"
+    with launcher._spawn_lock() as owned:
+        assert owned is True
+        # Simulate another launch reclaiming the lock (stamps its own token).
+        lock.write_bytes(b"another-launchs-token")
+    assert lock.exists(), "must not delete a lock that is no longer ours"
+    assert lock.read_bytes() == b"another-launchs-token"
 
 
 # --------------------------------------------------------------------------

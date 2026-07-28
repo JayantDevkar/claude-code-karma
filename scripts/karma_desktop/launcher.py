@@ -18,6 +18,8 @@ import os
 import shutil
 import subprocess
 import sys
+import time
+import uuid
 import webbrowser
 from pathlib import Path
 
@@ -30,6 +32,15 @@ else:
 # A cold vite build on this repo is slow; the API is comparatively instant.
 API_TIMEOUT = 90
 WEB_TIMEOUT = 240
+
+# The spawn lock is held for the whole cold start (spawn + both port waits), so
+# a *live* holder can legitimately keep it for up to API_TIMEOUT + WEB_TIMEOUT
+# before it exits and unlinks. The stale threshold must therefore sit above that
+# sum (plus margin): a smaller value -- e.g. the old 60s -- would declare a lock
+# that is legitimately still held mid-compile "stale", reclaim it, and spawn the
+# duplicate this lock exists to prevent. Above the sum, "stale" can only mean a
+# crashed launch.
+_STALE_LOCK_SECONDS = API_TIMEOUT + WEB_TIMEOUT + 30
 
 
 def _log(message: str) -> None:
@@ -344,34 +355,41 @@ def _spawn_lock():
     the winner's servers, so two near-simultaneous launches never both start a
     set of servers and fight for the port.
 
-    Uses an exclusively-created lock file. A stale one (from a crashed launch)
-    is reclaimed after a minute by unlinking and re-creating it exclusively, so
-    only one of several waiting launches wins the takeover; a launch that loses
-    that race yields ``False`` rather than deleting the winner's live lock in
-    its ``finally``. On any unexpected error the lock is skipped (yields
-    ``True``) rather than blocking the launch -- a rare double-spawn is a far
-    milder failure than never starting at all.
+    Uses an exclusively-created lock file stamped with a per-launch token. A
+    stale one (from a crashed launch, i.e. older than ``_STALE_LOCK_SECONDS``)
+    is reclaimed by unlinking and re-creating it exclusively, so only one of
+    several waiting launches wins the takeover. The ``finally`` only removes the
+    lock if it *still carries this launch's token*: if a stale-reclaim handed
+    ownership to another launch, deleting by path would wipe that launch's live
+    lock and let a third launch spawn a duplicate. On any unexpected error the
+    lock is skipped (yields ``True``) rather than blocking the launch -- a rare
+    double-spawn is a far milder failure than never starting at all.
     """
     lock = core.log_dir() / "launch.lock"
+    token = f"{os.getpid()}:{uuid.uuid4().hex}".encode()
     acquired = False
     owned = True  # default to spawning if the lock machinery itself fails
+
+    def _create_exclusive() -> None:
+        fd = os.open(str(lock), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+        try:
+            os.write(fd, token)
+        finally:
+            os.close(fd)
+
     try:
         try:
-            fd = os.open(str(lock), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
-            os.close(fd)
+            _create_exclusive()
             acquired = True
         except FileExistsError:
-            import time
-
             owned = False  # another launch holds the lock: don't spawn
             try:
-                if time.time() - lock.stat().st_mtime > 60:
+                if time.time() - lock.stat().st_mtime > _STALE_LOCK_SECONDS:
                     # Stale lock from a crashed launch. Reclaim it atomically so
                     # exactly one waiter wins; a loser of this race falls through
                     # as a non-owner and won't unlink the winner's fresh lock.
                     lock.unlink(missing_ok=True)
-                    fd = os.open(str(lock), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
-                    os.close(fd)
+                    _create_exclusive()
                     acquired = True
                     owned = True
             except (OSError, FileExistsError):
@@ -383,7 +401,11 @@ def _spawn_lock():
     finally:
         if acquired:
             try:
-                lock.unlink(missing_ok=True)
+                # Remove the lock only if it is still ours. A stale-reclaim by
+                # another launch (or a hand-off) replaces the token, and we must
+                # not delete a lock we no longer own.
+                if lock.read_bytes() == token:
+                    lock.unlink(missing_ok=True)
             except OSError:
                 pass
 
