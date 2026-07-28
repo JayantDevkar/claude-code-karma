@@ -442,6 +442,7 @@ def test_stub_alerts_and_exits_when_launcher_is_missing(tmp_path, monkeypatch):
     assert result.returncode == 1
 
 
+@pytest.mark.skipif(sys.platform != "darwin", reason="launchd is macOS-only")
 def test_autostart_command_self_heals_when_launcher_missing():
     """The launchd command must unload+delete itself if the launcher is gone,
     rather than failing at every login forever."""
