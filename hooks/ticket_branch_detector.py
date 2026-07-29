@@ -35,7 +35,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-API_BASE = os.environ.get("CLAUDE_KARMA_API", "http://localhost:8000")
+API_BASE = os.environ.get("CLAUDE_KARMA_API", "http://localhost:8020")
 CONFIG_PATH = Path.home() / ".claude_karma" / "config.json"
 LIVE_SESSIONS_DIR = Path.home() / ".claude_karma" / "live-sessions"
 LOG_PATH = Path.home() / ".claude_karma" / "logs" / "ticket_branch_detector.log"

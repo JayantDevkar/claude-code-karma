@@ -14,14 +14,14 @@ pip install -e ".[dev]"
 pip install -r requirements.txt
 
 # Run API server
-uvicorn main:app --reload --port 8000
+uvicorn main:app --reload --port 8020
 ```
 
 ## Commands
 
 ```bash
 # Development
-uvicorn main:app --reload --port 8000      # Run dev server
+uvicorn main:app --reload --port 8020      # Run dev server
 
 # Testing
 pytest                                      # Run all tests
@@ -135,6 +135,7 @@ Real-time state tracked in `~/.claude_karma/live-sessions/{slug}.json` via Claud
 | `/history` | File history snapshots |
 | `/settings` | User preferences |
 | `/skills` | Skill usage tracking |
+| `/desktop-app` | Install/manage the native desktop launcher — `GET status`, `POST install`, `PUT autostart`, `DELETE install` (localhost-only) |
 
 ### Key Endpoints
 

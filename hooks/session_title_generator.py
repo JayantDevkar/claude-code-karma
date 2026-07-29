@@ -17,7 +17,7 @@ import sys
 from pathlib import Path
 from typing import Optional, Tuple
 
-API_BASE = os.environ.get("CLAUDE_KARMA_API", "http://localhost:8000")
+API_BASE = os.environ.get("CLAUDE_KARMA_API", "http://localhost:8020")
 MAX_PROMPT_LENGTH = 500
 MAX_RESPONSE_LENGTH = 300
 TITLE_MAX_WORDS = 10

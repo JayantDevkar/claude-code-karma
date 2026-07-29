@@ -179,7 +179,7 @@ Skeleton placeholders:
 
 Centered error card with:
 - "Failed to load projects" title
-- Hint to check API server at localhost:8000
+- Hint to check API server at localhost:8020
 - "Retry" button that calls `refetch()`
 
 ### Empty State

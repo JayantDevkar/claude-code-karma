@@ -224,7 +224,7 @@
 		{:else if error}
 			<div class="empty-state error">
 				<span>{error}</span>
-				<span class="hint">Is the API running on port 8000?</span>
+				<span class="hint">Is the API running on port 8020?</span>
 			</div>
 		{:else if sessions.length === 0}
 			<div class="empty-state">

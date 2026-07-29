@@ -8,6 +8,7 @@
 	import SettingsSection from '$lib/components/settings/SettingsSection.svelte';
 	import SettingItem from '$lib/components/settings/SettingItem.svelte';
 	import PermissionsList from '$lib/components/settings/PermissionsList.svelte';
+	import DesktopAppSetting from '$lib/components/settings/DesktopAppSetting.svelte';
 	import PageHeader from '$lib/components/layout/PageHeader.svelte';
 	import type { ClaudeSettings, PermissionMode } from '$lib/api-types';
 	import { RETENTION_OPTIONS, PERMISSION_MODE_OPTIONS } from '$lib/api-types';
@@ -154,6 +155,11 @@
 		<SettingsSkeleton />
 	{:else}
 		<div class="space-y-6">
+			<!-- DESKTOP APP Section -->
+			<SettingsSection title="Desktop App">
+				<DesktopAppSetting />
+			</SettingsSection>
+
 			<!-- GENERAL Section -->
 			<SettingsSection title="General">
 				<SettingItem

@@ -41,7 +41,7 @@ from pathlib import Path
 from typing import Optional
 
 # Claude Code Karma API base URL
-API_BASE_URL = "http://localhost:8000"
+API_BASE_URL = "http://localhost:8020"
 
 
 def output_continue() -> None:
@@ -246,7 +246,7 @@ def format_deny_message(status: str, status_data: dict, annotations: list) -> st
         if len(annotations) > 10:
             lines.append(f"\n... and {len(annotations) - 10} more annotations")
 
-    lines.append(f"\nReview the plan at: http://localhost:5173/plans")
+    lines.append(f"\nReview the plan at: http://localhost:5180/plans")
 
     return "\n".join(lines)
 
@@ -289,14 +289,14 @@ def main() -> None:
         if "Connection error" in status_error or "timed out" in status_error:
             output_deny(
                 f"Cannot verify plan approval - Claude Code Karma API is not reachable.\n"
-                f"Please ensure the API is running (uvicorn main:app --port 8000)\n"
-                f"and review the plan at: http://localhost:5173/plans/{slug}"
+                f"Please ensure the API is running (uvicorn main:app --port 8020)\n"
+                f"and review the plan at: http://localhost:5180/plans/{slug}"
             )
         elif "Not found" in status_error:
             # Plan not found in API - it might not have been synced yet
             output_deny(
                 f"Plan '{slug}' not found in Claude Code Karma.\n"
-                f"Please review the plan at: http://localhost:5173/plans/{slug}"
+                f"Please review the plan at: http://localhost:5180/plans/{slug}"
             )
         else:
             output_deny(f"Error checking plan status: {status_error}")
@@ -326,7 +326,7 @@ def main() -> None:
     output_deny(
         f"Plan '{slug}' is pending review.\n"
         f"Please review and approve the plan in Claude Code Karma before proceeding.\n"
-        f"Review at: http://localhost:5173/plans/{slug}"
+        f"Review at: http://localhost:5180/plans/{slug}"
     )
 
 

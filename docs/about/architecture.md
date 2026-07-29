@@ -15,7 +15,7 @@ Technical overview of Claude Code Karma's system design, data flow, and key patt
         |
         v
 +---------------------------------------+
-|           API (FastAPI, port 8000)     |
+|           API (FastAPI, port 8020)     |
 |                                        |
 |  models/   — JSONL parsing, Pydantic   |
 |  routers/  — REST endpoints            |
@@ -24,7 +24,7 @@ Technical overview of Claude Code Karma's system design, data flow, and key patt
         |
         v  (JSON over HTTP)
 +---------------------------------------+
-|      Frontend (SvelteKit, port 5173)   |
+|      Frontend (SvelteKit, port 5180)   |
 |                                        |
 |  src/routes/   — pages & layouts       |
 |  src/lib/      — components, stores    |

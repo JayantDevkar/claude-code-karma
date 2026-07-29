@@ -2,7 +2,7 @@
 Claude Code Karma API - FastAPI backend for Claude Code session monitoring.
 
 Run with:
-  uvicorn main:app --reload --port 8000
+  uvicorn main:app --reload --port 8020
 """
 
 import asyncio
@@ -27,6 +27,7 @@ from routers import (  # noqa: E402
     background_shells,
     commands,
     cron,
+    desktop_app,
     docs,
     history,
     hooks,
@@ -197,6 +198,7 @@ app.include_router(tickets.router)
 app.include_router(background_shells.router)
 app.include_router(cron.router)
 app.include_router(memory.router)
+app.include_router(desktop_app.router)
 app.include_router(system_cron.router)  # ADDITIVE: Linux crontab view at /cron/system
 
 

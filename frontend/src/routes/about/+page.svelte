@@ -91,7 +91,7 @@
 			class="p-4 rounded-lg bg-[var(--error-subtle)] border border-[var(--error)] text-[var(--error)]"
 		>
 			<p class="text-sm">Failed to load documentation: {data.error}</p>
-			<p class="text-xs mt-1 opacity-70">Make sure the API is running on port 8000.</p>
+			<p class="text-xs mt-1 opacity-70">Make sure the API is running on port 8020.</p>
 		</div>
 	{:else}
 		<div class="flex gap-6">

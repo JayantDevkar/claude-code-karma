@@ -27,10 +27,10 @@ pip install -r apps/api/requirements.txt
 
 # Start the API server
 cd apps/api
-uvicorn main:app --reload --port 8000
+uvicorn main:app --reload --port 8020
 ```
 
-The API will be available at `http://localhost:8000`.
+The API will be available at `http://localhost:8020`.
 
 ## 2. Frontend Setup
 
@@ -46,9 +46,9 @@ npm install
 npm run dev
 ```
 
-Open your browser to `http://localhost:5173`.
+Open your browser to `http://localhost:5180`.
 
 ## Troubleshooting
 
 - **Missing Data?** Ensure you have run `claude` (the CLI tool) at least once on your machine. The dashboard reads from your local `~/.claude` or project-specific `.claude` directories.
-- **API Connection Error?** Verify the backend is running on port `8000` and usually check console logs for CORS issues if accessing from a different port.
+- **API Connection Error?** Verify the backend is running on port `8020` and usually check console logs for CORS issues if accessing from a different port.

@@ -33,6 +33,9 @@ Thumbs.db
 *.png
 !docs/design-briefs/**/*.png
 !docs/screenshots/*.png
+# App icons are shipped assets, not screenshots — the web manifest references
+# them by path, so a clone without them serves a PWA with broken icons.
+!frontend/static/icons/*.png
 
 # Python
 __pycache__/

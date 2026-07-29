@@ -15,14 +15,14 @@ FastAPI backend for monitoring and analyzing Claude Code sessions.
 pip install -r requirements.txt
 
 # Start API server
-uvicorn main:app --reload --port 8000
+uvicorn main:app --reload --port 8020
 ```
 
-The API runs at **http://localhost:8000**
+The API runs at **http://localhost:8020**
 
 Verify with:
 ```bash
-curl http://localhost:8000/health
+curl http://localhost:8020/health
 # {"status": "healthy"}
 ```
 
@@ -30,7 +30,7 @@ curl http://localhost:8000/health
 
 ```bash
 # Development
-uvicorn main:app --reload --port 8000      # Run with hot reload
+uvicorn main:app --reload --port 8020      # Run with hot reload
 
 # Testing
 pytest                                      # Run all tests
@@ -311,7 +311,7 @@ ls ~/.claude/projects/-Users-*/
 ### Port already in use
 
 ```bash
-lsof -ti:8000 | xargs kill -9
+lsof -ti:8020 | xargs kill -9
 ```
 
 ### Live sessions not updating

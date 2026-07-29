@@ -25,15 +25,15 @@ cd claude-code-karma
 ```bash
 cd api
 pip install -e ".[dev]" && pip install -r requirements.txt
-uvicorn main:app --reload --port 8000
+uvicorn main:app --reload --port 8020
 ```
 
-The API server starts at `http://localhost:8000`. It automatically discovers and parses session files from `~/.claude/projects/`.
+The API server starts at `http://localhost:8020`. It automatically discovers and parses session files from `~/.claude/projects/`.
 
 Verify the API is running:
 
 ```bash
-curl http://localhost:8000/health
+curl http://localhost:8020/health
 ```
 
 ## 3. Start the Frontend
@@ -46,11 +46,11 @@ npm install
 npm run dev
 ```
 
-The dashboard opens at `http://localhost:5173`.
+The dashboard opens at `http://localhost:5180`.
 
 ## 4. Verify
 
-Open [http://localhost:5173](http://localhost:5173) in your browser. You should see your Claude Code projects listed with their sessions.
+Open [http://localhost:5180](http://localhost:5180) in your browser. You should see your Claude Code projects listed with their sessions.
 
 ## Optional: Enable Live Session Tracking
 

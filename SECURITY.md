@@ -46,7 +46,7 @@ Claude Code Karma reads your Claude Code session transcripts, which may contain:
 **Recommendations:**
 
 - Run Claude Code Karma only on your local machine
-- Do not expose the API (port 8000) or frontend (port 5173) to the public internet
+- Do not expose the API (port 8020) or frontend (port 5180) to the public internet
 - Review CORS settings if changing the default configuration (`CLAUDE_KARMA_CORS_ORIGINS`)
 
 ### Hook Scripts

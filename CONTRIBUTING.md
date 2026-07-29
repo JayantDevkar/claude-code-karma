@@ -42,10 +42,10 @@ cd claude-code-karma
 cd api
 pip install -e ".[dev]"
 pip install -r requirements.txt
-uvicorn main:app --reload --port 8000
+uvicorn main:app --reload --port 8020
 ```
 
-The API will be available at `http://localhost:8000`.
+The API will be available at `http://localhost:8020`.
 
 3. **Set up the Frontend** (in a new terminal)
 
@@ -55,7 +55,7 @@ npm install
 npm run dev
 ```
 
-The frontend will be available at `http://localhost:5173`.
+The frontend will be available at `http://localhost:5180`.
 
 4. **Set up Captain Hook** (if making changes)
 

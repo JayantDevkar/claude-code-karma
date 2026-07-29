@@ -146,7 +146,7 @@
 			{#if loading}
 				<div class="muted-row">Loading…</div>
 			{:else if error}
-				<div class="muted-row">{error} — is the API running on port 8000?</div>
+				<div class="muted-row">{error} — is the API running on port 8020?</div>
 			{:else}
 				{#each recent as session (session.session_id)}
 					{@const config = statusConfig[session.status]}

@@ -1,6 +1,6 @@
 # API Reference
 
-Complete reference for the Claude Code Karma REST API. All endpoints are served from `http://localhost:8000`.
+Complete reference for the Claude Code Karma REST API. All endpoints are served from `http://localhost:8020`.
 
 The API also provides interactive documentation via FastAPI's built-in Swagger UI at `/docs` and ReDoc at `/redoc`.
 
@@ -126,6 +126,19 @@ Returns session state objects with fields: session ID, project, status (STARTING
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/health` | Health check endpoint returning API status |
+
+---
+
+## Desktop App
+
+Installs and manages the native desktop launcher (macOS `.app` / Windows `.lnk`) that starts both servers and opens the dashboard. **Localhost-only:** these endpoints write an executable and can register a login item, so they are rejected for any non-local or cross-site caller (see `_require_local`).
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/desktop-app/status` | Whether the launcher is installed on this machine, its path, autostart state and the brand ports |
+| POST | `/desktop-app/install` | Install the launcher; body `{dock, autostart}`. `409` if a foreign same-named app/shortcut is in the way |
+| PUT | `/desktop-app/autostart` | Turn start-at-login on or off; body `{enabled}` |
+| DELETE | `/desktop-app/install` | Remove the launcher, its Dock/Startup entry and any login item |
 
 ---
 

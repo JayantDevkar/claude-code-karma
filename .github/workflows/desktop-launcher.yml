@@ -1,0 +1,93 @@
+name: Desktop Launcher
+
+on:
+  push:
+    branches: [main]
+    paths: &desktop_paths
+      - 'scripts/**'
+      - 'api/routers/desktop_app.py'
+      - 'api/tests/test_desktop_app_guard.py'
+      # ruff resolves config hierarchically, so api/pyproject.toml governs the
+      # lint/format of the endpoint files this job checks -- a change to its
+      # line-length or select set must re-run this job.
+      - 'api/pyproject.toml'
+      # The feature also depends on the port pin, the CORS entry, the router
+      # registration and the PWA manifest link -- a change to any of these can
+      # break the desktop app, so they must trigger this workflow too.
+      - 'api/main.py'
+      - 'api/config.py'
+      - 'frontend/vite.config.ts'
+      - 'frontend/src/app.html'
+      - 'frontend/static/**'
+      - 'frontend/src/lib/components/settings/DesktopAppSetting.svelte'
+      - '.github/workflows/desktop-launcher.yml'
+  pull_request:
+    branches: [main]
+    paths: *desktop_paths
+
+jobs:
+  test:
+    name: ${{ matrix.os }} / Python ${{ matrix.python-version }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # All three desktop platforms: the installer generates a .app on macOS,
+        # a .lnk on Windows, and must at minimum import cleanly on Linux.
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ['3.10', '3.12']
+        # The launcher/installer are meant to run on the oldest interpreter the
+        # project still claims (3.9, for the hook scripts). One 3.9 leg enforces
+        # that -- is_relative_to, str.startswith(tuple) and the __future__
+        # annotations must all keep working there.
+        include:
+          - os: ubuntu-latest
+            python-version: '3.9'
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install test dependencies
+        run: python -m pip install --upgrade pip pytest
+
+      - name: Run desktop launcher tests
+        run: python -m pytest scripts/tests/ -v
+
+      # The launcher and installer use only the standard library, so a clean
+      # interpreter with nothing installed must still be able to import them.
+      - name: Verify no third-party imports are required
+        run: |
+          python -c "import sys; sys.path.insert(0, 'scripts'); import karma_desktop.launcher, karma_desktop.core, karma_desktop.installer_macos, karma_desktop.installer_windows; print('stdlib-only import OK')"
+
+      - name: Verify installer CLI runs
+        run: python scripts/install_karma_app.py --help
+
+  api-and-lint:
+    name: API guard tests + lint (ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: python -m pip install --upgrade pip ruff pytest fastapi pydantic pydantic-settings
+
+      # The endpoint code and its guard live in api/, not scripts/; without this
+      # a path-filtered run could green-tick an untested change to either.
+      - name: Run desktop-app endpoint guard tests
+        working-directory: api
+        run: python -m pytest tests/test_desktop_app_guard.py -v
+
+      - name: Lint scripts and the endpoint
+        run: |
+          ruff check scripts/ api/routers/desktop_app.py api/tests/test_desktop_app_guard.py
+          ruff format --check scripts/ api/routers/desktop_app.py api/tests/test_desktop_app_guard.py

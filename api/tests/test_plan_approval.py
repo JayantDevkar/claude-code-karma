@@ -200,7 +200,7 @@ class TestApiGet:
         from urllib.error import HTTPError
 
         error = HTTPError(
-            url="http://localhost:8000/plans/missing/status",
+            url="http://localhost:8020/plans/missing/status",
             code=404,
             msg="Not Found",
             hdrs={},
@@ -218,7 +218,7 @@ class TestApiGet:
         from urllib.error import HTTPError
 
         error = HTTPError(
-            url="http://localhost:8000/plans/test/status",
+            url="http://localhost:8020/plans/test/status",
             code=500,
             msg="Internal Server Error",
             hdrs={},
@@ -389,7 +389,7 @@ class TestFormatDenyMessage:
     def test_includes_review_url(self):
         """Test that review URL is included."""
         result = plan_approval.format_deny_message("pending", {}, [])
-        assert "http://localhost:5173/plans" in result
+        assert "http://localhost:5180/plans" in result
 
     def test_truncates_long_feedback(self):
         """Test that long feedback is truncated."""
@@ -599,7 +599,7 @@ class TestMain:
         }
 
         error = HTTPError(
-            url="http://localhost:8000/plans/nonexistent-plan/status",
+            url="http://localhost:8020/plans/nonexistent-plan/status",
             code=404,
             msg="Not Found",
             hdrs={},

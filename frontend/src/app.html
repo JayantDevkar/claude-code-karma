@@ -3,6 +3,12 @@
 	<head>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<!-- Lets the browser offer "Install app", which gives Karma its own
+		     window and icon. Installing is optional: the desktop launcher
+		     falls back to a plain app-mode window when no PWA is present. -->
+		<link rel="manifest" href="%sveltekit.assets%/manifest.webmanifest" />
+		<link rel="icon" href="%sveltekit.assets%/icons/karma-192.png" />
+		<link rel="apple-touch-icon" href="%sveltekit.assets%/icons/karma-192.png" />
 		<!-- FOUC Prevention: Apply theme before page renders -->
 		<script>
 			(function () {

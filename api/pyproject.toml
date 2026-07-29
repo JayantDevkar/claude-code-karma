@@ -49,6 +49,10 @@ exclude_lines = [
 [tool.ruff]
 target-version = "py39"
 line-length = 100
+# Never touch Markdown. ruff 0.16 began reformatting Python code blocks inside
+# .md files, which (with unpinned ruff in CI) reformatted models/README.md out
+# from under us. Prose docs are not the linter's job; keep it to source files.
+extend-exclude = ["*.md"]
 
 [tool.ruff.lint]
 select = [

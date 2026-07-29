@@ -16,14 +16,14 @@ cd claude-code-karma
 # Start API (terminal 1)
 cd api
 pip install -e ".[dev]" && pip install -r requirements.txt
-uvicorn main:app --reload --port 8000
+uvicorn main:app --reload --port 8020
 
 # Start frontend (terminal 2)
 cd frontend
 npm install && npm run dev
 ```
 
-Open http://localhost:5173 to view the dashboard.
+Open http://localhost:5180 to view the dashboard.
 
 **This is Tier 1 only — a read-only historical viewer.** Karma's core feature is live session tracking (Tier 2 in [SETUP.md](./SETUP.md#tier-2-live-monitoring-core-feature)); install through Tier 2 by default unless the user explicitly wants only historical browsing.
 
@@ -33,8 +33,8 @@ This is a monorepo with all components in a single repository:
 
 ```
 claude-code-karma/
-├── api/                    # FastAPI backend (Python) - port 8000
-├── frontend/               # SvelteKit frontend (Svelte 5) - port 5173
+├── api/                    # FastAPI backend (Python) - port 8020
+├── frontend/               # SvelteKit frontend (Svelte 5) - port 5180
 ├── captain-hook/           # Claude Code hooks Pydantic library
 └── hooks/                  # Hook scripts (symlinked from ~/.claude/hooks/)
     ├── live_session_tracker.py    # Tracks live session state across hook events
@@ -52,7 +52,7 @@ Each directory has its own `CLAUDE.md` with module-specific guidance.
 cd api
 
 # Run server
-uvicorn main:app --reload --port 8000
+uvicorn main:app --reload --port 8020
 
 # Run all tests
 pytest
@@ -77,7 +77,7 @@ ruff format models/ tests/ routers/
 cd frontend
 
 npm install           # Install dependencies
-npm run dev           # Dev server (port 5173)
+npm run dev           # Dev server (port 5180)
 npm run check         # Type check
 npm run lint          # Lint
 npm run format        # Format
@@ -100,9 +100,9 @@ pytest tests/test_models.py -v
     ↓
 API (models/ parses JSONL → Pydantic models)
     ↓
-FastAPI endpoints (routers/) on port 8000
+FastAPI endpoints (routers/) on port 8020
     ↓
-SvelteKit frontend (src/routes/) on port 5173
+SvelteKit frontend (src/routes/) on port 5180
 ```
 
 ### Claude Code Storage Locations
@@ -165,6 +165,7 @@ Project (entry point)
 | GET | `/skills` | Skill usage |
 | GET | `/history` | File history |
 | GET | `/settings` | User preferences |
+| GET/POST/PUT/DELETE | `/desktop-app/{status,install,autostart}` | Install/manage the native desktop launcher (localhost-only) |
 
 ## Frontend Routes
 

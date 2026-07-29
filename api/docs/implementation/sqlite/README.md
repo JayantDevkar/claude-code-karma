@@ -417,7 +417,7 @@ If you see `"SQLite query failed, falling back to JSONL"`, check the warning mes
 ### Force JSONL fallback
 
 ```bash
-CLAUDE_KARMA_USE_SQLITE=false uvicorn main:app --reload --port 8000
+CLAUDE_KARMA_USE_SQLITE=false uvicorn main:app --reload --port 8020
 ```
 
 ### Verify database contents
