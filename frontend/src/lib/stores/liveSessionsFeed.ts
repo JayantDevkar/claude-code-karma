@@ -1,17 +1,20 @@
 /**
- * Shared live-sessions polling feed.
- *
- * LiveSessionsDock and SessionSwitcher both need the same active-session
- * list; this ref-counts subscribers so the poll runs once regardless of how
- * many consumers are mounted, and stops when none are.
+ * Shared live-sessions polling feed — ref-counted so the poll runs once no
+ * matter how many consumers (dock, switcher, LIVE NOW sections) are mounted.
  */
 
 import { writable } from 'svelte/store';
 import { API_BASE, POLLING_INTERVALS } from '$lib/config';
 import type { LiveSessionSummary } from '$lib/api-types';
 
+export interface LiveSessionsFeedStatus {
+	loading: boolean;
+	error: string | null;
+}
+
 function createLiveSessionsFeed() {
 	const { subscribe, set } = writable<LiveSessionSummary[]>([]);
+	const status = writable<LiveSessionsFeedStatus>({ loading: true, error: null });
 
 	let refCount = 0;
 	let interval: ReturnType<typeof setInterval> | null = null;
@@ -26,10 +29,17 @@ function createLiveSessionsFeed() {
 			});
 			if (res.ok) {
 				set(await res.json());
+				status.set({ loading: false, error: null });
+			} else {
+				status.set({
+					loading: false,
+					error: res.status === 404 ? 'API not available' : 'Failed to fetch'
+				});
 			}
 		} catch (e) {
 			if (e instanceof Error && e.name === 'AbortError') return;
 			// Best-effort — leave the last known list in place on transient errors.
+			status.set({ loading: false, error: 'Cannot connect to API' });
 		}
 	}
 
@@ -50,7 +60,7 @@ function createLiveSessionsFeed() {
 		}
 	}
 
-	return { subscribe, start, stop, refresh: fetchOnce };
+	return { subscribe, status: { subscribe: status.subscribe }, start, stop, refresh: fetchOnce };
 }
 
 export const liveSessionsFeed = createLiveSessionsFeed();

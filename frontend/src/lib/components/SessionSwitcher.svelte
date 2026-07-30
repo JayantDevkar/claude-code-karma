@@ -15,26 +15,23 @@
 		getSessionUrl,
 		canNavigate,
 		getDisplayName,
-		matchesRoute
+		matchesRoute,
+		visibleLiveSessions
 	} from '$lib/utils/live-session-display';
 
-	// Cmd+B — both keys sit under the left hand, unlike Cmd+K.
-	// (Cmd+E was tried first but Chrome on Mac reserves it at the browser-chrome
-	// level — "search with selected text" — so the keydown never reaches page JS.
-	// Cmd+B has no default Chrome/macOS binding.)
+	// Cmd/Ctrl+B — 'b' is free of browser-chrome bindings (unlike Cmd+E on Chrome/Mac).
 	const SWITCH_KEY = 'b';
 
-	const sessions = $derived(
-		$liveSessionsFeed.filter((s) => s.status !== 'ended' && s.transcript_exists !== false)
-	);
+	const sessions = $derived(visibleLiveSessions($liveSessionsFeed));
 
 	let isOpen = $state(false);
 	let index = $state(0);
-
-	// --- display-only derivations (no bearing on open/commit behaviour) ---
+	// Mac holds Cmd, everyone else holds Ctrl (Meta is the Windows/Super key there).
+	let isMac = $state(true);
+	// A mouse-opened switcher must not commit on an incidentally-held Cmd/Ctrl release.
+	let openedViaKeyboard = false;
 
 	// Tiles shrink as the roster grows so 2 and ~12 sessions both sit on one row.
-	// +25% over the original 76/62/50 px, per Ayush's request to match the dock resize.
 	const density = $derived(
 		sessions.length <= 6
 			? { tile: 95, gap: 15 }
@@ -56,10 +53,7 @@
 		index = startIndex;
 	}
 
-	// Skip past whatever session we're already on, same as Cmd+Tab landing on
-	// the "other" window first. Shared by the Cmd+B first-press and the
-	// footer button (which has no "current session" of its own to skip via
-	// held-key repeats, so it needs the same starting point).
+	// Land on the "other" session first, Cmd+Tab-style — skip the one we're on.
 	function openFromCurrent() {
 		if (sessions.length === 0) return;
 		const currentIdx = sessions.findIndex((s) => matchesRoute($page.url.pathname, s));
@@ -76,10 +70,7 @@
 		isOpen = false;
 		sessionSwitcherStore.close();
 		if (!session) return;
-		// Route-only: focus-terminal raises the native Terminal window on top of
-		// Chrome, which would steal focus the instant you land here and hide the
-		// very page you just switched to. Terminal jump stays a deliberate,
-		// separate action on the dock's own button.
+		// Route-only: raising the native terminal here would hide the page just switched to.
 		if (canNavigate(session)) goto(getSessionUrl(session, 'timeline'));
 	}
 
@@ -88,24 +79,29 @@
 		sessionSwitcherStore.close();
 	}
 
-	// Opened via the footer button (mouse, no Cmd held) — sync from the store.
+	// Opened via the footer button (mouse) — sync from the store.
 	$effect(() => {
 		if ($sessionSwitcherStore.isOpen && !isOpen) {
+			openedViaKeyboard = false;
 			openFromCurrent();
 		}
 	});
 
-	// Clicking the dimmed backdrop is the only way to cancel a mouse-opened
-	// switcher — there's no Cmd being held to release.
+	// Backdrop click is the mouse path's cancel — there may be no modifier held to release.
 	function handleBackdropClick(e: MouseEvent) {
 		if (e.target === e.currentTarget) cancel();
 	}
 
+	function switchModifierHeld(e: KeyboardEvent): boolean {
+		return isMac ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey;
+	}
+
 	function handleKeydown(e: KeyboardEvent) {
-		if (e.key.toLowerCase() === SWITCH_KEY && e.metaKey && !e.ctrlKey && !e.altKey) {
+		if (e.key.toLowerCase() === SWITCH_KEY && switchModifierHeld(e) && !e.altKey) {
 			if (commandPalette.getIsOpen()) return;
 			if (sessions.length === 0) return;
 			e.preventDefault();
+			openedViaKeyboard = true;
 
 			if (!isOpen) {
 				openFromCurrent();
@@ -122,7 +118,7 @@
 	}
 
 	function handleKeyup(e: KeyboardEvent) {
-		if (isOpen && e.key === 'Meta') {
+		if (isOpen && openedViaKeyboard && e.key === (isMac ? 'Meta' : 'Control')) {
 			commit();
 		}
 	}
@@ -136,6 +132,7 @@
 	}
 
 	onMount(() => {
+		isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
 		liveSessionsFeed.start();
 		window.addEventListener('keydown', handleKeydown);
 		window.addEventListener('keyup', handleKeyup);
@@ -145,8 +142,7 @@
 
 	onDestroy(() => {
 		liveSessionsFeed.stop();
-		// onDestroy also fires during SSR teardown, where onMount never ran and
-		// window/document don't exist — guard so that doesn't throw.
+		// onDestroy also fires during SSR teardown, where window never existed — guard it.
 		if (typeof window === 'undefined') return;
 		window.removeEventListener('keydown', handleKeydown);
 		window.removeEventListener('keyup', handleKeyup);
@@ -156,10 +152,7 @@
 </script>
 
 {#if isOpen}
-	<!-- Escape is already handled globally by handleKeydown above; this click
-	     handler is the mouse-only equivalent for a switcher opened without
-	     Cmd held (via the footer button), so no separate keyboard handler
-	     is needed on the element itself. -->
+	<!-- Escape is handled by the global handleKeydown; this click is its mouse-only twin. -->
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<div
 		class="switcher-overlay"
@@ -210,8 +203,7 @@
 									>
 								{/if}
 							</div>
-							<!-- Session name, not just the project monogram: two sessions in the
-							     same repo would otherwise render as identical tiles. -->
+							<!-- Session name disambiguates two sessions in the same repo. -->
 							<span class="tile-label font-mono">{getDisplayName(session)}</span>
 						</div>
 					{/each}
@@ -221,13 +213,11 @@
 			<div class="switcher-detail">
 				{#if selected}
 					{@const config = statusConfig[selected.status]}
-					<!-- The tile label already shows the session id/slug — the big
-					     readout should answer "which project", not repeat it. -->
+					<!-- The big readout answers "which project"; tiles already show the session id. -->
 					<div class="detail-name font-mono" aria-live="polite">
 						{getProjectDisplayName(selected)}
 					</div>
-					<!-- Single line, never wrapping: a second line would grow the frame
-					     mid-cycle and shift the tiles under the user's fingers. -->
+					<!-- Never wraps — a second line would shift the tiles mid-cycle. -->
 					<div class="detail-meta">
 						<span class="meta-status" style="--tone: {config.color}">
 							<span class="meta-dot"></span>{config.label}
@@ -253,7 +243,9 @@
 			</div>
 
 			<div class="switcher-hint">
-				<span>hold <kbd>⌘</kbd> — tap <kbd>B</kbd> to cycle, release to jump</span>
+				<span
+					>hold <kbd>{isMac ? '⌘' : 'Ctrl'}</kbd> — tap <kbd>B</kbd> to cycle, release to jump</span
+				>
 				<span class="hint-sep"></span>
 				<span><kbd>esc</kbd> cancel</span>
 			</div>
@@ -270,11 +262,7 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		/* Same black as the command palette's scrim, lighter: this HUD is a
-		   transient hold-to-cycle overlay, not a place you stop and work.
-		   No backdrop-filter — a full-viewport blur is the one thing that could
-		   make a keypress-triggered HUD arrive late, and it buys nothing under
-		   a 42% wash. The frame keeps its own glass. */
+		/* Lighter than the palette scrim; no full-viewport blur — it would delay the HUD. */
 		background: rgba(0, 0, 0, 0.42);
 		animation: overlayIn 80ms linear;
 	}
@@ -282,9 +270,11 @@
 	/* --- HUD frame ------------------------------------------------------ */
 
 	.switcher-frame {
-		/* Sized from the tile roster so the panel never jitters as the
-		   selected session's name changes length underneath it. */
-		width: min(92vw, max(475px, calc(var(--n) * var(--tile) + (var(--n) - 1) * var(--gap) + 40px)));
+		/* Sized from the tile roster so the frame never jitters as the detail text changes. */
+		width: min(
+			92vw,
+			max(475px, calc(var(--n) * var(--tile) + (var(--n) - 1) * var(--gap) + 40px))
+		);
 		padding: 20px 20px 0;
 		background: color-mix(in srgb, var(--bg-base) 82%, transparent);
 		border: 1px solid var(--border);
@@ -314,12 +304,10 @@
 		margin-inline: auto;
 	}
 
-	/* Single highlight that slides between cells — reads as one continuous
-	   selection rather than N independently-animating tiles. */
+	/* One highlight sliding between cells — reads as a single continuous selection. */
 	.strip-plate {
 		position: absolute;
-		/* Stretched rather than given a height, so it always covers the full
-		   tile (art + label) without hardcoding the tile's computed height. */
+		/* Stretched, not sized — covers the full tile without hardcoding its height. */
 		top: 0;
 		bottom: 0;
 		left: 0;
@@ -371,9 +359,7 @@
 			color-mix(in srgb, var(--tone) 7%, var(--bg-subtle))
 		);
 		box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
-		/* Unselected tiles stay readable — you pick a session by scanning the
-		   whole roster, so dimming everything but the current selection defeats
-		   the point. Selection is already carried by the plate, ring and scale. */
+		/* Unselected tiles stay readable — the roster is picked by scanning all of it. */
 		opacity: 0.82;
 		transform: scale(0.96);
 		transition:
@@ -462,8 +448,7 @@
 		font-weight: 600;
 	}
 
-	/* Where you're standing right now — the tile Cmd+B skipped past. Carried by
-	   the label's colour: a 2px faint dash under the tile was invisible. */
+	/* The session you're on now — accent label; a faint underline dash was invisible. */
 	.switcher-tile.here .tile-label {
 		color: var(--accent);
 	}
@@ -552,8 +537,7 @@
 		justify-content: center;
 		gap: 10px;
 		font-size: 14px;
-		/* --text-faint at this size lands under AA; this line teaches the whole
-		   interaction, so it gets the readable muted step instead. */
+		/* --text-faint lands under AA at this size — this line teaches the interaction. */
 		color: var(--text-muted);
 	}
 

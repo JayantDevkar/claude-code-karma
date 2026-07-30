@@ -13,31 +13,24 @@
 		getSessionUrl,
 		canNavigate,
 		getDisplayName,
-		matchesRoute
+		matchesRoute,
+		visibleLiveSessions
 	} from '$lib/utils/live-session-display';
 
-	// Hidden on routes that already render the full live-sessions table —
-	// the dock would just be a redundant floating copy there.
+	// Hidden where the full live-sessions table already renders — the dock would be a copy.
 	const HIDDEN_ROUTES = new Set(['/', '/sessions']);
 	const hidden = $derived(HIDDEN_ROUTES.has($page.url.pathname));
 
-	const sessions = $derived(
-		$liveSessionsFeed.filter((s) => s.status !== 'ended' && s.transcript_exists !== false)
-	);
+	const sessions = $derived(visibleLiveSessions($liveSessionsFeed));
 
-	// "active" means Claude is working and needs nothing; "waiting" means it's
-	// blocked on you. Only the second one earns motion — a dot that pulses
-	// whenever a session is merely busy trains you to ignore it.
+	// Only "waiting" (blocked on you) earns motion — pulsing for merely-busy trains you to ignore it.
 	const hasWorking = $derived(sessions.some((s) => s.status === 'active'));
 	const needsInput = $derived(sessions.some((s) => s.status === 'waiting'));
 
 	let expanded = $state(false);
 	let container: HTMLDivElement | undefined = $state();
 
-	// Close after navigation completes — NOT via onclick on the row link.
-	// Collapsing synchronously inside the anchor's own click handler unmounts
-	// the anchor (via {#if expanded}) before the browser processes its native
-	// href navigation, which silently cancels the navigation.
+	// Collapse after navigation, not on row click — unmounting the anchor mid-click cancels it.
 	afterNavigate(() => {
 		expanded = false;
 	});
@@ -83,9 +76,7 @@
 						{@const config = statusConfig[session.status]}
 						{@const current = matchesRoute($page.url.pathname, session)}
 						{@const linkable = canNavigate(session) && !current}
-						<!-- bgTint is the app-wide status wash (SessionCard uses the same
-						     token), and it stays on for the current row too — hover and
-						     "you are here" layer on top instead of erasing the status. -->
+						<!-- bgTint stays on every row — hover and "you are here" layer over it. -->
 						<div
 							class="dock-row"
 							class:current
@@ -158,15 +149,13 @@
 		position: fixed;
 		right: var(--spacing-5);
 		bottom: var(--spacing-5);
-		/* Above the sticky header (50), below the command palette (9998) — an
-		   always-on floating dock should never be painted under page chrome. */
+		/* Above the sticky header (50), below the command palette (9998). */
 		z-index: 60;
 		display: flex;
 		flex-direction: column;
 		align-items: flex-end;
 		gap: var(--spacing-2);
-		/* Anchored bottom-right, so it should grow from there — scaling from the
-		   centre reads as a diagonal drift. */
+		/* Grows from its bottom-right anchor — centre scaling reads as diagonal drift. */
 		transform-origin: bottom right;
 	}
 
@@ -250,8 +239,6 @@
 	}
 
 	.dock-panel {
-		/* +25% over the original 320px / 60vh, per Ayush's request for more
-		   legible row text (project names were reading too small). */
 		width: 400px;
 		max-height: 75vh;
 		display: flex;
@@ -320,8 +307,7 @@
 		border-bottom: none;
 	}
 
-	/* Hover is a layer over the status wash, not a replacement for it — a row
-	   shouldn't lose its meaning the moment you point at it. */
+	/* Hover layers over the status wash — a row keeps its meaning under the pointer. */
 	.dock-row.clickable:hover {
 		background-image: linear-gradient(var(--accent-muted), var(--accent-muted));
 	}
@@ -367,8 +353,7 @@
 		gap: 7px;
 	}
 
-	/* Accent is the app's "this is a link" colour; spending it on every row name
-	   flattens the list. Names are body text; accent marks where you are. */
+	/* Names are body text; accent is reserved for marking where you are. */
 	.dock-row-name {
 		font-size: 15px;
 		color: var(--text-primary);
@@ -382,8 +367,7 @@
 		color: var(--accent);
 	}
 
-	/* The most useful marker in the list, so it reads as a marker — it was the
-	   faintest colour in the system before. */
+	/* The most useful marker in the list, so it reads as one. */
 	.here-badge {
 		flex-shrink: 0;
 		padding: 1px 6px;
