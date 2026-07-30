@@ -23,13 +23,13 @@ export const statusConfig: Record<LiveSessionStatus, StatusConfig> = {
 	starting: {
 		color: 'var(--nav-purple)',
 		label: 'starting',
-		pulse: true,
+		pulse: false,
 		bgTint: 'var(--status-starting-bg)'
 	},
 	active: {
 		color: 'var(--success)',
 		label: 'active',
-		pulse: true,
+		pulse: false,
 		bgTint: 'var(--status-active-bg)'
 	},
 	idle: {
@@ -38,10 +38,11 @@ export const statusConfig: Record<LiveSessionStatus, StatusConfig> = {
 		pulse: false,
 		bgTint: 'var(--status-idle-bg)'
 	},
+	// Pulse means "blocked on you" everywhere — a dot blinking for merely-busy trains you to ignore it.
 	waiting: {
 		color: 'var(--info)',
 		label: 'waiting',
-		pulse: false,
+		pulse: true,
 		bgTint: 'var(--status-waiting-bg)'
 	},
 	stopped: {

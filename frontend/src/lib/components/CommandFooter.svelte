@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { Command, Sun, Moon, Keyboard } from 'lucide-svelte';
+	import { Command, Sun, Moon, Keyboard, ArrowLeftRight } from 'lucide-svelte';
 	import { commandPalette } from '$lib/stores/commandPalette';
+	import { sessionSwitcherStore } from '$lib/stores/sessionSwitcher';
 	import KeyIndicator from '$lib/components/ui/KeyIndicator.svelte';
 
 	interface Props {
@@ -70,6 +71,18 @@
 			<Command size={14} />
 			<span class="label">Command Menu</span>
 			<KeyIndicator keys={[isMac ? 'cmd' : 'ctrl', 'K']} class="shortcut" />
+		</button>
+
+		<!-- Session Switcher -->
+		<button
+			type="button"
+			class="command-btn"
+			onclick={() => sessionSwitcherStore.open()}
+			title="Switch Sessions"
+		>
+			<ArrowLeftRight size={14} />
+			<span class="label">Switch Sessions</span>
+			<KeyIndicator keys={[isMac ? 'cmd' : 'ctrl', 'B']} class="shortcut" />
 		</button>
 	</div>
 </footer>

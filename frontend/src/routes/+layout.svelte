@@ -5,6 +5,8 @@
 	import CommandFooter from '$lib/components/CommandFooter.svelte';
 	import CommandPalette from '$lib/components/command-palette/CommandPalette.svelte';
 	import KeyboardShortcutsHelp from '$lib/components/KeyboardShortcutsHelp.svelte';
+	import LiveSessionsDock from '$lib/components/LiveSessionsDock.svelte';
+	import SessionSwitcher from '$lib/components/SessionSwitcher.svelte';
 	import { globalKeyboard } from '$lib/actions/globalKeyboard';
 	import { globalShortcuts } from '$lib/actions/globalShortcuts';
 	import { navigating } from '$app/stores';
@@ -174,4 +176,10 @@
 
 	<!-- Keyboard Shortcuts Help Modal -->
 	<KeyboardShortcutsHelp bind:open={showKeyboardHelp} />
+
+	<!-- Floating live-sessions dock (hidden on / and /sessions — they already show the full table) -->
+	<LiveSessionsDock />
+
+	<!-- Cmd+B hold-to-cycle session switcher -->
+	<SessionSwitcher />
 </div>

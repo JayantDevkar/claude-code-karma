@@ -7,10 +7,21 @@
 		LiveSubStatus,
 		SessionSummary
 	} from '$lib/api-types';
-	import { projectHrefFromSession } from '$lib/utils/project-url';
 	import { statusConfig } from '$lib/live-session-config';
 	import TerminalFocusButton from '$lib/components/TerminalFocusButton.svelte';
 	import { API_BASE } from '$lib/config';
+	import { liveSessionsFeed } from '$lib/stores/liveSessionsFeed';
+	import {
+		formatDuration,
+		formatIdleTime,
+		getProjectDisplayName,
+		getSessionUrl,
+		canNavigate,
+		getDisplayName,
+		visibleLiveSessions
+	} from '$lib/utils/live-session-display';
+
+	const feedStatus = liveSessionsFeed.status;
 
 	interface Props {
 		/** Initial collapsed state */
@@ -73,9 +84,9 @@
 		return byId ?? null;
 	}
 
-	let sessions = $state<LiveSessionSummary[]>([]);
-	let loading = $state(true);
-	let error = $state<string | null>(null);
+	const sessions = $derived($liveSessionsFeed);
+	const loading = $derived($feedStatus.loading);
+	const error = $derived($feedStatus.error);
 	// svelte-ignore state_referenced_locally
 	let collapsed = $state(initialCollapsed);
 	let collapsedInitialized = $state(false);
@@ -107,7 +118,7 @@
 		try {
 			const res = await fetch(`${API_BASE}/live-sessions/cleanup-old`, { method: 'POST' });
 			if (res.ok) {
-				await fetchSessions();
+				await liveSessionsFeed.refresh();
 				stuckSessionCount = 0;
 			}
 		} catch (e) {
@@ -116,11 +127,6 @@
 			isCleaningUp = false;
 		}
 	}
-
-	let pollInterval: ReturnType<typeof setInterval> | null = null;
-	let isFetching = $state(false);
-	let abortController: AbortController | null = null;
-	let lastFetchTime = 0;
 
 	// Initialize collapsed state from localStorage
 	$effect(() => {
@@ -155,11 +161,7 @@
 		stopped: sessions.filter((s) => s.status === 'stopped' || s.status === 'stale').length
 	});
 
-	// Filter to only show non-ended sessions, and exclude ghost sessions
-	// (ended sessions whose transcript never materialized)
-	const activeSessions = $derived(
-		sessions.filter((s) => s.status !== 'ended' && s.transcript_exists !== false)
-	);
+	const activeSessions = $derived(visibleLiveSessions(sessions));
 
 	// Apply all filters to activeSessions
 	const filteredSessions = $derived.by(() => {
@@ -221,114 +223,14 @@
 		return `${total}`;
 	});
 
-	async function fetchSessions() {
-		if (isFetching) return; // Guard against concurrent fetches
-		isFetching = true;
-
-		const fetchTime = Date.now();
-
-		// Abort any previous request
-		if (abortController) abortController.abort();
-		abortController = new AbortController();
-
-		try {
-			const res = await fetch(`${API_BASE}/live-sessions/active`, {
-				signal: abortController.signal
-			});
-
-			// Only update if this is the most recent request
-			if (fetchTime < lastFetchTime) return;
-			lastFetchTime = fetchTime;
-
-			if (res.ok) {
-				sessions = await res.json();
-				error = null;
-			} else if (res.status === 404) {
-				error = 'API not available';
-			} else {
-				error = 'Failed to fetch';
-			}
-		} catch (e) {
-			if (e instanceof Error && e.name === 'AbortError') return;
-			error = 'Cannot connect to API';
-			console.error('Failed to fetch live sessions:', e);
-		} finally {
-			isFetching = false;
-			loading = false;
-		}
-	}
-
-	function formatDuration(seconds: number): string {
-		const mins = Math.floor(seconds / 60);
-		const hrs = Math.floor(mins / 60);
-		if (hrs > 0) return `${hrs}h ${mins % 60}m`;
-		if (mins > 0) return `${mins}m`;
-		return `${Math.floor(seconds)}s`;
-	}
-
-	function formatIdleTime(seconds: number): string {
-		if (seconds < 60) return `${Math.floor(seconds)}s`;
-		const mins = Math.floor(seconds / 60);
-		return `${mins}m`;
-	}
-
-	function getProjectDisplayName(session: LiveSessionSummary): string {
-		const parts = session.cwd.split('/').filter(Boolean);
-		const skipDirs = ['Users', 'home', 'Documents', 'GitHub', 'Projects', 'repos', 'src'];
-
-		for (let i = parts.length - 1; i >= 0; i--) {
-			const part = parts[i];
-			if (!skipDirs.includes(part) && part.length > 2) {
-				if (
-					i > 0 &&
-					(part === 'frontend' ||
-						part === 'backend' ||
-						part === 'api' ||
-						part === 'src' ||
-						part === 'app')
-				) {
-					return parts[i - 1] || part;
-				}
-				return part;
-			}
-		}
-
-		return parts[parts.length - 1] || 'Unknown';
-	}
-
-	function getSessionUrl(session: LiveSessionSummary): string {
-		if (!session.project_encoded_name) {
-			return '#';
-		}
-		const identifier = session.slug || session.session_id.slice(0, 8);
-		return projectHrefFromSession(session, `/${identifier}`);
-	}
-
-	function canNavigate(session: LiveSessionSummary): boolean {
-		return !!session.project_encoded_name;
-	}
-
-	function getDisplayName(session: LiveSessionSummary): string {
-		return session.slug || session.session_id.slice(0, 8);
-	}
-
-	// Polling configuration - 3 seconds is a good balance between responsiveness and efficiency
-	const POLL_INTERVAL = 3000;
-
 	onMount(() => {
-		fetchSessions();
+		// Sessions come from the shared liveSessionsFeed poll — no private fetch loop.
+		liveSessionsFeed.start();
 		checkStuckSessions();
-		// Poll every 3 seconds for live session status
-		pollInterval = setInterval(fetchSessions, POLL_INTERVAL);
 	});
 
 	onDestroy(() => {
-		if (pollInterval) {
-			clearInterval(pollInterval);
-		}
-		if (abortController) {
-			abortController.abort();
-		}
+		liveSessionsFeed.stop();
 	});
 </script>
 
@@ -391,7 +293,7 @@
 						>
 					</button>
 				{/if}
-				<span class="pulse-indicator" title="Polling every 1s"></span>
+				<span class="pulse-indicator" title="Live — updates every 2s"></span>
 			</div>
 		</div>
 
