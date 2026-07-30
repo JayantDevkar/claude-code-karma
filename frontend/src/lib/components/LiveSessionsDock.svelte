@@ -101,6 +101,10 @@
 									<span class="dock-row-name font-mono"
 										>{getDisplayName(session)}</span
 									>
+									<!-- Status as text too — dot color alone fails color-blind and reduced-motion users. -->
+									<span class="status-label" style="color: {config.color}"
+										>{config.label.toUpperCase()}</span
+									>
 									{#if current}
 										<span class="here-badge">you are here</span>
 									{/if}
@@ -149,8 +153,8 @@
 		position: fixed;
 		right: var(--spacing-5);
 		bottom: var(--spacing-5);
-		/* Above the sticky header (50), below the command palette (9998). */
-		z-index: 60;
+		/* Below modal scrims (50) so dialogs dim it; the header (50) never overlaps it. */
+		z-index: 40;
 		display: flex;
 		flex-direction: column;
 		align-items: flex-end;
@@ -367,6 +371,13 @@
 		color: var(--accent);
 	}
 
+	.status-label {
+		flex-shrink: 0;
+		font-size: 11px;
+		font-weight: 600;
+		letter-spacing: 0.5px;
+	}
+
 	/* The most useful marker in the list, so it reads as one. */
 	.here-badge {
 		flex-shrink: 0;
@@ -401,7 +412,8 @@
 	.duration {
 		flex-shrink: 0;
 		font-variant-numeric: tabular-nums;
-		color: var(--text-faint);
+		/* --text-faint fails AA at this size. */
+		color: var(--text-muted);
 	}
 
 	.dock-row-actions {

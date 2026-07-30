@@ -178,6 +178,7 @@
 							style="--tone: {config.color}"
 							role="button"
 							tabindex="0"
+							title={getDisplayName(session)}
 							aria-label={`Switch to ${getDisplayName(session)}`}
 							onmouseenter={() => (index = i)}
 							onclick={() => {
@@ -537,8 +538,8 @@
 		justify-content: center;
 		gap: 10px;
 		font-size: 14px;
-		/* --text-faint lands under AA at this size — this line teaches the interaction. */
-		color: var(--text-muted);
+		/* This line teaches the interaction — muted/faint steps land under AA on the glass frame. */
+		color: var(--text-secondary);
 	}
 
 	.hint-sep {
