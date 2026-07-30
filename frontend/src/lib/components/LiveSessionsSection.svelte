@@ -7,10 +7,17 @@
 		LiveSubStatus,
 		SessionSummary
 	} from '$lib/api-types';
-	import { projectHrefFromSession } from '$lib/utils/project-url';
 	import { statusConfig } from '$lib/live-session-config';
 	import TerminalFocusButton from '$lib/components/TerminalFocusButton.svelte';
 	import { API_BASE } from '$lib/config';
+	import {
+		formatDuration,
+		formatIdleTime,
+		getProjectDisplayName,
+		getSessionUrl,
+		canNavigate,
+		getDisplayName
+	} from '$lib/utils/live-session-display';
 
 	interface Props {
 		/** Initial collapsed state */
@@ -256,60 +263,6 @@
 			isFetching = false;
 			loading = false;
 		}
-	}
-
-	function formatDuration(seconds: number): string {
-		const mins = Math.floor(seconds / 60);
-		const hrs = Math.floor(mins / 60);
-		if (hrs > 0) return `${hrs}h ${mins % 60}m`;
-		if (mins > 0) return `${mins}m`;
-		return `${Math.floor(seconds)}s`;
-	}
-
-	function formatIdleTime(seconds: number): string {
-		if (seconds < 60) return `${Math.floor(seconds)}s`;
-		const mins = Math.floor(seconds / 60);
-		return `${mins}m`;
-	}
-
-	function getProjectDisplayName(session: LiveSessionSummary): string {
-		const parts = session.cwd.split('/').filter(Boolean);
-		const skipDirs = ['Users', 'home', 'Documents', 'GitHub', 'Projects', 'repos', 'src'];
-
-		for (let i = parts.length - 1; i >= 0; i--) {
-			const part = parts[i];
-			if (!skipDirs.includes(part) && part.length > 2) {
-				if (
-					i > 0 &&
-					(part === 'frontend' ||
-						part === 'backend' ||
-						part === 'api' ||
-						part === 'src' ||
-						part === 'app')
-				) {
-					return parts[i - 1] || part;
-				}
-				return part;
-			}
-		}
-
-		return parts[parts.length - 1] || 'Unknown';
-	}
-
-	function getSessionUrl(session: LiveSessionSummary): string {
-		if (!session.project_encoded_name) {
-			return '#';
-		}
-		const identifier = session.slug || session.session_id.slice(0, 8);
-		return projectHrefFromSession(session, `/${identifier}`);
-	}
-
-	function canNavigate(session: LiveSessionSummary): boolean {
-		return !!session.project_encoded_name;
-	}
-
-	function getDisplayName(session: LiveSessionSummary): string {
-		return session.slug || session.session_id.slice(0, 8);
 	}
 
 	// Polling configuration - 3 seconds is a good balance between responsiveness and efficiency

@@ -23,6 +23,10 @@
 			category: 'Quick Actions',
 			items: [
 				{ keys: [isMac ? 'cmd' : 'ctrl', 'K'], description: 'Command Menu' },
+				{
+					keys: [isMac ? 'cmd' : 'ctrl', 'B'],
+					description: 'Hold + tap to cycle live sessions, release to jump'
+				},
 				{ keys: ['K', 'S'], description: 'This Help' }
 			]
 		},
