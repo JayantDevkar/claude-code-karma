@@ -67,7 +67,7 @@
 			<div class="dock-panel" transition:scale={{ duration: 140, start: 0.94, opacity: 0 }}>
 				<div class="dock-panel-header">
 					<span class="dock-panel-title">
-						<Radio size={12} strokeWidth={2} class="text-[var(--success)]" />
+						<Radio size={15} strokeWidth={2} class="text-[var(--success)]" />
 						Live sessions
 					</span>
 					<button
@@ -75,7 +75,7 @@
 						onclick={() => (expanded = false)}
 						aria-label="Collapse"
 					>
-						<X size={14} strokeWidth={2} />
+						<X size={17} strokeWidth={2} />
 					</button>
 				</div>
 				<div class="dock-list">
@@ -116,7 +116,7 @@
 								</div>
 								<div class="dock-row-secondary">
 									<span class="project" title={session.cwd}>
-										<FolderOpen size={10} strokeWidth={2} />
+										<FolderOpen size={13} strokeWidth={2} />
 										{getProjectDisplayName(session)}
 									</span>
 									<span class="duration"
@@ -250,8 +250,10 @@
 	}
 
 	.dock-panel {
-		width: 320px;
-		max-height: 60vh;
+		/* +25% over the original 320px / 60vh, per Ayush's request for more
+		   legible row text (project names were reading too small). */
+		width: 400px;
+		max-height: 75vh;
 		display: flex;
 		flex-direction: column;
 		background: var(--bg-base);
@@ -266,7 +268,7 @@
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
-		padding: var(--spacing-2) var(--spacing-3);
+		padding: 10px 15px;
 		border-bottom: 1px solid var(--border-subtle);
 		background: var(--bg-muted);
 	}
@@ -274,8 +276,8 @@
 	.dock-panel-title {
 		display: inline-flex;
 		align-items: center;
-		gap: 6px;
-		font-size: 11px;
+		gap: 7px;
+		font-size: 14px;
 		font-weight: 600;
 		letter-spacing: 0.5px;
 		color: var(--text-secondary);
@@ -307,8 +309,8 @@
 		position: relative;
 		display: flex;
 		align-items: flex-start;
-		gap: var(--spacing-2);
-		padding: var(--spacing-2) var(--spacing-3);
+		gap: 10px;
+		padding: 10px 15px;
 		border-bottom: 1px solid var(--border-subtle);
 		background-color: var(--row-tint, transparent);
 		transition: background-color var(--duration-fast);
@@ -339,11 +341,11 @@
 	}
 
 	.status-dot {
-		width: 7px;
-		height: 7px;
+		width: 9px;
+		height: 9px;
 		border-radius: 50%;
 		flex-shrink: 0;
-		margin-top: 5px;
+		margin-top: 6px;
 	}
 
 	.status-dot.pulse {
@@ -355,20 +357,20 @@
 		min-width: 0;
 		display: flex;
 		flex-direction: column;
-		gap: 3px;
+		gap: 4px;
 	}
 
 	.dock-row-primary {
 		display: flex;
 		align-items: center;
 		min-width: 0;
-		gap: 6px;
+		gap: 7px;
 	}
 
 	/* Accent is the app's "this is a link" colour; spending it on every row name
 	   flattens the list. Names are body text; accent marks where you are. */
 	.dock-row-name {
-		font-size: 12px;
+		font-size: 15px;
 		color: var(--text-primary);
 		font-weight: 500;
 		overflow: hidden;
@@ -384,9 +386,9 @@
 	   faintest colour in the system before. */
 	.here-badge {
 		flex-shrink: 0;
-		padding: 1px 5px;
+		padding: 1px 6px;
 		border-radius: var(--radius-sm);
-		font-size: 9px;
+		font-size: 11px;
 		font-weight: 600;
 		letter-spacing: 0.3px;
 		text-transform: uppercase;
@@ -398,15 +400,15 @@
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
-		gap: 8px;
-		font-size: 11px;
+		gap: 10px;
+		font-size: 14px;
 		color: var(--text-muted);
 	}
 
 	.project {
 		display: flex;
 		align-items: center;
-		gap: 4px;
+		gap: 5px;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
@@ -423,7 +425,7 @@
 		z-index: 1;
 		display: flex;
 		align-items: center;
-		gap: var(--spacing-1);
+		gap: 5px;
 		flex-shrink: 0;
 	}
 

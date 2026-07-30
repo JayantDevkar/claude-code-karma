@@ -2,8 +2,9 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
-	import { FolderOpen, Clock, Bot, Pause } from 'lucide-svelte';
+	import { Clock, Bot, Pause } from 'lucide-svelte';
 	import { commandPalette } from '$lib/stores/commandPalette';
+	import { sessionSwitcherStore } from '$lib/stores/sessionSwitcher';
 	import { liveSessionsFeed } from '$lib/stores/liveSessionsFeed';
 	import { statusConfig } from '$lib/live-session-config';
 	import type { LiveSessionSummary } from '$lib/api-types';
@@ -33,12 +34,13 @@
 	// --- display-only derivations (no bearing on open/commit behaviour) ---
 
 	// Tiles shrink as the roster grows so 2 and ~12 sessions both sit on one row.
+	// +25% over the original 76/62/50 px, per Ayush's request to match the dock resize.
 	const density = $derived(
 		sessions.length <= 6
-			? { tile: 76, gap: 12 }
+			? { tile: 95, gap: 15 }
 			: sessions.length <= 10
-				? { tile: 62, gap: 9 }
-				: { tile: 50, gap: 6 }
+				? { tile: 78, gap: 11 }
+				: { tile: 63, gap: 8 }
 	);
 
 	const selected = $derived(sessions[index]);
@@ -54,6 +56,16 @@
 		index = startIndex;
 	}
 
+	// Skip past whatever session we're already on, same as Cmd+Tab landing on
+	// the "other" window first. Shared by the Cmd+B first-press and the
+	// footer button (which has no "current session" of its own to skip via
+	// held-key repeats, so it needs the same starting point).
+	function openFromCurrent() {
+		if (sessions.length === 0) return;
+		const currentIdx = sessions.findIndex((s) => matchesRoute($page.url.pathname, s));
+		openAt(currentIdx >= 0 ? (currentIdx + 1) % sessions.length : 0);
+	}
+
 	function advance() {
 		if (sessions.length === 0) return;
 		index = (index + 1) % sessions.length;
@@ -62,6 +74,7 @@
 	function commit() {
 		const session = sessions[index];
 		isOpen = false;
+		sessionSwitcherStore.close();
 		if (!session) return;
 		// Route-only: focus-terminal raises the native Terminal window on top of
 		// Chrome, which would steal focus the instant you land here and hide the
@@ -72,6 +85,20 @@
 
 	function cancel() {
 		isOpen = false;
+		sessionSwitcherStore.close();
+	}
+
+	// Opened via the footer button (mouse, no Cmd held) — sync from the store.
+	$effect(() => {
+		if ($sessionSwitcherStore.isOpen && !isOpen) {
+			openFromCurrent();
+		}
+	});
+
+	// Clicking the dimmed backdrop is the only way to cancel a mouse-opened
+	// switcher — there's no Cmd being held to release.
+	function handleBackdropClick(e: MouseEvent) {
+		if (e.target === e.currentTarget) cancel();
 	}
 
 	function handleKeydown(e: KeyboardEvent) {
@@ -81,10 +108,7 @@
 			e.preventDefault();
 
 			if (!isOpen) {
-				// First press: skip past whatever session we're already on, same
-				// as Cmd+Tab landing on the "other" window first.
-				const currentIdx = sessions.findIndex((s) => matchesRoute($page.url.pathname, s));
-				openAt(currentIdx >= 0 ? (currentIdx + 1) % sessions.length : 0);
+				openFromCurrent();
 			} else {
 				advance();
 			}
@@ -132,11 +156,18 @@
 </script>
 
 {#if isOpen}
+	<!-- Escape is already handled globally by handleKeydown above; this click
+	     handler is the mouse-only equivalent for a switcher opened without
+	     Cmd held (via the footer button), so no separate keyboard handler
+	     is needed on the element itself. -->
+	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<div
 		class="switcher-overlay"
 		role="dialog"
 		aria-modal="true"
 		aria-label="Live session switcher"
+		tabindex="-1"
+		onclick={handleBackdropClick}
 	>
 		<div
 			class="switcher-frame"
@@ -152,6 +183,21 @@
 							class:selected={i === index}
 							class:here={matchesRoute($page.url.pathname, session)}
 							style="--tone: {config.color}"
+							role="button"
+							tabindex="0"
+							aria-label={`Switch to ${getDisplayName(session)}`}
+							onmouseenter={() => (index = i)}
+							onclick={() => {
+								index = i;
+								commit();
+							}}
+							onkeydown={(e) => {
+								if (e.key === 'Enter' || e.key === ' ') {
+									e.preventDefault();
+									index = i;
+									commit();
+								}
+							}}
 						>
 							<div class="tile-art">
 								<div class="tile-icon">
@@ -175,33 +221,30 @@
 			<div class="switcher-detail">
 				{#if selected}
 					{@const config = statusConfig[selected.status]}
+					<!-- The tile label already shows the session id/slug — the big
+					     readout should answer "which project", not repeat it. -->
 					<div class="detail-name font-mono" aria-live="polite">
-						{getDisplayName(selected)}
+						{getProjectDisplayName(selected)}
 					</div>
 					<!-- Single line, never wrapping: a second line would grow the frame
-					     mid-cycle and shift the tiles under the user's fingers. Order is
-					     priority order — the last items are the ones allowed to clip. -->
+					     mid-cycle and shift the tiles under the user's fingers. -->
 					<div class="detail-meta">
 						<span class="meta-status" style="--tone: {config.color}">
 							<span class="meta-dot"></span>{config.label}
 						</span>
-						<span class="meta-item shrink"
-							><FolderOpen size={11} strokeWidth={2} />
-							<span class="meta-text">{getProjectDisplayName(selected)}</span></span
-						>
 						{#if selected.active_subagent_count > 0}
 							<span class="meta-item accent"
-								><Bot size={11} strokeWidth={2} />
+								><Bot size={14} strokeWidth={2} />
 								{selected.active_subagent_count}</span
 							>
 						{/if}
 						<span class="meta-item"
-							><Clock size={11} strokeWidth={2} />
+							><Clock size={14} strokeWidth={2} />
 							{formatDuration(selected.duration_seconds)}</span
 						>
 						{#if selected.idle_seconds >= 60}
 							<span class="meta-item"
-								><Pause size={11} strokeWidth={2} />
+								><Pause size={14} strokeWidth={2} />
 								{formatIdleTime(selected.idle_seconds)} idle</span
 							>
 						{/if}
@@ -241,14 +284,8 @@
 	.switcher-frame {
 		/* Sized from the tile roster so the panel never jitters as the
 		   selected session's name changes length underneath it. */
-		width: min(
-			92vw,
-			max(
-				380px,
-				calc(var(--n) * var(--tile) + (var(--n) - 1) * var(--gap) + var(--spacing-4) * 2)
-			)
-		);
-		padding: var(--spacing-4) var(--spacing-4) 0;
+		width: min(92vw, max(475px, calc(var(--n) * var(--tile) + (var(--n) - 1) * var(--gap) + 40px)));
+		padding: 20px 20px 0;
 		background: color-mix(in srgb, var(--bg-base) 82%, transparent);
 		border: 1px solid var(--border);
 		border-radius: calc(var(--radius-lg) * 2);
@@ -303,8 +340,15 @@
 		display: flex;
 		flex-direction: column;
 		align-items: center;
-		gap: var(--spacing-1);
-		padding: calc(var(--tile) * 0.11) 0 var(--spacing-1);
+		gap: 5px;
+		padding: calc(var(--tile) * 0.11) 0 5px;
+		cursor: pointer;
+	}
+
+	.switcher-tile:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: 2px;
+		border-radius: var(--radius-lg);
 	}
 
 	.tile-art {
@@ -359,8 +403,8 @@
 		position: absolute;
 		top: -3px;
 		right: -3px;
-		width: 9px;
-		height: 9px;
+		width: 11px;
+		height: 11px;
 		border-radius: 50%;
 		background: var(--tone);
 		border: 2px solid var(--bg-base);
@@ -380,13 +424,13 @@
 		position: absolute;
 		bottom: -3px;
 		right: -3px;
-		min-width: 15px;
-		height: 15px;
-		padding: 0 3px;
+		min-width: 19px;
+		height: 19px;
+		padding: 0 4px;
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		font-size: 9px;
+		font-size: 11px;
 		font-weight: 600;
 		line-height: 1;
 		border-radius: 999px;
@@ -403,7 +447,7 @@
 
 	.tile-label {
 		max-width: 100%;
-		font-size: 10px;
+		font-size: 13px;
 		line-height: 1.3;
 		letter-spacing: -0.01em;
 		color: var(--text-muted);
@@ -432,18 +476,18 @@
 	/* --- selected-session readout --------------------------------------- */
 
 	.switcher-detail {
-		min-height: 46px;
-		padding-top: var(--spacing-3);
+		min-height: 58px;
+		padding-top: 15px;
 		display: flex;
 		flex-direction: column;
 		align-items: center;
-		gap: var(--spacing-1);
+		gap: 5px;
 		text-align: center;
 	}
 
 	.detail-name {
 		max-width: 100%;
-		font-size: 14px;
+		font-size: 18px;
 		font-weight: 600;
 		letter-spacing: -0.01em;
 		color: var(--text-primary);
@@ -458,9 +502,9 @@
 		align-items: center;
 		justify-content: center;
 		flex-wrap: nowrap;
-		gap: var(--spacing-2);
+		gap: 10px;
 		overflow: hidden;
-		font-size: 11px;
+		font-size: 14px;
 		color: var(--text-muted);
 	}
 
@@ -468,18 +512,18 @@
 		display: inline-flex;
 		align-items: center;
 		flex: none;
-		gap: 5px;
+		gap: 6px;
 		white-space: nowrap;
 		font-weight: 600;
 		text-transform: uppercase;
 		letter-spacing: 0.4px;
-		font-size: 10px;
+		font-size: 13px;
 		color: var(--tone);
 	}
 
 	.meta-dot {
-		width: 5px;
-		height: 5px;
+		width: 6px;
+		height: 6px;
 		border-radius: 50%;
 		background: var(--tone);
 	}
@@ -488,22 +532,9 @@
 		display: inline-flex;
 		align-items: center;
 		flex: none;
-		gap: var(--spacing-1);
+		gap: 5px;
 		white-space: nowrap;
 		font-variant-numeric: tabular-nums;
-	}
-
-	/* The project name is the only variable-length item, so it's the one that
-	   gives ground when the line is tight. */
-	.meta-item.shrink {
-		flex: 0 1 auto;
-		min-width: 0;
-	}
-
-	.meta-text {
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
 	}
 
 	.meta-item.accent {
@@ -513,22 +544,22 @@
 	/* --- footer hint ---------------------------------------------------- */
 
 	.switcher-hint {
-		margin-top: var(--spacing-3);
-		padding: var(--spacing-2) 0;
+		margin-top: 15px;
+		padding: 10px 0;
 		border-top: 1px solid var(--border-subtle);
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		gap: var(--spacing-2);
-		font-size: 11px;
-		/* --text-faint at 11px lands under AA; this line teaches the whole
+		gap: 10px;
+		font-size: 14px;
+		/* --text-faint at this size lands under AA; this line teaches the whole
 		   interaction, so it gets the readable muted step instead. */
 		color: var(--text-muted);
 	}
 
 	.hint-sep {
 		width: 1px;
-		height: 10px;
+		height: 13px;
 		background: var(--border);
 	}
 
@@ -536,12 +567,12 @@
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
-		min-width: 18px;
-		height: 18px;
+		min-width: 23px;
+		height: 23px;
 		margin: 0 1px;
-		padding: 0 5px;
+		padding: 0 6px;
 		font-family: var(--font-sans);
-		font-size: 10px;
+		font-size: 13px;
 		font-weight: 600;
 		line-height: 1;
 		background: var(--bg-muted);
