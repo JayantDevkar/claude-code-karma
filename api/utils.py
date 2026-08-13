@@ -749,6 +749,16 @@ def find_best_root(path: str, working_dirs: list[str]) -> str | None:
         return None
 
 
+# Cap on free-text tool-input fields shipped in timeline metadata, which live sessions poll every second.
+_METADATA_TEXT_LIMIT = 4000
+
+
+def _cap_text(value: str, limit: int = _METADATA_TEXT_LIMIT) -> str:
+    if len(value) <= limit:
+        return value
+    return value[:limit] + f"\n... [truncated, {len(value)} chars total]"
+
+
 def get_tool_summary(block, working_dirs: list[str] | None = None) -> tuple[str, str | None, dict]:
     """
     Extract title, summary, and metadata from a tool use block.
@@ -776,11 +786,17 @@ def get_tool_summary(block, working_dirs: list[str] | None = None) -> tuple[str,
         return "Read file", to_relative(path), {"path": path}
     elif tool_name == "Write":
         path = tool_input.get("path") or tool_input.get("file_path", "")
-        content = tool_input.get("content", "")
+        content = _cap_text(tool_input.get("content", ""))
         return "Write file", to_relative(path), {"path": path, "content": content}
     elif tool_name == "Edit" or tool_name == "StrReplace":
         path = tool_input.get("path") or tool_input.get("file_path", "")
-        return "Edit file", to_relative(path), {"path": path}
+        old_string = _cap_text(tool_input.get("old_string", ""))
+        new_string = _cap_text(tool_input.get("new_string", ""))
+        return (
+            "Edit file",
+            to_relative(path),
+            {"path": path, "old_string": old_string, "new_string": new_string},
+        )
     elif tool_name == "Delete":
         path = tool_input.get("path") or tool_input.get("file_path", "")
         return "Delete file", to_relative(path), {"path": path}
@@ -807,12 +823,14 @@ def get_tool_summary(block, working_dirs: list[str] | None = None) -> tuple[str,
     elif tool_name in ("Task", "Agent"):
         description = tool_input.get("description", "")
         subagent_type = tool_input.get("subagent_type")  # None if missing
+        prompt = _cap_text(tool_input.get("prompt", ""))
         return (
             "Spawn subagent",
             description[:100] if description else None,
             {
                 "description": description,
                 "subagent_type": subagent_type,
+                "prompt": prompt,
             },
         )
     elif tool_name == "TodoWrite":

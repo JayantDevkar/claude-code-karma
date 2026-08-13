@@ -9,6 +9,7 @@
 		Bot
 	} from 'lucide-svelte';
 	import type { TodoItem } from '$lib/api-types';
+	import { highlightPlainText } from '$lib/utils/highlight';
 
 	interface Props {
 		todos: TodoItem[];
@@ -16,9 +17,18 @@
 		agentSlug?: string;
 		isExpanded?: boolean;
 		class?: string;
+		/** Search query for highlighting matches in todo content */
+		searchQuery?: string;
 	}
 
-	let { todos, action, agentSlug, isExpanded = false, class: className = '' }: Props = $props();
+	let {
+		todos,
+		action,
+		agentSlug,
+		isExpanded = false,
+		class: className = '',
+		searchQuery = ''
+	}: Props = $props();
 
 	// Calculate counts
 	const completed = $derived(todos.filter((t) => t.status === 'completed').length);
@@ -35,6 +45,8 @@
 	const completedPercent = $derived(total > 0 ? (completed / total) * 100 : 0);
 	const inProgressPercent = $derived(total > 0 ? (inProgress / total) * 100 : 0);
 </script>
+
+{#snippet hl(text: string)}{#if searchQuery}{@html highlightPlainText(text, searchQuery)}{:else}{text}{/if}{/snippet}
 
 <div class="space-y-3 {className}">
 	<!-- Header badges -->
@@ -129,11 +141,11 @@
 								? 'text-[var(--text-muted)] line-through'
 								: 'text-[var(--text-primary)]'}"
 						>
-							{todo.content}
+							{@render hl(todo.content)}
 						</p>
 						{#if todo.status === 'in_progress' && todo.activeForm}
 							<p class="text-xs text-[var(--warning)] mt-0.5 italic">
-								{todo.activeForm}...
+								{@render hl(todo.activeForm)}...
 							</p>
 						{/if}
 					</div>
@@ -193,11 +205,11 @@
 							{#if todos.length > 5}
 								<span class="text-[var(--text-muted)] mr-1">{index + 1}.</span>
 							{/if}
-							{todo.content}
+							{@render hl(todo.content)}
 						</p>
 						{#if todo.status === 'in_progress' && todo.activeForm}
 							<p class="text-xs text-[var(--warning)] mt-0.5 italic">
-								{todo.activeForm}...
+								{@render hl(todo.activeForm)}...
 							</p>
 						{/if}
 					</div>

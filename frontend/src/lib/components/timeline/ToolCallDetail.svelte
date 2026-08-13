@@ -25,17 +25,22 @@
 	import DOMPurify from 'isomorphic-dompurify';
 	import type { TimelineEvent } from '$lib/api-types';
 	import { formatDisplayPath } from '$lib/utils';
+	import { highlightPlainText, highlightHtmlContent } from '$lib/utils/highlight';
 
 	interface Props {
 		event: TimelineEvent;
 		projectPath?: string | null;
 		class?: string;
+		/** Search query for highlighting matches in content blocks */
+		searchQuery?: string;
 	}
 
-	let { event, projectPath = null, class: className = '' }: Props = $props();
+	let { event, projectPath = null, class: className = '', searchQuery = '' }: Props = $props();
 
 	let copiedSection = $state<string | null>(null);
-	let renderedPlanHtml = $state('');
+
+	// Sanitized plan markdown; depends on toolName/input, not searchQuery (see $derived below).
+	let sanitizedPlanHtml = $state('');
 
 	// Extract tool metadata
 	const toolName = $derived(event.metadata?.tool_name as string | undefined);
@@ -90,13 +95,18 @@
 			const parsed = marked.parse(raw);
 			if (parsed instanceof Promise) {
 				parsed.then((html) => {
-					renderedPlanHtml = DOMPurify.sanitize(html);
+					sanitizedPlanHtml = DOMPurify.sanitize(html);
 				});
 			} else {
-				renderedPlanHtml = DOMPurify.sanitize(parsed);
+				sanitizedPlanHtml = DOMPurify.sanitize(parsed);
 			}
 		}
 	});
+
+	// Cheap text-node walk over the already-parsed content, re-run on searchQuery change only.
+	const renderedPlanHtml = $derived(
+		searchQuery ? highlightHtmlContent(sanitizedPlanHtml, searchQuery) : sanitizedPlanHtml
+	);
 
 	// Task tool detection
 	const isTaskTool = $derived(
@@ -240,12 +250,20 @@
 		return val != null && val !== '';
 	}
 
+	// Caps free-text blocks for display; matches the server's _METADATA_TEXT_LIMIT (api/utils.py).
+	const DISPLAY_TRUNCATE_LENGTH = 4000;
+	function truncateForDisplay(text: string, maxLength = DISPLAY_TRUNCATE_LENGTH): string {
+		return text.length > maxLength ? text.slice(0, maxLength) + '\n... [truncated]' : text;
+	}
+
 	async function copyToClipboard(text: string, section: string) {
 		await navigator.clipboard.writeText(text);
 		copiedSection = section;
 		setTimeout(() => (copiedSection = null), 2000);
 	}
 </script>
+
+{#snippet hl(text: string)}{#if searchQuery}{@html highlightPlainText(String(text ?? ''), searchQuery)}{:else}{String(text ?? '')}{/if}{/snippet}
 
 <div class="border-t border-[var(--border)] pt-3 space-y-4 {className}">
 	<!-- Input Section -->
@@ -259,10 +277,10 @@
 			<div
 				class="font-mono text-sm bg-[var(--bg-muted)] rounded-[var(--radius-md)] p-3 flex items-center justify-between gap-2"
 			>
-				<div title={String(input.file_path || '')}>
+				<div title={String(input.file_path || input.path || '')}>
 					<span class="text-[var(--event-prompt)]">Reading:</span>
 					<span class="text-[var(--text-primary)] ml-1"
-						>{formatDisplayPath(String(input.file_path || ''), projectPath)}</span
+						>{@render hl(formatDisplayPath(String(input.file_path || input.path || ''), projectPath))}</span
 					>
 					{#if input.offset != null && input.limit != null}
 						<span class="text-[var(--text-muted)]">
@@ -270,11 +288,11 @@
 						</span>
 					{/if}
 				</div>
-				{#if hasValue(input.file_path)}
+				{#if hasValue(input.file_path || input.path)}
 					<button
 						onclick={(e) => {
 							e.stopPropagation();
-							copyToClipboard(String(input.file_path), 'file_path');
+							copyToClipboard(String(input.file_path || input.path), 'file_path');
 						}}
 						class="p-1 rounded text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-subtle)] transition-colors"
 						title="Copy path"
@@ -294,17 +312,17 @@
 				<div
 					class="font-mono text-sm bg-[var(--bg-muted)] rounded-[var(--radius-md)] p-3 flex items-center justify-between gap-2"
 				>
-					<div title={String(input.file_path || '')}>
+					<div title={String(input.file_path || input.path || '')}>
 						<span class="text-[var(--success)]">Creating:</span>
 						<span class="text-[var(--text-primary)] ml-1"
-							>{formatDisplayPath(String(input.file_path || ''), projectPath)}</span
+							>{@render hl(formatDisplayPath(String(input.file_path || input.path || ''), projectPath))}</span
 						>
 					</div>
-					{#if hasValue(input.file_path)}
+					{#if hasValue(input.file_path || input.path)}
 						<button
 							onclick={(e) => {
 								e.stopPropagation();
-								copyToClipboard(String(input.file_path), 'file_path');
+								copyToClipboard(String(input.file_path || input.path), 'file_path');
 							}}
 							class="p-1 rounded text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-subtle)] transition-colors"
 							title="Copy path"
@@ -319,6 +337,7 @@
 				</div>
 				{#if hasValue(input.content)}
 					{@const content = String(input.content)}
+					{@const displayContent = truncateForDisplay(content)}
 					{@const lineCount = content.replace(/\n$/, '').split('\n').length || 1}
 					<div
 						class="rounded-[var(--radius-md)] border border-[var(--border)] p-3 relative"
@@ -351,7 +370,7 @@
 						</div>
 						<div class="max-h-80 overflow-y-auto">
 							<pre
-								class="font-mono text-xs whitespace-pre-wrap break-words text-[var(--text-secondary)]">{content}</pre>
+								class="font-mono text-xs whitespace-pre-wrap break-words text-[var(--text-secondary)]">{#if searchQuery}{@html highlightPlainText(displayContent, searchQuery)}{:else}{displayContent}{/if}</pre>
 						</div>
 					</div>
 				{/if}
@@ -363,17 +382,17 @@
 				<div
 					class="font-mono text-sm bg-[var(--bg-muted)] rounded-[var(--radius-md)] p-3 flex items-center justify-between gap-2"
 				>
-					<div title={String(input.file_path || '')}>
+					<div title={String(input.file_path || input.path || '')}>
 						<span class="text-[var(--event-thinking)]">Editing:</span>
 						<span class="text-[var(--text-primary)] ml-1"
-							>{formatDisplayPath(String(input.file_path || ''), projectPath)}</span
+							>{@render hl(formatDisplayPath(String(input.file_path || input.path || ''), projectPath))}</span
 						>
 					</div>
-					{#if hasValue(input.file_path)}
+					{#if hasValue(input.file_path || input.path)}
 						<button
 							onclick={(e) => {
 								e.stopPropagation();
-								copyToClipboard(String(input.file_path), 'file_path');
+								copyToClipboard(String(input.file_path || input.path), 'file_path');
 							}}
 							class="p-1 rounded text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-subtle)] transition-colors"
 							title="Copy path"
@@ -390,6 +409,7 @@
 				<!-- Original (old_string) -->
 				{#if hasValue(input.old_string)}
 					{@const content = String(input.old_string)}
+					{@const displayContent = truncateForDisplay(content)}
 					<div
 						class="rounded-[var(--radius-md)] border border-red-500/20 bg-red-500/5 p-3 relative"
 					>
@@ -414,14 +434,17 @@
 								{/if}
 							</button>
 						</div>
-						<pre
-							class="font-mono text-xs whitespace-pre-wrap break-words text-red-300">{content}</pre>
+						<div class="max-h-80 overflow-y-auto">
+							<pre
+								class="font-mono text-xs whitespace-pre-wrap break-words text-red-300">{#if searchQuery}{@html highlightPlainText(displayContent, searchQuery)}{:else}{displayContent}{/if}</pre>
+						</div>
 					</div>
 				{/if}
 
 				<!-- Replacement (new_string) -->
 				{#if hasValue(input.new_string)}
 					{@const content = String(input.new_string)}
+					{@const displayContent = truncateForDisplay(content)}
 					<div
 						class="rounded-[var(--radius-md)] border border-green-500/20 bg-green-500/5 p-3 relative"
 					>
@@ -446,19 +469,21 @@
 								{/if}
 							</button>
 						</div>
-						<pre
-							class="font-mono text-xs whitespace-pre-wrap break-words text-green-300">{content}</pre>
+						<div class="max-h-80 overflow-y-auto">
+							<pre
+								class="font-mono text-xs whitespace-pre-wrap break-words text-green-300">{#if searchQuery}{@html highlightPlainText(displayContent, searchQuery)}{:else}{displayContent}{/if}</pre>
+						</div>
 					</div>
 				{/if}
 			</div>
 
 			<!-- Bash/Shell Tool -->
 		{:else if toolName === 'Bash' || toolName === 'Shell'}
+			{@const displayCommand = truncateForDisplay(String(input.command || ''))}
 			<div
 				class="font-mono text-sm bg-[var(--bg-muted)] rounded-[var(--radius-md)] p-3 flex items-center justify-between gap-2"
 			>
-				<pre class="text-[var(--event-tool)] overflow-x-auto flex-1">$ {input.command ||
-						''}</pre>
+				<pre class="text-[var(--event-tool)] overflow-x-auto flex-1">$ {#if searchQuery}{@html highlightPlainText(displayCommand, searchQuery)}{:else}{displayCommand}{/if}</pre>
 				{#if hasValue(input.command)}
 					<button
 						onclick={(e) => {
@@ -481,10 +506,10 @@
 		{:else if toolName === 'Glob'}
 			<div class="font-mono text-sm bg-[var(--bg-muted)] rounded-[var(--radius-md)] p-3">
 				<span class="text-[var(--event-subagent)]">Pattern:</span>
-				<span class="text-[var(--text-primary)] ml-1">{input.pattern || ''}</span>
+				<span class="text-[var(--text-primary)] ml-1">{@render hl(String(input.pattern || ''))}</span>
 				{#if hasValue(input.path)}
 					<span class="text-[var(--text-muted)]" title={String(input.path)}>
-						in {formatDisplayPath(String(input.path), projectPath)}</span
+						in {@render hl(formatDisplayPath(String(input.path), projectPath))}</span
 					>
 				{/if}
 			</div>
@@ -496,20 +521,20 @@
 			>
 				<div>
 					<span class="text-[var(--event-subagent)]">Pattern:</span>
-					<span class="text-[var(--text-primary)] ml-1">{input.pattern || ''}</span>
+					<span class="text-[var(--text-primary)] ml-1">{@render hl(String(input.pattern || ''))}</span>
 				</div>
 				{#if hasValue(input.path)}
 					<div title={String(input.path)}>
 						<span class="text-[var(--text-muted)]">In:</span>
 						<span class="text-[var(--text-primary)] ml-1"
-							>{formatDisplayPath(String(input.path), projectPath)}</span
+							>{@render hl(formatDisplayPath(String(input.path), projectPath))}</span
 						>
 					</div>
 				{/if}
 				{#if hasValue(input.include)}
 					<div>
 						<span class="text-[var(--text-muted)]">Include:</span>
-						<span class="text-[var(--text-primary)] ml-1">{input.include}</span>
+						<span class="text-[var(--text-primary)] ml-1">{@render hl(String(input.include))}</span>
 					</div>
 				{/if}
 			</div>
@@ -522,11 +547,12 @@
 						class="font-mono text-sm bg-[var(--bg-muted)] rounded-[var(--radius-md)] p-3"
 					>
 						<span class="text-[var(--event-subagent)]">Task:</span>
-						<span class="text-[var(--text-primary)] ml-1">{input.description}</span>
+						<span class="text-[var(--text-primary)] ml-1">{@render hl(String(input.description))}</span>
 					</div>
 				{/if}
 				{#if hasValue(input.prompt)}
 					{@const content = String(input.prompt)}
+					{@const displayContent = truncateForDisplay(content)}
 					<div
 						class="rounded-[var(--radius-md)] border border-[var(--border)] p-3 relative"
 					>
@@ -551,8 +577,10 @@
 								{/if}
 							</button>
 						</div>
-						<pre
-							class="font-mono text-xs whitespace-pre-wrap break-words text-[var(--text-secondary)]">{content}</pre>
+						<div class="max-h-80 overflow-y-auto">
+							<pre
+								class="font-mono text-xs whitespace-pre-wrap break-words text-[var(--text-secondary)]">{#if searchQuery}{@html highlightPlainText(displayContent, searchQuery)}{:else}{displayContent}{/if}</pre>
+						</div>
 					</div>
 				{/if}
 			</div>
@@ -619,7 +647,7 @@
 		{:else if toolName === 'WebSearch'}
 			<div class="font-mono text-sm bg-[var(--bg-muted)] rounded-[var(--radius-md)] p-3">
 				<span class="text-[var(--event-prompt)]">Search:</span>
-				<span class="text-[var(--text-primary)] ml-1">{input.query || ''}</span>
+				<span class="text-[var(--text-primary)] ml-1">{@render hl(String(input.query || ''))}</span>
 			</div>
 
 			<!-- WebFetch Tool -->
@@ -629,7 +657,7 @@
 			>
 				<div class="overflow-hidden">
 					<span class="text-[var(--event-prompt)]">Fetching:</span>
-					<span class="text-[var(--text-primary)] ml-1 break-all">{input.url || ''}</span>
+					<span class="text-[var(--text-primary)] ml-1 break-all">{@render hl(String(input.url || ''))}</span>
 				</div>
 				{#if hasValue(input.url)}
 					<button
@@ -673,7 +701,7 @@
 						<!-- Subject -->
 						{#if subject}
 							<p class="text-sm font-medium text-[var(--text-primary)] leading-snug">
-								{subject}
+								{@render hl(subject)}
 							</p>
 						{/if}
 						<!-- Description -->
@@ -681,14 +709,14 @@
 							<p
 								class="text-xs text-[var(--text-secondary)] leading-relaxed border-l-2 border-emerald-500/30 pl-3"
 							>
-								{description}
+								{@render hl(description)}
 							</p>
 						{/if}
 						<!-- Active form -->
 						{#if activeForm}
 							<div class="flex items-center gap-2 text-xs text-[var(--text-muted)]">
 								<RefreshCw size={11} class="animate-spin" />
-								<span class="italic">{activeForm}</span>
+								<span class="italic">{@render hl(activeForm)}</span>
 							</div>
 						{/if}
 					</div>
@@ -730,7 +758,7 @@
 							</div>
 							{#if subject || taskSubject}
 								<span class="text-xs text-[var(--text-secondary)] pl-6 truncate">
-									{subject || taskSubject}
+									{@render hl(subject || taskSubject)}
 								</span>
 							{/if}
 						</div>
@@ -756,7 +784,7 @@
 									>
 										Rename to
 									</span>
-									<span class="text-sm text-[var(--text-primary)]">{subject}</span>
+									<span class="text-sm text-[var(--text-primary)]">{@render hl(subject)}</span>
 								</div>
 							{/if}
 							{#if description}
@@ -768,7 +796,7 @@
 									</span>
 									<span
 										class="text-xs text-[var(--text-secondary)] leading-relaxed"
-										>{description}</span
+										>{@render hl(description)}</span
 									>
 								</div>
 							{/if}
@@ -783,7 +811,7 @@
 										class="inline-flex items-center gap-1 text-xs text-[var(--text-primary)]"
 									>
 										<User size={11} class="text-[var(--text-muted)]" />
-										{owner}
+										{@render hl(owner)}
 									</span>
 								</div>
 							{/if}
@@ -795,7 +823,7 @@
 										Spinner
 									</span>
 									<span class="text-xs italic text-[var(--text-muted)]"
-										>{activeForm}</span
+										>{@render hl(activeForm)}</span
 									>
 								</div>
 							{/if}
@@ -806,7 +834,7 @@
 											class="inline-flex items-center gap-1 text-[10px] text-orange-400"
 										>
 											<GitBranch size={10} />
-											blocks: {addBlocks.join(', ')}
+											blocks: {@render hl(addBlocks.join(', '))}
 										</span>
 									{/if}
 									{#if addBlockedBy.length > 0}
@@ -814,7 +842,7 @@
 											class="inline-flex items-center gap-1 text-[10px] text-orange-400"
 										>
 											<ArrowRight size={10} />
-											blocked by: {addBlockedBy.join(', ')}
+											blocked by: {@render hl(addBlockedBy.join(', '))}
 										</span>
 									{/if}
 								</div>
@@ -874,14 +902,14 @@
 						<span
 							class="font-mono text-[10px] rounded-full bg-purple-500/15 px-2.5 py-1 text-purple-300 border border-purple-500/20"
 						>
-							{server}
+							{@render hl(server)}
 						</span>
 					{/if}
 					{#if server && mcpTool}
 						<ArrowRight size={12} class="text-purple-500/40" />
 					{/if}
 					{#if mcpTool}
-						<span class="font-mono text-sm text-[var(--text-primary)]">{mcpTool}</span>
+						<span class="font-mono text-sm text-[var(--text-primary)]">{@render hl(mcpTool)}</span>
 					{/if}
 				</div>
 				<!-- MCP tool arguments -->
@@ -901,13 +929,17 @@
 											class="font-mono text-xs text-[var(--text-secondary)] break-all"
 										>
 											{#if typeof mcpArgs[key] === 'string'}
-												{String(mcpArgs[key]).length > 150
-													? String(mcpArgs[key]).slice(0, 150) + '...'
-													: mcpArgs[key]}
+												{@render hl(
+													String(mcpArgs[key]).length > 150
+														? String(mcpArgs[key]).slice(0, 150) + '...'
+														: String(mcpArgs[key])
+												)}
 											{:else}
-												{JSON.stringify(mcpArgs[key]).length > 150
-													? JSON.stringify(mcpArgs[key]).slice(0, 150) + '...'
-													: JSON.stringify(mcpArgs[key])}
+												{@render hl(
+													JSON.stringify(mcpArgs[key]).length > 150
+														? JSON.stringify(mcpArgs[key]).slice(0, 150) + '...'
+														: JSON.stringify(mcpArgs[key])
+												)}
 											{/if}
 										</span>
 									</div>
@@ -932,7 +964,7 @@
 					<FolderOpen size={15} class="text-[var(--event-tool)] shrink-0" />
 					<span class="text-[var(--event-tool)]">Listing:</span>
 					<span class="text-[var(--text-primary)]">
-						{formatDisplayPath(String(input.path || '.'), projectPath)}
+						{@render hl(formatDisplayPath(String(input.path || '.'), projectPath))}
 					</span>
 				</div>
 			</div>
@@ -946,7 +978,7 @@
 					<Trash2 size={15} class="text-red-400 shrink-0" />
 					<span class="text-red-400">Deleting:</span>
 					<span class="text-[var(--text-primary)]">
-						{formatDisplayPath(String(input.file_path || input.path || ''), projectPath)}
+						{@render hl(formatDisplayPath(String(input.file_path || input.path || ''), projectPath))}
 					</span>
 				</div>
 			</div>
@@ -971,7 +1003,7 @@
 					<span
 						class="rounded bg-[var(--event-thinking)]/15 px-2 py-0.5 text-xs font-medium text-[var(--text-primary)]"
 					>
-						{input.target_mode}
+						{@render hl(String(input.target_mode))}
 					</span>
 				{/if}
 			</div>
@@ -1007,11 +1039,11 @@
 					<div class="px-4 py-3">
 						{#if summary}
 							<p class="text-[10px] text-indigo-400/60 uppercase tracking-wide mb-1">
-								{summary}
+								{@render hl(summary)}
 							</p>
 						{/if}
 						<p class="text-xs text-[var(--text-secondary)] leading-relaxed">
-							{content.length > 200 ? content.slice(0, 200) + '...' : content}
+							{@render hl(content.length > 200 ? content.slice(0, 200) + '...' : content)}
 						</p>
 					</div>
 				{/if}
@@ -1025,9 +1057,9 @@
 				class="font-mono text-sm bg-[var(--accent)]/5 border border-[var(--accent)]/20 rounded-[var(--radius-md)] p-3 flex items-center gap-2.5"
 			>
 				<Zap size={15} class="text-[var(--accent)] shrink-0" />
-				<span class="text-[var(--accent)]">/{skillName}</span>
+				<span class="text-[var(--accent)]">/{@render hl(skillName)}</span>
 				{#if args}
-					<span class="text-[var(--text-muted)] text-xs">{args}</span>
+					<span class="text-[var(--text-muted)] text-xs">{@render hl(args)}</span>
 				{/if}
 			</div>
 
@@ -1039,7 +1071,7 @@
 			>
 				<Search size={15} class="text-[var(--text-muted)] shrink-0" />
 				<span class="text-[var(--text-muted)]">Searching tools:</span>
-				<span class="text-[var(--text-primary)]">{query}</span>
+				<span class="text-[var(--text-primary)]">{@render hl(query)}</span>
 			</div>
 
 			<!-- SemanticSearch -->
@@ -1049,7 +1081,7 @@
 			>
 				<Search size={15} class="text-[var(--event-subagent)] shrink-0" />
 				<span class="text-[var(--event-subagent)]">Semantic search:</span>
-				<span class="text-[var(--text-primary)]">{input.query || ''}</span>
+				<span class="text-[var(--text-primary)]">{@render hl(String(input.query || ''))}</span>
 			</div>
 
 			<!-- AskUserQuestion: Formatted questions with options -->
@@ -1073,7 +1105,7 @@
 									</span>
 								{/if}
 								<p class="text-sm font-medium text-[var(--text-primary)] leading-snug">
-									{q.question}
+									{@render hl(q.question)}
 								</p>
 								{#if q.multiSelect}
 									<span
@@ -1132,7 +1164,7 @@
 												: 'text-[var(--text-primary)]'}
 											"
 										>
-											{option.label}
+											{@render hl(option.label)}
 										</span>
 										{#if option.description}
 											<p
@@ -1143,7 +1175,7 @@
 													: 'text-[var(--text-muted)]'}
 												"
 											>
-												{option.description}
+												{@render hl(option.description)}
 											</p>
 										{/if}
 									</div>
@@ -1187,7 +1219,7 @@
 										<p
 											class="mt-0.5 text-sm font-medium text-[var(--success)]"
 										>
-											{getCustomAnswer(q)}
+											{@render hl(String(getCustomAnswer(q)))}
 										</p>
 									</div>
 									<span
@@ -1209,7 +1241,7 @@
 										User Note
 									</span>
 									<p class="mt-0.5 text-xs text-[var(--text-secondary)]">
-										{userNotes.get(q.question)}
+										{@render hl(String(userNotes.get(q.question)))}
 									</p>
 								</div>
 							{/if}
@@ -1221,6 +1253,7 @@
 		<!-- Default: JSON display -->
 		{:else}
 			{@const content = JSON.stringify(input, null, 2)}
+			{@const displayContent = truncateForDisplay(content)}
 			<div class="rounded-[var(--radius-md)] border border-[var(--border)] p-3 relative">
 				<div class="flex items-center justify-between gap-2 mb-2">
 					<h5
@@ -1244,7 +1277,7 @@
 					</button>
 				</div>
 				<pre
-					class="font-mono text-xs whitespace-pre-wrap break-words text-[var(--text-secondary)]">{content}</pre>
+					class="font-mono text-xs whitespace-pre-wrap break-words text-[var(--text-secondary)]">{#if searchQuery}{@html highlightPlainText(displayContent, searchQuery)}{:else}{displayContent}{/if}</pre>
 			</div>
 		{/if}
 	</div>
@@ -1275,6 +1308,7 @@
 		{@const isError = resultStatus === 'error'}
 		{@const maxLength = 1000}
 		{@const truncated = content.length > maxLength}
+		{@const displayContent = truncated ? content.slice(0, maxLength) + '\n...' : content}
 		<div>
 			<div class="flex items-center gap-2 mb-2">
 				<h4
@@ -1304,9 +1338,7 @@
 					: 'bg-[var(--bg-muted)] border-[var(--border)]'}"
 			>
 				<pre
-					class="font-mono text-xs whitespace-pre-wrap break-words text-[var(--text-secondary)]">{truncated
-						? content.slice(0, maxLength) + '\n...'
-						: content}</pre>
+					class="font-mono text-xs whitespace-pre-wrap break-words text-[var(--text-secondary)]">{#if searchQuery}{@html highlightPlainText(displayContent, searchQuery)}{:else}{displayContent}{/if}</pre>
 				{#if truncated}
 					<div class="absolute bottom-2 right-2">
 						<span

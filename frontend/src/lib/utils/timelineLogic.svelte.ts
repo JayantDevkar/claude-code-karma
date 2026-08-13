@@ -84,29 +84,80 @@ function matchesSingleFilter(
 	}
 }
 
+// Metadata keys holding binary/opaque data — skipped to avoid false-positive
+// matches and wasted cycles lowercasing multi-MB strings.
+const SEARCH_SKIP_KEYS = new Set([
+	'image_attachments',
+	'tool_id',
+	'result_timestamp',
+	'spawned_agent_id',
+	'result_parsed'
+]);
+
+// Recursively collects every searchable string value inside `value` into `out`,
+// walking nested objects/arrays and skipping SEARCH_SKIP_KEYS at any depth.
+function collectSearchableText(value: unknown, out: string[]): void {
+	if (value == null) return;
+	if (typeof value === 'string') {
+		out.push(value);
+		return;
+	}
+	if (Array.isArray(value)) {
+		for (const item of value) collectSearchableText(item, out);
+		return;
+	}
+	if (typeof value === 'object') {
+		for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+			if (SEARCH_SKIP_KEYS.has(key)) continue;
+			collectSearchableText(item, out);
+		}
+	}
+}
+
+// Per-event lowercased "haystack" cache, invalidated by content fingerprint rather than object identity
+// (live-session polling replaces the event list every second). Cleared per session view in createTimelineLogic.
+const haystackCache = new Map<string, { fingerprint: string; haystack: string }>();
+
+// A separator no realistic query contains, so a multi-word query can't match across two fields' boundary.
+const FIELD_SEPARATOR = String.fromCharCode(0);
+
+function getEventFingerprint(event: TimelineEvent): string {
+	const m = event.metadata;
+	return [
+		event.timestamp,
+		event.summary?.length ?? 0,
+		m?.result_content?.length ?? 0,
+		m?.full_content?.length ?? 0,
+		m?.full_text?.length ?? 0,
+		m?.full_thinking?.length ?? 0,
+		m?.has_result ? 1 : 0,
+		m?.result_status ?? '',
+		// Structural signals so a metadata field arriving on a later poll (e.g. spawned_agent_slug) invalidates the cache.
+		m ? Object.keys(m).length : 0,
+		m?.spawned_agent_slug ?? ''
+	].join('|');
+}
+
+function getHaystack(event: TimelineEvent): string {
+	const fingerprint = getEventFingerprint(event);
+	const cached = haystackCache.get(event.id);
+	if (cached && cached.fingerprint === fingerprint) {
+		return cached.haystack;
+	}
+	const parts: string[] = [event.title, event.summary ?? '', event.actor];
+	collectSearchableText(event.metadata, parts);
+	const haystack = parts.join(FIELD_SEPARATOR).toLowerCase();
+	haystackCache.set(event.id, { fingerprint, haystack });
+	return haystack;
+}
+
 /**
  * Check if event matches search query
  */
-function matchesSearch(event: TimelineEvent, query: string): boolean {
-	if (!query.trim()) return true;
-	const q = query.toLowerCase();
-
-	// Check basic fields
-	if (event.title.toLowerCase().includes(q)) return true;
-	if (event.summary?.toLowerCase().includes(q)) return true;
-	if (event.actor.toLowerCase().includes(q)) return true;
-
-	// Check metadata content
-	const metadata = event.metadata || {};
-	if (metadata.tool_name?.toLowerCase().includes(q)) return true;
-	if (metadata.full_content?.toLowerCase().includes(q)) return true;
-	if (metadata.full_thinking?.toLowerCase().includes(q)) return true;
-	if (metadata.full_text?.toLowerCase().includes(q)) return true;
-	if (metadata.result_content?.toLowerCase().includes(q)) return true;
-	if (metadata.error_message && String(metadata.error_message).toLowerCase().includes(q))
-		return true;
-
-	return false;
+export function matchesSearch(event: TimelineEvent, query: string): boolean {
+	const trimmed = query.trim();
+	if (!trimmed) return true;
+	return getHaystack(event).includes(trimmed.toLowerCase());
 }
 
 /**
@@ -259,6 +310,9 @@ export function createTimelineLogic(
 	eventsGetter: () => TimelineEvent[],
 	options: TimelineLogicOptions = {}
 ) {
+	// New session view — event ids are session-scoped, so prior entries can never hit again.
+	haystackCache.clear();
+
 	const {
 		isTailingGetter = () => false,
 		tailCount = 3,

@@ -17,6 +17,8 @@
 	import TodoUpdateDetail from './TodoUpdateDetail.svelte';
 	import ImageAttachments from '$lib/components/ImageAttachments.svelte';
 	import { markdownCopyButtons } from '$lib/actions/markdownCopyButtons';
+	import { highlightPlainText, highlightHtmlContent } from '$lib/utils/highlight';
+	import { matchesSearch } from '$lib/utils/timelineLogic.svelte';
 
 	interface Props {
 		event: TimelineEvent;
@@ -60,30 +62,45 @@
 
 	let isCopied = $state(false);
 
-	// Rendered markdown content for expanded view
-	let renderedExpandedContent = $state('');
+	// Sanitized markdown for expanded view; depends on content/expansion, not searchQuery (see $derived below).
+	let sanitizedExpandedContent = $state('');
 
-	// Render markdown when content changes or expansion state changes
+	// Skips tool_call/todo_update — they render via ToolCallDetail/TodoUpdateDetail instead.
 	$effect(() => {
-		if (isExpanded && hasExpandableContent) {
+		if (
+			isExpanded &&
+			hasExpandableContent &&
+			event.event_type !== 'tool_call' &&
+			event.event_type !== 'todo_update'
+		) {
 			const rawContent =
 				event.metadata?.full_content ||
 				event.metadata?.full_thinking ||
 				event.metadata?.full_text ||
 				event.metadata?.result_content ||
+				(event.metadata?.prompt as string | undefined) ||
 				event.summary ||
 				'';
 
 			const parsed = marked.parse(rawContent);
 			if (parsed instanceof Promise) {
 				parsed.then((html) => {
-					renderedExpandedContent = DOMPurify.sanitize(html);
+					sanitizedExpandedContent = DOMPurify.sanitize(html);
 				});
 			} else {
-				renderedExpandedContent = DOMPurify.sanitize(parsed);
+				sanitizedExpandedContent = DOMPurify.sanitize(parsed);
 			}
 		}
 	});
+
+	// Cheap text-node walk over the already-parsed content; skips tool_call/todo_update like the effect above.
+	const renderedExpandedContent = $derived(
+		event.event_type !== 'tool_call' && event.event_type !== 'todo_update'
+			? searchQuery
+				? highlightHtmlContent(sanitizedExpandedContent, searchQuery)
+				: sanitizedExpandedContent
+			: ''
+	);
 
 	// Get event configuration
 	const isPlanEvent = $derived(
@@ -138,6 +155,7 @@
 			event.metadata?.full_thinking ||
 			event.metadata?.full_text ||
 			event.metadata?.result_content ||
+			event.metadata?.prompt ||
 			(event.summary && event.summary.length > 100)
 	);
 
@@ -156,18 +174,31 @@
 		event.actor_type === 'subagent' && (!currentAgentId || event.actor !== currentAgentId)
 	);
 
-	function highlightText(text: string, query: string): string {
-		if (!query || !text) return text;
-		// Escape HTML entities first to prevent XSS
-		const safeText = text
-			.replace(/&/g, '&amp;')
-			.replace(/</g, '&lt;')
-			.replace(/>/g, '&gt;')
-			.replace(/"/g, '&quot;');
-		const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-		const regex = new RegExp(`(${escaped})`, 'gi');
-		return safeText.replace(regex, '<mark class="search-highlight">$1</mark>');
-	}
+	// True when the event matched the search but the match is buried in content not shown on the collapsed card.
+	const hasHiddenMatch = $derived.by(() => {
+		// Expanded content is already visible via ToolCallDetail/the markdown block below.
+		if (isExpanded) return false;
+		const trimmedQuery = searchQuery.trim();
+		if (!trimmedQuery) return false;
+
+		const visibleParts = [displayTitle];
+		if (event.summary && event.event_type !== 'todo_update') {
+			visibleParts.push(truncate(event.summary, 100));
+		}
+		if (toolName && event.event_type === 'tool_call') visibleParts.push(toolName);
+		if (shouldShowActorBadge) visibleParts.push(event.actor);
+		if (event.event_type === 'todo_update' && todosArray.length <= 3) {
+			// Mirrors TodoUpdateDetail's own inlineLimit (beyond 3 it shows a "click to see all" hint, not content).
+			for (const todo of todosArray) {
+				visibleParts.push(todo.content);
+				if (todo.status === 'in_progress' && todo.activeForm) visibleParts.push(todo.activeForm);
+			}
+		}
+		const visibleText = visibleParts.join(' ').toLowerCase();
+		if (visibleText.includes(trimmedQuery.toLowerCase())) return false;
+		return matchesSearch(event, searchQuery);
+	});
+
 </script>
 
 <div
@@ -271,7 +302,7 @@
 				<div class="flex items-center gap-2 flex-wrap">
 					<span class="font-medium text-[var(--text-primary)]">
 						{#if searchQuery}
-							{@html highlightText(displayTitle, searchQuery)}
+							{@html highlightPlainText(displayTitle, searchQuery)}
 						{:else}
 							{displayTitle}
 						{/if}
@@ -336,7 +367,7 @@
 				{#if event.summary && event.event_type !== 'todo_update'}
 					<p class="font-mono text-xs text-[var(--text-muted)]">
 						{#if searchQuery}
-							{@html highlightText(
+							{@html highlightPlainText(
 								isExpanded ? event.summary : truncate(event.summary, 100),
 								searchQuery
 							)}
@@ -354,6 +385,7 @@
 							action={event.metadata?.action as 'set' | 'merge' | undefined}
 							agentSlug={event.metadata?.agent_slug as string | undefined}
 							{isExpanded}
+							{searchQuery}
 						/>
 					</div>
 				{/if}
@@ -384,6 +416,12 @@
 
 			<!-- Timestamp and expand -->
 			<div class="flex items-center gap-2 shrink-0">
+				{#if hasHiddenMatch}
+					<span
+						class="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--warning)]"
+						title="Search match found in expanded content"
+					></span>
+				{/if}
 				<span
 					class="whitespace-nowrap font-mono text-xs text-[var(--text-muted)]/70 tabular-nums"
 					title={formatDate(event.timestamp)}
@@ -410,7 +448,7 @@
 		{#if isExpanded && hasExpandableContent && !usePopup}
 			<!-- Tool call detail - use specialized component -->
 			{#if event.event_type === 'tool_call'}
-				<ToolCallDetail {event} {projectPath} />
+				<ToolCallDetail {event} {projectPath} {searchQuery} />
 			{:else if event.event_type !== 'todo_update'}
 				<!-- Non-tool-call, non-todo content (prompts, thinking, responses) -->
 				<div class="mt-3 border-t border-[var(--border)] pt-3 relative">
@@ -438,6 +476,7 @@
 									event.metadata?.full_thinking ||
 									event.metadata?.full_text ||
 									event.metadata?.result_content ||
+									(event.metadata?.prompt as string | undefined) ||
 									event.summary ||
 									'';
 								navigator.clipboard.writeText(content);
