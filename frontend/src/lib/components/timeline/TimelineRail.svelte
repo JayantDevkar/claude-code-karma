@@ -5,7 +5,7 @@
 	import { marked } from 'marked';
 	import DOMPurify from 'isomorphic-dompurify';
 	import type { TimelineEvent } from '$lib/api-types';
-	import { createTimelineLogic } from '$lib/utils/timelineLogic.svelte';
+	import { createTimelineLogic, matchesSearch } from '$lib/utils/timelineLogic.svelte';
 	import { formatDate } from '$lib/utils';
 	import TimelineFilterBar from './TimelineFilterBar.svelte';
 	import TimelineEventCard from './TimelineEventCard.svelte';
@@ -15,6 +15,7 @@
 	import TodoUpdateDetail from './TodoUpdateDetail.svelte';
 	import ImageAttachments from '$lib/components/ImageAttachments.svelte';
 	import { markdownCopyButtons } from '$lib/actions/markdownCopyButtons';
+	import { highlightHtmlContent } from '$lib/utils/highlight';
 
 	interface Props {
 		events: TimelineEvent[];
@@ -65,8 +66,10 @@
 	const isPopupOpen = $derived(popupEvent !== null);
 	let isCopied = $state(false);
 
-	// Rendered markdown content for popup modal
-	let renderedPopupContent = $state('');
+	// Sanitized markdown content for popup modal — parsing/sanitizing is the
+	// expensive part, so this effect depends only on popupEvent, NOT the search
+	// query. Highlighting is applied separately below as a cheap $derived.
+	let sanitizedPopupContent = $state('');
 
 	// Render markdown when popup opens or content changes
 	$effect(() => {
@@ -76,16 +79,17 @@
 				popupEvent.metadata?.full_thinking ||
 				popupEvent.metadata?.full_text ||
 				popupEvent.metadata?.result_content ||
+				(popupEvent.metadata?.prompt as string | undefined) ||
 				popupEvent.summary ||
 				'';
 
 			const parsed = marked.parse(rawContent);
 			if (parsed instanceof Promise) {
 				parsed.then((html) => {
-					renderedPopupContent = DOMPurify.sanitize(html);
+					sanitizedPopupContent = DOMPurify.sanitize(html);
 				});
 			} else {
-				renderedPopupContent = DOMPurify.sanitize(parsed);
+				sanitizedPopupContent = DOMPurify.sanitize(parsed);
 			}
 		}
 	});
@@ -126,6 +130,14 @@
 		currentAgentIdGetter: () => currentAgentId
 	});
 
+	// Re-runs only the (cheap) text-node walk when the search query changes,
+	// not the full marked.parse + DOMPurify.sanitize pipeline.
+	const renderedPopupContent = $derived(
+		timeline.searchQuery
+			? highlightHtmlContent(sanitizedPopupContent, timeline.searchQuery)
+			: sanitizedPopupContent
+	);
+
 	// Pre-compute visible events (excluding gaps) for correct indexing
 	const visibleEvents = $derived(timeline.viewItems.filter((i) => !('type' in i)));
 
@@ -138,6 +150,7 @@
 			event.metadata?.full_thinking ||
 			event.metadata?.full_text ||
 			event.metadata?.result_content ||
+			event.metadata?.prompt ||
 			(event.summary && event.summary.length > 100)
 		);
 	}
@@ -169,25 +182,12 @@
 		return () => window.removeEventListener('keydown', onKeyDown);
 	});
 
-	// Search match tracking
+	// Search match tracking — shares matchesSearch (and its memoized haystack)
+	// with the filter bar / card highlighting so the "N matches" count here
+	// never contradicts what's actually visible and marked on screen.
 	let searchMatchIds = $derived.by<string[]>(() => {
-		if (!searchQuery) return [];
-		const q = searchQuery.toLowerCase();
-		return events
-			.filter((e) => {
-				const text = [
-					e.summary,
-					e.title,
-					e.metadata?.full_content,
-					e.metadata?.full_text,
-					e.metadata?.full_thinking
-				]
-					.filter(Boolean)
-					.join(' ')
-					.toLowerCase();
-				return text.includes(q);
-			})
-			.map((e) => e.id);
+		if (!timeline.searchQuery.trim()) return [];
+		return events.filter((e) => matchesSearch(e, timeline.searchQuery)).map((e) => e.id);
 	});
 
 	let currentMatchIdx = $state(0);
@@ -204,11 +204,11 @@
 		onCurrentMatchChange?.(currentMatchIdx);
 	});
 
-	// When search query changes, also update TimelineFilterBar's search if searchQuery is set externally
+	// Sync the external (Cmd+F) search query into the timeline's own search state,
+	// including when it's cleared — otherwise Escape closes the search bar but
+	// leaves every card's highlights and the filtered view stuck in place.
 	$effect(() => {
-		if (searchQuery) {
-			timeline.setSearchQuery(searchQuery);
-		}
+		timeline.setSearchQuery(searchQuery);
 	});
 
 	// Container ref for scroll management
@@ -348,7 +348,7 @@
 						{currentAgentId}
 						{projectPath}
 						onToggleHide={() => timeline.toggleHide(eventItem.id)}
-						{searchQuery}
+						searchQuery={timeline.searchQuery}
 					/>
 				{/if}
 			{/each}
@@ -419,7 +419,7 @@
 
 		<div class="max-h-[70vh] overflow-auto break-words">
 			{#if popupEvent.event_type === 'tool_call'}
-				<ToolCallDetail event={popupEvent} {projectPath} />
+				<ToolCallDetail event={popupEvent} {projectPath} searchQuery={timeline.searchQuery} />
 			{:else if popupEvent.event_type === 'todo_update'}
 				{@const todos = Array.isArray(popupEvent.metadata?.todos)
 					? popupEvent.metadata.todos
@@ -429,6 +429,7 @@
 					action={popupEvent.metadata?.action as 'set' | 'merge' | undefined}
 					agentSlug={popupEvent.metadata?.agent_slug as string | undefined}
 					isExpanded={true}
+					searchQuery={timeline.searchQuery}
 				/>
 			{:else}
 				<!-- Generic content display for prompts, thinking, responses -->
@@ -456,6 +457,7 @@
 								popupEvent?.metadata?.full_thinking ||
 								popupEvent?.metadata?.full_text ||
 								popupEvent?.metadata?.result_content ||
+								(popupEvent?.metadata?.prompt as string | undefined) ||
 								popupEvent?.summary ||
 								'';
 							navigator.clipboard.writeText(content);

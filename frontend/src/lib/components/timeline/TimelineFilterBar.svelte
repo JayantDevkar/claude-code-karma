@@ -16,6 +16,7 @@
 		Plug,
 		ClipboardList
 	} from 'lucide-svelte';
+	import { onDestroy } from 'svelte';
 	import type { FilterCategory, FilterCounts } from '$lib/api-types';
 
 	interface Props {
@@ -41,6 +42,28 @@
 		onSearchChange,
 		class: className = ''
 	}: Props = $props();
+
+	// Debounce the (expensive — full metadata scan across every event)
+	// downstream search so it doesn't re-run on every keystroke.
+	let debounceTimeout: ReturnType<typeof setTimeout>;
+	function handleSearchInput(value: string) {
+		clearTimeout(debounceTimeout);
+		debounceTimeout = setTimeout(() => onSearchChange(value), 200);
+	}
+	function clearSearch() {
+		clearTimeout(debounceTimeout);
+		onSearchChange('');
+	}
+	onDestroy(() => clearTimeout(debounceTimeout));
+
+	// If searchQuery changes from outside this component (e.g. the Cmd+F bar
+	// clearing it on Escape), cancel any pending debounced edit — otherwise a
+	// stale keystroke fires after the external change and resurrects a query
+	// the user just cleared.
+	$effect(() => {
+		void searchQuery;
+		clearTimeout(debounceTimeout);
+	});
 
 	// Color mapping for each filter category - matches timeline event node colors
 	const filterColors: Record<
@@ -236,7 +259,7 @@
 			<input
 				type="text"
 				value={searchQuery}
-				oninput={(e) => onSearchChange(e.currentTarget.value)}
+				oninput={(e) => handleSearchInput(e.currentTarget.value)}
 				placeholder="Search events..."
 				data-timeline-search="true"
 				class="
@@ -252,7 +275,7 @@
 			/>
 			{#if searchQuery}
 				<button
-					onclick={() => onSearchChange('')}
+					onclick={clearSearch}
 					class="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-[var(--text-primary)]"
 				>
 					<X size={12} strokeWidth={2} />

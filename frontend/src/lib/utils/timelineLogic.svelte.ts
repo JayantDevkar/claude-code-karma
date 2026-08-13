@@ -85,28 +85,92 @@ function matchesSingleFilter(
 }
 
 /**
+ * Metadata keys that hold binary/opaque/non-searchable data — walking these
+ * produces false-positive matches (e.g. a short query matching inside a
+ * base64 image payload) and wastes cycles lowercasing multi-MB strings.
+ */
+const SEARCH_SKIP_KEYS = new Set([
+	'image_attachments',
+	'tool_id',
+	'result_timestamp',
+	'spawned_agent_id',
+	'result_parsed'
+]);
+
+/**
+ * Recursively collect every searchable string value inside `value` into `out`.
+ * Walks nested objects/arrays (e.g. MCP tool `args`) so every metadata field
+ * is searchable without hand-listing each tool's field names here, skipping
+ * SEARCH_SKIP_KEYS at any depth.
+ */
+function collectSearchableText(value: unknown, out: string[]): void {
+	if (value == null) return;
+	if (typeof value === 'string') {
+		out.push(value);
+		return;
+	}
+	if (Array.isArray(value)) {
+		for (const item of value) collectSearchableText(item, out);
+		return;
+	}
+	if (typeof value === 'object') {
+		for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+			if (SEARCH_SKIP_KEYS.has(key)) continue;
+			collectSearchableText(item, out);
+		}
+	}
+}
+
+/**
+ * Per-event lowercased "haystack" cache, keyed by event.id. Building the
+ * haystack (walking metadata, lowercasing every string) is the expensive
+ * part — this makes it happen once per event object instead of once per
+ * keystroke x call site (matchesFilters, matchingCount, and each card's
+ * hasHiddenMatch all used to run their own independent walk).
+ *
+ * Invalidated by a cheap content fingerprint, NOT object identity: a live
+ * session's poll (see ConversationView's POLL_INTERVAL_ACTIVE) replaces the
+ * entire event list with freshly-parsed objects every second even when
+ * nothing actually changed, so an identity check would rebuild every
+ * haystack every tick while a search is active. The fingerprint only needs
+ * to change when the *searchable content* changes, not the object reference.
+ */
+const haystackCache = new Map<string, { fingerprint: string; haystack: string }>();
+
+function getEventFingerprint(event: TimelineEvent): string {
+	const m = event.metadata;
+	return [
+		event.timestamp,
+		event.summary?.length ?? 0,
+		m?.result_content?.length ?? 0,
+		m?.full_content?.length ?? 0,
+		m?.full_text?.length ?? 0,
+		m?.full_thinking?.length ?? 0,
+		m?.has_result ? 1 : 0,
+		m?.result_status ?? ''
+	].join('|');
+}
+
+function getHaystack(event: TimelineEvent): string {
+	const fingerprint = getEventFingerprint(event);
+	const cached = haystackCache.get(event.id);
+	if (cached && cached.fingerprint === fingerprint) {
+		return cached.haystack;
+	}
+	const parts: string[] = [event.title, event.summary ?? '', event.actor];
+	collectSearchableText(event.metadata, parts);
+	const haystack = parts.join(' ').toLowerCase();
+	haystackCache.set(event.id, { fingerprint, haystack });
+	return haystack;
+}
+
+/**
  * Check if event matches search query
  */
-function matchesSearch(event: TimelineEvent, query: string): boolean {
-	if (!query.trim()) return true;
-	const q = query.toLowerCase();
-
-	// Check basic fields
-	if (event.title.toLowerCase().includes(q)) return true;
-	if (event.summary?.toLowerCase().includes(q)) return true;
-	if (event.actor.toLowerCase().includes(q)) return true;
-
-	// Check metadata content
-	const metadata = event.metadata || {};
-	if (metadata.tool_name?.toLowerCase().includes(q)) return true;
-	if (metadata.full_content?.toLowerCase().includes(q)) return true;
-	if (metadata.full_thinking?.toLowerCase().includes(q)) return true;
-	if (metadata.full_text?.toLowerCase().includes(q)) return true;
-	if (metadata.result_content?.toLowerCase().includes(q)) return true;
-	if (metadata.error_message && String(metadata.error_message).toLowerCase().includes(q))
-		return true;
-
-	return false;
+export function matchesSearch(event: TimelineEvent, query: string): boolean {
+	const trimmed = query.trim();
+	if (!trimmed) return true;
+	return getHaystack(event).includes(trimmed.toLowerCase());
 }
 
 /**
