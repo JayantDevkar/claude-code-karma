@@ -66,14 +66,16 @@
 	const isPopupOpen = $derived(popupEvent !== null);
 	let isCopied = $state(false);
 
-	// Sanitized markdown content for popup modal — parsing/sanitizing is the
-	// expensive part, so this effect depends only on popupEvent, NOT the search
-	// query. Highlighting is applied separately below as a cheap $derived.
+	// Sanitized markdown content for popup modal; depends on popupEvent, not the search query (see $derived below).
 	let sanitizedPopupContent = $state('');
 
-	// Render markdown when popup opens or content changes
+	// Skips tool_call/todo_update — they render via ToolCallDetail/TodoUpdateDetail instead.
 	$effect(() => {
-		if (popupEvent) {
+		if (
+			popupEvent &&
+			popupEvent.event_type !== 'tool_call' &&
+			popupEvent.event_type !== 'todo_update'
+		) {
 			const rawContent =
 				popupEvent.metadata?.full_content ||
 				popupEvent.metadata?.full_thinking ||
@@ -130,12 +132,13 @@
 		currentAgentIdGetter: () => currentAgentId
 	});
 
-	// Re-runs only the (cheap) text-node walk when the search query changes,
-	// not the full marked.parse + DOMPurify.sanitize pipeline.
+	// Cheap text-node walk over the already-parsed content; skips tool_call/todo_update like the effect above.
 	const renderedPopupContent = $derived(
-		timeline.searchQuery
-			? highlightHtmlContent(sanitizedPopupContent, timeline.searchQuery)
-			: sanitizedPopupContent
+		popupEvent && popupEvent.event_type !== 'tool_call' && popupEvent.event_type !== 'todo_update'
+			? timeline.searchQuery
+				? highlightHtmlContent(sanitizedPopupContent, timeline.searchQuery)
+				: sanitizedPopupContent
+			: ''
 	);
 
 	// Pre-compute visible events (excluding gaps) for correct indexing
@@ -182,9 +185,7 @@
 		return () => window.removeEventListener('keydown', onKeyDown);
 	});
 
-	// Search match tracking — shares matchesSearch (and its memoized haystack)
-	// with the filter bar / card highlighting so the "N matches" count here
-	// never contradicts what's actually visible and marked on screen.
+	// Shares matchesSearch/its haystack cache with the filter bar and cards, so the count never contradicts them.
 	let searchMatchIds = $derived.by<string[]>(() => {
 		if (!timeline.searchQuery.trim()) return [];
 		return events.filter((e) => matchesSearch(e, timeline.searchQuery)).map((e) => e.id);
@@ -204,9 +205,7 @@
 		onCurrentMatchChange?.(currentMatchIdx);
 	});
 
-	// Sync the external (Cmd+F) search query into the timeline's own search state,
-	// including when it's cleared — otherwise Escape closes the search bar but
-	// leaves every card's highlights and the filtered view stuck in place.
+	// Syncs the external (Cmd+F) search query, including clears, so Escape doesn't leave stale highlights.
 	$effect(() => {
 		timeline.setSearchQuery(searchQuery);
 	});
@@ -482,4 +481,3 @@
 		</div>
 	</Modal>
 {/if}
-```

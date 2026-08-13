@@ -749,9 +749,7 @@ def find_best_root(path: str, working_dirs: list[str]) -> str | None:
         return None
 
 
-# Cap on free-text tool-input fields (diffs, subagent prompts) placed into
-# timeline metadata. Without this, large Edit diffs or Task prompts ship in
-# full over the timeline endpoint, which live sessions poll every second.
+# Cap on free-text tool-input fields shipped in timeline metadata, which live sessions poll every second.
 _METADATA_TEXT_LIMIT = 4000
 
 
@@ -788,7 +786,7 @@ def get_tool_summary(block, working_dirs: list[str] | None = None) -> tuple[str,
         return "Read file", to_relative(path), {"path": path}
     elif tool_name == "Write":
         path = tool_input.get("path") or tool_input.get("file_path", "")
-        content = tool_input.get("content", "")
+        content = _cap_text(tool_input.get("content", ""))
         return "Write file", to_relative(path), {"path": path, "content": content}
     elif tool_name == "Edit" or tool_name == "StrReplace":
         path = tool_input.get("path") or tool_input.get("file_path", "")

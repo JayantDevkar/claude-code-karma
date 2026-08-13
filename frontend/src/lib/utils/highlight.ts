@@ -90,8 +90,7 @@ export function highlightHtmlContent(html: string, query: string): string {
 		textNode.parentNode?.replaceChild(fragment, textNode);
 	}
 
-	// Re-sanitize: innerHTML was already sanitized once, but reading it back out
-	// and returning it as a fresh HTML string is a parse/serialize round-trip —
-	// re-sanitizing here is the cheap way to stay safe against that class of bug.
+	// Belt-and-suspenders: content is already safe (built via createElement/
+	// textContent above), but this feeds {@html} so re-sanitize anyway.
 	return DOMPurify.sanitize(container.innerHTML);
 }

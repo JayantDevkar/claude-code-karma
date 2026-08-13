@@ -39,9 +39,7 @@
 
 	let copiedSection = $state<string | null>(null);
 
-	// Sanitized plan markdown — parsing/sanitizing is the expensive part, so
-	// this effect depends only on toolName/input, NOT searchQuery. Highlighting
-	// is applied separately below as a cheap $derived over this.
+	// Sanitized plan markdown; depends on toolName/input, not searchQuery (see $derived below).
 	let sanitizedPlanHtml = $state('');
 
 	// Extract tool metadata
@@ -105,8 +103,7 @@
 		}
 	});
 
-	// Re-runs only the (cheap) text-node walk when searchQuery changes, not the
-	// full marked.parse + DOMPurify.sanitize pipeline.
+	// Cheap text-node walk over the already-parsed content, re-run on searchQuery change only.
 	const renderedPlanHtml = $derived(
 		searchQuery ? highlightHtmlContent(sanitizedPlanHtml, searchQuery) : sanitizedPlanHtml
 	);
@@ -253,12 +250,8 @@
 		return val != null && val !== '';
 	}
 
-	// Cap large free-text blocks (Write content, Edit diffs, Task prompts, the
-	// default JSON dump) before display/highlighting — these are only ever
-	// shown in a max-h-80 scroll box anyway, so highlighting the untruncated
-	// string (which can be multi-MB) wastes cycles clipped content never uses.
-	// Copy-to-clipboard buttons still use the original, untruncated string.
-	const DISPLAY_TRUNCATE_LENGTH = 2000;
+	// Caps free-text blocks for display; matches the server's _METADATA_TEXT_LIMIT (api/utils.py).
+	const DISPLAY_TRUNCATE_LENGTH = 4000;
 	function truncateForDisplay(text: string, maxLength = DISPLAY_TRUNCATE_LENGTH): string {
 		return text.length > maxLength ? text.slice(0, maxLength) + '\n... [truncated]' : text;
 	}
@@ -486,10 +479,11 @@
 
 			<!-- Bash/Shell Tool -->
 		{:else if toolName === 'Bash' || toolName === 'Shell'}
+			{@const displayCommand = truncateForDisplay(String(input.command || ''))}
 			<div
 				class="font-mono text-sm bg-[var(--bg-muted)] rounded-[var(--radius-md)] p-3 flex items-center justify-between gap-2"
 			>
-				<pre class="text-[var(--event-tool)] overflow-x-auto flex-1">$ {#if searchQuery}{@html highlightPlainText(String(input.command || ''), searchQuery)}{:else}{input.command || ''}{/if}</pre>
+				<pre class="text-[var(--event-tool)] overflow-x-auto flex-1">$ {#if searchQuery}{@html highlightPlainText(displayCommand, searchQuery)}{:else}{displayCommand}{/if}</pre>
 				{#if hasValue(input.command)}
 					<button
 						onclick={(e) => {

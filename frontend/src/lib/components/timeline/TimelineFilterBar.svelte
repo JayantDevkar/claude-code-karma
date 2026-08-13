@@ -43,8 +43,7 @@
 		class: className = ''
 	}: Props = $props();
 
-	// Debounce the (expensive — full metadata scan across every event)
-	// downstream search so it doesn't re-run on every keystroke.
+	// Debounces the downstream search (a full metadata scan) so it doesn't re-run on every keystroke.
 	let debounceTimeout: ReturnType<typeof setTimeout>;
 	function handleSearchInput(value: string) {
 		clearTimeout(debounceTimeout);
@@ -56,10 +55,7 @@
 	}
 	onDestroy(() => clearTimeout(debounceTimeout));
 
-	// If searchQuery changes from outside this component (e.g. the Cmd+F bar
-	// clearing it on Escape), cancel any pending debounced edit — otherwise a
-	// stale keystroke fires after the external change and resurrects a query
-	// the user just cleared.
+	// Cancels a pending debounced edit on external searchQuery changes, so a stale keystroke can't resurrect a cleared query.
 	$effect(() => {
 		void searchQuery;
 		clearTimeout(debounceTimeout);

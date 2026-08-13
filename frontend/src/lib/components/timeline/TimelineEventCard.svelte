@@ -62,14 +62,17 @@
 
 	let isCopied = $state(false);
 
-	// Sanitized markdown for expanded view — parsing/sanitizing is the expensive
-	// part, so this effect depends only on content/expansion state, NOT searchQuery.
-	// Highlighting is applied separately below as a cheap $derived over this.
+	// Sanitized markdown for expanded view; depends on content/expansion, not searchQuery (see $derived below).
 	let sanitizedExpandedContent = $state('');
 
-	// Render markdown when content changes or expansion state changes
+	// Skips tool_call/todo_update — they render via ToolCallDetail/TodoUpdateDetail instead.
 	$effect(() => {
-		if (isExpanded && hasExpandableContent) {
+		if (
+			isExpanded &&
+			hasExpandableContent &&
+			event.event_type !== 'tool_call' &&
+			event.event_type !== 'todo_update'
+		) {
 			const rawContent =
 				event.metadata?.full_content ||
 				event.metadata?.full_thinking ||
@@ -90,12 +93,13 @@
 		}
 	});
 
-	// Re-runs only the (cheap) text-node walk when searchQuery changes, not the
-	// full marked.parse + DOMPurify.sanitize pipeline.
+	// Cheap text-node walk over the already-parsed content; skips tool_call/todo_update like the effect above.
 	const renderedExpandedContent = $derived(
-		searchQuery
-			? highlightHtmlContent(sanitizedExpandedContent, searchQuery)
-			: sanitizedExpandedContent
+		event.event_type !== 'tool_call' && event.event_type !== 'todo_update'
+			? searchQuery
+				? highlightHtmlContent(sanitizedExpandedContent, searchQuery)
+				: sanitizedExpandedContent
+			: ''
 	);
 
 	// Get event configuration
@@ -170,22 +174,27 @@
 		event.actor_type === 'subagent' && (!currentAgentId || event.actor !== currentAgentId)
 	);
 
-	// True when the event matched the search, but the match is buried in content
-	// that isn't shown on the collapsed card (e.g. full_content/full_thinking) —
-	// title + visible summary don't contain it, so there's nothing here to highlight.
+	// True when the event matched the search but the match is buried in content not shown on the collapsed card.
 	const hasHiddenMatch = $derived.by(() => {
-		// Once expanded, any match in full_content/full_thinking/etc. is already
-		// visible (rendered inline via ToolCallDetail or the generic markdown
-		// block below) — the dot would otherwise keep claiming it's still hidden.
+		// Expanded content is already visible via ToolCallDetail/the markdown block below.
 		if (isExpanded) return false;
 		const trimmedQuery = searchQuery.trim();
 		if (!trimmedQuery) return false;
-		const visibleSummary = event.summary
-			? isExpanded
-				? event.summary
-				: truncate(event.summary, 100)
-			: '';
-		const visibleText = `${displayTitle} ${visibleSummary}`.toLowerCase();
+
+		const visibleParts = [displayTitle];
+		if (event.summary && event.event_type !== 'todo_update') {
+			visibleParts.push(truncate(event.summary, 100));
+		}
+		if (toolName && event.event_type === 'tool_call') visibleParts.push(toolName);
+		if (shouldShowActorBadge) visibleParts.push(event.actor);
+		if (event.event_type === 'todo_update' && todosArray.length <= 3) {
+			// Mirrors TodoUpdateDetail's own inlineLimit (beyond 3 it shows a "click to see all" hint, not content).
+			for (const todo of todosArray) {
+				visibleParts.push(todo.content);
+				if (todo.status === 'in_progress' && todo.activeForm) visibleParts.push(todo.activeForm);
+			}
+		}
+		const visibleText = visibleParts.join(' ').toLowerCase();
 		if (visibleText.includes(trimmedQuery.toLowerCase())) return false;
 		return matchesSearch(event, searchQuery);
 	});

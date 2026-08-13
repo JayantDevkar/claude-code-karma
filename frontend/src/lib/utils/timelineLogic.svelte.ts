@@ -84,11 +84,8 @@ function matchesSingleFilter(
 	}
 }
 
-/**
- * Metadata keys that hold binary/opaque/non-searchable data — walking these
- * produces false-positive matches (e.g. a short query matching inside a
- * base64 image payload) and wastes cycles lowercasing multi-MB strings.
- */
+// Metadata keys holding binary/opaque data — skipped to avoid false-positive
+// matches and wasted cycles lowercasing multi-MB strings.
 const SEARCH_SKIP_KEYS = new Set([
 	'image_attachments',
 	'tool_id',
@@ -97,12 +94,8 @@ const SEARCH_SKIP_KEYS = new Set([
 	'result_parsed'
 ]);
 
-/**
- * Recursively collect every searchable string value inside `value` into `out`.
- * Walks nested objects/arrays (e.g. MCP tool `args`) so every metadata field
- * is searchable without hand-listing each tool's field names here, skipping
- * SEARCH_SKIP_KEYS at any depth.
- */
+// Recursively collects every searchable string value inside `value` into `out`,
+// walking nested objects/arrays and skipping SEARCH_SKIP_KEYS at any depth.
 function collectSearchableText(value: unknown, out: string[]): void {
 	if (value == null) return;
 	if (typeof value === 'string') {
@@ -121,21 +114,12 @@ function collectSearchableText(value: unknown, out: string[]): void {
 	}
 }
 
-/**
- * Per-event lowercased "haystack" cache, keyed by event.id. Building the
- * haystack (walking metadata, lowercasing every string) is the expensive
- * part — this makes it happen once per event object instead of once per
- * keystroke x call site (matchesFilters, matchingCount, and each card's
- * hasHiddenMatch all used to run their own independent walk).
- *
- * Invalidated by a cheap content fingerprint, NOT object identity: a live
- * session's poll (see ConversationView's POLL_INTERVAL_ACTIVE) replaces the
- * entire event list with freshly-parsed objects every second even when
- * nothing actually changed, so an identity check would rebuild every
- * haystack every tick while a search is active. The fingerprint only needs
- * to change when the *searchable content* changes, not the object reference.
- */
+// Per-event lowercased "haystack" cache, invalidated by content fingerprint rather than object identity
+// (live-session polling replaces the event list every second). Cleared per session view in createTimelineLogic.
 const haystackCache = new Map<string, { fingerprint: string; haystack: string }>();
+
+// A separator no realistic query contains, so a multi-word query can't match across two fields' boundary.
+const FIELD_SEPARATOR = String.fromCharCode(0);
 
 function getEventFingerprint(event: TimelineEvent): string {
 	const m = event.metadata;
@@ -147,7 +131,10 @@ function getEventFingerprint(event: TimelineEvent): string {
 		m?.full_text?.length ?? 0,
 		m?.full_thinking?.length ?? 0,
 		m?.has_result ? 1 : 0,
-		m?.result_status ?? ''
+		m?.result_status ?? '',
+		// Structural signals so a metadata field arriving on a later poll (e.g. spawned_agent_slug) invalidates the cache.
+		m ? Object.keys(m).length : 0,
+		m?.spawned_agent_slug ?? ''
 	].join('|');
 }
 
@@ -159,7 +146,7 @@ function getHaystack(event: TimelineEvent): string {
 	}
 	const parts: string[] = [event.title, event.summary ?? '', event.actor];
 	collectSearchableText(event.metadata, parts);
-	const haystack = parts.join(' ').toLowerCase();
+	const haystack = parts.join(FIELD_SEPARATOR).toLowerCase();
 	haystackCache.set(event.id, { fingerprint, haystack });
 	return haystack;
 }
@@ -323,6 +310,9 @@ export function createTimelineLogic(
 	eventsGetter: () => TimelineEvent[],
 	options: TimelineLogicOptions = {}
 ) {
+	// New session view — event ids are session-scoped, so prior entries can never hit again.
+	haystackCache.clear();
+
 	const {
 		isTailingGetter = () => false,
 		tailCount = 3,
