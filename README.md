@@ -260,6 +260,52 @@ Open **http://localhost:5180** to view the dashboard.
 
 **This only gets you the historical dashboard.** Karma's core feature — live session tracking as sessions actually run — needs one more step, [Tier 2 in SETUP.md](./SETUP.md#tier-2-live-monitoring-core-feature). Install through Tier 2 by default; the rest of SETUP.md's tiers are optional polish on top.
 
+## Run with Docker Compose
+
+Prefer containers over two terminals? This fork ships a `Dockerfile` and a `docker-compose.yaml`:
+
+```bash
+git clone https://github.com/reduxvzr/claude-code-karma-docker-compose.git
+cd claude-code-karma-docker-compose
+
+docker compose up -d --build
+```
+
+Open **http://localhost:5180**; the API stays on **8020**.
+
+Both processes share a single container on purpose: SvelteKit renders pages server-side and calls the API over `localhost`, so they need the same network namespace.
+
+### What gets mounted
+
+| Host path | In container | Mode |
+| --- | --- | --- |
+| `~/.claude` | `/home/node/.claude` | read-only — Karma only reads session JSONL |
+| `~/.claude_karma` | `/home/node/.claude_karma` | read-write — SQLite index, title cache, live sessions |
+
+`~/.claude_karma` has to stay writable: mounted read-only the API still starts, but indexing fails with `unable to open database file`.
+
+Live session tracking keeps working — the hooks run on the host and write into `~/.claude_karma/live-sessions`, which the container reads through that same mount. Install them as described in [Tier 2 of SETUP.md](./SETUP.md#tier-2-live-monitoring-core-feature).
+
+### Environment variables
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `KARMA_ALLOWED_HOSTS` | empty | Comma-separated domains Karma is served under behind a reverse proxy. Vite answers `403` to unknown `Host` headers; `localhost` and bare IPs are always allowed |
+| `CLAUDE_DIR` | `$HOME/.claude` | Claude Code's data directory. Set the real path if `~/.claude` is a symlink |
+| `KARMA_DIR` | `$HOME/.claude_karma` | Karma's own data directory |
+| `KARMA_API_TARGET` | `http://localhost:8020` | Where the browser-facing `/backend` proxy forwards |
+| `TZ` | `Europe/Moscow` | Container timezone |
+
+### Behind a reverse proxy
+
+```bash
+KARMA_ALLOWED_HOSTS=karma.example docker compose up -d
+```
+
+Point the proxy at port `5180` and let it forward the original `Host` header. In the browser Karma calls the API through `/backend` on the same origin, so there is no CORS to configure and no second vhost for port 8020.
+
+Changing the domain only needs a restart — `vite.config.ts` reads the variable at startup, so no rebuild is required.
+
 ## Desktop App (macOS & Windows)
 
 Two terminals every time gets old. Install a desktop icon that starts both servers for you and opens the dashboard:
