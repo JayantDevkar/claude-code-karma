@@ -1,4 +1,4 @@
-FROM node:22-bookworm
+FROM node:22-trixie
 
 ENV PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
