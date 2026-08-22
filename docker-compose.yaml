@@ -1,0 +1,33 @@
+services:
+  api:
+    container_name: claude-code-karma-api
+    hostname: karma-api
+    image: claude-code-karma:local
+    build:
+      context: .
+      dockerfile: ./Dockerfile
+    restart: unless-stopped
+    environment:
+      TZ: "${TZ:-Europe/Moscow}"
+    ports:
+      - "8020:8020"
+    volumes:
+      # Claude Code Files. Karma reads these files.
+      - "${CLAUDE_DIR:-$HOME/.claude}:/home/node/.claude:ro"
+      # Karma files
+      - "${KARMA_DIR:-$HOME/.claude_karma}:/home/node/.claude_karma"
+  frontend:
+    container_name: claude-code-karma-frontend
+    hostname: karma-frontend
+    image: claude-code-karma:local
+    build:
+      context: .
+      dockerfile: ./Dockerfile
+    restart: unless-stopped
+    environment:
+      TZ: "${TZ:-Europe/Moscow}"
+    command: ["npm", "--prefix", "frontend", "run", "dev", "--", "--host", "0.0.0.0"]
+    ports:
+      - "5180:5180"
+    depends_on:
+      - api
