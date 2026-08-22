@@ -262,18 +262,35 @@ Open **http://localhost:5180** to view the dashboard.
 
 ## Run with Docker Compose
 
-Prefer containers over two terminals? This fork ships a `Dockerfile` and a `docker-compose.yaml`:
+Prefer containers over two terminals? This fork publishes a ready image to GHCR, so nothing has to be built locally:
+
+```bash
+curl -O https://raw.githubusercontent.com/reduxvzr/claude-code-karma-docker-compose/main/docker-compose.yml
+docker compose up -d
+```
+
+Open **http://localhost:5180**; the API stays on **8020**.
+
+The image is `ghcr.io/reduxvzr/claude-code-karma-docker-compose:latest`, rebuilt by [build-docker.yml](.github/workflows/build-docker.yml) on every push to `main`. Update with:
+
+```bash
+docker compose pull && docker compose up -d
+```
+
+Both processes share a single container on purpose: SvelteKit renders pages server-side and calls the API over `localhost`, so they need the same network namespace.
+
+### Build from source instead
+
+To run your own changes rather than the published image:
 
 ```bash
 git clone https://github.com/reduxvzr/claude-code-karma-docker-compose.git
 cd claude-code-karma-docker-compose
 
-docker compose up -d --build
+docker compose -f docker-compose.build.yml up -d --build
 ```
 
-Open **http://localhost:5180**; the API stays on **8020**.
-
-Both processes share a single container on purpose: SvelteKit renders pages server-side and calls the API over `localhost`, so they need the same network namespace.
+Same container layout, same volumes and variables — it just builds from the local `Dockerfile` and tags the result `claude-code-karma:local`.
 
 ### What gets mounted
 

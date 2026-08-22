@@ -2,16 +2,11 @@ services:
   claude-code-karma:
     container_name: claude-code-karma
     hostname: karma
-    image: claude-code-karma:local
-    build:
-      context: .
-      dockerfile: ./Dockerfile
+    image: ghcr.io/reduxvzr/claude-code-karma-docker-compose:latest
     restart: unless-stopped
     environment:
       TZ: "${TZ:-Europe/Moscow}"
       # Domains Karma is served under from behind a reverse proxy. Comma-separated.
-      # Without this Vite answers 403 to any Host it doesn't know.
-      # Example: KARMA_ALLOWED_HOSTS=karma.example docker compose up -d
       KARMA_ALLOWED_HOSTS: "${KARMA_ALLOWED_HOSTS:-}"
     ports:
       - "8020:8020"
