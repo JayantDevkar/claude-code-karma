@@ -31,4 +31,7 @@ USER node
 
 EXPOSE 8020/tcp 5180/tcp
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8020", "--app-dir", "api"]
+# Both processes share one container on purpose: SvelteKit renders server-side and
+# calls the API at http://localhost:8020 (see src/lib/config.ts), so they need the
+# same network namespace. `wait -n` exits as soon as either dies, so restart kicks in.
+CMD ["bash", "-c", "uvicorn main:app --host 0.0.0.0 --port 8020 --app-dir api & npm --prefix frontend run dev -- --host 0.0.0.0 & wait -n"]

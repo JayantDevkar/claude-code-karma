@@ -1,7 +1,7 @@
 services:
-  api:
-    container_name: claude-code-karma-api
-    hostname: karma-api
+  claude-code-karma:
+    container_name: claude-code-karma
+    hostname: karma
     image: claude-code-karma:local
     build:
       context: .
@@ -9,25 +9,15 @@ services:
     restart: unless-stopped
     environment:
       TZ: "${TZ:-Europe/Moscow}"
+      # Domains Karma is served under from behind a reverse proxy. Comma-separated.
+      # Without this Vite answers 403 to any Host it doesn't know.
+      # Example: KARMA_ALLOWED_HOSTS=karma.example docker compose up -d
+      KARMA_ALLOWED_HOSTS: "${KARMA_ALLOWED_HOSTS:-}"
     ports:
       - "8020:8020"
+      - "5180:5180"
     volumes:
       # Claude Code Files. Karma reads these files.
       - "${CLAUDE_DIR:-$HOME/.claude}:/home/node/.claude:ro"
-      # Karma files
+      # Karma files. Must stay writable: metadata.db, cache/titles/, live-sessions/
       - "${KARMA_DIR:-$HOME/.claude_karma}:/home/node/.claude_karma"
-  frontend:
-    container_name: claude-code-karma-frontend
-    hostname: karma-frontend
-    image: claude-code-karma:local
-    build:
-      context: .
-      dockerfile: ./Dockerfile
-    restart: unless-stopped
-    environment:
-      TZ: "${TZ:-Europe/Moscow}"
-    command: ["npm", "--prefix", "frontend", "run", "dev", "--", "--host", "0.0.0.0"]
-    ports:
-      - "5180:5180"
-    depends_on:
-      - api
