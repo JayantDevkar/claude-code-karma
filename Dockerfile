@@ -1,4 +1,4 @@
-FROM node:22-trixie
+FROM node:26-trixie
 
 ENV PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
