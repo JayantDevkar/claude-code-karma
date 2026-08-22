@@ -3,7 +3,8 @@
  *
  * API Base URL:
  * - Uses PUBLIC_API_URL environment variable if set
- * - Falls back to http://localhost:8020 for local development
+ * - In the browser, falls back to /backend, which Vite proxies to the API
+ * - During SSR, falls back to http://localhost:8020
  *
  * To configure in production:
  * - Set PUBLIC_API_URL in your .env file
@@ -18,7 +19,14 @@
  * const response = await fetch(`${API_BASE}/projects`);
  * ```
  */
-export const API_BASE = import.meta.env.PUBLIC_API_URL || 'http://localhost:8020';
+export const API_BASE =
+	typeof window === 'undefined'
+		? // SSR runs next to the API inside the container.
+			'http://localhost:8020'
+		: // The browser must not hardcode localhost: served under a domain that
+			// address points at the visitor's own machine, and the API would reject
+			// the cross-origin request anyway. /backend is proxied by Vite.
+			import.meta.env.PUBLIC_API_URL || '/backend';
 
 /**
  * API request timeout in milliseconds (default: 30 seconds)
