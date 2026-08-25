@@ -113,7 +113,11 @@ def filter_reference_to_watched_keys(text: str, watched_keys: list) -> str:
     an apples-to-apples shape before diffing against it.
     """
     lines = text.splitlines(keepends=True)
-    heading_idx = [i for i, l in enumerate(lines) if l.startswith("## ") or l.startswith("### ")]
+    heading_idx = [
+        i
+        for i, line in enumerate(lines)
+        if line.startswith("## ") or line.startswith("### ")
+    ]
 
     table_rows = {}
     for line in lines:
@@ -286,7 +290,9 @@ def main() -> None:
     # snapshot-update step below would re-inflate the vendored files back to
     # the full ~150-property schema the moment any real drift fires.
     new_schema = filter_schema_to_watched_keys(new_schema_raw, watched_keys)
-    new_reference_text = filter_reference_to_watched_keys(new_reference_text_raw, watched_keys)
+    new_reference_text = filter_reference_to_watched_keys(
+        new_reference_text_raw, watched_keys
+    )
     # Serialize once and reuse for both the diff and the snapshot-update
     # output below -- computing this separately in two places previously
     # left the diffed text missing the trailing newline the vendored file
@@ -321,7 +327,9 @@ def main() -> None:
     # Trimmed live content, for the workflow's "update vendored snapshots"
     # step to copy from -- never the raw fetch, which would defeat the whole
     # point of trimming by re-growing the vendored files on the next drift.
-    (args.output_dir / "trimmed-live-schema.json").write_text(new_schema_text, encoding="utf-8")
+    (args.output_dir / "trimmed-live-schema.json").write_text(
+        new_schema_text, encoding="utf-8"
+    )
     (args.output_dir / "trimmed-live-reference.md").write_text(
         new_reference_text, encoding="utf-8"
     )
