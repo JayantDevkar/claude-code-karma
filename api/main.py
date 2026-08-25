@@ -161,6 +161,12 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# A JSON body nested thousands of levels deep blows Python's recursion limit
+# while Starlette parses it -- guard every route with a clean 400 instead of
+# letting that surface as an opaque 500 (see routers/settings.py for detail;
+# this is app-wide because FastAPI only supports exception handlers here).
+app.add_exception_handler(RecursionError, settings_router.handle_recursion_error)
+
 # CORS middleware for frontend
 app.add_middleware(
     CORSMiddleware,

@@ -1,0 +1,113 @@
+name: Schema Drift Monitor
+
+# Keeps karma's vendored Claude Code settings snapshots (schema/) honest
+# against the two live sources of truth, and opens an issue when a setting
+# karma's settings page actually reads or writes has changed shape upstream.
+# See docs/settings-page-v2-plan.md for the full rationale.
+#
+# Test locally with: gh workflow run schema-drift.yml
+# (or hand-edit schema/claude-code-settings.schema.json to differ from the
+# live schema, push, then dispatch — that's the "hand-mangled snapshot" test.)
+
+on:
+  schedule:
+    - cron: "0 13 * * 1" # Mondays 13:00 UTC
+  workflow_dispatch: {}
+
+permissions:
+  issues: write
+  pull-requests: write
+  contents: write
+
+env:
+  SCHEMA_URL: https://www.schemastore.org/claude-code-settings.json
+  REFERENCE_URL: https://code.claude.com/docs/en/settings-reference.md
+  # Issues/PRs opened with the default GITHUB_TOKEN don't trigger other
+  # Actions workflows (GitHub's anti-loop rule). This only matters once a
+  # fix-agent workflow exists that listens for `issues: opened` on the
+  # schema-drift label — until then GITHUB_TOKEN is fine. If that workflow
+  # is added later, set a fine-grained PAT as the DRIFT_BOT_TOKEN repo
+  # secret and everything below picks it up automatically.
+  GH_TOKEN: ${{ secrets.DRIFT_BOT_TOKEN || secrets.GITHUB_TOKEN }}
+
+jobs:
+  check-drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch live sources
+        run: |
+          curl -sSf "$SCHEMA_URL" -o /tmp/live-schema.json
+          curl -sSf "$REFERENCE_URL" -o /tmp/live-reference.md
+
+      - name: Normalize for diffing
+        run: |
+          jq -S . /tmp/live-schema.json > /tmp/live-schema.normalized.json
+          jq -S . schema/claude-code-settings.schema.json > /tmp/vendored-schema.normalized.json
+          # Strip the docs site's JSX preamble (page-chrome components, not
+          # settings content) so it never shows up as noise in the diff.
+          awk '/^## /{f=1} f' /tmp/live-reference.md > /tmp/live-reference.normalized.md
+          awk '/^## /{f=1} f' schema/settings-reference.md > /tmp/vendored-reference.normalized.md
+
+      - name: Check for drift
+        id: drift
+        run: |
+          python3 scripts/check_schema_drift.py \
+            /tmp/vendored-schema.normalized.json \
+            /tmp/live-schema.normalized.json \
+            /tmp/vendored-reference.normalized.md \
+            /tmp/live-reference.normalized.md \
+            schema/watched-keys.json \
+            /tmp/drift-output >> "$GITHUB_OUTPUT"
+
+      - name: Ensure labels exist
+        if: steps.drift.outputs.has_any_drift == 'true'
+        run: |
+          gh label create schema-drift --color B60205 \
+            --description "A karma-exposed Claude Code setting changed upstream" 2>/dev/null || true
+          gh label create schema-drift-digest --color FBCA04 \
+            --description "Non-watched changes in upstream Claude Code settings" 2>/dev/null || true
+
+      - name: Create watched-key issue
+        if: steps.drift.outputs.has_watched_drift == 'true'
+        run: |
+          gh issue create \
+            --title "Schema drift: a karma-exposed setting changed upstream ($(date -u +%Y-%m-%d))" \
+            --label schema-drift \
+            --body-file /tmp/drift-output/watched-drift-body.md
+
+      - name: Create digest issue
+        if: steps.drift.outputs.has_digest_drift == 'true'
+        run: |
+          gh issue create \
+            --title "Schema drift digest ($(date -u +%Y-%m-%d))" \
+            --label schema-drift-digest \
+            --body-file /tmp/drift-output/digest-body.md
+
+      - name: Update vendored snapshots
+        if: steps.drift.outputs.has_any_drift == 'true'
+        run: |
+          cp /tmp/live-schema.normalized.json schema/claude-code-settings.schema.json
+          cp /tmp/live-reference.normalized.md schema/settings-reference.md
+
+      - name: Open snapshot-update PR
+        if: steps.drift.outputs.has_any_drift == 'true'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ env.GH_TOKEN }}
+          commit-message: "chore(schema): update vendored Claude Code settings snapshots"
+          branch: schema-drift/update-snapshots
+          title: "chore(schema): update vendored settings snapshots"
+          labels: schema-drift
+          body: |
+            Automated snapshot refresh from `.github/workflows/schema-drift.yml`,
+            so the next scheduled run has a clean baseline and doesn't re-alert
+            on the same diff.
+
+            If a `schema-drift` or `schema-drift-digest` issue was opened
+            alongside this PR, resolve that first — merging this PR without
+            addressing it just silences the alert without fixing anything.
+          add-paths: |
+            schema/claude-code-settings.schema.json
+            schema/settings-reference.md

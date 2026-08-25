@@ -170,8 +170,8 @@
 	<SettingItem
 		title="Desktop app"
 		description={status?.installed
-			? `Installed. Click the Karma icon to start both servers and open the dashboard.`
-			: `Adds a Karma icon to your ${placeName}. Clicking it starts the API and frontend for you, so you never need two terminals again.`}
+			? `Click the Karma icon to start both servers and open the dashboard.`
+			: `Adds a Karma icon to your ${placeName} that starts both servers for you.`}
 		hint={status?.installed && status.install_path ? status.install_path : undefined}
 	>
 		{#snippet control()}
@@ -218,7 +218,8 @@
 	{#if isMac && !autostart}
 		<SettingItem
 			title="Pin the launcher to the Dock"
-			description="Adds one Karma tile you click to start the servers. Only useful without autostart — with autostart on, pin the browser-installed Karma instead, since the servers are already running. Note: pinning briefly restarts the Dock."
+			description="Adds a Karma tile to the Dock that starts the servers."
+			hint="Only useful without autostart — and pinning briefly restarts the Dock."
 		>
 			{#snippet control()}
 				<Switch bind:checked={pinToDock} />
@@ -228,7 +229,8 @@
 
 	<SettingItem
 		title="Start Karma at login"
-		description="Brings the servers up when you log in, so the dashboard is simply always there — a browser-installed Karma window then works on its own, with no icon to click first. Costs roughly 150–350 MB of memory in the background and almost no CPU."
+		description="Starts both servers automatically when you log in."
+		hint="Uses roughly 150–350 MB of memory in the background, almost no CPU."
 		saving={busy}
 	>
 		{#snippet control()}
