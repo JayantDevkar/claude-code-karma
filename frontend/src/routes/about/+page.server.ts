@@ -13,12 +13,13 @@ interface DocsListResponse {
 	docs: DocItem[];
 }
 
-export async function load({ fetch }) {
+export async function load({ fetch, url }) {
+	const initialDoc = url.searchParams.get('doc');
 	const result = await safeFetch<DocsListResponse>(fetch, `${API_BASE}/docs/about`);
 
 	if (!result.ok) {
-		return { docs: [], error: result.message };
+		return { docs: [], error: result.message, initialDoc };
 	}
 
-	return { docs: result.data?.docs ?? [], error: null };
+	return { docs: result.data?.docs ?? [], error: null, initialDoc };
 }
