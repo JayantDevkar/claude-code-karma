@@ -272,57 +272,62 @@ class TestCorruptFile:
 
 
 class TestSchemaValidation:
-    def test_wrong_typed_value_for_unmodeled_schema_key_is_rejected(self, client, settings_path):
-        # autoCompactEnabled is a real settings.json boolean our Pydantic model
-        # doesn't type explicitly (extra="allow" lets it through raw) — the
-        # vendored jsonschema is the only thing that catches the bad type here.
+    # The vendored schema (schema/claude-code-settings.schema.json) is
+    # deliberately trimmed to only the ~12 keys in schema/watched-keys.json --
+    # the settings this Settings page actually reads or writes -- not the
+    # full ~150-property upstream schema. That's a scope decision, not a
+    # gap: validation for any *other* real settings.json key (autoCompactEnabled,
+    # hooks, etc.) that flows through via extra="allow" is intentionally not
+    # this validator's job. The tests below cover the two keys that ARE
+    # meant to be checked (an unmodeled-but-watched key, and a watched key
+    # with a nested `additionalProperties: false` fragment) and one that
+    # explicitly documents the boundary.
+
+    def test_unwatched_schema_key_is_not_validated_by_design(self, client, settings_path):
+        # autoCompactEnabled is a real settings.json boolean, but it's neither
+        # a typed Pydantic field nor one of the watched keys the vendored
+        # schema covers -- extra="allow" lets a wrong-typed value straight
+        # through with no validation. This documents the boundary, it isn't
+        # asserting desired behavior: if this ever needs closing, the fix is
+        # widening schema/watched-keys.json, not the validator itself.
         resp = client.put("/settings/", json={"autoCompactEnabled": "yes"})
+        assert resp.status_code == 200
+        on_disk = json.loads(settings_path.read_text())
+        assert on_disk["autoCompactEnabled"] == "yes"
+
+    def test_malformed_value_for_watched_key_is_rejected_by_schema_not_just_pydantic(
+        self, client, settings_path
+    ):
+        # permissions.allow is typed as Optional[List[str]] by Pydantic --
+        # any string passes that. The vendored schema's `permissionRule` $def
+        # is stricter (a real tool-permission-syntax pattern), so a string
+        # that's a perfectly valid Python str but not a valid permission rule
+        # should still be caught -- proving the jsonschema layer does real,
+        # independent work for a watched key, not just for unwatched ones.
+        resp = client.put(
+            "/settings/", json={"permissions": {"allow": ["not a valid permission rule!!!"]}}
+        )
         assert resp.status_code == 422
         assert not settings_path.exists()
 
-    def test_valid_value_for_unmodeled_schema_key_is_accepted(self, client, settings_path):
-        resp = client.put("/settings/", json={"autoCompactEnabled": True})
-        assert resp.status_code == 200
-        on_disk = json.loads(settings_path.read_text())
-        assert on_disk["autoCompactEnabled"] is True
-
     def test_typo_in_nested_strict_object_is_rejected(self, client, settings_path):
-        # `mathcer` (typo of `matcher`) inside a hook entry -- `hooks.*.hooks[]`'s
-        # schema fragment declares additionalProperties: false several levels
-        # down. Regression test: the additionalProperties filter used to be
-        # applied tree-wide, so this typo -- which would make the hook
-        # silently never fire, with zero feedback -- was written verbatim.
+        # `tpye` (typo of `type`) inside statusLine -- statusLine's schema
+        # fragment declares additionalProperties: false. Regression test: the
+        # additionalProperties filter used to be applied tree-wide, so a typo
+        # like this -- which Claude Code would just ignore, with zero
+        # feedback -- was written verbatim.
         resp = client.put(
-            "/settings/",
-            json={
-                "hooks": {
-                    "PostToolUse": [
-                        {
-                            "mathcer": "Edit",
-                            "hooks": [{"type": "command", "command": "echo hi"}],
-                        }
-                    ]
-                }
-            },
+            "/settings/", json={"statusLine": {"tpye": "command", "command": "echo hi"}}
         )
         assert resp.status_code == 422
         assert not settings_path.exists()
 
     def test_correctly_spelled_nested_strict_object_is_accepted(self, client, settings_path):
-        payload = {
-            "hooks": {
-                "PostToolUse": [
-                    {
-                        "matcher": "Edit",
-                        "hooks": [{"type": "command", "command": "echo hi"}],
-                    }
-                ]
-            }
-        }
+        payload = {"statusLine": {"type": "command", "command": "echo hi"}}
         resp = client.put("/settings/", json=payload)
         assert resp.status_code == 200
         on_disk = json.loads(settings_path.read_text())
-        assert on_disk["hooks"] == payload["hooks"]
+        assert on_disk["statusLine"] == payload["statusLine"]
 
 
 class TestDeeplyNestedPayload:

@@ -88,8 +88,13 @@ jobs:
       - name: Update vendored snapshots
         if: steps.drift.outputs.has_any_drift == 'true'
         run: |
-          cp /tmp/live-schema.normalized.json schema/claude-code-settings.schema.json
-          cp /tmp/live-reference.normalized.md schema/settings-reference.md
+          # From the *trimmed* live content the drift check wrote out, not
+          # the raw fetch -- the vendored files only cover the watched keys
+          # (schema/watched-keys.json), and copying the raw full upstream
+          # schema/reference here would silently re-inflate them back to the
+          # full ~150-property surface on the very next drift-triggered PR.
+          cp /tmp/drift-output/trimmed-live-schema.json schema/claude-code-settings.schema.json
+          cp /tmp/drift-output/trimmed-live-reference.md schema/settings-reference.md
 
       - name: Open snapshot-update PR
         if: steps.drift.outputs.has_any_drift == 'true'
