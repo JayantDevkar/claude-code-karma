@@ -988,6 +988,29 @@ class TerminalFocusResult(BaseModel):
     detail: str = Field(..., description="Human-readable detail about the attempt")
 
 
+class TerminalResumeResult(BaseModel):
+    """Result of the focus-or-resume action on a session's terminal."""
+
+    ok: bool = Field(..., description="Whether the action succeeded")
+    action: Literal["focused", "launched", "failed"] = Field(
+        ...,
+        description=(
+            "'focused' when the session was already live and its terminal was raised; "
+            "'launched' when a new terminal was opened running claude --resume"
+        ),
+    )
+    method: str = Field(..., description="Mechanism attempted (iterm-tab, terminal-window, ...)")
+    detail: str = Field(..., description="Human-readable detail about the attempt")
+
+
+class SessionResolveResult(BaseModel):
+    """Resolution of a session UUID (or UUID prefix) to its dashboard location."""
+
+    uuid: str = Field(..., description="Full session UUID")
+    project_encoded_name: str = Field(..., description="Encoded project directory name")
+    slug: Optional[str] = Field(None, description="Session slug when tracked live")
+
+
 class LiveSessionSummary(BaseModel):
     """Summary of a live session for list display."""
 

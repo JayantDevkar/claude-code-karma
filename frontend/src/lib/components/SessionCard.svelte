@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { MessageSquare, Users, Clock, Sparkles, GitBranch, Monitor, Copy } from 'lucide-svelte';
+	import { MessageSquare, Users, Clock, Sparkles, GitBranch, Monitor } from 'lucide-svelte';
+	import ResumeSessionButton from './ResumeSessionButton.svelte';
 	import type { SessionSummary, LiveSessionSummary } from '$lib/api-types';
 	import { statusConfig } from '$lib/live-session-config';
 	import {
@@ -11,8 +12,7 @@
 		modelColorConfig,
 		getSessionDisplayName,
 		sessionHasTitle,
-		getSessionDisplayPrompt,
-		copyToClipboard
+		getSessionDisplayPrompt
 	} from '$lib/utils';
 	import { getSessionUrlIdentifier } from '$lib/utils/sessionIdentifier';
 
@@ -123,19 +123,6 @@
 	const showResumeChip = $derived(
 		!liveSession || !['active', 'idle', 'starting'].includes(liveSession.status)
 	);
-	let resumeCopied = $state(false);
-	let resumeCopyTimeout: ReturnType<typeof setTimeout> | null = null;
-
-	async function handleResumeCopy(e: MouseEvent) {
-		e.preventDefault();
-		e.stopPropagation();
-		await copyToClipboard(`claude --resume ${session.uuid}`);
-		if (resumeCopyTimeout) clearTimeout(resumeCopyTimeout);
-		resumeCopied = true;
-		resumeCopyTimeout = setTimeout(() => {
-			resumeCopied = false;
-		}, 350);
-	}
 </script>
 
 <a
@@ -345,18 +332,7 @@
 			<div class="flex items-center gap-1.5 shrink-0">
 				<!-- Resume chip: only for ended sessions -->
 				{#if showResumeChip}
-					<button
-						type="button"
-						onclick={handleResumeCopy}
-						aria-label="Copy claude --resume command"
-						class="flex items-center gap-1 px-2 py-0.5 rounded-full border bg-[var(--bg-muted)] text-[var(--text-secondary)] border-[var(--border)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors cursor-pointer"
-						title="Copy: claude --resume {session.uuid}"
-					>
-						<Copy size={10} strokeWidth={2} />
-						<span class="font-mono font-medium text-[11px]">
-							{#if resumeCopied}copied!{:else}resume{/if}
-						</span>
-					</button>
+					<ResumeSessionButton sessionUuid={session.uuid} />
 				{/if}
 				{#if session.session_source === 'desktop'}
 					<div
