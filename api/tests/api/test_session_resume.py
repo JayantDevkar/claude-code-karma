@@ -226,8 +226,10 @@ def test_resume_live_session_focuses_instead(env, monkeypatch):
     monkeypatch.setattr(
         tf,
         "focus_terminal",
-        lambda terminal: focused_with.update(terminal)
-        or {"focused": True, "method": "osascript-tab", "detail": "raised"},
+        lambda terminal: (
+            focused_with.update(terminal)
+            or {"focused": True, "method": "osascript-tab", "detail": "raised"}
+        ),
     )
 
     res = client.post(f"/sessions/{UUID_A}/resume-in-terminal")
@@ -282,10 +284,10 @@ def test_resume_without_live_state_uses_jsonl_cwd(env, monkeypatch, tmp_path):
     monkeypatch.setattr(
         tl,
         "launch_resume_in_terminal",
-        lambda project_path, session_uuid, term_program=None: calls.update(
-            path=project_path, term=term_program
-        )
-        or {"launched": True, "method": "terminal-window", "detail": "opened"},
+        lambda project_path, session_uuid, term_program=None: (
+            calls.update(path=project_path, term=term_program)
+            or {"launched": True, "method": "terminal-window", "detail": "opened"}
+        ),
     )
 
     res = client.post(f"/sessions/{UUID_A}/resume-in-terminal")
