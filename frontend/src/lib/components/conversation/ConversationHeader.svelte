@@ -17,6 +17,7 @@
 	import { fade } from 'svelte/transition';
 	import PageHeader from '$lib/components/layout/PageHeader.svelte';
 	import TerminalFocusButton from '$lib/components/TerminalFocusButton.svelte';
+	import ResumeSessionButton from '$lib/components/ResumeSessionButton.svelte';
 	import type {
 		ConversationEntity,
 		LiveSessionSummary,
@@ -246,7 +247,7 @@
 	let typeIcon = $derived(isSubagentSession(entity) ? getTypeIcon(effectiveSubagentType) : null);
 
 	// Copy action state for session ID actions
-	type CopyTarget = 'uuid' | 'resume';
+	type CopyTarget = 'uuid';
 	let copiedTarget = $state<CopyTarget | null>(null);
 	let copyTimeout: ReturnType<typeof setTimeout> | null = null;
 
@@ -261,6 +262,14 @@
 
 	// UUID is only present on main sessions (SessionDetail), not subagents.
 	let mainSessionUuid = $derived(isSubagentSession(entity) ? null : entity.uuid);
+
+	// Resume button: mirrors SessionCard's showResumeChip — hide it while the
+	// session is actively running (the focus button above already covers
+	// that terminal) and show it once it's waiting/stopped/stale/ended, or
+	// when the session was never tracked live at all.
+	let showResume = $derived(
+		!liveStatus || !['active', 'idle', 'starting'].includes(liveStatus.status)
+	);
 </script>
 
 <!-- Agent Session Header with colored background -->
@@ -494,22 +503,10 @@
 								<span>{mainSessionUuid.slice(0, 8)}</span>
 							{/if}
 						</button>
-						<!-- Copy resume command -->
-						<button
-							type="button"
-							onclick={() =>
-								handleCopy('resume', `claude --resume ${mainSessionUuid}`)}
-							aria-label="Copy claude --resume command"
-							class="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-muted)] border border-transparent hover:border-[var(--border)] transition-colors"
-							title="Copy: claude --resume {mainSessionUuid}"
-						>
-							<Terminal size={11} strokeWidth={2} />
-							{#if copiedTarget === 'resume'}
-								<span>copied!</span>
-							{:else}
-								<span>resume</span>
-							{/if}
-						</button>
+						{#if showResume}
+							<!-- Resume: focuses the terminal if still live, else opens a new one -->
+							<ResumeSessionButton sessionUuid={mainSessionUuid} />
+						{/if}
 					{/if}
 				</div>
 			{/snippet}

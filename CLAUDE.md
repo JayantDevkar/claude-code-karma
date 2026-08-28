@@ -154,6 +154,8 @@ Project (entry point)
 | GET | `/projects` | List all projects |
 | GET | `/projects/{encoded_name}` | Project details with sessions |
 | GET | `/sessions/{uuid}` | Session details |
+| GET | `/sessions/resolve/{short_id}` | Resolve a UUID or UUID prefix to its project (powers `/s/` short links) |
+| POST | `/sessions/{uuid}/resume-in-terminal` | Focus the session's terminal if live, else open a terminal running `claude --resume` (localhost-only) |
 | GET | `/sessions/{uuid}/timeline` | Event timeline |
 | GET | `/sessions/{uuid}/tools` | Tool usage |
 | GET | `/sessions/{uuid}/file-activity` | File operations |
@@ -183,6 +185,7 @@ Project (entry point)
 | `/plugins` | Plugins browser |
 | `/tools` | Tools browser |
 | `/sessions` | Global sessions browser |
+| `/s/[short_id]` | Short session link → redirects to the session's project page (statusline / `scripts/karma`) |
 | `/archived` | Archived sessions |
 | `/about` | About page |
 | `/settings` | User settings |

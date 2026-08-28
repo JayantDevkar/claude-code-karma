@@ -449,6 +449,35 @@ Once the tracker hook is installed, live sessions show a `>_` button (session pa
 
 Sessions started before this feature gain the button automatically after their next activity (the hook backfills terminal identity on any event). Details: [docs/feature/open-terminal/spec.md](./docs/feature/open-terminal/spec.md).
 
+### Karma Link in Your Status Line (optional)
+
+Every session also gets a short link back to its Karma page: `http://localhost:5180/s/<8-char-id>`, which opens straight to that session's timeline. The link itself (`karma <short-id>`, or pasting the URL) needs only Tier 1 — it just reads Claude Code's own session files. Auto-detecting *which* session you're currently in needs Tier 2's live tracking, since that's what records which terminal each session runs in:
+
+- **From any terminal:** `scripts/karma` opens a specific session with `karma <short-id>` (Tier 1 is enough), or auto-detects the session on your current tty with plain `karma` (needs Tier 2). Symlink it onto your PATH once: `ln -s "$(pwd)/scripts/karma" /usr/local/bin/karma`.
+- **Always visible, in your status line:** unlike the hooks above, Karma does **not** touch your `statusLine` for you — it's a personal, global Claude Code setting shared across every project, so only you should decide what goes into it. [`scripts/example-karma-statusline.py`](./scripts/example-karma-statusline.py) is a copy-from reference, not an installer:
+
+  - No status line yet? Point `statusLine.command` straight at it:
+
+    ```json
+    {
+      "statusLine": {
+        "type": "command",
+        "command": "python3 /path/to/claude-code-karma/scripts/example-karma-statusline.py"
+      }
+    }
+    ```
+
+  - Already have a custom status line script? Copy the `karma_segment()` function into it instead of overwriting what you have.
+
+The link looks different depending on your terminal:
+
+| Terminal | What you see |
+|----------|--------------|
+| iTerm2, WezTerm, Kitty, Ghostty | A real clickable link — "see this in karma?", url hidden underneath it (Cmd+click) |
+| Apple Terminal.app | The label plus the plain url, both visible — a plain click does nothing here; try Cmd+double-click or right-click the url and choose "Open URL" (Terminal.app has never implemented OSC 8, the standard that lets a label hide a different url; no setting fixes this) |
+
+**Prerequisite:** the link only opens something if Karma is reachable when you click it — either the dev servers are running, or the desktop app's autostart-at-login is on. Neither running means a blank page or browser error, not a bug.
+
 ---
 
 ## Desktop App (macOS & Windows, Recommended)
