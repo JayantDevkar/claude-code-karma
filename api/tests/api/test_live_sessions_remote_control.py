@@ -518,8 +518,10 @@ def test_disable_opens_menu_and_raises_terminal(client, monkeypatch):
     monkeypatch.setattr(
         live_sessions,
         "focus_terminal",
-        lambda _t: focus_called.update(n=focus_called["n"] + 1)
-        or {"focused": True, "method": "osascript-tab", "detail": "raised"},
+        lambda _t: (
+            focus_called.update(n=focus_called["n"] + 1)
+            or {"focused": True, "method": "osascript-tab", "detail": "raised"}
+        ),
     )
     _write_session(
         client.live_dir, "s", {"term_program": "Apple_Terminal", "tty": "/dev/t9", "pid": 1}
