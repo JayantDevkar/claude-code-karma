@@ -972,11 +972,15 @@ class TerminalInfo(BaseModel):
     tmux: bool = Field(False, description="Whether the session runs inside tmux")
     tmux_pane: Optional[str] = Field(None, description="tmux pane id (TMUX_PANE)")
     term_program: Optional[str] = Field(None, description="Terminal app (TERM_PROGRAM)")
-    term_session_id: Optional[str] = Field(None, description="Terminal session id (TERM_SESSION_ID)")
+    term_session_id: Optional[str] = Field(
+        None, description="Terminal session id (TERM_SESSION_ID)"
+    )
     window_id: Optional[str] = Field(None, description="X11 window id (WINDOWID)")
     pid: Optional[int] = Field(None, description="claude PID (tty lookup for exact-tab focus)")
     tty: Optional[str] = Field(None, description="Controlling tty captured while alive")
-    iterm_session_id: Optional[str] = Field(None, description="iTerm2 session id (ITERM_SESSION_ID)")
+    iterm_session_id: Optional[str] = Field(
+        None, description="iTerm2 session id (ITERM_SESSION_ID)"
+    )
     bundle_id: Optional[str] = Field(None, description="macOS app bundle id (__CFBundleIdentifier)")
 
 
@@ -986,6 +990,40 @@ class TerminalFocusResult(BaseModel):
     focused: bool = Field(..., description="Whether the terminal was successfully raised")
     method: str = Field(..., description="Focus method attempted (tmux, osascript, xdotool, ...)")
     detail: str = Field(..., description="Human-readable detail about the attempt")
+
+
+class RemoteControlState(BaseModel):
+    """Current Remote Control state for a session, read from its transcript."""
+
+    state: Literal["on", "off", "unknown"] = Field(
+        "unknown",
+        description="on = Remote Control active, off = not active, unknown = unparseable",
+    )
+    url: Optional[str] = Field(
+        None, description="claude.ai/code URL to reach the session (when RC is on)"
+    )
+    at: Optional[str] = Field(None, description="Timestamp of the bridge_status line this reflects")
+
+
+class RemoteControlToggleRequest(BaseModel):
+    """Body for POST /live-sessions/{id}/remote-control."""
+
+    desired: Literal["on", "off"] = Field(..., description="Target Remote Control state")
+
+
+class RemoteControlToggleResult(BaseModel):
+    """Result of typing /remote-control into a session's terminal."""
+
+    sent: bool = Field(..., description="Whether the /remote-control keystroke was delivered")
+    method: str = Field(..., description="Delivery method (tmux, osascript-tab, none)")
+    detail: str = Field(..., description="Human-readable detail about the attempt")
+    confirmed: bool = Field(
+        False, description="Whether the transcript confirmed the session reached `state`"
+    )
+    state: Literal["on", "off", "unknown"] = Field(
+        "unknown", description="Remote Control state read back after the attempt"
+    )
+    url: Optional[str] = Field(None, description="claude.ai/code URL (when RC is on)")
 
 
 class LiveSessionSummary(BaseModel):
@@ -1049,6 +1087,15 @@ class LiveSessionSummary(BaseModel):
     can_focus_terminal: bool = Field(
         False,
         description="Whether the server can attempt to raise this session's terminal window",
+    )
+
+    # Remote Control toggle (session-page only; None on list endpoints for perf)
+    remote_control: Optional[RemoteControlState] = Field(
+        None, description="Current Remote Control state, read from the session transcript"
+    )
+    can_remote_control: bool = Field(
+        False,
+        description="Whether the server can type /remote-control into this session's terminal",
     )
 
 

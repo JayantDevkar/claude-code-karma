@@ -478,12 +478,7 @@ export interface StatItem {
 // Claude Code Settings (~/.claude/settings.json)
 // ============================================
 
-export type PermissionMode =
-	| 'default'
-	| 'acceptEdits'
-	| 'plan'
-	| 'bypassPermissions'
-	| 'dontAsk';
+export type PermissionMode = 'default' | 'acceptEdits' | 'plan' | 'bypassPermissions' | 'dontAsk';
 
 export interface PermissionsConfig {
 	allow?: string[];
@@ -649,6 +644,29 @@ export interface LiveSessionSummary {
 	// Terminal focus ("open terminal" button)
 	terminal?: TerminalInfo | null;
 	can_focus_terminal?: boolean;
+	// Remote Control toggle (session-page only; null on list endpoints)
+	remote_control?: RemoteControlState | null;
+	can_remote_control?: boolean;
+}
+
+/** Current Remote Control state for a session, read from its transcript. */
+export interface RemoteControlState {
+	/** on = RC active, off = not active, unknown = could not parse the transcript. */
+	state: 'on' | 'off' | 'unknown';
+	/** claude.ai/code URL to reach the session (when RC is on). */
+	url: string | null;
+	/** Timestamp of the bridge_status line this reflects. */
+	at: string | null;
+}
+
+/** Result of typing /remote-control into a session's terminal. */
+export interface RemoteControlToggleResult {
+	sent: boolean;
+	method: string;
+	detail: string;
+	confirmed: boolean;
+	state: 'on' | 'off' | 'unknown';
+	url: string | null;
 }
 
 /** Terminal/pane identity captured for a live session (for window focus). */
@@ -1909,11 +1927,7 @@ export interface ShellsProjectRollupResponse {
 // ============================================
 
 export type CronDeletionReason = 'CronDelete' | 'session_end' | 'expiry' | 'unknown';
-export type CronStateTriggerEvent =
-	| 'CronCreate'
-	| 'CronDelete'
-	| 'CronList'
-	| 'session_start';
+export type CronStateTriggerEvent = 'CronCreate' | 'CronDelete' | 'CronList' | 'session_start';
 export type CronFireInferenceSource = 'jsonl' | 'hook';
 
 /** A scheduled cron job created via CronCreate. */

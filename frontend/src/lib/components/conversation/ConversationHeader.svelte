@@ -17,6 +17,7 @@
 	import { fade } from 'svelte/transition';
 	import PageHeader from '$lib/components/layout/PageHeader.svelte';
 	import TerminalFocusButton from '$lib/components/TerminalFocusButton.svelte';
+	import RemoteControlToggle from '$lib/components/RemoteControlToggle.svelte';
 	import type {
 		ConversationEntity,
 		LiveSessionSummary,
@@ -378,6 +379,17 @@
 			{#snippet badges()}
 				<!-- Badges Container - keeps slug and compaction badges side by side -->
 				<div class="flex items-center gap-2 flex-wrap">
+					<!-- Live-sync spinner — ambient "this view is updating" signal, kept
+					     beside the title rather than crowding the action row. -->
+					{#if showRefreshIndicator}
+						<span
+							class="inline-flex items-center justify-center p-1 rounded-full bg-[var(--info)]/10 text-[var(--info)]"
+							title="Syncing live session data…"
+							transition:fade={{ duration: 200 }}
+						>
+							<RefreshCw size={14} strokeWidth={2.5} class="animate-spin" />
+						</span>
+					{/if}
 					<!-- Slug Badge (show slug when title is displayed as header) -->
 					{#if hasSessionTitle && entity.slug}
 						<div
@@ -441,20 +453,6 @@
 			{/snippet}
 			{#snippet headerRight()}
 				<div class="flex items-center gap-2">
-					{#if showRefreshIndicator}
-						<div
-							class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[var(--info)]/10 border border-[var(--info)]/30"
-							title="Syncing live data..."
-							transition:fade={{ duration: 200 }}
-						>
-							<RefreshCw
-								size={12}
-								strokeWidth={2.5}
-								class="text-[var(--info)] animate-spin"
-							/>
-							<span class="text-xs font-medium text-[var(--info)]"> Syncing </span>
-						</div>
-					{/if}
 					{#if liveStatus && liveStatus.status !== 'ended'}
 						{@const config = statusConfig[liveStatus.status]}
 						<div
@@ -478,7 +476,20 @@
 						<!-- Open (focus) the terminal window running this live session -->
 						<TerminalFocusButton sessionId={liveStatus.session_id} variant="label" />
 					{/if}
+					{#if liveStatus && liveStatus.status !== 'ended' && liveStatus.can_remote_control}
+						<!-- Toggle Claude Code Remote Control (reach this session from a phone) -->
+						<RemoteControlToggle
+							sessionId={liveStatus.session_id}
+							remoteControl={liveStatus.remote_control}
+							sessionStatus={liveStatus.status}
+						/>
+					{/if}
 					{#if mainSessionUuid}
+						<!-- Divider between live-session actions and copy utilities. -->
+						{#if liveStatus && liveStatus.status !== 'ended' && (liveStatus.can_focus_terminal || liveStatus.can_remote_control)}
+							<span class="w-px h-4 self-center bg-[var(--border)]" aria-hidden="true"
+							></span>
+						{/if}
 						<!-- Copy session ID -->
 						<button
 							type="button"
@@ -494,22 +505,25 @@
 								<span>{mainSessionUuid.slice(0, 8)}</span>
 							{/if}
 						</button>
-						<!-- Copy resume command -->
-						<button
-							type="button"
-							onclick={() =>
-								handleCopy('resume', `claude --resume ${mainSessionUuid}`)}
-							aria-label="Copy claude --resume command"
-							class="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-muted)] border border-transparent hover:border-[var(--border)] transition-colors"
-							title="Copy: claude --resume {mainSessionUuid}"
-						>
-							<Terminal size={11} strokeWidth={2} />
-							{#if copiedTarget === 'resume'}
-								<span>copied!</span>
-							{:else}
-								<span>resume</span>
-							{/if}
-						</button>
+						<!-- Copy resume command — only useful once the session has ended;
+						     while it's live you'd just go to its terminal. -->
+						{#if !liveStatus || liveStatus.status === 'ended'}
+							<button
+								type="button"
+								onclick={() =>
+									handleCopy('resume', `claude --resume ${mainSessionUuid}`)}
+								aria-label="Copy claude --resume command"
+								class="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-muted)] border border-transparent hover:border-[var(--border)] transition-colors"
+								title="Copy: claude --resume {mainSessionUuid}"
+							>
+								<Terminal size={11} strokeWidth={2} />
+								{#if copiedTarget === 'resume'}
+									<span>copied!</span>
+								{:else}
+									<span>resume</span>
+								{/if}
+							</button>
+						{/if}
 					{/if}
 				</div>
 			{/snippet}
