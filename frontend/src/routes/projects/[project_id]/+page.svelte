@@ -25,7 +25,7 @@
 		LayoutGrid,
 		List,
 		Brain,
-		Milestone
+		Workflow
 	} from 'lucide-svelte';
 	import { isToday, isYesterday, isThisWeek, isThisMonth } from 'date-fns';
 	import TabsTrigger from '$lib/components/ui/TabsTrigger.svelte';
@@ -41,7 +41,6 @@
 	import SkillList from '$lib/components/skills/SkillList.svelte';
 	import ToolList from '$lib/components/tools/ToolList.svelte';
 	import MemoryViewer from '$lib/components/memory/MemoryViewer.svelte';
-	import DecisionLedger from '$lib/components/decisions/DecisionLedger.svelte';
 	import StatsGrid from '$lib/components/StatsGrid.svelte';
 	import ActiveBranches from '$lib/components/ActiveBranches.svelte';
 	import Pagination from '$lib/components/Pagination.svelte';
@@ -317,7 +316,6 @@
 		'skills',
 		'tools',
 		'memory',
-		'decisions',
 		'tickets',
 		'archived'
 	];
@@ -464,14 +462,18 @@
 		const savedScroll = sessionStorage.getItem(scrollKey);
 		if (savedScroll !== null) {
 			sessionStorage.removeItem(scrollKey);
-			requestAnimationFrame(() => window.scrollTo({ top: Number(savedScroll), behavior: 'instant' }));
+			requestAnimationFrame(() =>
+				window.scrollTo({ top: Number(savedScroll), behavior: 'instant' })
+			);
 		}
 
 		const savedId = sessionStorage.getItem(lastKey);
 		if (savedId) {
 			sessionStorage.removeItem(lastKey);
 			lastOpenedSessionId = savedId;
-			setTimeout(() => { lastOpenedSessionId = null; }, 2000);
+			setTimeout(() => {
+				lastOpenedSessionId = null;
+			}, 2000);
 		}
 
 		return () => window.removeEventListener('popstate', handlePopState);
@@ -1076,7 +1078,17 @@
 				{ label: project.display_name }
 			]}
 			subtitle={project.path}
-		/>
+		>
+			{#snippet badges()}
+				<a
+					href={`/projects/${project.encoded_name}/workflow`}
+					class="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--bg-base)] px-2.5 py-1.5 text-xs font-medium text-[var(--text-secondary)] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)]"
+				>
+					<Workflow size={14} strokeWidth={2} />
+					View your workflow
+				</a>
+			{/snippet}
+		</PageHeader>
 
 		<!-- Tab Navigation using Bits UI -->
 		{#if tabsReady}
@@ -1089,7 +1101,6 @@
 					<TabsTrigger value="skills" icon={Wrench}>Project Skills</TabsTrigger>
 					<TabsTrigger value="tools" icon={Cable}>Project Tools</TabsTrigger>
 					<TabsTrigger value="memory" icon={Brain}>Project Memory</TabsTrigger>
-					<TabsTrigger value="decisions" icon={Milestone}>Decisions</TabsTrigger>
 					<TabsTrigger value="tickets" icon={TicketIcon}>Tickets</TabsTrigger>
 					<TabsTrigger value="analytics" icon={BarChart3}>Analytics</TabsTrigger>
 					{#if archived.total_sessions > 0}
@@ -1321,7 +1332,10 @@
 											showBranch={selectedBranchFilters.size === 0}
 											compact={viewMode === 'grid'}
 											{liveSession}
-											highlighted={getSessionUrlIdentifier(session, liveSession) === lastOpenedSessionId}
+											highlighted={getSessionUrlIdentifier(
+												session,
+												liveSession
+											) === lastOpenedSessionId}
 										/>
 									{/each}
 								</div>
@@ -1358,10 +1372,11 @@
 															projectEncodedName={project.encoded_name}
 															showBranch={selectedBranchFilters.size ===
 																0}
-															liveSession={getLiveSession(
-																session
-															)}
-															highlighted={getSessionUrlIdentifier(session, getLiveSession(session)) === lastOpenedSessionId}
+															liveSession={getLiveSession(session)}
+															highlighted={getSessionUrlIdentifier(
+																session,
+																getLiveSession(session)
+															) === lastOpenedSessionId}
 														/>
 													{/each}
 												</div>
@@ -1396,10 +1411,11 @@
 															showBranch={selectedBranchFilters.size ===
 																0}
 															compact
-															liveSession={getLiveSession(
-																session
-															)}
-															highlighted={getSessionUrlIdentifier(session, getLiveSession(session)) === lastOpenedSessionId}
+															liveSession={getLiveSession(session)}
+															highlighted={getSessionUrlIdentifier(
+																session,
+																getLiveSession(session)
+															) === lastOpenedSessionId}
 														/>
 													{/each}
 												</div>
@@ -1598,7 +1614,11 @@
 
 									<div class="pt-4 border-t border-[var(--border)] space-y-2">
 										<div class="flex justify-between items-center text-xs">
-											<span class="text-[var(--text-muted)]" title="Pay-as-you-go API rate — not your subscription cost">Est. Cost ⓘ</span>
+											<span
+												class="text-[var(--text-muted)]"
+												title="Pay-as-you-go API rate — not your subscription cost"
+												>Est. Cost ⓘ</span
+											>
 											<span class="font-mono text-[var(--text-primary)]"
 												>${analytics.estimated_cost_usd}</span
 											>
@@ -1740,11 +1760,6 @@
 				<!-- Memory Tab -->
 				<Tabs.Content value="memory" class="animate-fade-in">
 					<MemoryViewer projectEncodedName={project.encoded_name} />
-				</Tabs.Content>
-
-				<!-- Decisions Tab -->
-				<Tabs.Content value="decisions" class="animate-fade-in">
-					<DecisionLedger projectEncodedName={project.encoded_name} />
 				</Tabs.Content>
 
 				<!-- Tickets Tab (Q9a A — full Tickets tab) -->

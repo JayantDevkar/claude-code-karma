@@ -27,7 +27,6 @@ from routers import (  # noqa: E402
     background_shells,
     commands,
     cron,
-    decisions,
     desktop_app,
     docs,
     history,
@@ -43,6 +42,7 @@ from routers import (  # noqa: E402
     system_cron,
     tickets,
     tools,
+    workflow,
 )
 from routers import settings as settings_router  # noqa: E402
 
@@ -201,7 +201,7 @@ app.include_router(cron.router)
 app.include_router(memory.router)
 app.include_router(desktop_app.router)
 app.include_router(system_cron.router)  # ADDITIVE: Linux crontab view at /cron/system
-app.include_router(decisions.router)  # decision ledger at /projects/{encoded}/decisions
+app.include_router(workflow.router)  # decision workflow at /projects/{encoded}/workflow
 
 
 @app.get("/")

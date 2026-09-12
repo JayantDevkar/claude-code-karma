@@ -1,0 +1,483 @@
+{
+	"project": "-Users-ayushj-My-Github-claude-code-karma",
+	"period": "2026-08",
+	"curated_by": "hand-curated first draft (Claude + Ayush, 2026-08-27, reshaped into threads 2026-09-01)",
+	"model": "Each thread is one topic. root = a tier-1 node (feature/milestone/scope/design). nodes = tier-2 events (process/reversal/review), each pointing at a parent in the same thread; a tier-2 event may carry tier-3 sub-nodes (waiver/correction). tier + label (e.g. 'Review 3.1') are derived by the API.",
+	"threads": [
+		{
+			"id": "t-search-highlight",
+			"title": "Timeline search-result highlighting",
+			"root": {
+				"id": "n-0807-highlight",
+				"kind": "feature",
+				"date": "2026-08-07T12:32:00Z",
+				"parent": null,
+				"session_id": "f9d17223-08fe-44f9-b579-e2ce907ad094",
+				"session_title": "Add search result highlighting across timeline views",
+				"decided_by": "human",
+				"status": "active",
+				"title": "Build timeline search-result highlighting, locally first",
+				"intent": "Searching a session's timeline found matches, but opening a result never highlighted the matched keyword — forcing a manual re-scan through walls of text.",
+				"chosen": "Wire the search query into every render path that can show a result, developed on a local branch and human-tested before any commit.",
+				"why_quoted": "yes create a branch and do it locally. i will test it first",
+				"evidence": [
+					{ "type": "pr", "label": "PR #96", "url": "https://github.com/JayantDevkar/claude-code-karma/pull/96" },
+					{ "type": "session", "label": "Session · Aug 7", "session_id": "f9d17223-08fe-44f9-b579-e2ce907ad094" }
+				]
+			},
+			"nodes": [
+				{
+					"id": "n-0807-subtle-tab",
+					"kind": "process",
+					"date": "2026-08-07T12:38:00Z",
+					"parent": "n-0807-highlight",
+					"session_id": "f9d17223-08fe-44f9-b579-e2ce907ad094",
+					"session_title": "Add search result highlighting across timeline views",
+					"decided_by": "human",
+					"status": "active",
+					"title": "Design call: mark tabs holding hidden matches, subtly",
+					"intent": "A matched keyword could sit inside a collapsed tab's body, invisible from the tab strip; the user couldn't tell which tab held the hit.",
+					"chosen": "Add a subtle indicator on tabs whose hidden content contains the search term, rather than auto-expanding or loudly badging them.",
+					"why_quoted": "i cna't know that this tab has the seached keyword right? help me highight the tab … very subtle.",
+					"evidence": [
+						{ "type": "session", "label": "Session · Aug 7", "session_id": "f9d17223-08fe-44f9-b579-e2ce907ad094" }
+					]
+				},
+				{
+					"id": "n-0807-scope",
+					"kind": "process",
+					"date": "2026-08-07T13:02:00Z",
+					"parent": "n-0807-highlight",
+					"session_id": "f9d17223-08fe-44f9-b579-e2ce907ad094",
+					"session_title": "Add search result highlighting across timeline views",
+					"decided_by": "human",
+					"status": "active",
+					"title": "Scope call: widen the searchable surface to agent prompts and Write results",
+					"intent": "Asked for the blast radius of making agent prompts, Write tool results — everything — searchable, then chose the full scope.",
+					"options": ["Keep search limited to existing surfaces", "Make agent prompts + tool results searchable too"],
+					"chosen": "Full scope: agent prompts and Write tool results become searchable, with the same inline mark highlighting applied.",
+					"why_quoted": "yes do all of these on this branch. i will test them locally.",
+					"evidence": [
+						{ "type": "session", "label": "Session · Aug 7", "session_id": "f9d17223-08fe-44f9-b579-e2ce907ad094" }
+					]
+				},
+				{
+					"id": "n-0807-review1",
+					"kind": "review",
+					"date": "2026-08-07T13:54:00Z",
+					"parent": "n-0807-highlight",
+					"session_id": "f9d17223-08fe-44f9-b579-e2ce907ad094",
+					"session_title": "Add search result highlighting across timeline views",
+					"decided_by": "human",
+					"status": "superseded",
+					"title": "Adopt blind review by a separate agent before committing",
+					"intent": "Rather than trusting the implementing agent's own claims, have an independent Opus 5 session review the whole branch with deliberately limited context.",
+					"chosen": "Blind review as a standing quality gate: separate agent, fresh eyes, verdict reported back before commit.",
+					"why_quoted": "opus is good at reviewing give enough context but do not share everything, it needs to be a blind review.",
+					"evidence": [
+						{ "type": "session", "label": "Session · Aug 7", "session_id": "f9d17223-08fe-44f9-b579-e2ce907ad094" }
+					]
+				},
+				{
+					"id": "n-0807-triage",
+					"kind": "process",
+					"date": "2026-08-07T14:18:00Z",
+					"parent": "n-0807-review1",
+					"session_id": "f9d17223-08fe-44f9-b579-e2ce907ad094",
+					"session_title": "Add search result highlighting across timeline views",
+					"decided_by": "human",
+					"status": "active",
+					"title": "Triage the review findings: fix 1–3 now, defer the rest",
+					"intent": "The blind review returned a ranked findings list; not everything needed fixing before shipping.",
+					"chosen": "Address the top three findings immediately, leave the remainder for a later session.",
+					"why_quoted": "let's start with fixing 1,2 and 3.",
+					"evidence": [
+						{ "type": "session", "label": "Session · Aug 7", "session_id": "f9d17223-08fe-44f9-b579-e2ce907ad094" }
+					]
+				},
+				{
+					"id": "n-0813-resume",
+					"kind": "process",
+					"date": "2026-08-13T03:58:00Z",
+					"parent": "n-0807-highlight",
+					"session_id": "9a13fbfc-b160-49a2-99bf-f069924980ac",
+					"session_title": "Review previous work and continue from checkpoint",
+					"decided_by": "human",
+					"status": "active",
+					"title": "Resume the branch at deferred findings #6 and #10",
+					"intent": "Picking the branch back up three days later: where to restart?",
+					"options": ["Fix #6 and #10", "Fix #6, #10, plus remaining Medium items", "Just test what's already there first", "Something else"],
+					"chosen": "Fix #6 and #10 first (the structured question's recommended path), then re-review.",
+					"why_inferred": "Continuation of the Aug 7 triage — finish the deferred findings before shipping.",
+					"evidence": [
+						{ "type": "session", "label": "Session · Aug 13", "session_id": "9a13fbfc-b160-49a2-99bf-f069924980ac" }
+					]
+				},
+				{
+					"id": "n-0813-review2",
+					"kind": "review",
+					"date": "2026-08-13T04:09:00Z",
+					"parent": "n-0807-highlight",
+					"session_id": "9a13fbfc-b160-49a2-99bf-f069924980ac",
+					"session_title": "Review previous work and continue from checkpoint",
+					"decided_by": "human",
+					"status": "active",
+					"title": "Second blind review — cheaper this time",
+					"intent": "Another independent review of the whole branch, but with an explicit token budget: a plain subagent, no skills, prompt written fresh.",
+					"chosen": "Lightweight blind review; all its findings fixed in one pass before the PR.",
+					"why_quoted": "launcha subagent do not use any skills. you write the prompt yourself. … do not waste a lot of tokens",
+					"evidence": [
+						{ "type": "session", "label": "Session · Aug 13", "session_id": "9a13fbfc-b160-49a2-99bf-f069924980ac" }
+					]
+				},
+				{
+					"id": "n-0813-skip-review3",
+					"kind": "reversal",
+					"date": "2026-08-13T04:31:00Z",
+					"parent": "n-0807-review1",
+					"session_id": "9a13fbfc-b160-49a2-99bf-f069924980ac",
+					"session_title": "Review previous work and continue from checkpoint",
+					"decided_by": "human",
+					"status": "active",
+					"title": "Skip a third blind review — two is enough",
+					"intent": "The review-everything habit was burning tokens; a third pass over an already twice-reviewed branch had thin expected value.",
+					"options": ["Run a third blind review", "Ship with two reviews"],
+					"chosen": "Two reviews are enough. The blind-review gate stays, but not repeated per iteration.",
+					"why_quoted": "can we run another blind review? is ti necessary? it's just suing too many tokens man",
+					"supersedes": "n-0807-review1",
+					"evidence": [
+						{ "type": "session", "label": "Session · Aug 13", "session_id": "9a13fbfc-b160-49a2-99bf-f069924980ac" }
+					]
+				},
+				{
+					"id": "n-0813-ship96",
+					"kind": "process",
+					"date": "2026-08-13T04:30:00Z",
+					"parent": "n-0807-highlight",
+					"session_id": "9a13fbfc-b160-49a2-99bf-f069924980ac",
+					"session_title": "Review previous work and continue from checkpoint",
+					"decided_by": "human",
+					"status": "active",
+					"title": "Shipped as PR #96",
+					"intent": "Branch reviewed twice, findings fixed — ready to leave localhost.",
+					"chosen": "Commit and open PR #96: highlighting wired across timeline cards, modal, and tool details.",
+					"why_quoted": "can you please push all the changes and create a PR out of this brnach?",
+					"evidence": [
+						{ "type": "commit", "label": "ea36f0e — wire search-result highlighting" },
+						{ "type": "pr", "label": "PR #96", "url": "https://github.com/JayantDevkar/claude-code-karma/pull/96" }
+					]
+				},
+				{
+					"id": "n-0813-ext-review",
+					"kind": "review",
+					"date": "2026-08-13T15:16:00Z",
+					"parent": "n-0813-ship96",
+					"session_id": "8e7ead3c-d513-485a-a508-2c0620dc1d66",
+					"session_title": "Fix Wire timeline search result highlighting across UI components",
+					"decided_by": "human",
+					"status": "active",
+					"title": "Accept the external reviewer's findings on PR #96 wholesale",
+					"intent": "A friend's review agent requested changes on PR #96 — many of them. Accept, contest, or triage?",
+					"chosen": "Fix every finding one by one, resolve all review threads, and merge the same day.",
+					"why_quoted": "fix all the problems the agen tfound. one by one. verify your work",
+					"evidence": [
+						{ "type": "pr", "label": "PR #96 (merged Aug 13)", "url": "https://github.com/JayantDevkar/claude-code-karma/pull/96" },
+						{ "type": "session", "label": "Session · Aug 13", "session_id": "8e7ead3c-d513-485a-a508-2c0620dc1d66" }
+					]
+				},
+				{
+					"id": "n-0813-ext-correction",
+					"kind": "correction",
+					"date": "2026-08-13T16:40:00Z",
+					"parent": "n-0813-ext-review",
+					"session_id": "8e7ead3c-d513-485a-a508-2c0620dc1d66",
+					"session_title": "Fix Wire timeline search result highlighting across UI components",
+					"decided_by": "both",
+					"status": "active",
+					"title": "Two review findings were real bugs — fixed",
+					"intent": "Most of the external findings were polish, but two were genuine defects hiding in the shipped branch.",
+					"chosen": "Fixed the hidden-match indicator misfiring and the permanently stale search cache before merge.",
+					"why_inferred": "The reviewer surfaced them; verification confirmed both reproduced, so they were corrected rather than waived.",
+					"evidence": [
+						{ "type": "commit", "label": "address PR #96 review — hidden-match dot, stale cache" }
+					]
+				}
+			]
+		},
+		{
+			"id": "t-vite-timeout",
+			"title": "Vite transport timeout",
+			"root": {
+				"id": "n-0810-vite",
+				"kind": "scope",
+				"date": "2026-08-10T13:16:00Z",
+				"parent": null,
+				"session_id": "d5904767-cf9c-4dcf-aadf-2aaf020d2995",
+				"session_title": "Identify error from image",
+				"decided_by": "both",
+				"status": "active",
+				"title": "Vite transport timeout is out of scope — upstream bug, don't patch",
+				"intent": "\"transport invoke timed out after 60000ms\" errors looked like a Karma bug; investigation traced them to an unfixed upstream Vite issue (vitejs/vite#23131).",
+				"options": ["Patch around it inside Karma", "Document the workaround ladder and wait for the upstream fix"],
+				"chosen": "No code change. The issue is upstream and outside Karma's scope to fix.",
+				"why_quoted": "is thee a long term fix? … yes save to memory",
+				"evidence": [
+					{ "type": "session", "label": "Session · Aug 10", "session_id": "d5904767-cf9c-4dcf-aadf-2aaf020d2995" }
+				]
+			},
+			"nodes": [
+				{
+					"id": "n-0810-vite-doc",
+					"kind": "process",
+					"date": "2026-08-10T13:20:00Z",
+					"parent": "n-0810-vite",
+					"session_id": "d5904767-cf9c-4dcf-aadf-2aaf020d2995",
+					"session_title": "Identify error from image",
+					"decided_by": "human",
+					"status": "active",
+					"title": "Save the workaround ladder to project memory instead of code",
+					"intent": "The fix belongs upstream, but the team still needs a reliable recovery path when the timeout hits mid-session.",
+					"chosen": "Record the ladder — touch file → restart by port → wait for vite#23132 — in project memory.",
+					"why_inferred": "Keeps the operational knowledge without adding a workaround to the codebase that would have to be removed later.",
+					"evidence": [
+						{ "type": "memory", "label": "memory: vite transport timeout bug" }
+					]
+				}
+			]
+		},
+		{
+			"id": "t-settings-v2",
+			"title": "Settings page v2",
+			"root": {
+				"id": "n-0825-scope",
+				"kind": "scope",
+				"date": "2026-08-25T07:43:00Z",
+				"parent": null,
+				"session_id": "ef8610f6-b4cd-4896-adf8-b5da3fd08a13",
+				"session_title": "Settings page v2 implementation",
+				"decided_by": "human",
+				"status": "active",
+				"title": "Three scope calls locked in before Settings v2 coding started",
+				"intent": "The agent surfaced three open questions from the plan doc before writing any code — Aviator-style intent capture, performed naturally.",
+				"options": [
+					"Model field suggestions: aliases only vs aliases + full model IDs",
+					"Write-safety: single rolling backup vs timestamped history",
+					"Drift monitor: schema + docs only vs also watching CHANGELOG.md"
+				],
+				"chosen": "Aliases only · single rolling backup (settings.json.karma-bak) · schema + docs only. All three recommended options, all three verifiable in the shipped code.",
+				"why_inferred": "Keep v2 minimal and reversible; each rejected option adds surface area without proven need.",
+				"evidence": [
+					{ "type": "code", "label": "settings.py — rolling .karma-bak backup" },
+					{ "type": "pr", "label": "PR #99", "url": "https://github.com/JayantDevkar/claude-code-karma/pull/99" },
+					{ "type": "session", "label": "Session · Aug 25", "session_id": "ef8610f6-b4cd-4896-adf8-b5da3fd08a13" }
+				]
+			},
+			"nodes": [
+				{
+					"id": "n-0825-autoupdates",
+					"kind": "correction",
+					"date": "2026-08-25T07:47:00Z",
+					"parent": "n-0825-scope",
+					"session_id": "ef8610f6-b4cd-4896-adf8-b5da3fd08a13",
+					"session_title": "Settings page v2 implementation",
+					"decided_by": "both",
+					"status": "active",
+					"title": "Planned \"Auto-Updates\" toggle doesn't exist — swap in autoUpdatesChannel",
+					"intent": "The plan doc specified a boolean Auto-Updates setting, but Claude Code has no such key. The agent caught the invalid assumption and offered the real key instead.",
+					"options": ["Swap in autoUpdatesChannel (stable/latest)", "Drop the setting from this pass"],
+					"chosen": "Swap in the real key: autoUpdatesChannel as a stable/latest enum, shipped in the settings model.",
+					"why_inferred": "AI caught a wrong assumption in the human-written plan; the human ratified the corrected version.",
+					"evidence": [
+						{ "type": "code", "label": "settings.py — AutoUpdatesChannelEnum" },
+						{ "type": "session", "label": "Session · Aug 25", "session_id": "ef8610f6-b4cd-4896-adf8-b5da3fd08a13" }
+					]
+				},
+				{
+					"id": "n-0825-accordion",
+					"kind": "process",
+					"date": "2026-08-25T08:14:00Z",
+					"parent": "n-0825-scope",
+					"session_id": "ef8610f6-b4cd-4896-adf8-b5da3fd08a13",
+					"session_title": "Settings page v2 implementation",
+					"decided_by": "human",
+					"status": "active",
+					"title": "Design call: sections become accordions — one open by default, two max",
+					"intent": "A page of ~15 settings rendered flat was a wall; the fix chosen was progressive disclosure over scrolling.",
+					"chosen": "Every section is an accordion; first section open on load, at most two open at once.",
+					"why_quoted": "make every section in to an accrodion. max 2 can be stayed open at the same time. … by default only one is opened.",
+					"evidence": [
+						{ "type": "pr", "label": "PR #99", "url": "https://github.com/JayantDevkar/claude-code-karma/pull/99" }
+					]
+				},
+				{
+					"id": "n-0825-guide",
+					"kind": "process",
+					"date": "2026-08-25T08:30:00Z",
+					"parent": "n-0825-scope",
+					"session_id": "ef8610f6-b4cd-4896-adf8-b5da3fd08a13",
+					"session_title": "Settings page v2 implementation",
+					"decided_by": "both",
+					"status": "active",
+					"title": "Design call: move explanation into a Settings Guide page, shrink inline descriptions",
+					"intent": "Each setting carried 3–4 lines of inline description; once a dedicated Settings Guide doc page existed, that redundancy became clutter.",
+					"chosen": "One canonical Settings Guide page; per-setting descriptions cut to a single line linking out to it.",
+					"why_quoted": "Isn't it too much … now that we have our own docs? What do you suggest?",
+					"evidence": [
+						{ "type": "pr", "label": "PR #99", "url": "https://github.com/JayantDevkar/claude-code-karma/pull/99" }
+					]
+				},
+				{
+					"id": "n-0825-review",
+					"kind": "review",
+					"date": "2026-08-25T09:00:00Z",
+					"parent": "n-0825-scope",
+					"session_id": "2114cd07-2c32-4132-8ee2-255905bf7835",
+					"session_title": "Claude code karma settings page adversarial review",
+					"decided_by": "human",
+					"status": "active",
+					"title": "Blind adversarial review of the settings write path",
+					"intent": "Before opening the PR, run a separate agent at the settings write path with an attacker's mindset and a ranked-findings brief.",
+					"chosen": "Independent adversarial review; findings triaged one by one below.",
+					"why_inferred": "Same blind-review gate as the highlighting work, applied to a path that touches the user's real settings.json.",
+					"evidence": [
+						{ "type": "session", "label": "Review session · Aug 25", "session_id": "2114cd07-2c32-4132-8ee2-255905bf7835" }
+					]
+				},
+				{
+					"id": "n-0825-waive",
+					"kind": "waiver",
+					"date": "2026-08-25T09:09:00Z",
+					"parent": "n-0825-review",
+					"session_id": "2114cd07-2c32-4132-8ee2-255905bf7835",
+					"session_title": "Claude code karma settings page adversarial review",
+					"decided_by": "human",
+					"status": "active",
+					"title": "Waive the reviewer's top finding: Karma is local-first",
+					"intent": "The review's #1 finding flagged the settings write path as a security risk, assuming a networked deployment Karma doesn't have.",
+					"options": ["Harden against the flagged attack surface", "Waive: doesn't apply to a localhost-only tool"],
+					"chosen": "Waived with reason. Findings 2+ were kept and fixed; #1 was dropped as not applicable.",
+					"why_quoted": "This is local first. Everything is running locally on a server. … Yeah, drop 1 and keep the rest.",
+					"evidence": [
+						{ "type": "session", "label": "Review session · Aug 25", "session_id": "2114cd07-2c32-4132-8ee2-255905bf7835" }
+					]
+				},
+				{
+					"id": "n-0825-cleanup",
+					"kind": "process",
+					"date": "2026-08-25T12:00:00Z",
+					"parent": "n-0825-scope",
+					"session_id": "2114cd07-2c32-4132-8ee2-255905bf7835",
+					"session_title": "Claude code karma settings page adversarial review",
+					"decided_by": "human",
+					"status": "active",
+					"title": "Strip temporary artifacts before the PR",
+					"intent": "Plan docs, review-findings files, and storygraph experiments were working scaffolding, not shippable code.",
+					"chosen": "Delete the plan and findings documents and everything storygraph-related from the branch before opening the PR.",
+					"why_quoted": "they are supposed to be tmeporary. delete everything reated to storygraph as welll in this repo.",
+					"evidence": [
+						{ "type": "session", "label": "Review session · Aug 25", "session_id": "2114cd07-2c32-4132-8ee2-255905bf7835" }
+					]
+				},
+				{
+					"id": "n-0825-ship99",
+					"kind": "process",
+					"date": "2026-08-25T12:03:00Z",
+					"parent": "n-0825-scope",
+					"session_id": "2114cd07-2c32-4132-8ee2-255905bf7835",
+					"session_title": "Claude code karma settings page adversarial review",
+					"decided_by": "human",
+					"status": "active",
+					"title": "Shipped as PR #99",
+					"intent": "Twice-reviewed, recommendations fixed, temp files stripped — the settings work leaves the branch.",
+					"chosen": "Open PR #99: seven new settings, hardened write path, schema-drift monitoring.",
+					"why_quoted": "create a PR out of this brnach please.",
+					"evidence": [
+						{ "type": "commit", "label": "f5903fd — feat(settings): 7 new settings, hardened write path" },
+						{ "type": "pr", "label": "PR #99", "url": "https://github.com/JayantDevkar/claude-code-karma/pull/99" }
+					]
+				},
+				{
+					"id": "n-0826-trim-schema",
+					"kind": "reversal",
+					"date": "2026-08-25T12:15:00Z",
+					"parent": "n-0825-ship99",
+					"session_id": "2114cd07-2c32-4132-8ee2-255905bf7835",
+					"session_title": "Claude code karma settings page adversarial review",
+					"decided_by": "human",
+					"status": "active",
+					"title": "Trim the vendored schema from ~150 properties to the 12 watched keys",
+					"intent": "The PR landed at 11,000 lines. The vendored upstream settings schema covered Claude Code's full surface, but drift-tracking only ever reads 12 keys.",
+					"options": ["Keep the full vendored schema for future coverage", "Cut both snapshot files to only the 12 tracked keys"],
+					"chosen": "Cut both files to the 12 keys — the PR shrank drastically and the drift monitor lost nothing it actually used.",
+					"why_quoted": "why do we need the entire schema? we are using 12 features … it's okay cut both of them. … this will reduce the load drastically",
+					"supersedes": "n-0825-ship99",
+					"evidence": [
+						{ "type": "commit", "label": "398cb6b — trim vendored snapshots to 12 watched keys" },
+						{ "type": "pr", "label": "PR #99", "url": "https://github.com/JayantDevkar/claude-code-karma/pull/99" }
+					]
+				}
+			]
+		},
+		{
+			"id": "t-decision-workflow",
+			"title": "Decision workflow feature",
+			"root": {
+				"id": "n-0826-ledger",
+				"kind": "feature",
+				"date": "2026-08-26T12:49:00Z",
+				"parent": null,
+				"session_id": "f2237c70-7941-449f-b366-3b9ae1579218",
+				"session_title": "Feature research",
+				"decided_by": "both",
+				"status": "superseded",
+				"title": "Model project decisions as a threaded ledger, not a node-and-edge tree",
+				"intent": "The original Feb/March idea was a \"decision tree\" for the dashboard, but tree visualizations collapse into hairballs as projects grow. Research into Aviator Verify showed their UI never draws a tree — it's one legible document per decision, listed chronologically.",
+				"options": ["Node-and-edge decision tree visualization", "Chronological decision ledger with threaded supersedes-links"],
+				"chosen": "Ledger of decision cards, threaded like replies when a decision revisits an earlier one.",
+				"why_inferred": "Real decision history is mostly linear with occasional reversals; threading conveys descent without the layout problem.",
+				"evidence": [
+					{ "type": "session", "label": "Research session · Aug 26", "session_id": "f2237c70-7941-449f-b366-3b9ae1579218" },
+					{ "type": "link", "label": "Aviator Verify — verified intent", "url": "https://www.aviator.co/verify" }
+				]
+			},
+			"nodes": [
+				{
+					"id": "n-0827-handcurate",
+					"kind": "process",
+					"date": "2026-08-27T03:20:00Z",
+					"parent": "n-0826-ledger",
+					"session_id": "f2237c70-7941-449f-b366-3b9ae1579218",
+					"session_title": "Feature research",
+					"decided_by": "human",
+					"status": "active",
+					"title": "Hand-curate August as a static first draft before building extraction",
+					"intent": "Prove the UI with real content before investing in an automated extraction pipeline. A month of this project's sessions, mined by hand into ~20 cards.",
+					"chosen": "Static curated JSON served by a thin endpoint. Automated (LLM-assisted) extraction comes only if the ledger earns its keep.",
+					"why_quoted": "give me a first draft and then I can check it out all locally and then we can do changes to it as we go on",
+					"evidence": [
+						{ "type": "session", "label": "Research session · Aug 27", "session_id": "f2237c70-7941-449f-b366-3b9ae1579218" }
+					]
+				},
+				{
+					"id": "n-0901-flowchart",
+					"kind": "reversal",
+					"date": "2026-09-01T05:10:00Z",
+					"parent": "n-0826-ledger",
+					"session_id": null,
+					"session_title": "Workflow flowchart build",
+					"decided_by": "human",
+					"status": "active",
+					"title": "Reshape the ledger into a workflow flowchart on its own route",
+					"intent": "The chronological card ledger read fine but stayed flat. The decision history is really a set of topic threads, each accreting review/reversal/process events — a shape a flowchart shows and a list doesn't.",
+					"options": ["Keep the ledger tab of cards", "A tiered flowchart on a dedicated route, cards move into a left inspector drawer"],
+					"chosen": "Drop the Decisions tab. A \"View your workflow\" button by the project title opens a new route: an inverted-pyramid taxonomy key, one lane per topic thread, shapes + initials per category, click a node to open a left drawer with the full decision.",
+					"why_quoted": "i need a flowchart which will have a inverted pyramid key … i should be abel to click on a shape and then a dsraw should appear from the elft hand side with beautifully sand usefully desgined ui",
+					"supersedes": "n-0826-ledger",
+					"evidence": [
+						{ "type": "session", "label": "This session · Sep 1, 2026" }
+					]
+				}
+			]
+		}
+	]
+}

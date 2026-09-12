@@ -43,6 +43,7 @@
 	},
 	"dependencies": {
 		"@sveltejs/adapter-node": "^5.5.2",
+		"@xyflow/svelte": "^1.6.5",
 		"bits-ui": "^2.15.4",
 		"chart.js": "^4.5.1",
 		"date-fns": "^4.1.0",
