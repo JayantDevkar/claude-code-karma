@@ -80,7 +80,7 @@ hooks:
         INPUT=$(cat)
         SESSION=$(echo "$INPUT" | jq -r '.session_id')
         echo "[$(date)] Subagent stopped: $SESSION" >> /tmp/subagent-stops.log
-      timeout: 2000
+      timeout: 2
 ```
 
 ### Continue Until Exploration Complete
@@ -102,7 +102,7 @@ hooks:
             fi
           fi
         fi
-      timeout: 10000
+      timeout: 10
 ```
 
 ### Status Tracking
@@ -113,7 +113,7 @@ hooks:
         INPUT=$(cat)
         export KARMA_SESSION_ID=$(echo "$INPUT" | jq -r '.session_id')
         karma radio report-progress --message "Subagent completed"
-      timeout: 3000
+      timeout: 3
 ```
 
 ### Prompt-Based Evaluation (LLM)
@@ -155,7 +155,7 @@ hooks:
           # Your continue condition here
           :
         fi
-      timeout: 3000
+      timeout: 3
 ```
 
 ### Different Behavior by Subagent Type
@@ -177,7 +177,7 @@ hooks:
             echo '{"hookSpecificOutput": {"decision": "continue", "reason": "Ensure exploration is comprehensive"}}'
           fi
         fi
-      timeout: 5000
+      timeout: 5
 ```
 
 ### Quality Check Before Returning
@@ -200,7 +200,7 @@ hooks:
             fi
           fi
         fi
-      timeout: 5000
+      timeout: 5
 ```
 
 ## Use Cases

@@ -93,7 +93,7 @@ hooks:
         SESSION=$(echo "$INPUT" | jq -r '.session_id')
         TRIGGER=$(echo "$INPUT" | jq -r '.trigger')
         echo "[$(date)] Compaction triggered ($TRIGGER) for session $SESSION" >> /tmp/compaction.log
-      timeout: 2000
+      timeout: 2
 ```
 
 ### Backup Transcript Before Compaction
@@ -111,7 +111,7 @@ hooks:
           cp "$TRANSCRIPT" "$BACKUP_DIR/pre-compact-$SESSION-$(date +%Y%m%d%H%M%S).jsonl"
           echo "Transcript backed up before compaction"
         fi
-      timeout: 10000
+      timeout: 10
 ```
 
 ### Extract Key Information
@@ -137,7 +137,7 @@ hooks:
             echo "$FILES" | sed 's/"file_path":"//g' | sed 's/"//g' | sed 's/^/  - /'
           fi
         fi
-      timeout: 10000
+      timeout: 10
 ```
 
 ### Conditional by Trigger
@@ -161,7 +161,7 @@ hooks:
             fi
             ;;
         esac
-      timeout: 3000
+      timeout: 3
 ```
 
 ### Preserve Decision Log
@@ -182,7 +182,7 @@ hooks:
         # This output goes to Claude's context
         echo "Note: Key decisions saved to $DECISIONS_FILE"
         echo "Review this file if context about earlier decisions is needed."
-      timeout: 5000
+      timeout: 5
 ```
 
 ### Calculate Session Statistics
@@ -202,7 +202,7 @@ hooks:
           echo "  Lines: $LINES" >> /tmp/session-stats.log
           echo "  Size: $SIZE" >> /tmp/session-stats.log
         fi
-      timeout: 3000
+      timeout: 3
 ```
 
 ### Status Update
@@ -213,7 +213,7 @@ hooks:
         INPUT=$(cat)
         export KARMA_SESSION_ID=$(echo "$INPUT" | jq -r '.session_id')
         karma radio report-progress --message "Context compacting..."
-      timeout: 3000
+      timeout: 3
 ```
 
 ### Notify on Auto-Compaction
@@ -228,7 +228,7 @@ hooks:
           # macOS notification
           osascript -e 'display notification "Context being compacted - long session" with title "Claude Code"'
         fi
-      timeout: 2000
+      timeout: 2
 ```
 
 ## Use Cases

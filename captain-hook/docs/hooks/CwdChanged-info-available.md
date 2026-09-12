@@ -56,7 +56,7 @@ hooks:
         OLD=$(echo "$INPUT" | jq -r '.old_cwd')
         NEW=$(echo "$INPUT" | jq -r '.new_cwd')
         echo "$(date): $OLD -> $NEW" >> /tmp/cwd_history.log
-      timeout: 2000
+      timeout: 2
 ```
 
 ## Use Cases

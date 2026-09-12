@@ -1660,7 +1660,7 @@ export interface HookRegistration {
 	command: string;
 	script_filename?: string | null;
 	script_language: string;
-	timeout_ms?: number | null;
+	timeout_seconds?: number | null;
 	can_block: boolean;
 }
 

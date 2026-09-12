@@ -81,7 +81,7 @@ Add the following to `~/.claude/settings.json`:
           {
             "type": "command",
             "command": "python3 ~/.claude/hooks/live_session_tracker.py",
-            "timeout": 5000
+            "timeout": 5
           }
         ]
       }
@@ -92,7 +92,7 @@ Add the following to `~/.claude/settings.json`:
           {
             "type": "command",
             "command": "python3 ~/.claude/hooks/live_session_tracker.py",
-            "timeout": 5000
+            "timeout": 5
           }
         ]
       }
@@ -103,7 +103,7 @@ Add the following to `~/.claude/settings.json`:
           {
             "type": "command",
             "command": "python3 ~/.claude/hooks/live_session_tracker.py",
-            "timeout": 5000
+            "timeout": 5
           }
         ]
       }
@@ -114,7 +114,7 @@ Add the following to `~/.claude/settings.json`:
           {
             "type": "command",
             "command": "python3 ~/.claude/hooks/live_session_tracker.py",
-            "timeout": 5000
+            "timeout": 5
           }
         ]
       }
@@ -125,7 +125,7 @@ Add the following to `~/.claude/settings.json`:
           {
             "type": "command",
             "command": "python3 ~/.claude/hooks/live_session_tracker.py",
-            "timeout": 5000
+            "timeout": 5
           }
         ]
       }
@@ -136,7 +136,7 @@ Add the following to `~/.claude/settings.json`:
           {
             "type": "command",
             "command": "python3 ~/.claude/hooks/live_session_tracker.py",
-            "timeout": 5000
+            "timeout": 5
           }
         ]
       }
@@ -147,7 +147,7 @@ Add the following to `~/.claude/settings.json`:
           {
             "type": "command",
             "command": "python3 ~/.claude/hooks/live_session_tracker.py",
-            "timeout": 5000
+            "timeout": 5
           }
         ]
       }
@@ -158,7 +158,7 @@ Add the following to `~/.claude/settings.json`:
           {
             "type": "command",
             "command": "python3 ~/.claude/hooks/live_session_tracker.py",
-            "timeout": 5000
+            "timeout": 5
           }
         ]
       }

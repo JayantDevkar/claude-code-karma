@@ -290,7 +290,7 @@ The tracker needs **8 of Claude Code's 24 hook events** registered in `~/.claude
           {
             "type": "command",
             "command": "python3 ~/.claude/hooks/live_session_tracker.py",
-            "timeout": 5000
+            "timeout": 5
           }
         ]
       }
@@ -301,7 +301,7 @@ The tracker needs **8 of Claude Code's 24 hook events** registered in `~/.claude
           {
             "type": "command",
             "command": "python3 ~/.claude/hooks/live_session_tracker.py",
-            "timeout": 5000
+            "timeout": 5
           }
         ]
       }
@@ -312,7 +312,7 @@ The tracker needs **8 of Claude Code's 24 hook events** registered in `~/.claude
           {
             "type": "command",
             "command": "python3 ~/.claude/hooks/live_session_tracker.py",
-            "timeout": 5000
+            "timeout": 5
           }
         ]
       }
@@ -323,7 +323,7 @@ The tracker needs **8 of Claude Code's 24 hook events** registered in `~/.claude
           {
             "type": "command",
             "command": "python3 ~/.claude/hooks/live_session_tracker.py",
-            "timeout": 5000
+            "timeout": 5
           }
         ]
       }
@@ -334,7 +334,7 @@ The tracker needs **8 of Claude Code's 24 hook events** registered in `~/.claude
           {
             "type": "command",
             "command": "python3 ~/.claude/hooks/live_session_tracker.py",
-            "timeout": 5000
+            "timeout": 5
           }
         ]
       }
@@ -345,7 +345,7 @@ The tracker needs **8 of Claude Code's 24 hook events** registered in `~/.claude
           {
             "type": "command",
             "command": "python3 ~/.claude/hooks/live_session_tracker.py",
-            "timeout": 5000
+            "timeout": 5
           }
         ]
       }
@@ -356,7 +356,7 @@ The tracker needs **8 of Claude Code's 24 hook events** registered in `~/.claude
           {
             "type": "command",
             "command": "python3 ~/.claude/hooks/live_session_tracker.py",
-            "timeout": 5000
+            "timeout": 5
           }
         ]
       }
@@ -367,7 +367,7 @@ The tracker needs **8 of Claude Code's 24 hook events** registered in `~/.claude
           {
             "type": "command",
             "command": "python3 ~/.claude/hooks/live_session_tracker.py",
-            "timeout": 5000
+            "timeout": 5
           }
         ]
       }
@@ -376,7 +376,7 @@ The tracker needs **8 of Claude Code's 24 hook events** registered in `~/.claude
 }
 ```
 
-> **Important:** Timeout values are in **milliseconds** for command hooks (5000 = 5 seconds). If you already have a `"hooks"` key in settings.json, merge these entries into it rather than overwriting.
+> **Important:** Timeout values are in **seconds** for command hooks (`5` = 5 seconds, not milliseconds — `5000` would be 83 minutes). If you already have a `"hooks"` key in settings.json, merge these entries into it rather than overwriting.
 
 **Verify:**
 ```bash
@@ -592,7 +592,7 @@ ls -la ~/.claude/hooks/session_title_generator.py
           {
             "type": "command",
             "command": "python3 ~/.claude/hooks/session_title_generator.py",
-            "timeout": 15000
+            "timeout": 15
           }
         ]
       }
@@ -611,7 +611,7 @@ If you have Tier 2 live tracker, your `SessionEnd` should now have TWO entries:
           {
             "type": "command",
             "command": "python3 ~/.claude/hooks/live_session_tracker.py",
-            "timeout": 5000
+            "timeout": 5
           }
         ]
       },
@@ -620,7 +620,7 @@ If you have Tier 2 live tracker, your `SessionEnd` should now have TWO entries:
           {
             "type": "command",
             "command": "python3 ~/.claude/hooks/session_title_generator.py",
-            "timeout": 15000
+            "timeout": 15
           }
         ]
       }
@@ -802,7 +802,7 @@ The full `~/.claude/settings.json` for Tier 2 + 3:
           {
             "type": "command",
             "command": "python3 ~/.claude/hooks/live_session_tracker.py",
-            "timeout": 5000
+            "timeout": 5
           }
         ]
       }
@@ -813,7 +813,7 @@ The full `~/.claude/settings.json` for Tier 2 + 3:
           {
             "type": "command",
             "command": "python3 ~/.claude/hooks/live_session_tracker.py",
-            "timeout": 5000
+            "timeout": 5
           }
         ]
       }
@@ -824,7 +824,7 @@ The full `~/.claude/settings.json` for Tier 2 + 3:
           {
             "type": "command",
             "command": "python3 ~/.claude/hooks/live_session_tracker.py",
-            "timeout": 5000
+            "timeout": 5
           }
         ]
       }
@@ -835,7 +835,7 @@ The full `~/.claude/settings.json` for Tier 2 + 3:
           {
             "type": "command",
             "command": "python3 ~/.claude/hooks/live_session_tracker.py",
-            "timeout": 5000
+            "timeout": 5
           }
         ]
       }
@@ -846,7 +846,7 @@ The full `~/.claude/settings.json` for Tier 2 + 3:
           {
             "type": "command",
             "command": "python3 ~/.claude/hooks/live_session_tracker.py",
-            "timeout": 5000
+            "timeout": 5
           }
         ]
       }
@@ -857,7 +857,7 @@ The full `~/.claude/settings.json` for Tier 2 + 3:
           {
             "type": "command",
             "command": "python3 ~/.claude/hooks/live_session_tracker.py",
-            "timeout": 5000
+            "timeout": 5
           }
         ]
       }
@@ -868,7 +868,7 @@ The full `~/.claude/settings.json` for Tier 2 + 3:
           {
             "type": "command",
             "command": "python3 ~/.claude/hooks/live_session_tracker.py",
-            "timeout": 5000
+            "timeout": 5
           }
         ]
       }
@@ -879,7 +879,7 @@ The full `~/.claude/settings.json` for Tier 2 + 3:
           {
             "type": "command",
             "command": "python3 ~/.claude/hooks/live_session_tracker.py",
-            "timeout": 5000
+            "timeout": 5
           }
         ]
       },
@@ -888,7 +888,7 @@ The full `~/.claude/settings.json` for Tier 2 + 3:
           {
             "type": "command",
             "command": "python3 ~/.claude/hooks/session_title_generator.py",
-            "timeout": 15000
+            "timeout": 15
           }
         ]
       }
@@ -912,7 +912,7 @@ If you installed the branch detector hook in Tier 4, add it to `SessionStart` al
       {
         "type": "command",
         "command": "python3 ~/.claude/hooks/live_session_tracker.py",
-        "timeout": 5000
+        "timeout": 5
       },
       {
         "type": "command",

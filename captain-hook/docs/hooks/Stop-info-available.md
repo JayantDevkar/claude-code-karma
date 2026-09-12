@@ -88,7 +88,7 @@ hooks:
         INPUT=$(cat)
         SESSION=$(echo "$INPUT" | jq -r '.session_id')
         echo "[$(date)] Agent stopped: $SESSION" >> /tmp/claude-stops.log
-      timeout: 2000
+      timeout: 2
 ```
 
 ### Continue Until Tests Pass
@@ -105,7 +105,7 @@ hooks:
             echo '{"hookSpecificOutput": {"decision": "continue", "reason": "Tests are failing - please fix them"}}'
           fi
         fi
-      timeout: 30000
+      timeout: 30
 ```
 
 ### Continue Until Build Succeeds
@@ -121,7 +121,7 @@ hooks:
             echo '{"hookSpecificOutput": {"decision": "continue", "reason": "Build is failing - please fix compilation errors"}}'
           fi
         fi
-      timeout: 60000
+      timeout: 60
 ```
 
 ### Status Tracking (Karma Radio)
@@ -132,7 +132,7 @@ hooks:
         INPUT=$(cat)
         export KARMA_SESSION_ID=$(echo "$INPUT" | jq -r '.session_id')
         karma radio set-status completed --message "Session completed"
-      timeout: 5000
+      timeout: 5
 ```
 
 ### Continue if TODO Items Remain
@@ -152,7 +152,7 @@ hooks:
             echo "{\"hookSpecificOutput\": {\"decision\": \"continue\", \"reason\": \"$PENDING TODO items still pending\"}}"
           fi
         fi
-      timeout: 5000
+      timeout: 5
 ```
 
 ### Prompt-Based Continue Decision (LLM)
@@ -182,7 +182,7 @@ hooks:
     - command: |
         # macOS notification when Claude finishes
         osascript -e 'display notification "Claude finished working" with title "Claude Code"'
-      timeout: 2000
+      timeout: 2
 ```
 
 ### Check Lint Before Stopping
@@ -200,7 +200,7 @@ hooks:
             echo "{\"hookSpecificOutput\": {\"decision\": \"continue\", \"reason\": \"Found $LINT_ERRORS lint errors - please fix them\"}}"
           fi
         fi
-      timeout: 30000
+      timeout: 30
 ```
 
 ### Time-Limited Continue
@@ -223,7 +223,7 @@ hooks:
             echo '{"hookSpecificOutput": {"decision": "continue", "reason": "Continue marker present"}}'
           fi
         fi
-      timeout: 5000
+      timeout: 5
 ```
 
 ## Use Cases

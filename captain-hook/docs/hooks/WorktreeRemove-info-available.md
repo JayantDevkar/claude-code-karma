@@ -53,7 +53,7 @@ hooks:
         INPUT=$(cat)
         PATH_=$(echo "$INPUT" | jq -r '.worktree_path')
         echo "$(date): Removed $PATH_" >> /tmp/worktree_removals.log
-      timeout: 2000
+      timeout: 2
 ```
 
 ## Use Cases

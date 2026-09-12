@@ -86,7 +86,7 @@ hooks:
         echo "  Reason: $REASON" >> /tmp/claude-sessions.log
         echo "  Transcript: $TRANSCRIPT" >> /tmp/claude-sessions.log
         echo "" >> /tmp/claude-sessions.log
-      timeout: 5000
+      timeout: 5
 ```
 
 ### Status Tracking (Karma Radio)
@@ -98,7 +98,7 @@ hooks:
         export KARMA_SESSION_ID=$(echo "$INPUT" | jq -r '.session_id')
         REASON=$(echo "$INPUT" | jq -r '.reason')
         karma radio set-status completed --message "Session ended: $REASON"
-      timeout: 5000
+      timeout: 5
 ```
 
 ### Cleanup Temporary Files
@@ -112,7 +112,7 @@ hooks:
         # Clean up session-specific temp files
         rm -f "/tmp/claude-$SESSION-"* 2>/dev/null
         rm -f "/tmp/hooks-$SESSION.log" 2>/dev/null
-      timeout: 3000
+      timeout: 3
 ```
 
 ### Archive Transcript
@@ -129,7 +129,7 @@ hooks:
           mkdir -p "$ARCHIVE_DIR"
           cp "$TRANSCRIPT" "$ARCHIVE_DIR/session-$SESSION-$(date +%Y%m%d).jsonl"
         fi
-      timeout: 10000
+      timeout: 10
 ```
 
 ### Calculate Session Statistics
@@ -149,7 +149,7 @@ hooks:
           echo "  Messages: $MESSAGES" >> ~/.claude-stats.log
           echo "  Tool calls: $TOOLS" >> ~/.claude-stats.log
         fi
-      timeout: 5000
+      timeout: 5
 ```
 
 ### Notify on Exit
@@ -162,7 +162,7 @@ hooks:
 
         # macOS notification
         osascript -e "display notification \"Session ended: $REASON\" with title \"Claude Code\""
-      timeout: 3000
+      timeout: 3
 ```
 
 ### Conditional Cleanup by Reason
@@ -190,7 +190,7 @@ hooks:
             echo "[WARN] Unexpected session termination" >> /tmp/claude-errors.log
             ;;
         esac
-      timeout: 5000
+      timeout: 5
 ```
 
 ### Git Status Snapshot
@@ -207,7 +207,7 @@ hooks:
           git status --short > ~/.claude-git-snapshots/"$SESSION-end.txt"
           git log -1 --format="%H %s" >> ~/.claude-git-snapshots/"$SESSION-end.txt"
         fi
-      timeout: 5000
+      timeout: 5
 ```
 
 ### Send Analytics
@@ -224,7 +224,7 @@ hooks:
           -H "Content-Type: application/json" \
           -d "{\"session\": \"$SESSION\", \"reason\": \"$REASON\", \"ended\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" \
           > /dev/null 2>&1 &
-      timeout: 2000
+      timeout: 2
 ```
 
 ## Use Cases

@@ -89,7 +89,7 @@ hooks:
         SESSION=$(echo "$INPUT" | jq -r '.session_id')
         MESSAGE=$(echo "$INPUT" | jq -r '.message')
         echo "[$(date)] Permission requested: $MESSAGE" >> /tmp/permissions.log
-      timeout: 2000
+      timeout: 2
 ```
 
 ### Auto-Allow Safe Commands
@@ -107,7 +107,7 @@ hooks:
           echo '{"hookSpecificOutput": {"permissionDecision": "allow"}}'
         fi
         # If no output, shows normal dialog
-      timeout: 2000
+      timeout: 2
 ```
 
 ### Block Dangerous Operations
@@ -122,7 +122,7 @@ hooks:
         if echo "$MESSAGE" | grep -qE 'rm -rf|sudo|chmod 777|curl.*\|.*sh'; then
           echo '{"hookSpecificOutput": {"permissionDecision": "deny", "reason": "Blocked by security policy"}}'
         fi
-      timeout: 2000
+      timeout: 2
 ```
 
 ### Project-Specific Allow List
@@ -143,7 +143,7 @@ hooks:
             fi
           done < "$ALLOW_FILE"
         fi
-      timeout: 3000
+      timeout: 3
 ```
 
 ### Time-Based Permissions
@@ -162,7 +162,7 @@ hooks:
             echo '{"hookSpecificOutput": {"permissionDecision": "allow"}}'
           fi
         fi
-      timeout: 2000
+      timeout: 2
 ```
 
 ### Prompt-Based Decision (LLM)
@@ -196,7 +196,7 @@ hooks:
           osascript -e "display notification \"Blocked: $MESSAGE\" with title \"Claude Code Security\""
           echo '{"hookSpecificOutput": {"permissionDecision": "deny", "reason": "Destructive operations require manual approval"}}'
         fi
-      timeout: 3000
+      timeout: 3
 ```
 
 ### Auto-Allow in CI/Automation
@@ -208,7 +208,7 @@ hooks:
         if [ -n "$CI" ] || [ -n "$GITHUB_ACTIONS" ]; then
           echo '{"hookSpecificOutput": {"permissionDecision": "allow"}}'
         fi
-      timeout: 1000
+      timeout: 1
 ```
 
 ### File Operation Permissions
@@ -228,7 +228,7 @@ hooks:
         if echo "$MESSAGE" | grep -qE 'Write.*/(\.|config|env|secret)'; then
           echo '{"hookSpecificOutput": {"permissionDecision": "deny", "reason": "Cannot write to sensitive files"}}'
         fi
-      timeout: 2000
+      timeout: 2
 ```
 
 ### Rate Limiting
@@ -249,7 +249,7 @@ hooks:
           echo "[$(date)] Permission limit reached" >> /tmp/permissions.log
           # Don't auto-allow anymore - let user decide
         fi
-      timeout: 2000
+      timeout: 2
 ```
 
 ## Use Cases

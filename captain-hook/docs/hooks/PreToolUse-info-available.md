@@ -79,7 +79,7 @@ Fires **before** a tool is executed. Can block execution or modify tool inputs.
   "tool_name": "Bash",
   "tool_input": {
     "command": "npm run build",
-    "timeout": 120000,
+    "timeout": 120,
     "description": "Build the project"
   }
 }
@@ -207,7 +207,7 @@ hooks:
         INPUT=$(cat)
         TOOL=$(echo "$INPUT" | jq -r '.tool_name')
         echo "Tool: $TOOL" >> /tmp/hooks.log
-      timeout: 5000
+      timeout: 5
 ```
 
 ### Filter by Tool Name (using matcher)
@@ -218,7 +218,7 @@ hooks:
       hooks:
         - type: "command"
           command: "./scripts/validate-write.sh"
-          timeout: 3000
+          timeout: 3
 ```
 
 ### Block Dangerous Commands
@@ -235,7 +235,7 @@ hooks:
               echo "Dangerous command blocked" >&2
               exit 2
             fi
-          timeout: 1000
+          timeout: 1
 ```
 
 ### MCP Tool Matching
@@ -246,7 +246,7 @@ hooks:
       hooks:
         - type: "command"
           command: "./scripts/log-mcp.sh"
-          timeout: 2000
+          timeout: 2
 ```
 
 ### Prompt-Based Hook (LLM)

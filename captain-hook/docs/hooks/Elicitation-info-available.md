@@ -66,7 +66,7 @@ hooks:
           echo "Blocked elicitation from $SERVER" >&2
           exit 2
         fi
-      timeout: 2000
+      timeout: 2
 ```
 
 ## Use Cases

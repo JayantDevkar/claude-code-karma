@@ -68,7 +68,7 @@ Exit code 0, no output.
 hooks:
   TaskCompleted:
     - command: ./scripts/verify-task-done.sh
-      timeout: 5000
+      timeout: 5
 ```
 
 ## Use Cases

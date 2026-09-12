@@ -120,7 +120,7 @@ hooks:
         echo ""
         echo "Recent commits:"
         git log --oneline -3 2>/dev/null || true
-      timeout: 5000
+      timeout: 5
 ```
 
 ### Add Project Context
@@ -132,7 +132,7 @@ hooks:
           echo "Node project: $(jq -r '.name' package.json)"
           echo "Scripts: $(jq -r '.scripts | keys | join(", ")' package.json)"
         fi
-      timeout: 3000
+      timeout: 3
 ```
 
 ### Block Specific Keywords
@@ -148,7 +148,7 @@ hooks:
           echo "Dangerous operation blocked for safety" >&2
           exit 2
         fi
-      timeout: 2000
+      timeout: 2
 ```
 
 ### Log All Prompts
@@ -160,7 +160,7 @@ hooks:
         SESSION=$(echo "$INPUT" | jq -r '.session_id')
         PROMPT=$(echo "$INPUT" | jq -r '.prompt')
         echo "[$(date)] [$SESSION] $PROMPT" >> /tmp/claude-prompts.log
-      timeout: 1000
+      timeout: 1
 ```
 
 ### Add Issue Context
@@ -177,7 +177,7 @@ hooks:
           echo "Issue #$ISSUE context:"
           gh issue view "$ISSUE" --json title,body,state 2>/dev/null || true
         fi
-      timeout: 10000
+      timeout: 10
 ```
 
 ### Prompt-Based Validation (LLM)
@@ -207,7 +207,7 @@ hooks:
         echo "- Time: $(date '+%Y-%m-%d %H:%M:%S %Z')"
         echo "- Working directory: $(pwd)"
         echo "- User: $(whoami)"
-      timeout: 1000
+      timeout: 1
 ```
 
 ### Inject Custom Instructions
@@ -225,7 +225,7 @@ hooks:
           echo "- Add tests for new functions"
           echo "- Update CHANGELOG.md for user-facing changes"
         fi
-      timeout: 2000
+      timeout: 2
 ```
 
 ## Use Cases

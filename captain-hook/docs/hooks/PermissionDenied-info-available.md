@@ -73,7 +73,7 @@ hooks:
         REASON=$(echo "$INPUT" | jq -r '.reason')
         TOOL=$(echo "$INPUT" | jq -r '.tool_name')
         echo "Denied $TOOL: $REASON" >> /tmp/denied.log
-      timeout: 2000
+      timeout: 2
 ```
 
 ## Use Cases

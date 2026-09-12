@@ -138,7 +138,7 @@ Add hook registrations to your Claude Code settings file (`~/.claude/settings.js
           {
             "type": "command",
             "command": "python3 ~/.claude/hooks/live_session_tracker.py",
-            "timeout": 5000
+            "timeout": 5
           }
         ]
       }
@@ -149,7 +149,7 @@ Add hook registrations to your Claude Code settings file (`~/.claude/settings.js
           {
             "type": "command",
             "command": "python3 ~/.claude/hooks/live_session_tracker.py",
-            "timeout": 5000
+            "timeout": 5
           }
         ]
       }
@@ -160,7 +160,7 @@ Add hook registrations to your Claude Code settings file (`~/.claude/settings.js
           {
             "type": "command",
             "command": "python3 ~/.claude/hooks/live_session_tracker.py",
-            "timeout": 5000
+            "timeout": 5
           }
         ]
       }
@@ -171,7 +171,7 @@ Add hook registrations to your Claude Code settings file (`~/.claude/settings.js
           {
             "type": "command",
             "command": "python3 ~/.claude/hooks/live_session_tracker.py",
-            "timeout": 5000
+            "timeout": 5
           }
         ]
       }
@@ -182,7 +182,7 @@ Add hook registrations to your Claude Code settings file (`~/.claude/settings.js
           {
             "type": "command",
             "command": "python3 ~/.claude/hooks/live_session_tracker.py",
-            "timeout": 5000
+            "timeout": 5
           }
         ]
       }
@@ -193,7 +193,7 @@ Add hook registrations to your Claude Code settings file (`~/.claude/settings.js
           {
             "type": "command",
             "command": "python3 ~/.claude/hooks/live_session_tracker.py",
-            "timeout": 5000
+            "timeout": 5
           }
         ]
       }
@@ -204,7 +204,7 @@ Add hook registrations to your Claude Code settings file (`~/.claude/settings.js
           {
             "type": "command",
             "command": "python3 ~/.claude/hooks/live_session_tracker.py",
-            "timeout": 5000
+            "timeout": 5
           }
         ]
       }
@@ -215,7 +215,7 @@ Add hook registrations to your Claude Code settings file (`~/.claude/settings.js
           {
             "type": "command",
             "command": "python3 ~/.claude/hooks/live_session_tracker.py",
-            "timeout": 5000
+            "timeout": 5
           }
         ]
       },
@@ -224,7 +224,7 @@ Add hook registrations to your Claude Code settings file (`~/.claude/settings.js
           {
             "type": "command",
             "command": "python3 ~/.claude/hooks/session_title_generator.py",
-            "timeout": 15000
+            "timeout": 15
           }
         ]
       }
@@ -235,7 +235,7 @@ Add hook registrations to your Claude Code settings file (`~/.claude/settings.js
           {
             "type": "command",
             "command": "python3 ~/.claude/hooks/plan_approval.py",
-            "timeout": 10000
+            "timeout": 10
           }
         ]
       }
@@ -244,7 +244,7 @@ Add hook registrations to your Claude Code settings file (`~/.claude/settings.js
 }
 ```
 
-The `timeout` value is in milliseconds. If a hook exceeds its timeout, Claude Code kills the process and continues without it.
+The `timeout` value is in **seconds**, not milliseconds (`5` = 5 seconds; `5000` would be 83 minutes). If a hook exceeds its timeout, Claude Code kills the process and continues without it.
 
 ---
 

@@ -44,42 +44,42 @@ hooks:
   SessionStart:
     - command: |
         cat | python3 ~/.local/bin/claude-code-karma-tracker
-      timeout: 2000
+      timeout: 2
 
   UserPromptSubmit:
     - command: |
         cat | python3 ~/.local/bin/claude-code-karma-tracker
-      timeout: 2000
+      timeout: 2
 
   PostToolUse:
     - command: |
         cat | python3 ~/.local/bin/claude-code-karma-tracker
-      timeout: 2000
+      timeout: 2
 
   Notification:
     - command: |
         cat | python3 ~/.local/bin/claude-code-karma-tracker
-      timeout: 2000
+      timeout: 2
 
   Stop:
     - command: |
         cat | python3 ~/.local/bin/claude-code-karma-tracker
-      timeout: 2000
+      timeout: 2
 
   SubagentStart:
     - command: |
         cat | python3 ~/.local/bin/claude-code-karma-tracker
-      timeout: 2000
+      timeout: 2
 
   SubagentStop:
     - command: |
         cat | python3 ~/.local/bin/claude-code-karma-tracker
-      timeout: 2000
+      timeout: 2
 
   SessionEnd:
     - command: |
         cat | python3 ~/.local/bin/claude-code-karma-tracker
-      timeout: 2000
+      timeout: 2
 ```
 
 #### Option B: Global hooks (all projects)
@@ -89,14 +89,14 @@ Add to `~/.claude/settings.json`:
 ```json
 {
   "hooks": {
-    "SessionStart": [{ "command": "cat | python3 ~/.local/bin/claude-code-karma-tracker", "timeout": 2000 }],
-    "UserPromptSubmit": [{ "command": "cat | python3 ~/.local/bin/claude-code-karma-tracker", "timeout": 2000 }],
-    "PostToolUse": [{ "command": "cat | python3 ~/.local/bin/claude-code-karma-tracker", "timeout": 2000 }],
-    "Notification": [{ "command": "cat | python3 ~/.local/bin/claude-code-karma-tracker", "timeout": 2000 }],
-    "Stop": [{ "command": "cat | python3 ~/.local/bin/claude-code-karma-tracker", "timeout": 2000 }],
-    "SessionEnd": [{ "command": "cat | python3 ~/.local/bin/claude-code-karma-tracker", "timeout": 2000 }],
-    "SubagentStart": [{ "command": "cat | python3 ~/.local/bin/claude-code-karma-tracker", "timeout": 2000 }],
-    "SubagentStop": [{ "command": "cat | python3 ~/.local/bin/claude-code-karma-tracker", "timeout": 2000 }]
+    "SessionStart": [{ "command": "cat | python3 ~/.local/bin/claude-code-karma-tracker", "timeout": 2 }],
+    "UserPromptSubmit": [{ "command": "cat | python3 ~/.local/bin/claude-code-karma-tracker", "timeout": 2 }],
+    "PostToolUse": [{ "command": "cat | python3 ~/.local/bin/claude-code-karma-tracker", "timeout": 2 }],
+    "Notification": [{ "command": "cat | python3 ~/.local/bin/claude-code-karma-tracker", "timeout": 2 }],
+    "Stop": [{ "command": "cat | python3 ~/.local/bin/claude-code-karma-tracker", "timeout": 2 }],
+    "SessionEnd": [{ "command": "cat | python3 ~/.local/bin/claude-code-karma-tracker", "timeout": 2 }],
+    "SubagentStart": [{ "command": "cat | python3 ~/.local/bin/claude-code-karma-tracker", "timeout": 2 }],
+    "SubagentStop": [{ "command": "cat | python3 ~/.local/bin/claude-code-karma-tracker", "timeout": 2 }]
   }
 }
 ```

@@ -160,13 +160,13 @@
 									>
 								</div>
 							{/if}
-							{#if registration.timeout_ms}
+							{#if registration.timeout_seconds}
 								<div class="flex items-center gap-1.5">
 									<Clock size={12} />
 									<span
 										>Timeout: <span
 											class="text-[var(--text-secondary)] tabular-nums"
-											>{registration.timeout_ms}ms</span
+											>{registration.timeout_seconds}s</span
 										></span
 									>
 								</div>

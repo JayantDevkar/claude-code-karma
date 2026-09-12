@@ -63,7 +63,7 @@ hooks:
         INPUT=$(cat)
         FILE=$(echo "$INPUT" | jq -r '.file_path')
         echo "Loaded instructions: $FILE" >> /tmp/instructions.log
-      timeout: 2000
+      timeout: 2
 ```
 
 ## Use Cases

@@ -64,7 +64,7 @@ Hooks are defined in JSON settings files and merged from multiple sources:
           {
             "type": "command",
             "command": "node script.js",
-            "timeout": 5000
+            "timeout": 5
           }
         ],
         "description": "Optional description"
@@ -79,7 +79,7 @@ Hooks are defined in JSON settings files and merged from multiple sources:
 - `matcher`: Filter pattern — `*` for all, tool name, or regex on tool input
 - `type`: Always `"command"` for executable hooks
 - `command`: Shell command to execute (plugins use `${CLAUDE_PLUGIN_ROOT}` variable)
-- `timeout`: Max execution time in milliseconds
+- `timeout`: Max execution time in **seconds** (Claude Code's schema — not milliseconds, despite the field naming below)
 - `description`: Optional human-readable description
 
 ### Hook Event Types (11 total)
@@ -156,7 +156,7 @@ HookRegistration
 │   ├── command: str                 # Full command string
 │   ├── script_path: str             # Resolved path to script file
 │   ├── script_language: enum        # "python" | "node" | "shell" | "unknown"
-│   ├── timeout_ms: int              # Timeout in milliseconds
+│   ├── timeout_ms: int              # NOTE: misnamed -- holds raw seconds from settings.json, never multiplied; rename to timeout_seconds
 │   └── can_block: bool              # Derived from event_type
 │
 └── Metadata
