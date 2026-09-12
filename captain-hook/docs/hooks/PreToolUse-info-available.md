@@ -79,7 +79,7 @@ Fires **before** a tool is executed. Can block execution or modify tool inputs.
   "tool_name": "Bash",
   "tool_input": {
     "command": "npm run build",
-    "timeout": 120,
+    "timeout": 120000,
     "description": "Build the project"
   }
 }
