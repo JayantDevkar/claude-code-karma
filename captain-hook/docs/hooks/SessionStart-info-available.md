@@ -112,7 +112,7 @@ hooks:
         echo "Directory: $(pwd)"
         echo "Time: $(date)"
         echo ""
-      timeout: 5000
+      timeout: 5
 ```
 
 ### Git Context
@@ -127,7 +127,7 @@ hooks:
           echo "- Status: $(git status --short | wc -l | tr -d ' ') changed files"
           echo ""
         fi
-      timeout: 5000
+      timeout: 5
 ```
 
 ### Node.js Project Setup
@@ -147,7 +147,7 @@ hooks:
             echo "NODE_ENV=development" >> "$CLAUDE_ENV_FILE"
           fi
         fi
-      timeout: 5000
+      timeout: 5
 ```
 
 ### NVM Version Switching
@@ -175,7 +175,7 @@ hooks:
 
           echo "Using Node $(node -v) from .nvmrc"
         fi
-      timeout: 10000
+      timeout: 10
 ```
 
 ### Load Recent Issues
@@ -186,7 +186,7 @@ hooks:
         echo "Recent GitHub Issues:"
         gh issue list --limit 5 --state open 2>/dev/null || echo "GitHub CLI not available"
         echo ""
-      timeout: 15000
+      timeout: 15
 ```
 
 ### Status Tracking (Karma Radio)
@@ -198,7 +198,7 @@ hooks:
         export KARMA_SESSION_ID=$(echo "$INPUT" | jq -r '.session_id')
         export KARMA_AGENT_ID=$(echo "$INPUT" | jq -r '.session_id')
         karma radio set-status pending --message "Session started"
-      timeout: 5000
+      timeout: 5
 ```
 
 ### Conditional by Source
@@ -225,7 +225,7 @@ hooks:
             echo "Context compacted - preserving key info..."
             ;;
         esac
-      timeout: 5000
+      timeout: 5
 ```
 
 ### Load Project-Specific Config
@@ -240,7 +240,7 @@ hooks:
           echo "$CONFIG" | jq -r 'to_entries | .[] | "- \(.key): \(.value)"'
           echo ""
         fi
-      timeout: 3000
+      timeout: 3
 ```
 
 ### Set Up Virtual Environment (Python)
@@ -257,7 +257,7 @@ hooks:
             fi
           fi
         fi
-      timeout: 5000
+      timeout: 5
 ```
 
 ## Use Cases

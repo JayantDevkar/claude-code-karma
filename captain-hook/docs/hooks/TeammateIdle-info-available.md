@@ -59,7 +59,7 @@ Exit code 2 with stderr to keep the agent active (e.g., to dispatch new work).
 hooks:
   TeammateIdle:
     - command: ./scripts/maybe-dispatch-task.sh
-      timeout: 5000
+      timeout: 5
 ```
 
 ## Use Cases

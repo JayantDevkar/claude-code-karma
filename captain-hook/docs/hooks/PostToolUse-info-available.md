@@ -162,7 +162,7 @@ hooks:
     - command: |
         INPUT=$(cat)
         echo "$INPUT" >> /tmp/claude-tools.jsonl
-      timeout: 2000
+      timeout: 2
 ```
 
 ### Track File Changes
@@ -176,7 +176,7 @@ hooks:
         RESULT=$(echo "$INPUT" | jq -r '.tool_response' | head -c 100)
         echo "[$(date)] $TOOL: $FILE -> $RESULT" >> /tmp/file-changes.log
       match_tools: ["Write", "Edit"]
-      timeout: 2000
+      timeout: 2
 ```
 
 ### Error Detection & Notification
@@ -190,7 +190,7 @@ hooks:
           TOOL=$(echo "$INPUT" | jq -r '.tool_name')
           osascript -e "display notification \"$TOOL failed\" with title \"Claude Code\""
         fi
-      timeout: 3000
+      timeout: 3
 ```
 
 ### Build Result Feedback
@@ -209,7 +209,7 @@ hooks:
           fi
         fi
       match_tools: ["Bash"]
-      timeout: 5000
+      timeout: 5
 ```
 
 ### Status Reporting (Karma Radio)
@@ -221,7 +221,7 @@ hooks:
         export KARMA_SESSION_ID=$(echo "$INPUT" | jq -r '.session_id')
         TOOL=$(echo "$INPUT" | jq -r '.tool_name')
         karma radio report-progress --message "Completed $TOOL"
-      timeout: 5000
+      timeout: 5
 ```
 
 ### MCP Call Analytics
@@ -235,7 +235,7 @@ hooks:
           SERVER=$(echo "$TOOL" | cut -d'_' -f3)
           echo "[$(date)] MCP call to $SERVER" >> /tmp/mcp-usage.log
         fi
-      timeout: 2000
+      timeout: 2
 ```
 
 ## Use Cases

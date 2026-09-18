@@ -98,7 +98,7 @@ Hooks are defined in `.claude/hooks.yaml`:
 hooks:
   PreToolUse:
     - command: "your-script.sh"
-      timeout: 5000
+      timeout: 5
       match_tools: ["Write", "Edit"]  # optional filter
 
     - type: "prompt"  # LLM-powered hook

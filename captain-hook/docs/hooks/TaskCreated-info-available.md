@@ -68,7 +68,7 @@ Exit code 0, no output.
 hooks:
   TaskCreated:
     - command: ./scripts/audit-task-created.sh
-      timeout: 3000
+      timeout: 3
 ```
 
 ## Use Cases

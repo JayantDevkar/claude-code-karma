@@ -13,7 +13,7 @@ Hook settings.json structure:
           {
             "matcher": "*",
             "hooks": [
-              {"type": "command", "command": "python3 script.py", "timeout": 5000}
+              {"type": "command", "command": "python3 script.py", "timeout": 5}
             ]
           }
         ]
@@ -110,7 +110,7 @@ class HookRegistration(BaseModel):
     command: str
     script_filename: Optional[str] = None
     script_language: str = "unknown"
-    timeout_ms: Optional[int] = None
+    timeout_seconds: Optional[int] = None
     can_block: bool = False
 
 
@@ -372,7 +372,7 @@ def _parse_hook_groups(
                 if not command:
                     continue
 
-                timeout_ms = hook_entry.get("timeout")
+                timeout_seconds = hook_entry.get("timeout")
 
                 # For plugins, expand ${CLAUDE_PLUGIN_ROOT} in the display command
                 display_command = command
@@ -390,7 +390,7 @@ def _parse_hook_groups(
                         command=display_command,
                         script_filename=_extract_script_filename(command),
                         script_language=_detect_script_language(command),
-                        timeout_ms=timeout_ms,
+                        timeout_seconds=timeout_seconds,
                         can_block=can_block,
                         description=description,
                     )

@@ -61,7 +61,7 @@ hooks:
         INPUT=$(cat)
         SERVER=$(echo "$INPUT" | jq -r '.mcp_server')
         echo "User responded to $SERVER" >> /tmp/elicitations.log
-      timeout: 2000
+      timeout: 2
 ```
 
 ## Use Cases

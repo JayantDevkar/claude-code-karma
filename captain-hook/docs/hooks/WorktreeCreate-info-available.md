@@ -64,7 +64,7 @@ hooks:
   WorktreeCreate:
     - type: "http"
       url: "https://hooks.example.com/worktree"
-      timeout: 5000
+      timeout: 5
 ```
 
 ## Use Cases

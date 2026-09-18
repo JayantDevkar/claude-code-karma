@@ -55,7 +55,7 @@ hooks:
         INPUT=$(cat)
         FILE=$(echo "$INPUT" | jq -r '.file_path')
         echo "External change: $FILE" >> /tmp/file_changes.log
-      timeout: 2000
+      timeout: 2
 ```
 
 ## Use Cases

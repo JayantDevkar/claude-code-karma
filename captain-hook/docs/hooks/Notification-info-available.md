@@ -71,7 +71,7 @@ hooks:
         SESSION=$(echo "$INPUT" | jq -r '.session_id')
         TYPE=$(echo "$INPUT" | jq -r '.notification_type')
         echo "[$(date)] [$SESSION] $TYPE" >> /tmp/claude-notifications.log
-      timeout: 2000
+      timeout: 2
 ```
 
 ### Custom macOS Notifications
@@ -93,7 +93,7 @@ hooks:
             osascript -e 'display notification "Permission needed" with title "Claude Code" sound name "Ping"'
             ;;
         esac
-      timeout: 3000
+      timeout: 3
 ```
 
 ### Sound Alerts
@@ -114,7 +114,7 @@ hooks:
             afplay /System/Library/Sounds/Ping.aiff &
             ;;
         esac
-      timeout: 2000
+      timeout: 2
 ```
 
 ### Slack/Discord Integration
@@ -133,7 +133,7 @@ hooks:
             -d "{\"text\": \"Claude Code needs permission (session: $SESSION)\"}" \
             > /dev/null 2>&1 &
         fi
-      timeout: 3000
+      timeout: 3
 ```
 
 ### Terminal Bell
@@ -148,7 +148,7 @@ hooks:
           # Ring terminal bell
           printf '\a'
         fi
-      timeout: 1000
+      timeout: 1
 ```
 
 ### Status Tracking
@@ -168,7 +168,7 @@ hooks:
             karma radio set-status waiting --message "Awaiting permission"
             ;;
         esac
-      timeout: 3000
+      timeout: 3
 ```
 
 ### Track Idle Time
@@ -184,7 +184,7 @@ hooks:
           IDLE_FILE="/tmp/claude-idle-$SESSION"
           echo "$(date +%s)" > "$IDLE_FILE"
         fi
-      timeout: 1000
+      timeout: 1
 ```
 
 ### Focus Window (macOS)
@@ -199,7 +199,7 @@ hooks:
           # Bring Terminal to front for permissions
           osascript -e 'tell application "Terminal" to activate'
         fi
-      timeout: 2000
+      timeout: 2
 ```
 
 ### Email Alert for Long Waits
@@ -231,7 +231,7 @@ hooks:
             rm -f "$WAIT_FILE"
           fi
         fi
-      timeout: 5000
+      timeout: 5
 ```
 
 ### Desktop Notification with Icon
@@ -251,7 +251,7 @@ hooks:
             terminal-notifier -title "Claude Code" -message "Permission required" -sound Ping 2>/dev/null || true
             ;;
         esac
-      timeout: 3000
+      timeout: 3
 ```
 
 ## Use Cases
