@@ -67,6 +67,15 @@ select:focus {
 	border-radius: var(--radius-md);
 }
 
+html {
+	/* Reserve the vertical scrollbar's width at all times, whether or not the
+	   page is currently tall enough to need it. Without this, content whose
+	   height crosses the viewport threshold (e.g. expanding an accordion
+	   section) causes the scrollbar to appear/disappear, which resizes the
+	   content column and shifts everything sideways by the scrollbar's width. */
+	scrollbar-gutter: stable;
+}
+
 body {
 	font-family: var(--font-sans);
 	background-color: var(--bg-base);

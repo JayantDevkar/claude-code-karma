@@ -35,7 +35,15 @@ router = APIRouter()
 ALLOWED_PATH_PATTERN = re.compile(r"^[a-zA-Z0-9_.\-]+$")
 
 # Predefined order for docs
-DOC_ORDER = ["overview", "quick-start", "features", "architecture", "hooks-guide", "api-reference"]
+DOC_ORDER = [
+    "overview",
+    "quick-start",
+    "features",
+    "settings-guide",
+    "hooks-guide",
+    "architecture",
+    "api-reference",
+]
 
 
 # =============================================================================

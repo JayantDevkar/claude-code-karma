@@ -1,0 +1,17 @@
+{
+	"_comment": "Top-level settings.json keys karma's settings page reads or writes (frontend/src/lib/settings-manifest.ts plus the hand-written sections in frontend/src/routes/settings/+page.svelte and api/routers/settings.py). Checked weekly by .github/workflows/schema-drift.yml against the live SchemaStore schema — keep this list in sync whenever a setting is added to or removed from the page.",
+	"keys": [
+		"cleanupPeriodDays",
+		"permissions",
+		"statusLine",
+		"enabledPlugins",
+		"alwaysThinkingEnabled",
+		"spellcheck",
+		"preferredNotifChannel",
+		"editorMode",
+		"includeCoAuthoredBy",
+		"model",
+		"autoUpdatesChannel",
+		"verbose"
+	]
+}

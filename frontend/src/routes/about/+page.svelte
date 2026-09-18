@@ -13,9 +13,16 @@
 	let isLoading = $state(false);
 	let contentError = $state<string | null>(null);
 
-	// Initialize selectedDoc when data loads
+	// Initialize selectedDoc when data loads. A `?doc=` query param (e.g. from
+	// the Settings page's "Settings Guide" link) opens that doc directly
+	// instead of always landing on the first one, as long as it's real.
 	$effect(() => {
-		if (!selectedDoc && data.docs?.[0]?.path) {
+		if (selectedDoc) return;
+		const requested = data.initialDoc;
+		const requestedExists = requested && data.docs?.some((d: any) => d.path === requested);
+		if (requestedExists) {
+			selectedDoc = requested as string;
+		} else if (data.docs?.[0]?.path) {
 			selectedDoc = data.docs[0].path;
 		}
 	});

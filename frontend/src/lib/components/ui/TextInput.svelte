@@ -5,6 +5,7 @@
 		disabled?: boolean;
 		class?: string;
 		type?: 'text' | 'password' | 'email';
+		list?: string;
 		onkeydown?: (e: KeyboardEvent) => void;
 		oninput?: (e: Event) => void;
 	}
@@ -15,6 +16,7 @@
 		disabled = false,
 		class: className = '',
 		type = 'text',
+		list,
 		onkeydown,
 		oninput
 	}: Props = $props();
@@ -25,6 +27,7 @@
 	bind:value
 	{placeholder}
 	{disabled}
+	{list}
 	{onkeydown}
 	{oninput}
 	class="

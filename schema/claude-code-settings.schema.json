@@ -1,0 +1,250 @@
+{
+  "$defs": {
+    "permissionRule": {
+      "description": "Tool permission rule.\nSee https://code.claude.com/docs/en/settings#permission-rule-syntax\nSee https://code.claude.com/docs/en/tools-reference for full list of tools available to Claude.",
+      "examples": [
+        "Bash",
+        "Bash(npm run build)",
+        "Bash(git commit *)",
+        "Bash(npm run *)",
+        "Bash(ls*)",
+        "Bash(git * main)",
+        "Edit",
+        "Edit(/src/**/*.ts)",
+        "Read(*)",
+        "Skill(*)",
+        "Read(./.env)",
+        "Read(./secrets/**)",
+        "Read(//Users/alice/secrets/**)",
+        "Read(~/Documents/*.pdf)",
+        "Agent(Explore)",
+        "WebFetch",
+        "WebFetch(domain:example.com)",
+        "mcp__puppeteer",
+        "mcp__github__search_repositories"
+      ],
+      "pattern": "^((Agent|Artifact|Bash|Cd|Edit|EnterWorktree|ExitPlanMode|Glob|Grep|KillShell|LSP|Monitor|MultiEdit|NotebookEdit|PowerShell|Read|ShareOnboardingGuide|Skill|TaskCreate|TaskGet|TaskList|TaskOutput|TaskStop|TaskUpdate|TodoWrite|ToolSearch|WebFetch|WebSearch|Workflow|Write)(\\([^)]+\\))?|mcp__.*)$",
+      "type": "string"
+    }
+  },
+  "$id": "https://json.schemastore.org/claude-code-settings.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": true,
+  "allowTrailingCommas": false,
+  "description": "Configuration settings for Claude Code. Learn more: https://code.claude.com/docs/en/settings",
+  "properties": {
+    "alwaysThinkingEnabled": {
+      "description": "Enable extended thinking by default for all sessions. Typically configured via the /config command rather than editing directly. See https://code.claude.com/docs/en/common-workflows#use-extended-thinking-thinking-mode",
+      "type": "boolean"
+    },
+    "autoUpdatesChannel": {
+      "default": "latest",
+      "description": "Release channel to follow for updates. Use \"stable\" for a version that is typically about one week old and skips versions with major regressions, or \"latest\" (default) for the most recent release. Set DISABLE_AUTOUPDATER=1 to disable background auto-updates, or DISABLE_UPDATES=1 (added in v2.1.118) to block all update paths including manual `claude update`.",
+      "enum": [
+        "stable",
+        "latest"
+      ],
+      "type": "string"
+    },
+    "cleanupPeriodDays": {
+      "default": 30,
+      "description": "Number of days to retain sessions, orphaned subagent worktrees, tasks, shell snapshots, and backups. Minimum is 1; setting 0 is rejected with a validation error. See https://code.claude.com/docs/en/settings#available-settings",
+      "examples": [
+        20,
+        30,
+        60
+      ],
+      "minimum": 1,
+      "type": "integer"
+    },
+    "editorMode": {
+      "default": "normal",
+      "description": "Key binding mode for the input prompt: \"normal\" or \"vim\". Appears in /config as Editor mode. See https://code.claude.com/docs/en/terminal-config#edit-prompts-with-vim-keybindings",
+      "enum": [
+        "normal",
+        "vim"
+      ],
+      "type": "string"
+    },
+    "enabledPlugins": {
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          {
+            "type": "boolean"
+          },
+          {
+            "not": {}
+          }
+        ]
+      },
+      "description": "Enabled plugins using plugin-id@marketplace-id format. Example: { \"formatter@anthropic-tools\": true }. See https://code.claude.com/docs/en/plugins",
+      "type": "object"
+    },
+    "includeCoAuthoredBy": {
+      "default": true,
+      "description": "DEPRECATED. Use 'attribution' instead. Whether to include the co-authored-by Claude byline in git commits and pull requests (default: true)",
+      "type": "boolean"
+    },
+    "model": {
+      "description": "Override the default model used by Claude Code. For finer control, use environment variables: ANTHROPIC_MODEL (runtime override), ANTHROPIC_DEFAULT_OPUS_MODEL, ANTHROPIC_DEFAULT_SONNET_MODEL, ANTHROPIC_DEFAULT_HAIKU_MODEL (per-class pinning), CLAUDE_CODE_SUBAGENT_MODEL (subagent model). See https://code.claude.com/docs/en/model-config",
+      "type": "string"
+    },
+    "permissions": {
+      "additionalProperties": false,
+      "description": "Tool usage permissions configuration.\nSee https://code.claude.com/docs/en/permissions and https://code.claude.com/docs/en/settings#permission-settings\nSee https://code.claude.com/docs/en/tools-reference for full list of tools available to Claude.",
+      "examples": [
+        {
+          "allow": [
+            "Bash(git add:*)"
+          ],
+          "ask": [
+            "Bash(gh pr create:*)",
+            "Bash(git commit:*)"
+          ],
+          "defaultMode": "default",
+          "deny": [
+            "Read(*.env)",
+            "Bash(rm:*)",
+            "Bash(curl:*)"
+          ]
+        }
+      ],
+      "properties": {
+        "additionalDirectories": {
+          "description": "Additional directories to include in the permission scope",
+          "examples": [
+            [
+              "//Users/alice/Documents",
+              "~/projects"
+            ]
+          ],
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "allow": {
+          "description": "List of permission rules for allowed operations",
+          "items": {
+            "$ref": "#/$defs/permissionRule"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "ask": {
+          "description": "List of permission rules that should always prompt for confirmation",
+          "items": {
+            "$ref": "#/$defs/permissionRule"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "defaultMode": {
+          "description": "Default permission mode.\n\"default\": prompts on first use.\nUNDOCUMENTED. \"manual\": accepted alias for \"default\" (the CLI/VS Code/JetBrains UI now labels this mode \"Manual\" as of v2.1.200; permission-modes.md has not yet been updated to mention it).\n\"acceptEdits\": auto-accepts file edits.\n\"plan\": read-only, no modifications.\nUNDOCUMENTED. \"delegate\": coordination-only for agent team leads (agent teams are experimental; enable via CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS).\n\"dontAsk\": auto-denies unless pre-approved via permissions.\n\"bypassPermissions\": skips all prompts (use only in isolated environments).\n\"auto\": auto-approves tool calls with background safety checks that verify actions align with your request.\nSee https://code.claude.com/docs/en/permissions",
+          "enum": [
+            "acceptEdits",
+            "bypassPermissions",
+            "default",
+            "delegate",
+            "dontAsk",
+            "plan",
+            "auto",
+            "manual"
+          ],
+          "type": "string"
+        },
+        "deny": {
+          "description": "List of permission rules for denied operations",
+          "items": {
+            "$ref": "#/$defs/permissionRule"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "disableAutoMode": {
+          "description": "Set to \"disable\" to prevent auto mode from being activated. Removes `auto` from the Shift+Tab cycle and rejects `--permission-mode auto` at startup. Most useful in managed settings where users cannot override it. See https://code.claude.com/docs/en/permissions",
+          "enum": [
+            "disable"
+          ],
+          "type": "string"
+        },
+        "disableBypassPermissionsMode": {
+          "description": "Disable the ability to bypass permission prompts",
+          "enum": [
+            "disable"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "preferredNotifChannel": {
+      "default": "auto",
+      "description": "Method for task-complete and permission-prompt notifications. \"auto\" (default) sends a desktop notification in iTerm2, Ghostty, and Kitty and does nothing in other terminals; \"terminal_bell\" rings the bell in any terminal; \"notifications_disabled\" turns them off. See https://code.claude.com/docs/en/terminal-config#get-a-terminal-bell-or-notification",
+      "enum": [
+        "auto",
+        "terminal_bell",
+        "iterm2",
+        "iterm2_with_bell",
+        "kitty",
+        "ghostty",
+        "notifications_disabled"
+      ],
+      "type": "string"
+    },
+    "statusLine": {
+      "additionalProperties": false,
+      "description": "Custom status line display configuration. See https://code.claude.com/docs/en/statusline",
+      "examples": [
+        {
+          "command": "~/.claude/statusline.sh",
+          "type": "command"
+        }
+      ],
+      "properties": {
+        "command": {
+          "description": "A shell command or path to a script that displays session information (context usage, costs, git status, etc.) by reading JSON data from stdin and writing output to stdout. See https://code.claude.com/docs/en/statusline",
+          "type": "string"
+        },
+        "hideVimModeIndicator": {
+          "description": "Set to true when your status line script renders the vim mode indicator itself, to suppress the built-in vim mode display. See https://code.claude.com/docs/en/statusline#manually-configure-a-status-line",
+          "type": "boolean"
+        },
+        "padding": {
+          "description": "Optional number of extra horizontal spacing characters added to the status line content; defaults to 0.",
+          "type": "number"
+        },
+        "refreshInterval": {
+          "description": "Re-run the status line command every N seconds in addition to event-driven updates. Leave unset to run only on events. Useful for time-based data like clocks, or when background subagents change git state while the main session is idle. See https://code.claude.com/docs/en/statusline",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "type": {
+          "const": "command",
+          "description": "The type of status line handler; must be set to \"command\" to run a custom shell script that receives JSON session data via stdin.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "command"
+      ],
+      "type": "object"
+    },
+    "verbose": {
+      "default": false,
+      "description": "Show full tool output instead of truncated summaries. The --verbose flag overrides this for a single session. Requires Claude Code v2.1.119 or later. See https://code.claude.com/docs/en/settings#available-settings",
+      "type": "boolean"
+    }
+  },
+  "title": "Claude Code Settings",
+  "type": "object"
+}

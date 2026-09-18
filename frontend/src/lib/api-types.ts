@@ -497,6 +497,26 @@ export interface StatusLineConfig {
 	padding?: number;
 }
 
+export type NotifChannel =
+	| 'auto'
+	| 'iterm2'
+	| 'terminal_bell'
+	| 'iterm2_with_bell'
+	| 'kitty'
+	| 'ghostty'
+	| 'notifications_disabled';
+
+export type EditorMode = 'normal' | 'vim';
+
+export type AutoUpdatesChannel = 'latest' | 'stable';
+
+export interface SpellcheckConfig {
+	enabled?: boolean;
+	checker?: 'aspell' | 'hunspell' | 'ispell' | 'auto';
+	language?: string;
+	color?: string;
+}
+
 export interface ClaudeSettings {
 	permissions?: PermissionsConfig;
 	statusLine?: StatusLineConfig;
@@ -506,6 +526,17 @@ export interface ClaudeSettings {
 	env?: Record<string, string>;
 	model?: string;
 	hooks?: Record<string, unknown>;
+	spellcheck?: SpellcheckConfig;
+	preferredNotifChannel?: NotifChannel;
+	editorMode?: EditorMode;
+	includeCoAuthoredBy?: boolean;
+	autoUpdatesChannel?: AutoUpdatesChannel;
+	verbose?: boolean;
+}
+
+export interface SettingsEnvironment {
+	spellcheckers: string[];
+	settingsPath: string;
 }
 
 // Permission mode options with labels and descriptions for the settings UI
