@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+# karma — jump from this terminal to the Karma dashboard.
+#
+# With no arguments, resolves the Claude Code session running on THIS
+# terminal (by tty, from ~/.claude_karma/live-sessions/) and opens its
+# session page via the short link route (/s/{uuid-prefix}). Falls back to
+# the dashboard home when no session is tracked on this tty.
+#
+#   karma              # open this terminal's session (or the dashboard)
+#   karma 1eecfa75     # open a specific session by uuid or uuid prefix
+#
+# Install: symlink somewhere on PATH, e.g.
+#   ln -s "$(pwd)/scripts/karma" /usr/local/bin/karma
+#
+# KARMA_URL overrides the dashboard base (default http://localhost:5180).
+
+set -euo pipefail
+
+KARMA_URL="${KARMA_URL:-http://localhost:5180}"
+LIVE_DIR="${HOME}/.claude_karma/live-sessions"
+
+open_url() {
+  if command -v open >/dev/null 2>&1; then
+    open "$1"
+  elif command -v xdg-open >/dev/null 2>&1; then
+    xdg-open "$1"
+  else
+    echo "$1"
+  fi
+}
+
+if [[ $# -ge 1 ]]; then
+  open_url "${KARMA_URL}/s/$1"
+  exit 0
+fi
+
+tty_path="$(tty 2>/dev/null || true)"
+short_id=""
+if [[ -n "$tty_path" && "$tty_path" != "not a tty" && -d "$LIVE_DIR" ]]; then
+  short_id="$(python3 - "$LIVE_DIR" "$tty_path" <<'PY'
+import glob, json, os, sys
+
+live_dir, tty = sys.argv[1], sys.argv[2]
+best_mtime, best_id = 0.0, ""
+for path in glob.glob(os.path.join(live_dir, "*.json")):
+    try:
+        with open(path) as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        continue
+    terminal = data.get("terminal") or {}
+    session_id = data.get("session_id") or ""
+    if terminal.get("tty") == tty and session_id:
+        mtime = os.path.getmtime(path)
+        if mtime > best_mtime:
+            best_mtime, best_id = mtime, session_id
+print(best_id[:8])
+PY
+)"
+fi
+
+if [[ -n "$short_id" ]]; then
+  open_url "${KARMA_URL}/s/${short_id}"
+else
+  echo "No Claude Code session tracked on this terminal — opening the dashboard." >&2
+  open_url "$KARMA_URL"
+fi

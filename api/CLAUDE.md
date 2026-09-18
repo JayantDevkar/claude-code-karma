@@ -149,6 +149,8 @@ Real-time state tracked in `~/.claude_karma/live-sessions/{slug}.json` via Claud
 | GET | `/sessions/{uuid}/file-activity` | File operations |
 | GET | `/sessions/{uuid}/subagents` | Subagent activity |
 | GET | `/analytics/projects/{encoded_name}` | Project analytics |
+| GET | `/sessions/resolve/{short_id}` | Resolve a UUID/prefix to its project (short links) |
+| POST | `/sessions/{uuid}/resume-in-terminal` | Focus if live, else launch `claude --resume` in a new terminal |
 
 ## Core Classes
 

@@ -7,6 +7,7 @@ Phase 3: HTTP caching with conditional request support.
 import heapq
 import json
 import logging
+import re
 import sqlite3
 import sys
 from datetime import datetime, timezone
@@ -94,11 +95,13 @@ from schemas import (
     PlanDetail,
     ProjectFilterOption,
     SessionDetail,
+    SessionResolveResult,
     SessionWithContext,
     SkillUsage,
     StatusFilterOption,
     SubagentSummary,
     TaskSchema,
+    TerminalResumeResult,
     TodoItemSchema,
 )
 from services.session_lookup import (
@@ -1768,4 +1771,192 @@ def set_session_title(uuid: str, request: SetTitleRequest):
     return JSONResponse(
         content={"status": "ok", "uuid": uuid, "title": title},
         status_code=200,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Short-link resolution + focus-or-resume
+# ---------------------------------------------------------------------------
+
+_UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+# Short ids are UUID prefixes (statusline links use the first 8 hex chars).
+_SHORT_ID_RE = re.compile(r"^[0-9a-f][0-9a-f-]{5,35}$")
+
+
+def _find_session_files(uuid_prefix: str) -> list[tuple[Path, str]]:
+    """All session JSONLs whose uuid starts with ``uuid_prefix``.
+
+    Returns (jsonl_path, project_encoded_name) pairs. The prefix is validated
+    by the caller, so it is safe to embed in a glob pattern.
+    """
+    from utils import is_encoded_project_dir
+
+    projects_dir = settings.projects_dir
+    if not projects_dir.exists():
+        return []
+    matches: list[tuple[Path, str]] = []
+    for encoded_dir in projects_dir.iterdir():
+        if not encoded_dir.is_dir() or not is_encoded_project_dir(encoded_dir.name):
+            continue
+        exact = encoded_dir / f"{uuid_prefix}.jsonl"
+        if exact.exists():
+            return [(exact, encoded_dir.name)]
+        for jsonl in encoded_dir.glob(f"{uuid_prefix}*.jsonl"):
+            if not jsonl.name.startswith("agent-"):
+                matches.append((jsonl, encoded_dir.name))
+    return matches
+
+
+def _session_cwd(jsonl_path: Path) -> Optional[str]:
+    """The session's working directory, from the JSONL's own cwd field.
+
+    Per-session cwd beats the project-level decoded path: worktree sessions
+    live under the main project's encoded dir but ran elsewhere.
+    """
+    try:
+        with open(jsonl_path, "r", encoding="utf-8") as f:
+            for i, line in enumerate(f):
+                if i > 50:
+                    break
+                try:
+                    cwd = json.loads(line).get("cwd")
+                except (json.JSONDecodeError, AttributeError):
+                    continue
+                if isinstance(cwd, str) and Path(cwd).is_absolute():
+                    return cwd
+    except (OSError, UnicodeDecodeError):
+        pass
+    return None
+
+
+def _resolve_from_live_sessions(short_id: str) -> Optional[SessionResolveResult]:
+    """Resolve a uuid prefix against live-session records instead of JSONL files.
+
+    A brand-new session has a live-session state (written immediately by the
+    SessionStart hook) before Claude Code has written its first message to
+    the transcript JSONL — so right at session start, `_find_session_files`
+    finds nothing even though the session genuinely exists. This is the
+    fallback that makes the short link work in that window.
+    """
+    from models import Project
+    from models.live_session import load_all_live_sessions
+
+    candidates = [
+        state
+        for state in load_all_live_sessions()
+        if state.session_id.lower().startswith(short_id) or short_id == state.session_id.lower()
+    ]
+    if not candidates:
+        return None
+    newest = max(candidates, key=lambda s: s.updated_at)
+    return SessionResolveResult(
+        uuid=newest.session_id,
+        project_encoded_name=Project.encode_path(newest.cwd),
+        slug=newest.slug,
+    )
+
+
+@router.get("/resolve/{short_id}", response_model=SessionResolveResult)
+def resolve_session_short_id(short_id: str) -> SessionResolveResult:
+    """Resolve a session UUID or UUID prefix to its dashboard location.
+
+    Powers the frontend's short links (``/s/{first-8-of-uuid}``), which are
+    compact enough for a terminal statusline. Ambiguous prefixes resolve to
+    the most recently modified match. Falls back to live-session records
+    (see ``_resolve_from_live_sessions``) for a session too new to have a
+    transcript JSONL yet.
+    """
+    short_id = short_id.lower()
+    if not _SHORT_ID_RE.match(short_id):
+        raise HTTPException(status_code=400, detail=f"Not a session id or prefix: {short_id}")
+
+    matches = _find_session_files(short_id)
+    if not matches:
+        live_result = _resolve_from_live_sessions(short_id)
+        if live_result:
+            return live_result
+        raise HTTPException(status_code=404, detail=f"No session matches: {short_id}")
+
+    def _mtime(match: tuple[Path, str]) -> float:
+        try:
+            return match[0].stat().st_mtime
+        except OSError:
+            return 0.0
+
+    jsonl_path, encoded_name = max(matches, key=_mtime)
+    uuid = jsonl_path.stem
+
+    from models.live_session import load_live_session
+
+    state = load_live_session(uuid)
+    return SessionResolveResult(
+        uuid=uuid,
+        project_encoded_name=encoded_name,
+        slug=state.slug if state else None,
+    )
+
+
+@router.post("/{uuid}/resume-in-terminal", response_model=TerminalResumeResult)
+def resume_session_in_terminal(uuid: str, request: Request) -> TerminalResumeResult:
+    """Focus the session's terminal if it is still running, else resume it.
+
+    A live claude process gets its existing terminal raised (same behavior as
+    ``/live-sessions/{id}/focus-terminal``). An ended session gets a fresh
+    terminal tab/window that cd's into the project and runs
+    ``claude --resume <uuid>`` — the new session's hooks then re-register it
+    as live on their own.
+
+    The shell command is built entirely server-side from the validated UUID
+    and Karma's own project path resolution; the request body carries nothing.
+    Returns 404 if the session is unknown, 409 if its project directory no
+    longer exists, 403 for cross-origin browser requests.
+    """
+    from models import Project
+    from models.live_session import load_live_session
+    from routers.live_sessions import _reject_cross_origin
+    from services.terminal_focus import focus_terminal, pid_is_live_claude
+    from services.terminal_launch import launch_resume_in_terminal
+
+    _reject_cross_origin(request, settings)
+    uuid = uuid.lower()
+    if not _UUID_RE.match(uuid):
+        raise HTTPException(status_code=400, detail=f"Not a session UUID: {uuid}")
+
+    state = load_live_session(uuid)
+    terminal = state.terminal if state else None
+
+    # Dedupe: never spawn a second claude on a session that is still running.
+    if terminal and terminal.pid and pid_is_live_claude(terminal.pid):
+        result = focus_terminal(terminal.model_dump())
+        return TerminalResumeResult(
+            ok=bool(result.get("focused")),
+            action="focused",
+            method=result.get("method", "none"),
+            detail=result.get("detail", ""),
+        )
+
+    matches = _find_session_files(uuid)
+    if not matches:
+        raise HTTPException(status_code=404, detail=f"Session not found: {uuid}")
+    jsonl_path, encoded_name = matches[0]
+
+    # Per-session cwd first (worktrees), then the live record, then the
+    # project-level path recovered from other sessions.
+    cwd = _session_cwd(jsonl_path) or (state.cwd if state else None)
+    if not cwd:
+        cwd = Project.from_encoded_name(encoded_name).path
+    if not Path(cwd).is_dir():
+        raise HTTPException(
+            status_code=409,
+            detail=f"The session's project directory no longer exists: {cwd}",
+        )
+
+    result = launch_resume_in_terminal(
+        cwd, uuid, term_program=terminal.term_program if terminal else None
+    )
+    return TerminalResumeResult(
+        ok=bool(result.get("launched")),
+        action="launched" if result.get("launched") else "failed",
+        method=result.get("method", "none"),
+        detail=result.get("detail", ""),
     )
