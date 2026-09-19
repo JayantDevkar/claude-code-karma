@@ -26,6 +26,18 @@ TRUSTED_ORIGIN = "http://localhost:5180"
 RC_HEADERS = {"origin": TRUSTED_ORIGIN, "x-karma-rc": "1"}
 
 
+@pytest.fixture(autouse=True)
+def _clear_rc_caches():
+    """The scan memo and the tmux pane-ownership probe are module-level."""
+    import services.remote_control as rc
+
+    rc.reset_scan_cache()
+    rc._pane_cache.clear()
+    yield
+    rc.reset_scan_cache()
+    rc._pane_cache.clear()
+
+
 # ===========================================================================
 # Unit: read_remote_control_state
 # ===========================================================================
@@ -198,6 +210,48 @@ def test_read_state_refuses_path_outside_projects(tmp_path, projects_dir):
     assert got["state"] == "off" and got["url"] is None
 
 
+def test_scan_is_memoized_until_the_transcript_changes(tmp_path, monkeypatch):
+    """The polled single-session GET must not re-read a quiet multi-MB
+    transcript once a second (review)."""
+    import services.remote_control as rc
+
+    path = tmp_path / "s.jsonl"
+    _jsonl(path, {"type": "user", "message": {"role": "user", "content": "hi"}})
+
+    scans = []
+    real_scan = rc._scan_bridge_status
+    monkeypatch.setattr(
+        rc, "_scan_bridge_status", lambda p, size: scans.append(p) or real_scan(p, size)
+    )
+
+    assert rc._last_bridge_status_in(path) is None
+    assert rc._last_bridge_status_in(path) is None
+    assert rc._last_bridge_status_in(path) is None
+    assert len(scans) == 1, "an unchanged transcript must be scanned once"
+
+    # Appending invalidates the memo on (mtime, size) and the new line is seen.
+    with path.open("a") as fh:
+        fh.write(
+            json.dumps(_bridge("/remote-control is active", "https://claude.ai/code/x", "t1"))
+            + "\n"
+        )
+    got = rc._last_bridge_status_in(path)
+    assert got is not None and got["subtype"] == "bridge_status"
+    assert len(scans) == 2
+
+
+def test_scan_cache_is_per_path(tmp_path):
+    """Two transcripts of identical size must not share a memo entry."""
+    import services.remote_control as rc
+
+    a = tmp_path / "a.jsonl"
+    b = tmp_path / "b.jsonl"
+    _jsonl(a, _bridge("/remote-control is active", "https://claude.ai/code/x", "t1"))
+    _jsonl(b, {"type": "user", "message": {"role": "user", "content": "hi"}})
+    assert rc._last_bridge_status_in(a) is not None
+    assert rc._last_bridge_status_in(b) is None
+
+
 # ===========================================================================
 # Unit: can_send_remote_control + keystroke senders
 # ===========================================================================
@@ -207,6 +261,7 @@ def test_can_send_requires_live_pid(monkeypatch):
     import services.remote_control as rc
 
     monkeypatch.setattr(rc, "pid_is_live_claude", lambda _pid: True)
+    monkeypatch.setattr(rc, "_pane_owns_pid", lambda _pane, _pid: True)
     assert rc.can_send_remote_control({"tmux_pane": "%2", "pid": 111}) is True
     assert rc.can_send_remote_control({"tmux_pane": "%2"}) is False  # no pid
     assert rc.can_send_remote_control({"term_program": "vscode", "pid": 111}) is False
@@ -216,11 +271,46 @@ def test_can_send_requires_live_pid(monkeypatch):
     assert rc.can_send_remote_control({"tmux_pane": "%2", "pid": 111}) is False
 
 
+def test_can_send_rejects_pane_that_lost_the_pid(monkeypatch):
+    """A recycled pid in a recycled pane must not enable RC (review)."""
+    import services.remote_control as rc
+
+    monkeypatch.setattr(rc, "pid_is_live_claude", lambda _pid: True)
+    monkeypatch.setattr(rc, "_pane_owns_pid", lambda _pane, _pid: False)
+    assert rc.can_send_remote_control({"tmux_pane": "%2", "pid": 111}) is False
+
+
+def test_pane_owns_pid_accepts_pane_pid_and_descendants(monkeypatch):
+    import services.remote_control as rc
+
+    monkeypatch.setattr(rc, "_tmux_pane_pid", lambda _pane: 500)
+    # pid is the pane process itself
+    assert rc._pane_owns_pid("%1", 500) is True
+    rc._pane_cache.clear()
+    # pid is a grandchild of the pane process (claude under the pane's shell)
+    parents = {700: 600, 600: 500}
+    monkeypatch.setattr(rc, "_ppid_of", lambda pid: parents.get(pid))
+    assert rc._pane_owns_pid("%1", 700) is True
+    rc._pane_cache.clear()
+    # unrelated process tree — walk terminates at init
+    monkeypatch.setattr(rc, "_ppid_of", lambda pid: 1)
+    assert rc._pane_owns_pid("%1", 999) is False
+
+
+def test_pane_owns_pid_false_when_unverifiable(monkeypatch):
+    """No tmux / pane gone → can't identify the pane, so don't type into it."""
+    import services.remote_control as rc
+
+    monkeypatch.setattr(rc, "_tmux_pane_pid", lambda _pane: None)
+    assert rc._pane_owns_pid("%1", 500) is False
+
+
 def test_type_command_tmux_argv(monkeypatch):
     import services.remote_control as rc
 
     calls = []
     monkeypatch.setattr(rc, "pid_is_live_claude", lambda _pid: True)
+    monkeypatch.setattr(rc, "_pane_owns_pid", lambda _pane, _pid: True)
     monkeypatch.setattr(
         rc,
         "_run",
@@ -320,22 +410,13 @@ def test_untrusted_origin_403(client):
     assert r.status_code == 403
 
 
-def test_no_origin_allowed(client, monkeypatch):
-    from routers import live_sessions
-
-    monkeypatch.setattr(
-        live_sessions,
-        "read_remote_control_state",
-        lambda *a: {"state": "off", "url": None, "at": None},
-    )
-    monkeypatch.setattr(
-        live_sessions,
-        "type_remote_control_command",
-        lambda _t: {"sent": True, "method": "tmux", "detail": "x"},
-    )
+def test_no_origin_403(client):
+    """A keystroke-injecting endpoint doesn't give "no Origin" the benefit of
+    the doubt — it closes the DNS-rebinding / no-Origin-POST corner (review)."""
     _write_session(client.live_dir, "s", {"tmux_pane": "%2", "pid": 1})
     r = _post(client, "s", headers={"x-karma-rc": "1"})
-    assert r.status_code == 200
+    assert r.status_code == 403
+    assert "Origin" in r.json()["detail"]
 
 
 def test_invalid_session_id_400(client):
@@ -479,9 +560,13 @@ def test_enable_success_confirmed(client, monkeypatch):
     )
 
 
-def test_enable_sent_but_unconfirmed(client, monkeypatch):
+def test_enable_sent_but_unconfirmed_raises_terminal(client, monkeypatch):
+    """Unconfirmed ON may mean the "off" reading was stale and the command
+    opened the *disconnect* menu instead. Nothing sends Esc, so the terminal is
+    raised rather than left with a menu waiting for keys (review)."""
     from routers import live_sessions
 
+    focused = []
     monkeypatch.setattr(
         live_sessions,
         "read_remote_control_state",
@@ -492,11 +577,47 @@ def test_enable_sent_but_unconfirmed(client, monkeypatch):
         "type_remote_control_command",
         lambda _t: {"sent": True, "method": "tmux", "detail": "typed"},
     )
+    monkeypatch.setattr(
+        live_sessions,
+        "focus_terminal",
+        lambda t: focused.append(t) or {"focused": True, "method": "tmux", "detail": "raised"},
+    )
     _write_session(client.live_dir, "s", {"tmux_pane": "%2", "pid": 1})
     r = _post(client, "s", desired="on")
     assert r.status_code == 200
     b = r.json()
     assert b["sent"] is True and b["confirmed"] is False and b["state"] == "off"
+    assert len(focused) == 1, "the terminal must be raised when ON can't be confirmed"
+    assert "disconnect menu" in b["detail"]
+
+
+def test_enable_confirmed_does_not_raise_terminal(client, monkeypatch):
+    """The happy path must not steal focus from the browser."""
+    from routers import live_sessions
+
+    focused = []
+    states = iter([{"state": "off", "url": None, "at": "t0"}])
+    monkeypatch.setattr(
+        live_sessions,
+        "read_remote_control_state",
+        lambda *a: next(states, {"state": "on", "url": "https://claude.ai/code/x", "at": "t1"}),
+    )
+    monkeypatch.setattr(
+        live_sessions,
+        "type_remote_control_command",
+        lambda _t: {"sent": True, "method": "tmux", "detail": "typed"},
+    )
+    monkeypatch.setattr(
+        live_sessions,
+        "focus_terminal",
+        lambda t: focused.append(t) or {"focused": True, "method": "tmux", "detail": "raised"},
+    )
+    _write_session(client.live_dir, "s", {"tmux_pane": "%2", "pid": 1})
+    r = _post(client, "s", desired="on")
+    assert r.status_code == 200
+    b = r.json()
+    assert b["confirmed"] is True and b["state"] == "on"
+    assert focused == []
 
 
 def test_disable_opens_menu_and_raises_terminal(client, monkeypatch):

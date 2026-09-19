@@ -20,7 +20,9 @@ fully automated:
 
 Supported terminals: tmux, macOS Terminal.app, macOS iTerm2 — and only for a
 session whose ``pid`` is still alive (a reused tty / tmux pane must never be
-typed into blind).
+typed into blind). For tmux the pane must additionally still *own* that pid,
+since a live pid alone doesn't rule out a recycled pane now hosting a different
+Claude session.
 
 State is read back from the session JSONL transcript chain, where Claude Code
 writes ``{"type":"system","subtype":"bridge_status", ...}`` lines on connect
@@ -35,8 +37,12 @@ from __future__ import annotations
 import json
 import os
 import re
+import stat
+import threading
+import time
+from collections import OrderedDict
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from services.terminal_focus import (
     _app_is_running,
@@ -82,21 +88,87 @@ _ON_MARKERS = ("is active", "session is active", "remote control is on")
 # Capability gate
 # ---------------------------------------------------------------------------
 
+# Pane-ownership probes shell out to tmux/ps, and the gate runs on a polled
+# endpoint, so results are cached for a beat like terminal_focus's pid probe.
+_PANE_TTL_SECONDS = 5.0
+_MAX_PID_ANCESTRY = 8
+_pane_cache: Dict[Tuple[str, int], Tuple[float, bool]] = {}
+
+
+def _tmux_pane_pid(pane: str) -> Optional[int]:
+    """The process tmux reports for ``pane`` (usually its shell), or None."""
+    try:
+        res = _run(["tmux", "display-message", "-p", "-t", pane, "#{pane_pid}"])
+    except Exception:  # noqa: BLE001 — probe must never raise
+        return None
+    out = res.stdout.strip()
+    return int(out) if res.returncode == 0 and out.isdigit() else None
+
+
+def _ppid_of(pid: int) -> Optional[int]:
+    try:
+        res = _run(["ps", "-o", "ppid=", "-p", str(int(pid))])
+    except Exception:  # noqa: BLE001
+        return None
+    out = res.stdout.strip()
+    return int(out) if res.returncode == 0 and out.isdigit() else None
+
+
+def _pane_owns_pid(pane: str, pid: int) -> bool:
+    """Whether tmux pane ``pane`` is really the one running ``pid``.
+
+    ``pid_is_live_claude`` only proves *some* claude-ish process holds that pid
+    — it accepts ``node``/``bun``/``deno``. A recycled pid paired with a
+    recycled pane id would otherwise let Karma type into a pane now hosting a
+    *different* Claude session (review). tmux reports the pane's own process, so
+    ``pid`` is accepted when it is that process or a descendant of it.
+
+    Unverifiable (no tmux, pane gone, ps unavailable) is treated as **not**
+    owned: we can't type into a pane we can't identify anyway.
+    """
+    now = time.monotonic()
+    key = (pane, int(pid))
+    hit = _pane_cache.get(key)
+    if hit is not None and now - hit[0] < _PANE_TTL_SECONDS:
+        return hit[1]
+
+    pane_pid = _tmux_pane_pid(pane)
+    owned = False
+    if pane_pid is not None:
+        cur: Optional[int] = int(pid)
+        for _ in range(_MAX_PID_ANCESTRY):
+            if cur is None or cur <= 1:
+                break
+            if cur == pane_pid:
+                owned = True
+                break
+            cur = _ppid_of(cur)
+
+    if len(_pane_cache) > 256:
+        _pane_cache.clear()
+    _pane_cache[key] = (now, owned)
+    return owned
+
 
 def can_send_remote_control(terminal: Optional[Dict[str, Any]]) -> bool:
     """Whether Karma can type ``/remote-control`` into this session's terminal.
 
     Stricter than ``terminal_focus.can_focus``: keystroke injection requires a
     still-alive captured ``pid`` (so a recycled tty / tmux pane is never typed
-    into) and one of the three terminal hosts we implement.
+    into) and one of the three terminal hosts we implement. For tmux the pane
+    must additionally still *own* that pid — see :func:`_pane_owns_pid`.
     """
     if not terminal:
         return False
     pid = terminal.get("pid")
     if not pid or not pid_is_live_claude(pid):
         return False
-    if terminal.get("tmux_pane"):
-        return True
+    pane = terminal.get("tmux_pane")
+    if pane:
+        try:
+            return _pane_owns_pid(str(pane), int(pid))
+        except (TypeError, ValueError):
+            return False  # unparseable pid in the state file — don't type blind
     return terminal.get("term_program") in _SUPPORTED_TERM_PROGRAMS
 
 
@@ -141,17 +213,26 @@ def _within_projects(path: Path, projects_dir: Optional[Path]) -> bool:
     return real == base_real or base_real in real.parents
 
 
-def _last_bridge_status_in(path: Path) -> Optional[Dict[str, Any]]:
-    """The last real ``system/bridge_status`` event in ``path``, or None.
+# The scan result is memoized on (path, st_mtime_ns, st_size). The single-
+# session GET that reads RC state is polled once a second per open tab, and in
+# the common case (RC never used) there is no bridge_status line anywhere, so
+# every uncached hit would re-read and decode the whole multi-MB chain. A JSONL
+# transcript is append-only: unchanged mtime+size means unchanged content, so a
+# quiet session is scanned exactly once (review).
+_SCAN_CACHE_MAX = 256
+_scan_cache: "OrderedDict[str, Tuple[Tuple[int, int], Optional[Dict[str, Any]]]]" = OrderedDict()
+_scan_cache_lock = threading.Lock()
 
-    Scans the whole file (capped at _MAX_SCAN_BYTES) — the event can be far
-    from the end of an active session. Lines that only *contain* the string
-    "bridge_status" but don't parse to a ``type==system`` event are ignored.
-    """
+
+def reset_scan_cache() -> None:
+    """Drop the memoized scans (tests; a transcript rewritten within one tick)."""
+    with _scan_cache_lock:
+        _scan_cache.clear()
+
+
+def _scan_bridge_status(path: Path, size: int) -> Optional[Dict[str, Any]]:
+    """Read ``path`` and return its last real ``system/bridge_status`` event."""
     try:
-        if not path.is_file():
-            return None
-        size = path.stat().st_size
         with path.open("rb") as fh:
             if size > _MAX_SCAN_BYTES:
                 fh.seek(size - _TAIL_BYTES)
@@ -171,6 +252,40 @@ def _last_bridge_status_in(path: Path) -> Optional[Dict[str, Any]]:
     return latest
 
 
+def _last_bridge_status_in(path: Path) -> Optional[Dict[str, Any]]:
+    """The last real ``system/bridge_status`` event in ``path``, or None.
+
+    Scans the whole file (capped at _MAX_SCAN_BYTES) — the event can be far
+    from the end of an active session. Lines that only *contain* the string
+    "bridge_status" but don't parse to a ``type==system`` event are ignored.
+    The result is memoized per (path, mtime, size), so an unchanged transcript
+    is never re-read.
+    """
+    try:
+        st = path.stat()
+    except OSError:
+        return None
+    if not stat.S_ISREG(st.st_mode):
+        return None
+
+    key = str(path)
+    sig = (st.st_mtime_ns, st.st_size)
+    with _scan_cache_lock:
+        hit = _scan_cache.get(key)
+        if hit is not None and hit[0] == sig:
+            _scan_cache.move_to_end(key)
+            return hit[1]
+
+    latest = _scan_bridge_status(path, st.st_size)
+
+    with _scan_cache_lock:
+        _scan_cache[key] = (sig, latest)
+        _scan_cache.move_to_end(key)
+        while len(_scan_cache) > _SCAN_CACHE_MAX:
+            _scan_cache.popitem(last=False)
+    return latest
+
+
 def read_remote_control_state(
     transcript_path: Optional[str],
     chain_ids: Optional[Sequence[str]] = None,
@@ -182,10 +297,14 @@ def read_remote_control_state(
 
     - **No** ``bridge_status`` line anywhere in the chain → ``"off"``. Remote
       Control has to be turned on explicitly and writes a line when it does, so
-      "never seen one" means off. (The rare case where it was on via
-      ``--remote-control`` and the line has scrolled past the tail degrades
-      safely: turning "on" again just opens — and Esc-dismisses — the menu; we
-      only ever *disable* from a positive "is active" reading.)
+      "never seen one" means off. This reading can be stale in one case: a
+      session launched with ``--remote-control`` is on but never wrote a line.
+      Acting on that stale ``"off"`` types the command, which opens the
+      *disconnect* menu instead of connecting — nothing here sends Esc, so the
+      menu stays open. The toggle endpoint handles it by raising the terminal
+      whenever it cannot confirm ``"on"``, exactly as the OFF path does, so the
+      menu is never left waiting for keys in an unfocused window. Disabling
+      still only ever happens from a positive "is active" reading.
     - A line we found but can't classify → ``"unknown"`` (callers 409 rather
       than blind-toggle — this needs Claude Code to have changed its wording).
 

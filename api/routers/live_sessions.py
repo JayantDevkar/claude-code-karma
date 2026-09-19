@@ -65,6 +65,7 @@ from schemas import (
     TerminalFocusResult,
 )
 from services.remote_control import (
+    RC_COMMAND,
     can_send_remote_control,
     read_remote_control_state,
     type_remote_control_command,
@@ -640,9 +641,23 @@ def _rc_trusted_origin(request: Request, config: Settings) -> None:
     Karma's own dashboard, so this checks ``rc_trusted_origins`` and also
     requires a custom header (which a cross-origin simple request cannot set,
     and setting it forces a CORS preflight the middleware then screens).
+
+    Unlike :func:`_reject_cross_origin`, a **missing** ``Origin`` is rejected
+    too (review). For an endpoint that injects keystrokes, "no Origin" is not
+    worth the benefit of the doubt: it closes DNS-rebinding and the
+    no-Origin-on-same-origin-POST corner, and the dashboard always sends one.
+    Scripted callers can send ``Origin: http://localhost:5180`` explicitly.
     """
     origin = request.headers.get("origin")
-    if origin is not None and origin not in config.rc_trusted_origins:
+    if origin is None:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "Remote Control toggling requires an Origin header from the Karma "
+                "dashboard on this machine."
+            ),
+        )
+    if origin not in config.rc_trusted_origins:
         raise HTTPException(
             status_code=403,
             detail=(
@@ -696,7 +711,7 @@ async def toggle_session_remote_control(
 
     Honest by construction: ``sent=false`` means nothing was typed; ``sent=true,
     confirmed=false`` means keys went but the transcript hasn't caught up.
-    404 unknown session, 400 no/unsupported terminal, 403 wrong origin,
+    404 unknown session, 400 no/unsupported terminal, 403 wrong or missing origin,
     409 session not at its prompt / state unreadable / another toggle running.
     """
     _rc_trusted_origin(request, config)
@@ -794,6 +809,36 @@ async def toggle_session_remote_control(
 
         if body.desired == "on":
             final = await _rc_poll_state(read_state, "on")
+            if final["state"] != "on":
+                # Unconfirmed ON has two readings, and we can't tell them apart
+                # from the transcript: either the connect is just slow, or the
+                # "off" we acted on was stale (a session launched with
+                # --remote-control is on but never wrote a bridge_status line)
+                # and the command opened the *disconnect* menu instead. Nothing
+                # here sends Esc, so that menu would sit open in an unfocused
+                # terminal and the user's next Enter there would pick an item.
+                # Raise the terminal like the OFF path rather than leave it.
+                focus = await asyncio.to_thread(focus_terminal, terminal_dict)
+                raised = (
+                    " and brought its terminal to the front"
+                    if focus.get("focused")
+                    else " — check its terminal"
+                )
+                # Not "menu-open": the frontend reserves that for the OFF click.
+                # Here the honest read is "sent, unconfirmed" — the caveat about
+                # a possibly-open menu rides along in `detail`.
+                return RemoteControlToggleResult(
+                    sent=True,
+                    method=typed["method"],
+                    detail=(
+                        f"Typed {RC_COMMAND}{raised}. Remote Control hasn't reported "
+                        "itself on yet — if it was already on, the terminal is now "
+                        "showing the disconnect menu instead; finish or dismiss it there."
+                    ),
+                    confirmed=False,
+                    state=final["state"],
+                    url=final.get("url"),
+                )
             return _rc_result(typed, final, "on")
 
         # desired == "off": typing /remote-control opens the "Disconnect Remote
