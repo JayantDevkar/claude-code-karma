@@ -8,7 +8,11 @@ service unit tests exercise the real `read_remote_control_state`,
 from __future__ import annotations
 
 import json
+import os
+import shutil
+import subprocess
 import sys
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -328,6 +332,73 @@ def test_type_command_refuses_without_terminal(monkeypatch):
     monkeypatch.setattr(rc, "pid_is_live_claude", lambda _pid: True)
     out = rc.type_remote_control_command({"pid": 1})  # no pane, no term_program
     assert out["sent"] is False
+
+
+# ===========================================================================
+# Integration: the tmux gate against a REAL tmux (skipped when tmux is absent)
+# ===========================================================================
+
+
+@pytest.mark.skipif(shutil.which("tmux") is None, reason="tmux not installed")
+def test_pane_ownership_against_real_tmux():
+    """The mocked pane tests can't catch a wrong `display-message` invocation.
+
+    This drives a throwaway tmux session end to end, so a bad flag or format
+    string shows up here instead of silently withholding the toggle from every
+    tmux user (review). Never touches the user's own sessions.
+    """
+    import services.remote_control as rc
+
+    name = f"karma-rc-test-{os.getpid()}"
+    subprocess.run(["tmux", "kill-session", "-t", name], capture_output=True)
+    created = subprocess.run(["tmux", "new-session", "-d", "-s", name], capture_output=True)
+    if created.returncode != 0:
+        pytest.skip("could not start a tmux server in this environment")
+    try:
+        pane = subprocess.run(
+            ["tmux", "list-panes", "-t", name, "-F", "#{pane_id}"],
+            capture_output=True,
+            text=True,
+        ).stdout.split()[0]
+        pane_pid = int(
+            subprocess.run(
+                ["tmux", "display-message", "-p", "-t", pane, "#{pane_pid}"],
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+        )
+
+        # the module's own probe must agree with tmux
+        assert rc._tmux_pane_pid(pane) == pane_pid
+
+        # the pane's process, and a descendant of it (claude sits under the
+        # pane's shell in the real setup), are both owned
+        rc._pane_cache.clear()
+        assert rc._pane_owns_pid(pane, pane_pid) is True
+
+        subprocess.run(["tmux", "send-keys", "-t", pane, "sleep 30", "Enter"], capture_output=True)
+        child = None
+        for _ in range(20):
+            out = subprocess.run(
+                ["pgrep", "-P", str(pane_pid)], capture_output=True, text=True
+            ).stdout.split()
+            if out:
+                child = int(out[0])
+                break
+            time.sleep(0.1)
+        if child:
+            rc._pane_cache.clear()
+            assert rc._pane_owns_pid(pane, child) is True
+
+        # and unrelated / unresolvable things are not
+        rc._pane_cache.clear()
+        assert rc._pane_owns_pid(pane, 1) is False
+        rc._pane_cache.clear()
+        assert rc._pane_owns_pid(pane, os.getpid()) is False
+        rc._pane_cache.clear()
+        assert rc._pane_owns_pid("%99999", pane_pid) is False
+    finally:
+        subprocess.run(["tmux", "kill-session", "-t", name], capture_output=True)
 
 
 # ===========================================================================
