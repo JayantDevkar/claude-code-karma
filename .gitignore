@@ -63,3 +63,9 @@ coverage/
 # package-lock.json
 # yarn.lock
 .worktrees/
+
+# storygraph — external tool's local SQLite artifact (plus WAL/SHM sidecars).
+# Not karma's database (that lives at ~/.claude_karma/metadata.db).
+.storygraph.db
+.storygraph.db-shm
+.storygraph.db-wal

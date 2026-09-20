@@ -99,13 +99,29 @@ class Settings(BaseSettings):
         ],
         description="Allowed CORS origins",
     )
+    # Origins allowed to drive keystroke-injecting endpoints (Remote Control
+    # toggle). Deliberately NARROWER than cors_origins — that list also trusts
+    # :5173/:3000 (any local dev server), which must not be able to enable
+    # Remote Control on the user's live sessions. Karma's own frontend is :5180.
+    rc_trusted_origins: List[str] = Field(
+        default=[
+            "http://localhost:5180",
+            "http://127.0.0.1:5180",
+        ],
+        description="Origins permitted to POST /live-sessions/{id}/remote-control",
+    )
+
     cors_allow_credentials: bool = Field(default=True, description="Allow credentials in CORS")
     cors_allow_methods: List[str] = Field(
         default=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         description="Allowed HTTP methods for CORS",
     )
     cors_allow_headers: List[str] = Field(
-        default=["Content-Type", "Authorization"],
+        # X-Karma-RC is the CSRF marker the Remote Control toggle sends. It must
+        # be listed here or CORSMiddleware answers the preflight with 400
+        # ("Disallowed CORS headers") and the browser never sends the POST —
+        # which origin may actually toggle is still enforced by rc_trusted_origins.
+        default=["Content-Type", "Authorization", "X-Karma-RC"],
         description="Allowed headers for CORS",
     )
 
