@@ -373,7 +373,7 @@ def _index_session(
 
     # Extract all metadata
     usage = session.get_usage_summary()
-    _, subagent_cost = session.get_subagent_totals()
+    subagent_cost = session.get_subagent_total_cost()
     tools_used = session.get_tools_used()
     skills_used = session.get_skills_used()
     skills_mentioned = session.get_skills_mentioned()

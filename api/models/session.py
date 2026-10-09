@@ -886,20 +886,9 @@ class Session(BaseModel):
         self._load_metadata()
         return self._get_cache().total_cost or 0.0
 
-    def list_subagent_paths(self) -> List[Path]:
-        """Paths of this session's subagent JSONL files, sorted."""
-        if not self.subagents_dir.exists():
-            return []
-        return sorted(p for p in self.subagents_dir.glob("agent-*.jsonl") if p.is_file())
-
-    def get_subagent_totals(self) -> tuple[TokenUsage, float]:
-        """Aggregate token usage and estimated cost across this session's subagents."""
-        usage = TokenUsage.zero()
-        cost = 0.0
-        for agent in self.list_subagents():
-            usage = usage + agent.get_usage_summary()
-            cost += agent.get_total_cost()
-        return usage, cost
+    def get_subagent_total_cost(self) -> float:
+        """Sum the estimated cost of this session's subagents."""
+        return sum(agent.get_total_cost() for agent in self.list_subagents())
 
     def get_models_used(self) -> Set[str]:
         """

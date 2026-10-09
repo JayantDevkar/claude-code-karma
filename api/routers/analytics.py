@@ -540,7 +540,7 @@ def _calculate_analytics_from_sessions(
             models_categorized[_categorize_model(model)] += 1
 
         # Per-response cost, priced by each response's model, plus subagents
-        total_cost += session.get_total_cost() + session.get_subagent_totals()[1]
+        total_cost += session.get_total_cost() + session.get_subagent_total_cost()
 
         # Track tools used
         session_tools = session.get_tools_used()

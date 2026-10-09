@@ -794,34 +794,17 @@
 		return seconds >= 86400 ? `${(seconds / 86400).toFixed(1)} days` : formatDuration(seconds);
 	}
 
-	// Analytics stats (session cards include subagent usage; agent cards are the agent's own)
+	// Analytics stats (each subagent's usage is on its own analytics page)
 	let analyticsStats = $derived.by<StatItem[]>(() => {
 		if (!entity) return [];
 		const isAgent = isSubagentSession(entity);
-		const session = isAgent ? null : entity;
-		const subCost = session?.subagent_cost || 0;
-		const subIn = session?.subagent_input_tokens || 0;
-		const subOut = session?.subagent_output_tokens || 0;
-		const subCacheRead = session?.subagent_cache_read_tokens || 0;
-		const hasSubagentUsage = subCost + subIn + subOut > 0;
-
-		const tokenIn = (entity.total_input_tokens || 0) + subIn;
-		const tokenOut = (entity.total_output_tokens || 0) + subOut;
-		const cacheReads = (entity.cache_read_tokens || 0) + subCacheRead;
-		const cacheHitRate =
-			entity.cache_read_tokens == null
-				? entity.cache_hit_rate || 0
-				: cacheReads / Math.max(1, tokenIn + cacheReads);
+		const tokenIn = entity.total_input_tokens || 0;
+		const tokenOut = entity.total_output_tokens || 0;
+		const cacheReads = entity.cache_read_tokens || 0;
 		const toolsCount = isAgent
 			? Object.keys(entity.tools_used || {}).length
 			: toolsArray.length;
 
-		const tokenNote = [
-			hasSubagentUsage ? 'Includes subagents.' : '',
-			cacheReads > 0 ? `Excludes ${formatTokens(cacheReads)} cache reads.` : ''
-		]
-			.join(' ')
-			.trim();
 		const wallClock =
 			!isAgent && entity.start_time && entity.end_time
 				? formatWallClock(entity.start_time, entity.end_time)
@@ -833,17 +816,17 @@
 			{
 				title: 'Total Cost',
 				description: 'API pricing',
-				value: formatCost((entity.total_cost || 0) + subCost),
-				footnote: hasSubagentUsage
-					? `Session ${formatCost(entity.total_cost)} + subagents ${formatCost(subCost)}`
-					: undefined,
+				value: formatCost(entity.total_cost),
 				icon: DollarSign,
 				color: 'purple'
 			},
 			{
 				title: 'Total Tokens',
 				value: formatTokens(tokenIn + tokenOut),
-				footnote: tokenNote || undefined,
+				footnote:
+					cacheReads > 0
+						? `Excludes ${formatTokens(cacheReads)} cache reads.`
+						: undefined,
 				icon: Cpu,
 				color: 'teal',
 				tokenIn,
@@ -864,8 +847,7 @@
 			},
 			{
 				title: 'Cache Hit Rate',
-				value: `${(cacheHitRate * 100).toFixed(1)}%`,
-				footnote: hasSubagentUsage ? 'Includes subagents' : undefined,
+				value: `${((entity.cache_hit_rate || 0) * 100).toFixed(1)}%`,
 				icon: Percent,
 				color: 'accent'
 			}

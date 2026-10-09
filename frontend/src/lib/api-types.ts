@@ -245,10 +245,6 @@ export interface SessionSummary {
 	total_cost?: number;
 	cache_hit_rate?: number;
 	cache_read_tokens?: number;
-	subagent_input_tokens?: number;
-	subagent_output_tokens?: number;
-	subagent_cache_read_tokens?: number;
-	subagent_cost?: number;
 	tools_used?: Record<string, number>;
 	working_directories?: string[];
 	project_path?: string;

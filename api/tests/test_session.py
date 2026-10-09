@@ -712,10 +712,10 @@ class TestUsageSummary:
             usage.calculate_cost("claude-opus-4-5-20251101")
         )
 
-    def test_subagent_usage_and_cost(
+    def test_subagent_total_cost(
         self, temp_claude_dir: Path, temp_project_dir: Path, sample_assistant_message_data
     ):
-        """Subagent usage is summed separately from the main session."""
+        """Subagent cost is summed separately from the main session's cost."""
         jsonl_path = temp_project_dir / "parent.jsonl"
         jsonl_path.write_text(json.dumps(sample_assistant_message_data) + "\n")
         subagents_dir = temp_project_dir / "parent" / "subagents"
@@ -727,9 +727,7 @@ class TestUsageSummary:
 
         session = Session.from_path(jsonl_path, claude_base_dir=temp_claude_dir)
 
-        subagent_usage, subagent_cost = session.get_subagent_totals()
-        assert subagent_usage.output_tokens == 1000
-        assert subagent_cost == pytest.approx(2 * session.get_total_cost())
+        assert session.get_subagent_total_cost() == pytest.approx(2 * session.get_total_cost())
 
 
 # =============================================================================
