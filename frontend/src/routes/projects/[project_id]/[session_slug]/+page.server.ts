@@ -99,7 +99,11 @@ export async function load({ params, fetch }) {
 		fetchWithFallback(fetch, `${API_BASE}/sessions/${sessionUuid}/timeline`, []),
 		fetchWithFallback(fetch, `${API_BASE}/sessions/${sessionUuid}/file-activity`, []),
 		fetchWithFallback(fetch, `${API_BASE}/sessions/${sessionUuid}/subagents`, []),
-		fetchWithFallback(fetch, `${API_BASE}/sessions/${sessionUuid}/tools`, []),
+		fetchWithFallback(
+			fetch,
+			`${API_BASE}/sessions/${sessionUuid}/tools?include_subagents=false`,
+			[]
+		),
 		fetchWithFallback(fetch, `${API_BASE}/sessions/${sessionUuid}/tasks`, []),
 		safeFetch<PlanDetail>(fetch, `${API_BASE}/sessions/${sessionUuid}/plan`),
 		fetchWithFallback<SessionTicketRow[]>(

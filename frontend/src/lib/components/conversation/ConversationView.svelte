@@ -382,7 +382,9 @@
 						signal
 					}),
 					fetch(`${API_BASE}/sessions/${uuid}/subagents?fresh=1`, { signal }),
-					fetch(`${API_BASE}/sessions/${uuid}/tools?fresh=1`, { signal }),
+					fetch(`${API_BASE}/sessions/${uuid}/tools?fresh=1&include_subagents=false`, {
+						signal
+					}),
 					fetch(tasksUrl, { signal })
 				]);
 

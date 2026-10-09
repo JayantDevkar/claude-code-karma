@@ -10,6 +10,7 @@ import logging
 import re
 import sqlite3
 import sys
+from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -1419,7 +1420,7 @@ async def get_subagents_parallel(uuid: str, request: Request):
 
 
 @router.get("/{uuid}/tools")
-def get_tools(uuid: str, request: Request, fresh: bool = False):
+def get_tools(uuid: str, request: Request, fresh: bool = False, include_subagents: bool = True):
     """
     Get tool usage breakdown for a session.
 
@@ -1430,6 +1431,7 @@ def get_tools(uuid: str, request: Request, fresh: bool = False):
     Args:
         uuid: Session UUID
         fresh: If true, use minimal cache (1s) for live session polling
+        include_subagents: If false, count only the main session's own tool calls
     """
     from services.conversation_endpoints import build_tool_usage_summaries
 
@@ -1437,13 +1439,13 @@ def get_tools(uuid: str, request: Request, fresh: bool = False):
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    # Single-pass collection with subagents
-    data = collect_session_data(session, include_subagents=True)
+    # Single-pass collection, optionally with subagents
+    data = collect_session_data(session, include_subagents=include_subagents)
 
-    # Use shared service for building tool summaries
+    # Inline sidechain messages in the main JSONL also land in subagent_tool_counts
     summaries = build_tool_usage_summaries(
         data.session_tool_counts,
-        data.subagent_tool_counts,
+        data.subagent_tool_counts if include_subagents else Counter(),
     )
 
     # Add cache headers - minimal cache for live polling
