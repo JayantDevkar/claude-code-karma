@@ -10,8 +10,7 @@ import sqlite3
 
 logger = logging.getLogger(__name__)
 
-# v20/v21 are taken by PR #106 (session analytics accuracy); v22 is the orphan repair.
-SCHEMA_VERSION = 22
+SCHEMA_VERSION = 23
 
 SCHEMA_SQL = """
 -- Schema versioning
@@ -35,6 +34,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     cache_creation_tokens INTEGER DEFAULT 0,
     cache_read_tokens INTEGER DEFAULT 0,
     total_cost REAL DEFAULT 0,
+    subagent_cost REAL DEFAULT 0,
     initial_prompt TEXT,
     git_branch TEXT,
     models_used TEXT,
@@ -798,6 +798,20 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
         if current_version < 22:
             logger.info("Migrating → v22: remove orphaned child rows (issue #107)")
             _delete_orphan_rows(conn)
+
+        if current_version < 23:
+            logger.info(
+                "Migrating → v23: sessions.subagent_cost + re-index costs "
+                "(per-response usage dedup, current pricing, active time)"
+            )
+            sessions_cols = {
+                r[1] for r in conn.execute("PRAGMA table_info(sessions)").fetchall()
+            }
+            # Guarded: DBs that ran this PR's pre-merge v21 already have the column.
+            if sessions_cols and "subagent_cost" not in sessions_cols:
+                conn.execute("ALTER TABLE sessions ADD COLUMN subagent_cost REAL DEFAULT 0")
+            if sessions_cols:
+                conn.execute("UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1")
 
     # Record version
     conn.execute(

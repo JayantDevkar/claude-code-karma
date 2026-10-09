@@ -245,17 +245,17 @@ class TestGetModelPricing:
 
     def test_prefix_match_sonnet(self):
         """Test prefix matching for Sonnet model variant."""
-        # Fuzzy matches "sonnet" pattern → claude-sonnet-4-5 (may include long-context keys)
+        # Fuzzy matches legacy "3-5-sonnet" pattern → claude-3-5-sonnet pricing
         pricing = get_model_pricing("claude-3-5-sonnet-20250101")
         assert pricing["input"] == 3.0
         assert pricing["output"] == 15.0
 
     def test_prefix_match_haiku(self):
         """Test prefix matching for Haiku model variant."""
-        # Fuzzy matches "haiku" pattern → claude-haiku-4-5 (latest haiku pricing)
+        # Fuzzy matches legacy "3-5-haiku" pattern → claude-3-5-haiku pricing
         pricing = get_model_pricing("claude-3-5-haiku-20250101")
-        assert pricing["input"] == 1.0
-        assert pricing["output"] == 5.0
+        assert pricing["input"] == 0.80
+        assert pricing["output"] == 4.0
 
     def test_fallback_to_default_unknown_model(self):
         """Test fallback to default for unknown model."""

@@ -127,6 +127,28 @@ def get_file_cache_info(file_path: Path) -> tuple[Optional[str], Optional[dateti
     return etag, last_modified
 
 
+def get_files_cache_info(
+    file_paths: list[Path],
+) -> tuple[Optional[str], Optional[datetime]]:
+    """
+    Get a combined ETag and newest mtime for a set of files.
+
+    Used when a response depends on several files (e.g. a session plus its
+    subagent JSONLs), so a change to any of them invalidates the cache.
+    Files that don't exist are skipped.
+
+    Returns:
+        Tuple of (etag, last_modified), both None if no file exists
+    """
+    stamps = [(path, path.stat().st_mtime) for path in file_paths if path.exists()]
+    if not stamps:
+        return None, None
+    hash_input = "|".join(f"{path}:{mtime}" for path, mtime in stamps).encode()
+    etag = f'"{hashlib.md5(hash_input).hexdigest()}"'
+    last_modified = datetime.fromtimestamp(max(m for _, m in stamps), tz=timezone.utc)
+    return etag, last_modified
+
+
 # === Conditional Requests ===
 
 

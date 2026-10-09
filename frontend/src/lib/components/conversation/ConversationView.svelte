@@ -788,33 +788,71 @@
 
 	let totalToolCalls = $derived(toolsArray.reduce((acc, t) => acc + t.count, 0));
 
-	// Analytics stats
+	// Formats the first-to-last message span, in days once it passes 24h
+	function formatWallClock(startTime: string, endTime: string): string {
+		const seconds = (new Date(endTime).getTime() - new Date(startTime).getTime()) / 1000;
+		return seconds >= 86400 ? `${(seconds / 86400).toFixed(1)} days` : formatDuration(seconds);
+	}
+
+	// Analytics stats (session cards include subagent usage; agent cards are the agent's own)
 	let analyticsStats = $derived.by<StatItem[]>(() => {
 		if (!entity) return [];
-		const totalTokens = (entity.total_input_tokens || 0) + (entity.total_output_tokens || 0);
-		const toolsCount = isSubagentSession(entity)
+		const isAgent = isSubagentSession(entity);
+		const session = isAgent ? null : entity;
+		const subCost = session?.subagent_cost || 0;
+		const subIn = session?.subagent_input_tokens || 0;
+		const subOut = session?.subagent_output_tokens || 0;
+		const subCacheRead = session?.subagent_cache_read_tokens || 0;
+		const hasSubagentUsage = subCost + subIn + subOut > 0;
+
+		const tokenIn = (entity.total_input_tokens || 0) + subIn;
+		const tokenOut = (entity.total_output_tokens || 0) + subOut;
+		const cacheReads = (entity.cache_read_tokens || 0) + subCacheRead;
+		const cacheHitRate =
+			entity.cache_read_tokens == null
+				? entity.cache_hit_rate || 0
+				: cacheReads / Math.max(1, tokenIn + cacheReads);
+		const toolsCount = isAgent
 			? Object.keys(entity.tools_used || {}).length
 			: toolsArray.length;
+
+		const tokenNote = [
+			hasSubagentUsage ? 'Includes subagents.' : '',
+			cacheReads > 0 ? `Excludes ${formatTokens(cacheReads)} cache reads.` : ''
+		]
+			.join(' ')
+			.trim();
+		const wallClock =
+			!isAgent && entity.start_time && entity.end_time
+				? formatWallClock(entity.start_time, entity.end_time)
+				: null;
+		const durationDiffers =
+			wallClock !== null && wallClock !== formatDuration(entity.duration_seconds);
 
 		return [
 			{
 				title: 'Total Cost',
-				value: formatCost(entity.total_cost),
-				footnote: 'Pay-as-you-go API rate — not your subscription cost',
+				description: 'API pricing',
+				value: formatCost((entity.total_cost || 0) + subCost),
+				footnote: hasSubagentUsage
+					? `Session ${formatCost(entity.total_cost)} + subagents ${formatCost(subCost)}`
+					: undefined,
 				icon: DollarSign,
 				color: 'purple'
 			},
 			{
 				title: 'Total Tokens',
-				value: formatTokens(totalTokens),
+				value: formatTokens(tokenIn + tokenOut),
+				footnote: tokenNote || undefined,
 				icon: Cpu,
 				color: 'teal',
-				tokenIn: entity.total_input_tokens,
-				tokenOut: entity.total_output_tokens
+				tokenIn,
+				tokenOut
 			},
 			{
 				title: 'Duration',
 				value: formatDuration(entity.duration_seconds),
+				footnote: durationDiffers ? `Active time over ${wallClock}` : undefined,
 				icon: Clock,
 				color: 'orange'
 			},
@@ -826,7 +864,8 @@
 			},
 			{
 				title: 'Cache Hit Rate',
-				value: `${((entity.cache_hit_rate || 0) * 100).toFixed(1)}%`,
+				value: `${(cacheHitRate * 100).toFixed(1)}%`,
+				footnote: hasSubagentUsage ? 'Includes subagents' : undefined,
 				icon: Percent,
 				color: 'accent'
 			}
