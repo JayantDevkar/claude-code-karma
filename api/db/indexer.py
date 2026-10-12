@@ -368,13 +368,7 @@ def _index_session(
     # Skip empty sessions
     if session.message_count == 0:
         # Remove from DB if it was previously indexed
-        conn.execute("DELETE FROM sessions WHERE uuid = ?", (uuid,))
-        conn.execute("DELETE FROM session_tools WHERE session_uuid = ?", (uuid,))
-        conn.execute("DELETE FROM session_skills WHERE session_uuid = ?", (uuid,))
-        conn.execute("DELETE FROM session_commands WHERE session_uuid = ?", (uuid,))
-        conn.execute("DELETE FROM message_uuids WHERE session_uuid = ?", (uuid,))
-        conn.execute("DELETE FROM session_leaf_refs WHERE session_uuid = ?", (uuid,))
-        conn.execute("DELETE FROM subagent_invocations WHERE session_uuid = ?", (uuid,))
+        _delete_session_rows(conn, [uuid])
         return
 
     # Extract all metadata
@@ -403,10 +397,11 @@ def _index_session(
 
         session_source = get_session_source(uuid)
 
-    # Upsert session
+    # Upsert session. ON CONFLICT instead of INSERT OR REPLACE: REPLACE deletes the
+    # row and cascades to every child table, churning shell/cron ids on each re-index.
     conn.execute(
-        """
-        INSERT OR REPLACE INTO sessions (
+        f"""
+        INSERT INTO sessions (
             uuid, slug, project_encoded_name, project_path,
             start_time, end_time, message_count, duration_seconds,
             input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens,
@@ -425,6 +420,7 @@ def _index_session(
             ?, ?, ?, ?,
             datetime('now')
         )
+        ON CONFLICT(uuid) DO UPDATE SET {_SESSION_UPSERT_SET}
         """,
         (
             uuid,
@@ -516,19 +512,7 @@ def _index_session(
         )
 
     # Upsert subagent invocations
-    conn.execute(
-        "DELETE FROM subagent_skills WHERE invocation_id IN (SELECT id FROM subagent_invocations WHERE session_uuid = ?)",
-        (uuid,),
-    )
-    conn.execute(
-        "DELETE FROM subagent_commands WHERE invocation_id IN (SELECT id FROM subagent_invocations WHERE session_uuid = ?)",
-        (uuid,),
-    )
-    conn.execute(
-        "DELETE FROM subagent_tools WHERE invocation_id IN (SELECT id FROM subagent_invocations WHERE session_uuid = ?)",
-        (uuid,),
-    )
-    conn.execute("DELETE FROM subagent_invocations WHERE session_uuid = ?", (uuid,))
+    _delete_subagent_rows(conn, [uuid])
     if subagent_count > 0:
         try:
             from services.subagent_types import get_all_subagent_types
@@ -744,49 +728,77 @@ def _cleanup_stale_sessions(conn: sqlite3.Connection, projects_dir: Path) -> Non
                 stale_uuids.append(uuid)
 
     if stale_uuids:
-        placeholders = ",".join("?" * len(stale_uuids))
-        conn.execute(
-            f"DELETE FROM sessions WHERE uuid IN ({placeholders})",
-            stale_uuids,
-        )
-        conn.execute(
-            f"DELETE FROM session_tools WHERE session_uuid IN ({placeholders})",
-            stale_uuids,
-        )
-        conn.execute(
-            f"DELETE FROM session_skills WHERE session_uuid IN ({placeholders})",
-            stale_uuids,
-        )
-        conn.execute(
-            f"DELETE FROM session_commands WHERE session_uuid IN ({placeholders})",
-            stale_uuids,
-        )
-        conn.execute(
-            f"DELETE FROM message_uuids WHERE session_uuid IN ({placeholders})",
-            stale_uuids,
-        )
-        conn.execute(
-            f"DELETE FROM session_leaf_refs WHERE session_uuid IN ({placeholders})",
-            stale_uuids,
-        )
-        conn.execute(
-            f"DELETE FROM subagent_skills WHERE invocation_id IN (SELECT id FROM subagent_invocations WHERE session_uuid IN ({placeholders}))",
-            stale_uuids,
-        )
-        conn.execute(
-            f"DELETE FROM subagent_commands WHERE invocation_id IN (SELECT id FROM subagent_invocations WHERE session_uuid IN ({placeholders}))",
-            stale_uuids,
-        )
-        conn.execute(
-            f"DELETE FROM subagent_tools WHERE invocation_id IN (SELECT id FROM subagent_invocations WHERE session_uuid IN ({placeholders}))",
-            stale_uuids,
-        )
-        conn.execute(
-            f"DELETE FROM subagent_invocations WHERE session_uuid IN ({placeholders})",
-            stale_uuids,
-        )
+        _delete_session_rows(conn, stale_uuids)
         conn.commit()
         logger.info("Removed %d stale sessions from index", len(stale_uuids))
+
+
+# Every indexed sessions column except uuid; needs_shell_cron_reindex is left untouched.
+_SESSION_UPSERT_SET = ", ".join(
+    f"{col} = excluded.{col}"
+    for col in (
+        "slug project_encoded_name project_path start_time end_time message_count "
+        "duration_seconds input_tokens output_tokens cache_creation_tokens cache_read_tokens "
+        "total_cost initial_prompt git_branch models_used session_titles is_continuation_marker "
+        "was_compacted compaction_count file_snapshot_count subagent_count jsonl_mtime jsonl_size "
+        "session_source source_encoded_name indexed_at"
+    ).split()
+)
+
+# Session-scoped tables deleted when a session leaves the index (children before parents).
+_SUBAGENT_CHILD_TABLES = ("subagent_tools", "subagent_skills", "subagent_commands")
+_SESSION_CHILD_TABLES = (
+    "session_tools",
+    "session_skills",
+    "session_commands",
+    "message_uuids",
+    "session_leaf_refs",
+    "background_shells",
+    "cron_jobs",
+    "cron_state_snapshots",
+)
+_DELETE_CHUNK = 500
+
+
+def _chunks(items: list, size: int = _DELETE_CHUNK):
+    for i in range(0, len(items), size):
+        yield items[i : i + size]
+
+
+def _delete_subagent_rows(conn: sqlite3.Connection, uuids: list) -> None:
+    """Delete subagent invocations for these sessions, children first (no cascade reliance)."""
+    for chunk in _chunks(list(uuids)):
+        ph = ",".join("?" * len(chunk))
+        parent = f"SELECT id FROM subagent_invocations WHERE session_uuid IN ({ph})"
+        for table in _SUBAGENT_CHILD_TABLES:
+            conn.execute(f"DELETE FROM {table} WHERE invocation_id IN ({parent})", chunk)
+        conn.execute(f"DELETE FROM subagent_invocations WHERE session_uuid IN ({ph})", chunk)
+
+
+def _count_orphan_rows(conn: sqlite3.Connection) -> int:
+    """FK violations, plus orphaned shells on DBs where the v19 rebuild dropped that FK."""
+    count = conn.execute("SELECT COUNT(*) FROM pragma_foreign_key_check").fetchone()[0]
+    if not conn.execute("PRAGMA foreign_key_list(background_shells)").fetchall():
+        count += conn.execute(
+            "SELECT COUNT(*) FROM background_shells WHERE session_uuid NOT IN (SELECT uuid FROM sessions)"
+        ).fetchone()[0]
+    return count
+
+
+def _delete_session_rows(conn: sqlite3.Connection, uuids: list) -> None:
+    """Remove sessions and every row that hangs off them, without relying on FK cascade."""
+    uuids = list(uuids)
+    _delete_subagent_rows(conn, uuids)
+    for chunk in _chunks(uuids):
+        ph = ",".join("?" * len(chunk))
+        conn.execute(
+            f"DELETE FROM shell_polls WHERE shell_row_id IN "
+            f"(SELECT id FROM background_shells WHERE session_uuid IN ({ph}))",
+            chunk,
+        )
+        for table in _SESSION_CHILD_TABLES:
+            conn.execute(f"DELETE FROM {table} WHERE session_uuid IN ({ph})", chunk)
+        conn.execute(f"DELETE FROM sessions WHERE uuid IN ({ph})", chunk)
 
 
 def _resolve_project_path(encoded_name: str, candidate_paths: list) -> str:
@@ -921,6 +933,14 @@ def _log_db_health(conn: sqlite3.Connection) -> dict:
         metrics["subagent_commands_count"] = conn.execute(
             "SELECT COUNT(*) FROM subagent_commands"
         ).fetchone()[0]
+
+        # Orphaned child rows (issue #107); should always be 0
+        try:
+            metrics["fk_violations"] = _count_orphan_rows(conn)
+            if metrics["fk_violations"]:
+                logger.warning("DB has %d orphaned child rows", metrics["fk_violations"])
+        except sqlite3.Error as e:
+            logger.warning("Orphan check failed: %s", e)
 
         # Fragmentation check
         page_count = conn.execute("PRAGMA page_count").fetchone()[0]
