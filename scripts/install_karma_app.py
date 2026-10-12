@@ -174,8 +174,8 @@ def main(argv: list[str] | None = None) -> int:
         f"\nRepo:   {repo}\nPython: {python}\nPorts:  web {args.web_port}, api {args.api_port}"
     )
     print(
-        "\nClick the icon to start Karma. First launch compiles the frontend "
-        "and can take a minute or two; a desktop notification confirms it's starting."
+        "\nClick the icon to start Karma. First launch builds the frontend "
+        "(about half a minute); a desktop notification confirms it's starting."
     )
     return 0
 

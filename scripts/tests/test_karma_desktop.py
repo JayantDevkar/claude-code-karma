@@ -26,6 +26,13 @@ from karma_desktop import installer_windows as win  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
+def _private_log_dir(monkeypatch, tmp_path_factory):
+    """Keep launcher logs, locks and the web-server record out of the real ~/.claude_karma."""
+    logs = tmp_path_factory.mktemp("launcher-logs")
+    monkeypatch.setattr(core, "log_dir", lambda: logs)
+
+
+@pytest.fixture(autouse=True)
 def _no_lsregister(monkeypatch):
     """Keep install_app out of the host's LaunchServices database.
 

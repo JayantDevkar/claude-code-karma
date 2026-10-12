@@ -271,7 +271,7 @@ python3 scripts/install_karma_app.py --dock    # macOS: also pin it to the Dock
 python3 scripts/install_karma_app.py --uninstall
 ```
 
-Click the icon and Karma starts whichever servers aren't already running, then opens the dashboard. The first launch after a reboot has to compile the frontend (a minute or two), so it posts a "Starting Karma…" desktop notification straight away — the click never looks like it did nothing — and opens the dashboard once the servers answer.
+Click the icon and Karma starts whichever servers aren't already running, then opens the dashboard. It serves a production build of the frontend: the first launch, and the first launch after you pull frontend changes, builds it once (about half a minute) and posts a desktop notification while it works, so the click never looks like it did nothing. Every other launch is instant. Run `python3 scripts/karma_desktop/launcher.py --dev` to use the Vite dev server instead.
 
 Nothing is hardcoded: the installer works out your repo location from its own path and finds a Python interpreter on the machine, so a clone anywhere works.
 
@@ -282,7 +282,7 @@ python3 scripts/install_karma_app.py --autostart      # on
 python3 scripts/install_karma_app.py --no-autostart   # off
 ```
 
-This adds a launchd agent (macOS) or a Startup-folder entry (Windows) so the servers are already up when you log in — the dashboard is simply always there, with no icon to click first. It costs roughly **150–350 MB** of memory and almost no CPU while idle.
+This adds a launchd agent (macOS) or a Startup-folder entry (Windows) so the servers are already up when you log in — the dashboard is simply always there, with no icon to click first. It costs roughly **200–250 MB** of memory and almost no CPU while idle. The servers run at normal priority; older installs that ran them as a throttled background task are repaired automatically the next time Karma launches, and take effect at the next login.
 
 It's also what makes a browser-installed Karma work on its own: a PWA is only a window and cannot start servers, so with autostart you never need the launcher icon at all.
 

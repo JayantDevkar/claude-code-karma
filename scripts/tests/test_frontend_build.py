@@ -21,6 +21,13 @@ sys.path.insert(0, str(SCRIPTS))
 from karma_desktop import core, frontend  # noqa: E402
 
 
+@pytest.fixture(autouse=True)
+def _private_log_dir(monkeypatch, tmp_path_factory):
+    """Keep launcher logs, locks and the web-server record out of the real ~/.claude_karma."""
+    logs = tmp_path_factory.mktemp("launcher-logs")
+    monkeypatch.setattr(core, "log_dir", lambda: logs)
+
+
 @pytest.fixture
 def fe(tmp_path: Path) -> Path:
     root = tmp_path / "frontend"

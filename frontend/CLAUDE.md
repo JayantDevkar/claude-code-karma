@@ -23,6 +23,8 @@ npm run dev
 npm run dev              # Start dev server (port 5180)
 npm run build            # Production build
 npm run preview          # Preview production build
+# The desktop launcher serves build/ via `node build`; it builds into a staging
+# dir by setting KARMA_BUILD_OUT (read in svelte.config.js), then swaps it in.
 
 # Code Quality
 npm run check            # Type check with svelte-check
