@@ -5,28 +5,21 @@ Phase 2 optimization: Extract all needed data from session messages in one
 iteration instead of multiple passes.
 """
 
+import os
+import threading
 from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Set
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Set, Tuple
+
+from cachetools import TTLCache
 
 from command_helpers import classify_invocation, is_command_category, is_skill_category
 from config import FILE_TOOL_MAPPINGS
 from models import AssistantMessage, Session, ToolUseBlock, UserMessage
 from models.conversation import ConversationEntity
 from utils import FileOperation, extract_file_operation, normalize_key
-
-
-@dataclass
-class ToolCall:
-    """Represents a single tool invocation."""
-
-    tool_use_id: str
-    name: str
-    input: Dict[str, Any]
-    timestamp: datetime
-    actor: str  # "session" or agent_id
-    actor_type: str  # "session" or "subagent"
 
 
 @dataclass
@@ -71,7 +64,6 @@ class SessionData:
     initial_prompt: Optional[str] = None
 
     # Tool usage
-    tool_calls: List[ToolCall] = field(default_factory=list)
     session_tool_counts: Counter = field(default_factory=Counter)
     subagent_tool_counts: Counter = field(default_factory=Counter)
 
@@ -314,17 +306,6 @@ def collect_session_data(session: Session, include_subagents: bool = False) -> S
                     else:
                         data.subagent_tool_counts[tool_name] += 1
 
-                    # Create tool call record
-                    tool_call = ToolCall(
-                        tool_use_id=block.id,
-                        name=tool_name,
-                        input=block.input or {},
-                        timestamp=msg.timestamp,
-                        actor=actor,
-                        actor_type=actor_type,
-                    )
-                    data.tool_calls.append(tool_call)
-
                     # Extract file operations
                     file_op = _extract_file_operation(block, msg.timestamp, actor, actor_type)
                     if file_op:
@@ -356,42 +337,105 @@ def collect_session_data(session: Session, include_subagents: bool = False) -> S
 
 def _collect_subagent_data(subagent, data: SessionData) -> None:
     """Add subagent data to the session data collector."""
+    digest = _subagent_digest(subagent)
+    data.subagent_tool_counts.update(digest.tool_counts)
+    data.subagent_skill_counts.update(digest.skill_counts)
+    data.subagent_command_counts.update(digest.command_counts)
+    data.file_operations.extend(digest.file_operations)
+
+
+@dataclass(frozen=True)
+class _SubagentDigest:
+    """Everything the collectors need from one subagent file, read in one pass."""
+
+    tool_counts: Counter
+    skill_counts: Counter
+    command_counts: Counter
+    file_operations: Tuple[FileOperation, ...]
+    initial_prompt: Optional[str]
+    message_count: int
+
+
+# Keyed by (path, mtime_ns, size): a finished subagent's file never changes, so its digest
+# is reused by every endpoint and request; a growing one is re-read only when it changes.
+_digest_cache: TTLCache = TTLCache(maxsize=2048, ttl=3600)
+_digest_lock = threading.Lock()
+_digest_key_locks: Dict[tuple, threading.Lock] = {}
+
+
+def clear_subagent_digest_cache() -> None:
+    with _digest_lock:
+        _digest_cache.clear()
+
+
+def _file_version(path: Path) -> Optional[tuple]:
+    try:
+        stat = os.stat(path)
+    except OSError:
+        return None
+    return (str(path), stat.st_mtime_ns, stat.st_size)
+
+
+def _subagent_digest(subagent) -> _SubagentDigest:
+    """Cached digest of a subagent file; concurrent callers wait for one parse."""
+    key = _file_version(subagent.jsonl_path)
+    if key is None:
+        return _read_subagent_digest(subagent)
+    with _digest_lock:
+        digest = _digest_cache.get(key)
+        if digest is not None:
+            return digest
+        key_lock = _digest_key_locks.setdefault(key, threading.Lock())
+    with key_lock:
+        with _digest_lock:
+            digest = _digest_cache.get(key)
+        if digest is None:
+            digest = _read_subagent_digest(subagent)
+            with _digest_lock:
+                _digest_cache[key] = digest
+                _digest_key_locks.pop(key, None)
+    return digest
+
+
+def _read_subagent_digest(subagent) -> _SubagentDigest:
     agent_id = subagent.agent_id
+    tool_counts: Counter = Counter()
+    skill_counts: Counter = Counter()
+    command_counts: Counter = Counter()
+    file_operations: List[FileOperation] = []
+    initial_prompt: Optional[str] = None
+    message_count = 0
 
     for msg in subagent.iter_messages():
-        if isinstance(msg, AssistantMessage):
+        message_count += 1
+        if isinstance(msg, UserMessage):
+            if initial_prompt is None:
+                initial_prompt = msg.content[:5000] if msg.content else None
+        elif isinstance(msg, AssistantMessage):
             for block in msg.content_blocks:
-                if isinstance(block, ToolUseBlock):
-                    tool_name = block.name
+                if not isinstance(block, ToolUseBlock):
+                    continue
+                tool_counts[block.name] += 1
+                file_op = _extract_file_operation(block, msg.timestamp, agent_id, "subagent")
+                if file_op:
+                    file_operations.append(file_op)
+                if block.name == "Skill" and block.input:
+                    skill_name = block.input.get("skill")
+                    if skill_name:
+                        kind = classify_invocation(skill_name, source="skill_tool")
+                        if is_skill_category(kind):
+                            skill_counts[skill_name] += 1
+                        elif is_command_category(kind):
+                            command_counts[skill_name] += 1
 
-                    # Count tools for subagents
-                    data.subagent_tool_counts[tool_name] += 1
-
-                    # Create tool call record
-                    tool_call = ToolCall(
-                        tool_use_id=block.id,
-                        name=tool_name,
-                        input=block.input or {},
-                        timestamp=msg.timestamp,
-                        actor=agent_id,
-                        actor_type="subagent",
-                    )
-                    data.tool_calls.append(tool_call)
-
-                    # Extract file operations
-                    file_op = _extract_file_operation(block, msg.timestamp, agent_id, "subagent")
-                    if file_op:
-                        data.file_operations.append(file_op)
-
-                    # Extract skill/command names from Skill tool inputs
-                    if tool_name == "Skill" and block.input:
-                        skill_name = block.input.get("skill")
-                        if skill_name:
-                            kind = classify_invocation(skill_name, source="skill_tool")
-                            if is_skill_category(kind):
-                                data.subagent_skill_counts[skill_name] += 1
-                            elif is_command_category(kind):
-                                data.subagent_command_counts[skill_name] += 1
+    return _SubagentDigest(
+        tool_counts=tool_counts,
+        skill_counts=skill_counts,
+        command_counts=command_counts,
+        file_operations=tuple(file_operations),
+        initial_prompt=initial_prompt,
+        message_count=message_count,
+    )
 
 
 @dataclass
@@ -437,30 +481,8 @@ def collect_subagent_info(
     subagents_info: List[SubagentInfo] = []
 
     for subagent in session.list_subagents():
-        # Count tools, skills, and commands for this subagent - single pass
-        tool_counts: Counter = Counter()
-        skill_counts: Counter = Counter()
-        command_counts: Counter = Counter()
-        initial_prompt = None
-
-        for msg in subagent.iter_messages():
-            if isinstance(msg, UserMessage):
-                if initial_prompt is None:
-                    initial_prompt = msg.content[:5000] if msg.content else None
-            elif isinstance(msg, AssistantMessage):
-                for block in msg.content_blocks:
-                    if isinstance(block, ToolUseBlock):
-                        tool_counts[block.name] += 1
-
-                        # Extract skill/command names from Skill tool inputs
-                        if block.name == "Skill" and block.input:
-                            skill_name = block.input.get("skill")
-                            if skill_name:
-                                kind = classify_invocation(skill_name, source="skill_tool")
-                                if is_skill_category(kind):
-                                    skill_counts[skill_name] += 1
-                                elif is_command_category(kind):
-                                    command_counts[skill_name] += 1
+        digest = _subagent_digest(subagent)
+        initial_prompt = digest.initial_prompt
 
         # Match subagent to Task invocation
         subagent_type = agent_id_to_type.get(subagent.agent_id)
@@ -485,12 +507,13 @@ def collect_subagent_info(
             SubagentInfo(
                 agent_id=subagent.agent_id,
                 slug=subagent.slug,
-                tool_counts=tool_counts,
-                skills_used=skill_counts,
-                commands_used=command_counts,
+                # Copies: callers own these, the cached digest must not change
+                tool_counts=Counter(digest.tool_counts),
+                skills_used=Counter(digest.skill_counts),
+                commands_used=Counter(digest.command_counts),
                 initial_prompt=initial_prompt,
                 subagent_type=subagent_type,
-                message_count=subagent.message_count,
+                message_count=digest.message_count,
             )
         )
 

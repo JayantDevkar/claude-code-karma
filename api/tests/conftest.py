@@ -21,11 +21,13 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
-def _fresh_git_caches():
-    """Git lookups are cached process-wide; start every test from a cold cache."""
+def _fresh_process_caches():
+    """Git lookups and subagent digests are cached process-wide; start each test cold."""
+    from collectors import clear_subagent_digest_cache
     from utils import clear_git_caches
 
     clear_git_caches()
+    clear_subagent_digest_cache()
     yield
 
 
