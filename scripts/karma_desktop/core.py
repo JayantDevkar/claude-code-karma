@@ -9,12 +9,13 @@ from __future__ import annotations
 import os
 import re
 import shutil
+import signal
 import socket
 import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Optional, Sequence
+from typing import Mapping, Optional, Sequence
 
 # Karma's declared ports. These are deliberately fixed rather than taken from
 # vite/uvicorn defaults so that karma always lives at the same address on every
@@ -78,6 +79,35 @@ def wait_for_port(port: int, seconds: float, interval: float = 0.5) -> bool:
     return False
 
 
+def wait_for_port_closed(port: int, seconds: float, interval: float = 0.25) -> bool:
+    """Poll ``port`` until nothing accepts connections or ``seconds`` elapses."""
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        if not port_is_up(port):
+            return True
+        time.sleep(interval)
+    return False
+
+
+def port_listener_pids(port: int) -> list:
+    """PIDs listening on ``port`` (POSIX, via lsof); empty when unknowable."""
+    if sys.platform == "win32":
+        return []
+    lsof = shutil.which("lsof")
+    if not lsof:
+        return []
+    try:
+        out = subprocess.run(
+            [lsof, "-ti", f"tcp:{port}", "-sTCP:LISTEN"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        ).stdout
+    except (OSError, subprocess.SubprocessError):
+        return []
+    return [int(pid) for pid in out.split() if pid.isdigit()]
+
+
 def port_owner_cwd(port: int) -> Optional[str]:
     """Working directory of the process listening on ``port``, if discoverable.
 
@@ -95,19 +125,11 @@ def port_owner_cwd(port: int) -> Optional[str]:
     if not lsof:
         return None
     try:
-        pids = subprocess.run(
-            [lsof, "-ti", f"tcp:{port}", "-sTCP:LISTEN"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        ).stdout.split()
-        if not pids:
-            return None
         # A port can have several matching pids (a reloader parent + worker, or
         # IPv4/IPv6 sockets); return the first cwd we can resolve.
-        for pid in pids:
+        for pid in port_listener_pids(port):
             out = subprocess.run(
-                [lsof, "-a", "-p", pid, "-d", "cwd", "-Fn"],
+                [lsof, "-a", "-p", str(pid), "-d", "cwd", "-Fn"],
                 capture_output=True,
                 text=True,
                 timeout=5,
@@ -238,11 +260,56 @@ def _cap_log(log_path: Path) -> None:
         pass
 
 
+def _child_env(env: Optional[Mapping[str, str]]) -> Optional[dict]:
+    return {**os.environ, **env} if env else None
+
+
+def _popen(
+    args: Sequence[str],
+    cwd: Path,
+    handle,
+    use_login_shell: bool,
+    env: Optional[Mapping[str, str]],
+    windows_flags: int,
+) -> subprocess.Popen:
+    """Start ``args`` with output to ``handle``, the way every launcher child is started."""
+    popen_kwargs = {
+        "cwd": str(cwd),
+        "stdout": handle,
+        "stderr": subprocess.STDOUT,
+        "stdin": subprocess.DEVNULL,
+        "env": _child_env(env),
+    }
+
+    if sys.platform == "win32":
+        popen_kwargs["creationflags"] = windows_flags
+        # CreateProcess only appends ".exe" to a bare name; it does NOT walk
+        # PATHEXT. Node ships "npm" as npm.cmd (no npm.exe), so Popen(["npm",
+        # ...]) raises WinError 2. Resolve through shutil.which (which does
+        # honour PATHEXT) so the real npm.cmd / npx.cmd is launched. Without
+        # this the frontend never starts and, under pythonw, does so with no
+        # error anywhere.
+        resolved = shutil.which(args[0])
+        win_args = [resolved, *args[1:]] if resolved else list(args)
+        return subprocess.Popen(win_args, **popen_kwargs)
+
+    popen_kwargs["start_new_session"] = True
+    shell = login_shell() if use_login_shell else None
+    if shell:
+        # Force the working directory *after* the login shell's profile
+        # runs: a .zprofile/.bash_profile with `cd ~` would otherwise move
+        # the process out of <repo>/api before uvicorn's `main:app` import.
+        command = f"cd {_quote([str(cwd)])} && {_quote(args)}"
+        return subprocess.Popen([shell, "-lc", command], **popen_kwargs)
+    return subprocess.Popen(list(args), **popen_kwargs)
+
+
 def spawn_detached(
     args: Sequence[str],
     cwd: Path,
     log_path: Path,
     use_login_shell: bool = True,
+    env: Optional[Mapping[str, str]] = None,
 ) -> subprocess.Popen:
     """Start a long-running server, detached, with output appended to a log.
 
@@ -255,36 +322,52 @@ def spawn_detached(
     # once Popen has taken it -- leaving it open leaks a handle per call.
     handle = open(log_path, "ab")
     try:
-        popen_kwargs = {
-            "cwd": str(cwd),
-            "stdout": handle,
-            "stderr": subprocess.STDOUT,
-            "stdin": subprocess.DEVNULL,
-        }
-
-        if sys.platform == "win32":
-            # Detach from this console and never flash a window.
-            popen_kwargs["creationflags"] = (
-                subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS  # type: ignore[attr-defined]
-            )
-            # CreateProcess only appends ".exe" to a bare name; it does NOT walk
-            # PATHEXT. Node ships "npm" as npm.cmd (no npm.exe), so Popen(["npm",
-            # ...]) raises WinError 2. Resolve through shutil.which (which does
-            # honour PATHEXT) so the real npm.cmd / npx.cmd is launched. Without
-            # this the frontend never starts and, under pythonw, does so with no
-            # error anywhere.
-            resolved = shutil.which(args[0])
-            win_args = [resolved, *args[1:]] if resolved else list(args)
-            return subprocess.Popen(win_args, **popen_kwargs)
-
-        popen_kwargs["start_new_session"] = True
-        shell = login_shell() if use_login_shell else None
-        if shell:
-            # Force the working directory *after* the login shell's profile
-            # runs: a .zprofile/.bash_profile with `cd ~` would otherwise move
-            # the process out of <repo>/api before uvicorn's `main:app` import.
-            command = f"cd {_quote([str(cwd)])} && {_quote(args)}"
-            return subprocess.Popen([shell, "-lc", command], **popen_kwargs)
-        return subprocess.Popen(list(args), **popen_kwargs)
+        # Windows: detach from this console and never flash a window.
+        flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(
+            subprocess, "DETACHED_PROCESS", 0
+        )
+        return _popen(args, cwd, handle, use_login_shell, env, flags)
     finally:
         handle.close()
+
+
+def run_logged(
+    args: Sequence[str],
+    cwd: Path,
+    log_path: Path,
+    timeout: float,
+    env: Optional[Mapping[str, str]] = None,
+) -> Optional[int]:
+    """Run a command to completion, output appended to a log.
+
+    Returns the exit code, or None when it ran past ``timeout`` (it is then
+    killed together with everything it started).
+    """
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    _cap_log(log_path)
+    with open(log_path, "ab") as handle:
+        proc = _popen(
+            args, cwd, handle, True, env, getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        )
+        try:
+            return proc.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            stop_process_tree(proc.pid)
+            proc.wait()
+            return None
+
+
+def stop_process_tree(pid: int) -> None:
+    """Stop a process this launcher started, and everything it started."""
+    try:
+        if sys.platform == "win32":
+            subprocess.run(
+                ["taskkill", "/PID", str(pid), "/T", "/F"],
+                capture_output=True,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+        else:
+            # Children were started with start_new_session, so pid is the group id.
+            os.killpg(pid, signal.SIGTERM)
+    except (OSError, subprocess.SubprocessError):
+        pass

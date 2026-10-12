@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import json
 import os
 import shutil
 import subprocess
@@ -25,22 +26,27 @@ from pathlib import Path
 
 if __package__ in (None, ""):  # invoked as a plain script by the .app / .lnk
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-    from karma_desktop import core, installer_macos
+    from karma_desktop import core, frontend, installer_macos
 else:
-    from . import core, installer_macos
+    from . import core, frontend, installer_macos
 
-# A cold vite build on this repo is slow; the API is comparatively instant.
 API_TIMEOUT = 90
+# A frontend build takes ~20 s on a laptop; the cap covers a slow machine.
+BUILD_TIMEOUT = 600
+# `node build` binds in about a second; the dev-server fallback compiles first.
 WEB_TIMEOUT = 240
 
-# The spawn lock is held for the whole cold start (spawn + both port waits), so
-# a *live* holder can legitimately keep it for up to API_TIMEOUT + WEB_TIMEOUT
-# before it exits and unlinks. The stale threshold must therefore sit above that
-# sum (plus margin): a smaller value -- e.g. the old 60s -- would declare a lock
-# that is legitimately still held mid-compile "stale", reclaim it, and spawn the
-# duplicate this lock exists to prevent. Above the sum, "stale" can only mean a
-# crashed launch.
-_STALE_LOCK_SECONDS = API_TIMEOUT + WEB_TIMEOUT + 30
+# The spawn lock is held for the whole cold start (build + spawn + both port
+# waits), so a *live* holder can legitimately keep it for up to the sum of the
+# three timeouts before it exits and unlinks. The stale threshold must sit above
+# that sum (plus margin): a smaller value would declare a lock that is still
+# held mid-build "stale", reclaim it, and spawn the duplicate this lock exists
+# to prevent. Above the sum, "stale" can only mean a crashed launch.
+_STALE_LOCK_SECONDS = API_TIMEOUT + BUILD_TIMEOUT + WEB_TIMEOUT + 30
+
+# Which frontend server this launcher last started, so a later launch can
+# restart it after a rebuild without ever touching a server someone else ran.
+_WEB_RECORD = "web-server.json"
 
 
 def _log(message: str) -> None:
@@ -293,13 +299,89 @@ def start_api(root: Path, port: int) -> None:
     )
 
 
-def start_web(root: Path, port: int) -> None:
-    """Start the vite dev server on karma's fixed port."""
-    core.spawn_detached(
-        ["npm", "run", "dev", "--", "--port", str(port), "--strictPort"],
+def start_web(root: Path, port: int, dev: bool = False):
+    """Start the frontend on karma's fixed port: the production build, or vite dev."""
+    if dev:
+        return core.spawn_detached(
+            ["npm", "run", "dev", "--", "--port", str(port), "--strictPort"],
+            cwd=root / "frontend",
+            log_path=core.log_dir() / "web.log",
+        )
+    return core.spawn_detached(
+        ["node", "build"],
         cwd=root / "frontend",
         log_path=core.log_dir() / "web.log",
+        # Same address as vite dev; node's default host would be 0.0.0.0.
+        env={"PORT": str(port), "HOST": "localhost"},
     )
+
+
+def _record_web_server(pid: int, mode: str, port: int) -> None:
+    try:
+        (core.log_dir() / _WEB_RECORD).write_text(
+            json.dumps({"pid": pid, "mode": mode, "port": port})
+        )
+    except OSError:
+        pass
+
+
+def _running_build_server(port: int) -> int | None:
+    """Process group of the build server this launcher started, if it still serves ``port``.
+
+    Ownership is proven by matching the port's listener to the recorded process
+    group, which needs lsof; on Windows it can't be proven, so nothing is restarted.
+    """
+    if sys.platform == "win32":
+        return None
+    try:
+        record = json.loads((core.log_dir() / _WEB_RECORD).read_text())
+    except (OSError, ValueError):
+        return None
+    pid = record.get("pid")
+    if (
+        record.get("mode") != "build"
+        or record.get("port") != port
+        or not isinstance(pid, int)
+    ):
+        return None
+    for listener in core.port_listener_pids(port):
+        try:
+            if os.getpgid(listener) == pid:
+                return pid
+        except OSError:
+            continue
+    return None
+
+
+def _ensure_web(root: Path, port: int, dev: bool, headless: bool) -> None:
+    """Make sure the frontend serves current code, building and restarting as needed."""
+    fe = root / "frontend"
+    up = core.port_is_up(port)
+    if dev:
+        if not up:
+            _record_web_server(start_web(root, port, dev=True).pid, "dev", port)
+        return
+    if frontend.build_is_current(fe):
+        if not up:
+            _record_web_server(start_web(root, port).pid, "build", port)
+        return
+
+    running = _running_build_server(port) if up else None
+    if up and running is None:
+        # A dev server, another checkout's server, or one we can't verify: leave it.
+        return
+    if not headless:
+        notify("Updating the dashboard — this takes about half a minute.")
+    if not frontend.build(fe, core.log_dir() / "web.log", BUILD_TIMEOUT):
+        _log("Frontend build failed; see web.log")
+        if not up:
+            _record_web_server(start_web(root, port, dev=True).pid, "dev", port)
+        return
+    if running is not None:
+        core.stop_process_tree(running)
+        if not core.wait_for_port_closed(port, 15):
+            _log(f"The previous frontend server still holds port {port}")
+    _record_web_server(start_web(root, port).pid, "build", port)
 
 
 def _has_command(name: str) -> bool:
@@ -322,10 +404,10 @@ def _has_command(name: str) -> bool:
 def _preflight(root: Path, need_api: bool, need_web: bool) -> str | None:
     """Fast, accurate error for a missing toolchain, instead of a 4-minute wait.
 
-    ``start_web`` runs ``npm run dev`` and ``start_api`` runs uvicorn; with no
-    check, a missing npm/node/node_modules or uvicorn just prints
-    "command not found" into a log nobody reads while the launcher waits out the
-    full ~4-minute port timeout.
+    The frontend is built with npm and served with node, and ``start_api`` runs
+    uvicorn; with no check, a missing npm/node/node_modules or uvicorn just
+    prints "command not found" into a log nobody reads while the launcher waits
+    out the full port timeout.
     """
     if need_api:
         if core.find_venv_bin(root, "uvicorn") is None and not _has_command("uvicorn"):
@@ -487,6 +569,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Report failures on stderr instead of a GUI alert.",
     )
+    parser.add_argument(
+        "--dev",
+        action="store_true",
+        help="Serve the frontend with the vite dev server instead of a production build.",
+    )
     args = parser.parse_args(argv)
 
     if sys.platform == "darwin":
@@ -505,7 +592,8 @@ def main(argv: list[str] | None = None) -> int:
             return _fail(problem, headless or args.quiet)
 
     # Fail fast on a missing toolchain rather than waiting out the port timeout.
-    problem = _preflight(root, need_api=not api_up, need_web=not web_up)
+    needs_build = not args.dev and not frontend.build_is_current(root / "frontend")
+    problem = _preflight(root, need_api=not api_up, need_web=not web_up or needs_build)
     if problem:
         return _fail(problem, headless or args.quiet)
 
@@ -519,8 +607,7 @@ def main(argv: list[str] | None = None) -> int:
             web_up = core.port_is_up(args.web_port)
             if not api_up:
                 start_api(root, args.api_port)
-            if not web_up:
-                start_web(root, args.web_port)
+            _ensure_web(root, args.web_port, dev=args.dev, headless=headless)
 
         # The lock is held across the wait, not just the spawn. Releasing after
         # the Popen calls (which return in milliseconds) leaves the whole ~1-2
