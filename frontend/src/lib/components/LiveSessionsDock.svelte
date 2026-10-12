@@ -3,7 +3,7 @@
 	import { scale } from 'svelte/transition';
 	import { page } from '$app/stores';
 	import { afterNavigate } from '$app/navigation';
-	import { FolderOpen, Radio, X } from 'lucide-svelte';
+	import { ChevronUp, FolderOpen, Radio, X } from 'lucide-svelte';
 	import { liveSessionsFeed } from '$lib/stores/liveSessionsFeed';
 	import { statusConfig } from '$lib/live-session-config';
 	import TerminalFocusButton from '$lib/components/TerminalFocusButton.svelte';
@@ -24,8 +24,7 @@
 	const sessions = $derived(visibleLiveSessions($liveSessionsFeed));
 
 	// Only "waiting" (blocked on you) earns motion — pulsing for merely-busy trains you to ignore it.
-	const hasWorking = $derived(sessions.some((s) => s.status === 'active'));
-	const needsInput = $derived(sessions.some((s) => s.status === 'waiting'));
+	const waitingCount = $derived(sessions.filter((s) => s.status === 'waiting').length);
 
 	let expanded = $state(false);
 	let container: HTMLDivElement | undefined = $state();
@@ -132,18 +131,20 @@
 
 		<button
 			class="dock-pill"
-			class:attention={needsInput}
+			class:expanded
 			onclick={() => (expanded = !expanded)}
 			aria-expanded={expanded}
-			aria-label={needsInput ? 'Live sessions — one is waiting on you' : 'Live sessions'}
+			aria-label={`${sessions.length} live sessions${waitingCount ? `, ${waitingCount} waiting on you` : ''}`}
 		>
-			<span class="dock-icon">
-				<Radio size={13} strokeWidth={2} />
-			</span>
-			<span class="dock-count">{sessions.length}</span>
-			{#if needsInput || hasWorking}
-				<span class="dock-badge" class:pulse={needsInput}></span>
+			<Radio size={16} strokeWidth={2} />
+			<span class="dock-count">{sessions.length} live</span>
+			{#if waitingCount > 0}
+				<span class="dock-waiting">
+					<span class="waiting-dot"></span>
+					{waitingCount} waiting
+				</span>
 			{/if}
+			<span class="dock-chevron"><ChevronUp size={16} strokeWidth={2} /></span>
 		</button>
 	</div>
 {/if}
@@ -163,71 +164,82 @@
 		transform-origin: bottom right;
 	}
 
+	@media (max-width: 480px) {
+		.dock {
+			right: var(--spacing-4);
+			bottom: var(--spacing-4);
+		}
+	}
+
+	/* Inverted surface so the launcher never reads as another card, in either theme. */
 	.dock-pill {
-		position: relative;
 		display: inline-flex;
 		align-items: center;
 		gap: var(--spacing-2);
-		padding: var(--spacing-2) var(--spacing-3) var(--spacing-2) var(--spacing-2);
-		border: 1px solid var(--border);
+		min-height: 44px;
+		padding: 0 var(--spacing-3) 0 var(--spacing-4);
+		border: none;
 		border-radius: 999px;
-		background: var(--bg-base);
-		color: var(--text-secondary);
+		background: var(--text-primary);
+		color: var(--bg-base);
 		box-shadow: var(--shadow-lg);
+		font-size: 14px;
+		font-weight: 600;
 		cursor: pointer;
 		transition:
-			background var(--duration-fast),
-			border-color var(--duration-fast),
-			color var(--duration-fast),
-			transform var(--duration-fast);
+			transform var(--duration-fast),
+			box-shadow var(--duration-fast);
 	}
 
 	.dock-pill:hover {
-		background: var(--bg-subtle);
-		color: var(--text-primary);
-		border-color: var(--accent);
 		transform: translateY(-1px);
+		box-shadow: var(--shadow-elevated), var(--shadow-lg);
 	}
 
 	.dock-pill:active {
 		transform: translateY(0);
 	}
 
-	.dock-pill.attention {
-		border-color: color-mix(in srgb, var(--info) 60%, var(--border));
-	}
-
-	.dock-icon {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		width: 24px;
-		height: 24px;
-		border-radius: 50%;
-		background: var(--nav-teal-subtle);
-		color: var(--nav-teal);
+	.dock-pill:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: 3px;
 	}
 
 	.dock-count {
-		font-size: 12px;
-		font-weight: 600;
 		font-variant-numeric: tabular-nums;
+		white-space: nowrap;
 	}
 
-	.dock-badge {
-		position: absolute;
-		top: -1px;
-		right: -1px;
-		width: 9px;
-		height: 9px;
-		border-radius: 50%;
-		background: var(--success);
-		border: 2px solid var(--bg-base);
-	}
-
-	.dock-badge.pulse {
+	/* The one state that earns colour: a session blocked on you. */
+	.dock-waiting {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		padding: 3px 10px 3px 8px;
+		border-radius: 999px;
 		background: var(--info);
+		color: var(--bg-base);
+		font-size: 13px;
+		font-variant-numeric: tabular-nums;
+		white-space: nowrap;
+	}
+
+	.waiting-dot {
+		width: 7px;
+		height: 7px;
+		border-radius: 50%;
+		background: currentColor;
 		animation: dock-pulse 2s ease infinite;
+	}
+
+	.dock-chevron {
+		display: inline-flex;
+		opacity: 0.7;
+		transition: transform var(--duration-fast);
+	}
+
+	.dock-pill.expanded .dock-chevron {
+		transform: rotate(180deg);
 	}
 
 	@keyframes dock-pulse {
@@ -243,7 +255,7 @@
 	}
 
 	.dock-panel {
-		width: 400px;
+		width: min(400px, calc(100vw - 2 * var(--spacing-4)));
 		max-height: 75vh;
 		display: flex;
 		flex-direction: column;
@@ -426,12 +438,13 @@
 	}
 
 	@media (prefers-reduced-motion: reduce) {
-		.dock-badge.pulse,
+		.waiting-dot,
 		.status-dot.pulse {
 			animation: none;
 		}
 
-		.dock-pill {
+		.dock-pill,
+		.dock-chevron {
 			transition: none;
 		}
 
