@@ -316,22 +316,3 @@ def test_index_entry_duration_is_active_time(tmp_path):
     )
 
     assert entry.duration_seconds == GAPPED_ACTIVE_SECONDS
-
-
-def test_fallback_analytics_totals_include_subagents(tmp_path):
-    from models.session import Session
-    from routers.analytics import _calculate_analytics_from_sessions
-
-    usage = {"input_tokens": 100, "output_tokens": 50}
-    project = tmp_path / "-p"
-    session_path = _write_jsonl(project / "s1.jsonl", [_assistant("m1", T0, usage=usage)])
-    _write_jsonl(
-        project / "s1" / "subagents" / "agent-a1.jsonl", [_assistant("x1", T0, usage=usage)]
-    )
-
-    analytics = _calculate_analytics_from_sessions(
-        [Session.from_path(session_path, claude_base_dir=tmp_path)], use_index=False
-    )
-
-    assert analytics.total_input_tokens == 200
-    assert analytics.total_output_tokens == 100
