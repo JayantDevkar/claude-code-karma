@@ -20,6 +20,8 @@ on:
       # The launcher builds the frontend into a staging dir via KARMA_BUILD_OUT.
       - 'frontend/svelte.config.js'
       - 'frontend/package.json'
+      - 'frontend/package-lock.json'
+      - 'frontend/tsconfig.json'
       - 'frontend/src/app.html'
       - 'frontend/static/**'
       - 'frontend/src/lib/components/settings/DesktopAppSetting.svelte'

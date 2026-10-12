@@ -38,6 +38,8 @@ from typing import Optional
 
 from cachetools import TTLCache, cached
 
+from utils import GIT_LOOKUP_TTL_SECONDS
+
 logger = logging.getLogger(__name__)
 
 # Match either:
@@ -98,18 +100,18 @@ def read_git_identity(project_path: Optional[str]) -> Optional[str]:
     if not project_path:
         return None
     try:
-        return _git_identity_uncached(project_path)
+        return _cached_git_identity(project_path)
     except (FileNotFoundError, subprocess.TimeoutExpired, OSError) as e:
         logger.debug("git_identity read failed for %s: %r", project_path, e)
         return None
 
 
-# Same window as utils.GIT_LOOKUP_TTL_SECONDS; failures raise above and are not cached.
-_identity_cache: TTLCache = TTLCache(maxsize=4096, ttl=600)
+# "No remote" is cached like a remote; errors raise above and are not cached.
+_identity_cache: TTLCache = TTLCache(maxsize=4096, ttl=GIT_LOOKUP_TTL_SECONDS)
 
 
 @cached(_identity_cache, lock=threading.Lock())
-def _git_identity_uncached(project_path: str) -> Optional[str]:
+def _cached_git_identity(project_path: str) -> Optional[str]:
     result = subprocess.run(
         ["git", "-C", project_path, "config", "--get", "remote.origin.url"],
         capture_output=True,

@@ -352,12 +352,14 @@ def run_logged(
         try:
             return proc.wait(timeout=timeout)
         except subprocess.TimeoutExpired:
-            stop_process_tree(proc.pid)
+            # A build has nothing to flush: kill outright, or a child that ignores
+            # SIGTERM would keep the launcher (and its spawn lock) waiting forever.
+            stop_process_tree(proc.pid, force=True)
             proc.wait()
             return None
 
 
-def stop_process_tree(pid: int) -> None:
+def stop_process_tree(pid: int, force: bool = False) -> None:
     """Stop a process this launcher started, and everything it started."""
     try:
         if sys.platform == "win32":
@@ -368,6 +370,6 @@ def stop_process_tree(pid: int) -> None:
             )
         else:
             # Children were started with start_new_session, so pid is the group id.
-            os.killpg(pid, signal.SIGTERM)
+            os.killpg(pid, signal.SIGKILL if force else signal.SIGTERM)
     except (OSError, subprocess.SubprocessError):
         pass

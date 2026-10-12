@@ -68,7 +68,7 @@ _git_root_cache: TTLCache = TTLCache(maxsize=4096, ttl=GIT_LOOKUP_TTL_SECONDS)
 
 
 @cached(_git_root_cache, lock=threading.Lock())
-def _git_root_uncached(path: str) -> Optional[str]:
+def _cached_git_root(path: str) -> Optional[str]:
     result = subprocess.run(
         ["git", "rev-parse", "--show-superproject-working-tree", "--show-toplevel"],
         cwd=path,
@@ -87,11 +87,11 @@ def _git_root_uncached(path: str) -> Optional[str]:
 def resolve_git_root(path: str) -> Optional[str]:
     """Find the git repository root for a path, cached for GIT_LOOKUP_TTL_SECONDS.
 
-    For submodules, returns the parent (superproject) root.
-    Returns None if not in a git repo. Failures (timeout, missing dir) are not cached.
+    For submodules, returns the parent (superproject) root. Returns None if not
+    in a git repo; that answer is cached too, while errors (timeout, missing dir) are not.
     """
     try:
-        return _git_root_uncached(path)
+        return _cached_git_root(path)
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError, PermissionError):
         return None
 

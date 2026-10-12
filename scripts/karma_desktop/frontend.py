@@ -59,20 +59,28 @@ def _entry(frontend: Path, path: Path) -> str:
     return f"{rel}|{stat.st_size}|{stat.st_mtime_ns}"
 
 
+def has_build(frontend: Path) -> bool:
+    return (frontend / BUILD_DIR / "index.js").is_file()
+
+
 def build_is_current(frontend: Path) -> bool:
     """True when ``build/`` exists and was made from the current inputs."""
-    build_dir = frontend / BUILD_DIR
-    if not (build_dir / "index.js").is_file():
+    if not has_build(frontend):
         return False
     try:
-        stamp = (build_dir / STAMP_NAME).read_text().strip()
+        stamp = (frontend / BUILD_DIR / STAMP_NAME).read_text().strip()
     except OSError:
         return False
     return stamp == fingerprint(frontend)
 
 
 def build(frontend: Path, log_path: Path, timeout: float) -> bool:
-    """Build into a staging directory and swap it in. True on success."""
+    """Build and swap the result in. True on success."""
+    return prepare(frontend, log_path, timeout) and activate(frontend)
+
+
+def prepare(frontend: Path, log_path: Path, timeout: float) -> bool:
+    """Build into the staging directory, leaving the live build untouched. True on success."""
     stamp = fingerprint(frontend)
     staging = frontend / STAGING_DIR
     shutil.rmtree(staging, ignore_errors=True)
@@ -85,16 +93,28 @@ def build(frontend: Path, log_path: Path, timeout: float) -> bool:
         env={"KARMA_BUILD_OUT": STAGING_DIR},
     )
     if code != 0 or not (staging / "index.js").is_file():
-        shutil.rmtree(staging, ignore_errors=True)
+        discard(frontend)
         return False
+    try:
+        (staging / STAMP_NAME).write_text(stamp)
+    except OSError:
+        discard(frontend)
+        return False
+    return True
 
-    (staging / STAMP_NAME).write_text(stamp)
-    return _swap_in(frontend, staging)
+
+def discard(frontend: Path) -> None:
+    """Drop a staged build that will not be used."""
+    shutil.rmtree(frontend / STAGING_DIR, ignore_errors=True)
 
 
-def _swap_in(frontend: Path, staging: Path) -> bool:
+def activate(frontend: Path) -> bool:
+    """Swap the staged build in. On failure the previous build is kept."""
+    staging = frontend / STAGING_DIR
     live = frontend / BUILD_DIR
     retired = frontend / RETIRED_DIR
+    if not (staging / "index.js").is_file():
+        return False
     shutil.rmtree(retired, ignore_errors=True)
     try:
         if live.exists():
@@ -104,7 +124,7 @@ def _swap_in(frontend: Path, staging: Path) -> bool:
         # Put the previous build back if it was moved; never leave no build at all.
         if retired.exists() and not live.exists():
             os.rename(retired, live)
-        shutil.rmtree(staging, ignore_errors=True)
+        discard(frontend)
         return False
     shutil.rmtree(retired, ignore_errors=True)
     return True
