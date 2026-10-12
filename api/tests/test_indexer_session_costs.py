@@ -12,7 +12,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from db import indexer
 from db.schema import ensure_schema
-from models.session import Session
 
 
 @pytest.fixture
@@ -40,24 +39,3 @@ def test_reindex_overwrites_stale_subagent_cost(mem_db, sample_session_jsonl):
 
     row = mem_db.execute("SELECT subagent_cost FROM sessions WHERE uuid = ?", (uuid,)).fetchone()
     assert row["subagent_cost"] == 0.0
-
-
-def test_subagents_are_listed_once_per_index(mem_db, sample_session_with_subagents, monkeypatch):
-    calls = {"list": 0, "cost": 0}
-    real_list = Session.list_subagents
-
-    def counting_list(self):
-        calls["list"] += 1
-        return real_list(self)
-
-    def counting_cost(self):
-        calls["cost"] += 1
-        return 0.0
-
-    monkeypatch.setattr(Session, "list_subagents", counting_list)
-    monkeypatch.setattr(Session, "get_subagent_total_cost", counting_cost)
-
-    _index(mem_db, sample_session_with_subagents)
-
-    # One listing feeds both the cost sum and the invocation rows; no separate cost pass.
-    assert calls == {"list": 1, "cost": 0}

@@ -1,5 +1,5 @@
 """
-Tests for GET /sessions/{uuid}/tools?include_subagents=... scoping.
+Tests for the main-session vs subagent split in GET /sessions/{uuid}/tools.
 """
 
 import json
@@ -48,15 +48,10 @@ def session_with_subagent(mock_claude_base):
     return SESSION_UUID
 
 
-def test_tools_include_subagents_by_default(client, session_with_subagent):
+def test_tools_split_session_and_subagent_counts(client, session_with_subagent):
     response = client.get(f"/sessions/{session_with_subagent}/tools")
 
     assert response.status_code == 200
-    assert {t["tool_name"]: t["count"] for t in response.json()} == {"Read": 1, "Bash": 1}
-
-
-def test_tools_session_only(client, session_with_subagent):
-    response = client.get(f"/sessions/{session_with_subagent}/tools?include_subagents=false")
-
-    assert response.status_code == 200
-    assert {t["tool_name"]: t["count"] for t in response.json()} == {"Read": 1}
+    rows = {t["tool_name"]: (t["count"], t["by_session"]) for t in response.json()}
+    # The Analytics tab shows by_session; Overview shows count
+    assert rows == {"Read": (1, 1), "Bash": (1, 0)}

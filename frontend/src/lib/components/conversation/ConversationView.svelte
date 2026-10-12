@@ -68,6 +68,7 @@
 	import { isSubagentSession, isMainSession } from '$lib/api-types';
 	import {
 		activeTimeWasCapped,
+		sessionOnlyTools,
 		formatDuration,
 		formatTokens,
 		formatCost,
@@ -131,7 +132,8 @@
 			if (Array.isArray(sessionTools)) {
 				return sessionTools.map((t: any) => ({
 					tool_name: t.tool_name || t.name || 'Unknown',
-					count: typeof t.count === 'number' ? t.count : 1
+					count: typeof t.count === 'number' ? t.count : 1,
+					by_session: t.by_session
 				}));
 			}
 		}
@@ -383,9 +385,7 @@
 						signal
 					}),
 					fetch(`${API_BASE}/sessions/${uuid}/subagents?fresh=1`, { signal }),
-					fetch(`${API_BASE}/sessions/${uuid}/tools?fresh=1&include_subagents=false`, {
-						signal
-					}),
+					fetch(`${API_BASE}/sessions/${uuid}/tools?fresh=1`, { signal }),
 					fetch(tasksUrl, { signal })
 				]);
 
@@ -400,7 +400,8 @@
 
 			const tools_used = toolsData.map((t: any) => ({
 				tool_name: t.tool_name,
-				count: t.count
+				count: t.count,
+				by_session: t.by_session
 			}));
 
 			entityData = {
@@ -785,11 +786,16 @@
 	});
 
 	// Derived values
-	let toolsUsedRecord = $derived.by<Record<string, number>>(() => {
-		return Object.fromEntries(toolsArray.map((t) => [t.tool_name, t.count]));
-	});
-
 	let totalToolCalls = $derived(toolsArray.reduce((acc, t) => acc + t.count, 0));
+
+	// Overview counts subagent tool calls; the Analytics tab is the session's own work
+	let analyticsTools = $derived(
+		entity && isSubagentSession(entity) ? toolsArray : sessionOnlyTools(toolsArray)
+	);
+	let analyticsToolCalls = $derived(analyticsTools.reduce((acc, t) => acc + t.count, 0));
+	let analyticsToolsRecord = $derived.by<Record<string, number>>(() => {
+		return Object.fromEntries(analyticsTools.map((t) => [t.tool_name, t.count]));
+	});
 
 	// Formats the first-to-last message span, in days once it passes 24h
 	function formatWallClock(startTime: string, endTime: string): string {
@@ -806,7 +812,7 @@
 		const cacheReads = entity.cache_read_tokens || 0;
 		const toolsCount = isAgent
 			? Object.keys(entity.tools_used || {}).length
-			: toolsArray.length;
+			: analyticsTools.length;
 
 		const wallClock =
 			!isAgent && entity.start_time && entity.end_time
@@ -1263,10 +1269,13 @@
 
 						<StatsGrid stats={analyticsStats} columns={5} />
 
-						{#if toolsArray.length > 0}
+						{#if analyticsTools.length > 0}
 							<div class="grid gap-6 lg:grid-cols-2">
-								<ToolUsageTable tools={toolsArray} totalCalls={totalToolCalls} />
-								<ToolsChart toolsUsed={toolsUsedRecord} />
+								<ToolUsageTable
+									tools={analyticsTools}
+									totalCalls={analyticsToolCalls}
+								/>
+								<ToolsChart toolsUsed={analyticsToolsRecord} />
 							</div>
 						{:else}
 							<EmptyState

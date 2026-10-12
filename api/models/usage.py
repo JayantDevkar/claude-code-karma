@@ -6,10 +6,14 @@ Tracks input/output tokens including cache statistics.
 
 from __future__ import annotations
 
+import logging
 import re
+from functools import lru_cache
 from typing import Any, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+logger = logging.getLogger(__name__)
 
 # Pricing per 1M tokens (USD) - https://www.anthropic.com/pricing
 # Long-context pricing applies when input exceeds the threshold (e.g., 200K for Sonnet 4.5)
@@ -132,13 +136,17 @@ def _index_known_versions() -> tuple[
 _KNOWN_VERSIONS, _VERSIONS_BY_FAMILY = _index_known_versions()
 
 
-def _nearest_known(parsed: ModelVersion) -> str:
-    """Closest priced version at or below the parsed one; the oldest known if none is."""
+@lru_cache(maxsize=None)
+def _nearest_known(model: str, parsed: ModelVersion) -> str:
+    """Closest priced version at or below the parsed one, preferring the same major version."""
     family, major, minor = parsed
     target = _rank(major, minor)
     versions = _VERSIONS_BY_FAMILY[family]
-    at_or_below = [model_id for rank, model_id in versions if rank <= target]
-    return at_or_below[-1] if at_or_below else versions[0][1]
+    pool = [v for v in versions if v[0][0] == target[0]] or versions
+    at_or_below = [model_id for rank, model_id in pool if rank <= target]
+    guess = at_or_below[-1] if at_or_below else pool[0][1]
+    logger.warning("No pricing for %s; billing it as %s", model, guess)
+    return guess
 
 
 def _resolve_model(model: Optional[str]) -> dict[str, float]:
@@ -150,7 +158,7 @@ def _resolve_model(model: Optional[str]) -> dict[str, float]:
     parsed = _parse_model_id(model)
     if parsed is None:
         return MODEL_PRICING[DEFAULT_PRICING_MODEL]
-    canonical = _KNOWN_VERSIONS.get(parsed) or _nearest_known(parsed)
+    canonical = _KNOWN_VERSIONS.get(parsed) or _nearest_known(model, parsed)
     return MODEL_PRICING[canonical]
 
 

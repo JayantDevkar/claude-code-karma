@@ -82,10 +82,7 @@ def get_subagent_detail(
     # Get usage summary
     usage = agent.get_usage_summary()
 
-    # Calculate duration
-    duration_seconds = None
-    if agent.start_time and agent.end_time:
-        duration_seconds = (agent.end_time - agent.start_time).total_seconds()
+    duration_seconds = agent.duration_seconds
 
     total_cost = agent.get_total_cost()
 

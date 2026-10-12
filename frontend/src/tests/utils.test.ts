@@ -30,7 +30,8 @@ import {
 	isHourBasedFilter,
 	isKnownSubagentType,
 	calculateSubagentDuration,
-	activeTimeWasCapped
+	activeTimeWasCapped,
+	sessionOnlyTools
 } from '$lib/utils';
 
 // ============================================================
@@ -931,7 +932,8 @@ describe('calculateSubagentDuration', () => {
 
 describe('activeTimeWasCapped', () => {
 	const start = '2026-10-01T10:00:00.000Z';
-	const endAfter = (seconds: number) => new Date(Date.parse(start) + seconds * 1000).toISOString();
+	const endAfter = (seconds: number) =>
+		new Date(Date.parse(start) + seconds * 1000).toISOString();
 
 	it('is false when active time matches the wall clock', () => {
 		expect(activeTimeWasCapped(start, endAfter(3600), 3600)).toBe(false);
@@ -953,5 +955,21 @@ describe('activeTimeWasCapped', () => {
 		expect(activeTimeWasCapped(undefined, endAfter(10), 10)).toBe(false);
 		expect(activeTimeWasCapped(start, undefined, 10)).toBe(false);
 		expect(activeTimeWasCapped(start, endAfter(10), null)).toBe(false);
+	});
+});
+
+describe('sessionOnlyTools', () => {
+	it('uses the main-session counts and drops subagent-only tools', () => {
+		const tools = [
+			{ tool_name: 'Read', count: 5, by_session: 3 },
+			{ tool_name: 'Bash', count: 2, by_session: 0 }
+		];
+		expect(sessionOnlyTools(tools)).toEqual([{ tool_name: 'Read', count: 3, by_session: 3 }]);
+	});
+
+	it('keeps the total when the split is unknown', () => {
+		expect(sessionOnlyTools([{ tool_name: 'Grep', count: 4 }])).toEqual([
+			{ tool_name: 'Grep', count: 4 }
+		]);
 	});
 });

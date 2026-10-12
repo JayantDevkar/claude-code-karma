@@ -48,6 +48,7 @@ class AgentCache(BaseCache):
     __slots__ = (
         "start_time",
         "end_time",
+        "active_duration_seconds",
         "usage_summary",
         "total_cost",
         "message_count",
@@ -61,6 +62,7 @@ class AgentCache(BaseCache):
         super().__init__()
         self.start_time: Optional[datetime] = None
         self.end_time: Optional[datetime] = None
+        self.active_duration_seconds: Optional[float] = None
         self.usage_summary: Optional["TokenUsage"] = None
         self.total_cost: Optional[float] = None
         self.message_count: Optional[int] = None
@@ -73,6 +75,7 @@ class AgentCache(BaseCache):
         """Reset all cache values to initial state."""
         self.start_time = None
         self.end_time = None
+        self.active_duration_seconds = None
         self.usage_summary = None
         self.total_cost = None
         self.message_count = None
@@ -213,6 +216,7 @@ class Agent(BaseModel):
 
         from command_helpers import classify_invocation, is_command_category, is_skill_category
 
+        from .active_time import ActiveTimeAccumulator
         from .content import ToolUseBlock
         from .message import AssistantMessage
         from .usage import UsageAccumulator
@@ -220,6 +224,7 @@ class Agent(BaseModel):
         # Initialize accumulators
         first_ts: Optional[datetime] = None
         last_ts: Optional[datetime] = None
+        active_time = ActiveTimeAccumulator()
         usage_acc = UsageAccumulator()
         message_count = 0
         models: set = set()
@@ -233,6 +238,7 @@ class Agent(BaseModel):
             # Timestamps
             if first_ts is None:
                 first_ts = msg.timestamp
+            active_time.add(msg.timestamp)
             last_ts = msg.timestamp
 
             # Usage (assistant messages only)
@@ -255,6 +261,7 @@ class Agent(BaseModel):
         # Store all computed values
         cache.start_time = first_ts
         cache.end_time = last_ts
+        cache.active_duration_seconds = active_time.seconds
         cache.usage_summary = usage_acc.usage
         cache.total_cost = usage_acc.cost
         cache.message_count = message_count
@@ -364,6 +371,14 @@ class Agent(BaseModel):
         """Get timestamp of last message (cached)."""
         self._load_metadata()
         return self._get_cache().end_time
+
+    @property
+    def duration_seconds(self) -> Optional[float]:
+        """Active duration in seconds, idle gaps capped like Session.duration_seconds (cached)."""
+        self._load_metadata()
+        if not (self.start_time and self.end_time):
+            return None
+        return self._get_cache().active_duration_seconds
 
     def list_tasks(self) -> List[Task]:
         """

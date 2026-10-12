@@ -10,7 +10,6 @@ import logging
 import re
 import sqlite3
 import sys
-from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -83,6 +82,7 @@ from http_caching import (
 from models import Session, ToolUseBlock
 from models.plan import load_plan
 from models.project import get_cached_jsonl_count
+from models.session import active_duration_seconds
 
 # Phase 4: Parallel processing
 from parallel import process_subagents_parallel
@@ -645,8 +645,6 @@ def _get_all_sessions_jsonl(
     sessions_with_context = []
     for meta in paginated_sessions:
         duration_seconds = None
-        if meta.start_time and meta.end_time:
-            duration_seconds = (meta.end_time - meta.start_time).total_seconds()
 
         slug = meta.slug
         session_titles = (
@@ -659,6 +657,10 @@ def _get_all_sessions_jsonl(
 
         project_dir = settings.projects_dir / meta.encoded_name
         subagent_count = _count_subagents_fast(project_dir, meta.uuid)
+        if meta._session is None:
+            duration_seconds = active_duration_seconds(
+                project_dir / f"{meta.uuid}.jsonl", meta.start_time, meta.end_time
+            )
 
         if meta._session is not None:
             try:
@@ -1420,7 +1422,7 @@ async def get_subagents_parallel(uuid: str, request: Request):
 
 
 @router.get("/{uuid}/tools")
-def get_tools(uuid: str, request: Request, fresh: bool = False, include_subagents: bool = True):
+def get_tools(uuid: str, request: Request, fresh: bool = False):
     """
     Get tool usage breakdown for a session.
 
@@ -1431,7 +1433,6 @@ def get_tools(uuid: str, request: Request, fresh: bool = False, include_subagent
     Args:
         uuid: Session UUID
         fresh: If true, use minimal cache (1s) for live session polling
-        include_subagents: If false, count only the main session's own tool calls
     """
     from services.conversation_endpoints import build_tool_usage_summaries
 
@@ -1439,13 +1440,13 @@ def get_tools(uuid: str, request: Request, fresh: bool = False, include_subagent
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    # Single-pass collection, optionally with subagents
-    data = collect_session_data(session, include_subagents=include_subagents)
+    # Single-pass collection with subagents
+    data = collect_session_data(session, include_subagents=True)
 
-    # Inline sidechain messages in the main JSONL also land in subagent_tool_counts
+    # Inline sidechain messages in the main JSONL land in subagent_tool_counts (by_subagents)
     summaries = build_tool_usage_summaries(
         data.session_tool_counts,
-        data.subagent_tool_counts if include_subagents else Counter(),
+        data.subagent_tool_counts,
     )
 
     # Add cache headers - minimal cache for live polling

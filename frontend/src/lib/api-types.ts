@@ -100,6 +100,7 @@ export interface FileActivity {
 export interface ToolUsage {
 	tool_name: string;
 	count: number;
+	by_session?: number;
 	by_actor?: Record<string, number>;
 }
 

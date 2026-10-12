@@ -99,11 +99,7 @@ export async function load({ params, fetch }) {
 		fetchWithFallback(fetch, `${API_BASE}/sessions/${sessionUuid}/timeline`, []),
 		fetchWithFallback(fetch, `${API_BASE}/sessions/${sessionUuid}/file-activity`, []),
 		fetchWithFallback(fetch, `${API_BASE}/sessions/${sessionUuid}/subagents`, []),
-		fetchWithFallback(
-			fetch,
-			`${API_BASE}/sessions/${sessionUuid}/tools?include_subagents=false`,
-			[]
-		),
+		fetchWithFallback(fetch, `${API_BASE}/sessions/${sessionUuid}/tools`, []),
 		fetchWithFallback(fetch, `${API_BASE}/sessions/${sessionUuid}/tasks`, []),
 		safeFetch<PlanDetail>(fetch, `${API_BASE}/sessions/${sessionUuid}/plan`),
 		fetchWithFallback<SessionTicketRow[]>(
@@ -130,9 +126,12 @@ export async function load({ params, fetch }) {
 	const sessionData = sessionResult.data;
 
 	// Transform tools from API format to ToolUsage format [{tool_name, count}]
-	const tools_used = (toolsData as Array<{ tool_name: string; count: number }>).map((t) => ({
+	const tools_used = (
+		toolsData as Array<{ tool_name: string; count: number; by_session?: number }>
+	).map((t) => ({
 		tool_name: t.tool_name,
-		count: t.count
+		count: t.count,
+		by_session: t.by_session
 	}));
 
 	// Transform file activity to files_accessed format

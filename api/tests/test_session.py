@@ -727,7 +727,7 @@ class TestUsageSummary:
 
         session = Session.from_path(jsonl_path, claude_base_dir=temp_claude_dir)
 
-        assert session.get_subagent_total_cost() == pytest.approx(2 * session.get_total_cost())
+        assert session.get_subagent_totals()[1] == pytest.approx(2 * session.get_total_cost())
 
 
 # =============================================================================

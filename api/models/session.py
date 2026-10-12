@@ -24,6 +24,7 @@ from command_helpers import (
     parse_command_from_content,
 )
 
+from .active_time import ACTIVE_IDLE_CAP_SECONDS, ActiveTimeAccumulator
 from .agent import Agent
 from .base_cache import (
     BaseCache,
@@ -52,9 +53,6 @@ from .usage import TokenUsage, UsageAccumulator
 
 if TYPE_CHECKING:
     pass
-
-# Idle gaps between messages count toward active duration only up to this cap
-ACTIVE_IDLE_CAP_SECONDS = 30 * 60
 
 
 def _apply_command_triggered(pending_command_plugins: set[str], skills: Counter) -> None:
@@ -351,10 +349,9 @@ class Session(BaseModel):
         # Initialize accumulators
         first_ts: Optional[datetime] = None
         last_ts: Optional[datetime] = None
-        latest_ts: Optional[datetime] = None  # max timestamp seen; active time only moves forward
         slug: Optional[str] = None
         usage_acc = UsageAccumulator()
-        active_seconds = 0.0
+        active_time = ActiveTimeAccumulator()
         tools: Counter[str] = Counter()
         # Skills/commands use (name, source) tuple keys for invocation tracking
         skills: Counter[tuple] = Counter()  # {(name, source): count}
@@ -451,12 +448,7 @@ class Session(BaseModel):
             if hasattr(msg, "timestamp") and msg.timestamp:
                 if first_ts is None:
                     first_ts = msg.timestamp
-                if latest_ts is None:
-                    latest_ts = msg.timestamp
-                elif msg.timestamp > latest_ts:
-                    gap = (msg.timestamp - latest_ts).total_seconds()
-                    active_seconds += min(gap, ACTIVE_IDLE_CAP_SECONDS)
-                    latest_ts = msg.timestamp
+                active_time.add(msg.timestamp)
                 last_ts = msg.timestamp
 
             # Slug (from any message)
@@ -546,7 +538,7 @@ class Session(BaseModel):
         cache.models_used = models_used
         cache.message_count = message_count
         cache.total_cost = usage_acc.cost
-        cache.active_duration_seconds = active_seconds
+        cache.active_duration_seconds = active_time.seconds
         # Message type counts
         cache.user_message_count = user_msg_count
         cache.assistant_message_count = assistant_msg_count
@@ -886,9 +878,14 @@ class Session(BaseModel):
         self._load_metadata()
         return self._get_cache().total_cost or 0.0
 
-    def get_subagent_total_cost(self) -> float:
-        """Sum the estimated cost of this session's subagents."""
-        return sum(agent.get_total_cost() for agent in self.list_subagents())
+    def get_subagent_totals(self) -> tuple[TokenUsage, float]:
+        """Token usage and estimated cost summed across this session's subagents."""
+        usage = TokenUsage.zero()
+        cost = 0.0
+        for agent in self.list_subagents():
+            usage = usage + agent.get_usage_summary()
+            cost += agent.get_total_cost()
+        return usage, cost
 
     def get_models_used(self) -> Set[str]:
         """
@@ -1123,3 +1120,18 @@ class Session(BaseModel):
             "summary": cache.summary_count,  # SessionTitleMessage (not compaction)
             "compact_boundary": cache.compact_boundary_count,  # True compaction events
         }
+
+
+def active_duration_seconds(
+    jsonl_path: Path, start: Optional[datetime], end: Optional[datetime]
+) -> Optional[float]:
+    """Active duration for a session known only by its span; None when it can't be computed."""
+    if not (start and end):
+        return None
+    span = (end - start).total_seconds()
+    # No gap inside a span shorter than the cap can be trimmed, so the wall clock is exact
+    if span <= ACTIVE_IDLE_CAP_SECONDS:
+        return span
+    if not jsonl_path.is_file():
+        return None
+    return Session.from_path(jsonl_path).duration_seconds
