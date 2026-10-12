@@ -49,8 +49,11 @@ export function groupProjects(projects: Project[]): GroupedProjects {
 	const nonGitProjects = projects.filter((p) => !p.git_root_path);
 
 	// Normalize path separators for cross-platform comparison (Windows uses backslashes,
-	// git outputs forward slashes — normalize both to forward slashes before comparing)
-	const normalizePath = (p: string) => p.replace(/\\/g, '/');
+	// git outputs forward slashes — normalize both to forward slashes before comparing).
+	// Also uppercase the Windows drive letter: Claude Code may record `f:/repo` while
+	// git reports `F:/repo`, which would otherwise leave the group with 0 projects.
+	const normalizePath = (p: string) =>
+		p.replace(/\\/g, '/').replace(/^([a-z]):/, (_, d: string) => d.toUpperCase() + ':');
 
 	// Step 2: Group git projects by normalized git_root_path
 	const groupMap = new Map<string, Project[]>();

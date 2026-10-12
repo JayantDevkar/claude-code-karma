@@ -251,4 +251,18 @@ describe('groupProjects — Windows paths', () => {
 		const result = groupProjects(projects as any);
 		expect(result.singleGitProjects).toHaveLength(1);
 	});
+
+	it('matches project to git root when drive letter case differs', () => {
+		const projects = [
+			makeProject({
+				encoded_name: 'f--code-journal',
+				path: 'f:/code/journal',
+				git_root_path: 'F:/code/journal',
+				is_nested_project: false
+			})
+		];
+		const result = groupProjects(projects as any);
+		expect(result.gitRoots).toHaveLength(0);
+		expect(result.singleGitProjects).toHaveLength(1);
+	});
 });
