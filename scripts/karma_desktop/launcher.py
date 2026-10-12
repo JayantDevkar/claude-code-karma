@@ -266,7 +266,7 @@ def _ps_quote(text: str) -> str:
 # --------------------------------------------------------------------------
 
 
-def start_api(root: Path, port: int) -> None:
+def start_api(root: Path, port: int, silent: bool = False) -> None:
     """Start uvicorn, preferring a karma virtualenv over the ambient PATH.
 
     No ``--reload``: this launcher runs Karma to *use* it, often as a login
@@ -284,21 +284,24 @@ def start_api(root: Path, port: int) -> None:
             cwd=root / "api",
             log_path=core.log_dir() / "api.log",
             use_login_shell=False,
+            hide_console=silent,
         )
         return
     core.spawn_detached(
         ["uvicorn", "main:app", "--port", str(port)],
         cwd=root / "api",
         log_path=core.log_dir() / "api.log",
+        hide_console=silent,
     )
 
 
-def start_web(root: Path, port: int) -> None:
+def start_web(root: Path, port: int, silent: bool = False) -> None:
     """Start the vite dev server on karma's fixed port."""
     core.spawn_detached(
         ["npm", "run", "dev", "--", "--port", str(port), "--strictPort"],
         cwd=root / "frontend",
         log_path=core.log_dir() / "web.log",
+        hide_console=silent,
     )
 
 
@@ -476,6 +479,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Report failures on stderr instead of a GUI alert.",
     )
+    parser.add_argument(
+        "--silent",
+        action="store_true",
+        help="Windows only: run the servers without console windows.",
+    )
     args = parser.parse_args(argv)
 
     root = core.repo_root()
@@ -504,9 +512,9 @@ def main(argv: list[str] | None = None) -> int:
             api_up = core.port_is_up(args.api_port)
             web_up = core.port_is_up(args.web_port)
             if not api_up:
-                start_api(root, args.api_port)
+                start_api(root, args.api_port, silent=args.silent)
             if not web_up:
-                start_web(root, args.web_port)
+                start_web(root, args.web_port, silent=args.silent)
 
         # The lock is held across the wait, not just the spawn. Releasing after
         # the Popen calls (which return in milliseconds) leaves the whole ~1-2
