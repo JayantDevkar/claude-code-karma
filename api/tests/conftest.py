@@ -23,11 +23,13 @@ import pytest
 @pytest.fixture(autouse=True)
 def _fresh_process_caches():
     """Git lookups and subagent digests are cached process-wide; start each test cold."""
-    from collectors import clear_subagent_digest_cache
-    from utils import clear_git_caches
-
-    clear_git_caches()
-    clear_subagent_digest_cache()
+    # Only clear caches whose module is loaded, so minimal CI envs never import them.
+    for module, clear in (
+        ("utils", "clear_git_caches"),
+        ("collectors", "clear_subagent_digest_cache"),
+    ):
+        if module in sys.modules:
+            getattr(sys.modules[module], clear)()
     yield
 
 
