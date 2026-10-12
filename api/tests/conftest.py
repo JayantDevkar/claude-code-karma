@@ -20,6 +20,15 @@ import pytest
 # =============================================================================
 
 
+@pytest.fixture(autouse=True)
+def _fresh_git_caches():
+    """Git lookups are cached process-wide; start every test from a cold cache."""
+    from utils import clear_git_caches
+
+    clear_git_caches()
+    yield
+
+
 @pytest.fixture
 def sample_user_message_data() -> Dict[str, Any]:
     """Sample user message data from session JSONL."""

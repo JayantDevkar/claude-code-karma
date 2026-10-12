@@ -33,7 +33,10 @@ from __future__ import annotations
 import logging
 import re
 import subprocess
+import threading
 from typing import Optional
+
+from cachetools import TTLCache, cached
 
 logger = logging.getLogger(__name__)
 
@@ -95,17 +98,29 @@ def read_git_identity(project_path: Optional[str]) -> Optional[str]:
     if not project_path:
         return None
     try:
-        result = subprocess.run(
-            ["git", "-C", project_path, "config", "--get", "remote.origin.url"],
-            capture_output=True,
-            text=True,
-            timeout=2,
-            check=False,
-        )
+        return _git_identity_uncached(project_path)
     except (FileNotFoundError, subprocess.TimeoutExpired, OSError) as e:
         logger.debug("git_identity read failed for %s: %r", project_path, e)
         return None
 
+
+# Same window as utils.GIT_LOOKUP_TTL_SECONDS; failures raise above and are not cached.
+_identity_cache: TTLCache = TTLCache(maxsize=4096, ttl=600)
+
+
+@cached(_identity_cache, lock=threading.Lock())
+def _git_identity_uncached(project_path: str) -> Optional[str]:
+    result = subprocess.run(
+        ["git", "-C", project_path, "config", "--get", "remote.origin.url"],
+        capture_output=True,
+        text=True,
+        timeout=2,
+        check=False,
+    )
     if result.returncode != 0:
         return None
     return normalize_git_url(result.stdout)
+
+
+def clear_git_identity_cache() -> None:
+    _identity_cache.clear()

@@ -861,7 +861,7 @@ def _update_project_summaries(conn: sqlite3.Connection) -> None:
     from pathlib import Path
 
     from services.git_identity import read_git_identity
-    from utils import compute_project_slug
+    from utils import compute_project_slug, resolve_git_root
 
     rows = conn.execute(
         """
@@ -889,6 +889,9 @@ def _update_project_summaries(conn: sqlite3.Connection) -> None:
         slug = compute_project_slug(encoded_name, project_path)
         display_name = Path(project_path).name if project_path else encoded_name
         git_identity = read_git_identity(project_path)
+        # Warm the cache /projects reads, so the page never waits on git
+        if project_path and Path(project_path).is_dir():
+            resolve_git_root(project_path.replace("\\", "/"))
 
         conn.execute(
             """
