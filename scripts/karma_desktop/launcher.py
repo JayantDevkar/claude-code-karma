@@ -25,9 +25,9 @@ from pathlib import Path
 
 if __package__ in (None, ""):  # invoked as a plain script by the .app / .lnk
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-    from karma_desktop import core
+    from karma_desktop import core, installer_macos
 else:
-    from . import core
+    from . import core, installer_macos
 
 # A cold vite build on this repo is slow; the API is comparatively instant.
 API_TIMEOUT = 90
@@ -410,6 +410,17 @@ def _spawn_lock():
                 pass
 
 
+def _repair_autostart() -> None:
+    """Remove the old background-priority keys from an installed login item."""
+    try:
+        if installer_macos.repair_autostart_priority():
+            _log(
+                "Repaired the login item: servers start at normal priority from next login"
+            )
+    except Exception as e:  # noqa: BLE001 - never block a launch on this
+        _log(f"Could not repair the login item: {e!r}")
+
+
 def _is_karma_checkout(path: Path) -> bool:
     """Whether ``path`` (a server's cwd) sits inside any Karma checkout.
 
@@ -477,6 +488,9 @@ def main(argv: list[str] | None = None) -> int:
         help="Report failures on stderr instead of a GUI alert.",
     )
     args = parser.parse_args(argv)
+
+    if sys.platform == "darwin":
+        _repair_autostart()
 
     root = core.repo_root()
     url = f"http://localhost:{args.web_port}"

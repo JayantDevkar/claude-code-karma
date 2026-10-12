@@ -604,6 +604,76 @@ def test_autostart_plist_runs_the_launcher_headless(tmp_path, monkeypatch):
     assert "--quiet" in script
 
 
+THROTTLE_KEYS = ("ProcessType", "LowPriorityIO", "Nice")
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="launchd is macOS-only")
+def test_autostart_plist_does_not_throttle_the_servers(tmp_path, monkeypatch):
+    """The servers the login item spawns inherit its QoS for their whole life.
+
+    Regression: ProcessType=Background + LowPriorityIO made every request 6-10x
+    slower for as long as the autostarted servers ran.
+    """
+    from karma_desktop import installer_macos as mac
+
+    fake_agent = tmp_path / "agent.plist"
+    monkeypatch.setattr(mac, "agent_path", lambda: fake_agent)
+    monkeypatch.setattr(
+        mac.subprocess,
+        "run",
+        lambda *a, **k: types.SimpleNamespace(returncode=0, stderr=b""),
+    )
+
+    mac.install_autostart(REPO, Path(sys.executable), 5180, 8020)
+    payload = plistlib.loads(fake_agent.read_bytes())
+
+    assert not set(THROTTLE_KEYS) & set(payload)
+
+
+def test_repair_strips_throttling_from_an_existing_login_item(tmp_path, monkeypatch):
+    """Upgrades keep their old plist, so it is repaired in place."""
+    from karma_desktop import installer_macos as mac
+
+    fake_agent = tmp_path / "agent.plist"
+    monkeypatch.setattr(mac, "agent_path", lambda: fake_agent)
+    old = {
+        "Label": mac.AGENT_LABEL,
+        "ProgramArguments": ["/bin/bash", "-c", "exec launcher.py --no-open"],
+        "RunAtLoad": True,
+        "KeepAlive": False,
+        "ProcessType": "Background",
+        "LowPriorityIO": True,
+        "Nice": 5,
+    }
+    fake_agent.write_bytes(plistlib.dumps(old))
+
+    assert mac.repair_autostart_priority() is True
+    repaired = plistlib.loads(fake_agent.read_bytes())
+    assert repaired == {k: v for k, v in old.items() if k not in THROTTLE_KEYS}
+    # Nothing left to repair, and no login item at all, are both no-ops.
+    assert mac.repair_autostart_priority() is False
+    fake_agent.unlink()
+    assert mac.repair_autostart_priority() is False
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="launchd is macOS-only")
+def test_launcher_repairs_the_login_item_on_every_launch(monkeypatch):
+    from karma_desktop import launcher
+
+    calls = []
+    monkeypatch.setattr(
+        launcher.installer_macos,
+        "repair_autostart_priority",
+        lambda: calls.append(1) or True,
+    )
+    # Stop main right after the repair, before it touches ports or spawns anything.
+    monkeypatch.setattr(launcher, "_claim_port", lambda *a: "stop here")
+    monkeypatch.setattr(launcher, "_fail", lambda message, quiet: 1)
+
+    assert launcher.main(["--no-open", "--quiet"]) == 1
+    assert calls == [1]
+
+
 @pytest.mark.skipif(sys.platform != "win32", reason="Startup folder is Windows-only")
 def test_windows_autostart_round_trips(tmp_path, monkeypatch):
     monkeypatch.setattr(win, "startup_dir", lambda: tmp_path)
