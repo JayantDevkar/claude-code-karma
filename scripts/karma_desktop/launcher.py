@@ -119,37 +119,54 @@ def _chrome_command() -> list[str] | None:
             ).is_dir():
                 return ["open", "-na", name, "--args"]
         return None
-    candidates = (
-        ["google-chrome", "chrome", "chromium", "microsoft-edge", "msedge"]
-        if sys.platform != "win32"
-        else []
-    )
-    for name in candidates:
+    if sys.platform == "win32":
+        # Respect the user's default browser: app mode only when that browser
+        # is Chromium-based. A non-Chromium default (Firefox, ...) returns None
+        # so open_window opens a plain tab in it, never a hard-coded Edge.
+        exe = _windows_default_browser()
+        if exe is not None and _is_chromium_exe(exe):
+            return [str(exe)]
+        return None
+    for name in ["google-chrome", "chrome", "chromium", "microsoft-edge", "msedge"]:
         found = shutil.which(name)
         if found:
             return [found]
-    if sys.platform == "win32":
-        # Edge ships on every stock Windows install; searching only for Chrome
-        # meant the common case silently fell through to a plain browser tab
-        # instead of the advertised app-mode window.
-        relative = (
-            ("Google", "Chrome", "Application", "chrome.exe"),
-            ("Microsoft", "Edge", "Application", "msedge.exe"),
-            ("BraveSoftware", "Brave-Browser", "Application", "brave.exe"),
-        )
-        bases = (
-            os.environ.get("PROGRAMFILES", r"C:\Program Files"),
-            os.environ.get("PROGRAMFILES(X86)", r"C:\Program Files (x86)"),
-            os.environ.get("LOCALAPPDATA", ""),
-        )
-        for base in bases:
-            if not base:
-                continue
-            for parts in relative:
-                exe = Path(base).joinpath(*parts)
-                if exe.is_file():
-                    return [str(exe)]
     return None
+
+
+def _windows_default_browser() -> Path | None:
+    """Executable registered as the user's default http handler, if found."""
+    try:
+        import shlex
+        import winreg
+    except ImportError:
+        return None
+    try:
+        user_choice = (
+            r"Software\Microsoft\Windows\Shell\Associations"
+            r"\UrlAssociations\http\UserChoice"
+        )
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, user_choice) as key:
+            prog_id = winreg.QueryValueEx(key, "ProgId")[0]
+        command_key = rf"{prog_id}\shell\open\command"
+        with winreg.OpenKey(winreg.HKEY_CLASSES_ROOT, command_key) as key:
+            command = winreg.QueryValueEx(key, "")[0]
+        exe = Path(shlex.split(command, posix=False)[0].strip('"'))
+    except (OSError, ValueError, IndexError):
+        return None
+    return exe if exe.is_file() else None
+
+
+def _is_chromium_exe(exe: Path) -> bool:
+    """Whether ``exe`` is a Chromium-family browser (so it accepts ``--app=``).
+
+    Chromium builds ship a ``*_elf.dll`` (chrome_elf.dll, msedge_elf.dll) in
+    the versioned folder beside the executable, whatever the browser's brand.
+    """
+    try:
+        return any(exe.parent.glob("*/*_elf.dll"))
+    except OSError:
+        return False
 
 
 # The exact bundle names a browser gives a Karma PWA shim, and the (localised)

@@ -207,6 +207,31 @@ def test_chrome_command_none_without_a_browser(monkeypatch):
     assert launcher._chrome_command() is None
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows default-browser lookup")
+def test_chrome_command_uses_chromium_default_browser(monkeypatch, tmp_path):
+    """A Chromium-based default browser is used for app mode."""
+    from karma_desktop import launcher
+
+    exe = tmp_path / "Application" / "comet.exe"
+    (exe.parent / "1.0.0").mkdir(parents=True)
+    exe.touch()
+    (exe.parent / "1.0.0" / "chrome_elf.dll").touch()
+    monkeypatch.setattr(launcher, "_windows_default_browser", lambda: exe)
+    assert launcher._chrome_command() == [str(exe)]
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows default-browser lookup")
+def test_chrome_command_none_for_non_chromium_default(monkeypatch, tmp_path):
+    """A non-Chromium default browser gets a plain tab, not a fallback to Edge."""
+    from karma_desktop import launcher
+
+    exe = tmp_path / "Firefox" / "firefox.exe"
+    exe.parent.mkdir(parents=True)
+    exe.touch()
+    monkeypatch.setattr(launcher, "_windows_default_browser", lambda: exe)
+    assert launcher._chrome_command() is None
+
+
 def test_notify_never_raises(monkeypatch):
     """notify() is best-effort; a missing tool must not crash the launch."""
     from karma_desktop import launcher
