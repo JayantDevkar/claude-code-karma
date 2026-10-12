@@ -105,27 +105,44 @@ def _parse_model_id(model: str) -> Optional[ModelVersion]:
     return None
 
 
-def _index_known_versions() -> tuple[dict[ModelVersion, str], dict[str, str]]:
-    """Map each priced (family, major, minor) to its ID, and each family to its newest ID."""
+def _rank(major: Optional[int], minor: Optional[int]) -> tuple[int, int]:
+    return (major or 0, minor or 0)
+
+
+def _index_known_versions() -> tuple[
+    dict[ModelVersion, str], dict[str, list[tuple[tuple[int, int], str]]]
+]:
+    """Map each priced (family, major, minor) to its ID, and each family to its versions, oldest first."""
     known: dict[ModelVersion, str] = {}
-    newest: dict[str, tuple[tuple[int, int], str]] = {}
+    by_family: dict[str, list[tuple[tuple[int, int], str]]] = {}
     for model_id in MODEL_PRICING:
         parsed = _parse_model_id(model_id)
         if parsed is None:
             continue
         family, major, minor = parsed
-        known.setdefault(parsed, model_id)
-        rank = (major or 0, minor or 0)
-        if family not in newest or rank > newest[family][0]:
-            newest[family] = (rank, model_id)
-    return known, {family: model_id for family, (_, model_id) in newest.items()}
+        if parsed in known:
+            continue
+        known[parsed] = model_id
+        by_family.setdefault(family, []).append((_rank(major, minor), model_id))
+    for versions in by_family.values():
+        versions.sort()
+    return known, by_family
 
 
-_KNOWN_VERSIONS, _NEWEST_IN_FAMILY = _index_known_versions()
+_KNOWN_VERSIONS, _VERSIONS_BY_FAMILY = _index_known_versions()
+
+
+def _nearest_known(parsed: ModelVersion) -> str:
+    """Closest priced version at or below the parsed one; the oldest known if none is."""
+    family, major, minor = parsed
+    target = _rank(major, minor)
+    versions = _VERSIONS_BY_FAMILY[family]
+    at_or_below = [model_id for rank, model_id in versions if rank <= target]
+    return at_or_below[-1] if at_or_below else versions[0][1]
 
 
 def _resolve_model(model: Optional[str]) -> dict[str, float]:
-    """Resolve a model ID to its pricing; unknown versions get the newest model in their family."""
+    """Resolve a model ID to its pricing; unknown versions bill like the nearest known one."""
     if not model:
         return MODEL_PRICING[DEFAULT_PRICING_MODEL]
     if model in MODEL_PRICING:
@@ -133,7 +150,7 @@ def _resolve_model(model: Optional[str]) -> dict[str, float]:
     parsed = _parse_model_id(model)
     if parsed is None:
         return MODEL_PRICING[DEFAULT_PRICING_MODEL]
-    canonical = _KNOWN_VERSIONS.get(parsed) or _NEWEST_IN_FAMILY[parsed[0]]
+    canonical = _KNOWN_VERSIONS.get(parsed) or _nearest_known(parsed)
     return MODEL_PRICING[canonical]
 
 

@@ -40,6 +40,18 @@ export function formatDuration(seconds?: number | null): string {
 /**
  * Format seconds into compact duration (e.g., "2h", "45m", "30s")
  */
+/** Whether the active-time duration dropped more than `thresholdSeconds` of idle time versus the wall clock. */
+export function activeTimeWasCapped(
+	startTime?: string | null,
+	endTime?: string | null,
+	activeSeconds?: number | null,
+	thresholdSeconds = 60
+): boolean {
+	if (!startTime || !endTime || activeSeconds == null) return false;
+	const wallSeconds = (Date.parse(endTime) - Date.parse(startTime)) / 1000;
+	return wallSeconds - activeSeconds > thresholdSeconds;
+}
+
 export function formatDurationCompact(seconds?: number | null): string {
 	if (seconds == null || seconds <= 0) return '--';
 

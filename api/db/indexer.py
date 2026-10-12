@@ -373,7 +373,6 @@ def _index_session(
 
     # Extract all metadata
     usage = session.get_usage_summary()
-    subagent_cost = session.get_subagent_total_cost()
     tools_used = session.get_tools_used()
     skills_used = session.get_skills_used()
     skills_mentioned = session.get_skills_mentioned()
@@ -388,6 +387,9 @@ def _index_session(
     subagents_dir = jsonl_path.parent / uuid / "subagents"
     if subagents_dir.exists():
         subagent_count = len(list(subagents_dir.glob("agent-*.jsonl")))
+    # One parse of each subagent file feeds both the cost sum and the invocation rows below
+    subagents = session.list_subagents() if subagent_count else []
+    subagent_cost = sum(agent.get_total_cost() for agent in subagents)
 
     # Detect project_path from session data (or use override for worktrees)
     project_path = project_path_override or _detect_project_path(session, encoded_name)
@@ -520,7 +522,7 @@ def _index_session(
             from services.subagent_types import get_all_subagent_types
 
             subagent_types = get_all_subagent_types(jsonl_path, subagents_dir)
-            for subagent in session.list_subagents():
+            for subagent in subagents:
                 subagent_type = subagent_types.get(subagent.agent_id, "_unknown")
                 if subagent_type == "_unknown":
                     logger.debug(
@@ -741,7 +743,7 @@ _SESSION_UPSERT_SET = ", ".join(
     for col in (
         "slug project_encoded_name project_path start_time end_time message_count "
         "duration_seconds input_tokens output_tokens cache_creation_tokens cache_read_tokens "
-        "total_cost initial_prompt git_branch models_used session_titles is_continuation_marker "
+        "total_cost subagent_cost initial_prompt git_branch models_used session_titles is_continuation_marker "
         "was_compacted compaction_count file_snapshot_count subagent_count jsonl_mtime jsonl_size "
         "session_source source_encoded_name indexed_at"
     ).split()

@@ -698,6 +698,23 @@ class TestCurrentModelPricing:
         usage = TokenUsage(input_tokens=1_000, output_tokens=1_000)
         assert usage.calculate_cost(model) == pytest.approx(usage.calculate_cost(canonical))
 
+    @pytest.mark.parametrize(
+        "model,canonical",
+        [
+            # Unseen point releases bill like the nearest known version at or below them,
+            # not like the newest model in the family.
+            ("claude-haiku-4-7", "claude-haiku-4-5-20251001"),
+            ("claude-sonnet-4-7", "claude-sonnet-4-6"),
+            ("claude-opus-4-2", "claude-opus-4-1-20250805"),
+            ("claude-opus-4-5", "claude-opus-4-5-20251101"),
+            # Older than anything known: the oldest known version in the family.
+            ("claude-haiku-2", "claude-3-haiku-20240307"),
+        ],
+    )
+    def test_unknown_versions_use_nearest_known_version(self, model, canonical):
+        usage = TokenUsage(input_tokens=1_000_000, output_tokens=1_000_000)
+        assert usage.calculate_cost(model) == pytest.approx(usage.calculate_cost(canonical))
+
     def test_no_long_context_premium_for_1m_models(self):
         """Opus 4.7+ and Claude 5 bill 1M context at standard rates."""
         usage = TokenUsage(input_tokens=500_000, output_tokens=0)

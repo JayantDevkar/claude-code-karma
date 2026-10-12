@@ -67,6 +67,7 @@
 	} from '$lib/api-types';
 	import { isSubagentSession, isMainSession } from '$lib/api-types';
 	import {
+		activeTimeWasCapped,
 		formatDuration,
 		formatTokens,
 		formatCost,
@@ -812,7 +813,8 @@
 				? formatWallClock(entity.start_time, entity.end_time)
 				: null;
 		const durationDiffers =
-			wallClock !== null && wallClock !== formatDuration(entity.duration_seconds);
+			wallClock !== null &&
+			activeTimeWasCapped(entity.start_time, entity.end_time, entity.duration_seconds);
 
 		return [
 			{
