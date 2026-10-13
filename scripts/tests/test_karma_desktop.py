@@ -214,6 +214,118 @@ def test_chrome_command_none_without_a_browser(monkeypatch):
     assert launcher._chrome_command() is None
 
 
+_WIN_ONLY = pytest.mark.skipif(
+    sys.platform != "win32", reason="Windows default-browser lookup"
+)
+
+
+def _fake_chromium(root: Path, name: str = "chrome.exe") -> Path:
+    """A browser exe with a versioned ``*_elf.dll`` beside it, like Chromium."""
+    exe = root / "Application" / name
+    (exe.parent / "1.0.0").mkdir(parents=True)
+    exe.touch()
+    (exe.parent / "1.0.0" / "chrome_elf.dll").touch()
+    return exe
+
+
+@_WIN_ONLY
+def test_assoc_query_http_exe_real_call():
+    """The real AssocQueryStringW binding runs and returns a str or None."""
+    from karma_desktop import launcher
+
+    result = launcher._assoc_query_http_exe()
+    assert result is None or isinstance(result, str)
+
+
+@_WIN_ONLY
+def test_chrome_command_uses_chromium_default_browser(monkeypatch, tmp_path):
+    """A Chromium-based default browser of any brand is used for app mode."""
+    from karma_desktop import launcher
+
+    exe = _fake_chromium(tmp_path, "comet.exe")
+    monkeypatch.setattr(launcher, "_assoc_query_http_exe", lambda: str(exe))
+    assert launcher._chrome_command() == [str(exe)]
+
+
+@_WIN_ONLY
+def test_chrome_command_none_for_non_chromium_default(monkeypatch, tmp_path):
+    """A non-Chromium default browser gets a plain tab, not a fallback to Edge."""
+    from karma_desktop import launcher
+
+    exe = tmp_path / "Firefox" / "firefox.exe"
+    exe.parent.mkdir(parents=True)
+    exe.touch()
+    monkeypatch.setattr(launcher, "_assoc_query_http_exe", lambda: str(exe))
+    monkeypatch.setattr(
+        launcher, "_windows_installed_chromium", lambda: pytest.fail("no fallback")
+    )
+    assert launcher._chrome_command() is None
+
+
+@_WIN_ONLY
+def test_default_browser_expands_env_vars_and_quotes(monkeypatch, tmp_path):
+    """A quoted ``%VAR%`` path resolves to the real executable."""
+    from karma_desktop import launcher
+
+    exe = _fake_chromium(tmp_path)
+    monkeypatch.setenv("KARMA_TEST_BROWSER_ROOT", str(tmp_path))
+    monkeypatch.setattr(
+        launcher,
+        "_assoc_query_http_exe",
+        lambda: r'"%KARMA_TEST_BROWSER_ROOT%\Application\chrome.exe"',
+    )
+    assert launcher._windows_default_browser() == exe
+
+
+@_WIN_ONLY
+def test_default_browser_path_with_spaces(monkeypatch, tmp_path):
+    """An unquoted path containing spaces is not split at the first space."""
+    from karma_desktop import launcher
+
+    exe = _fake_chromium(tmp_path / "Program Files" / "My Browser")
+    monkeypatch.setattr(launcher, "_assoc_query_http_exe", lambda: str(exe))
+    assert launcher._windows_default_browser() == exe
+    assert launcher._chrome_command() == [str(exe)]
+
+
+@_WIN_ONLY
+@pytest.mark.parametrize(
+    "answer",
+    [None, "", r"C:\no\such\browser.exe"],
+    ids=["lookup-failed", "empty", "missing-file"],
+)
+def test_chrome_command_falls_back_when_default_unknown(monkeypatch, answer):
+    """No usable default (no association, stale path) uses the list."""
+    from karma_desktop import launcher
+
+    monkeypatch.setattr(launcher, "_assoc_query_http_exe", lambda: answer)
+    monkeypatch.setattr(
+        launcher, "_is_chromium_exe", lambda exe: pytest.fail("must not glob")
+    )
+    monkeypatch.setattr(
+        launcher, "_windows_installed_chromium", lambda: ["fallback.exe"]
+    )
+    assert launcher._chrome_command() == ["fallback.exe"]
+
+
+@_WIN_ONLY
+def test_chrome_command_plain_tab_for_store_broker(monkeypatch, tmp_path):
+    """A LaunchWinApp.exe default gets a plain tab: no System32 glob, no Edge."""
+    from karma_desktop import launcher
+
+    broker = tmp_path / "System32" / "LaunchWinApp.exe"
+    broker.parent.mkdir()
+    broker.touch()
+    monkeypatch.setattr(launcher, "_assoc_query_http_exe", lambda: str(broker))
+    monkeypatch.setattr(
+        launcher, "_is_chromium_exe", lambda exe: pytest.fail("must not glob")
+    )
+    monkeypatch.setattr(
+        launcher, "_windows_installed_chromium", lambda: pytest.fail("no fallback")
+    )
+    assert launcher._chrome_command() is None
+
+
 def test_notify_never_raises(monkeypatch):
     """notify() is best-effort; a missing tool must not crash the launch."""
     from karma_desktop import launcher
