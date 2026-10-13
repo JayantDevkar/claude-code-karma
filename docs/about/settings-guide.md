@@ -23,7 +23,7 @@ Two things this page will never touch, on purpose: `theme` (that lives in a diff
 
 This section isn't a Claude Code setting at all — it's karma's own native launcher, unrelated to settings.json.
 
-**Start Karma at login** — starts both the API and frontend servers automatically when you log in, so the dashboard is just always there. It costs roughly 150–350 MB of memory in the background and almost no CPU, which is the trade you're making for never needing to click an icon first.
+**Start Karma at login** — starts both the API and frontend servers automatically when you log in, so the dashboard is just always there. It costs roughly 200–250 MB of memory in the background and almost no CPU, which is the trade you're making for never needing to click an icon first.
 
 **Pin the launcher to the Dock** — only useful if you *don't* have autostart on; with autostart running the servers already, pin the browser-installed Karma window instead so you're not duplicating icons. Pinning briefly restarts the Dock (that's macOS, not a karma bug).
 

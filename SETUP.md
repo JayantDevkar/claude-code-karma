@@ -476,7 +476,7 @@ The link looks different depending on your terminal:
 | iTerm2, WezTerm, Kitty, Ghostty | A real clickable link — "see this in karma?", url hidden underneath it (Cmd+click) |
 | Apple Terminal.app | The label plus the plain url, both visible — a plain click does nothing here; try Cmd+double-click or right-click the url and choose "Open URL" (Terminal.app has never implemented OSC 8, the standard that lets a label hide a different url; no setting fixes this) |
 
-**Prerequisite:** the link only opens something if Karma is reachable when you click it — either the dev servers are running, or the desktop app's autostart-at-login is on. Neither running means a blank page or browser error, not a bug.
+**Prerequisite:** the link only opens something if Karma is reachable when you click it — either the servers are running (`npm run dev` or the desktop launcher), or the desktop app's autostart-at-login is on. Neither running means a blank page or browser error, not a bug.
 
 ---
 
@@ -525,14 +525,15 @@ python3 scripts/karma_desktop/launcher.py --no-open
 # Expect: "OK: Karma is ready at http://localhost:5180"
 ```
 
-Then click the icon. On the first launch of the day the frontend has to
-compile (a minute or two), so a "Starting Karma…" desktop notification appears
-right away and the dashboard opens once the servers answer — the click never
-looks dead.
+Then click the icon. The launcher serves a production build of the frontend.
+The first launch, and the first launch after frontend changes are pulled,
+builds it (about half a minute) with a desktop notification while it works;
+later launches open the dashboard right away. Add `--dev` to the launcher
+command to use the Vite dev server instead.
 
 > **Agent notes:** Installing the icon is safe to do on your own. Autostart is
 > **a decision for the user — ask before enabling it, do not enable it by
-> default.** It trades ~150–350 MB of idle memory for the dashboard always
+> default.** It trades ~200–250 MB of idle memory for the dashboard always
 > being up at `http://localhost:5180` after any reboot, with no icon to click.
 > If the user says yes, add `--autostart`; then tell them macOS notifies them a
 > background item was added (System Settings → General → Login Items) — it is

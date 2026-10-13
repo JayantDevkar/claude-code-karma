@@ -10,8 +10,7 @@ import sqlite3
 
 logger = logging.getLogger(__name__)
 
-# v20/v21 are taken by PR #106 (session analytics accuracy); v22 is the orphan repair.
-SCHEMA_VERSION = 22
+SCHEMA_VERSION = 23
 
 SCHEMA_SQL = """
 -- Schema versioning
@@ -35,6 +34,11 @@ CREATE TABLE IF NOT EXISTS sessions (
     cache_creation_tokens INTEGER DEFAULT 0,
     cache_read_tokens INTEGER DEFAULT 0,
     total_cost REAL DEFAULT 0,
+    subagent_cost REAL DEFAULT 0,
+    subagent_input_tokens INTEGER DEFAULT 0,
+    subagent_output_tokens INTEGER DEFAULT 0,
+    subagent_cache_read_tokens INTEGER DEFAULT 0,
+    subagent_cache_creation_tokens INTEGER DEFAULT 0,
     initial_prompt TEXT,
     git_branch TEXT,
     models_used TEXT,
@@ -426,6 +430,9 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
     # v13 incremental block below (ALTER is not idempotent).
     conn.executescript(_SHELLS_CRON_SCHEMA_SQL)
 
+    # Same cross-branch guard for sessions columns added after v19.
+    columns_added = _ensure_session_columns(conn)
+
     # Check current version
     try:
         row = conn.execute("SELECT MAX(version) FROM schema_version").fetchone()
@@ -799,6 +806,18 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             logger.info("Migrating → v22: remove orphaned child rows (issue #107)")
             _delete_orphan_rows(conn)
 
+        if current_version < 23:
+            logger.info(
+                "Migrating → v23: re-index costs "
+                "(per-response usage dedup, current pricing, active time)"
+            )
+            has_sessions = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='sessions'"
+            ).fetchone()
+            # _ensure_session_columns already forced the reindex if it added columns
+            if has_sessions and not columns_added:
+                conn.execute("UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1")
+
     # Record version
     conn.execute(
         "INSERT OR REPLACE INTO schema_version (version) VALUES (?)",
@@ -810,6 +829,31 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
     conn.execute("PRAGMA foreign_keys=ON")
 
     logger.info("Schema version %d applied successfully", SCHEMA_VERSION)
+
+
+# Sessions columns added after v19; also in SCHEMA_SQL for fresh installs.
+_SESSION_COLUMNS = [
+    ("subagent_cost", "REAL DEFAULT 0"),
+    ("subagent_input_tokens", "INTEGER DEFAULT 0"),
+    ("subagent_output_tokens", "INTEGER DEFAULT 0"),
+    ("subagent_cache_read_tokens", "INTEGER DEFAULT 0"),
+    ("subagent_cache_creation_tokens", "INTEGER DEFAULT 0"),
+]
+
+
+def _ensure_session_columns(conn: sqlite3.Connection) -> bool:
+    """Add missing sessions columns regardless of schema version; True if any were added."""
+    existing = {r[1] for r in conn.execute("PRAGMA table_info(sessions)").fetchall()}
+    if not existing:
+        return False
+    missing = [(name, ddl) for name, ddl in _SESSION_COLUMNS if name not in existing]
+    for name, ddl in missing:
+        conn.execute(f"ALTER TABLE sessions ADD COLUMN {name} {ddl}")
+    if missing:
+        logger.info("Added sessions columns %s; forcing a reindex", [n for n, _ in missing])
+        conn.execute("UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1")
+        conn.commit()
+    return bool(missing)
 
 
 # Child rows whose parent is gone; (table, parent-existence subquery).

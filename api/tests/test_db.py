@@ -756,6 +756,15 @@ class TestAnalyticsQuery:
         assert totals["total_duration"] == 2100.0
         assert totals["projects_active"] == 2
 
+    def test_total_cost_includes_subagents(self, mem_db):
+        from db.queries import query_analytics
+
+        self._populate(mem_db)
+        mem_db.execute("UPDATE sessions SET subagent_cost = 0.5 WHERE uuid = 'a1'")
+        mem_db.commit()
+        totals = query_analytics(mem_db)["totals"]
+        assert abs(totals["total_cost"] - 0.90) < 0.001
+
     def test_project_filter(self, mem_db):
         from db.queries import query_analytics
 

@@ -572,6 +572,52 @@ class TestAnalytics:
         # Duration from 13:03:26.669 to 13:03:30.123 is about 3.454 seconds
         assert 3.0 <= duration <= 4.0
 
+    def test_duration_seconds_caps_idle_gaps(
+        self, temp_claude_dir: Path, temp_project_dir: Path, sample_assistant_message_data
+    ):
+        """Idle gaps longer than the cap (e.g. a resume days later) count only up to the cap."""
+        jsonl_path = temp_project_dir / "resumed.jsonl"
+        timestamps = [
+            "2026-01-08T13:00:00.000Z",
+            "2026-01-08T13:10:00.000Z",
+            "2026-01-12T09:00:00.000Z",
+            "2026-01-12T09:05:00.000Z",
+        ]
+        with open(jsonl_path, "w") as f:
+            for i, ts in enumerate(timestamps):
+                line = copy.deepcopy(sample_assistant_message_data)
+                line["uuid"] = f"assistant-line-{i}"
+                line["message"]["id"] = f"msg_{i}"
+                line["timestamp"] = ts
+                f.write(json.dumps(line) + "\n")
+
+        session = Session.from_path(jsonl_path, claude_base_dir=temp_claude_dir)
+
+        assert session.duration_seconds == pytest.approx(10 * 60 + 30 * 60 + 5 * 60)
+
+    def test_duration_seconds_ignores_out_of_order_timestamps(
+        self, temp_claude_dir: Path, temp_project_dir: Path, sample_assistant_message_data
+    ):
+        """An earlier timestamp mid-file must not let the next gap be counted twice."""
+        jsonl_path = temp_project_dir / "out-of-order.jsonl"
+        timestamps = [
+            "2026-01-08T10:00:00.000Z",
+            "2026-01-08T10:10:00.000Z",
+            "2026-01-08T10:05:00.000Z",
+            "2026-01-08T10:12:00.000Z",
+        ]
+        with open(jsonl_path, "w") as f:
+            for i, ts in enumerate(timestamps):
+                line = copy.deepcopy(sample_assistant_message_data)
+                line["uuid"] = f"assistant-line-{i}"
+                line["message"]["id"] = f"msg_{i}"
+                line["timestamp"] = ts
+                f.write(json.dumps(line) + "\n")
+
+        session = Session.from_path(jsonl_path, claude_base_dir=temp_claude_dir)
+
+        assert session.duration_seconds == pytest.approx(12 * 60)
+
     def test_duration_seconds_empty_session(self, temp_claude_dir: Path, temp_project_dir: Path):
         """Test duration_seconds returns None for empty session."""
         empty_path = temp_project_dir / "empty.jsonl"
@@ -625,6 +671,7 @@ class TestUsageSummary:
         msg1 = copy.deepcopy(sample_assistant_message_data)
         msg2 = copy.deepcopy(sample_assistant_message_data)
         msg2["uuid"] = "assistant-msg-uuid-002"
+        msg2["message"]["id"] = "msg_test456"
         msg2["message"]["usage"]["input_tokens"] = 200
         msg2["message"]["usage"]["output_tokens"] = 300
 
@@ -641,6 +688,46 @@ class TestUsageSummary:
         assert usage.output_tokens == 800
         # 50000 + 50000 cache creation
         assert usage.cache_creation_input_tokens == 100000
+
+    def test_usage_counted_once_per_response(
+        self, temp_claude_dir: Path, temp_project_dir: Path, sample_assistant_message_data
+    ):
+        """Lines sharing a message id are one API response; the last line's usage wins."""
+        jsonl_path = temp_project_dir / "split-response.jsonl"
+
+        with open(jsonl_path, "w") as f:
+            for i, output_tokens in enumerate([10, 10, 500]):
+                line = copy.deepcopy(sample_assistant_message_data)
+                line["uuid"] = f"assistant-line-{i}"
+                line["message"]["usage"]["output_tokens"] = output_tokens
+                f.write(json.dumps(line) + "\n")
+
+        session = Session.from_path(jsonl_path, claude_base_dir=temp_claude_dir)
+        usage = session.get_usage_summary()
+
+        assert usage.input_tokens == 100
+        assert usage.output_tokens == 500
+        assert usage.cache_creation_input_tokens == 50000
+        assert session.get_total_cost() == pytest.approx(
+            usage.calculate_cost("claude-opus-4-5-20251101")
+        )
+
+    def test_subagent_total_cost(
+        self, temp_claude_dir: Path, temp_project_dir: Path, sample_assistant_message_data
+    ):
+        """Subagent cost is summed separately from the main session's cost."""
+        jsonl_path = temp_project_dir / "parent.jsonl"
+        jsonl_path.write_text(json.dumps(sample_assistant_message_data) + "\n")
+        subagents_dir = temp_project_dir / "parent" / "subagents"
+        subagents_dir.mkdir(parents=True)
+        for agent_id in ("a1", "a2"):
+            (subagents_dir / f"agent-{agent_id}.jsonl").write_text(
+                json.dumps(sample_assistant_message_data) + "\n"
+            )
+
+        session = Session.from_path(jsonl_path, claude_base_dir=temp_claude_dir)
+
+        assert session.get_subagent_totals()[1] == pytest.approx(2 * session.get_total_cost())
 
 
 # =============================================================================

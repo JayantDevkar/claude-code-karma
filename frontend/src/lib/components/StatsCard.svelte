@@ -87,7 +87,7 @@
 >
 	<!-- Label at top with optional description in brackets -->
 	<div class="text-xs uppercase tracking-wider font-semibold text-[var(--text-muted)] mb-3 min-h-[2rem]">
-		{title}{#if description}<span class="normal-case tracking-normal font-normal">
+		{title}{#if description}<span class="ml-1 normal-case tracking-normal font-normal">
 				({description})</span
 			>{/if}
 	</div>

@@ -40,6 +40,27 @@ export function formatDuration(seconds?: number | null): string {
 /**
  * Format seconds into compact duration (e.g., "2h", "45m", "30s")
  */
+/** Tool rows scoped to the main session, using `by_session`; rows without the split are kept as-is. */
+export function sessionOnlyTools<T extends { count: number; by_session?: number }>(
+	tools: T[]
+): T[] {
+	return tools
+		.map((t) => (t.by_session === undefined ? t : { ...t, count: t.by_session }))
+		.filter((t) => t.count > 0);
+}
+
+/** Whether the active-time duration dropped more than `thresholdSeconds` of idle time versus the wall clock. */
+export function activeTimeWasCapped(
+	startTime?: string | null,
+	endTime?: string | null,
+	activeSeconds?: number | null,
+	thresholdSeconds = 60
+): boolean {
+	if (!startTime || !endTime || activeSeconds == null) return false;
+	const wallSeconds = (Date.parse(endTime) - Date.parse(startTime)) / 1000;
+	return wallSeconds - activeSeconds > thresholdSeconds;
+}
+
 export function formatDurationCompact(seconds?: number | null): string {
 	if (seconds == null || seconds <= 0) return '--';
 

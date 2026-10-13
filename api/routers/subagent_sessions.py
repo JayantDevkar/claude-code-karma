@@ -28,7 +28,7 @@ from http_caching import (
     check_conditional_request,
     get_file_cache_info,
 )
-from models import AssistantMessage, Session
+from models import Session
 from models.live_session import load_live_session
 from routers.live_sessions import determine_status
 from schemas import (
@@ -82,16 +82,9 @@ def get_subagent_detail(
     # Get usage summary
     usage = agent.get_usage_summary()
 
-    # Calculate duration
-    duration_seconds = None
-    if agent.start_time and agent.end_time:
-        duration_seconds = (agent.end_time - agent.start_time).total_seconds()
+    duration_seconds = agent.duration_seconds
 
-    # Calculate cost from usage
-    total_cost = 0.0
-    for msg in agent.iter_messages():
-        if isinstance(msg, AssistantMessage) and msg.usage:
-            total_cost += msg.usage.calculate_cost(msg.model)
+    total_cost = agent.get_total_cost()
 
     # Determine subagent type: SQLite fast-path, then JSONL fallback
     subagent_type = None
@@ -126,6 +119,7 @@ def get_subagent_detail(
         total_input_tokens=usage.total_input,
         total_output_tokens=usage.output_tokens,
         cache_hit_rate=usage.cache_hit_rate,
+        cache_read_tokens=usage.cache_read_input_tokens,
         total_cost=total_cost,
         tools_used=dict(agent_data.tool_counts),
         skills_used=dict(agent_data.skills),

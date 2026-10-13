@@ -100,6 +100,7 @@ export interface FileActivity {
 export interface ToolUsage {
 	tool_name: string;
 	count: number;
+	by_session?: number;
 	by_actor?: Record<string, number>;
 }
 
@@ -244,6 +245,7 @@ export interface SessionSummary {
 	total_output_tokens?: number;
 	total_cost?: number;
 	cache_hit_rate?: number;
+	cache_read_tokens?: number;
 	tools_used?: Record<string, number>;
 	working_directories?: string[];
 	project_path?: string;
@@ -739,6 +741,7 @@ export interface SubagentSessionDetail {
 	total_input_tokens: number;
 	total_output_tokens: number;
 	cache_hit_rate: number;
+	cache_read_tokens?: number;
 	total_cost: number;
 
 	// Tool usage

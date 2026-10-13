@@ -397,8 +397,10 @@ def query_dashboard_stats(
             COUNT(*) as session_count,
             COUNT(DISTINCT project_encoded_name) as projects_active,
             COALESCE(SUM(duration_seconds), 0) as total_duration,
-            COALESCE(SUM(input_tokens + output_tokens + cache_read_tokens), 0) as total_tokens,
-            COALESCE(SUM(total_cost), 0) as total_cost
+            COALESCE(SUM(input_tokens + output_tokens + cache_read_tokens
+                + COALESCE(subagent_input_tokens, 0) + COALESCE(subagent_output_tokens, 0)
+                + COALESCE(subagent_cache_read_tokens, 0)), 0) as total_tokens,
+            COALESCE(SUM(total_cost + COALESCE(subagent_cost, 0)), 0) as total_cost
         FROM sessions
         WHERE start_time >= :start AND start_time <= :end""",
         {"start": start_dt.isoformat(), "end": end_dt.isoformat()},
@@ -451,11 +453,13 @@ def query_analytics(
     totals_row = conn.execute(
         f"""SELECT
             COUNT(*) as total_sessions,
-            COALESCE(SUM(input_tokens), 0) as total_input,
-            COALESCE(SUM(output_tokens), 0) as total_output,
-            COALESCE(SUM(cache_read_tokens), 0) as total_cache_read,
-            COALESCE(SUM(cache_creation_tokens), 0) as total_cache_creation,
-            COALESCE(SUM(total_cost), 0) as total_cost,
+            COALESCE(SUM(input_tokens + COALESCE(subagent_input_tokens, 0)), 0) as total_input,
+            COALESCE(SUM(output_tokens + COALESCE(subagent_output_tokens, 0)), 0) as total_output,
+            COALESCE(SUM(cache_read_tokens + COALESCE(subagent_cache_read_tokens, 0)), 0)
+                as total_cache_read,
+            COALESCE(SUM(cache_creation_tokens + COALESCE(subagent_cache_creation_tokens, 0)), 0)
+                as total_cache_creation,
+            COALESCE(SUM(total_cost + COALESCE(subagent_cost, 0)), 0) as total_cost,
             COALESCE(SUM(duration_seconds), 0) as total_duration,
             COUNT(DISTINCT project_encoded_name) as projects_active
         FROM sessions s

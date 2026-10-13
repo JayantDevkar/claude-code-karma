@@ -358,6 +358,7 @@ def _index_session(
                             (differs from encoded_name for remapped worktree sessions)
     """
     from models import Session
+    from models.usage import TokenUsage
     from utils import get_initial_prompt
 
     uuid = jsonl_path.stem
@@ -387,6 +388,9 @@ def _index_session(
     subagents_dir = jsonl_path.parent / uuid / "subagents"
     if subagents_dir.exists():
         subagent_count = len(list(subagents_dir.glob("agent-*.jsonl")))
+    subagents = session.list_subagents() if subagent_count else []
+    subagent_cost = sum(agent.get_total_cost() for agent in subagents)
+    subagent_usage = sum((agent.get_usage_summary() for agent in subagents), TokenUsage.zero())
 
     # Detect project_path from session data (or use override for worktrees)
     project_path = project_path_override or _detect_project_path(session, encoded_name)
@@ -405,7 +409,9 @@ def _index_session(
             uuid, slug, project_encoded_name, project_path,
             start_time, end_time, message_count, duration_seconds,
             input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens,
-            total_cost, initial_prompt, git_branch, models_used,
+            total_cost, subagent_cost, subagent_input_tokens, subagent_output_tokens,
+            subagent_cache_read_tokens, subagent_cache_creation_tokens,
+            initial_prompt, git_branch, models_used,
             session_titles, is_continuation_marker, was_compacted,
             compaction_count, file_snapshot_count, subagent_count,
             jsonl_mtime, jsonl_size, session_source, source_encoded_name,
@@ -415,6 +421,8 @@ def _index_session(
             ?, ?, ?, ?,
             ?, ?, ?, ?,
             ?, ?, ?, ?,
+            ?, ?,
+            ?, ?, ?,
             ?, ?, ?,
             ?, ?, ?,
             ?, ?, ?, ?,
@@ -436,6 +444,11 @@ def _index_session(
             usage.cache_creation_input_tokens,
             usage.cache_read_input_tokens,
             session.get_total_cost(),
+            subagent_cost,
+            subagent_usage.total_input,
+            subagent_usage.output_tokens,
+            subagent_usage.cache_read_input_tokens,
+            subagent_usage.cache_creation_input_tokens,
             initial_prompt,
             git_branches[0] if git_branches else None,
             json.dumps(models_used) if models_used else None,
@@ -518,7 +531,7 @@ def _index_session(
             from services.subagent_types import get_all_subagent_types
 
             subagent_types = get_all_subagent_types(jsonl_path, subagents_dir)
-            for subagent in session.list_subagents():
+            for subagent in subagents:
                 subagent_type = subagent_types.get(subagent.agent_id, "_unknown")
                 if subagent_type == "_unknown":
                     logger.debug(
@@ -526,9 +539,7 @@ def _index_session(
                     )
                     continue
                 usage = subagent.get_usage_summary()
-                duration = 0.0
-                if subagent.start_time and subagent.end_time:
-                    duration = (subagent.end_time - subagent.start_time).total_seconds()
+                duration = subagent.duration_seconds or 0.0
                 conn.execute(
                     """INSERT INTO subagent_invocations
                        (session_uuid, agent_id, subagent_type, input_tokens,
@@ -540,7 +551,7 @@ def _index_session(
                         subagent_type,
                         usage.total_input,
                         usage.output_tokens,
-                        usage.calculate_cost(subagent.get_primary_model()),
+                        subagent.get_total_cost(),
                         duration,
                         subagent.start_time.isoformat() if subagent.start_time else None,
                     ),
@@ -739,7 +750,9 @@ _SESSION_UPSERT_SET = ", ".join(
     for col in (
         "slug project_encoded_name project_path start_time end_time message_count "
         "duration_seconds input_tokens output_tokens cache_creation_tokens cache_read_tokens "
-        "total_cost initial_prompt git_branch models_used session_titles is_continuation_marker "
+        "total_cost subagent_cost subagent_input_tokens subagent_output_tokens "
+        "subagent_cache_read_tokens subagent_cache_creation_tokens "
+        "initial_prompt git_branch models_used session_titles is_continuation_marker "
         "was_compacted compaction_count file_snapshot_count subagent_count jsonl_mtime jsonl_size "
         "session_source source_encoded_name indexed_at"
     ).split()
@@ -848,7 +861,7 @@ def _update_project_summaries(conn: sqlite3.Connection) -> None:
     from pathlib import Path
 
     from services.git_identity import read_git_identity
-    from utils import compute_project_slug
+    from utils import compute_project_slug, resolve_git_root
 
     rows = conn.execute(
         """
@@ -876,6 +889,9 @@ def _update_project_summaries(conn: sqlite3.Connection) -> None:
         slug = compute_project_slug(encoded_name, project_path)
         display_name = Path(project_path).name if project_path else encoded_name
         git_identity = read_git_identity(project_path)
+        # Warm the cache /projects reads, so the page never waits on git
+        if project_path and Path(project_path).is_dir():
+            resolve_git_root(project_path.replace("\\", "/"))
 
         conn.execute(
             """

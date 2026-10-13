@@ -67,6 +67,8 @@
 	} from '$lib/api-types';
 	import { isSubagentSession, isMainSession } from '$lib/api-types';
 	import {
+		activeTimeWasCapped,
+		sessionOnlyTools,
 		formatDuration,
 		formatTokens,
 		formatCost,
@@ -130,7 +132,8 @@
 			if (Array.isArray(sessionTools)) {
 				return sessionTools.map((t: any) => ({
 					tool_name: t.tool_name || t.name || 'Unknown',
-					count: typeof t.count === 'number' ? t.count : 1
+					count: typeof t.count === 'number' ? t.count : 1,
+					by_session: t.by_session
 				}));
 			}
 		}
@@ -397,7 +400,8 @@
 
 			const tools_used = toolsData.map((t: any) => ({
 				tool_name: t.tool_name,
-				count: t.count
+				count: t.count,
+				by_session: t.by_session
 			}));
 
 			entityData = {
@@ -782,39 +786,66 @@
 	});
 
 	// Derived values
-	let toolsUsedRecord = $derived.by<Record<string, number>>(() => {
-		return Object.fromEntries(toolsArray.map((t) => [t.tool_name, t.count]));
-	});
-
 	let totalToolCalls = $derived(toolsArray.reduce((acc, t) => acc + t.count, 0));
 
-	// Analytics stats
+	// Overview counts subagent tool calls; the Analytics tab is the session's own work
+	let analyticsTools = $derived(
+		entity && isSubagentSession(entity) ? toolsArray : sessionOnlyTools(toolsArray)
+	);
+	let analyticsToolCalls = $derived(analyticsTools.reduce((acc, t) => acc + t.count, 0));
+	let analyticsToolsRecord = $derived.by<Record<string, number>>(() => {
+		return Object.fromEntries(analyticsTools.map((t) => [t.tool_name, t.count]));
+	});
+
+	// Formats the first-to-last message span, in days once it passes 24h
+	function formatWallClock(startTime: string, endTime: string): string {
+		const seconds = (new Date(endTime).getTime() - new Date(startTime).getTime()) / 1000;
+		return seconds >= 86400 ? `${(seconds / 86400).toFixed(1)} days` : formatDuration(seconds);
+	}
+
+	// Analytics stats (each subagent's usage is on its own analytics page)
 	let analyticsStats = $derived.by<StatItem[]>(() => {
 		if (!entity) return [];
-		const totalTokens = (entity.total_input_tokens || 0) + (entity.total_output_tokens || 0);
-		const toolsCount = isSubagentSession(entity)
+		const isAgent = isSubagentSession(entity);
+		const tokenIn = entity.total_input_tokens || 0;
+		const tokenOut = entity.total_output_tokens || 0;
+		const cacheReads = entity.cache_read_tokens || 0;
+		const toolsCount = isAgent
 			? Object.keys(entity.tools_used || {}).length
-			: toolsArray.length;
+			: analyticsTools.length;
+
+		const wallClock =
+			!isAgent && entity.start_time && entity.end_time
+				? formatWallClock(entity.start_time, entity.end_time)
+				: null;
+		const durationDiffers =
+			wallClock !== null &&
+			activeTimeWasCapped(entity.start_time, entity.end_time, entity.duration_seconds);
 
 		return [
 			{
 				title: 'Total Cost',
+				description: 'API pricing',
 				value: formatCost(entity.total_cost),
-				footnote: 'Pay-as-you-go API rate — not your subscription cost',
 				icon: DollarSign,
 				color: 'purple'
 			},
 			{
 				title: 'Total Tokens',
-				value: formatTokens(totalTokens),
+				value: formatTokens(tokenIn + tokenOut),
+				footnote:
+					cacheReads > 0
+						? `Excludes ${formatTokens(cacheReads)} cache reads.`
+						: undefined,
 				icon: Cpu,
 				color: 'teal',
-				tokenIn: entity.total_input_tokens,
-				tokenOut: entity.total_output_tokens
+				tokenIn,
+				tokenOut
 			},
 			{
 				title: 'Duration',
 				value: formatDuration(entity.duration_seconds),
+				footnote: durationDiffers ? `Active time over ${wallClock}` : undefined,
 				icon: Clock,
 				color: 'orange'
 			},
@@ -1238,10 +1269,13 @@
 
 						<StatsGrid stats={analyticsStats} columns={5} />
 
-						{#if toolsArray.length > 0}
+						{#if analyticsTools.length > 0}
 							<div class="grid gap-6 lg:grid-cols-2">
-								<ToolUsageTable tools={toolsArray} totalCalls={totalToolCalls} />
-								<ToolsChart toolsUsed={toolsUsedRecord} />
+								<ToolUsageTable
+									tools={analyticsTools}
+									totalCalls={analyticsToolCalls}
+								/>
+								<ToolsChart toolsUsed={analyticsToolsRecord} />
 							</div>
 						{:else}
 							<EmptyState

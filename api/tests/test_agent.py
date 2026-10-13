@@ -446,6 +446,33 @@ class TestGetUsageSummary:
         assert usage.input_tokens == 300  # 100 * 3
         assert usage.output_tokens == 150  # 50 * 3
 
+    def test_usage_and_cost_counted_once_per_response(self, temp_project_dir: Path) -> None:
+        """Lines sharing a message id are one API response; the last line's usage wins."""
+        agent_path = temp_project_dir / "agent-split-response.jsonl"
+
+        with open(agent_path, "w") as f:
+            for i, output_tokens in enumerate([5, 5, 50]):
+                msg = {
+                    "type": "assistant",
+                    "message": {
+                        "id": "msg_same",
+                        "model": "claude-opus-4-8",
+                        "role": "assistant",
+                        "content": [{"type": "text", "text": f"block {i}"}],
+                        "usage": {"input_tokens": 100, "output_tokens": output_tokens},
+                    },
+                    "uuid": f"uuid-{i}",
+                    "timestamp": f"2026-01-08T13:0{i}:00.000Z",
+                }
+                f.write(json.dumps(msg) + "\n")
+
+        agent = Agent.from_path(agent_path)
+
+        assert agent.get_usage_summary().input_tokens == 100
+        assert agent.get_usage_summary().output_tokens == 50
+        # Opus 4.8: $5/$25 per 1M tokens
+        assert agent.get_total_cost() == pytest.approx((100 * 5.0 + 50 * 25.0) / 1_000_000)
+
     def test_get_usage_summary_zero_for_user_only(self, temp_project_dir: Path) -> None:
         """Test usage is zero when only user messages exist."""
         agent_path = temp_project_dir / "agent-user-only.jsonl"

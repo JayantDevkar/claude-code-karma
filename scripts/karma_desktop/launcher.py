@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import json
 import os
 import shutil
 import subprocess
@@ -25,22 +26,27 @@ from pathlib import Path
 
 if __package__ in (None, ""):  # invoked as a plain script by the .app / .lnk
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-    from karma_desktop import core
+    from karma_desktop import core, frontend, installer_macos
 else:
-    from . import core
+    from . import core, frontend, installer_macos
 
-# A cold vite build on this repo is slow; the API is comparatively instant.
 API_TIMEOUT = 90
+# A frontend build takes ~20 s on a laptop; the cap covers a slow machine.
+BUILD_TIMEOUT = 600
+# `node build` binds in about a second; the dev-server fallback compiles first.
 WEB_TIMEOUT = 240
 
-# The spawn lock is held for the whole cold start (spawn + both port waits), so
-# a *live* holder can legitimately keep it for up to API_TIMEOUT + WEB_TIMEOUT
-# before it exits and unlinks. The stale threshold must therefore sit above that
-# sum (plus margin): a smaller value -- e.g. the old 60s -- would declare a lock
-# that is legitimately still held mid-compile "stale", reclaim it, and spawn the
-# duplicate this lock exists to prevent. Above the sum, "stale" can only mean a
-# crashed launch.
-_STALE_LOCK_SECONDS = API_TIMEOUT + WEB_TIMEOUT + 30
+# The spawn lock is held for the whole cold start (build + spawn + both port
+# waits), so a *live* holder can legitimately keep it for up to the sum of the
+# three timeouts before it exits and unlinks. The stale threshold must sit above
+# that sum (plus margin): a smaller value would declare a lock that is still
+# held mid-build "stale", reclaim it, and spawn the duplicate this lock exists
+# to prevent. Above the sum, "stale" can only mean a crashed launch.
+_STALE_LOCK_SECONDS = API_TIMEOUT + BUILD_TIMEOUT + WEB_TIMEOUT + 30
+
+# Which frontend server this launcher last started, so a later launch can
+# restart it after a rebuild without ever touching a server someone else ran.
+_WEB_RECORD = "web-server.json"
 
 
 def _log(message: str) -> None:
@@ -293,13 +299,105 @@ def start_api(root: Path, port: int) -> None:
     )
 
 
-def start_web(root: Path, port: int) -> None:
-    """Start the vite dev server on karma's fixed port."""
-    core.spawn_detached(
-        ["npm", "run", "dev", "--", "--port", str(port), "--strictPort"],
+def start_web(root: Path, port: int, dev: bool = False):
+    """Start the frontend on karma's fixed port: the production build, or vite dev."""
+    if dev:
+        return core.spawn_detached(
+            ["npm", "run", "dev", "--", "--port", str(port), "--strictPort"],
+            cwd=root / "frontend",
+            log_path=core.log_dir() / "web.log",
+        )
+    return core.spawn_detached(
+        ["node", "build"],
         cwd=root / "frontend",
         log_path=core.log_dir() / "web.log",
+        # Same address as vite dev; node's default host would be 0.0.0.0.
+        env={"PORT": str(port), "HOST": "localhost"},
     )
+
+
+def _record_web_server(pid: int, mode: str, port: int) -> None:
+    try:
+        (core.log_dir() / _WEB_RECORD).write_text(
+            json.dumps({"pid": pid, "mode": mode, "port": port})
+        )
+    except OSError:
+        pass
+
+
+def _start_and_record(root: Path, port: int, mode: str) -> None:
+    """Start the frontend in ``mode`` ("build" or "dev") and remember that we did."""
+    _record_web_server(start_web(root, port, dev=mode == "dev").pid, mode, port)
+
+
+def _owned_web_server(port: int) -> tuple[int, str] | None:
+    """(process group, mode) of the frontend this launcher started, if it still serves ``port``.
+
+    Ownership is proven by matching the port's listener to the recorded process
+    group, which needs lsof; on Windows it can't be proven, so nothing is restarted.
+    """
+    if sys.platform == "win32":
+        return None
+    try:
+        record = json.loads((core.log_dir() / _WEB_RECORD).read_text())
+    except (OSError, ValueError):
+        return None
+    pid, mode = record.get("pid"), record.get("mode")
+    if (
+        mode not in ("build", "dev")
+        or record.get("port") != port
+        or not isinstance(pid, int)
+    ):
+        return None
+    for listener in core.port_listener_pids(port):
+        try:
+            if os.getpgid(listener) == pid:
+                return pid, mode
+        except OSError:
+            continue
+    return None
+
+
+def _ensure_web(root: Path, port: int, dev: bool, headless: bool) -> None:
+    """Make sure the frontend serves current code, building and restarting as needed."""
+    fe = root / "frontend"
+    up = core.port_is_up(port)
+    if dev:
+        if not up:
+            _start_and_record(root, port, "dev")
+        return
+
+    owned = _owned_web_server(port) if up else None
+    current = frontend.build_is_current(fe)
+    if up and (owned is None or (owned[1] == "build" and current)):
+        # Not ours to replace (a dev server someone ran, another checkout), or already current.
+        return
+
+    if not current:
+        if not headless:
+            notify("Updating the dashboard — this takes about half a minute.")
+        if not frontend.prepare(fe, core.log_dir() / "web.log", BUILD_TIMEOUT):
+            _log("Frontend build failed; see web.log")
+            if not up:
+                _start_and_record(root, port, "dev")
+            return
+
+    # Stop the old server before the swap: it lazily loads chunks from build/.
+    if owned is not None:
+        core.stop_process_tree(owned[0])
+        if not core.wait_for_port_closed(port, 15):
+            _log(f"The previous frontend server still holds port {port}; keeping it")
+            frontend.discard(fe)
+            return
+
+    if not current and not frontend.activate(fe):
+        _log("Could not swap in the new frontend build")
+    _start_and_record(root, port, "build" if frontend.has_build(fe) else "dev")
+
+
+def _web_wait_seconds(own_spawn: bool) -> float:
+    """How long to wait for the frontend; a launch that lost the lock may be waiting out a build."""
+    return WEB_TIMEOUT if own_spawn else BUILD_TIMEOUT + WEB_TIMEOUT
 
 
 def _has_command(name: str) -> bool:
@@ -322,10 +420,10 @@ def _has_command(name: str) -> bool:
 def _preflight(root: Path, need_api: bool, need_web: bool) -> str | None:
     """Fast, accurate error for a missing toolchain, instead of a 4-minute wait.
 
-    ``start_web`` runs ``npm run dev`` and ``start_api`` runs uvicorn; with no
-    check, a missing npm/node/node_modules or uvicorn just prints
-    "command not found" into a log nobody reads while the launcher waits out the
-    full ~4-minute port timeout.
+    The frontend is built with npm and served with node, and ``start_api`` runs
+    uvicorn; with no check, a missing npm/node/node_modules or uvicorn just
+    prints "command not found" into a log nobody reads while the launcher waits
+    out the full port timeout.
     """
     if need_api:
         if core.find_venv_bin(root, "uvicorn") is None and not _has_command("uvicorn"):
@@ -410,6 +508,17 @@ def _spawn_lock():
                 pass
 
 
+def _repair_autostart() -> None:
+    """Remove the old background-priority keys from an installed login item."""
+    try:
+        if installer_macos.repair_autostart_priority():
+            _log(
+                "Repaired the login item: servers start at normal priority from next login"
+            )
+    except Exception as e:  # noqa: BLE001 - never block a launch on this
+        _log(f"Could not repair the login item: {e!r}")
+
+
 def _is_karma_checkout(path: Path) -> bool:
     """Whether ``path`` (a server's cwd) sits inside any Karma checkout.
 
@@ -476,7 +585,15 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Report failures on stderr instead of a GUI alert.",
     )
+    parser.add_argument(
+        "--dev",
+        action="store_true",
+        help="Serve the frontend with the vite dev server instead of a production build.",
+    )
     args = parser.parse_args(argv)
+
+    if sys.platform == "darwin":
+        _repair_autostart()
 
     root = core.repo_root()
     url = f"http://localhost:{args.web_port}"
@@ -491,6 +608,7 @@ def main(argv: list[str] | None = None) -> int:
             return _fail(problem, headless or args.quiet)
 
     # Fail fast on a missing toolchain rather than waiting out the port timeout.
+    # A running frontend is served as-is even if its rebuild would need npm.
     problem = _preflight(root, need_api=not api_up, need_web=not web_up)
     if problem:
         return _fail(problem, headless or args.quiet)
@@ -505,17 +623,9 @@ def main(argv: list[str] | None = None) -> int:
             web_up = core.port_is_up(args.web_port)
             if not api_up:
                 start_api(root, args.api_port)
-            if not web_up:
-                start_web(root, args.web_port)
+            _ensure_web(root, args.web_port, dev=args.dev, headless=headless)
 
-        # The lock is held across the wait, not just the spawn. Releasing after
-        # the Popen calls (which return in milliseconds) leaves the whole ~1-2
-        # minute cold compile unguarded: a launch that arrives then finds the
-        # port not yet bound and the lock free, and spawns a *second* server set
-        # -- exactly the "Dock click while launchd's RunAtLoad is still working"
-        # race. Holding it until the ports answer makes a later launch see the
-        # lock (skip spawning, wait) and makes the 60s stale-lock reclaim
-        # reachable. The loser holds no lock, so it waits here without blocking.
+        # Held until the ports answer, so a launch arriving mid-start waits instead of spawning a duplicate.
         cold = not (api_up and web_up)
         if cold and not headless:
             notify("Starting servers — the dashboard will open in a moment.")
@@ -526,7 +636,7 @@ def main(argv: list[str] | None = None) -> int:
                 f"Check {core.log_dir() / 'api.log'}",
                 headless or args.quiet,
             )
-        if not core.wait_for_port(args.web_port, WEB_TIMEOUT):
+        if not core.wait_for_port(args.web_port, _web_wait_seconds(own_spawn)):
             return _fail(
                 f"The frontend did not start on port {args.web_port}. "
                 f"Check {core.log_dir() / 'web.log'}",

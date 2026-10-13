@@ -9,6 +9,7 @@ import pytest
 from pydantic import ValidationError
 
 from models import TokenUsage
+from models.usage import UsageAccumulator
 
 # =============================================================================
 # Fixtures
@@ -658,3 +659,139 @@ class TestTokenUsageCalculateCost:
         # Standard: $5/$25 regardless of input size
         expected = (500_000 / 1_000_000) * 5.0 + (1_000_000 / 1_000_000) * 25.0
         assert cost == pytest.approx(expected)
+
+
+class TestCurrentModelPricing:
+    """Pricing for current models, cache TTL split, and family fallback."""
+
+    @pytest.mark.parametrize(
+        "model,input_price,output_price",
+        [
+            ("claude-fable-5-1", 10.0, 50.0),
+            ("claude-fable-5", 10.0, 50.0),
+            ("claude-opus-5-5", 4.0, 20.0),
+            ("claude-opus-5", 5.0, 25.0),
+            ("claude-opus-4-8", 5.0, 25.0),
+            ("claude-opus-4-7", 5.0, 25.0),
+            ("claude-sonnet-5-5", 2.0, 10.0),
+            ("claude-sonnet-5", 2.0, 10.0),
+            ("claude-haiku-5-5", 0.10, 0.50),
+        ],
+    )
+    def test_base_rates(self, model, input_price, output_price):
+        usage = TokenUsage(input_tokens=50_000, output_tokens=1_000_000)
+        expected = 0.05 * input_price + output_price
+        assert usage.calculate_cost(model) == pytest.approx(expected)
+
+    @pytest.mark.parametrize(
+        "model,canonical",
+        [
+            ("claude-opus-6", "claude-opus-5-5"),
+            ("claude-sonnet-6", "claude-sonnet-5-5"),
+            ("claude-haiku-6", "claude-haiku-5-5"),
+            ("claude-fable-6", "claude-fable-5-1"),
+            ("claude-mythos-5", "claude-mythos-5-1"),
+            ("us.anthropic.claude-opus-4-8-v1", "claude-opus-4-8"),
+        ],
+    )
+    def test_unknown_versions_use_family_pricing(self, model, canonical):
+        usage = TokenUsage(input_tokens=1_000, output_tokens=1_000)
+        assert usage.calculate_cost(model) == pytest.approx(usage.calculate_cost(canonical))
+
+    @pytest.mark.parametrize(
+        "model,canonical",
+        [
+            # Unseen point releases bill like the nearest known version at or below them,
+            # not like the newest model in the family.
+            ("claude-haiku-4-7", "claude-haiku-4-5-20251001"),
+            ("claude-sonnet-4-7", "claude-sonnet-4-6"),
+            ("claude-opus-4-2", "claude-opus-4-1-20250805"),
+            ("claude-opus-4-5", "claude-opus-4-5-20251101"),
+            # Older than anything known: the oldest known version in the family.
+            ("claude-haiku-2", "claude-3-haiku-20240307"),
+        ],
+    )
+    def test_unknown_versions_use_nearest_known_version(self, model, canonical):
+        usage = TokenUsage(input_tokens=1_000_000, output_tokens=1_000_000)
+        assert usage.calculate_cost(model) == pytest.approx(usage.calculate_cost(canonical))
+
+    def test_no_long_context_premium_for_1m_models(self):
+        """Opus 4.7+ and Claude 5 bill 1M context at standard rates."""
+        usage = TokenUsage(input_tokens=500_000, output_tokens=0)
+        assert usage.calculate_cost("claude-opus-4-8") == pytest.approx(0.5 * 5.0)
+        assert usage.calculate_cost("claude-fable-5-1") == pytest.approx(0.5 * 10.0)
+
+    def test_haiku_5_5_long_prompt_rate(self):
+        """Haiku 5.5 prompts over 100K tokens use the $0.50/$2.50 card."""
+        usage = TokenUsage(input_tokens=200_000, output_tokens=1_000_000)
+        assert usage.calculate_cost("claude-haiku-5-5") == pytest.approx(0.2 * 0.50 + 2.50)
+
+    @pytest.mark.parametrize(
+        "model,cache_read_multiplier",
+        [("claude-fable-5-1", 0.025), ("claude-opus-5-5", 0.05), ("claude-opus-4-8", 0.10)],
+    )
+    def test_cache_read_rate_per_model(self, model, cache_read_multiplier):
+        usage = TokenUsage(cache_read_input_tokens=1_000_000)
+        input_price = {"claude-fable-5-1": 10.0, "claude-opus-5-5": 4.0, "claude-opus-4-8": 5.0}
+        expected = input_price[model] * cache_read_multiplier
+        assert usage.calculate_cost(model) == pytest.approx(expected)
+
+    def test_one_hour_cache_writes_cost_double(self):
+        """1-hour cache writes bill at 2x input; the remainder at the 5-minute 1.25x."""
+        usage = TokenUsage.model_validate(
+            {
+                "cache_creation_input_tokens": 1_000_000,
+                "cache_creation": {
+                    "ephemeral_1h_input_tokens": 600_000,
+                    "ephemeral_5m_input_tokens": 400_000,
+                },
+            }
+        )
+        assert usage.cache_creation_1h_input_tokens == 600_000
+        # Opus 4.8 ($5): 0.6M * 5 * 2.0 + 0.4M * 5 * 1.25
+        assert usage.calculate_cost("claude-opus-4-8") == pytest.approx(6.0 + 2.5)
+
+    def test_one_hour_split_survives_addition(self):
+        a = TokenUsage(cache_creation_input_tokens=10, cache_creation_1h_input_tokens=10)
+        b = TokenUsage(cache_creation_input_tokens=5, cache_creation_1h_input_tokens=0)
+        assert (a + b).cache_creation_1h_input_tokens == 10
+
+
+class _Msg:
+    def __init__(self, message_id, usage, model="claude-opus-4-8", request_id=None, uuid="u"):
+        self.message_id = message_id
+        self.request_id = request_id
+        self.uuid = uuid
+        self.usage = usage
+        self.model = model
+
+
+class TestUsageAccumulator:
+    """UsageAccumulator dedups usage per API response."""
+
+    def test_last_line_per_response_wins(self):
+        acc = UsageAccumulator()
+        acc.add(_Msg("msg_1", TokenUsage(output_tokens=10)))
+        acc.add(_Msg("msg_1", TokenUsage(output_tokens=40)))
+        acc.add(_Msg("msg_2", TokenUsage(output_tokens=5)))
+        assert acc.usage.output_tokens == 45
+
+    def test_cost_priced_per_response_model(self):
+        acc = UsageAccumulator()
+        acc.add(_Msg("msg_1", TokenUsage(output_tokens=1_000_000), model="claude-opus-4-8"))
+        acc.add(_Msg("msg_2", TokenUsage(output_tokens=1_000_000), model="claude-sonnet-5-5"))
+        assert acc.cost == pytest.approx(25.0 + 10.0)
+
+    def test_falls_back_to_request_id_then_uuid(self):
+        acc = UsageAccumulator()
+        acc.add(_Msg(None, TokenUsage(output_tokens=1), request_id="req_1", uuid="a"))
+        acc.add(_Msg(None, TokenUsage(output_tokens=1), request_id="req_1", uuid="b"))
+        acc.add(_Msg(None, TokenUsage(output_tokens=1), uuid="c"))
+        acc.add(_Msg(None, TokenUsage(output_tokens=1), uuid="d"))
+        assert acc.usage.output_tokens == 3
+
+    def test_ignores_messages_without_usage(self):
+        acc = UsageAccumulator()
+        acc.add(_Msg("msg_1", None))
+        assert acc.usage == TokenUsage.zero()
+        assert acc.cost == 0.0

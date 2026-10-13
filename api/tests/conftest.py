@@ -20,6 +20,19 @@ import pytest
 # =============================================================================
 
 
+@pytest.fixture(autouse=True)
+def _fresh_process_caches():
+    """Git lookups and subagent digests are cached process-wide; start each test cold."""
+    # Only clear caches whose module is loaded, so minimal CI envs never import them.
+    for module, clear in (
+        ("utils", "clear_git_caches"),
+        ("collectors", "clear_subagent_digest_cache"),
+    ):
+        if module in sys.modules:
+            getattr(sys.modules[module], clear)()
+    yield
+
+
 @pytest.fixture
 def sample_user_message_data() -> Dict[str, Any]:
     """Sample user message data from session JSONL."""

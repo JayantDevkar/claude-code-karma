@@ -12,11 +12,14 @@ import ast
 import hashlib
 import re
 import subprocess
+import threading
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Iterator, Optional, Protocol
+
+from cachetools import TTLCache, cached
 
 if TYPE_CHECKING:
     from models.session import Session
@@ -59,37 +62,46 @@ def utc_to_local_date(dt: datetime) -> str:
     return dt.astimezone(local_timezone()).strftime("%Y-%m-%d")
 
 
-def resolve_git_root(path: str) -> Optional[str]:
-    """Find the git repository root for a path.
+# Git roots and remotes rarely change; /projects and every index pass ask for all of them.
+GIT_LOOKUP_TTL_SECONDS = 600
+_git_root_cache: TTLCache = TTLCache(maxsize=4096, ttl=GIT_LOOKUP_TTL_SECONDS)
 
-    For submodules, returns the parent (superproject) root.
-    Returns None if not in a git repo.
+
+@cached(_git_root_cache, lock=threading.Lock())
+def _cached_git_root(path: str) -> Optional[str]:
+    result = subprocess.run(
+        ["git", "rev-parse", "--show-superproject-working-tree", "--show-toplevel"],
+        cwd=path,
+        capture_output=True,
+        text=True,
+        timeout=5,
+        check=False,
+    )
+    if result.returncode != 0:
+        return None
+    # A submodule prints its superproject first; any other repo prints only its toplevel
+    lines = result.stdout.splitlines()
+    return lines[0].strip() if lines else None
+
+
+def resolve_git_root(path: str) -> Optional[str]:
+    """Find the git repository root for a path, cached for GIT_LOOKUP_TTL_SECONDS.
+
+    For submodules, returns the parent (superproject) root. Returns None if not
+    in a git repo; that answer is cached too, while errors (timeout, missing dir) are not.
     """
     try:
-        result = subprocess.run(
-            ["git", "rev-parse", "--show-superproject-working-tree"],
-            cwd=path,
-            capture_output=True,
-            text=True,
-            timeout=5,
-            check=False,
-        )
-        if result.returncode == 0 and result.stdout.strip():
-            return result.stdout.strip()
-
-        result = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],
-            cwd=path,
-            capture_output=True,
-            text=True,
-            timeout=5,
-            check=False,
-        )
-        if result.returncode == 0:
-            return result.stdout.strip()
-        return None
+        return _cached_git_root(path)
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError, PermissionError):
         return None
+
+
+def clear_git_caches() -> None:
+    """Forget cached git lookups (tests, or after a repo is created or moved)."""
+    from services.git_identity import clear_git_identity_cache
+
+    _git_root_cache.clear()
+    clear_git_identity_cache()
 
 
 def compute_project_slug(encoded_name: str, project_path: str) -> str:
