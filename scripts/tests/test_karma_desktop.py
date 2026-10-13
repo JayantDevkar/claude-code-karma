@@ -225,6 +225,22 @@ def test_notify_never_raises(monkeypatch):
     launcher.notify("hello")  # must not raise
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows creation flags")
+def test_notify_opens_no_console_window(monkeypatch):
+    """The balloon's powershell must not get a visible console of its own."""
+    from karma_desktop import launcher
+
+    captured = {}
+
+    def fake_popen(args, **kwargs):
+        captured.update(kwargs)
+        return types.SimpleNamespace(pid=1)
+
+    monkeypatch.setattr(launcher.subprocess, "Popen", fake_popen)
+    launcher.notify("hello")
+    assert captured["creationflags"] & subprocess.CREATE_NO_WINDOW
+
+
 # --------------------------------------------------------------------------
 # Toolchain discovery
 # --------------------------------------------------------------------------
