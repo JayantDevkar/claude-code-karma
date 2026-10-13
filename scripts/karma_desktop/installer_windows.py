@@ -218,17 +218,12 @@ def _flag_arguments(boot: Path, web_port: int, api_port: int, extra: str = "") -
     return f"{args} {extra}".strip()
 
 
-def install_app(
-    repo: Path, python: Path, web_port: int, api_port: int, silent: bool = False
-) -> Path:
+def install_app(repo: Path, python: Path, web_port: int, api_port: int) -> Path:
     """Create the Desktop shortcut (via the repo-gone-aware boot script).
 
     Refuses to overwrite a same-named .lnk that is not ours, mirroring the macOS
     install_app's FileExistsError on a foreign bundle; the endpoint turns that
     into a 409 rather than silently clobbering an unrelated shortcut.
-
-    ``silent`` adds the launcher's ``--silent`` flag to the shortcut, so the
-    servers run without console windows.
     """
     lnk = desktop_dir() / SHORTCUT_NAME
     if lnk.exists() and not _is_our_shortcut(lnk):
@@ -242,9 +237,7 @@ def install_app(
     return create_shortcut(
         lnk=lnk,
         target=pythonw_for(python),
-        arguments=_flag_arguments(
-            boot, web_port, api_port, extra="--silent" if silent else ""
-        ),
+        arguments=_flag_arguments(boot, web_port, api_port),
         workdir=repo,
         icon=icon if icon.is_file() else None,
     )
@@ -276,9 +269,7 @@ def uninstall_autostart() -> bool:
     return True
 
 
-def install_autostart(
-    repo: Path, python: Path, web_port: int, api_port: int, silent: bool = False
-) -> Path:
+def install_autostart(repo: Path, python: Path, web_port: int, api_port: int) -> Path:
     """Put a headless copy of the launcher in the Startup folder.
 
     The Startup boot script is told its own shortcut path so that, if the repo
@@ -294,12 +285,7 @@ def install_autostart(
     return create_shortcut(
         lnk=startup_lnk,
         target=pythonw_for(python),
-        arguments=_flag_arguments(
-            boot,
-            web_port,
-            api_port,
-            extra="--no-open --quiet" + (" --silent" if silent else ""),
-        ),
+        arguments=_flag_arguments(boot, web_port, api_port, extra="--no-open --quiet"),
         workdir=repo,
         icon=icon if icon.is_file() else None,
     )

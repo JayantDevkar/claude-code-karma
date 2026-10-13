@@ -243,15 +243,11 @@ def spawn_detached(
     cwd: Path,
     log_path: Path,
     use_login_shell: bool = True,
-    hide_console: bool = False,
 ) -> subprocess.Popen:
     """Start a long-running server, detached, with output appended to a log.
 
     The process must outlive this launcher: the launcher exits as soon as the
     dashboard is open, but the servers keep running.
-
-    ``hide_console`` (Windows only) runs the server under a hidden console, so
-    no console window appears for it or its child processes.
     """
     log_path.parent.mkdir(parents=True, exist_ok=True)
     _cap_log(log_path)
@@ -267,21 +263,16 @@ def spawn_detached(
         }
 
         if sys.platform == "win32":
-            if hide_console:
-                # A hidden console, inherited by the server's own console
-                # children. DETACHED_PROCESS can't do this: Windows ignores
-                # CREATE_NO_WINDOW alongside it, and the console-less parent's
-                # children (uvicorn.exe -> python.exe, npm.cmd -> node.exe) then
-                # each open a new, visible console window.
-                popen_kwargs["creationflags"] = (
-                    subprocess.CREATE_NO_WINDOW  # type: ignore[attr-defined]
-                    | subprocess.CREATE_NEW_PROCESS_GROUP  # type: ignore[attr-defined]
-                )
-            else:
-                # Detach from this console and never flash a window.
-                popen_kwargs["creationflags"] = (
-                    subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS  # type: ignore[attr-defined]
-                )
+            # Never flash a window: a hidden console, inherited by the server's
+            # own console children. DETACHED_PROCESS can't do this: Windows
+            # ignores CREATE_NO_WINDOW alongside it, and the console-less
+            # parent's children (uvicorn.exe -> python.exe, npm.cmd -> node.exe)
+            # then each open a new, visible console window. The new process
+            # group keeps a Ctrl+C in the launching console from reaching it.
+            popen_kwargs["creationflags"] = (
+                subprocess.CREATE_NO_WINDOW  # type: ignore[attr-defined]
+                | subprocess.CREATE_NEW_PROCESS_GROUP  # type: ignore[attr-defined]
+            )
             # CreateProcess only appends ".exe" to a bare name; it does NOT walk
             # PATHEXT. Node ships "npm" as npm.cmd (no npm.exe), so Popen(["npm",
             # ...]) raises WinError 2. Resolve through shutil.which (which does

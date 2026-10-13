@@ -605,12 +605,11 @@ def test_autostart_plist_runs_the_launcher_headless(tmp_path, monkeypatch):
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows creation flags")
-@pytest.mark.parametrize("hide_console", [False, True])
-def test_spawn_detached_console_flags(tmp_path, monkeypatch, hide_console):
-    """Default detaches the console; hide_console keeps a hidden one instead.
+def test_spawn_detached_hides_console(tmp_path, monkeypatch):
+    """The servers get a hidden console that their console children inherit.
 
     DETACHED_PROCESS makes Windows ignore CREATE_NO_WINDOW, so the servers'
-    console children open visible windows. --silent must not use it.
+    console children open visible windows. It must not be used.
     """
     captured = {}
 
@@ -619,54 +618,11 @@ def test_spawn_detached_console_flags(tmp_path, monkeypatch, hide_console):
         return types.SimpleNamespace(pid=1)
 
     monkeypatch.setattr(core.subprocess, "Popen", fake_popen)
-    core.spawn_detached(
-        [sys.executable],
-        cwd=tmp_path,
-        log_path=tmp_path / "x.log",
-        hide_console=hide_console,
-    )
+    core.spawn_detached([sys.executable], cwd=tmp_path, log_path=tmp_path / "x.log")
     flags = captured["creationflags"]
     assert flags & subprocess.CREATE_NO_WINDOW
-    assert bool(flags & subprocess.DETACHED_PROCESS) is not hide_console
-
-
-@pytest.mark.parametrize("argv, silent", [([], False), (["--silent"], True)])
-def test_launcher_passes_silent_to_servers(tmp_path, monkeypatch, argv, silent):
-    from karma_desktop import launcher
-
-    seen = {}
-    monkeypatch.setattr(core, "log_dir", lambda: tmp_path)
-    monkeypatch.setattr(core, "port_is_up", lambda port, **k: False)
-    monkeypatch.setattr(core, "wait_for_port", lambda port, seconds: True)
-    monkeypatch.setattr(launcher, "_preflight", lambda *a, **k: None)
-    monkeypatch.setattr(
-        launcher, "start_api", lambda root, port, silent: seen.update(api=silent)
-    )
-    monkeypatch.setattr(
-        launcher, "start_web", lambda root, port, silent: seen.update(web=silent)
-    )
-    monkeypatch.setattr(launcher, "notify", lambda msg: None)
-    assert launcher.main(["--no-open", *argv]) == 0
-    assert seen == {"api": silent, "web": silent}
-
-
-@pytest.mark.skipif(sys.platform != "win32", reason="Windows shortcuts")
-@pytest.mark.parametrize("silent", [False, True])
-def test_windows_shortcuts_carry_silent_flag(tmp_path, monkeypatch, silent):
-    made = {}
-    monkeypatch.setattr(win, "desktop_dir", lambda: tmp_path)
-    monkeypatch.setattr(win, "startup_dir", lambda: tmp_path / "startup")
-    monkeypatch.setattr(win, "stub_dir", lambda: tmp_path)
-    def fake_create_shortcut(lnk, arguments, **kwargs):
-        made[lnk.parent.name] = arguments
-
-    monkeypatch.setattr(win, "create_shortcut", fake_create_shortcut)
-    win.install_app(REPO, Path(sys.executable), 5180, 8020, silent=silent)
-    win.install_autostart(REPO, Path(sys.executable), 5180, 8020, silent=silent)
-    assert len(made) == 2
-    for arguments in made.values():
-        assert ("--silent" in arguments) is silent
-    assert "--no-open --quiet" in made["startup"]
+    assert flags & subprocess.CREATE_NEW_PROCESS_GROUP
+    assert not flags & subprocess.DETACHED_PROCESS
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Startup folder is Windows-only")

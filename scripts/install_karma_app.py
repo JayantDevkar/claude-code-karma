@@ -4,7 +4,6 @@
     python3 scripts/install_karma_app.py              # install
     python3 scripts/install_karma_app.py --dock       # macOS: also pin to Dock
     python3 scripts/install_karma_app.py --autostart  # also start at login
-    python3 scripts/install_karma_app.py --silent     # Windows: no console windows
     python3 scripts/install_karma_app.py --uninstall
 
 By default the desktop icon starts the servers on demand, so nothing runs
@@ -58,11 +57,6 @@ def main(argv: list[str] | None = None) -> int:
         "--user",
         action="store_true",
         help="macOS only: install to ~/Applications instead of /Applications.",
-    )
-    parser.add_argument(
-        "--silent",
-        action="store_true",
-        help="Windows only: the icon starts the servers without console windows.",
     )
     parser.add_argument("--uninstall", action="store_true")
     args = parser.parse_args(argv)
@@ -135,8 +129,6 @@ def main(argv: list[str] | None = None) -> int:
                 if backend.uninstall_autostart()
                 else "Autostart was not enabled."
             )
-        if args.silent:
-            print("Note: --silent is Windows only; macOS opens no console windows.")
 
     elif sys.platform == "win32":
         from karma_desktop import installer_windows as backend
@@ -148,13 +140,11 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"  {item}")
             return 0
 
-        lnk = backend.install_app(
-            repo, python, args.web_port, args.api_port, silent=args.silent
-        )
+        lnk = backend.install_app(repo, python, args.web_port, args.api_port)
         print(f"Installed {lnk}")
         if args.autostart:
             entry = backend.install_autostart(
-                repo, python, args.web_port, args.api_port, silent=args.silent
+                repo, python, args.web_port, args.api_port
             )
             print(f"Autostart enabled: {entry}")
             print("Windows lists this under Task Manager > Startup.")
