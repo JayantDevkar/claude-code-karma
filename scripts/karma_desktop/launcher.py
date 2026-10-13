@@ -127,6 +127,10 @@ def _chrome_command() -> list[str] | None:
         exe = _windows_default_browser()
         if exe is None:
             return _windows_installed_chromium()
+        if exe.name.lower() == "launchwinapp.exe":
+            # Store-app broker: a default exists but its engine is unknowable,
+            # so give it a plain tab rather than glob System32 or pick Edge.
+            return None
         return [str(exe)] if _is_chromium_exe(exe) else None
     for name in ["google-chrome", "chrome", "chromium", "microsoft-edge", "msedge"]:
         found = shutil.which(name)
@@ -136,19 +140,12 @@ def _chrome_command() -> list[str] | None:
 
 
 def _windows_default_browser() -> Path | None:
-    """Executable Windows opens http links with, or None if it can't tell.
-
-    Store-installed browsers answer with the ``LaunchWinApp.exe`` broker rather
-    than the browser itself, which says nothing about the engine, so that is
-    treated as unknown too instead of globbing System32 for a ``*_elf.dll``.
-    """
+    """Executable Windows opens http links with, or None if it can't tell."""
     raw = _assoc_query_http_exe()
     if not raw:
         return None
     exe = Path(os.path.expandvars(raw.strip().strip('"')))
-    if exe.name.lower() == "launchwinapp.exe" or not exe.is_file():
-        return None
-    return exe
+    return exe if exe.is_file() else None
 
 
 def _assoc_query_http_exe() -> str | None:

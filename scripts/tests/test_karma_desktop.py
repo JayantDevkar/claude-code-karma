@@ -284,11 +284,11 @@ def test_default_browser_path_with_spaces(monkeypatch, tmp_path):
 @_WIN_ONLY
 @pytest.mark.parametrize(
     "answer",
-    [None, "", r"C:\Windows\System32\LaunchWinApp.exe", r"C:\no\such\browser.exe"],
-    ids=["lookup-failed", "empty", "store-broker", "missing-file"],
+    [None, "", r"C:\no\such\browser.exe"],
+    ids=["lookup-failed", "empty", "missing-file"],
 )
 def test_chrome_command_falls_back_when_default_unknown(monkeypatch, answer):
-    """No usable default (no association, Store broker, stale path) uses the list."""
+    """No usable default (no association, stale path) uses the list."""
     from karma_desktop import launcher
 
     monkeypatch.setattr(launcher, "_assoc_query_http_exe", lambda: answer)
@@ -299,6 +299,24 @@ def test_chrome_command_falls_back_when_default_unknown(monkeypatch, answer):
         launcher, "_windows_installed_chromium", lambda: ["fallback.exe"]
     )
     assert launcher._chrome_command() == ["fallback.exe"]
+
+
+@_WIN_ONLY
+def test_chrome_command_plain_tab_for_store_broker(monkeypatch, tmp_path):
+    """A LaunchWinApp.exe default gets a plain tab: no System32 glob, no Edge."""
+    from karma_desktop import launcher
+
+    broker = tmp_path / "System32" / "LaunchWinApp.exe"
+    broker.parent.mkdir()
+    broker.touch()
+    monkeypatch.setattr(launcher, "_assoc_query_http_exe", lambda: str(broker))
+    monkeypatch.setattr(
+        launcher, "_is_chromium_exe", lambda exe: pytest.fail("must not glob")
+    )
+    monkeypatch.setattr(
+        launcher, "_windows_installed_chromium", lambda: pytest.fail("no fallback")
+    )
+    assert launcher._chrome_command() is None
 
 
 def test_notify_never_raises(monkeypatch):
