@@ -225,6 +225,22 @@ def test_notify_never_raises(monkeypatch):
     launcher.notify("hello")  # must not raise
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows creation flags")
+def test_notify_opens_no_console_window(monkeypatch):
+    """The balloon's powershell must not get a visible console of its own."""
+    from karma_desktop import launcher
+
+    captured = {}
+
+    def fake_popen(args, **kwargs):
+        captured.update(kwargs)
+        return types.SimpleNamespace(pid=1)
+
+    monkeypatch.setattr(launcher.subprocess, "Popen", fake_popen)
+    launcher.notify("hello")
+    assert captured["creationflags"] & subprocess.CREATE_NO_WINDOW
+
+
 # --------------------------------------------------------------------------
 # Toolchain discovery
 # --------------------------------------------------------------------------
@@ -679,6 +695,27 @@ def test_launcher_repairs_the_login_item_on_every_launch(monkeypatch):
 
     assert launcher.main(["--no-open", "--quiet"]) == 1
     assert calls == [1]
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows creation flags")
+def test_spawn_detached_hides_console(tmp_path, monkeypatch):
+    """The servers get a hidden console that their console children inherit.
+
+    DETACHED_PROCESS makes Windows ignore CREATE_NO_WINDOW, so the servers'
+    console children open visible windows. It must not be used.
+    """
+    captured = {}
+
+    def fake_popen(args, **kwargs):
+        captured.update(kwargs)
+        return types.SimpleNamespace(pid=1)
+
+    monkeypatch.setattr(core.subprocess, "Popen", fake_popen)
+    core.spawn_detached([sys.executable], cwd=tmp_path, log_path=tmp_path / "x.log")
+    flags = captured["creationflags"]
+    assert flags & subprocess.CREATE_NO_WINDOW
+    assert flags & subprocess.CREATE_NEW_PROCESS_GROUP
+    assert not flags & subprocess.DETACHED_PROCESS
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Startup folder is Windows-only")

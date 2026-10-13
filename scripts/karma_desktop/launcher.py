@@ -239,6 +239,9 @@ def notify(message: str) -> None:
         elif sys.platform == "win32":
             # A NotifyIcon balloon needs no third-party module. Run it detached
             # so the launcher does not block on the balloon's dwell time.
+            # CREATE_NO_WINDOW: under pythonw the launcher has no console, so
+            # powershell would otherwise get a new, visible one (a Windows
+            # Terminal window on Windows 11) before -WindowStyle Hidden applies.
             ps = (
                 "Add-Type -AssemblyName System.Windows.Forms;"
                 "$n=New-Object System.Windows.Forms.NotifyIcon;"
@@ -252,6 +255,7 @@ def notify(message: str) -> None:
                 ["powershell", "-NoProfile", "-WindowStyle", "Hidden", "-Command", ps],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             )
     except OSError:
         pass
