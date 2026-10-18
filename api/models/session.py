@@ -308,6 +308,12 @@ class Session(BaseModel):
             Session instance
         """
         uuid = path.stem  # Remove .jsonl extension
+        if claude_base_dir is None:
+            # Sessions synced from another machine keep todos/debug/tasks in that root
+            from services.session_roots import root_for_path
+
+            root = root_for_path(path)
+            claude_base_dir = root.claude_base if root else None
         base_dir = claude_base_dir or Path.home() / ".claude"
         return cls(uuid=uuid, jsonl_path=path, claude_base_dir=base_dir)
 

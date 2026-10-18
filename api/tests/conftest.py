@@ -33,6 +33,18 @@ def _fresh_process_caches():
     yield
 
 
+@pytest.fixture(autouse=True)
+def _no_extra_session_roots(tmp_path_factory, monkeypatch):
+    """Keep the developer's real ~/.claude_karma/extra-roots.json out of tests."""
+    from services import session_roots
+
+    missing = tmp_path_factory.getbasetemp() / "no-extra-roots.json"
+    monkeypatch.setattr(session_roots, "roots_file", lambda: missing)
+    session_roots.clear_cache()
+    yield
+    session_roots.clear_cache()
+
+
 @pytest.fixture
 def sample_user_message_data() -> Dict[str, Any]:
     """Sample user message data from session JSONL."""

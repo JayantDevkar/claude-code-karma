@@ -52,6 +52,8 @@ CREATE TABLE IF NOT EXISTS sessions (
     jsonl_size INTEGER DEFAULT 0,
     session_source TEXT,
     source_encoded_name TEXT,
+    -- Extra session root the JSONL was synced from; NULL = this machine
+    source_root TEXT,
     indexed_at TEXT DEFAULT (datetime('now')),
     -- Per-session flag set to 1 when a session needs the bg-shells/cron
     -- extraction pass (v13). Cleared by the indexer after processing.
@@ -815,6 +817,7 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
                 "SELECT 1 FROM sqlite_master WHERE type='table' AND name='sessions'"
             ).fetchone()
             # _ensure_session_columns already forced the reindex if it added columns
+            # that need one (source_root does not)
             if has_sessions and not columns_added:
                 conn.execute("UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1")
 
@@ -853,7 +856,11 @@ _SESSION_COLUMNS = [
     ("subagent_output_tokens", "INTEGER DEFAULT 0"),
     ("subagent_cache_read_tokens", "INTEGER DEFAULT 0"),
     ("subagent_cache_creation_tokens", "INTEGER DEFAULT 0"),
+    ("source_root", "TEXT"),
 ]
+
+# Columns whose NULL default is already right for existing rows (all local).
+_NO_REINDEX_COLUMNS = {"source_root"}
 
 
 def _ensure_session_columns(conn: sqlite3.Connection) -> bool:
@@ -864,11 +871,13 @@ def _ensure_session_columns(conn: sqlite3.Connection) -> bool:
     missing = [(name, ddl) for name, ddl in _SESSION_COLUMNS if name not in existing]
     for name, ddl in missing:
         conn.execute(f"ALTER TABLE sessions ADD COLUMN {name} {ddl}")
-    if missing:
-        logger.info("Added sessions columns %s; forcing a reindex", [n for n, _ in missing])
+    needs_reindex = [n for n, _ in missing if n not in _NO_REINDEX_COLUMNS]
+    if needs_reindex:
+        logger.info("Added sessions columns %s; forcing a reindex", needs_reindex)
         conn.execute("UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1")
+    if missing:
         conn.commit()
-    return bool(missing)
+    return bool(needs_reindex)
 
 
 # Child rows whose parent is gone; (table, parent-existence subquery).

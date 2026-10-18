@@ -191,6 +191,9 @@ def sync_all_projects(conn: sqlite3.Connection) -> dict:
                 logger.warning("Error syncing worktree %s: %s", wt_dir.name, e)
                 stats["errors"] += 1
 
+        # Third pass: sessions synced from other machines (extra session roots)
+        _sync_extra_roots(conn, stats, real_project_paths)
+
         # Clean up stale sessions (files deleted from disk)
         _cleanup_stale_sessions(conn, projects_dir)
 
@@ -244,6 +247,8 @@ def sync_project(
     encoded_name_override: Optional[str] = None,
     project_path_override: Optional[str] = None,
     session_source: Optional[str] = None,
+    source_root: Optional[str] = None,
+    skip_uuids: Optional[set[str]] = None,
 ) -> dict:
     """
     Sync a single project directory into SQLite.
@@ -258,6 +263,8 @@ def sync_project(
                               (used for worktree -> real project remapping)
         project_path_override: Use this project path instead of detecting from session data
         session_source: Tag sessions with this source (e.g., "desktop")
+        source_root: Extra session root name for synced dirs (None = local)
+        skip_uuids: Session UUIDs to leave alone (already indexed from this machine)
 
     Returns:
         Dict with per-project sync statistics
@@ -271,11 +278,14 @@ def sync_project(
     # The flag column may not yet exist on older schemas — fall back to {}.
     try:
         rows = conn.execute(
-            "SELECT uuid, jsonl_mtime, needs_shell_cron_reindex "
+            "SELECT uuid, jsonl_mtime, needs_shell_cron_reindex, source_root "
             "FROM sessions WHERE project_encoded_name = ?",
             (encoded_name,),
         ).fetchall()
-        db_mtimes = {row["uuid"]: row["jsonl_mtime"] for row in rows}
+        # A row indexed from another root must be re-indexed from this one
+        db_mtimes = {
+            row["uuid"]: row["jsonl_mtime"] for row in rows if row["source_root"] == source_root
+        }
         needs_backfill = {row["uuid"]: bool(row["needs_shell_cron_reindex"]) for row in rows}
     except sqlite3.OperationalError:
         rows = conn.execute(
@@ -291,6 +301,8 @@ def sync_project(
             continue
 
         uuid = jsonl_path.stem
+        if skip_uuids and uuid in skip_uuids:
+            continue
         stats["total"] += 1
 
         try:
@@ -323,6 +335,7 @@ def sync_project(
                 project_path_override=project_path_override,
                 session_source=session_source,
                 source_encoded_name=source_encoded_name,
+                source_root=source_root,
             )
             stats["indexed"] += 1
 
@@ -344,6 +357,7 @@ def _index_session(
     project_path_override: Optional[str] = None,
     session_source: Optional[str] = None,
     source_encoded_name: Optional[str] = None,
+    source_root: Optional[str] = None,
 ) -> None:
     """
     Extract metadata from a session JSONL and upsert into SQLite.
@@ -356,6 +370,7 @@ def _index_session(
         session_source: Tag session with this source (e.g., "desktop")
         source_encoded_name: The actual directory name where the JSONL lives
                             (differs from encoded_name for remapped worktree sessions)
+        source_root: Extra session root name the JSONL was synced from (None = local)
     """
     from models import Session
     from models.usage import TokenUsage
@@ -415,7 +430,7 @@ def _index_session(
             session_titles, is_continuation_marker, was_compacted,
             compaction_count, file_snapshot_count, subagent_count,
             jsonl_mtime, jsonl_size, session_source, source_encoded_name,
-            indexed_at
+            source_root, indexed_at
         ) VALUES (
             ?, ?, ?, ?,
             ?, ?, ?, ?,
@@ -426,7 +441,7 @@ def _index_session(
             ?, ?, ?,
             ?, ?, ?,
             ?, ?, ?, ?,
-            datetime('now')
+            ?, datetime('now')
         )
         ON CONFLICT(uuid) DO UPDATE SET {_SESSION_UPSERT_SET}
         """,
@@ -462,6 +477,7 @@ def _index_session(
             size,
             session_source,
             source_encoded_name,
+            source_root,
         ),
     )
 
@@ -692,6 +708,44 @@ def _detect_project_path(session, encoded_name: str) -> Optional[str]:
     return None
 
 
+def _sync_extra_roots(
+    conn: sqlite3.Connection, stats: dict, real_project_paths: dict[str, str]
+) -> None:
+    """Index project dirs from extra session roots under their canonical project."""
+    from services.session_roots import clear_cache, get_remote_dirs
+
+    # Pick up roots-config edits and new remote dirs on every full index pass
+    clear_cache()
+    remote_dirs = get_remote_dirs()
+    if not remote_dirs:
+        return
+
+    # A session indexed from this machine wins over a synced copy of it
+    local_uuids = {
+        row[0] for row in conn.execute("SELECT uuid FROM sessions WHERE source_root IS NULL")
+    }
+    for rd in remote_dirs:
+        try:
+            project_stats = sync_project(
+                conn,
+                rd.path,
+                encoded_name_override=rd.canonical,
+                project_path_override=real_project_paths.get(rd.canonical) if rd.merged else None,
+                session_source=None,
+                source_root=rd.root.name,
+                skip_uuids=local_uuids,
+            )
+            for key in ("total", "indexed", "skipped", "errors"):
+                stats[key] += project_stats[key]
+        except Exception as e:
+            logger.warning("Error syncing %s from root %s: %s", rd.path.name, rd.root.name, e)
+            stats["errors"] += 1
+        # The same session synced via two roots: the first root keeps it
+        local_uuids.update(
+            p.stem for p in rd.path.glob("*.jsonl") if not p.name.startswith("agent-")
+        )
+
+
 def _cleanup_stale_sessions(conn: sqlite3.Connection, projects_dir: Path) -> None:
     """
     Remove sessions from DB whose JSONL files no longer exist on disk.
@@ -705,20 +759,32 @@ def _cleanup_stale_sessions(conn: sqlite3.Connection, projects_dir: Path) -> Non
     # Get all sessions grouped by their actual source directory
     # source_encoded_name is set for worktree-remapped sessions;
     # for normal sessions it's NULL and we use project_encoded_name
+    from services.session_roots import projects_dir_for_root
+
     session_rows = conn.execute(
-        "SELECT uuid, COALESCE(source_encoded_name, project_encoded_name) as source_dir FROM sessions"
+        "SELECT uuid, COALESCE(source_encoded_name, project_encoded_name) as source_dir, "
+        "source_root FROM sessions"
     ).fetchall()
 
-    # Group by source directory
-    by_dir: dict[str, list[str]] = {}
+    # Group by (extra root, source directory)
+    by_dir: dict[tuple[Optional[str], str], list[str]] = {}
     for row in session_rows:
-        source_dir = row["source_dir"]
-        by_dir.setdefault(source_dir, []).append(row["uuid"])
+        by_dir.setdefault((row["source_root"], row["source_dir"]), []).append(row["uuid"])
 
     stale_uuids = []
 
-    for source_dir, uuids in by_dir.items():
-        project_dir = projects_dir / source_dir
+    for (source_root, source_dir), uuids in by_dir.items():
+        root_projects_dir = (
+            projects_dir if source_root is None else projects_dir_for_root(source_root)
+        )
+        if root_projects_dir is None:
+            # Root removed from the config: drop its sessions
+            stale_uuids.extend(uuids)
+            continue
+        if source_root is not None and not root_projects_dir.is_dir():
+            # Root offline (drive unmounted, sync paused): keep its sessions
+            continue
+        project_dir = root_projects_dir / source_dir
 
         # Build set of existing UUIDs on disk using scandir (single traversal)
         existing_uuids = set()
@@ -733,6 +799,8 @@ def _cleanup_stale_sessions(conn: sqlite3.Connection, projects_dir: Path) -> Non
                         existing_uuids.add(entry.name[:-6])  # Remove .jsonl extension
             except OSError as e:
                 logger.warning("Error scanning project directory %s: %s", source_dir, e)
+                if source_root is not None:
+                    continue
 
         for uuid in uuids:
             if uuid not in existing_uuids:
@@ -754,7 +822,7 @@ _SESSION_UPSERT_SET = ", ".join(
         "subagent_cache_read_tokens subagent_cache_creation_tokens "
         "initial_prompt git_branch models_used session_titles is_continuation_marker "
         "was_compacted compaction_count file_snapshot_count subagent_count jsonl_mtime jsonl_size "
-        "session_source source_encoded_name indexed_at"
+        "session_source source_encoded_name source_root indexed_at"
     ).split()
 )
 
@@ -860,7 +928,9 @@ def _update_project_summaries(conn: sqlite3.Connection) -> None:
     """
     from pathlib import Path
 
+    from config import settings
     from services.git_identity import read_git_identity
+    from services.session_roots import primary_dir_for, read_sidecar, write_sidecar
     from utils import compute_project_slug, resolve_git_root
 
     rows = conn.execute(
@@ -891,7 +961,16 @@ def _update_project_summaries(conn: sqlite3.Connection) -> None:
         git_identity = read_git_identity(project_path)
         # Warm the cache /projects reads, so the page never waits on git
         if project_path and Path(project_path).is_dir():
-            resolve_git_root(project_path.replace("\\", "/"))
+            git_root = resolve_git_root(project_path.replace("\\", "/"))
+            # Sidecar lets other machines' Karma match this project by git identity
+            write_sidecar(
+                settings.projects_dir / encoded_name, git_identity, project_path, git_root
+            )
+        if not git_identity:
+            # Remote-only project: its path doesn't exist here, the sidecar knows
+            remote = primary_dir_for(encoded_name)
+            sidecar = read_sidecar(remote.path) if remote else None
+            git_identity = (sidecar or {}).get("git_identity")
 
         conn.execute(
             """

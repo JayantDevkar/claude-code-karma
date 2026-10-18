@@ -68,17 +68,26 @@ def find_session_with_project(uuid: str) -> Optional[SessionLookupResult]:
         SessionLookupResult with session and project info, or None if not found.
     """
     projects_dir = settings.projects_dir
-    if not projects_dir.exists():
-        return None
+    if projects_dir.exists():
+        for encoded_dir in projects_dir.iterdir():
+            if encoded_dir.is_dir() and is_encoded_project_dir(encoded_dir.name):
+                jsonl_path = encoded_dir / f"{uuid}.jsonl"
+                if jsonl_path.exists():
+                    return SessionLookupResult(
+                        session=Session.from_path(jsonl_path),
+                        project_encoded_name=encoded_dir.name,
+                    )
 
-    for encoded_dir in projects_dir.iterdir():
-        if encoded_dir.is_dir() and is_encoded_project_dir(encoded_dir.name):
-            jsonl_path = encoded_dir / f"{uuid}.jsonl"
-            if jsonl_path.exists():
-                return SessionLookupResult(
-                    session=Session.from_path(jsonl_path),
-                    project_encoded_name=encoded_dir.name,
-                )
+    # Synced from another machine: report the project it is shown under
+    from services.session_roots import find_any_remote_session
+
+    remote = find_any_remote_session(uuid)
+    if remote:
+        rd, jsonl_path = remote
+        return SessionLookupResult(
+            session=Session.from_path(jsonl_path),
+            project_encoded_name=rd.canonical,
+        )
     return None
 
 
@@ -114,14 +123,19 @@ def find_session_by_message_uuid(message_uuid: str) -> Optional[SessionLookupRes
     Returns:
         SessionLookupResult with session and project info, or None if not found.
     """
+    from services.session_roots import get_remote_dirs
+
     projects_dir = settings.projects_dir
-    if not projects_dir.exists():
-        return None
+    search_dirs: list[tuple[Path, str]] = []
+    if projects_dir.exists():
+        search_dirs.extend(
+            (d, d.name)
+            for d in projects_dir.iterdir()
+            if d.is_dir() and is_encoded_project_dir(d.name)
+        )
+    search_dirs.extend((rd.path, rd.canonical) for rd in get_remote_dirs())
 
-    for encoded_dir in projects_dir.iterdir():
-        if not encoded_dir.is_dir() or not is_encoded_project_dir(encoded_dir.name):
-            continue
-
+    for encoded_dir, project_encoded_name in search_dirs:
         # Search all session JSONL files in this project
         for jsonl_path in encoded_dir.glob("*.jsonl"):
             if not _is_valid_session_filename(jsonl_path):
@@ -134,7 +148,7 @@ def find_session_by_message_uuid(message_uuid: str) -> Optional[SessionLookupRes
                     if hasattr(msg, "uuid") and msg.uuid == message_uuid:
                         return SessionLookupResult(
                             session=session,
-                            project_encoded_name=encoded_dir.name,
+                            project_encoded_name=project_encoded_name,
                         )
             except Exception:
                 # Skip invalid session files
@@ -175,7 +189,10 @@ def _find_session_jsonl(
         if wt_jsonl.exists():
             return wt_jsonl
 
-    return None
+    # Synced from another machine (extra session root)
+    from services.session_roots import find_remote_session_jsonl
+
+    return find_remote_session_jsonl(encoded_name, session_uuid)
 
 
 def find_subagent(

@@ -521,6 +521,18 @@ def _list_all_projects_impl() -> list:
             except Exception:
                 continue
 
+    # Remote-only projects synced from other machines (extra session roots)
+    from services.session_roots import standalone_canonicals
+
+    known = {p.encoded_name for p in projects}
+    for canonical in standalone_canonicals():
+        if canonical in known:
+            continue
+        try:
+            projects.append(Project.from_encoded_name(canonical))
+        except Exception:
+            continue
+
     return sorted(projects, key=lambda p: p.path)
 
 

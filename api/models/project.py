@@ -263,6 +263,14 @@ class Project(BaseModel):
             Path(claude_projects_dir) if claude_projects_dir is not None else settings.projects_dir
         )
         project_dir = base / encoded_name
+        if claude_projects_dir is None and not project_dir.exists():
+            # Remote-only project: its dir lives in an extra session root
+            from services.session_roots import primary_dir_for
+
+            remote = primary_dir_for(encoded_name)
+            if remote is not None:
+                base = remote.path.parent
+                project_dir = remote.path
 
         if skip_path_recovery:
             # Fast path: use lossy decode without reading session files
@@ -287,9 +295,36 @@ class Project(BaseModel):
         return self.claude_projects_dir / self.encoded_name
 
     @property
+    def session_dirs(self) -> List[Path]:
+        """Dirs holding this project's sessions: its own, then synced copies from extra roots."""
+        from services.session_roots import remote_dirs_for
+
+        dirs = [self.project_dir]
+        dirs.extend(rd.path for rd in remote_dirs_for(self.encoded_name) if rd.path not in dirs)
+        return dirs
+
+    def _iter_session_jsonl(self) -> List[Path]:
+        """Main session JSONL files across all session dirs; a UUID found locally wins."""
+        seen: set[str] = set()
+        paths: List[Path] = []
+        for d in self.session_dirs:
+            if not d.exists():
+                continue
+            for p in d.glob("*.jsonl"):
+                if p.name.startswith("agent-") or p.name in seen or not p.is_file():
+                    continue
+                seen.add(p.name)
+                paths.append(p)
+        return paths
+
+    def _session_base(self, jsonl_path: Path) -> Optional[Path]:
+        """claude_base_dir for a session file; None lets Session detect its extra root."""
+        return self.claude_base_dir if jsonl_path.parent == self.project_dir else None
+
+    @property
     def exists(self) -> bool:
         """Check if the project directory exists."""
-        return self.project_dir.exists()
+        return any(d.exists() for d in self.session_dirs)
 
     @property
     def is_git_repository(self) -> bool:
@@ -406,19 +441,17 @@ class Project(BaseModel):
         Returns:
             Tuple of (session_paths, agent_paths)
         """
-        if not self.project_dir.exists():
-            return [], []
-
-        sessions: List[Path] = []
+        sessions: List[Path] = self._iter_session_jsonl()
         agents: List[Path] = []
 
-        for p in self.project_dir.glob("*.jsonl"):
-            if not p.is_file():
+        seen: set[str] = set()
+        for d in self.session_dirs:
+            if not d.exists():
                 continue
-            if p.name.startswith("agent-"):
-                agents.append(p)
-            else:
-                sessions.append(p)
+            for p in d.glob("agent-*.jsonl"):
+                if p.is_file() and p.name not in seen:
+                    seen.add(p.name)
+                    agents.append(p)
 
         return sorted(sessions, key=lambda p: p.name), sorted(agents, key=lambda p: p.name)
 
@@ -443,7 +476,7 @@ class Project(BaseModel):
         from .session import Session
 
         return [
-            Session.from_path(p, claude_base_dir=self.claude_base_dir)
+            Session.from_path(p, claude_base_dir=self._session_base(p))
             for p in self.list_session_paths()
         ]
 
@@ -459,9 +492,10 @@ class Project(BaseModel):
         """
         from .session import Session
 
-        jsonl_path = self.project_dir / f"{uuid}.jsonl"
-        if jsonl_path.exists():
-            return Session.from_path(jsonl_path, claude_base_dir=self.claude_base_dir)
+        for d in self.session_dirs:
+            jsonl_path = d / f"{uuid}.jsonl"
+            if jsonl_path.exists():
+                return Session.from_path(jsonl_path, claude_base_dir=self._session_base(jsonl_path))
         return None
 
     # =========================================================================
@@ -500,9 +534,10 @@ class Project(BaseModel):
         """
         from .agent import Agent
 
-        jsonl_path = self.project_dir / f"agent-{agent_id}.jsonl"
-        if jsonl_path.exists():
-            return Agent.from_path(jsonl_path)
+        for d in self.session_dirs:
+            jsonl_path = d / f"agent-{agent_id}.jsonl"
+            if jsonl_path.exists():
+                return Agent.from_path(jsonl_path)
         return None
 
     # =========================================================================
@@ -561,15 +596,10 @@ class Project(BaseModel):
 
         from .session import Session
 
-        if not self.project_dir.exists():
-            return []
-
         # Get all session JSONL files
-        jsonl_files = [
-            p
-            for p in self.project_dir.glob("*.jsonl")
-            if p.is_file() and not p.name.startswith("agent-")
-        ]
+        jsonl_files = self._iter_session_jsonl()
+        if not jsonl_files:
+            return []
 
         # Pre-filter by file modification time if date range specified
         if start_date or end_date:
@@ -605,7 +635,9 @@ class Project(BaseModel):
         sessions = []
         for jsonl_path in jsonl_files:
             try:
-                session = Session.from_path(jsonl_path, claude_base_dir=self.claude_base_dir)
+                session = Session.from_path(
+                    jsonl_path, claude_base_dir=self._session_base(jsonl_path)
+                )
 
                 # Precise filtering after loading (using cached start_time)
                 if start_date and session.start_time and session.start_time < start_date:
@@ -635,14 +667,7 @@ class Project(BaseModel):
         """
         from datetime import datetime, timezone
 
-        if not self.project_dir.exists():
-            return None
-
-        jsonl_files = [
-            p
-            for p in self.project_dir.glob("*.jsonl")
-            if p.is_file() and not p.name.startswith("agent-")
-        ]
+        jsonl_files = self._iter_session_jsonl()
 
         if not jsonl_files:
             return None

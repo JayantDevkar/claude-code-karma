@@ -29,6 +29,7 @@ from routers import (  # noqa: E402
     cron,
     desktop_app,
     docs,
+    extra_roots,
     history,
     hooks,
     live_sessions,
@@ -204,6 +205,7 @@ app.include_router(tickets.router)
 app.include_router(background_shells.router)
 app.include_router(cron.router)
 app.include_router(memory.router)
+app.include_router(extra_roots.router)
 app.include_router(desktop_app.router)
 app.include_router(system_cron.router)  # ADDITIVE: Linux crontab view at /cron/system
 
