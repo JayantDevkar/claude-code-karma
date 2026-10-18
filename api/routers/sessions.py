@@ -208,15 +208,14 @@ def _list_all_projects_with_sessions_optimized() -> tuple[
         - project_options: List of ProjectFilterOption for filter dropdowns
     """
     from models import Project
+    from services.session_roots import get_remote_dirs
 
     projects_dir = settings.projects_dir
-    if not projects_dir.exists():
-        return [], []
 
     all_sessions: list[SessionMetadata] = []
     project_options: list[ProjectFilterOption] = []
 
-    for encoded_dir in projects_dir.iterdir():
+    for encoded_dir in projects_dir.iterdir() if projects_dir.exists() else ():
         if not encoded_dir.is_dir() or not is_encoded_project_dir(encoded_dir.name):
             continue
         try:
@@ -227,6 +226,7 @@ def _list_all_projects_with_sessions_optimized() -> tuple[
             # Try to use session index first (Phase 1 optimization)
             # But detect stale indexes by comparing to actual JSONL file count
             index = project.load_sessions_index()
+            # The index describes only the local dir; synced dirs are added below
             jsonl_count = get_cached_jsonl_count(project.project_dir)
             index_is_fresh = (
                 index
@@ -258,10 +258,12 @@ def _list_all_projects_with_sessions_optimized() -> tuple[
                         if initial_prompt is None and entry.first_prompt == "No prompt":
                             # Index may be stale - try loading actual prompt from session
                             try:
-                                jsonl_path = project.project_dir / f"{entry.session_id}.jsonl"
-                                if jsonl_path.exists():
-                                    session = Session.from_path(jsonl_path)
-                                    initial_prompt = get_initial_prompt(session, max_length=500)
+                                for session_dir in project.session_dirs:
+                                    jsonl_path = session_dir / f"{entry.session_id}.jsonl"
+                                    if jsonl_path.exists():
+                                        session = Session.from_path(jsonl_path)
+                                        initial_prompt = get_initial_prompt(session, max_length=500)
+                                        break
                             except Exception:
                                 pass  # Keep None on error
                         all_sessions.append(
@@ -316,6 +318,63 @@ def _list_all_projects_with_sessions_optimized() -> tuple[
                                 _session=session,
                             )
                         )
+        except Exception:
+            continue
+
+    # Sessions synced from other machines, shown under their canonical project
+    remote_dirs = get_remote_dirs()
+    seen = {(m.encoded_name, m.uuid) for m in all_sessions} if remote_dirs else set()
+    options_by_name = {opt.encoded_name: opt for opt in project_options}
+    for rd in remote_dirs:
+        try:
+            valid_sessions = []
+            for jsonl_path in rd.path.glob("*.jsonl"):
+                if not _is_valid_session_filename(jsonl_path):
+                    continue
+                if (rd.canonical, jsonl_path.stem) in seen:
+                    continue
+                # A file mid-sync may be partial or locked: skip it, keep the rest
+                try:
+                    session = Session.from_path(jsonl_path)
+                    if session.message_count > 0:
+                        valid_sessions.append(session)
+                except Exception:
+                    continue
+            if not valid_sessions:
+                continue
+
+            option = options_by_name.get(rd.canonical)
+            if option is None:
+                remote_path = rd.remote_project_path or rd.canonical
+                option = ProjectFilterOption(
+                    encoded_name=rd.canonical,
+                    path=remote_path,
+                    name=Path(remote_path).name,
+                    slug=compute_project_slug(rd.canonical, remote_path),
+                    display_name=Path(remote_path).name,
+                    session_count=0,
+                )
+                project_options.append(option)
+                options_by_name[rd.canonical] = option
+            option.session_count += len(valid_sessions)
+
+            for session in valid_sessions:
+                seen.add((rd.canonical, session.uuid))
+                all_sessions.append(
+                    SessionMetadata(
+                        uuid=session.uuid,
+                        encoded_name=rd.canonical,
+                        project_path=option.path,
+                        message_count=session.message_count,
+                        start_time=session.start_time,
+                        end_time=session.end_time,
+                        slug=session.slug,
+                        initial_prompt=get_initial_prompt(session),
+                        git_branch=next(iter(session.get_git_branches()), None),
+                        title=session.session_titles[0] if session.session_titles else None,
+                        _session=session,
+                    )
+                )
         except Exception:
             continue
 
@@ -526,6 +585,7 @@ def _get_all_sessions_sqlite(
                 or title_cache.get_titles(row["project_encoded_name"], row["uuid"])
                 or [],
                 session_source=get_session_source(row["uuid"]),
+                machine=row.get("source_root"),
             )
             sessions_with_context.append(session_context)
 
@@ -656,12 +716,13 @@ def _get_all_sessions_jsonl(
         models_used: list[str] = []
         subagent_count = 0
 
-        project_dir = settings.projects_dir / meta.encoded_name
+        from services.session_roots import machine_for_path, session_jsonl_path
+
+        jsonl_path = session_jsonl_path(meta.encoded_name, meta.uuid)
+        project_dir = jsonl_path.parent
         subagent_count = _count_subagents_fast(project_dir, meta.uuid)
         if meta._session is None:
-            duration_seconds = active_duration_seconds(
-                project_dir / f"{meta.uuid}.jsonl", meta.start_time, meta.end_time
-            )
+            duration_seconds = active_duration_seconds(jsonl_path, meta.start_time, meta.end_time)
 
         if meta._session is not None:
             try:
@@ -693,6 +754,7 @@ def _get_all_sessions_jsonl(
             git_branches=[meta.git_branch] if meta.git_branch else [],
             session_titles=session_titles,
             session_source=get_session_source(meta.uuid),
+            machine=machine_for_path(jsonl_path),
         )
         sessions_with_context.append(session_context)
 
@@ -847,16 +909,17 @@ def get_continuation_session(session_uuid: str) -> ContinuationSessionInfo:
     source_slug = source_session.slug
     source_end_time = source_session.end_time
 
-    # Get the project directory
-    projects_dir = settings.projects_dir
-    project_dir = projects_dir / project_encoded_name
+    # Get the project directories (local first, then synced copies)
+    from services.session_roots import project_dirs_for
 
-    if not project_dir.exists():
+    project_dirs = [d for d in project_dirs_for(project_encoded_name) if d.exists()]
+
+    if not project_dirs:
         raise HTTPException(status_code=404, detail="Project not found")
 
     # Search for continuation session with same slug
     candidates = []
-    for jsonl_path in project_dir.glob("*.jsonl"):
+    for jsonl_path in (p for d in project_dirs for p in d.glob("*.jsonl")):
         if not _is_valid_session_filename(jsonl_path):
             continue
         # Skip the source session itself
@@ -1050,6 +1113,8 @@ def get_session(uuid: str, request: Request, fresh: bool = False):
     except Exception:
         pass  # DB unavailable, frontend will still try /chain as fallback
 
+    from services.session_roots import machine_for_path
+
     response_data = SessionDetail(
         uuid=session.uuid,
         slug=session.slug,
@@ -1063,6 +1128,7 @@ def get_session(uuid: str, request: Request, fresh: bool = False):
         subagent_count=session.count_subagents(),
         has_todos=session.has_todos,
         session_source=get_session_source(session.uuid),
+        machine=machine_for_path(session.jsonl_path),
         todo_count=len(todos),
         initial_prompt=initial_prompt,
         initial_prompt_images=initial_prompt_images,
@@ -1810,13 +1876,12 @@ def _find_session_files(uuid_prefix: str) -> list[tuple[Path, str]]:
     Returns (jsonl_path, project_encoded_name) pairs. The prefix is validated
     by the caller, so it is safe to embed in a glob pattern.
     """
+    from services.session_roots import get_remote_dirs
     from utils import is_encoded_project_dir
 
     projects_dir = settings.projects_dir
-    if not projects_dir.exists():
-        return []
     matches: list[tuple[Path, str]] = []
-    for encoded_dir in projects_dir.iterdir():
+    for encoded_dir in projects_dir.iterdir() if projects_dir.exists() else ():
         if not encoded_dir.is_dir() or not is_encoded_project_dir(encoded_dir.name):
             continue
         exact = encoded_dir / f"{uuid_prefix}.jsonl"
@@ -1825,6 +1890,16 @@ def _find_session_files(uuid_prefix: str) -> list[tuple[Path, str]]:
         for jsonl in encoded_dir.glob(f"{uuid_prefix}*.jsonl"):
             if not jsonl.name.startswith("agent-"):
                 matches.append((jsonl, encoded_dir.name))
+    # Synced copies from other machines, attributed to their canonical project
+    seen = {(name, p.stem) for p, name in matches}
+    for rd in get_remote_dirs():
+        exact = rd.path / f"{uuid_prefix}.jsonl"
+        if exact.exists():
+            return [(exact, rd.canonical)]
+        for jsonl in rd.path.glob(f"{uuid_prefix}*.jsonl"):
+            if not jsonl.name.startswith("agent-") and (rd.canonical, jsonl.stem) not in seen:
+                seen.add((rd.canonical, jsonl.stem))
+                matches.append((jsonl, rd.canonical))
     return matches
 
 

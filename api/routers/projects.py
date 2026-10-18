@@ -234,16 +234,22 @@ def _build_slug_cache(project: Project) -> dict[str, str]:
     """
     slug_map: dict[str, str] = {}
 
-    for jsonl_path in project.project_dir.glob("*.jsonl"):
-        stem = jsonl_path.stem
-        if "-" not in stem:
+    for session_dir in project.session_dirs:
+        if not session_dir.exists():
             continue
-        try:
-            session = Session.from_path(jsonl_path)
-            if session.message_count > 0 and session.slug:
-                slug_map[session.slug] = session.uuid
-        except Exception:
-            continue
+        dir_map: dict[str, str] = {}
+        for jsonl_path in session_dir.glob("*.jsonl"):
+            stem = jsonl_path.stem
+            if "-" not in stem:
+                continue
+            try:
+                session = Session.from_path(jsonl_path)
+                if session.message_count > 0 and session.slug:
+                    dir_map[session.slug] = session.uuid
+            except Exception:
+                continue
+        for slug, session_uuid in dir_map.items():
+            slug_map.setdefault(slug, session_uuid)
 
     return slug_map
 
@@ -257,10 +263,13 @@ def _get_slug_cache(project: Project) -> dict[str, str]:
     encoded_name = project.encoded_name
 
     # Check if cache exists and is fresh
-    try:
-        current_mtime = project.project_dir.stat().st_mtime
-    except Exception:
-        current_mtime = 0
+    # Newest mtime across local and synced dirs, so synced sessions invalidate too
+    current_mtime = 0
+    for d in project.session_dirs:
+        try:
+            current_mtime = max(current_mtime, d.stat().st_mtime)
+        except Exception:
+            continue
 
     if encoded_name in _slug_cache:
         cached_mtime = _slug_cache_mtime.get(encoded_name, 0)
@@ -282,6 +291,8 @@ def session_to_summary(
     session_source: Optional[str] = None,
 ) -> SessionSummary:
     """Convert a Session to SessionSummary."""
+    from services.session_roots import machine_for_path
+
     initial_prompt = get_initial_prompt(session, max_length=500)
 
     return SessionSummary(
@@ -300,6 +311,7 @@ def session_to_summary(
         chain_info=chain_info,
         session_titles=list(session.session_titles or []),
         session_source=session_source,
+        machine=machine_for_path(session.jsonl_path),
     )
 
 
@@ -315,6 +327,8 @@ def session_index_to_summary(
     This is ~10x faster than session_to_summary() as it uses pre-computed
     metadata from sessions-index.json.
     """
+    from services.session_roots import machine_for_path
+
     return SessionSummary(
         uuid=entry.session_id,
         slug=None,  # Not in index, will need Session for this
@@ -333,6 +347,7 @@ def session_index_to_summary(
         chain_info=chain_info,
         session_titles=title_cache.get_titles(project_encoded_name, entry.session_id) or [],
         session_source=session_source,
+        machine=machine_for_path(Path(entry.full_path)) if entry.full_path else None,
     )
 
 
@@ -536,6 +551,7 @@ def get_project(
                             session_titles=titles,
                             chain_info=chain_info,
                             session_source=row.get("session_source"),
+                            machine=row.get("source_root"),
                         )
                     )
 
@@ -680,34 +696,14 @@ def _lookup_session_in_project(
     from schemas import SessionLookupResult
 
     if is_uuid_like:
-        # Try exact UUID match first
-        exact_path = project.project_dir / f"{identifier}.jsonl"
-        if exact_path.exists():
-            try:
-                session = Session.from_path(exact_path)
-                if session.message_count > 0:
-                    return SessionLookupResult(
-                        uuid=session.uuid,
-                        slug=session.slug,
-                        project_encoded_name=encoded_name,
-                        project_path=project_path,
-                        message_count=session.message_count,
-                        start_time=session.start_time,
-                        end_time=session.end_time,
-                        initial_prompt=get_initial_prompt(session, max_length=500),
-                        matched_by="uuid",
-                    )
-            except Exception:
-                pass
+        session_dirs = [d for d in project.session_dirs if d.exists()]
 
-        # Try UUID prefix match
-        for jsonl_path in project.project_dir.glob("*.jsonl"):
-            stem = jsonl_path.stem
-            if "-" not in stem:
-                continue
-            if stem.startswith(identifier):
+        # Try exact UUID match first
+        for session_dir in session_dirs:
+            exact_path = session_dir / f"{identifier}.jsonl"
+            if exact_path.exists():
                 try:
-                    session = Session.from_path(jsonl_path)
+                    session = Session.from_path(exact_path)
                     if session.message_count > 0:
                         return SessionLookupResult(
                             uuid=session.uuid,
@@ -718,10 +714,34 @@ def _lookup_session_in_project(
                             start_time=session.start_time,
                             end_time=session.end_time,
                             initial_prompt=get_initial_prompt(session, max_length=500),
-                            matched_by="uuid_prefix",
+                            matched_by="uuid",
                         )
                 except Exception:
+                    pass
+
+        # Try UUID prefix match
+        for session_dir in session_dirs:
+            for jsonl_path in session_dir.glob("*.jsonl"):
+                stem = jsonl_path.stem
+                if "-" not in stem:
                     continue
+                if stem.startswith(identifier):
+                    try:
+                        session = Session.from_path(jsonl_path)
+                        if session.message_count > 0:
+                            return SessionLookupResult(
+                                uuid=session.uuid,
+                                slug=session.slug,
+                                project_encoded_name=encoded_name,
+                                project_path=project_path,
+                                message_count=session.message_count,
+                                start_time=session.start_time,
+                                end_time=session.end_time,
+                                initial_prompt=get_initial_prompt(session, max_length=500),
+                                matched_by="uuid_prefix",
+                            )
+                    except Exception:
+                        continue
 
         # Try sessions-index.json for UUID matching
         index = project.load_sessions_index()
@@ -754,7 +774,14 @@ def _lookup_session_in_project(
         slug_cache = _get_slug_cache(project)
         if identifier in slug_cache:
             session_uuid = slug_cache[identifier]
-            jsonl_path = project.project_dir / f"{session_uuid}.jsonl"
+            jsonl_path = next(
+                (
+                    d / f"{session_uuid}.jsonl"
+                    for d in project.session_dirs
+                    if (d / f"{session_uuid}.jsonl").exists()
+                ),
+                project.project_dir / f"{session_uuid}.jsonl",
+            )
             if jsonl_path.exists():
                 try:
                     session = Session.from_path(jsonl_path)
@@ -1562,6 +1589,13 @@ async def get_project_memory(encoded_name: str, request: Request):
     from config import settings
 
     memory_dir = settings.projects_dir / encoded_name / "memory"
+    if not memory_dir.is_dir():
+        from services.session_roots import project_dirs_for
+
+        for d in project_dirs_for(encoded_name):
+            if (d / "memory").is_dir():
+                memory_dir = d / "memory"
+                break
     memory_file = memory_dir / "MEMORY.md"
 
     # Compute index entry.
@@ -1630,6 +1664,13 @@ async def get_project_memory_file(encoded_name: str, filename: str, request: Req
         raise HTTPException(status_code=400, detail="Invalid memory filename format")
 
     memory_dir = settings.projects_dir / encoded_name / "memory"
+    if not memory_dir.is_dir():
+        from services.session_roots import project_dirs_for
+
+        for d in project_dirs_for(encoded_name):
+            if (d / "memory").is_dir():
+                memory_dir = d / "memory"
+                break
     candidate = memory_dir / filename
 
     # Defense in depth: resolve and assert containment within memory_dir.

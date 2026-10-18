@@ -12,7 +12,8 @@
 		Minimize2,
 		MessageCircle,
 		Monitor,
-		Copy
+		Copy,
+		Laptop
 	} from 'lucide-svelte';
 	import { fade } from 'svelte/transition';
 	import PageHeader from '$lib/components/layout/PageHeader.svelte';
@@ -455,6 +456,21 @@
 							/>
 							<span class="text-xs font-medium text-[var(--text-secondary)]"
 								>Desktop</span
+							>
+						</div>
+					{/if}
+					{#if isMainSession(entity) && entity.machine}
+						<div
+							class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[var(--bg-muted)] border border-[var(--border)]"
+							title={`Synced from ${entity.machine}`}
+						>
+							<Laptop
+								size={12}
+								strokeWidth={2}
+								class="text-[var(--text-secondary)]"
+							/>
+							<span class="text-xs font-medium text-[var(--text-secondary)]"
+								>{entity.machine}</span
 							>
 						</div>
 					{/if}

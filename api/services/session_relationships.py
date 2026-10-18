@@ -42,6 +42,23 @@ def get_resolver(project_dir: Path) -> "SessionRelationshipResolver":
     return resolver
 
 
+def _sibling_session_dirs(project_dir: Path) -> List[Path]:
+    """Return project_dir followed by other dirs holding sessions of the same project."""
+    from config import settings
+    from services.session_roots import get_remote_dirs, project_dirs_for
+
+    if project_dir.parent == settings.projects_dir:
+        canonical = project_dir.name
+    else:
+        # A synced dir maps to its project; any other dir (e.g. tests) stands alone
+        canonical = next((rd.canonical for rd in get_remote_dirs() if rd.path == project_dir), None)
+        if canonical is None:
+            return [project_dir]
+    return [project_dir] + [
+        d for d in project_dirs_for(canonical) if d != project_dir and d.is_dir()
+    ]
+
+
 class SessionRelationshipResolver:
     """
     Discovers and resolves relationships between sessions.
@@ -67,6 +84,7 @@ class SessionRelationshipResolver:
                         (e.g., ~/.claude/projects/-Users-me-repo/)
         """
         self.project_dir = project_dir
+        self.session_dirs = _sibling_session_dirs(project_dir)
         self._session_cache: Dict[str, Session] = {}
         self._uuid_to_session_map: Optional[Dict[str, str]] = None
 
@@ -76,8 +94,11 @@ class SessionRelationshipResolver:
     def _get_session(self, uuid: str) -> Optional[Session]:
         """Load session with caching."""
         if uuid not in self._session_cache:
-            jsonl_path = self.project_dir / f"{uuid}.jsonl"
-            if jsonl_path.exists():
+            jsonl_path = next(
+                (p for p in (d / f"{uuid}.jsonl" for d in self.session_dirs) if p.exists()),
+                None,
+            )
+            if jsonl_path is not None:
                 try:
                     self._session_cache[uuid] = Session.from_path(jsonl_path)
                 except Exception as e:
@@ -86,6 +107,16 @@ class SessionRelationshipResolver:
             else:
                 return None
         return self._session_cache[uuid]
+
+    def _iter_session_files(self):
+        """Yield session JSONL paths across session_dirs; earlier dirs win on duplicates."""
+        seen: Set[str] = set()
+        for session_dir in self.session_dirs:
+            for jsonl_path in session_dir.glob("*.jsonl"):
+                if jsonl_path.name in seen:
+                    continue
+                seen.add(jsonl_path.name)
+                yield jsonl_path
 
     def _build_uuid_to_session_map(self) -> Dict[str, str]:
         """
@@ -101,7 +132,7 @@ class SessionRelationshipResolver:
 
         # First pass: collect all leaf_uuid targets we need to resolve
         target_uuids: Set[str] = set()
-        for jsonl_path in self.project_dir.glob("*.jsonl"):
+        for jsonl_path in self._iter_session_files():
             if jsonl_path.name.startswith("agent-"):
                 continue
             try:
@@ -116,7 +147,7 @@ class SessionRelationshipResolver:
 
         # Second pass: scan messages only to find target UUIDs
         remaining = set(target_uuids)
-        for jsonl_path in self.project_dir.glob("*.jsonl"):
+        for jsonl_path in self._iter_session_files():
             if not remaining:
                 break
             if jsonl_path.name.startswith("agent-"):
@@ -152,7 +183,7 @@ class SessionRelationshipResolver:
         self._leaf_uuid_children_map = {}
         uuid_map = self._build_uuid_to_session_map()
 
-        for jsonl_path in self.project_dir.glob("*.jsonl"):
+        for jsonl_path in self._iter_session_files():
             if jsonl_path.name.startswith("agent-"):
                 continue
             child_uuid = jsonl_path.stem

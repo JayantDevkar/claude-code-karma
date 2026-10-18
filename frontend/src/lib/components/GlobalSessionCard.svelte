@@ -8,7 +8,8 @@
 		GitBranch,
 		Folder,
 		Monitor,
-		Bot
+		Bot,
+		Laptop
 	} from 'lucide-svelte';
 	import type { SessionWithContext, LiveSessionSummary } from '$lib/api-types';
 	import { projectHrefFromSession } from '$lib/utils/project-url';
@@ -215,12 +216,21 @@
 					{displayPrompt}
 				</p>
 			{/if}
-			{#if session.session_source === 'desktop' || showSubagentBadge}
+			{#if session.session_source === 'desktop' || session.machine || showSubagentBadge}
 				<div class="flex items-center gap-2 mt-1 text-[10px] text-[var(--text-muted)]">
 					{#if session.session_source === 'desktop'}
 						<div class="flex items-center gap-0.5" title="Claude Desktop session">
 							<Monitor size={10} strokeWidth={2} />
 							<span>Desktop</span>
+						</div>
+					{/if}
+					{#if session.machine}
+						<div
+							class="flex items-center gap-0.5"
+							title={`Synced from ${session.machine}`}
+						>
+							<Laptop size={10} strokeWidth={2} />
+							<span>{session.machine}</span>
 						</div>
 					{/if}
 					{#if showSubagentBadge}
@@ -368,6 +378,15 @@
 					>
 						<Monitor size={10} strokeWidth={2} />
 						<span class="font-medium text-[11px]">Desktop</span>
+					</div>
+				{/if}
+				{#if session.machine}
+					<div
+						class="flex items-center gap-1 px-2 py-0.5 rounded-full border bg-[var(--bg-muted)] text-[var(--text-secondary)] border-[var(--border)]"
+						title={`Synced from ${session.machine}`}
+					>
+						<Laptop size={10} strokeWidth={2} />
+						<span class="font-medium text-[11px]">{session.machine}</span>
 					</div>
 				{/if}
 				<!-- Model Badge -->

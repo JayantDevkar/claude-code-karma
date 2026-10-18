@@ -206,6 +206,25 @@ def get_shells_project_rollup(
 # ============================================================================
 
 
+def _session_jsonl_for_cron(
+    claude_projects_dir: Path, encoded_name: str, session_uuid: str
+) -> Path:
+    """Session JSONL under `claude_projects_dir`; when missing and that dir is
+    the real Claude root, fall back to a synced copy from an extra root."""
+    jsonl_path = (
+        claude_projects_dir / _PROJECTS_SUBDIR / encoded_name / f"{session_uuid}.jsonl"
+    )
+    if jsonl_path.exists():
+        return jsonl_path
+    from config import settings
+
+    if claude_projects_dir / _PROJECTS_SUBDIR != settings.projects_dir:
+        return jsonl_path
+    from services.session_roots import session_jsonl_path
+
+    return session_jsonl_path(encoded_name, session_uuid)
+
+
 def get_cron_for_session(
     conn: sqlite3.Connection,
     session_uuid: str,
@@ -244,11 +263,8 @@ def get_cron_for_session(
             (session_uuid,),
         ).fetchone()
         if row:
-            jsonl_path = (
-                claude_projects_dir
-                / _PROJECTS_SUBDIR
-                / row[0]
-                / f"{session_uuid}.jsonl"
+            jsonl_path = _session_jsonl_for_cron(
+                claude_projects_dir, row[0], session_uuid
             )
             if jsonl_path.exists():
                 # Read JSONL once and infer fires for all jobs in a single pass.
@@ -341,11 +357,8 @@ def get_cron_global(
             snap = get_latest_cron_state(conn, session_uuid)
             enc = jobs[0].get("project_encoded_name")
             if enc:
-                jsonl_path = (
-                    claude_projects_dir
-                    / _PROJECTS_SUBDIR
-                    / enc
-                    / f"{session_uuid}.jsonl"
+                jsonl_path = _session_jsonl_for_cron(
+                    claude_projects_dir, enc, session_uuid
                 )
                 fires_map = (
                     infer_cron_fires_bulk(jsonl_path, jobs)

@@ -209,7 +209,7 @@ def query_all_sessions(
             s.input_tokens, s.output_tokens, s.total_cost,
             s.initial_prompt, s.git_branch, s.models_used,
             s.session_titles, s.is_continuation_marker, s.was_compacted,
-            s.subagent_count, s.session_source
+            s.subagent_count, s.session_source, s.source_root
         FROM sessions s
         {fts_join}
         {where}
@@ -1145,7 +1145,7 @@ def query_project_sessions(
             s.initial_prompt, s.git_branch, s.session_titles,
             s.is_continuation_marker, s.was_compacted, s.input_tokens,
             s.output_tokens, s.total_cost, s.compaction_count,
-            s.session_source
+            s.session_source, s.source_root
         FROM sessions s
         {fts_join}
         WHERE {where}

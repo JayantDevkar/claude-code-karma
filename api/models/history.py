@@ -123,14 +123,19 @@ def get_project_name(path: str) -> str:
 
 def list_existing_session_ids(projects_dir: Path) -> set[str]:
     """Get set of all existing session UUIDs (sessions that have .jsonl files)."""
+    from config import settings
+
     session_ids = set()
 
-    if not projects_dir.exists():
-        return session_ids
+    dirs = []
+    if projects_dir.exists():
+        dirs.extend(d for d in projects_dir.iterdir() if d.is_dir())
+    if projects_dir == settings.projects_dir:
+        from services.session_roots import get_remote_dirs
 
-    for project_dir in projects_dir.iterdir():
-        if not project_dir.is_dir():
-            continue
+        dirs.extend(rd.path for rd in get_remote_dirs() if rd.path.is_dir())
+
+    for project_dir in dirs:
         for jsonl_file in project_dir.glob("*.jsonl"):
             # Skip agent files
             if jsonl_file.name.startswith("agent-"):

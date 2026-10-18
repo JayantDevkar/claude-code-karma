@@ -207,6 +207,10 @@ class SessionSummary(BaseModel):
         None,
         description="Session origin: 'desktop' for Claude Desktop, None for CLI",
     )
+    machine: Optional[str] = Field(
+        None,
+        description="Extra session root the session was synced from; None for this machine",
+    )
 
 
 class CompactionSummary(BaseModel):

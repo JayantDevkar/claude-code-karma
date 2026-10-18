@@ -41,6 +41,7 @@ def memory_index() -> dict:
     projects: list[dict] = []
     pdir = settings.projects_dir
 
+    candidates: list[tuple[str, Path]] = []
     if pdir.is_dir():
         for enc_dir in sorted(pdir.iterdir()):
             if not enc_dir.is_dir():
@@ -48,26 +49,38 @@ def memory_index() -> dict:
             mem_dir = enc_dir / "memory"
             if not mem_dir.is_dir():
                 continue
+            candidates.append((enc_dir.name, mem_dir))
 
-            try:
-                md_files = [f for f in mem_dir.iterdir() if f.is_file() and f.suffix == ".md"]
-            except OSError:
-                continue
-            if not md_files:
-                continue
+    from services.session_roots import get_remote_dirs
 
-            note_count = sum(1 for f in md_files if f.name != "MEMORY.md")
-            has_index = any(f.name == "MEMORY.md" for f in md_files)
+    seen = {enc for enc, _ in candidates}
+    for rd in get_remote_dirs():
+        mem_dir = rd.path / "memory"
+        if rd.canonical in seen or not mem_dir.is_dir():
+            continue
+        seen.add(rd.canonical)
+        candidates.append((rd.canonical, mem_dir))
 
-            projects.append(
-                {
-                    "encoded": enc_dir.name,
-                    "label": _project_label(enc_dir.name),
-                    "path": _decoded_path(enc_dir.name),
-                    "note_count": note_count,
-                    "has_index": has_index,
-                }
-            )
+    for encoded, mem_dir in candidates:
+        try:
+            md_files = [f for f in mem_dir.iterdir() if f.is_file() and f.suffix == ".md"]
+        except OSError:
+            continue
+        if not md_files:
+            continue
+
+        note_count = sum(1 for f in md_files if f.name != "MEMORY.md")
+        has_index = any(f.name == "MEMORY.md" for f in md_files)
+
+        projects.append(
+            {
+                "encoded": encoded,
+                "label": _project_label(encoded),
+                "path": _decoded_path(encoded),
+                "note_count": note_count,
+                "has_index": has_index,
+            }
+        )
 
     projects.sort(key=lambda p: (-p["note_count"], p["label"].lower()))
 

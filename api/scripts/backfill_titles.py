@@ -88,8 +88,10 @@ def main():
     for uuid, encoded_name, initial_prompt in sessions:
         try:
             # Get JSONL path
-            projects_dir = Path.home() / ".claude" / "projects"
-            jsonl_path = projects_dir / encoded_name / f"{uuid}.jsonl"
+            # Local file, else a copy synced from another machine
+            from services.session_roots import session_jsonl_path
+
+            jsonl_path = session_jsonl_path(encoded_name, uuid)
 
             if not jsonl_path.exists():
                 print(f"⚠ Skipping {uuid}: JSONL not found")

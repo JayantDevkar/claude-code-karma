@@ -1,5 +1,13 @@
 <script lang="ts">
-	import { MessageSquare, Users, Clock, Sparkles, GitBranch, Monitor } from 'lucide-svelte';
+	import {
+		MessageSquare,
+		Users,
+		Clock,
+		Sparkles,
+		GitBranch,
+		Monitor,
+		Laptop
+	} from 'lucide-svelte';
 	import ResumeSessionButton from './ResumeSessionButton.svelte';
 	import type { SessionSummary, LiveSessionSummary } from '$lib/api-types';
 	import { statusConfig } from '$lib/live-session-config';
@@ -224,6 +232,15 @@
 					<span>Desktop</span>
 				</div>
 			{/if}
+			{#if session.machine}
+				<div
+					class="flex items-center gap-0.5 mt-1 text-[10px] text-[var(--text-muted)]"
+					title="Synced from {session.machine}"
+				>
+					<Laptop size={10} strokeWidth={2} />
+					<span>{session.machine}</span>
+				</div>
+			{/if}
 		</div>
 	{:else}
 		<!-- FULL MODE: Original detailed layout -->
@@ -341,6 +358,15 @@
 					>
 						<Monitor size={10} strokeWidth={2} />
 						<span class="font-medium text-[11px]">Desktop</span>
+					</div>
+				{/if}
+				{#if session.machine}
+					<div
+						class="flex items-center gap-1 px-2 py-0.5 rounded-full border bg-[var(--bg-muted)] text-[var(--text-secondary)] border-[var(--border)]"
+						title="Synced from {session.machine}"
+					>
+						<Laptop size={10} strokeWidth={2} />
+						<span class="font-medium text-[11px]">{session.machine}</span>
 					</div>
 				{/if}
 				<!-- Model Badge -->

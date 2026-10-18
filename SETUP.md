@@ -855,7 +855,7 @@ Each project dir from another machine joins a local project by the first rule th
 | 4 | Same encoded dir name (identical path on both machines) | Nothing |
 | 5 | Exactly one local project with the same folder name (`"match_by_name": true`, off by default) | Nothing |
 
-Unmatched dirs show as their own project. Rule 5 is a guess: a remote `api` or `web` folder would silently join whichever local project shares the name, so turn it on only for a root whose projects you know.
+Unmatched dirs show as their own project. Sessions from other machines carry a badge with the root's name. Rule 5 is a guess: a remote `api` or `web` folder would silently join whichever local project shares the name, so turn it on only for a root whose projects you know.
 
 `path_map` prefixes are case-insensitive for Windows paths (drive letter or UNC) and case-sensitive otherwise.
 

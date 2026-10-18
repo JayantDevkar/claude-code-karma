@@ -169,8 +169,9 @@ class SessionTitleCache:
             else:
                 # Create new entry with current mtime if file exists
                 mtime_ms = 0
-                project_dir = settings.projects_dir / encoded_name
-                jsonl_path = project_dir / f"{uuid}.jsonl"
+                from services.session_roots import session_jsonl_path
+
+                jsonl_path = session_jsonl_path(encoded_name, uuid)
                 if jsonl_path.exists():
                     try:
                         mtime_ns = jsonl_path.stat().st_mtime_ns
@@ -227,10 +228,22 @@ class SessionTitleCache:
 
         # Fallback to JSONL file count
         if current_count is None:
-            project_dir = settings.projects_dir / encoded_name
-            if not project_dir.is_dir():
+            from services.session_roots import project_dirs_for
+
+            project_dirs = [d for d in project_dirs_for(encoded_name) if d.is_dir()]
+            if not project_dirs:
                 return False
-            current_count = get_cached_jsonl_count(project_dir)
+            if len(project_dirs) == 1:
+                current_count = get_cached_jsonl_count(project_dirs[0])
+            else:
+                current_count = len(
+                    {
+                        p.name
+                        for d in project_dirs
+                        for p in d.glob("*.jsonl")
+                        if not p.name.startswith("agent-")
+                    }
+                )
 
         cached_count = len(cached)
         threshold = max(1, int(cached_count * 0.1))
@@ -456,45 +469,49 @@ class SessionTitleCache:
         """
         Build title cache by scanning all session JSONL files (slow fallback).
         """
-        project_dir = settings.projects_dir / encoded_name
-        if not project_dir.is_dir():
-            return {}
-
-        # Load sessions-index.json for fallback titles
-        index_path = project_dir / "sessions-index.json"
-        index = SessionIndex.load(index_path)
-        index_summaries: Dict[str, str] = {}
-        if index:
-            for entry in index.entries:
-                if entry.summary:
-                    index_summaries[entry.session_id] = entry.summary
+        from services.session_roots import project_dirs_for
 
         data: Dict[str, TitleEntry] = {}
 
-        for jsonl_path in project_dir.glob("*.jsonl"):
-            if jsonl_path.name.startswith("agent-"):
+        for project_dir in project_dirs_for(encoded_name):
+            if not project_dir.is_dir():
                 continue
 
-            uuid = jsonl_path.stem
+            # Load sessions-index.json for fallback titles
+            index_path = project_dir / "sessions-index.json"
+            index = SessionIndex.load(index_path)
+            index_summaries: Dict[str, str] = {}
+            if index:
+                for entry in index.entries:
+                    if entry.summary:
+                        index_summaries[entry.session_id] = entry.summary
 
-            try:
-                mtime_ns = jsonl_path.stat().st_mtime_ns
-                mtime_ms = mtime_ns // 1_000_000
-            except OSError:
-                mtime_ms = 0
+            for jsonl_path in project_dir.glob("*.jsonl"):
+                if jsonl_path.name.startswith("agent-"):
+                    continue
 
-            try:
-                titles, slug = self._extract_titles_lightweight(jsonl_path)
-            except Exception as exc:
-                logger.debug("Error scanning %s: %s", jsonl_path.name, exc)
-                titles, slug = [], None
+                uuid = jsonl_path.stem
+                if uuid in data:
+                    continue
 
-            if not titles:
-                fallback = index_summaries.get(uuid)
-                if fallback:
-                    titles = [fallback]
+                try:
+                    mtime_ns = jsonl_path.stat().st_mtime_ns
+                    mtime_ms = mtime_ns // 1_000_000
+                except OSError:
+                    mtime_ms = 0
 
-            data[uuid] = TitleEntry(titles=titles, slug=slug, mtime=mtime_ms)
+                try:
+                    titles, slug = self._extract_titles_lightweight(jsonl_path)
+                except Exception as exc:
+                    logger.debug("Error scanning %s: %s", jsonl_path.name, exc)
+                    titles, slug = [], None
+
+                if not titles:
+                    fallback = index_summaries.get(uuid)
+                    if fallback:
+                        titles = [fallback]
+
+                data[uuid] = TitleEntry(titles=titles, slug=slug, mtime=mtime_ms)
 
         return data
 

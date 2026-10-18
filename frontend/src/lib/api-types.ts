@@ -259,6 +259,8 @@ export interface SessionSummary {
 	chain_title?: string;
 	/** Session origin: 'desktop' for Claude Desktop sessions, undefined for CLI */
 	session_source?: 'desktop' | null;
+	/** Name of the other computer this session was synced from; null = this machine */
+	machine?: string | null;
 }
 
 /**

@@ -67,12 +67,11 @@ class SessionMetadata:
         if self._session:
             return self._session
         # Import here to avoid circular imports
-        from config import settings
         from models import Session
+        from services.session_roots import session_jsonl_path
 
         # Construct from path
-        projects_dir = settings.projects_dir
-        jsonl_path = projects_dir / self.encoded_name / f"{self.uuid}.jsonl"
+        jsonl_path = session_jsonl_path(self.encoded_name, self.uuid)
         return Session.from_path(jsonl_path)
 
     def get_git_branches(self) -> set:
