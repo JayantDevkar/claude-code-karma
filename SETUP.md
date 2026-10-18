@@ -955,6 +955,29 @@ If you installed the branch detector hook in Tier 4, add it to `SessionStart` al
 
 The branch detector has no timeout entry because it self-times-out at 2 seconds and is silent on every failure.
 
+### Project Identity Sidecar (Multiple Machines)
+
+`project_identity.py` writes `karma-project.json` (normalized git remote, subdir within the repo, project path) into the session's project dir on each session start. The file records which repository a project dir belongs to, independent of where the repo lives on disk; tools that read synced copies of `~/.claude` from several machines can use it to match the same project across different paths. The hook writes nothing else.
+
+```bash
+ln -sf "$(cd hooks && pwd)/project_identity.py" ~/.claude/hooks/project_identity.py
+```
+
+```json
+"SessionStart": [
+  {
+    "hooks": [
+      {
+        "type": "command",
+        "command": "python3 ~/.claude/hooks/project_identity.py"
+      }
+    ]
+  }
+]
+```
+
+Like the branch detector, it is silent on every failure and needs no timeout entry: each of its two git calls self-times-out at 2 seconds (4 seconds worst case). It only writes when the identity changed, and only into the session's project dir (a dir inside a `projects` dir).
+
 ### Removing a Hook
 
 To remove a hook after installation:
