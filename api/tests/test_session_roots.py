@@ -473,7 +473,7 @@ def test_build_failure_keeps_roots_so_sessions_survive(machines, mem_db, monkeyp
 
 
 # =============================================================================
-# Second review round
+# Config robustness, root validation, path_map edge cases, endpoint
 # =============================================================================
 
 
@@ -515,6 +515,35 @@ def test_roots_file_must_hold_a_list(tmp_path, monkeypatch):
     _roots_file(tmp_path, monkeypatch, '{"name": "laptop"}')
     assert session_roots.get_extra_roots() == ()
     assert not session_roots.roots_config_ok()
+
+
+def test_malformed_roots_file_on_cold_start_keeps_remote_rows(tmp_path, monkeypatch, mem_db):
+    local = tmp_path / "local" / ".claude"
+    (local / "projects").mkdir(parents=True)
+    monkeypatch.setattr(settings, "claude_base", local)
+    remote = tmp_path / "sync" / "laptop" / ".claude"
+    _write_session(remote / "projects" / "-home-me-solo", "r1", "/home/me/solo")
+    roots = _roots_file(
+        tmp_path, monkeypatch, json.dumps([{"name": "laptop", "path": str(remote)}])
+    )
+    indexer.sync_all_projects(mem_db)
+
+    roots.write_text("{", encoding="utf-8")
+    session_roots.clear_cache()  # API restart: no previous roots in memory
+    indexer.sync_all_projects(mem_db)
+
+    assert session_roots.get_extra_roots() == ()
+    assert [r[0] for r in mem_db.execute("SELECT uuid FROM sessions")] == ["r1"]
+
+
+def test_path_map_drive_root_prefix_is_case_insensitive(machines):
+    local, remote, configure = machines
+    configure(path_map={"C:/": "/home/me/"})
+    _write_session(local / "-home-me-karma", "l1", "/home/me/karma")
+    _write_session(remote / "c--karma", "r1", "c:/karma")
+
+    (rd,) = get_remote_dirs()
+    assert (rd.canonical, rd.matched_by) == ("-home-me-karma", "path_map")
 
 
 def test_nested_duplicate_and_file_roots_are_rejected(tmp_path, monkeypatch):
@@ -618,6 +647,13 @@ def test_no_roots_means_no_sidecar_write(tmp_path, monkeypatch, mem_db):
     session_roots.clear_cache()
     indexer.sync_all_projects(mem_db)
     assert not (local / "projects" / encoded / SIDECAR_NAME).exists()
+
+    # Nor does it delete a stale one (path outside its repo) without roots
+    _sidecar(local / "projects" / encoded, "o/repo", "")
+    monkeypatch.setattr(utils, "resolve_git_root", lambda p: str(tmp_path / "elsewhere"))
+    indexer.sync_all_projects(mem_db)
+    assert read_sidecar(local / "projects" / encoded)["git_identity"] == "o/repo"
+    monkeypatch.setattr(utils, "resolve_git_root", lambda p: p)
 
     other = tmp_path / "sync" / "laptop" / ".claude"
     (other / "projects").mkdir(parents=True)

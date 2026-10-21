@@ -53,6 +53,13 @@ _ROOT_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 _CACHE_TTL = 30.0
 
 
+def _resolve(path: Path) -> Path:
+    try:
+        return path.resolve()
+    except OSError:
+        return path
+
+
 @dataclass(frozen=True)
 class SessionRoot:
     """A synced copy of another machine's ``~/.claude`` dir."""
@@ -64,6 +71,10 @@ class SessionRoot:
     match_by_name: bool = False
     # claude_base resolved once at load time; root_for_path runs per session file
     resolved_base: Optional[Path] = None
+
+    def __post_init__(self) -> None:
+        if self.resolved_base is None:
+            object.__setattr__(self, "resolved_base", _resolve(self.claude_base))
 
     @property
     def projects_dir(self) -> Path:
@@ -104,13 +115,6 @@ _state = _State()
 _lock = threading.Lock()
 _generation = 0  # bumped by clear_cache()/invalidate(); an older in-flight build is discarded
 _build_lock = threading.Lock()  # one rebuild at a time; others serve the previous mapping
-
-
-def _resolve(path: Path) -> Path:
-    try:
-        return path.resolve()
-    except OSError:
-        return path
 
 
 # =============================================================================
@@ -161,7 +165,6 @@ def _parse_root(entry: object) -> Optional[SessionRoot]:
         path_map=tuple(path_map),
         project_map=project_map,
         match_by_name=bool(entry.get("match_by_name", False)),
-        resolved_base=_resolve(base),
     )
 
 
@@ -311,7 +314,7 @@ def _identity_key(sidecar: Optional[dict]) -> Optional[tuple[str, str]]:
 # =============================================================================
 
 
-_WINDOWS_PREFIX_RE = re.compile(r"^(?:[A-Za-z]:/|//)")
+_WINDOWS_PREFIX_RE = re.compile(r"^(?:[A-Za-z]:(?:/|$)|//)")  # "C:" after _norm_prefix("C:/")
 
 
 def _apply_path_map(path: str, path_map: tuple[tuple[str, str], ...]) -> Optional[str]:
@@ -477,7 +480,7 @@ def _refresh(force: bool = False) -> _State:
         if not force and state.built_at and time.time() - state.built_at < _CACHE_TTL:
             return state  # built while we waited
         generation = _generation
-        # Disk I/O happens outside _lock. On failure keep the last known roots (see _load_root_entries)
+        # Disk I/O happens outside _lock. On failure keep the last roots (see _load_root_entries)
         config_ok = True
         try:
             roots = _load_roots()
