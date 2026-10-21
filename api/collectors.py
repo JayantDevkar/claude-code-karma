@@ -257,6 +257,7 @@ def collect_session_data(session: Session, include_subagents: bool = False) -> S
         SessionData with all extracted information
     """
     data = SessionData()
+    prev_user: Optional[UserMessage] = None
 
     for msg in session.iter_messages():
         # Timestamps: track first and last (skip messages without timestamp like SessionTitleMessage)
@@ -285,9 +286,10 @@ def collect_session_data(session: Session, include_subagents: bool = False) -> S
         if isinstance(msg, UserMessage):
             # Initial prompt (first user message holding a real prompt)
             if data.initial_prompt is None:
-                prompt = prompt_from_user_message(msg)
+                prompt = prompt_from_user_message(msg, prev_user)
                 if prompt:
                     data.initial_prompt = prompt[:5000]
+            prev_user = msg
 
         # Assistant message processing
         elif isinstance(msg, AssistantMessage):

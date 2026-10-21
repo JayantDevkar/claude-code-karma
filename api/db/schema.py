@@ -10,7 +10,7 @@ import sqlite3
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 23
+SCHEMA_VERSION = 24
 
 SCHEMA_SQL = """
 -- Schema versioning
@@ -817,6 +817,21 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             # _ensure_session_columns already forced the reindex if it added columns
             if has_sessions and not columns_added:
                 conn.execute("UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1")
+
+        if current_version < 24:
+            logger.info(
+                "Migrating → v24: re-index sessions whose initial prompt is a "
+                "local-command preamble (/clear caveat, /model, ...)"
+            )
+            has_sessions = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='sessions'"
+            ).fetchone()
+            if has_sessions and not columns_added:
+                conn.execute(
+                    "UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1 "
+                    "WHERE initial_prompt LIKE '<local-command-%' "
+                    "OR initial_prompt LIKE '<command-name>%'"
+                )
 
     # Record version
     conn.execute(

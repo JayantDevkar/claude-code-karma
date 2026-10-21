@@ -182,6 +182,29 @@ class TestMigrationKeepsForeignKeysOn:
         assert conn.execute("PRAGMA foreign_keys").fetchone()[0] == 1
 
 
+class TestV24ReindexesLocalCommandPrompts:
+    def test_only_sessions_with_a_local_command_prompt_are_reindexed(self):
+        conn = _db_at_version(23, foreign_keys=True)
+        conn.execute(
+            "INSERT INTO projects (encoded_name, display_name, slug) VALUES ('-foo', 'foo', 'foo')"
+        )
+        for uuid, prompt in [
+            ("caveat", "<local-command-caveat>The command below was run</local-command-caveat>"),
+            ("typed", "Fix the login bug"),
+        ]:
+            conn.execute(
+                "INSERT INTO sessions (uuid, project_encoded_name, jsonl_mtime, initial_prompt) "
+                "VALUES (?, '-foo', 10.0, ?)",
+                (uuid, prompt),
+            )
+        conn.commit()
+
+        ensure_schema(conn)
+
+        mtimes = dict(conn.execute("SELECT uuid, jsonl_mtime FROM sessions").fetchall())
+        assert mtimes == {"caveat": 9.0, "typed": 10.0}
+
+
 # ============================================================================
 # 2. Indexer delete paths must not depend on the cascade
 # ============================================================================

@@ -56,6 +56,51 @@ def test_collect_session_data_skips_clear_preamble(tmp_path: Path):
     assert collect_session_data(session).initial_prompt == PROMPT
 
 
+def _session_from(tmp_path: Path, name: str, lines: list) -> Session:
+    jsonl = tmp_path / f"{name}.jsonl"
+    jsonl.write_text("\n".join(json.dumps(line) for line in lines) + "\n", encoding="utf-8")
+    return Session(uuid=name, jsonl_path=jsonl, claude_base_dir=tmp_path)
+
+
+def test_skips_local_command_with_args_after_clear(tmp_path: Path):
+    """/clear then /model fable: the model name is not the prompt."""
+    model = (
+        "<command-name>/model</command-name>\n"
+        "            <command-message>model</command-message>\n"
+        "            <command-args>fable</command-args>"
+    )
+    stdout = "<local-command-stdout>Set model to Fable</local-command-stdout>"
+    session = _session_from(
+        tmp_path,
+        "clear-model",
+        [
+            _user("u1", CAVEAT, "2026-10-21T10:00:00.000Z", isMeta=True),
+            _user("u2", CLEAR, "2026-10-21T10:00:00.100Z"),
+            _user("u3", CAVEAT, "2026-10-21T10:00:01.000Z", isMeta=True),
+            _user("u4", model, "2026-10-21T10:00:01.100Z"),
+            _user("u5", stdout, "2026-10-21T10:00:01.200Z"),
+            _user("u6", [{"type": "text", "text": PROMPT}], "2026-10-21T10:00:05.000Z"),
+        ],
+    )
+
+    assert get_initial_prompt(session) == PROMPT
+    assert collect_session_data(session).initial_prompt == PROMPT
+
+
+def test_preamble_only_session_has_no_prompt(tmp_path: Path):
+    session = _session_from(
+        tmp_path,
+        "preamble-only",
+        [
+            _user("u1", CAVEAT, "2026-10-21T10:00:00.000Z", isMeta=True),
+            _user("u2", CLEAR, "2026-10-21T10:00:00.100Z"),
+        ],
+    )
+
+    assert get_initial_prompt(session) is None
+    assert collect_session_data(session).initial_prompt is None
+
+
 def test_skips_tool_results_and_extracts_command_args(tmp_path: Path):
     tool_result = [{"type": "tool_result", "tool_use_id": "toolu_1", "content": "ok"}]
     skill = (
