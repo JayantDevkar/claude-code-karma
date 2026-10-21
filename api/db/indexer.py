@@ -278,7 +278,7 @@ def sync_project(
     # The flag column may not yet exist on older schemas — fall back to {}.
     try:
         rows = conn.execute(
-            "SELECT uuid, jsonl_mtime, needs_shell_cron_reindex, source_root "
+            "SELECT uuid, jsonl_mtime, jsonl_size, needs_shell_cron_reindex, source_root "
             "FROM sessions WHERE project_encoded_name = ?",
             (encoded_name,),
         ).fetchall()
@@ -286,6 +286,7 @@ def sync_project(
         db_mtimes = {
             row["uuid"]: row["jsonl_mtime"] for row in rows if row["source_root"] == source_root
         }
+        db_sizes = {row["uuid"]: row["jsonl_size"] for row in rows}
         needs_backfill = {row["uuid"]: bool(row["needs_shell_cron_reindex"]) for row in rows}
     except sqlite3.OperationalError:
         rows = conn.execute(
@@ -293,6 +294,7 @@ def sync_project(
             (encoded_name,),
         ).fetchall()
         db_mtimes = {row["uuid"]: row["jsonl_mtime"] for row in rows}
+        db_sizes = {}
         needs_backfill = {}
 
     for jsonl_path in project_dir.glob("*.jsonl"):
@@ -313,7 +315,11 @@ def sync_project(
             # mtime unchanged: skip the full re-index. But if the v13
             # bg-shells/cron backfill is still pending for this row, run
             # the lightweight extraction-only pass.
-            if uuid in db_mtimes and abs(db_mtimes[uuid] - current_mtime) < 0.001:
+            unchanged = uuid in db_mtimes and abs(db_mtimes[uuid] - current_mtime) < 0.001
+            # A synced copy can carry its final mtime before the data lands (cp -p, SMB)
+            if unchanged and source_root is not None and db_sizes.get(uuid) != current_size:
+                unchanged = False
+            if unchanged:
                 if needs_backfill.get(uuid):
                     try:
                         _backfill_shells_cron(conn, jsonl_path, uuid)
@@ -712,10 +718,10 @@ def _sync_extra_roots(
     conn: sqlite3.Connection, stats: dict, real_project_paths: dict[str, str]
 ) -> None:
     """Index project dirs from extra session roots under their canonical project."""
-    from services.session_roots import clear_cache, get_remote_dirs
+    from services.session_roots import get_remote_dirs, invalidate
 
     # Pick up roots-config edits and new remote dirs on every full index pass
-    clear_cache()
+    invalidate()
     remote_dirs = get_remote_dirs()
     if not remote_dirs:
         return
@@ -759,8 +765,10 @@ def _cleanup_stale_sessions(conn: sqlite3.Connection, projects_dir: Path) -> Non
     # Get all sessions grouped by their actual source directory
     # source_encoded_name is set for worktree-remapped sessions;
     # for normal sessions it's NULL and we use project_encoded_name
-    from services.session_roots import projects_dir_for_root
+    from services.session_roots import projects_dir_for_root, roots_config_ok
 
+    # A root missing from a config that failed to load is not a removed root
+    roots_known = roots_config_ok()
     session_rows = conn.execute(
         "SELECT uuid, COALESCE(source_encoded_name, project_encoded_name) as source_dir, "
         "source_root FROM sessions"
@@ -779,7 +787,8 @@ def _cleanup_stale_sessions(conn: sqlite3.Connection, projects_dir: Path) -> Non
         )
         if root_projects_dir is None:
             # Root removed from the config: drop its sessions
-            stale_uuids.extend(uuids)
+            if roots_known:
+                stale_uuids.extend(uuids)
             continue
         if source_root is not None and not root_projects_dir.is_dir():
             # Root offline (drive unmounted, sync paused): keep its sessions
@@ -930,9 +939,16 @@ def _update_project_summaries(conn: sqlite3.Connection) -> None:
 
     from config import settings
     from services.git_identity import read_git_identity
-    from services.session_roots import primary_dir_for, read_sidecar, write_sidecar
+    from services.session_roots import (
+        get_extra_roots,
+        primary_dir_for,
+        read_sidecar,
+        write_sidecar,
+    )
     from utils import compute_project_slug, resolve_git_root
 
+    # Never write into ~/.claude/projects unless the user opted into extra roots
+    publish_sidecars = bool(get_extra_roots())
     rows = conn.execute(
         """
         SELECT
@@ -963,9 +979,10 @@ def _update_project_summaries(conn: sqlite3.Connection) -> None:
         if project_path and Path(project_path).is_dir():
             git_root = resolve_git_root(project_path.replace("\\", "/"))
             # Sidecar lets other machines' Karma match this project by git identity
-            write_sidecar(
-                settings.projects_dir / encoded_name, git_identity, project_path, git_root
-            )
+            if publish_sidecars:
+                write_sidecar(
+                    settings.projects_dir / encoded_name, git_identity, project_path, git_root
+                )
         if not git_identity:
             # Remote-only project: its path doesn't exist here, the sidecar knows
             remote = primary_dir_for(encoded_name)

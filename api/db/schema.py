@@ -816,8 +816,7 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             has_sessions = conn.execute(
                 "SELECT 1 FROM sqlite_master WHERE type='table' AND name='sessions'"
             ).fetchone()
-            # _ensure_session_columns already forced the reindex if it added columns
-            # that need one (source_root does not)
+            # _ensure_session_columns already forced the reindex if it added a column needing one
             if has_sessions and not columns_added:
                 conn.execute("UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1")
 

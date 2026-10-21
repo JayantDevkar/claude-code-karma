@@ -60,12 +60,7 @@ class Settings(BaseSettings):
         description="Stale-while-revalidate duration for agent usage",
     )
 
-    # Extra session roots: synced copies of other machines' ~/.claude dirs.
-    # Each entry: {"name": "laptop", "path": "D:/Sync/laptop/.claude",
-    #              "path_map": {"/home/me/code": "C:/code"},
-    #              "project_map": {"-home-me-code-x": "C--code-x"},
-    #              "match_by_name": true}
-    # Also read from ~/.claude_karma/extra-roots.json (same list format).
+    # Entry format: SETUP.md "Multiple Machines"; also read from ~/.claude_karma/extra-roots.json
     extra_roots: List[dict] = Field(
         default_factory=list,
         description="Synced ~/.claude dirs of other machines to merge into this dashboard",

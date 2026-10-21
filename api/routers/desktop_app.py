@@ -69,8 +69,10 @@ _LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 _ALLOWED_FETCH_SITES = frozenset({"same-origin", "same-site", "none"})
 
 
-def _require_local(request: Request) -> None:
+def _require_local(request: Request, subject: str = "The desktop installer") -> None:
     """Guard this code-execution endpoint against remote and cross-site callers.
+
+    ``subject`` names the caller in the 403 detail for other localhost-only routers.
 
     Honest scope: this is a **localhost-only** endpoint, not an authenticated
     one. It writes an executable bundle and can register a login item, so it
@@ -115,7 +117,7 @@ def _require_local(request: Request) -> None:
         if hostname not in _LOOPBACK_HOSTS:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="The desktop installer can only be used from this machine.",
+                detail=f"{subject} can only be used from this machine.",
             )
 
     origin = request.headers.get("origin")
@@ -148,7 +150,7 @@ def _require_local(request: Request) -> None:
     if peer not in _LOOPBACK_PEERS:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="The desktop installer can only be used from this machine.",
+            detail=f"{subject} can only be used from this machine.",
         )
 
 

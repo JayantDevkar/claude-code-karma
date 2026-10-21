@@ -836,12 +836,12 @@ Create `~/.claude_karma/extra-roots.json` (or set `CLAUDE_KARMA_EXTRA_ROOTS` to 
     "path": "D:/Sync/laptop/.claude",
     "path_map": { "/home/me/code": "C:/Users/me/code" },
     "project_map": { "-home-me-scratch": "C--Users-me-code-playground" },
-    "match_by_name": true
+    "match_by_name": false
   }
 ]
 ```
 
-Only `path` is required. `name` (letters, digits, `._-`) identifies that machine; it defaults to the name of the folder containing `.claude` (`laptop` above).
+Only `path` is required. `name` (letters, digits, `._-`) identifies that machine; it defaults to the name of the folder containing `.claude` (`laptop` above). A root that is a file, duplicates another root's path, or overlaps this machine's own `~/.claude` is ignored with a warning; a path that does not exist yet (drive unmounted, sync paused) is kept. If the file fails to parse, Karma keeps the last roots it loaded and skips the "removed root" cleanup until it parses again.
 
 ### Step M3: How Sessions Are Matched to Projects
 
@@ -853,17 +853,21 @@ Each project dir from another machine joins a local project by the first rule th
 | 2 | Same git remote + subdir, read from a `karma-project.json` sidecar | Sidecar on the other machine (below) |
 | 3 | `path_map` prefix rewrite of the remote project path | Config |
 | 4 | Same encoded dir name (identical path on both machines) | Nothing |
-| 5 | Exactly one local project with the same folder name (`match_by_name`, a guess) | Nothing |
+| 5 | Exactly one local project with the same folder name (`"match_by_name": true`, off by default) | Nothing |
 
-Unmatched dirs show as their own project.
+Unmatched dirs show as their own project. Rule 5 is a guess: a remote `api` or `web` folder would silently join whichever local project shares the name, so turn it on only for a root whose projects you know.
 
-**Sidecars** make matching exact. Karma writes one into each local git project's dir (one with an `origin` remote) on every index pass, so a machine that also runs Karma needs nothing more. Machines without Karma fall back to rules 1 and 3–5.
+`path_map` prefixes are case-insensitive for Windows paths (drive letter or UNC) and case-sensitive otherwise.
+
+**Sidecars** make matching exact. A machine that runs Karma with at least one extra root configured writes one into each local git project's dir (one with an `origin` remote) on every index pass. A machine without extra roots never writes into `~/.claude/projects`; install the `project_identity.py` hook there instead (see [Hook Configuration Reference](#hook-configuration-reference)). Machines with neither fall back to rules 1 and 3–5.
 
 ### Step M4: Verify
 
 ```bash
-curl -s "http://localhost:8020/extra-roots?refresh=true" | python3 -m json.tool
+curl -s -X POST "http://localhost:8020/extra-roots/refresh" | python3 -m json.tool
 ```
+
+`GET /extra-roots` returns the same without rescanning. Both answer only from this machine.
 
 Each project dir lists `project_encoded_name` and `matched_by`. A full re-index runs every `CLAUDE_KARMA_REINDEX_INTERVAL_SECONDS` (default 300); restart the API to pick up a new root at once.
 

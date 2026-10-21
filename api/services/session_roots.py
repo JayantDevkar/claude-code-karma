@@ -20,10 +20,13 @@ Matching, first hit wins:
    Matched on (git identity, subdir within the repo).
 3. ``path_map`` prefix rewrites applied to the remote project path.
 4. Same encoded name locally (identical path on both machines).
-5. ``match_by_name`` (default on): exactly one local project with the same
+5. ``match_by_name`` (default off): exactly one local project with the same
    folder name. Flagged as a guess.
 
 Unmatched dirs stay standalone; two roots with the same standalone name merge.
+
+Karma writes sidecars into local project dirs only while at least one root is
+configured; machines that only publish use the ``project_identity`` hook.
 """
 
 from __future__ import annotations
@@ -58,11 +61,17 @@ class SessionRoot:
     claude_base: Path
     path_map: tuple[tuple[str, str], ...] = ()
     project_map: tuple[tuple[str, str], ...] = ()
-    match_by_name: bool = True
+    match_by_name: bool = False
+    # claude_base resolved once at load time; root_for_path runs per session file
+    resolved_base: Optional[Path] = None
 
     @property
     def projects_dir(self) -> Path:
         return self.claude_base / "projects"
+
+    @property
+    def base(self) -> Path:
+        return self.resolved_base or self.claude_base
 
 
 @dataclass(frozen=True)
@@ -72,8 +81,7 @@ class RemoteDir:
     root: SessionRoot
     path: Path
     canonical: str
-    # How the canonical project was found: project_map, sidecar, path_map,
-    # same_name, folder_name (a guess) or standalone
+    # project_map, sidecar, path_map, same_name, worktree, folder_name (a guess) or standalone
     matched_by: str
     remote_project_path: Optional[str] = None
 
@@ -88,14 +96,21 @@ class _State:
     roots: tuple[SessionRoot, ...] = ()
     remote_dirs: tuple[RemoteDir, ...] = ()
     by_canonical: dict[str, list[RemoteDir]] = field(default_factory=dict)
+    # False when the last load failed and ``roots`` is the previous known-good list
+    config_ok: bool = True
 
 
 _state = _State()
 _lock = threading.Lock()
-# Bumped by clear_cache(); a build that started before a clear is discarded
-_generation = 0
-# One rebuild at a time; others keep serving the previous mapping meanwhile
-_build_lock = threading.Lock()
+_generation = 0  # bumped by clear_cache()/invalidate(); an older in-flight build is discarded
+_build_lock = threading.Lock()  # one rebuild at a time; others serve the previous mapping
+
+
+def _resolve(path: Path) -> Path:
+    try:
+        return path.resolve()
+    except OSError:
+        return path
 
 
 # =============================================================================
@@ -128,21 +143,25 @@ def _parse_root(entry: object) -> Optional[SessionRoot]:
     if not isinstance(raw_path_map, dict) or not isinstance(raw_project_map, dict):
         logger.warning("Ignoring extra root %r: path_map/project_map must be objects", name)
         return None
-    path_map = tuple(
-        (_norm_prefix(str(src)), _norm_prefix(str(dst)))
-        for src, dst in raw_path_map.items()
-        if src and dst
-    )
+    path_map = []
+    for src, dst in raw_path_map.items():
+        src_prefix = _norm_prefix(str(src)) if src else ""
+        if not src_prefix or not dst:
+            # "/" would normalise to "" and match every remote path
+            logger.warning("Ignoring path_map entry %r in extra root %r", src, name)
+            continue
+        path_map.append((src_prefix, _norm_prefix(str(dst))))
     # Longest prefix first so nested mappings win
-    path_map = tuple(sorted(path_map, key=lambda kv: len(kv[0]), reverse=True))
+    path_map.sort(key=lambda kv: len(kv[0]), reverse=True)
     project_map = tuple((str(k), str(v)) for k, v in raw_project_map.items() if k and v)
 
     return SessionRoot(
         name=name,
         claude_base=base,
-        path_map=path_map,
+        path_map=tuple(path_map),
         project_map=project_map,
-        match_by_name=bool(entry.get("match_by_name", True)),
+        match_by_name=bool(entry.get("match_by_name", False)),
+        resolved_base=_resolve(base),
     )
 
 
@@ -152,24 +171,34 @@ def roots_file() -> Path:
 
 
 def _load_root_entries() -> list:
+    """Configured root entries. Raises when the roots file is unreadable or malformed.
+
+    A mid-edit or corrupt file must not look like "no roots": the indexer would
+    then drop every synced session as belonging to a removed root.
+    """
     entries = list(settings.extra_roots or [])
     path = roots_file()
     if path.is_file():
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-            if isinstance(data, list):
-                entries.extend(data)
-            else:
-                logger.warning("%s must hold a JSON list", path)
-        except (OSError, ValueError) as e:
-            logger.warning("Cannot read %s: %s", path, e)
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(data, list):
+            raise ValueError(f"{path} must hold a JSON list")
+        entries.extend(data)
     return entries
 
 
+def _is_within(path: Path, other: Path) -> bool:
+    try:
+        path.relative_to(other)
+        return True
+    except ValueError:
+        return False
+
+
 def _load_roots() -> tuple[SessionRoot, ...]:
-    local = settings.claude_base.resolve() if settings.claude_base.exists() else None
+    local = _resolve(settings.claude_base)
     roots: list[SessionRoot] = []
-    seen: set[str] = set()
+    seen_names: set[str] = set()
+    seen_paths: set[Path] = set()
     for entry in _load_root_entries():
         try:
             root = _parse_root(entry)
@@ -178,13 +207,20 @@ def _load_roots() -> tuple[SessionRoot, ...]:
             continue
         if root is None:
             continue
-        if root.name in seen:
+        if root.name in seen_names:
             logger.warning("Ignoring duplicate extra root name %r", root.name)
             continue
-        if local is not None and root.claude_base.exists() and root.claude_base.resolve() == local:
-            logger.warning("Ignoring extra root %r: it is this machine's ~/.claude", root.name)
+        if root.base in seen_paths:
+            logger.warning("Ignoring extra root %r: same path as an earlier root", root.name)
             continue
-        seen.add(root.name)
+        if _is_within(root.base, local) or _is_within(local, root.base):
+            logger.warning("Ignoring extra root %r: overlaps this machine's ~/.claude", root.name)
+            continue
+        if root.claude_base.is_file():
+            logger.warning("Ignoring extra root %r: %s is a file", root.name, root.claude_base)
+            continue
+        seen_names.add(root.name)
+        seen_paths.add(root.base)
         roots.append(root)
     return tuple(roots)
 
@@ -275,12 +311,16 @@ def _identity_key(sidecar: Optional[dict]) -> Optional[tuple[str, str]]:
 # =============================================================================
 
 
+_WINDOWS_PREFIX_RE = re.compile(r"^(?:[A-Za-z]:/|//)")
+
+
 def _apply_path_map(path: str, path_map: tuple[tuple[str, str], ...]) -> Optional[str]:
     p = _norm_prefix(path)
-    folded = p.lower()
     for src, dst in path_map:
-        prefix = src.lower()
-        if folded == prefix or folded.startswith(prefix + "/"):
+        # Windows paths (drive or UNC) are case-insensitive; POSIX ones are not
+        fold = _WINDOWS_PREFIX_RE.match(src) is not None
+        haystack, prefix = (p.lower(), src.lower()) if fold else (p, src)
+        if haystack == prefix or haystack.startswith(prefix + "/"):
             return dst + p[len(src) :]
     return None
 
@@ -299,6 +339,7 @@ def _local_index() -> tuple[
 
     by_lower: dict[str, str] = {}
     by_identity: dict[tuple[str, str], str] = {}
+    ambiguous: set[tuple[str, str]] = set()  # identity claimed by two local clones
     # folder name -> [(encoded name, git identity or None)]
     by_folder: dict[str, list[tuple[str, Optional[str]]]] = {}
 
@@ -313,10 +354,15 @@ def _local_index() -> tuple[
         sidecar = read_sidecar(d)
         key = _identity_key(sidecar)
         if key:
-            by_identity.setdefault(key, d.name)
+            if key in by_identity:
+                ambiguous.add(key)
+            else:
+                by_identity[key] = d.name
         path = (sidecar or {}).get("project_path") or Project._extract_real_path_from_sessions(d)
         if path:
             by_folder.setdefault(_folder_name(path), []).append((d.name, key[0] if key else None))
+    for key in ambiguous:
+        del by_identity[key]
     return by_lower, by_identity, by_folder
 
 
@@ -431,13 +477,13 @@ def _refresh(force: bool = False) -> _State:
         if not force and state.built_at and time.time() - state.built_at < _CACHE_TTL:
             return state  # built while we waited
         generation = _generation
-        # Disk I/O happens outside _lock. On failure keep the last known roots: an
-        # empty root list would make the indexer treat every root as removed.
+        # Disk I/O happens outside _lock. On failure keep the last known roots (see _load_root_entries)
+        config_ok = True
         try:
             roots = _load_roots()
         except Exception as e:
-            logger.warning("Failed to load extra session roots: %s", e)
-            roots = state.roots
+            logger.warning("Failed to load extra session roots, keeping the previous list: %s", e)
+            roots, config_ok = state.roots, False
         try:
             remote_dirs = _build(roots)
         except Exception as e:  # never break local views over a bad remote
@@ -447,7 +493,11 @@ def _refresh(force: bool = False) -> _State:
         for rd in remote_dirs:
             by_canonical.setdefault(rd.canonical, []).append(rd)
         new_state = _State(
-            built_at=time.time(), roots=roots, remote_dirs=remote_dirs, by_canonical=by_canonical
+            built_at=time.time(),
+            roots=roots,
+            remote_dirs=remote_dirs,
+            by_canonical=by_canonical,
+            config_ok=config_ok,
         )
         with _lock:
             stale = generation != _generation
@@ -462,11 +512,24 @@ def _refresh(force: bool = False) -> _State:
 
 
 def clear_cache() -> None:
-    """Forget roots and mappings (tests, or after editing the roots config)."""
+    """Forget roots and mappings entirely (tests)."""
     global _state, _generation
     with _lock:
         _generation += 1
         _state = _State()
+
+
+def invalidate() -> None:
+    """Re-read the config and rescan on the next call, keeping the last roots as a fallback."""
+    global _state, _generation
+    with _lock:
+        _generation += 1
+        _state = _State(
+            roots=_state.roots,
+            remote_dirs=_state.remote_dirs,
+            by_canonical=_state.by_canonical,
+            config_ok=_state.config_ok,
+        )
 
 
 # =============================================================================
@@ -476,6 +539,11 @@ def clear_cache() -> None:
 
 def get_extra_roots() -> tuple[SessionRoot, ...]:
     return _refresh().roots
+
+
+def roots_config_ok() -> bool:
+    """False while the roots config fails to load and the previous list is being served."""
+    return _refresh().config_ok
 
 
 def get_root(name: Optional[str]) -> Optional[SessionRoot]:
@@ -570,11 +638,8 @@ def root_for_path(path: Path) -> Optional[SessionRoot]:
     except OSError:
         return None
     for root in roots:
-        try:
-            resolved.relative_to(root.claude_base.resolve())
+        if _is_within(resolved, root.base):
             return root
-        except (ValueError, OSError):
-            continue
     return None
 
 

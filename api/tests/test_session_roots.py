@@ -159,7 +159,8 @@ def test_same_encoded_name_merges(machines):
 
 
 def test_folder_name_guess_only_when_unique(machines):
-    local, remote, _ = machines
+    local, remote, configure = machines
+    configure(match_by_name=True)
     _write_session(local / "C--a-karma", "l1", "C:/a/karma")
     _write_session(remote / "-home-me-karma", "r1", "/home/me/karma")
 
@@ -172,9 +173,8 @@ def test_folder_name_guess_only_when_unique(machines):
     assert rd.matched_by == "standalone"
 
 
-def test_folder_name_guess_can_be_disabled(machines):
-    local, remote, configure = machines
-    configure(match_by_name=False)
+def test_folder_name_guess_is_off_by_default(machines):
+    local, remote, _ = machines
     _write_session(local / "C--a-karma", "l1", "C:/a/karma")
     _write_session(remote / "-home-me-karma", "r1", "/home/me/karma")
 
@@ -374,7 +374,8 @@ def test_bad_root_entry_is_skipped_not_fatal(tmp_path, monkeypatch, bad):
 
 
 def test_folder_name_guess_rejects_different_git_remotes(machines):
-    local, remote, _ = machines
+    local, remote, configure = machines
+    configure(match_by_name=True)
     _write_session(local / "C--work-api", "l1", "C:/work/api")
     _sidecar(local / "C--work-api", "b/api")
     _write_session(remote / "-home-me-api", "r1", "/home/me/api")
@@ -469,3 +470,183 @@ def test_build_failure_keeps_roots_so_sessions_survive(machines, mem_db, monkeyp
     assert [r.name for r in session_roots.get_extra_roots()] == ["laptop"]
     uuids = sorted(r[0] for r in mem_db.execute("SELECT uuid FROM sessions"))
     assert uuids == ["l1", "r1"]
+
+
+# =============================================================================
+# Second review round
+# =============================================================================
+
+
+def _roots_file(tmp_path, monkeypatch, content: str) -> Path:
+    roots = tmp_path / "extra-roots.json"
+    roots.write_text(content, encoding="utf-8")
+    monkeypatch.setattr(settings, "extra_roots", [])
+    monkeypatch.setattr(session_roots, "roots_file", lambda: roots)
+    session_roots.clear_cache()
+    return roots
+
+
+def test_malformed_roots_file_keeps_previous_roots_and_sessions(tmp_path, monkeypatch, mem_db):
+    local = tmp_path / "local" / ".claude"
+    (local / "projects").mkdir(parents=True)
+    monkeypatch.setattr(settings, "claude_base", local)
+    remote = tmp_path / "sync" / "laptop" / ".claude"
+    _write_session(remote / "projects" / "-home-me-solo", "r1", "/home/me/solo")
+    roots = _roots_file(
+        tmp_path, monkeypatch, json.dumps([{"name": "laptop", "path": str(remote)}])
+    )
+    indexer.sync_all_projects(mem_db)
+    assert session_roots.roots_config_ok()
+
+    roots.write_text('[{"name": "laptop", ', encoding="utf-8")  # mid-edit
+    indexer.sync_all_projects(mem_db)
+
+    assert not session_roots.roots_config_ok()
+    assert [r.name for r in session_roots.get_extra_roots()] == ["laptop"]
+    assert [r[0] for r in mem_db.execute("SELECT uuid FROM sessions")] == ["r1"]
+
+    roots.write_text("[]", encoding="utf-8")  # root really removed
+    indexer.sync_all_projects(mem_db)
+    assert session_roots.roots_config_ok()
+    assert mem_db.execute("SELECT COUNT(*) FROM sessions").fetchone()[0] == 0
+
+
+def test_roots_file_must_hold_a_list(tmp_path, monkeypatch):
+    _roots_file(tmp_path, monkeypatch, '{"name": "laptop"}')
+    assert session_roots.get_extra_roots() == ()
+    assert not session_roots.roots_config_ok()
+
+
+def test_nested_duplicate_and_file_roots_are_rejected(tmp_path, monkeypatch):
+    local = tmp_path / ".claude"
+    (local / "projects").mkdir(parents=True)
+    monkeypatch.setattr(settings, "claude_base", local)
+    good = tmp_path / "sync" / "box" / ".claude"
+    (good / "projects").mkdir(parents=True)
+    a_file = tmp_path / "roots.txt"
+    a_file.write_text("x", encoding="utf-8")
+    monkeypatch.setattr(
+        settings,
+        "extra_roots",
+        [
+            {"name": "inside", "path": str(local / "projects" / "sub")},
+            {"name": "contains", "path": str(tmp_path)},
+            {"name": "good", "path": str(good)},
+            {"name": "twin", "path": str(good / "projects")},  # same dir, other spelling
+            {"name": "file", "path": str(a_file)},
+            {"name": "missing", "path": str(tmp_path / "sync" / "offline" / ".claude")},
+        ],
+    )
+    session_roots.clear_cache()
+    assert [r.name for r in session_roots.get_extra_roots()] == ["good", "missing"]
+
+
+def test_path_map_root_prefix_is_ignored(machines):
+    _, remote, configure = machines
+    configure(path_map={"/": "C:/", "/home/me": "C:/Users/me"})
+    (root,) = session_roots.get_extra_roots()
+    assert root.path_map == (("/home/me", "C:/Users/me"),)
+
+
+def test_path_map_posix_prefix_is_case_sensitive(machines):
+    local, remote, configure = machines
+    configure(path_map={"/home/Me": "C:/Users/me"})
+    _write_session(local / "C--Users-me-karma", "l1", "C:/Users/me/karma")
+    _write_session(remote / "-home-me-karma", "r1", "/home/me/karma")
+
+    (rd,) = get_remote_dirs()
+    assert rd.matched_by == "standalone"
+
+
+def test_path_map_windows_prefix_is_case_insensitive(machines):
+    local, remote, configure = machines
+    configure(path_map={"D:/Work": "/home/me"})
+    _write_session(local / "-home-me-karma", "l1", "/home/me/karma")
+    _write_session(remote / "d--work-karma", "r1", "d:/work/karma")
+
+    (rd,) = get_remote_dirs()
+    assert (rd.canonical, rd.matched_by) == ("-home-me-karma", "path_map")
+
+
+def test_identity_claimed_by_two_local_clones_is_ambiguous(machines):
+    local, remote, _ = machines
+    for name, cwd in (("C--a-karma", "C:/a/karma"), ("C--b-karma", "C:/b/karma")):
+        _write_session(local / name, name, cwd)
+        _sidecar(local / name, "o/karma")
+    _write_session(remote / "-home-me-karma", "r1", "/home/me/karma")
+    _sidecar(remote / "-home-me-karma", "o/karma")
+
+    (rd,) = get_remote_dirs()
+    assert rd.matched_by == "standalone"
+
+
+def test_partial_remote_file_is_reindexed_when_it_grows(machines, mem_db):
+    import os
+
+    _, remote, _ = machines
+    full = _write_session(remote / "-home-me-solo", "r1", "/home/me/solo")
+    data = full.read_bytes()
+    st = full.stat()
+    full.write_bytes(data[: len(data) // 2])  # copy in progress, final mtime already stamped
+    os.utime(full, (st.st_atime, st.st_mtime))
+    indexer.sync_all_projects(mem_db)
+    size_before = mem_db.execute("SELECT jsonl_size FROM sessions WHERE uuid='r1'").fetchone()[0]
+
+    full.write_bytes(data)
+    os.utime(full, (st.st_atime, st.st_mtime))
+    indexer.sync_all_projects(mem_db)
+
+    size_after = mem_db.execute("SELECT jsonl_size FROM sessions WHERE uuid='r1'").fetchone()[0]
+    assert (size_before, size_after) == (len(data) // 2, len(data))
+
+
+def test_no_roots_means_no_sidecar_write(tmp_path, monkeypatch, mem_db):
+    local = tmp_path / ".claude"
+    (local / "projects").mkdir(parents=True)
+    monkeypatch.setattr(settings, "claude_base", local)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    encoded = Project.encode_path(str(repo))
+    _write_session(local / "projects" / encoded, "l1", str(repo))
+    import services.git_identity
+    import utils
+
+    monkeypatch.setattr(services.git_identity, "read_git_identity", lambda p: "o/repo")
+    monkeypatch.setattr(utils, "resolve_git_root", lambda p: p)
+
+    monkeypatch.setattr(settings, "extra_roots", [])
+    session_roots.clear_cache()
+    indexer.sync_all_projects(mem_db)
+    assert not (local / "projects" / encoded / SIDECAR_NAME).exists()
+
+    other = tmp_path / "sync" / "laptop" / ".claude"
+    (other / "projects").mkdir(parents=True)
+    monkeypatch.setattr(settings, "extra_roots", [{"name": "laptop", "path": str(other)}])
+    session_roots.clear_cache()
+    indexer.sync_all_projects(mem_db)
+    assert read_sidecar(local / "projects" / encoded)["git_identity"] == "o/repo"
+
+
+def test_extra_roots_endpoints(machines):
+    pytest.importorskip("fastapi")
+    from fastapi.testclient import TestClient
+
+    from main import app
+
+    _, remote, _ = machines
+    _write_session(remote / "-home-me-solo", "r1", "/home/me/solo")
+    client = TestClient(app, base_url="http://localhost", client=("127.0.0.1", 50000))
+
+    body = client.get("/extra-roots").json()
+    assert body["config_ok"] is True
+    assert [r["name"] for r in body["roots"]] == ["laptop"]
+    assert body["roots"][0]["project_dirs"][0]["matched_by"] == "standalone"
+
+    _write_session(remote / "-home-me-later", "r2", "/home/me/later")
+    assert len(client.get("/extra-roots").json()["roots"][0]["project_dirs"]) == 1  # cached
+    assert len(client.post("/extra-roots/refresh").json()["roots"][0]["project_dirs"]) == 2
+
+    assert client.get("/extra-roots", headers={"host": "karma.example.com"}).status_code == 403
+    assert (
+        client.post("/extra-roots/refresh", headers={"origin": "https://evil"}).status_code == 403
+    )
