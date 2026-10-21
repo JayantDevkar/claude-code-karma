@@ -48,7 +48,8 @@ def normalize_git_url(url: Optional[str]) -> Optional[str]:
     if not url:
         return None
 
-    m = _SCP_RE.match(url) or _URL_RE.match(url)
+    # A scheme URL with a port (ssh://git@host:2222/...) would also match the scp regex
+    m = _URL_RE.match(url) if "://" in url else _SCP_RE.match(url)
     if m is None:
         return None
 
@@ -56,8 +57,10 @@ def normalize_git_url(url: Optional[str]) -> Optional[str]:
     if path.lower().endswith(".git"):
         path = path[:-4]
 
+    parts = [p for p in path.split("/") if p]
     # Azure DevOps: https://dev.azure.com/org/project/_git/repo
-    parts = [p for p in path.split("/") if p and p != "_git"]
+    if len(parts) >= 3 and parts[-2] == "_git":
+        del parts[-2]
     if len(parts) < 2:
         return None
 

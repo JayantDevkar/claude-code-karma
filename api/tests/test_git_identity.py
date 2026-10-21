@@ -51,6 +51,8 @@ from services.git_identity import normalize_git_url, read_git_identity
         # Azure DevOps — the _git segment is dropped, project/repo remains
         ("https://dev.azure.com/org/project/_git/repo", "project/repo"),
         ("git@ssh.dev.azure.com:v3/org/project/repo", "project/repo"),
+        # A repo literally named _git keeps its name
+        ("https://github.com/owner/_git", "owner/_git"),
     ],
 )
 def test_normalize_git_url_happy_paths(url, expected):
@@ -67,6 +69,7 @@ def test_normalize_git_url_happy_paths(url, expected):
         "https://github.com/",  # no owner/repo
         "https://github.com/onlyone",  # only one segment
         "git@github.com:",  # scp-style with empty path
+        "ssh://git@host:2222/repo.git",  # port must not be read as the owner
     ],
 )
 def test_normalize_git_url_rejects_garbage(url):
