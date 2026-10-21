@@ -44,8 +44,9 @@ jobs:
         # project still claims (3.9, for the hook scripts). One 3.9 leg enforces
         # that -- is_relative_to, str.startswith(tuple) and the __future__
         # annotations must all keep working there.
+        # Pinned: ubuntu-latest is 26.04, which ships no 3.9 toolcache.
         include:
-          - os: ubuntu-latest
+          - os: ubuntu-24.04
             python-version: '3.9'
     runs-on: ${{ matrix.os }}
 
@@ -84,7 +85,7 @@ jobs:
           python-version: '3.12'
 
       - name: Install dependencies
-        run: python -m pip install --upgrade pip ruff pytest fastapi pydantic pydantic-settings
+        run: python -m pip install --upgrade pip ruff pytest -r api/requirements.txt
 
       # The endpoint code and its guard live in api/, not scripts/; without this
       # a path-filtered run could green-tick an untested change to either.
