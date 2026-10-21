@@ -1,0 +1,38 @@
+name: Hooks Tests
+
+on:
+  push:
+    branches: [main]
+    paths: ['hooks/**']
+  pull_request:
+    branches: [main]
+    paths: ['hooks/**']
+
+jobs:
+  test:
+    name: ${{ matrix.os }} / Python ${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Hook scripts are stdlib-only and must keep running on 3.9 (ubuntu-24.04: 26.04 has no 3.9).
+          - os: ubuntu-24.04
+            python-version: '3.9'
+          - os: ubuntu-latest
+            python-version: '3.12'
+          - os: macos-latest
+            python-version: '3.12'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install pytest
+        run: python -m pip install --upgrade pip pytest
+
+      - name: Run hook tests
+        run: python -m pytest hooks/tests -v
