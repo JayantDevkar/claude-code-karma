@@ -32,6 +32,21 @@ def _isolate_claude_base(tmp_path_factory, monkeypatch):
     monkeypatch.setattr(settings, "claude_base", tmp_path_factory.mktemp("claude_base"))
 
 
+@pytest.fixture(autouse=True)
+def _isolate_karma_base(tmp_path_factory, monkeypatch):
+    """Redirect karma_base (title cache, metadata.db) to a temp dir and drop any writer connection."""
+    from config import Settings
+    from db import connection
+
+    karma_dir = tmp_path_factory.mktemp("karma_base")
+    monkeypatch.setattr(Settings, "karma_base", property(lambda self: karma_dir))
+    connection._writer = None
+    yield
+    if connection._writer is not None:
+        connection._writer.close()
+    connection._writer = None
+
+
 @pytest.fixture
 def mock_claude_base(tmp_path, monkeypatch):
     """
