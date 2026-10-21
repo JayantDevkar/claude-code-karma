@@ -19,7 +19,12 @@ from command_helpers import classify_invocation, is_command_category, is_skill_c
 from config import FILE_TOOL_MAPPINGS
 from models import AssistantMessage, Session, ToolUseBlock, UserMessage
 from models.conversation import ConversationEntity
-from utils import FileOperation, extract_file_operation, normalize_key
+from utils import (
+    FileOperation,
+    extract_file_operation,
+    normalize_key,
+    prompt_from_user_message,
+)
 
 
 @dataclass
@@ -278,12 +283,11 @@ def collect_session_data(session: Session, include_subagents: bool = False) -> S
 
         # User message processing
         if isinstance(msg, UserMessage):
-            # Initial prompt (first user message that isn't a tool result)
+            # Initial prompt (first user message holding a real prompt)
             if data.initial_prompt is None:
-                content = msg.content or ""
-                # Skip tool result messages
-                if not (content.strip().startswith("{") and "'tool_use_id':" in content):
-                    data.initial_prompt = content[:5000] if content else None
+                prompt = prompt_from_user_message(msg)
+                if prompt:
+                    data.initial_prompt = prompt[:5000]
 
         # Assistant message processing
         elif isinstance(msg, AssistantMessage):

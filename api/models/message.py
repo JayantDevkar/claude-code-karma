@@ -78,6 +78,11 @@ class UserMessage(MessageBase):
         default=False,
         description="True if content is internal (local commands, task notifications, etc)",
     )
+    is_meta: bool = Field(
+        default=False,
+        alias="isMeta",
+        description="True if Claude Code marked the message as meta (not typed by the user)",
+    )
 
     @model_validator(mode="before")
     @classmethod
