@@ -3,10 +3,12 @@ name: Hooks Tests
 on:
   push:
     branches: [main]
-    paths: ['hooks/**']
+    paths: &hook_paths
+      - 'hooks/**'
+      - '.github/workflows/hooks-tests.yml'
   pull_request:
     branches: [main]
-    paths: ['hooks/**']
+    paths: *hook_paths
 
 jobs:
   test:
