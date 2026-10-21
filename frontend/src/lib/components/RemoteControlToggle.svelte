@@ -30,9 +30,7 @@
 	const COOLDOWN_MS = 1200;
 	const STAGED_TIMEOUT_MS = 15_000;
 	const MENU_TIMEOUT_MS = 40_000; // "go finish it in your terminal" — give more room
-	// The backend types /remote-control at any status except these: a dialog is
-	// open (its trailing Enter could answer it), no REPL yet, or the process is
-	// gone. During a tool run the slash command simply queues.
+	// The backend types /remote-control at any status except these (open dialog, no REPL, no process).
 	const BLOCKED = new Set<LiveSessionStatus>(['waiting', 'starting', 'ended']);
 	const CLAUDE_URL = /^https:\/\/claude\.ai\//i;
 
@@ -139,8 +137,7 @@
 					announcement = `Remote Control ${data.state}`;
 					later(() => (feedback = 'idle'), 2500);
 				} else if (data.method === 'menu-open') {
-					// "off" click: the disconnect menu is open in the terminal —
-					// the user finishes it there; our poll flips the pill to off.
+					// "off" click: the user finishes the disconnect menu in the terminal; our poll flips the pill.
 					stagedBaseline = rcState;
 					menuOpen = true;
 					announcement = 'Disconnect menu opened in your terminal';
@@ -156,8 +153,7 @@
 					later(() => (feedback = 'idle'), 4000);
 				}
 			} else if (res.status === 409) {
-				// Transient: session went busy between poll and click, or another
-				// toggle is running, or state unreadable. Retryable, not broken.
+				// Transient (busy, another toggle running, or state unreadable): retryable.
 				feedback = 'retry';
 				detailOverride = data?.detail ?? 'Session is busy — try again in a moment.';
 				announcement = 'Session busy — try again';
@@ -187,7 +183,6 @@
 		type="button"
 		class="rc-toggle"
 		onclick={toggle}
-		disabled={!canToggle}
 		aria-disabled={!canToggle}
 		role={isUnknown ? undefined : 'switch'}
 		aria-checked={isUnknown ? undefined : isOn}
@@ -296,7 +291,7 @@
 		border-left: 1px solid color-mix(in srgb, var(--accent) 24%, transparent);
 		color: var(--accent);
 	}
-	.rc-on .rc-toggle:not(:disabled):hover,
+	.rc-on .rc-toggle:not([aria-disabled='true']):hover,
 	.rc-open:hover {
 		background: color-mix(in srgb, var(--accent) 12%, transparent);
 		color: var(--accent);
@@ -338,7 +333,7 @@
 	}
 
 	/* Disabled toggle: no dimming of the pill — only the cursor + no hover. */
-	.rc-toggle:disabled {
+	.rc-toggle[aria-disabled='true'] {
 		cursor: not-allowed;
 	}
 

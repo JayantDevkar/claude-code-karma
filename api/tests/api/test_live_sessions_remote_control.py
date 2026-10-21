@@ -340,19 +340,26 @@ def test_type_command_refuses_without_terminal(monkeypatch):
 
 
 @pytest.mark.skipif(shutil.which("tmux") is None, reason="tmux not installed")
-def test_pane_ownership_against_real_tmux():
+def test_pane_ownership_against_real_tmux(monkeypatch):
     """The mocked pane tests can't catch a wrong `display-message` invocation.
 
     This drives a throwaway tmux session end to end, so a bad flag or format
     string shows up here instead of silently withholding the toggle from every
     tmux user (review). Never touches the user's own sessions.
     """
+    import tempfile
+
     import services.remote_control as rc
 
+    # private tmux server (short /tmp path: macOS caps socket path length)
+    tmpdir = tempfile.mkdtemp(prefix="krc", dir="/tmp")
+    monkeypatch.setenv("TMUX_TMPDIR", tmpdir)
+    monkeypatch.delenv("TMUX", raising=False)
     name = f"karma-rc-test-{os.getpid()}"
-    subprocess.run(["tmux", "kill-session", "-t", name], capture_output=True)
     created = subprocess.run(["tmux", "new-session", "-d", "-s", name], capture_output=True)
     if created.returncode != 0:
+        subprocess.run(["tmux", "kill-server"], capture_output=True)
+        shutil.rmtree(tmpdir, ignore_errors=True)
         pytest.skip("could not start a tmux server in this environment")
     try:
         pane = subprocess.run(
@@ -371,14 +378,19 @@ def test_pane_ownership_against_real_tmux():
         # the module's own probe must agree with tmux
         assert rc._tmux_pane_pid(pane) == pane_pid
 
-        # the pane's process, and a descendant of it (claude sits under the
-        # pane's shell in the real setup), are both owned
-        rc._pane_cache.clear()
-        assert rc._pane_owns_pid(pane, pane_pid) is True
+        # the pane's process and a descendant of it are both owned
+        owned = False
+        for _ in range(30):
+            rc._pane_cache.clear()  # a negative answer is cached for the TTL
+            owned = rc._pane_owns_pid(pane, pane_pid)
+            if owned:
+                break
+            time.sleep(0.1)
+        assert owned is True
 
         subprocess.run(["tmux", "send-keys", "-t", pane, "sleep 30", "Enter"], capture_output=True)
         child = None
-        for _ in range(20):
+        for _ in range(30):
             out = subprocess.run(
                 ["pgrep", "-P", str(pane_pid)], capture_output=True, text=True
             ).stdout.split()
@@ -386,9 +398,9 @@ def test_pane_ownership_against_real_tmux():
                 child = int(out[0])
                 break
             time.sleep(0.1)
-        if child:
-            rc._pane_cache.clear()
-            assert rc._pane_owns_pid(pane, child) is True
+        assert child is not None, "no process was spawned inside the pane"
+        rc._pane_cache.clear()
+        assert rc._pane_owns_pid(pane, child) is True
 
         # and unrelated / unresolvable things are not
         rc._pane_cache.clear()
@@ -398,7 +410,8 @@ def test_pane_ownership_against_real_tmux():
         rc._pane_cache.clear()
         assert rc._pane_owns_pid("%99999", pane_pid) is False
     finally:
-        subprocess.run(["tmux", "kill-session", "-t", name], capture_output=True)
+        subprocess.run(["tmux", "kill-server"], capture_output=True)
+        shutil.rmtree(tmpdir, ignore_errors=True)
 
 
 # ===========================================================================
@@ -516,8 +529,7 @@ def test_ended_session_409_resume_hint(client):
 
 
 def test_mid_turn_active_is_allowed(client, monkeypatch):
-    # ACTIVE (a tool ran in the last 30s) is sendable now — Claude Code queues
-    # the slash command if a tool is genuinely still running.
+    # ACTIVE is sendable: Claude Code queues the slash command if a tool is still running.
     from routers import live_sessions
 
     monkeypatch.setattr(

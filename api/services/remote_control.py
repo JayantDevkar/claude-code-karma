@@ -55,11 +55,7 @@ from services.terminal_focus import (
 # The slash command that controls Remote Control from inside a session.
 RC_COMMAND = "/remote-control"
 
-# The connect/disconnect line can be anywhere — a 20h session buries it under
-# megabytes of tool output — so the whole transcript is scanned, capped at
-# _MAX_SCAN_BYTES (beyond that, best-effort tail of _TAIL_BYTES). The strict
-# JSON match means conversation text that merely contains "bridge_status"
-# (this repo's own code, review notes) is ignored (review #1, #14).
+# Scan the whole transcript up to _MAX_SCAN_BYTES (then best-effort tail); strict JSON match ignores prose mentioning bridge_status.
 _MAX_SCAN_BYTES = 48 * 1024 * 1024
 _TAIL_BYTES = 2 * 1024 * 1024
 
@@ -88,8 +84,7 @@ _ON_MARKERS = ("is active", "session is active", "remote control is on")
 # Capability gate
 # ---------------------------------------------------------------------------
 
-# Pane-ownership probes shell out to tmux/ps, and the gate runs on a polled
-# endpoint, so results are cached for a beat like terminal_focus's pid probe.
+# Pane-ownership probes shell out to tmux/ps on a polled endpoint, so results are briefly cached.
 _PANE_TTL_SECONDS = 5.0
 _MAX_PID_ANCESTRY = 8
 _pane_cache: Dict[Tuple[str, int], Tuple[float, bool]] = {}
@@ -213,12 +208,7 @@ def _within_projects(path: Path, projects_dir: Optional[Path]) -> bool:
     return real == base_real or base_real in real.parents
 
 
-# The scan result is memoized on (path, st_mtime_ns, st_size). The single-
-# session GET that reads RC state is polled once a second per open tab, and in
-# the common case (RC never used) there is no bridge_status line anywhere, so
-# every uncached hit would re-read and decode the whole multi-MB chain. A JSONL
-# transcript is append-only: unchanged mtime+size means unchanged content, so a
-# quiet session is scanned exactly once (review).
+# Scan results are memoized on (path, mtime_ns, size) since the transcript is append-only and this is polled every second.
 _SCAN_CACHE_MAX = 256
 _scan_cache: "OrderedDict[str, Tuple[Tuple[int, int], Optional[Dict[str, Any]]]]" = OrderedDict()
 _scan_cache_lock = threading.Lock()
@@ -340,13 +330,7 @@ def read_remote_control_state(
 # ---------------------------------------------------------------------------
 # Typing /remote-control into the session's terminal
 # ---------------------------------------------------------------------------
-#
-# Only the *type the command* direction is automated. Turning RC OFF means
-# navigating Claude Code's interactive "Disconnect Remote Control" menu, and
-# nothing can drive that menu reliably from outside the process without the
-# macOS Accessibility grant (System Events) — which is a machine-wide
-# "any AppleScript may type" switch and fires stray keystrokes at the worst
-# times. So OFF just opens the menu and raises the terminal for the user.
+# Only typing the command is automated; OFF opens the Disconnect menu and raises the terminal, since driving it needs a machine-wide Accessibility grant.
 
 
 def _err(method: str, detail: str) -> Dict[str, Any]:

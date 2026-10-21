@@ -601,33 +601,20 @@ def focus_session_terminal(
     return TerminalFocusResult(**result)
 
 
-# /remote-control is typed into a session at *any* status except these three:
-#   WAITING_INPUT — a permission / question / plan dialog is open; the trailing
-#                   Enter of the injected command could select an answer.
-#   STARTING      — no REPL yet, the keystrokes would be lost.
-#   ENDED         — no live process to type into (also caught earlier, with a
-#                   resume hint).
-# ACTIVE is deliberately allowed: "a tool ran in the last 30s" doesn't mean one
-# is running right now, and if one is, Claude Code queues the slash command
-# until it finishes. Gating on ACTIVE (and, earlier, IDLE — review #2) made the
-# toggle feel dead on exactly the live sessions you'd reach for it on.
+# Typed at any status except these (open dialog, no REPL yet, no process); ACTIVE is allowed since Claude Code queues the command.
 _RC_BLOCKED_STATUSES = {
     SessionStatus.WAITING_INPUT,
     SessionStatus.STARTING,
     SessionStatus.ENDED,
 }
 
-# Confirm-poll budget. Reads the transcript BEFORE the first sleep (review #17)
-# and is hard-bounded (review #3).
+# Confirm-poll budget: reads the transcript before the first sleep and is hard-bounded.
 _RC_CONFIRM_ATTEMPTS = 6
 _RC_CONFIRM_INTERVAL = 0.5
-# After typing /remote-control on a session we believe is ON, wait this long
-# then re-read the transcript: a fresh "is active" line means it was actually
-# OFF and we just turned it on (not "opened the disconnect menu").
+# Wait this long after typing on a believed-ON session, then re-read: a fresh "is active" line means it was OFF.
 _RC_MENU_RENDER_WAIT = 1.0
 
-# Serializes every Remote Control toggle in this process: one keystroke sequence
-# into one terminal at a time, no pile-up under repeated clicks (review #3, #8).
+# Serializes toggles in this process: one keystroke sequence into one terminal at a time.
 _rc_lock = asyncio.Lock()
 
 _SESSION_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$")
@@ -706,8 +693,9 @@ async def toggle_session_remote_control(
 
     Claude Code has no API for this — the only lever is the ``/remote-control``
     slash command typed inside the session (tmux / macOS Terminal.app / iTerm2).
-    Turning it **on** is one command; turning it **off** types the command and
-    then navigates the "Disconnect Remote Control" menu it opens.
+    Turning it **on** is one command; turning it **off** types the command, and
+    Karma opens the "Disconnect Remote Control" menu and raises the terminal for
+    the user to finish.
 
     Honest by construction: ``sent=false`` means nothing was typed; ``sent=true,
     confirmed=false`` means keys went but the transcript hasn't caught up.
@@ -737,7 +725,7 @@ async def toggle_session_remote_control(
                     "It may predate terminal tracking, or was started without a TTY."
                 ),
             )
-        if not can_send_remote_control(terminal_dict):
+        if not await asyncio.to_thread(can_send_remote_control, terminal_dict):
             raise HTTPException(
                 status_code=400,
                 detail=(
@@ -810,23 +798,14 @@ async def toggle_session_remote_control(
         if body.desired == "on":
             final = await _rc_poll_state(read_state, "on")
             if final["state"] != "on":
-                # Unconfirmed ON has two readings, and we can't tell them apart
-                # from the transcript: either the connect is just slow, or the
-                # "off" we acted on was stale (a session launched with
-                # --remote-control is on but never wrote a bridge_status line)
-                # and the command opened the *disconnect* menu instead. Nothing
-                # here sends Esc, so that menu would sit open in an unfocused
-                # terminal and the user's next Enter there would pick an item.
-                # Raise the terminal like the OFF path rather than leave it.
+                # Unconfirmed ON may be a stale "off" that opened the disconnect menu, so raise the terminal like the OFF path.
                 focus = await asyncio.to_thread(focus_terminal, terminal_dict)
                 raised = (
                     " and brought its terminal to the front"
                     if focus.get("focused")
                     else " — check its terminal"
                 )
-                # Not "menu-open": the frontend reserves that for the OFF click.
-                # Here the honest read is "sent, unconfirmed" — the caveat about
-                # a possibly-open menu rides along in `detail`.
+                # Not "menu-open" (reserved for the OFF click): this is sent-but-unconfirmed, caveat in `detail`.
                 return RemoteControlToggleResult(
                     sent=True,
                     method=typed["method"],
@@ -841,9 +820,7 @@ async def toggle_session_remote_control(
                 )
             return _rc_result(typed, final, "on")
 
-        # desired == "off": typing /remote-control opens the "Disconnect Remote
-        # Control" menu (RC has no headless off). Karma doesn't navigate it —
-        # it raises the terminal and the user picks "Disconnect this session".
+        # desired == "off": the command opens the Disconnect menu; Karma raises the terminal and the user picks.
         await asyncio.sleep(_RC_MENU_RENDER_WAIT)
         mid = await asyncio.to_thread(read_state)
         if mid["state"] == "off":
@@ -854,8 +831,7 @@ async def toggle_session_remote_control(
             and current.get("at")
             and str(mid["at"]) > str(current["at"])
         ):
-            # A NEW "is active" line appeared: the transcript was stale, RC was
-            # actually OFF and the command just turned it ON — no menu opened.
+            # A new "is active" line: RC was actually OFF and the command turned it ON, no menu.
             return RemoteControlToggleResult(
                 sent=True,
                 method=typed["method"],
