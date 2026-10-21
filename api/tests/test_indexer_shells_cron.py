@@ -16,6 +16,7 @@ tmp_path so we don't depend on any real session being present on disk.
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 import sys
 from datetime import datetime, timedelta, timezone
@@ -109,6 +110,16 @@ def _tool_result(tool_use_id: str, content: str, ts: str = _ts(0, 1)) -> Dict[st
             "role": "user",
             "content": [{"type": "tool_result", "tool_use_id": tool_use_id, "content": content}],
         },
+    }
+
+
+def _api_request_blob(blocks: List[Dict[str, Any]], role: str = "assistant") -> Dict[str, Any]:
+    """Replay line as current Claude Code writes it: no timestamp, no uuid."""
+    return {
+        "type": "api-request-blob",
+        "hash": "blobhash",
+        "sessionId": "s1",
+        "message": {"role": role, "content": blocks},
     }
 
 
@@ -416,6 +427,119 @@ class TestExtraction:
         )
         shells, _, _ = extract_shells_and_cron(jsonl, "s1", session_ended=False)
         assert shells[0]["shell_id"] == "aaa123"
+
+
+# ============================================================================
+# api-request-blob replay lines (#124)
+# ============================================================================
+
+_BG_INPUT = {"command": "sleep 540; echo timer-done", "run_in_background": True, "timeout": 600000}
+
+
+class TestApiRequestBlobReplay:
+    def _spawn_with_replay(self, path: Path) -> Path:
+        return _write_jsonl(
+            path,
+            [
+                _assistant_tool_use("Bash", "toolu_bg", _BG_INPUT, ts=_ts(0), msg_uuid="msg-spawn"),
+                _api_request_blob(
+                    [
+                        {"type": "thinking", "thinking": "start a timer", "signature": "sig"},
+                        {"type": "tool_use", "id": "toolu_bg", "name": "Bash", "input": _BG_INPUT},
+                    ]
+                ),
+                _tool_result("toolu_bg", "Command running in background with ID: blob0001."),
+                _api_request_blob(
+                    [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "toolu_bg",
+                            "content": "Command running in background with ID: blob0001.",
+                        }
+                    ],
+                    role="user",
+                ),
+                {
+                    "type": "queue-operation",
+                    "operation": "enqueue",
+                    "timestamp": _ts(2),
+                    "content": "next prompt",
+                },
+            ],
+        )
+
+    def test_api_request_blob_replay_keeps_spawned_at(self, tmp_path):
+        jsonl = self._spawn_with_replay(tmp_path / "s.jsonl")
+        shells, polls, _ = extract_shells_and_cron(jsonl, "s1", session_ended=False)
+        assert len(shells) == 1
+        assert shells[0]["spawned_at"] == _ts(0)
+        assert shells[0]["spawn_message_uuid"] == "msg-spawn"
+        assert shells[0]["shell_id"] == "blob0001"
+        assert polls == []
+
+    def test_api_request_blob_tool_result_not_double_counted(self, tmp_path):
+        jsonl = _write_jsonl(
+            tmp_path / "s.jsonl",
+            [
+                _assistant_tool_use("Bash", "toolu_bg", _BG_INPUT, ts=_ts(0)),
+                _tool_result("toolu_bg", "Command running in background with ID: shellxyz."),
+                _assistant_tool_use(
+                    "BashOutput", "toolu_p1", {"shell_id": "shellxyz"}, ts=_ts(1), msg_uuid="m1"
+                ),
+                _tool_result("toolu_p1", "building..."),
+                _api_request_blob(
+                    [
+                        {
+                            "type": "tool_use",
+                            "id": "toolu_p1",
+                            "name": "BashOutput",
+                            "input": {"shell_id": "shellxyz"},
+                        }
+                    ]
+                ),
+                _api_request_blob(
+                    [{"type": "tool_result", "tool_use_id": "toolu_p1", "content": "building..."}],
+                    role="user",
+                ),
+            ],
+        )
+        shells, polls, _ = extract_shells_and_cron(jsonl, "s1", session_ended=False)
+        assert len(shells) == 1
+        assert shells[0]["poll_count"] == 1
+        assert shells[0]["total_output_bytes"] == len("building...")
+        assert len(polls) == 1
+        assert polls[0]["polled_at"] == _ts(1)
+
+    def test_persist_with_blob_lines_does_not_raise(self, mem_db, tmp_path):
+        _seed_session(mem_db)
+        jsonl = self._spawn_with_replay(tmp_path / "s.jsonl")
+        shells, polls, crons = extract_shells_and_cron(jsonl, "s1", session_ended=True)
+        persist_shells_and_cron(mem_db, "s1", shells, polls, crons)
+        rows = mem_db.execute("SELECT tool_use_id, spawned_at FROM background_shells").fetchall()
+        assert len(rows) == 1
+        assert rows[0]["tool_use_id"] == "toolu_bg"
+        assert rows[0]["spawned_at"] == _ts(0)
+
+    def test_row_without_spawned_at_is_dropped(self, mem_db, tmp_path, caplog):
+        _seed_session(mem_db)
+        spawn = _assistant_tool_use("Bash", "toolu_nots", _BG_INPUT)
+        del spawn["timestamp"]
+        jsonl = _write_jsonl(
+            tmp_path / "s.jsonl",
+            [
+                spawn,
+                _tool_result("toolu_nots", "Command running in background with ID: nots0001."),
+                _assistant_tool_use("BashOutput", "toolu_p1", {"shell_id": "nots0001"}, ts=_ts(1)),
+                _tool_result("toolu_p1", "partial"),
+            ],
+        )
+        with caplog.at_level(logging.WARNING, logger="db.indexer_shells_cron"):
+            shells, polls, crons = extract_shells_and_cron(jsonl, "s1", session_ended=True)
+        assert shells == []
+        assert polls == []
+        assert any("toolu_nots" in r.getMessage() for r in caplog.records)
+        persist_shells_and_cron(mem_db, "s1", shells, polls, crons)
+        assert mem_db.execute("SELECT COUNT(*) FROM background_shells").fetchone()[0] == 0
 
 
 # ============================================================================

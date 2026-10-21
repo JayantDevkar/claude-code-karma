@@ -234,6 +234,9 @@ def extract_shells_and_cron(
     cron_id_to_tu: Dict[str, str] = {}
 
     for obj in _iter_jsonl(jsonl_path):
+        # api-request-blob lines replay earlier blocks without a timestamp; skip anything that is not a turn
+        if obj.get("type") not in ("user", "assistant"):
+            continue
         ts = _normalize_ts(obj.get("timestamp"))
         msg = obj.get("message") or {}
         msg_uuid = obj.get("uuid")
@@ -338,6 +341,8 @@ def extract_shells_and_cron(
                 inp = c.get("input") or {}
 
                 if not tu_id:
+                    continue
+                if name in ("Bash", "Monitor") and tu_id in shells_by_tool_use:
                     continue
 
                 # Bash with run_in_background
@@ -521,6 +526,19 @@ def extract_shells_and_cron(
                     parent["poll_count"] += 1
                     parent["total_output_bytes"] += output_bytes
                     parent["last_output_at"] = poll["polled_at"]
+
+    unspawned = [tu for tu, row in shells_by_tool_use.items() if row["spawned_at"] is None]
+    if unspawned:
+        logger.warning(
+            "Dropping %d background shell(s) with no spawned_at in session %s: %s",
+            len(unspawned),
+            session_uuid,
+            ", ".join(unspawned),
+        )
+        for tu in unspawned:
+            del shells_by_tool_use[tu]
+        dropped = set(unspawned)
+        polls = [p for p in polls if p["_parent_tool_use_id"] not in dropped]
 
     # End-of-file: any shell still running gets the session_end marker IF the
     # session has actually ended. Otherwise leave it open — the indexer will
