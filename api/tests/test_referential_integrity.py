@@ -190,6 +190,10 @@ class TestV24ReindexesLocalCommandPrompts:
         )
         for uuid, prompt in [
             ("caveat", "<local-command-caveat>The command below was run</local-command-caveat>"),
+            (
+                "command",
+                "<command-name>/clear</command-name>\n<command-message>clear</command-message>",
+            ),
             ("typed", "Fix the login bug"),
         ]:
             conn.execute(
@@ -202,7 +206,7 @@ class TestV24ReindexesLocalCommandPrompts:
         ensure_schema(conn)
 
         mtimes = dict(conn.execute("SELECT uuid, jsonl_mtime FROM sessions").fetchall())
-        assert mtimes == {"caveat": 9.0, "typed": 10.0}
+        assert mtimes == {"caveat": 9.0, "command": 9.0, "typed": 10.0}
 
 
 # ============================================================================

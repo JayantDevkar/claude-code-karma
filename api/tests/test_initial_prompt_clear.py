@@ -130,3 +130,20 @@ def test_prompt_quoting_caveat_is_kept(tmp_path: Path):
 
     assert get_initial_prompt(session) == quoted
     assert collect_session_data(session).initial_prompt == quoted
+
+
+def test_initial_prompt_endpoint_returns_typed_prompt(tmp_path: Path, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from main import app
+    from routers import sessions as sessions_router
+
+    session = _make_session(tmp_path)
+    monkeypatch.setattr(sessions_router, "find_session", lambda uuid: session)
+
+    response = TestClient(app).get("/sessions/clear-session/initial-prompt")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["content"] == PROMPT
+    assert body["timestamp"].startswith("2026-10-21T10:00:05")

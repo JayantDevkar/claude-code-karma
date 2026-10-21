@@ -119,6 +119,7 @@ from utils import (
     is_encoded_project_dir,
     normalize_timezone,
     parse_timestamp_range,
+    prompt_from_user_message,
 )
 
 router = APIRouter()
@@ -1474,15 +1475,23 @@ def get_session_initial_prompt(uuid: str, request: Request):
     if prompt_content is None:
         raise HTTPException(status_code=404, detail="No user messages found in session")
 
-    # Get timestamp from first user message for the response
+    # Timestamp and attachments come from the message that holds the prompt
+    first = None
+    prev = None
     for msg in session.iter_user_messages():
-        return InitialPrompt(
-            content=msg.content,
-            timestamp=msg.timestamp,
-            image_attachments=list(msg.image_attachments) if msg.image_attachments else [],
-        )
+        first = first or msg
+        if prompt_from_user_message(msg, prev):
+            first = msg
+            break
+        prev = msg
 
-    raise HTTPException(status_code=404, detail="No user messages found in session")
+    if first is None:
+        raise HTTPException(status_code=404, detail="No user messages found in session")
+    return InitialPrompt(
+        content=prompt_content,
+        timestamp=first.timestamp,
+        image_attachments=list(first.image_attachments) if first.image_attachments else [],
+    )
 
 
 @router.get("/{uuid}/timeline")
