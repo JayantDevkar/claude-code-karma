@@ -106,7 +106,7 @@
 				{#if subtitle}
 					<span
 						class="
-							inline-flex max-w-full break-all
+							inline-flex max-w-full [overflow-wrap:anywhere]
 							px-2 py-0.5
 							text-xs font-mono
 							text-[var(--text-muted)]
