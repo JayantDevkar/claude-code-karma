@@ -6,6 +6,7 @@ from sessions.py, subagent_sessions.py, and live_sessions.py into a single
 service with consistent error handling and return types.
 """
 
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -13,6 +14,8 @@ from typing import Optional
 from config import settings
 from models import Agent, Session
 from utils import is_encoded_project_dir
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -67,6 +70,14 @@ def find_session_with_project(uuid: str) -> Optional[SessionLookupResult]:
     Returns:
         SessionLookupResult with session and project info, or None if not found.
     """
+    from services.session_roots import find_any_remote_session, get_extra_roots
+
+    # The index knows the project and root: one stat instead of a scan over every dir
+    if get_extra_roots():
+        hit = _indexed_location(uuid)
+        if hit is not None:
+            return hit
+
     projects_dir = settings.projects_dir
     if projects_dir.exists():
         for encoded_dir in projects_dir.iterdir():
@@ -79,8 +90,6 @@ def find_session_with_project(uuid: str) -> Optional[SessionLookupResult]:
                     )
 
     # Synced from another machine: report the project it is shown under
-    from services.session_roots import find_any_remote_session
-
     remote = find_any_remote_session(uuid)
     if remote:
         rd, jsonl_path = remote
@@ -89,6 +98,35 @@ def find_session_with_project(uuid: str) -> Optional[SessionLookupResult]:
             project_encoded_name=rd.canonical,
         )
     return None
+
+
+def _indexed_location(uuid: str) -> Optional[SessionLookupResult]:
+    """Resolve a session through the SQLite index's project and source_root; None if unknown."""
+    from db.connection import sqlite_read
+    from services.session_roots import find_remote_session_jsonl
+
+    try:
+        with sqlite_read() as conn:
+            if conn is None:
+                return None
+            row = conn.execute(
+                "SELECT project_encoded_name, source_root FROM sessions WHERE uuid = ?", (uuid,)
+            ).fetchone()
+    except Exception as e:
+        logger.debug("Index lookup for %s failed, scanning instead: %s", uuid, e)
+        return None
+    if row is None:
+        return None
+    encoded_name, source_root = row[0], row[1]
+    # A local copy wins even when the index still says synced (indexed before it appeared)
+    jsonl_path = settings.projects_dir / encoded_name / f"{uuid}.jsonl"
+    if source_root is not None and not jsonl_path.exists():
+        jsonl_path = find_remote_session_jsonl(encoded_name, uuid)
+    if jsonl_path is None or not jsonl_path.exists():
+        return None  # index stale: fall back to the scan
+    return SessionLookupResult(
+        session=Session.from_path(jsonl_path), project_encoded_name=encoded_name
+    )
 
 
 def find_session(uuid: str) -> Optional[Session]:
@@ -157,9 +195,7 @@ def find_session_by_message_uuid(message_uuid: str) -> Optional[SessionLookupRes
     return None
 
 
-def _find_session_jsonl(
-    projects_dir: Path, encoded_name: str, session_uuid: str
-) -> Optional[Path]:
+def _find_session_jsonl(projects_dir: Path, encoded_name: str, session_uuid: str) -> Optional[Path]:
     """
     Find a session JSONL file, searching the project dir and its worktree dirs.
 

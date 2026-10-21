@@ -57,8 +57,8 @@ BUILTIN_AGENTS = {
 
 
 def get_custom_agents_dir() -> Path:
-    """Get the ~/.claude/agents directory."""
-    return Path.home() / ".claude" / "agents"
+    """Get the agents dir under settings.claude_base (~/.claude/agents by default)."""
+    return settings.claude_base / "agents"
 
 
 def _agent_file_exists(agents_dir: Path, name: str) -> bool:
@@ -89,14 +89,8 @@ def _get_all_project_agent_names() -> frozenset[str]:
                 continue
             encoded_names.append(encoded_dir.name)
 
-    # Remote (synced) session roots, attributed to their canonical project
-    from services.session_roots import get_remote_dirs
-
-    for rd in get_remote_dirs():
-        if rd.path.is_dir():
-            encoded_names.append(rd.canonical)
-
-    for encoded_name in dict.fromkeys(encoded_names):
+    # Synced roots add nothing here: their projects' .claude/agents dirs live on the other machine
+    for encoded_name in encoded_names:
         # Decode to real project path using Project model
         from models.project import Project
 

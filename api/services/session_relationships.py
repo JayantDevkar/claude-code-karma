@@ -43,7 +43,7 @@ def get_resolver(project_dir: Path) -> "SessionRelationshipResolver":
 
 
 def _sibling_session_dirs(project_dir: Path) -> List[Path]:
-    """Return project_dir followed by other dirs holding sessions of the same project."""
+    """All dirs holding sessions of project_dir's project, local dir first, project_dir included."""
     from config import settings
     from services.session_roots import get_remote_dirs, project_dirs_for
 
@@ -54,9 +54,9 @@ def _sibling_session_dirs(project_dir: Path) -> List[Path]:
         canonical = next((rd.canonical for rd in get_remote_dirs() if rd.path == project_dir), None)
         if canonical is None:
             return [project_dir]
-    return [project_dir] + [
-        d for d in project_dirs_for(canonical) if d != project_dir and d.is_dir()
-    ]
+    # Local first so the local copy wins duplicates, same as everywhere else
+    dirs = [d for d in project_dirs_for(canonical) if d == project_dir or d.is_dir()]
+    return dirs if project_dir in dirs else [project_dir] + dirs
 
 
 class SessionRelationshipResolver:

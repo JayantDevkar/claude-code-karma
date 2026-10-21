@@ -209,8 +209,7 @@ def get_shells_project_rollup(
 def _session_jsonl_for_cron(
     claude_projects_dir: Path, encoded_name: str, session_uuid: str
 ) -> Path:
-    """Session JSONL under `claude_projects_dir`; when missing and that dir is
-    the real Claude root, fall back to a synced copy from an extra root."""
+    """Session JSONL under `claude_projects_dir`, else a synced copy if that is the real root."""
     jsonl_path = (
         claude_projects_dir / _PROJECTS_SUBDIR / encoded_name / f"{session_uuid}.jsonl"
     )

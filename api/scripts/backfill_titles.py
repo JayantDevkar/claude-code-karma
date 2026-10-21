@@ -87,8 +87,7 @@ def main():
 
     for uuid, encoded_name, initial_prompt in sessions:
         try:
-            # Get JSONL path
-            # Local file, else a copy synced from another machine
+            # JSONL path: local file, else a copy synced from another machine
             from services.session_roots import session_jsonl_path
 
             jsonl_path = session_jsonl_path(encoded_name, uuid)

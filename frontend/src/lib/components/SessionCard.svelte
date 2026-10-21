@@ -223,22 +223,20 @@
 					{displayPrompt}
 				</p>
 			{/if}
-			{#if session.session_source === 'desktop'}
-				<div
-					class="flex items-center gap-0.5 mt-1 text-[10px] text-[var(--text-muted)]"
-					title="Claude Desktop session"
-				>
-					<Monitor size={10} strokeWidth={2} />
-					<span>Desktop</span>
-				</div>
-			{/if}
-			{#if session.machine}
-				<div
-					class="flex items-center gap-0.5 mt-1 text-[10px] text-[var(--text-muted)]"
-					title="Synced from {session.machine}"
-				>
-					<Laptop size={10} strokeWidth={2} />
-					<span>{session.machine}</span>
+			{#if session.session_source === 'desktop' || session.machine}
+				<div class="flex items-center gap-2 mt-1 text-[10px] text-[var(--text-muted)]">
+					{#if session.session_source === 'desktop'}
+						<div class="flex items-center gap-0.5" title="Claude Desktop session">
+							<Monitor size={10} strokeWidth={2} />
+							<span>Desktop</span>
+						</div>
+					{/if}
+					{#if session.machine}
+						<div class="flex items-center gap-0.5" title="Synced from {session.machine}">
+							<Laptop size={10} strokeWidth={2} />
+							<span>{session.machine}</span>
+						</div>
+					{/if}
 				</div>
 			{/if}
 		</div>

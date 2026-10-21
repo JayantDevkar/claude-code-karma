@@ -663,6 +663,151 @@ def test_no_roots_means_no_sidecar_write(tmp_path, monkeypatch, mem_db):
     assert read_sidecar(local / "projects" / encoded)["git_identity"] == "o/repo"
 
 
+# =============================================================================
+# Views: browser, detail, lookup, relationships (coverage PR)
+# =============================================================================
+
+
+def _client():
+    pytest.importorskip("fastapi")
+    from fastapi.testclient import TestClient
+
+    from main import app
+
+    return TestClient(app, base_url="http://localhost", client=("127.0.0.1", 50000))
+
+
+@pytest.fixture
+def jsonl_only(monkeypatch):
+    """Force the JSONL code paths so tests never touch the developer's metadata.db."""
+    monkeypatch.setattr(settings, "use_sqlite", False)
+
+
+def test_browser_dedupes_and_tags_synced_sessions(machines, jsonl_only):
+    local, remote, _ = machines
+    _write_session(local / "-Users-me-repo", "l1", "/Users/me/repo")
+    _write_session(remote / "-Users-me-repo", "l1", "/Users/me/repo")  # synced back
+    _write_session(remote / "-Users-me-repo", "r1", "/Users/me/repo")
+    (remote / "-Users-me-repo" / "r2.jsonl").write_text("{not json\n", encoding="utf-8")  # mid-sync
+
+    body = _client().get("/sessions/all").json()
+    by_uuid = {s["uuid"]: s["machine"] for s in body["sessions"]}
+    assert by_uuid == {"l1": None, "r1": "laptop"}
+
+
+def test_detail_reports_machine(machines, jsonl_only):
+    local, remote, _ = machines
+    _write_session(local / "-Users-me-repo", "l1", "/Users/me/repo")
+    _write_session(remote / "-Users-me-repo", "r1", "/Users/me/repo")
+
+    client = _client()
+    assert client.get("/sessions/r1").json()["machine"] == "laptop"
+    assert client.get("/sessions/l1").json()["machine"] is None
+
+
+def test_no_roots_paths_are_local(tmp_path, monkeypatch):
+    local = tmp_path / ".claude"
+    (local / "projects").mkdir(parents=True)
+    monkeypatch.setattr(settings, "claude_base", local)
+    monkeypatch.setattr(settings, "extra_roots", [])
+    session_roots.clear_cache()
+
+    assert session_jsonl_path("-x", "u1") == local / "projects" / "-x" / "u1.jsonl"
+    assert session_roots.project_dirs_for("-x") == [local / "projects" / "-x"]
+
+
+def test_indexed_location_uses_source_root(machines, mem_db, monkeypatch):
+    from contextlib import contextmanager
+
+    import db.connection
+    from services import session_lookup
+
+    local, remote, _ = machines
+    _write_session(local / "-Users-me-repo", "l1", "/Users/me/repo")
+    r1 = _write_session(remote / "-home-me-solo", "r1", "/home/me/solo")
+    indexer.sync_all_projects(mem_db)
+
+    @contextmanager
+    def fake_read():
+        yield mem_db
+
+    monkeypatch.setattr(db.connection, "sqlite_read", fake_read)
+
+    hit = session_lookup._indexed_location("r1")
+    assert (hit.session.jsonl_path, hit.project_encoded_name) == (r1, "-home-me-solo")
+    assert session_lookup._indexed_location("l1").project_encoded_name == "-Users-me-repo"
+    r1.unlink()  # index stale: caller falls back to the scan
+    assert session_lookup._indexed_location("r1") is None
+
+
+def test_short_id_prefix_hits_span_local_and_remote(machines):
+    from routers.sessions import _find_session_files
+
+    local, remote, _ = machines
+    _write_session(
+        local / "-Users-me-repo", "abcd1234-0000-0000-0000-000000000000", "/Users/me/repo"
+    )
+    _write_session(
+        remote / "-home-me-solo", "abcd5678-0000-0000-0000-000000000000", "/home/me/solo"
+    )
+    _write_session(
+        remote / "-Users-me-repo", "abcd1234-0000-0000-0000-000000000000", "/Users/me/repo"
+    )
+
+    found = sorted((p.stem[:8], name) for p, name in _find_session_files("abcd"))
+    assert found == [("abcd1234", "-Users-me-repo"), ("abcd5678", "-home-me-solo")]
+    # An exact id wins outright, as in the local loop
+    (exact,) = _find_session_files("abcd5678-0000-0000-0000-000000000000")
+    assert exact[1] == "-home-me-solo"
+
+
+def test_browser_skips_unreadable_remote_file(machines, jsonl_only):
+    local, remote, _ = machines
+    _write_session(local / "-Users-me-repo", "l1", "/Users/me/repo")
+    _write_session(remote / "-Users-me-repo", "r1", "/Users/me/repo")
+    # Opens fine, every read raises: the shape of a file a sync client holds locked
+    (remote / "-Users-me-repo" / "r2.jsonl").mkdir()
+
+    body = _client().get("/sessions/all").json()
+    assert sorted(s["uuid"] for s in body["sessions"]) == ["l1", "r1"]
+
+
+def test_find_session_with_project_uses_index_for_synced_session(machines, mem_db, monkeypatch):
+    from contextlib import contextmanager
+
+    import db.connection
+    from services import session_lookup
+
+    local, remote, _ = machines
+    _write_session(local / "-Users-me-repo", "l1", "/Users/me/repo")
+    r1 = _write_session(remote / "-home-me-solo", "r1", "/home/me/solo")
+    indexer.sync_all_projects(mem_db)
+
+    @contextmanager
+    def fake_read():
+        yield mem_db
+
+    monkeypatch.setattr(db.connection, "sqlite_read", fake_read)
+
+    hit = session_lookup.find_session_with_project("r1")
+    assert (hit.session.jsonl_path, hit.project_encoded_name) == (r1, "-home-me-solo")
+    # Local copy appears after indexing: it wins over the synced one the index points at
+    local_copy = _write_session(local / "-home-me-solo", "r1", "/home/me/solo")
+    assert session_lookup.find_session_with_project("r1").session.jsonl_path == local_copy
+
+
+def test_relationship_resolver_prefers_local_copy(machines):
+    from services.session_relationships import SessionRelationshipResolver
+
+    local, remote, _ = machines
+    _write_session(local / "-Users-me-repo", "s1", "/Users/me/repo")
+    _write_session(remote / "-Users-me-repo", "s1", "/Users/me/repo")
+
+    resolver = SessionRelationshipResolver(remote / "-Users-me-repo")
+    assert resolver.session_dirs[0] == local / "-Users-me-repo"
+    assert resolver._get_session("s1").jsonl_path == local / "-Users-me-repo" / "s1.jsonl"
+
+
 def test_extra_roots_endpoints(machines):
     pytest.importorskip("fastapi")
     from fastapi.testclient import TestClient

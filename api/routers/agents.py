@@ -475,6 +475,7 @@ async def get_agent_sessions(
                     sessions.append(
                         SessionSummary(
                             uuid=row["uuid"],
+                            machine=row.get("source_root"),
                             slug=row.get("slug"),
                             project_encoded_name=row["project_encoded_name"],
                             project_display_name=project_display_name,

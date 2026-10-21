@@ -606,7 +606,7 @@ def query_sessions_by_skill(
             s.uuid, s.slug, s.project_encoded_name, s.project_path,
             s.message_count, s.start_time, s.end_time, s.duration_seconds,
             s.models_used, s.subagent_count, s.initial_prompt,
-            s.git_branch, s.session_titles
+            s.git_branch, s.session_titles, s.source_root
         FROM sessions s
         JOIN session_skills sk ON s.uuid = sk.session_uuid
         WHERE sk.skill_name = :skill AND sk.invocation_source != 'text_detection'
@@ -2074,7 +2074,7 @@ def query_sessions_by_agent(
             s.uuid, s.slug, s.project_encoded_name, s.project_path,
             s.message_count, s.start_time, s.end_time, s.duration_seconds,
             s.models_used, s.subagent_count, s.initial_prompt,
-            s.git_branch, s.session_titles
+            s.git_branch, s.session_titles, s.source_root
         FROM sessions s
         JOIN (SELECT DISTINCT session_uuid FROM subagent_invocations WHERE subagent_type = :type) si
             ON s.uuid = si.session_uuid
@@ -2848,7 +2848,7 @@ def query_sessions_by_mcp_server(
             s.uuid, s.slug, s.project_encoded_name, s.project_path,
             s.message_count, s.start_time, s.end_time, s.duration_seconds,
             s.models_used, s.subagent_count, s.initial_prompt,
-            s.git_branch, s.session_titles,
+            s.git_branch, s.session_titles, s.source_root,
             agg.has_main, agg.has_sub, agg.agent_ids
         FROM sessions s
         JOIN aggregated_sessions agg ON s.uuid = agg.session_uuid
@@ -3333,7 +3333,7 @@ def query_sessions_by_mcp_tool(
             s.uuid, s.slug, s.project_encoded_name, s.project_path,
             s.message_count, s.start_time, s.end_time, s.duration_seconds,
             s.models_used, s.subagent_count, s.initial_prompt,
-            s.git_branch, s.session_titles,
+            s.git_branch, s.session_titles, s.source_root,
             agg.has_main, agg.has_sub, agg.agent_ids
         FROM sessions s
         JOIN aggregated_sessions agg ON s.uuid = agg.session_uuid
@@ -3811,7 +3811,7 @@ def query_sessions_by_builtin_server(
             s.uuid, s.slug, s.project_encoded_name, s.project_path,
             s.message_count, s.start_time, s.end_time, s.duration_seconds,
             s.models_used, s.subagent_count, s.initial_prompt,
-            s.git_branch, s.session_titles,
+            s.git_branch, s.session_titles, s.source_root,
             agg.has_main, agg.has_sub, agg.agent_ids
         FROM sessions s
         JOIN aggregated_sessions agg ON s.uuid = agg.session_uuid
@@ -3886,7 +3886,7 @@ def query_sessions_by_builtin_tool(
             s.uuid, s.slug, s.project_encoded_name, s.project_path,
             s.message_count, s.start_time, s.end_time, s.duration_seconds,
             s.models_used, s.subagent_count, s.initial_prompt,
-            s.git_branch, s.session_titles,
+            s.git_branch, s.session_titles, s.source_root,
             agg.has_main, agg.has_sub, agg.agent_ids
         FROM sessions s
         JOIN aggregated_sessions agg ON s.uuid = agg.session_uuid

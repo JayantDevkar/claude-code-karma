@@ -133,6 +133,7 @@ def _build_session_summary(session_data: dict) -> SessionSummary:
 
     return SessionSummary(
         uuid=session_data["uuid"],
+        machine=session_data.get("source_root"),
         slug=session_data.get("slug"),
         project_encoded_name=session_data.get("project_encoded_name"),
         project_display_name=project_display_name,

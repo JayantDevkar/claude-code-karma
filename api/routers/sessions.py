@@ -1895,6 +1895,7 @@ def _find_session_files(uuid_prefix: str) -> list[tuple[Path, str]]:
     for rd in get_remote_dirs():
         exact = rd.path / f"{uuid_prefix}.jsonl"
         if exact.exists():
+            # Same rule as the local loop: an exact id is unambiguous, prefix hits are moot
             return [(exact, rd.canonical)]
         for jsonl in rd.path.glob(f"{uuid_prefix}*.jsonl"):
             if not jsonl.name.startswith("agent-") and (rd.canonical, jsonl.stem) not in seen:

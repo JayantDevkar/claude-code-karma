@@ -620,6 +620,7 @@ async def get_skill_detail(
             sessions.append(
                 SessionSummary(
                     uuid=row["uuid"],
+                    machine=row.get("source_root"),
                     slug=row.get("slug"),
                     project_encoded_name=project_encoded_name,
                     project_slug=project_encoded_name,
@@ -714,6 +715,7 @@ def get_skill_sessions(
                     sessions.append(
                         SessionWithContext(
                             uuid=row["uuid"],
+                            machine=row.get("source_root"),
                             slug=row.get("slug"),
                             project_encoded_name=project_encoded_name,
                             project_path=project_path,
@@ -742,6 +744,7 @@ def get_skill_sessions(
 
     from command_helpers import aggregate_by_name
     from parallel import process_items_parallel
+    from services.session_roots import machine_for_path
     from utils import get_initial_prompt, list_all_projects, normalize_timezone
 
     def process_session_for_skill(session_tuple) -> SessionWithContext | None:
@@ -769,6 +772,7 @@ def get_skill_sessions(
                 initial_prompt=initial_prompt,
                 git_branches=list(session.get_git_branches()),
                 session_titles=list(session.session_titles or []),
+                machine=machine_for_path(session.jsonl_path),
             )
         except Exception:
             return None
