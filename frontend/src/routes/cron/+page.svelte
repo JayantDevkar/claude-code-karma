@@ -330,10 +330,6 @@
 	}
 </script>
 
-<svelte:head>
-	<title>Cron Jobs · Claude Karma</title>
-</svelte:head>
-
 <div class="page-wrap">
 	<!-- Page header -->
 	<PageHeader

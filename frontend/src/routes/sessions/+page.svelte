@@ -1062,10 +1062,6 @@
 	);
 </script>
 
-<svelte:head>
-	<title>Sessions | Claude Code Karma</title>
-</svelte:head>
-
 <div use:listNavigation>
 	<!-- Page Header with Breadcrumb -->
 	<PageHeader

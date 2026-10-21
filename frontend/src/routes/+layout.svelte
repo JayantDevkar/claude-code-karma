@@ -9,7 +9,8 @@
 	import SessionSwitcher from '$lib/components/SessionSwitcher.svelte';
 	import { globalKeyboard } from '$lib/actions/globalKeyboard';
 	import { globalShortcuts } from '$lib/actions/globalShortcuts';
-	import { navigating } from '$app/stores';
+	import { navigating, page } from '$app/stores';
+	import { formatTitle, routeTitle } from '$lib/page-title';
 	import { registerWebMCPTools } from '$lib/webmcp';
 	import {
 		ProjectsPageSkeleton,
@@ -108,6 +109,7 @@
 </script>
 
 <svelte:head>
+	<title>{formatTitle([$page.data.title ?? routeTitle($page.url.pathname)])}</title>
 	<link rel="icon" href={favicon} />
 </svelte:head>
 

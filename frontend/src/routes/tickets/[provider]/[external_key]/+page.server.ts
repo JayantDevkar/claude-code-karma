@@ -1,6 +1,7 @@
 import type { Ticket, TicketDetailSessionRow } from '$lib/api-types';
 import { API_BASE } from '$lib/config';
 import { safeFetch, fetchWithFallback } from '$lib/utils/api-fetch';
+import { joinTitle } from '$lib/page-title';
 
 type TicketSessionRow = TicketDetailSessionRow;
 
@@ -28,12 +29,14 @@ export async function load({ params, fetch }) {
 			sessions: [] as TicketSessionRow[],
 			provider,
 			external_key,
+			title: 'Ticket not found',
 			error: ticketResult.message ?? 'Ticket not found'
 		};
 	}
 
 	return {
 		ticket: ticketResult.data,
+		title: joinTitle([ticketResult.data.external_key, 'Tickets']),
 		sessions: sessions ?? [],
 		provider,
 		external_key,

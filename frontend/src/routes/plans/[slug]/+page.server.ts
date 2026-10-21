@@ -1,6 +1,7 @@
 import type { PlanDetail, PlanRelatedSession, PlanSessionContext } from '$lib/api-types';
 import { API_BASE } from '$lib/config';
 import { safeFetch, fetchWithFallback } from '$lib/utils/api-fetch';
+import { joinTitle } from '$lib/page-title';
 import { error } from '@sveltejs/kit';
 
 export async function load({ params, fetch }) {
@@ -37,6 +38,7 @@ export async function load({ params, fetch }) {
 	return {
 		plan: planResult.data,
 		slug,
+		title: joinTitle([planResult.data.title || slug, 'Plans']),
 		sessionContext,
 		relatedSessions
 	};

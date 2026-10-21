@@ -1,6 +1,7 @@
 import type { CommandDetailResponse } from '$lib/api-types';
 import { API_BASE } from '$lib/config';
 import { safeFetch } from '$lib/utils/api-fetch';
+import { joinTitle } from '$lib/page-title';
 
 export async function load({ params, fetch }) {
 	const commandName = decodeURIComponent(params.command_name);
@@ -12,6 +13,7 @@ export async function load({ params, fetch }) {
 
 	return {
 		commandName,
-		detail: result.ok ? result.data : null
+		detail: result.ok ? result.data : null,
+		title: joinTitle([`/${result.ok ? result.data.name : commandName}`, 'Commands'])
 	};
 }

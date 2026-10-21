@@ -6,6 +6,7 @@ import type {
 } from '$lib/api-types';
 import { API_BASE } from '$lib/config';
 import { safeFetch, fetchWithFallback } from '$lib/utils/api-fetch';
+import { joinTitle } from '$lib/page-title';
 
 export async function load({ params, fetch, url }) {
 	// Extract timestamp filters from URL (Unix milliseconds)
@@ -73,12 +74,14 @@ export async function load({ params, fetch, url }) {
 			liveSessions: [] as LiveSessionSummary[],
 			pagination: { page, perPage },
 			error: `Project not found: ${projectResult.message}`,
+			title: 'Project not found',
 			analyticsUrlParams: { startTs, endTs, tzOffset }
 		};
 	}
 
 	return {
 		project: projectResult.data,
+		title: joinTitle([projectResult.data.display_name, 'Projects']),
 		branches,
 		analytics: null, // Fetched client-side on-demand
 		archived,

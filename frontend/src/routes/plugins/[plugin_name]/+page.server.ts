@@ -1,4 +1,5 @@
 import { API_BASE } from '$lib/config';
+import { joinTitle } from '$lib/page-title';
 import type { PluginDetail } from '$lib/api-types';
 import { error } from '@sveltejs/kit';
 
@@ -17,7 +18,7 @@ export async function load({ params, fetch }) {
 		}
 
 		const plugin: PluginDetail = await res.json();
-		return { plugin };
+		return { plugin, title: joinTitle([plugin.name.split('@')[0], 'Plugins']) };
 	} catch (err) {
 		if ((err as { status?: number }).status) {
 			throw err;

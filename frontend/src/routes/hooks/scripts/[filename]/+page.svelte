@@ -64,10 +64,6 @@
 	);
 </script>
 
-<svelte:head>
-	<title>{data.filename} - Hook Script - Claude Code Karma</title>
-</svelte:head>
-
 <div class="max-w-5xl mx-auto">
 	<PageHeader
 		title={script.filename}

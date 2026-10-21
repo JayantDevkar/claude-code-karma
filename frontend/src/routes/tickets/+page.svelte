@@ -112,10 +112,6 @@
 	);
 </script>
 
-<svelte:head>
-	<title>Tickets · Claude Karma</title>
-</svelte:head>
-
 <div class="max-w-6xl mx-auto p-6 flex flex-col gap-5">
 	<PageHeader
 		title="Tickets"

@@ -1,6 +1,8 @@
 import type { LiveSessionSummary, PlanDetail, SessionTicketRow } from '$lib/api-types';
 import { API_BASE } from '$lib/config';
 import { safeFetch, fetchWithFallback } from '$lib/utils/api-fetch';
+import { getSessionDisplayName } from '$lib/utils';
+import { joinTitle } from '$lib/page-title';
 
 /**
  * Session lookup result from the fast lookup endpoint
@@ -50,6 +52,7 @@ export async function load({ params, fetch }) {
 					plan: null,
 					liveSession: matchingLiveSession,
 					isStarting: true,
+					title: joinTitle([matchingLiveSession.session_id.slice(0, 8), 'Sessions']),
 					project_id,
 					session_slug,
 					tickets: [] as SessionTicketRow[],
@@ -69,6 +72,7 @@ export async function load({ params, fetch }) {
 			project_id,
 			session_slug,
 			tickets: [] as SessionTicketRow[],
+			title: isNotFound ? 'Session not found' : 'Failed to load session',
 			error: isNotFound
 				? `Session not found: ${session_slug}`
 				: `Failed to lookup session: ${lookupResult.message}`
@@ -119,6 +123,7 @@ export async function load({ params, fetch }) {
 			project_id,
 			session_slug,
 			tickets: [] as SessionTicketRow[],
+			title: 'Failed to load session',
 			error: `Failed to load session: ${sessionResult.message}`
 		};
 	}
@@ -199,9 +204,17 @@ export async function load({ params, fetch }) {
 		tasks: tasksData
 	};
 
+	const sessionName = getSessionDisplayName(
+		sessionData.session_titles as string[] | undefined,
+		sessionLookup.slug ?? undefined,
+		sessionUuid,
+		sessionData.chain_title as string | undefined
+	);
+
 	return {
 		session,
 		plan,
+		title: joinTitle([sessionName, 'Sessions']),
 		liveSession: null,
 		isStarting: false,
 		project_id,

@@ -28,10 +28,6 @@
 	}
 </script>
 
-<svelte:head>
-	<title>Memory · Claude Code Karma</title>
-</svelte:head>
-
 <div class="memory-page">
 	<PageHeader
 		title="Memory"

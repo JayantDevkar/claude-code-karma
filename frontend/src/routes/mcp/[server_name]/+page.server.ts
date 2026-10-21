@@ -1,6 +1,7 @@
 import type { McpServerDetail } from '$lib/api-types';
 import { API_BASE } from '$lib/config';
 import { fetchWithFallback } from '$lib/utils/api-fetch';
+import { joinTitle } from '$lib/page-title';
 
 export async function load({ params, fetch }) {
 	const serverName = params.server_name;
@@ -11,5 +12,9 @@ export async function load({ params, fetch }) {
 		null
 	);
 
-	return { serverName, detail };
+	return {
+		serverName,
+		detail,
+		title: joinTitle([detail?.display_name ?? serverName, 'MCP Servers'])
+	};
 }

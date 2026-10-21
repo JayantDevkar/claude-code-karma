@@ -8,6 +8,7 @@ import type {
 } from '$lib/api-types';
 import { API_BASE } from '$lib/config';
 import { fetchWithFallback } from '$lib/utils/api-fetch';
+import { joinTitle } from '$lib/page-title';
 
 const PER_PAGE = 20;
 
@@ -68,6 +69,7 @@ export async function load({ params, fetch, url }) {
 	return {
 		subagentType,
 		detail,
+		title: joinTitle([detail?.agent_name ?? subagentType, 'Agents']),
 		history: historyData.items,
 		pagination: {
 			total: historyData.total,

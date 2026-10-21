@@ -1,5 +1,6 @@
 import { API_BASE } from '$lib/config';
 import { fetchWithFallback } from '$lib/utils/api-fetch';
+import { joinTitle } from '$lib/page-title';
 import type { HookSourceDetail } from '$lib/api-types';
 
 export async function load({ params, fetch }) {
@@ -21,5 +22,9 @@ export async function load({ params, fetch }) {
 			coverage_matrix: {}
 		}
 	);
-	return { detail: data, source_id: params.source_id };
+	return {
+		detail: data,
+		source_id: params.source_id,
+		title: joinTitle([data.source.source_name, 'Hooks'])
+	};
 }

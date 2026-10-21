@@ -8,6 +8,8 @@ import type {
 } from '$lib/api-types';
 import { API_BASE } from '$lib/config';
 import { safeFetch, fetchWithFallback } from '$lib/utils/api-fetch';
+import { cleanAgentIdForDisplay } from '$lib/utils';
+import { joinTitle } from '$lib/page-title';
 
 interface SessionLookupResult {
 	uuid: string;
@@ -43,6 +45,7 @@ export async function load({ params, fetch }) {
 			session_uuid: null,
 			parent_session_slug: session_slug,
 			project_path: null,
+			title: 'Session not found',
 			error: `Session not found: ${session_slug}`
 		};
 	}
@@ -81,6 +84,7 @@ export async function load({ params, fetch }) {
 			session_uuid: sessionUuid,
 			parent_session_slug: sessionLookup.slug || sessionUuid.slice(0, 8),
 			project_path: sessionLookup.project_path,
+			title: 'Agent not found',
 			error: `Agent not found: ${agentResult.message}`
 		};
 	}
@@ -93,6 +97,7 @@ export async function load({ params, fetch }) {
 
 	return {
 		agent: agentResult.data,
+		title: joinTitle([cleanAgentIdForDisplay(agentResult.data.agent_id), 'Subagent']),
 		timeline: timelineData,
 		fileActivity: fileActivityData,
 		tools: tools_used,

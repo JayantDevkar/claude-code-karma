@@ -1,5 +1,6 @@
 import { API_BASE } from '$lib/config';
 import { fetchWithFallback } from '$lib/utils/api-fetch';
+import { joinTitle } from '$lib/page-title';
 import type { HookEventDetail } from '$lib/api-types';
 
 export async function load({ params, fetch }) {
@@ -20,5 +21,9 @@ export async function load({ params, fetch }) {
 			related_events: []
 		}
 	);
-	return { detail: data, event_type: params.event_type };
+	return {
+		detail: data,
+		event_type: params.event_type,
+		title: joinTitle([params.event_type, 'Hooks'])
+	};
 }

@@ -1,5 +1,6 @@
 import { API_BASE } from '$lib/config';
 import { fetchWithFallback } from '$lib/utils/api-fetch';
+import { joinTitle } from '$lib/page-title';
 import type { HookScriptDetail } from '$lib/api-types';
 import { createHighlighter } from 'shiki';
 
@@ -63,6 +64,7 @@ export async function load({ params, fetch }) {
 	return {
 		detail: data,
 		highlightedHtml,
-		filename: params.filename
+		filename: params.filename,
+		title: joinTitle([data.script.filename, 'Hooks'])
 	};
 }

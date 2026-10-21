@@ -120,10 +120,6 @@
 	}
 </script>
 
-<svelte:head>
-	<title>{data.ticket ? `${data.ticket.external_key} · Tickets` : 'Ticket not found'}</title>
-</svelte:head>
-
 <div class="max-w-4xl mx-auto p-6 flex flex-col gap-4">
 	<!-- Breadcrumb -->
 	<div class="flex items-center gap-1.5 text-xs text-[var(--text-muted)]">

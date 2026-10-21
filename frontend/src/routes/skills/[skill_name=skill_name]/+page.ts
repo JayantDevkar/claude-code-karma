@@ -1,6 +1,8 @@
 import type { SkillDetailResponse } from '$lib/api-types';
 import { API_BASE } from '$lib/config';
 import { safeFetch } from '$lib/utils/api-fetch';
+import { cleanSkillName } from '$lib/utils';
+import { joinTitle } from '$lib/page-title';
 
 export async function load({ params, fetch }) {
 	const skillName = decodeURIComponent(params.skill_name);
@@ -12,6 +14,10 @@ export async function load({ params, fetch }) {
 
 	return {
 		skillName,
-		detail: result.ok ? result.data : null
+		detail: result.ok ? result.data : null,
+		title: joinTitle([
+			result.ok ? cleanSkillName(result.data.name, result.data.is_plugin) : skillName,
+			'Skills'
+		])
 	};
 }
