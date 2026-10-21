@@ -741,6 +741,7 @@ def test_indexed_location_uses_source_root(machines, mem_db, monkeypatch):
 
 
 def test_short_id_prefix_hits_span_local_and_remote(machines):
+    pytest.importorskip("fastapi")  # the models-only CI job has no web deps
     from routers.sessions import _find_session_files
 
     local, remote, _ = machines
