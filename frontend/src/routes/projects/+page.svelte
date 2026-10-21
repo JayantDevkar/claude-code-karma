@@ -245,7 +245,7 @@
 	>
 		{#snippet headerRight()}
 			<!-- Compact Stats -->
-			<div class="flex items-center gap-4 text-xs">
+			<div class="flex flex-wrap items-center gap-2 sm:gap-4 text-xs">
 				<div
 					class="flex items-center gap-1.5 px-2 py-1 rounded-md bg-[var(--bg-subtle)] border border-[var(--border-subtle)] table-nums"
 				>

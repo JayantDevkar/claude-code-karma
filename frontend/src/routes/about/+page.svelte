@@ -101,10 +101,10 @@
 			<p class="text-xs mt-1 opacity-70">Make sure the API is running on port 8020.</p>
 		</div>
 	{:else}
-		<div class="flex gap-6">
+		<div class="flex flex-col md:flex-row gap-6">
 			<!-- Sidebar: Doc Navigation -->
-			<nav class="w-56 shrink-0">
-				<div class="sticky top-4 space-y-1">
+			<nav class="w-full md:w-56 md:shrink-0">
+				<div class="md:sticky md:top-4 space-y-1">
 					{#each data.docs as doc}
 						<button
 							class="w-full text-left px-3 py-2 rounded-md text-sm transition-colors {selectedDoc ===

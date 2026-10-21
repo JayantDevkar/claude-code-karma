@@ -978,7 +978,7 @@
 		{#if tabsReady}
 			<Tabs.Root bind:value={activeTab} class="space-y-6">
 				<Tabs.List
-					class="flex items-center gap-1 p-1 bg-[var(--bg-subtle)] rounded-lg w-fit mx-auto border border-[var(--border)]"
+					class="flex items-center gap-1 p-1 bg-[var(--bg-subtle)] rounded-lg w-fit mx-auto border border-[var(--border)] max-w-full overflow-x-auto"
 				>
 					<TabsTrigger value="overview" icon={Info}>Overview</TabsTrigger>
 					<TabsTrigger value="timeline" icon={Clock}>Timeline</TabsTrigger>

@@ -68,7 +68,7 @@
 
 	<!-- Page Header -->
 	<div class="mb-6 pb-6 border-b border-[var(--border)]">
-		<div class="flex items-start gap-4">
+		<div class="flex flex-wrap sm:flex-nowrap items-start gap-4">
 			<!-- Icon -->
 			{#if iconName || LucideIcon}
 				<div
@@ -106,7 +106,7 @@
 				{#if subtitle}
 					<span
 						class="
-							inline-flex
+							inline-flex max-w-full break-all
 							px-2 py-0.5
 							text-xs font-mono
 							text-[var(--text-muted)]
@@ -132,10 +132,7 @@
 								>
 									{#if item.icon}
 										{@const ItemIcon = item.icon}
-										<ItemIcon
-											size={12}
-											strokeWidth={2}
-										/>
+										<ItemIcon size={12} strokeWidth={2} />
 									{/if}
 									<span>{item.text}</span>
 								</a>
@@ -143,10 +140,7 @@
 								<div class="flex items-center gap-1.5 {item.class || ''}">
 									{#if item.icon}
 										{@const ItemIcon = item.icon}
-										<ItemIcon
-											size={12}
-											strokeWidth={2}
-										/>
+										<ItemIcon size={12} strokeWidth={2} />
 									{/if}
 									<span>{item.text}</span>
 								</div>
@@ -158,7 +152,7 @@
 
 			<!-- Right Side Content (e.g., Model Badge) -->
 			{#if headerRight}
-				<div class="shrink-0">
+				<div class="w-full sm:w-auto sm:shrink-0">
 					{@render headerRight()}
 				</div>
 			{/if}

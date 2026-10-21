@@ -17,7 +17,7 @@
 <Tabs.Trigger
 	{value}
 	class="
-		px-4 py-2 text-sm font-medium rounded-md
+		px-4 py-2 text-sm font-medium rounded-md shrink-0 whitespace-nowrap
 		transition-all duration-200 ease-out
 		flex items-center gap-2
 		focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-base)]
