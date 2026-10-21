@@ -322,12 +322,7 @@ def spawn_detached(
     # once Popen has taken it -- leaving it open leaks a handle per call.
     handle = open(log_path, "ab")
     try:
-        # Windows: never flash a window. CREATE_NO_WINDOW gives the server a
-        # hidden console that its own console children inherit. DETACHED_PROCESS
-        # can't do this: Windows ignores CREATE_NO_WINDOW alongside it, and the
-        # console-less parent's children (uvicorn.exe -> python.exe, npm.cmd ->
-        # node.exe) then each open a new, visible console window. The new
-        # process group keeps a Ctrl+C in the launching console from reaching it.
+        # Not DETACHED_PROCESS: Windows ignores CREATE_NO_WINDOW beside it and children flash consoles.
         flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(
             subprocess, "CREATE_NEW_PROCESS_GROUP", 0
         )
