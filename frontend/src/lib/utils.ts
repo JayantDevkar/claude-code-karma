@@ -237,6 +237,11 @@ export function formatCharCount(count: number): string {
 	return count.toLocaleString();
 }
 
+// Normalize separators and uppercase the drive letter so f:/repo matches F:/repo
+export function normalizePath(p: string): string {
+	return p.replace(/\\/g, '/').replace(/^([a-z]):/, (_, d: string) => d.toUpperCase() + ':');
+}
+
 /**
  * Trim project path prefix for cleaner display
  * @deprecated Use formatDisplayPath instead for better UX with home directory shortening
