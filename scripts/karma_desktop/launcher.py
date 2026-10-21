@@ -120,16 +120,12 @@ def _chrome_command() -> list[str] | None:
                 return ["open", "-na", name, "--args"]
         return None
     if sys.platform == "win32":
-        # Respect the user's default browser: app mode only when that browser
-        # is Chromium-based. A non-Chromium default (Firefox, ...) returns None
-        # so open_window opens a plain tab in it, never a hard-coded Edge. Only
-        # when Windows can't name the default at all do we probe the old list.
+        # App mode only when the default browser is Chromium; otherwise a plain tab in it.
         exe = _windows_default_browser()
         if exe is None:
             return _windows_installed_chromium()
         if exe.name.lower() == "launchwinapp.exe":
-            # Store-app broker: a default exists but its engine is unknowable,
-            # so give it a plain tab rather than glob System32 or pick Edge.
+            # Store-app broker: the engine is unknowable, so a plain tab rather than a guess.
             return None
         return [str(exe)] if _is_chromium_exe(exe) else None
     for name in ["google-chrome", "chrome", "chromium", "microsoft-edge", "msedge"]:
