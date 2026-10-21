@@ -24,6 +24,7 @@ from command_helpers import (
     parse_command_from_content,
 )
 
+from .active_time import ACTIVE_IDLE_CAP_SECONDS, ActiveTimeAccumulator
 from .agent import Agent
 from .base_cache import (
     BaseCache,
@@ -48,7 +49,7 @@ from .message import (
 from .task import Task, load_tasks_from_directory, reconstruct_tasks_from_jsonl
 from .todo import TodoItem, load_todos_from_file
 from .tool_result import ToolResult
-from .usage import TokenUsage
+from .usage import TokenUsage, UsageAccumulator
 
 if TYPE_CHECKING:
     pass
@@ -170,6 +171,7 @@ class SessionCache(BaseCache):
         "models_used",
         "message_count",
         "total_cost",
+        "active_duration_seconds",
         # Continuation session detection
         "user_message_count",
         "assistant_message_count",
@@ -206,6 +208,7 @@ class SessionCache(BaseCache):
         self.models_used: Optional[Set[str]] = None
         self.message_count: Optional[int] = None
         self.total_cost: Optional[float] = None
+        self.active_duration_seconds: Optional[float] = None
         # Continuation session detection
         self.user_message_count: int = 0
         self.assistant_message_count: int = 0
@@ -240,6 +243,7 @@ class SessionCache(BaseCache):
         self.models_used = None
         self.message_count = None
         self.total_cost = None
+        self.active_duration_seconds = None
         self.user_message_count = 0
         self.assistant_message_count = 0
         self.file_snapshot_count = 0
@@ -346,7 +350,8 @@ class Session(BaseModel):
         first_ts: Optional[datetime] = None
         last_ts: Optional[datetime] = None
         slug: Optional[str] = None
-        usage = TokenUsage.zero()
+        usage_acc = UsageAccumulator()
+        active_time = ActiveTimeAccumulator()
         tools: Counter[str] = Counter()
         # Skills/commands use (name, source) tuple keys for invocation tracking
         skills: Counter[tuple] = Counter()  # {(name, source): count}
@@ -360,7 +365,6 @@ class Session(BaseModel):
         working_dirs: Set[str] = set()
         models_used: Set[str] = set()
         message_count = 0
-        total_cost = 0.0
 
         # Message type counters for continuation session detection
         user_msg_count = 0
@@ -444,6 +448,7 @@ class Session(BaseModel):
             if hasattr(msg, "timestamp") and msg.timestamp:
                 if first_ts is None:
                     first_ts = msg.timestamp
+                active_time.add(msg.timestamp)
                 last_ts = msg.timestamp
 
             # Slug (from any message)
@@ -454,9 +459,7 @@ class Session(BaseModel):
 
             # Assistant message specific data
             if isinstance(msg, AssistantMessage):
-                if msg.usage:
-                    usage = usage + msg.usage
-                    total_cost += msg.usage.calculate_cost(msg.model)
+                usage_acc.add(msg)
                 if msg.model:
                     models_used.add(msg.model)
                 for block in msg.content_blocks:
@@ -525,7 +528,7 @@ class Session(BaseModel):
         cache.start_time = first_ts
         cache.end_time = last_ts
         cache.slug = slug
-        cache.usage_summary = usage
+        cache.usage_summary = usage_acc.usage
         cache.tools_used = dict(tools)
         cache.skills_used = dict(skills)
         cache.skills_mentioned = dict(skills_mentioned)
@@ -534,7 +537,8 @@ class Session(BaseModel):
         cache.working_dirs = working_dirs
         cache.models_used = models_used
         cache.message_count = message_count
-        cache.total_cost = total_cost
+        cache.total_cost = usage_acc.cost
+        cache.active_duration_seconds = active_time.seconds
         # Message type counts
         cache.user_message_count = user_msg_count
         cache.assistant_message_count = assistant_msg_count
@@ -840,12 +844,17 @@ class Session(BaseModel):
 
     @property
     def duration_seconds(self) -> Optional[float]:
-        """Get session duration in seconds."""
-        start = self.start_time
-        end = self.end_time
-        if start and end:
-            return (end - start).total_seconds()
-        return None
+        """
+        Get active session duration in seconds (cached).
+
+        Sums the gaps between consecutive messages, capping each idle gap at
+        ACTIVE_IDLE_CAP_SECONDS so resumes and breaks don't inflate it.
+        Wall-clock span is still available via start_time/end_time.
+        """
+        self._load_metadata()
+        if not (self.start_time and self.end_time):
+            return None
+        return self._get_cache().active_duration_seconds
 
     def get_usage_summary(self) -> TokenUsage:
         """
@@ -868,6 +877,15 @@ class Session(BaseModel):
         """
         self._load_metadata()
         return self._get_cache().total_cost or 0.0
+
+    def get_subagent_totals(self) -> tuple[TokenUsage, float]:
+        """Token usage and estimated cost summed across this session's subagents."""
+        usage = TokenUsage.zero()
+        cost = 0.0
+        for agent in self.list_subagents():
+            usage = usage + agent.get_usage_summary()
+            cost += agent.get_total_cost()
+        return usage, cost
 
     def get_models_used(self) -> Set[str]:
         """
@@ -1102,3 +1120,18 @@ class Session(BaseModel):
             "summary": cache.summary_count,  # SessionTitleMessage (not compaction)
             "compact_boundary": cache.compact_boundary_count,  # True compaction events
         }
+
+
+def active_duration_seconds(
+    jsonl_path: Path, start: Optional[datetime], end: Optional[datetime]
+) -> Optional[float]:
+    """Active duration for a session known only by its span; None when it can't be computed."""
+    if not (start and end):
+        return None
+    span = (end - start).total_seconds()
+    # No gap inside a span shorter than the cap can be trimmed, so the wall clock is exact
+    if span <= ACTIVE_IDLE_CAP_SECONDS:
+        return span
+    if not jsonl_path.is_file():
+        return None
+    return Session.from_path(jsonl_path).duration_seconds

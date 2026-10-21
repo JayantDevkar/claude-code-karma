@@ -82,6 +82,7 @@ from http_caching import (
 from models import Session, ToolUseBlock
 from models.plan import load_plan
 from models.project import get_cached_jsonl_count
+from models.session import active_duration_seconds
 
 # Phase 4: Parallel processing
 from parallel import process_subagents_parallel
@@ -644,8 +645,6 @@ def _get_all_sessions_jsonl(
     sessions_with_context = []
     for meta in paginated_sessions:
         duration_seconds = None
-        if meta.start_time and meta.end_time:
-            duration_seconds = (meta.end_time - meta.start_time).total_seconds()
 
         slug = meta.slug
         session_titles = (
@@ -658,6 +657,10 @@ def _get_all_sessions_jsonl(
 
         project_dir = settings.projects_dir / meta.encoded_name
         subagent_count = _count_subagents_fast(project_dir, meta.uuid)
+        if meta._session is None:
+            duration_seconds = active_duration_seconds(
+                project_dir / f"{meta.uuid}.jsonl", meta.start_time, meta.end_time
+            )
 
         if meta._session is not None:
             try:
@@ -667,6 +670,7 @@ def _get_all_sessions_jsonl(
                 if loaded_session.session_titles:
                     session_titles = loaded_session.session_titles
                 models_used = list(loaded_session.get_models_used())
+                duration_seconds = loaded_session.duration_seconds
             except Exception:
                 pass
 
@@ -1064,6 +1068,7 @@ def get_session(uuid: str, request: Request, fresh: bool = False):
         total_input_tokens=usage.total_input,
         total_output_tokens=usage.output_tokens,
         cache_hit_rate=usage.cache_hit_rate,
+        cache_read_tokens=usage.cache_read_input_tokens,
         total_cost=session.get_total_cost(),
         todos=todos,
         tasks=tasks,
@@ -1438,7 +1443,7 @@ def get_tools(uuid: str, request: Request, fresh: bool = False):
     # Single-pass collection with subagents
     data = collect_session_data(session, include_subagents=True)
 
-    # Use shared service for building tool summaries
+    # Inline sidechain messages in the main JSONL land in subagent_tool_counts (by_subagents)
     summaries = build_tool_usage_summaries(
         data.session_tool_counts,
         data.subagent_tool_counts,

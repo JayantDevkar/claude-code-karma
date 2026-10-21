@@ -5,6 +5,7 @@
  */
 
 import type { Project } from '$lib/api-types';
+import { normalizePath } from '$lib/utils';
 
 export interface GitRootGroup {
 	rootPath: string;
@@ -47,10 +48,6 @@ export function groupProjects(projects: Project[]): GroupedProjects {
 		(p) => p.git_root_path !== null && p.git_root_path !== undefined
 	);
 	const nonGitProjects = projects.filter((p) => !p.git_root_path);
-
-	// Normalize path separators for cross-platform comparison (Windows uses backslashes,
-	// git outputs forward slashes — normalize both to forward slashes before comparing)
-	const normalizePath = (p: string) => p.replace(/\\/g, '/');
 
 	// Step 2: Group git projects by normalized git_root_path
 	const groupMap = new Map<string, Project[]>();
@@ -163,9 +160,7 @@ function getGroupLatestTime(group: GitRootGroup): number {
  * C:\Users\me\repo -> "repo"
  */
 function getDisplayName(path: string): string {
-	// Normalize backslashes for cross-platform support
-	const normalized = path.replace(/\\/g, '/');
-	const segments = normalized.split('/').filter(Boolean);
+	const segments = normalizePath(path).split('/').filter(Boolean);
 	return segments[segments.length - 1] || path;
 }
 
@@ -174,9 +169,8 @@ function getDisplayName(path: string): string {
  * /Users/me/repo/packages/api -> "./packages/api"
  */
 export function getRelativePath(projectPath: string, rootPath: string): string {
-	// Normalize backslashes for cross-platform support
-	const normalizedProject = projectPath.replace(/\\/g, '/');
-	const normalizedRoot = rootPath.replace(/\\/g, '/');
+	const normalizedProject = normalizePath(projectPath);
+	const normalizedRoot = normalizePath(rootPath);
 
 	if (normalizedProject === normalizedRoot) {
 		return '';

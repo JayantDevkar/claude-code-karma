@@ -522,7 +522,9 @@ def _calculate_analytics_from_sessions(
     local_tz = timezone(timedelta(minutes=-tz_offset_minutes))
 
     for session in sessions:
-        usage = session.get_usage_summary()
+        # Totals cover the session plus its subagents, same scope as the SQLite path
+        subagent_usage, subagent_cost = session.get_subagent_totals()
+        usage = session.get_usage_summary() + subagent_usage
         total_input_tokens += usage.total_input
         total_output_tokens += usage.output_tokens
         total_cache_read += usage.cache_read_input_tokens
@@ -539,8 +541,7 @@ def _calculate_analytics_from_sessions(
             models_used[model] += 1
             models_categorized[_categorize_model(model)] += 1
 
-        # Use per-message cost (already computed with correct model per message)
-        total_cost += session.get_total_cost()
+        total_cost += session.get_total_cost() + subagent_cost
 
         # Track tools used
         session_tools = session.get_tools_used()

@@ -479,13 +479,7 @@ def install_autostart(repo: Path, python: Path, web_port: int, api_port: int) ->
         # The launcher exits once the servers are up; it is not the thing to
         # keep alive, so KeepAlive stays off to avoid a restart loop.
         "KeepAlive": False,
-        # A login-time `npm run dev` compile is heavy; run it as a background
-        # task with low-priority I/O and a lower niceness so it yields to the
-        # rest of login (Finder, menu bar, the user's own apps) rather than
-        # competing at default priority.
-        "ProcessType": "Background",
-        "LowPriorityIO": True,
-        "Nice": 5,
+        # No ProcessType/LowPriorityIO/Nice: the servers inherit them for life.
         "StandardOutPath": str(logs / "autostart.log"),
         "StandardErrorPath": str(logs / "autostart.log"),
     }
@@ -509,6 +503,36 @@ def install_autostart(repo: Path, python: Path, web_port: int, api_port: int) ->
         except OSError:
             pass
     return plist_path
+
+
+# Keys older installs wrote; they throttled the long-lived servers 6-10x.
+_THROTTLE_KEYS = ("ProcessType", "LowPriorityIO", "Nice")
+
+
+def repair_autostart_priority() -> bool:
+    """Drop the throttling keys from an existing login item; True if it was rewritten.
+
+    Only the file changes: launchd applies it at the next login, and reloading
+    the job from inside it would kill the launch that is running the repair.
+    """
+    plist_path = agent_path()
+    try:
+        payload = plistlib.loads(plist_path.read_bytes())
+    except (OSError, ValueError, plistlib.InvalidFileException):
+        return False
+    stale = [key for key in _THROTTLE_KEYS if key in payload]
+    if not stale:
+        return False
+    for key in stale:
+        del payload[key]
+    tmp = plist_path.with_name(f"{plist_path.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        tmp.write_bytes(plistlib.dumps(payload))
+        os.replace(tmp, plist_path)
+    except OSError:
+        tmp.unlink(missing_ok=True)
+        return False
+    return True
 
 
 def uninstall_autostart() -> bool:

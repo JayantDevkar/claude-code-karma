@@ -29,7 +29,9 @@ import {
 	getMondayOfWeek,
 	isHourBasedFilter,
 	isKnownSubagentType,
-	calculateSubagentDuration
+	calculateSubagentDuration,
+	activeTimeWasCapped,
+	sessionOnlyTools
 } from '$lib/utils';
 
 // ============================================================
@@ -925,5 +927,49 @@ describe('calculateSubagentDuration', () => {
 	it('returns 0 for zero duration', () => {
 		const time = '2024-01-01T10:00:00.000Z';
 		expect(calculateSubagentDuration(time, time)).toBe(0);
+	});
+});
+
+describe('activeTimeWasCapped', () => {
+	const start = '2026-10-01T10:00:00.000Z';
+	const endAfter = (seconds: number) =>
+		new Date(Date.parse(start) + seconds * 1000).toISOString();
+
+	it('is false when active time matches the wall clock', () => {
+		expect(activeTimeWasCapped(start, endAfter(3600), 3600)).toBe(false);
+	});
+
+	it('ignores sub-minute rounding differences', () => {
+		// 59m59s active vs 1h00m01s wall clock format differently but no idle was trimmed
+		expect(activeTimeWasCapped(start, endAfter(3601), 3599)).toBe(false);
+	});
+
+	it('is true once idle time was trimmed', () => {
+		// 1h30m05s active vs 1h30m50s wall clock format the same but 45s were dropped... still noise
+		expect(activeTimeWasCapped(start, endAfter(5450), 5405)).toBe(false);
+		// a 2h gap capped to 30m is a real trim
+		expect(activeTimeWasCapped(start, endAfter(4 * 3600), 2.5 * 3600)).toBe(true);
+	});
+
+	it('is false without both timestamps or a duration', () => {
+		expect(activeTimeWasCapped(undefined, endAfter(10), 10)).toBe(false);
+		expect(activeTimeWasCapped(start, undefined, 10)).toBe(false);
+		expect(activeTimeWasCapped(start, endAfter(10), null)).toBe(false);
+	});
+});
+
+describe('sessionOnlyTools', () => {
+	it('uses the main-session counts and drops subagent-only tools', () => {
+		const tools = [
+			{ tool_name: 'Read', count: 5, by_session: 3 },
+			{ tool_name: 'Bash', count: 2, by_session: 0 }
+		];
+		expect(sessionOnlyTools(tools)).toEqual([{ tool_name: 'Read', count: 3, by_session: 3 }]);
+	});
+
+	it('keeps the total when the split is unknown', () => {
+		expect(sessionOnlyTools([{ tool_name: 'Grep', count: 4 }])).toEqual([
+			{ tool_name: 'Grep', count: 4 }
+		]);
 	});
 });

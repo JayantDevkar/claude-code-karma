@@ -231,6 +231,7 @@ class SessionDetail(SessionSummary):
     total_input_tokens: int = 0
     total_output_tokens: int = 0
     cache_hit_rate: float = 0.0
+    cache_read_tokens: int = Field(0, description="Input tokens served from cache")
     total_cost: float = Field(0.0, description="Total estimated cost in USD")
     todos: list[TodoItemSchema] = Field(
         default_factory=list, description="Todo items for this session"
@@ -535,6 +536,7 @@ class SubagentSessionDetail(BaseModel):
     total_input_tokens: int = Field(0, description="Total input tokens used")
     total_output_tokens: int = Field(0, description="Total output tokens used")
     cache_hit_rate: float = Field(0.0, description="Proportion of tokens served from cache")
+    cache_read_tokens: int = Field(0, description="Input tokens served from cache")
     total_cost: float = Field(0.0, description="Estimated cost in USD")
 
     # Tool usage

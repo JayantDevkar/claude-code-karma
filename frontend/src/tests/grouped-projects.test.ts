@@ -251,4 +251,41 @@ describe('groupProjects — Windows paths', () => {
 		const result = groupProjects(projects as any);
 		expect(result.singleGitProjects).toHaveLength(1);
 	});
+
+	it('matches project to git root when drive letter case differs', () => {
+		const projects = [
+			makeProject({
+				encoded_name: 'f--code-journal',
+				path: 'f:/code/journal',
+				git_root_path: 'F:/code/journal',
+				is_nested_project: false
+			})
+		];
+		const result = groupProjects(projects as any);
+		expect(result.gitRoots).toHaveLength(0);
+		expect(result.singleGitProjects).toHaveLength(1);
+	});
+
+	it('nests a project under a root whose drive letter case differs', () => {
+		const projects = [
+			makeProject({
+				encoded_name: 'f--code-journal',
+				path: 'f:/code/journal',
+				git_root_path: 'F:/code/journal',
+				is_nested_project: false
+			}),
+			makeProject({
+				encoded_name: 'f--code-journal-pkg',
+				path: 'f:/code/journal/pkg',
+				git_root_path: 'F:/code/journal',
+				is_nested_project: true
+			})
+		];
+		const result = groupProjects(projects as any);
+		expect(result.gitRoots).toHaveLength(1);
+		const group = result.gitRoots[0];
+		expect(group.rootProject?.encoded_name).toBe('f--code-journal');
+		expect(group.nestedProjects).toHaveLength(1);
+		expect(getRelativePath(group.nestedProjects[0].path, group.rootPath)).toBe('./pkg');
+	});
 });

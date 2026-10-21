@@ -10,7 +10,7 @@ import sqlite3
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 19
+SCHEMA_VERSION = 23
 
 SCHEMA_SQL = """
 -- Schema versioning
@@ -34,6 +34,11 @@ CREATE TABLE IF NOT EXISTS sessions (
     cache_creation_tokens INTEGER DEFAULT 0,
     cache_read_tokens INTEGER DEFAULT 0,
     total_cost REAL DEFAULT 0,
+    subagent_cost REAL DEFAULT 0,
+    subagent_input_tokens INTEGER DEFAULT 0,
+    subagent_output_tokens INTEGER DEFAULT 0,
+    subagent_cache_read_tokens INTEGER DEFAULT 0,
+    subagent_cache_creation_tokens INTEGER DEFAULT 0,
     initial_prompt TEXT,
     git_branch TEXT,
     models_used TEXT,
@@ -425,6 +430,9 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
     # v13 incremental block below (ALTER is not idempotent).
     conn.executescript(_SHELLS_CRON_SCHEMA_SQL)
 
+    # Same cross-branch guard for sessions columns added after v19.
+    columns_added = _ensure_session_columns(conn)
+
     # Check current version
     try:
         row = conn.execute("SELECT MAX(version) FROM schema_version").fetchone()
@@ -736,6 +744,8 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
                 ).fetchall()
             }
             if "background_shells" in existing:
+                # PRAGMA foreign_keys is a no-op inside a transaction, so commit first.
+                conn.commit()
                 conn.execute("PRAGMA foreign_keys=OFF")
                 conn.execute("""
                     CREATE TABLE IF NOT EXISTS background_shells_v19 (
@@ -785,11 +795,28 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
                     "CREATE INDEX IF NOT EXISTS idx_bg_shells_spawned "
                     "ON background_shells(spawned_at DESC)"
                 )
+                conn.commit()
                 conn.execute("PRAGMA foreign_keys=ON")
             # Force reindex so manual shells get picked up.
             # Guard: minimal test fixtures may not have a sessions table.
             if "sessions" in existing:
                 conn.execute("UPDATE sessions SET needs_shell_cron_reindex = 1")
+
+        if current_version < 22:
+            logger.info("Migrating → v22: remove orphaned child rows (issue #107)")
+            _delete_orphan_rows(conn)
+
+        if current_version < 23:
+            logger.info(
+                "Migrating → v23: re-index costs "
+                "(per-response usage dedup, current pricing, active time)"
+            )
+            has_sessions = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='sessions'"
+            ).fetchone()
+            # _ensure_session_columns already forced the reindex if it added columns
+            if has_sessions and not columns_added:
+                conn.execute("UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1")
 
     # Record version
     conn.execute(
@@ -798,4 +825,80 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
     )
     conn.commit()
 
+    # Migrations may toggle FK enforcement; after the commit above this takes effect.
+    conn.execute("PRAGMA foreign_keys=ON")
+
     logger.info("Schema version %d applied successfully", SCHEMA_VERSION)
+
+
+# Sessions columns added after v19; also in SCHEMA_SQL for fresh installs.
+_SESSION_COLUMNS = [
+    ("subagent_cost", "REAL DEFAULT 0"),
+    ("subagent_input_tokens", "INTEGER DEFAULT 0"),
+    ("subagent_output_tokens", "INTEGER DEFAULT 0"),
+    ("subagent_cache_read_tokens", "INTEGER DEFAULT 0"),
+    ("subagent_cache_creation_tokens", "INTEGER DEFAULT 0"),
+]
+
+
+def _ensure_session_columns(conn: sqlite3.Connection) -> bool:
+    """Add missing sessions columns regardless of schema version; True if any were added."""
+    existing = {r[1] for r in conn.execute("PRAGMA table_info(sessions)").fetchall()}
+    if not existing:
+        return False
+    missing = [(name, ddl) for name, ddl in _SESSION_COLUMNS if name not in existing]
+    for name, ddl in missing:
+        conn.execute(f"ALTER TABLE sessions ADD COLUMN {name} {ddl}")
+    if missing:
+        logger.info("Added sessions columns %s; forcing a reindex", [n for n, _ in missing])
+        conn.execute("UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1")
+        conn.commit()
+    return bool(missing)
+
+
+# Child rows whose parent is gone; (table, parent-existence subquery).
+_ORPHAN_RULES = [
+    (
+        "subagent_tools",
+        "invocation_id NOT IN (SELECT id FROM subagent_invocations WHERE session_uuid IN (SELECT uuid FROM sessions))",
+    ),
+    (
+        "subagent_skills",
+        "invocation_id NOT IN (SELECT id FROM subagent_invocations WHERE session_uuid IN (SELECT uuid FROM sessions))",
+    ),
+    (
+        "subagent_commands",
+        "invocation_id NOT IN (SELECT id FROM subagent_invocations WHERE session_uuid IN (SELECT uuid FROM sessions))",
+    ),
+    ("subagent_invocations", "session_uuid NOT IN (SELECT uuid FROM sessions)"),
+    ("session_tools", "session_uuid NOT IN (SELECT uuid FROM sessions)"),
+    ("session_skills", "session_uuid NOT IN (SELECT uuid FROM sessions)"),
+    ("session_commands", "session_uuid NOT IN (SELECT uuid FROM sessions)"),
+    ("message_uuids", "session_uuid NOT IN (SELECT uuid FROM sessions)"),
+    ("session_leaf_refs", "session_uuid NOT IN (SELECT uuid FROM sessions)"),
+    (
+        "shell_polls",
+        "shell_row_id NOT IN (SELECT id FROM background_shells WHERE session_uuid IN (SELECT uuid FROM sessions))",
+    ),
+    ("background_shells", "session_uuid NOT IN (SELECT uuid FROM sessions)"),
+    ("cron_jobs", "session_uuid NOT IN (SELECT uuid FROM sessions)"),
+    ("cron_state_snapshots", "session_uuid NOT IN (SELECT uuid FROM sessions)"),
+]
+
+
+def _delete_orphan_rows(conn: sqlite3.Connection) -> int:
+    """Delete child rows whose parent no longer exists. Returns rows removed."""
+    existing = {
+        r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+    }
+    if "sessions" not in existing:
+        return 0
+    removed = 0
+    for table, predicate in _ORPHAN_RULES:
+        if table not in existing:
+            continue
+        count = conn.execute(f"DELETE FROM {table} WHERE {predicate}").rowcount
+        if count:
+            logger.info("Removed %d orphaned rows from %s", count, table)
+        removed += count
+    return removed

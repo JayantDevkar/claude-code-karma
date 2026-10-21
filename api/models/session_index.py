@@ -56,10 +56,10 @@ class SessionIndexEntry(BaseModel):
 
     @property
     def duration_seconds(self) -> Optional[float]:
-        """Calculate duration from created to modified."""
-        if self.created and self.modified:
-            return (self.modified - self.created).total_seconds()
-        return None
+        """Active duration, matching Session.duration_seconds; None if the JSONL is gone."""
+        from .session import active_duration_seconds
+
+        return active_duration_seconds(Path(self.full_path), self.created, self.modified)
 
     @property
     def initial_prompt(self) -> Optional[str]:
