@@ -23,6 +23,15 @@ sys.path.insert(0, str(apps_dir))
 sys.path.insert(0, str(api_dir))
 
 
+@pytest.fixture(autouse=True)
+def _isolate_claude_base(tmp_path_factory, monkeypatch):
+    """Point settings.claude_base at an empty dir so no API test reads the real ~/.claude."""
+    from config import settings
+
+    # No projects/ subdir, so an accidental sync_all_projects() returns early as it does on CI.
+    monkeypatch.setattr(settings, "claude_base", tmp_path_factory.mktemp("claude_base"))
+
+
 @pytest.fixture
 def mock_claude_base(tmp_path, monkeypatch):
     """

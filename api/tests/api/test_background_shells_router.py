@@ -8,8 +8,10 @@ covered by test_indexer_shells_cron.py.
 
 from __future__ import annotations
 
+import json
 import sqlite3
 import sys
+import threading
 from pathlib import Path
 
 import pytest
@@ -28,8 +30,8 @@ from fastapi.testclient import TestClient
 
 
 @pytest.fixture
-def client(tmp_path, monkeypatch):
-    """Spin up a FastAPI app with the background_shells router + fresh DB."""
+def shells_app(tmp_path, monkeypatch):
+    """Spin up a FastAPI app with the background_shells router + fresh DB; lazy sync stays live."""
     db_path = tmp_path / "test_karma.db"
 
     import db.connection as connection
@@ -47,12 +49,24 @@ def client(tmp_path, monkeypatch):
 
     from routers import background_shells
 
+    # The debounce clock is a module global; -inf lets the first request sync and teardown restores it.
+    monkeypatch.setattr(background_shells, "_last_sync_at", float("-inf"))
+
     app = FastAPI()
     app.include_router(background_shells.router)
 
     yield TestClient(app)
 
     connection._writer = None  # type: ignore[attr-defined]
+
+
+@pytest.fixture
+def client(shells_app, monkeypatch):
+    """shells_app with the lazy JSONL sync stubbed, for tests about query behavior."""
+    from routers import background_shells
+
+    monkeypatch.setattr(background_shells, "_maybe_sync", lambda: None)
+    return shells_app
 
 
 # ---------------------------------------------------------------------------
@@ -259,6 +273,74 @@ class TestListShellsGlobal:
         body = r.json()
         assert len(body["shells"]) == 2
         assert body["count"] == 2
+
+
+# ---------------------------------------------------------------------------
+# GET /shells — lazy JSONL sync
+# ---------------------------------------------------------------------------
+
+
+class TestListShellsLazySync:
+    def test_ingests_new_shell_from_claude_base(self, shells_app, tmp_path, monkeypatch):
+        import db.indexer as indexer
+        from config import Settings, settings
+
+        claude_base = tmp_path / "claude"
+        project_dir = claude_base / "projects" / "-fake-proj"
+        project_dir.mkdir(parents=True)
+        monkeypatch.setattr(settings, "claude_base", claude_base)
+        # karma_base derives from the real home; redirect it so the cron-state ingest stays in tmp.
+        monkeypatch.setattr(Settings, "karma_base", property(lambda self: tmp_path / "karma"))
+        # sync_all_projects() sets these module globals; scope them to this test.
+        monkeypatch.setattr(indexer, "_ready", threading.Event())
+        monkeypatch.setattr(indexer, "_last_sync_complete", 0.0)
+
+        session_uuid = "11111111-2222-3333-4444-555555555555"
+        lines = [
+            {
+                "type": "assistant",
+                "uuid": "msg-0",
+                "sessionId": session_uuid,
+                "timestamp": "2026-05-25T00:00:00Z",
+                "message": {
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "id": "toolu_sync",
+                            "name": "Bash",
+                            "input": {"command": "npm run dev", "run_in_background": True},
+                        }
+                    ],
+                },
+            },
+            {
+                "type": "user",
+                "uuid": "msg-1",
+                "sessionId": session_uuid,
+                "timestamp": "2026-05-25T00:00:01Z",
+                "message": {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "toolu_sync",
+                            "content": "Command running in background with ID: bedb379.",
+                        }
+                    ],
+                },
+            },
+        ]
+        (project_dir / f"{session_uuid}.jsonl").write_text(
+            "\n".join(json.dumps(line) for line in lines) + "\n"
+        )
+
+        r = shells_app.get("/shells")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["count"] == 1
+        assert body["shells"][0]["session_uuid"] == session_uuid
+        assert body["shells"][0]["command"] == "npm run dev"
 
 
 # ---------------------------------------------------------------------------
