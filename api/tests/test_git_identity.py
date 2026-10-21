@@ -42,6 +42,15 @@ from services.git_identity import normalize_git_url, read_git_identity
         ("https://github.com/foo/bar/", "foo/bar"),
         # Whitespace stripped (git config sometimes returns trailing newline)
         ("  https://github.com/foo/bar.git  \n", "foo/bar"),
+        # Embedded credentials
+        ("https://user:token@github.com/foo/bar.git", "foo/bar"),
+        # ssh:// with a port
+        ("ssh://git@host.example.com:2222/foo/bar.git", "foo/bar"),
+        # Uppercase .GIT suffix
+        ("https://github.com/foo/bar.GIT", "foo/bar"),
+        # Azure DevOps — the _git segment is dropped, project/repo remains
+        ("https://dev.azure.com/org/project/_git/repo", "project/repo"),
+        ("git@ssh.dev.azure.com:v3/org/project/repo", "project/repo"),
     ],
 )
 def test_normalize_git_url_happy_paths(url, expected):

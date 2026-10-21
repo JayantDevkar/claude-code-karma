@@ -53,10 +53,11 @@ def normalize_git_url(url: Optional[str]) -> Optional[str]:
         return None
 
     path = m.group("path").strip("/")
-    if path.endswith(".git"):
+    if path.lower().endswith(".git"):
         path = path[:-4]
 
-    parts = [p for p in path.split("/") if p]
+    # Azure DevOps: https://dev.azure.com/org/project/_git/repo
+    parts = [p for p in path.split("/") if p and p != "_git"]
     if len(parts) < 2:
         return None
 

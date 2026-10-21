@@ -969,14 +969,20 @@ ln -sf "$(cd hooks && pwd)/project_identity.py" ~/.claude/hooks/project_identity
     "hooks": [
       {
         "type": "command",
-        "command": "python3 ~/.claude/hooks/project_identity.py"
+        "command": "python3 ~/.claude/hooks/project_identity.py",
+        "timeout": 10
       }
     ]
   }
 ]
 ```
 
-Like the branch detector, it is silent on every failure and needs no timeout entry: each of its two git calls self-times-out at 2 seconds (4 seconds worst case). It only writes when the identity changed, and only into the session's project dir (a dir inside a `projects` dir).
+Like the branch detector, it is silent on every failure; each of its two git calls self-times-out at 2 seconds (4 seconds worst case), so the 10-second timeout is a safety net. It only writes when the identity changed, and only into the session's project dir (a dir inside a `projects` dir).
+
+Two things to know about the sidecar's lifecycle:
+
+- The hook only ever writes. If the `origin` remote is later removed (or the directory stops being a git checkout), the hook writes nothing and the existing `karma-project.json` stays as it was. Delete it by hand if the stale identity matters.
+- The hook compares only `git_identity`, `subdir` and `project_path`. When any of those changed, it rewrites the whole file, so any extra keys another tool added are lost.
 
 ### Removing a Hook
 
@@ -987,6 +993,7 @@ To remove a hook after installation:
 | Live tracker | Delete all `live_session_tracker.py` entries from `"hooks"` in settings.json |
 | Title generator | Delete the `session_title_generator.py` entry from `"SessionEnd"` |
 | Branch detector | Delete the `ticket_branch_detector.py` entry from `"SessionStart"`, or just set `"branch_detect_enabled": false` in `~/.claude_karma/config.json` to keep the hook installed but inert |
+| Project identity | Delete the `project_identity.py` entry from `"SessionStart"`. Existing `karma-project.json` files stay in place; delete them by hand if you no longer want them |
 
 Then optionally clean up the script:
 ```bash
