@@ -95,7 +95,7 @@
 
 			<!-- Title and Content -->
 			<div class="flex-1 min-w-0">
-				<div class="flex items-center gap-3 mb-2">
+				<div class="flex flex-wrap sm:flex-nowrap items-center gap-x-3 gap-y-2 mb-2">
 					<h1 class="text-2xl font-semibold tracking-tight text-[var(--text-primary)]">
 						{title}
 					</h1>

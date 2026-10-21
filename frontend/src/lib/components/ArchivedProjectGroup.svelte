@@ -40,7 +40,7 @@
 		onclick={() => (expanded = !expanded)}
 		class="
 			w-full px-4 py-3
-			flex items-center justify-between gap-4
+			flex flex-wrap sm:flex-nowrap items-center justify-between gap-x-4 gap-y-2
 			bg-[var(--bg-subtle)]
 			hover:bg-[var(--bg-muted)]
 			transition-colors
@@ -50,7 +50,7 @@
 	>
 		<!-- Left: Icon + Project Name -->
 		<div class="flex items-center gap-3 min-w-0 flex-1">
-			<div class="p-1.5 rounded-md bg-[var(--error-subtle)] text-[var(--error)]">
+			<div class="shrink-0 p-1.5 rounded-md bg-[var(--error-subtle)] text-[var(--error)]">
 				<FolderOpen size={16} strokeWidth={2} />
 			</div>
 			<div class="min-w-0 flex-1">
@@ -60,8 +60,8 @@
 			</div>
 		</div>
 
-		<!-- Right: Date Range + Session Count + Prompt Count + Chevron -->
-		<div class="flex items-center gap-4 shrink-0">
+		<!-- Right: Date Range + Session Count + Prompt Count + Chevron (own line under the name on phones) -->
+		<div class="flex flex-wrap sm:flex-nowrap items-center gap-x-4 gap-y-1 shrink-0 max-sm:w-full max-sm:pl-10">
 			<span class="text-xs text-[var(--text-muted)]">
 				{formatDateRange(project.date_range.start, project.date_range.end)}
 			</span>
@@ -82,7 +82,7 @@
 			</div>
 			<ChevronDown
 				size={16}
-				class="text-[var(--text-muted)] transition-transform {expanded ? 'rotate-180' : ''}"
+				class="text-[var(--text-muted)] transition-transform max-sm:ml-auto {expanded ? 'rotate-180' : ''}"
 			/>
 		</div>
 	</button>

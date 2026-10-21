@@ -129,7 +129,7 @@
 		<!-- Filter bar -->
 		<div class="flex flex-col gap-2 p-1 rounded-lg border border-[var(--border)] bg-[var(--bg-subtle)]">
 			<div class="flex flex-wrap items-center gap-3">
-				<div class="flex gap-0.5 p-0.5" role="tablist" aria-label="Filter by provider">
+				<div class="flex flex-wrap gap-0.5 p-0.5" role="tablist" aria-label="Filter by provider">
 					{#each PROVIDERS as opt (opt.id)}
 						{@const active = provider === opt.id}
 						{@const meta = opt.id ? PROVIDER_META[opt.id] : null}
@@ -138,7 +138,7 @@
 							role="tab"
 							aria-selected={active}
 							onclick={() => setProvider(opt.id)}
-							class="inline-flex items-center gap-1.5 px-3 py-1 text-xs rounded transition-colors
+							class="inline-flex items-center gap-1.5 px-3 py-1 text-xs whitespace-nowrap rounded transition-colors
 								{active
 								? 'bg-[var(--bg-base)] text-[var(--text-primary)] font-semibold shadow-[var(--shadow-sm)]'
 								: 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}"
@@ -242,8 +242,7 @@
 			<!-- Populated table -->
 			<div class="rounded-lg border border-[var(--border)] overflow-hidden bg-[var(--bg-base)]">
 				<div
-					class="grid gap-3.5 px-4 py-2.5 bg-[var(--bg-subtle)] border-b border-[var(--border)]"
-					style="grid-template-columns: 80px minmax(0, 1fr) 130px 90px 110px"
+					class="hidden sm:grid grid-cols-[80px_minmax(0,1fr)_130px_90px_110px] gap-3.5 px-4 py-2.5 bg-[var(--bg-subtle)] border-b border-[var(--border)]"
 				>
 					<div class="text-[9px] uppercase tracking-wider font-semibold text-[var(--text-muted)]">Provider</div>
 					<div class="text-[9px] uppercase tracking-wider font-semibold text-[var(--text-muted)]">Ticket</div>
@@ -256,8 +255,7 @@
 					{@const norm = normalizeStatus(t.status)}
 					<a
 						href="/tickets/{t.provider}/{encodeURIComponent(t.external_key)}"
-						class="grid gap-3.5 px-4 py-3 items-center border-t border-[var(--border-subtle)] hover:bg-[var(--accent-muted)] transition-colors"
-						style="grid-template-columns: 80px minmax(0, 1fr) 130px 90px 110px"
+						class="grid grid-cols-[auto_minmax(0,1fr)_auto] sm:grid-cols-[80px_minmax(0,1fr)_130px_90px_110px] gap-x-3.5 gap-y-1 px-4 py-3 items-center border-t max-sm:first-of-type:border-t-0 border-[var(--border-subtle)] hover:bg-[var(--accent-muted)] transition-colors"
 					>
 						<span class="justify-self-start">
 							<ProviderChip ticket={t} />
@@ -275,7 +273,10 @@
 							{/if}
 						</div>
 
-						<div class="inline-flex items-center gap-1.5 text-[11.5px] text-[var(--text-secondary)]">
+						<!-- Phones: status and last-linked drop to a second line under the ticket. -->
+						<div
+							class="inline-flex items-center gap-1.5 text-[11.5px] text-[var(--text-secondary)] max-sm:col-start-2 max-sm:row-start-2"
+						>
 							{#if t.status}
 								<span
 									class="inline-block w-[7px] h-[7px] rounded-full shrink-0"
@@ -287,7 +288,7 @@
 							{/if}
 						</div>
 
-						<div class="text-right">
+						<div class="text-right max-sm:col-start-3 max-sm:row-start-1">
 							<span
 								class="inline-flex font-mono text-[11px] px-2 py-0.5 rounded-full
 								{t.session_count > 1
@@ -298,7 +299,11 @@
 							</span>
 						</div>
 
-						<div class="text-[11px] text-[var(--text-muted)]">{formatRelative(t.last_linked_at)}</div>
+						<div
+							class="text-[11px] text-[var(--text-muted)] max-sm:col-start-3 max-sm:row-start-2 max-sm:text-right"
+						>
+							{formatRelative(t.last_linked_at)}
+						</div>
 					</a>
 				{/each}
 			</div>

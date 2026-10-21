@@ -518,3 +518,13 @@ body {
 	border-radius: 2px;
 	padding: 0 1px;
 }
+
+/* Room under the footer for the live-sessions dock pill (44px tall) while LiveSessionsDock sets data-live-dock. */
+:root[data-live-dock] .command-footer {
+	padding-bottom: calc(44px + var(--spacing-5) + var(--spacing-3));
+}
+@media (max-width: 480px) {
+	:root[data-live-dock] .command-footer {
+		padding-bottom: calc(44px + var(--spacing-4) + var(--spacing-3));
+	}
+}

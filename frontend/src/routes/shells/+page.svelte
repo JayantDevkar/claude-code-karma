@@ -682,6 +682,26 @@
 		transform: scale(1.03);
 	}
 	.sA-kill:active:not(:disabled) { transform: scale(0.97); }
+
+	/* Below 768 the fixed columns no longer fit: stack each row as main + action, then status + metric. */
+	@media (max-width: 767px) {
+		.sA-thead,
+		.sA-spark { display: none; }
+		.sA-row {
+			grid-template-columns: 8px minmax(0, 1fr) auto;
+			grid-template-areas:
+				'dot main caret'
+				'. status metric';
+			column-gap: 12px;
+			row-gap: 8px;
+		}
+		.sA-row > :first-child { grid-area: dot; }
+		.sA-c-main { grid-area: main; }
+		.sA-status { grid-area: status; }
+		.sA-metric { grid-area: metric; }
+		.sA-caret { grid-area: caret; }
+		.sA-id { overflow-wrap: anywhere; }
+	}
 	@keyframes spin {
 		to { transform: rotate(360deg); }
 	}

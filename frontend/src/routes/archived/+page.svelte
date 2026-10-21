@@ -146,7 +146,7 @@
 	>
 		{#snippet badges()}
 			{#if hasProjects}
-				<div class="flex items-center gap-2">
+				<div class="flex flex-wrap items-center gap-2">
 					<span
 						class="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-full border border-[var(--border)] bg-[var(--bg-subtle)] text-[var(--text-secondary)]"
 					>

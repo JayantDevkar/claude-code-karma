@@ -119,9 +119,20 @@
 
 	/* Teal chip — ties into the "$ live-sessions" terminal motif (see agent-badge). */
 	.focus-btn.icon {
-		padding: 4px;
+		padding: 5px;
+		/* 24px target that still takes the old 22px slot, so rows don't grow. */
+		margin: -1px;
 		color: var(--nav-teal, #0891b2);
 		background: var(--nav-teal-subtle, rgba(8, 145, 178, 0.1));
+	}
+
+	/* Invisible 36px touch area (inset counts from inside the 1px border); the chip stays 24px. */
+	@media (pointer: coarse) {
+		.focus-btn.icon::before {
+			content: '';
+			position: absolute;
+			inset: -7px;
+		}
 	}
 
 	.focus-btn:hover:not(:disabled) {

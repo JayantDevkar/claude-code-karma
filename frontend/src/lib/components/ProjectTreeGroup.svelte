@@ -45,7 +45,7 @@
 				px-2 py-1
 				bg-[var(--bg-subtle)]
 				rounded-[var(--radius-sm)]
-				text-xs font-medium
+				text-xs font-medium whitespace-nowrap
 			"
 		>
 			<Layers size={12} strokeWidth={2} class="text-[var(--text-muted)]" />
@@ -62,7 +62,7 @@
 					px-2 py-1
 					bg-[var(--bg-subtle)]
 					rounded-[var(--radius-sm)]
-					text-xs font-medium
+					text-xs font-medium whitespace-nowrap
 					text-[var(--text-secondary)]
 					mono
 				"
@@ -79,7 +79,7 @@
 					px-2 py-1
 					bg-[var(--bg-subtle)]
 					rounded-[var(--radius-sm)]
-					text-xs font-medium
+					text-xs font-medium whitespace-nowrap
 					text-[var(--text-secondary)]
 					mono
 				"

@@ -36,6 +36,16 @@
 			: ''
 	);
 
+	const shown = $derived(!hidden && sessions.length > 0);
+
+	// app.css pads the footer clear of the pill while this is set; client-only, so SSR renders without it.
+	$effect(() => {
+		if (!shown) return;
+		const root = document.documentElement;
+		root.dataset.liveDock = 'true';
+		return () => delete root.dataset.liveDock;
+	});
+
 	let expanded = $state(false);
 	let container: HTMLDivElement | undefined = $state();
 	let pill: HTMLButtonElement | undefined = $state();
@@ -77,7 +87,7 @@
 
 <svelte:window onkeydown={handleKeydown} />
 
-{#if !hidden && sessions.length > 0}
+{#if shown}
 	<!-- Pill before panel in the DOM so Tab after opening reaches the panel; column-reverse keeps the panel above. -->
 	<div class="dock" bind:this={container} transition:scale={{ duration: 150, start: 0.9 }}>
 		<button
@@ -363,12 +373,24 @@
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
+		/* 24px target (36px on touch); the negative margin keeps the header at its old height. */
+		min-width: 24px;
+		min-height: 24px;
+		margin: -2px;
 		border: none;
 		background: transparent;
 		color: var(--text-muted);
 		cursor: pointer;
 		padding: 2px;
 		border-radius: var(--radius-sm);
+	}
+
+	@media (pointer: coarse) {
+		.dock-close {
+			min-width: 36px;
+			min-height: 36px;
+			margin: -8px;
+		}
 	}
 
 	.dock-close:hover {

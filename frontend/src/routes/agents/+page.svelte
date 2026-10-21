@@ -381,10 +381,10 @@
 
 	<!-- Filters Row -->
 	<div
-		class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4"
+		class="flex flex-col sm:flex-row sm:flex-wrap lg:flex-nowrap items-start sm:items-center justify-between gap-4"
 		use:listNavigation
 	>
-		<div class="flex items-center gap-3 flex-wrap">
+		<div class="flex items-center gap-3 flex-wrap max-w-full">
 			<SegmentedControl options={viewOptions} bind:value={viewMode} />
 			<SegmentedControl options={categoryOptions} bind:value={selectedCategory} size="sm" />
 		</div>

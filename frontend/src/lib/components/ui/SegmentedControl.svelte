@@ -31,7 +31,7 @@
 
 <div
 	class="
-		inline-flex items-center gap-1 p-1
+		inline-flex items-center gap-1 p-1 max-w-full overflow-x-auto
 		bg-[var(--bg-subtle)] border border-[var(--border)] rounded-lg
 		{disabled ? 'opacity-50 cursor-not-allowed' : ''}
 		{className}
@@ -46,7 +46,7 @@
 			{disabled}
 			onclick={() => handleSelect(option.value)}
 			class="
-				{size === 'sm' ? 'px-2 py-1 text-xs' : 'px-3 py-1.5 text-sm'} font-medium rounded-md
+				{size === 'sm' ? 'px-2 py-1 text-xs' : 'px-3 py-1.5 text-sm'} font-medium rounded-md shrink-0 whitespace-nowrap
 				transition-all duration-150 ease-out
 				focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-1
 				{value === option.value

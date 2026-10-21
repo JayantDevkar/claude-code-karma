@@ -52,7 +52,7 @@
 			aria-expanded={open}
 			class="
 				w-full
-				flex items-center gap-3
+				flex flex-wrap sm:flex-nowrap items-center gap-x-3 gap-y-2
 				px-4 py-4
 				text-left
 				hover:bg-[var(--bg-subtle)]
@@ -69,6 +69,7 @@
 				size={16}
 				strokeWidth={2.5}
 				class="
+					shrink-0
 					text-[var(--text-muted)]
 					transition-transform
 					{open ? 'rotate-90' : 'rotate-0'}
@@ -89,8 +90,11 @@
 			</h3>
 
 			<!-- Metadata Slot -->
+			<!-- Phones: metadata gets its own line, indented past the chevron, so chips never clip. -->
 			{#if metadata}
-				<div class="flex items-center gap-3">
+				<div
+					class="flex flex-wrap sm:flex-nowrap items-center gap-2 sm:gap-3 max-sm:w-full max-sm:pl-7"
+				>
 					{@render metadata()}
 				</div>
 			{/if}
