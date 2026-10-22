@@ -782,7 +782,7 @@
 			url.searchParams.set('tab', tab);
 		}
 
-		if (analyticsScope === 'total') {
+		if (analyticsScope === 'total' && canShowTotal) {
 			url.searchParams.set('scope', 'total');
 		} else {
 			url.searchParams.delete('scope');

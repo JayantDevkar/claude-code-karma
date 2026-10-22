@@ -126,3 +126,9 @@ def test_etag_changes_when_a_subagent_writes(
     )
     assert second.status_code == 200
     assert second.headers["etag"] != etag
+
+    third = client.get(
+        f"/sessions/{session_with_nested_subagents}",
+        headers={"If-None-Match": second.headers["etag"]},
+    )
+    assert third.status_code == 304
