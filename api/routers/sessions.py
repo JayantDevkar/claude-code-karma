@@ -192,6 +192,11 @@ def _count_subagents_fast(project_dir: Path, session_uuid: str) -> int:
     return len(list(subagents_dir.glob("agent-*.jsonl")))
 
 
+def _session_cache_info(session: Session):
+    """ETag and Last-Modified over the session JSONL and its subagent JSONLs."""
+    return get_file_cache_info(session.jsonl_path, session.subagents_dir.glob("agent-*.jsonl"))
+
+
 def _has_messages(session: Session) -> bool:
     """False for an empty session or one whose file cannot be read (a synced copy mid-sync)."""
     try:
@@ -1048,9 +1053,7 @@ def get_session(uuid: str, request: Request, fresh: bool = False):
         session.clear_cache()
 
     # Phase 3: Conditional request; subagent files count since they feed the subagent totals
-    etag, last_modified = get_file_cache_info(
-        session.jsonl_path, session.subagents_dir.glob("agent-*.jsonl")
-    )
+    etag, last_modified = _session_cache_info(session)
 
     conditional_response = check_conditional_request(request, etag, last_modified)
     if conditional_response:
@@ -1371,6 +1374,11 @@ def get_file_activity(uuid: str, request: Request, fresh: bool = False):
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
+    etag, last_modified = _session_cache_info(session)
+    conditional_response = check_conditional_request(request, etag, last_modified)
+    if conditional_response:
+        return conditional_response
+
     # Single-pass collection with subagents (uses existing collectors.py)
     data = collect_session_data(session, include_subagents=True)
 
@@ -1379,9 +1387,13 @@ def get_file_activity(uuid: str, request: Request, fresh: bool = False):
 
     # Add cache headers - minimal cache for live polling
     response_data = [a.model_dump(mode="json") for a in activities]
-    headers = {
-        "Cache-Control": f"private, max-age={1 if fresh else 300}, stale-while-revalidate={2 if fresh else 600}"
-    }
+    headers = build_cache_headers(
+        etag=etag,
+        last_modified=last_modified,
+        max_age=1 if fresh else 300,
+        stale_while_revalidate=2 if fresh else 600,
+        private=True,
+    )
     return JSONResponse(content=response_data, headers=headers)
 
 
@@ -1401,6 +1413,11 @@ def get_subagents(uuid: str, request: Request, fresh: bool = False):
     session = find_session(uuid)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
+
+    etag, last_modified = _session_cache_info(session)
+    conditional_response = check_conditional_request(request, etag, last_modified)
+    if conditional_response:
+        return conditional_response
 
     # Single-pass collection of main session data (extracts Task -> type mappings)
     session_data = collect_session_data(session, include_subagents=False)
@@ -1441,9 +1458,13 @@ def get_subagents(uuid: str, request: Request, fresh: bool = False):
     from fastapi.responses import JSONResponse
 
     response_data = [s.model_dump(mode="json") for s in summaries]
-    headers = {
-        "Cache-Control": f"private, max-age={1 if fresh else 300}, stale-while-revalidate={2 if fresh else 600}"
-    }
+    headers = build_cache_headers(
+        etag=etag,
+        last_modified=last_modified,
+        max_age=1 if fresh else 300,
+        stale_while_revalidate=2 if fresh else 600,
+        private=True,
+    )
     return JSONResponse(content=response_data, headers=headers)
 
 
@@ -1595,6 +1616,12 @@ def get_timeline(uuid: str, request: Request, fresh: bool = False):
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
+    # Subagent files count: they supply the slugs shown on spawn events
+    etag, last_modified = _session_cache_info(session)
+    conditional_response = check_conditional_request(request, etag, last_modified)
+    if conditional_response:
+        return conditional_response
+
     # Get working directories for relative path conversion
     working_dirs = list(session.get_working_directories())
 
@@ -1614,9 +1641,13 @@ def get_timeline(uuid: str, request: Request, fresh: bool = False):
 
     # Add cache headers - minimal cache for live polling
     response_data = [e.model_dump(mode="json") for e in events]
-    headers = {
-        "Cache-Control": f"private, max-age={1 if fresh else 60}, stale-while-revalidate={2 if fresh else 300}"
-    }
+    headers = build_cache_headers(
+        etag=etag,
+        last_modified=last_modified,
+        max_age=1 if fresh else 60,
+        stale_while_revalidate=2 if fresh else 300,
+        private=True,
+    )
     return JSONResponse(content=response_data, headers=headers)
 
 

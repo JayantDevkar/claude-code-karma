@@ -2,7 +2,7 @@
 	import { browser } from '$app/environment';
 	import { replaceState } from '$app/navigation';
 	import { Tabs } from 'bits-ui';
-	import { onMount, onDestroy } from 'svelte';
+	import { onMount, onDestroy, untrack } from 'svelte';
 	import {
 		ArrowLeft,
 		ArrowDown,
@@ -29,7 +29,7 @@
 	} from 'lucide-svelte';
 	import TabsTrigger from '$lib/components/ui/TabsTrigger.svelte';
 	import SegmentedControl from '$lib/components/ui/SegmentedControl.svelte';
-	import { SessionDetailSkeleton } from '$lib/components/skeleton';
+	import { SessionDetailSkeleton, SkeletonBox, SkeletonText } from '$lib/components/skeleton';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import PageHeader from '$lib/components/layout/PageHeader.svelte';
 	import StatsGrid from '$lib/components/StatsGrid.svelte';
@@ -48,6 +48,13 @@
 	import SessionCronSection from '$lib/components/cron/SessionCronSection.svelte';
 	import ConversationHeader from './ConversationHeader.svelte';
 	import ConversationOverview from './ConversationOverview.svelte';
+	import {
+		loadTabResource,
+		peekTabResource,
+		invalidateTabResource,
+		type TabResourceKind,
+		type TabResourceResult
+	} from './tabData';
 	import type {
 		StatItem,
 		ConversationEntity,
@@ -94,10 +101,6 @@
 		parentSessionSlug?: string;
 		/** Session UUID (for subagent polling) */
 		sessionUuid?: string;
-		/** Pre-loaded timeline events */
-		timeline?: TimelineEvent[];
-		/** Pre-loaded file activity */
-		fileActivity?: FileActivity[];
 		/** Pre-loaded tools data */
 		tools?: ToolUsage[];
 		/** Pre-loaded tasks data */
@@ -117,8 +120,6 @@
 		isStarting = false,
 		parentSessionSlug,
 		sessionUuid,
-		timeline: initialTimeline = [],
-		fileActivity: initialFileActivity = [],
 		tools: initialTools = [],
 		tasks: initialTasks = [],
 		plan = null,
@@ -141,22 +142,6 @@
 		return [];
 	}
 
-	function getInitialTimeline(): TimelineEvent[] {
-		if (initialTimeline && initialTimeline.length > 0) return initialTimeline;
-		if (initialEntity && isMainSession(initialEntity) && initialEntity.timeline) {
-			return initialEntity.timeline;
-		}
-		return [];
-	}
-
-	function getInitialFileActivity(): FileActivity[] {
-		if (initialFileActivity && initialFileActivity.length > 0) return initialFileActivity;
-		if (initialEntity && isMainSession(initialEntity) && initialEntity.file_activity) {
-			return initialEntity.file_activity;
-		}
-		return [];
-	}
-
 	// Make entity data mutable for live updates - initialize directly from props
 	// svelte-ignore state_referenced_locally
 	let entityData = $state<ConversationEntity | null>(initialEntity);
@@ -164,9 +149,22 @@
 	// Derive entity for read access
 	const entity = $derived(entityData);
 
+	// Timeline, file activity and subagents load when a tab that shows them opens (#135)
+	const TAB_RESOURCE_KINDS: TabResourceKind[] = ['timeline', 'file-activity', 'subagents'];
+	let timelineEvents = $state<TimelineEvent[]>([]);
+	let fileActivities = $state<FileActivity[]>([]);
+	let subagentsArray = $state<SubagentSummary[]>([]);
+	let tabLoaded = $state<Record<TabResourceKind, boolean>>({
+		timeline: false,
+		'file-activity': false,
+		subagents: false
+	});
+	// Plain sets: kinds being fetched for the current entity, and loaded kinds the live poll skipped
+	let requestedKinds = new Set<TabResourceKind>();
+	let staleKinds = new Set<TabResourceKind>();
+	let destroyed = false;
+
 	// Mutable state for live updates - initialize from props
-	let timelineEvents = $state<TimelineEvent[]>(getInitialTimeline());
-	let fileActivities = $state<FileActivity[]>(getInitialFileActivity());
 	let toolsArray = $state<ToolUsage[]>(getInitialTools());
 	// svelte-ignore state_referenced_locally
 	let tasksArray = $state<Task[]>(initialTasks);
@@ -187,21 +185,30 @@
 	// null means we haven't done the first fetch yet (or need a full refresh)
 	let lastTasksFetchTime = $state<string | null>(null);
 
-	// Track which session we've initialized for to detect navigation (use sessionSlug as identifier)
+	// Agent pages of one session share sessionSlug, so the agent id is part of the identity
+	function entityIdentity(e: ConversationEntity | null): string {
+		return `${sessionSlug}|${e && isSubagentSession(e) ? e.agent_id : ''}`;
+	}
+
 	// Plain variable (not $state) to avoid reactive loop when read+written in $effect
 	// svelte-ignore state_referenced_locally
-	let initializedForSession: string | null = sessionSlug;
+	let initializedForSession: string = entityIdentity(initialEntity);
 
 	// Sync state when navigating to a different session (prop identity changes)
 	$effect(() => {
+		const identity = entityIdentity(initialEntity);
 		// Only re-initialize if we navigated to a different session
-		if (sessionSlug !== initializedForSession) {
+		if (identity !== initializedForSession) {
 			// Stop any existing polling for the previous session
 			stopPolling();
 			// Reset state for new session
 			entityData = initialEntity;
-			timelineEvents = getInitialTimeline();
-			fileActivities = getInitialFileActivity();
+			timelineEvents = [];
+			fileActivities = [];
+			subagentsArray = [];
+			tabLoaded = { timeline: false, 'file-activity': false, subagents: false };
+			requestedKinds = new Set();
+			staleKinds = new Set();
 			toolsArray = getInitialTools();
 			tasksArray = initialTasks;
 			lastTasksFetchTime = null;
@@ -209,7 +216,7 @@
 			sessionEnded = false;
 			hasAutoEnabledTailing = false;
 			isTailing = false;
-			initializedForSession = sessionSlug;
+			initializedForSession = identity;
 		}
 	});
 
@@ -257,6 +264,7 @@
 		taskCount: number;
 		timelineLength: number;
 		toolCount: number;
+		messageCount: number;
 	} | null>(null);
 
 	// Polling interval constants
@@ -377,25 +385,20 @@
 		// Record fetch time before making the request
 		const fetchStartTime = new Date().toISOString();
 
-		try {
-			const [sessionRes, timelineRes, fileActivityRes, subagentsRes, toolsRes, tasksRes] =
-				await Promise.all([
-					fetch(`${API_BASE}/sessions/${uuid}?fresh=1`, { signal }),
-					fetch(`${API_BASE}/sessions/${uuid}/timeline?fresh=1`, { signal }),
-					fetch(`${API_BASE}/sessions/${uuid}/file-activity?fresh=1`, {
-						signal
-					}),
-					fetch(`${API_BASE}/sessions/${uuid}/subagents?fresh=1`, { signal }),
-					fetch(`${API_BASE}/sessions/${uuid}/tools?fresh=1`, { signal }),
-					fetch(tasksUrl, { signal })
-				]);
+		const heavyKinds = pollTabResourceKinds(uuid);
 
+		try {
+			const [sessionRes, toolsRes, tasksRes, heavyResults] = await Promise.all([
+				fetch(`${API_BASE}/sessions/${uuid}?fresh=1`, { signal }),
+				fetch(`${API_BASE}/sessions/${uuid}/tools?fresh=1`, { signal }),
+				fetch(tasksUrl, { signal }),
+				Promise.all(heavyKinds.map((kind) => refreshTabResource(uuid, kind, signal)))
+			]);
+
+			applyPolledTabResources(heavyResults);
 			if (!sessionRes.ok) return;
 
 			const sessionDetail = await sessionRes.json();
-			const newTimeline = timelineRes.ok ? await timelineRes.json() : [];
-			const newFileActivity = fileActivityRes.ok ? await fileActivityRes.json() : [];
-			const newSubagents = subagentsRes.ok ? await subagentsRes.json() : [];
 			const toolsData = toolsRes.ok ? await toolsRes.json() : [];
 			const fetchedTasks: Task[] = tasksRes.ok ? await tasksRes.json() : [];
 
@@ -408,13 +411,8 @@
 			entityData = {
 				...sessionDetail,
 				project_path: projectPath,
-				tools_used,
-				file_activity: newFileActivity,
-				timeline: newTimeline,
-				subagents: newSubagents
+				tools_used
 			};
-			timelineEvents = newTimeline;
-			fileActivities = newFileActivity;
 			toolsArray = tools_used;
 
 			// Use incremental merging for tasks if we have a lastTasksFetchTime,
@@ -454,38 +452,31 @@
 		// Record fetch time before making the request
 		const fetchStartTime = new Date().toISOString();
 
+		const key = `${sessionUuid}/agents/${agentId}`;
+		const heavyKinds = pollTabResourceKinds(key);
+
 		try {
-			const [agentRes, timelineRes, fileActivityRes, toolsRes, tasksRes] = await Promise.all([
+			const [agentRes, toolsRes, tasksRes, heavyResults] = await Promise.all([
 				fetch(
 					`${API_BASE}/agents/${encodedName}/${sessionUuid}/agents/${agentId}?fresh=1`,
-					{ signal }
-				),
-				fetch(
-					`${API_BASE}/agents/${encodedName}/${sessionUuid}/agents/${agentId}/timeline?fresh=1`,
-					{ signal }
-				),
-				fetch(
-					`${API_BASE}/agents/${encodedName}/${sessionUuid}/agents/${agentId}/file-activity?fresh=1`,
 					{ signal }
 				),
 				fetch(
 					`${API_BASE}/agents/${encodedName}/${sessionUuid}/agents/${agentId}/tools?fresh=1`,
 					{ signal }
 				),
-				fetch(tasksUrl, { signal })
+				fetch(tasksUrl, { signal }),
+				Promise.all(heavyKinds.map((kind) => refreshTabResource(key, kind, signal)))
 			]);
 
+			applyPolledTabResources(heavyResults);
 			if (!agentRes.ok) return;
 
 			const agentDetail = await agentRes.json();
-			const newTimeline = timelineRes.ok ? await timelineRes.json() : [];
-			const newFileActivity = fileActivityRes.ok ? await fileActivityRes.json() : [];
 			const toolsData = toolsRes.ok ? await toolsRes.json() : [];
 			const fetchedTasks: Task[] = tasksRes.ok ? await tasksRes.json() : [];
 
 			entityData = agentDetail;
-			timelineEvents = newTimeline;
-			fileActivities = newFileActivity;
 			toolsArray = toolsData.map((t: any) => ({
 				tool_name: t.tool_name,
 				count: t.count
@@ -518,7 +509,9 @@
 		return {
 			taskCount: tasksArray.length,
 			timelineLength: timelineEvents.length,
-			toolCount: toolsArray.reduce((sum, t) => sum + t.count, 0)
+			toolCount: toolsArray.reduce((sum, t) => sum + t.count, 0),
+			// The timeline is only polled while its tab is open, so message count carries the signal
+			messageCount: entityData?.message_count ?? 0
 		};
 	}
 
@@ -534,7 +527,8 @@
 		const hasChanged =
 			currentData.taskCount !== lastPollData.taskCount ||
 			currentData.timelineLength !== lastPollData.timelineLength ||
-			currentData.toolCount !== lastPollData.toolCount;
+			currentData.toolCount !== lastPollData.toolCount ||
+			currentData.messageCount !== lastPollData.messageCount;
 
 		lastPollData = currentData;
 		return hasChanged;
@@ -647,6 +641,132 @@
 	];
 	let tabsReady = $state(true); // Initialize to true for SSR rendering
 	let isMounted = $state(false); // Track if component is mounted (router ready)
+
+	const isMainEntity = $derived(!!entity && isMainSession(entity));
+
+	// Cache key for the heavy tab data: the session uuid, or session/agents/agent for an agent page
+	const resourceKey = $derived.by<string | null>(() => {
+		if (!entity) return null;
+		if (isSubagentSession(entity)) {
+			return sessionUuid ? `${sessionUuid}/agents/${entity.agent_id}` : null;
+		}
+		return entity.uuid || null;
+	});
+
+	function tabResourceUrl(kind: TabResourceKind, fresh: boolean): string | null {
+		if (!entity) return null;
+		const query = fresh ? '?fresh=1' : '';
+		if (isSubagentSession(entity)) {
+			if (!sessionUuid || kind === 'subagents') return null;
+			return `${API_BASE}/agents/${encodedName}/${sessionUuid}/agents/${entity.agent_id}/${kind}${query}`;
+		}
+		return `${API_BASE}/sessions/${entity.uuid}/${kind}${query}`;
+	}
+
+	function tabResourceKinds(tab: string): TabResourceKind[] {
+		if (tab === 'timeline') return ['timeline'];
+		if (tab === 'files')
+			return isMainEntity ? ['file-activity', 'subagents'] : ['file-activity'];
+		if (tab === 'agents' && isMainEntity) return ['subagents'];
+		return [];
+	}
+
+	function applyTabResource(kind: TabResourceKind, data: unknown) {
+		const list = Array.isArray(data) ? data : [];
+		if (kind === 'timeline') timelineEvents = list as TimelineEvent[];
+		else if (kind === 'file-activity') fileActivities = list as FileActivity[];
+		else subagentsArray = list as SubagentSummary[];
+		tabLoaded[kind] = true;
+	}
+
+	function isAbortError(e: unknown): boolean {
+		return e instanceof Error && e.name === 'AbortError';
+	}
+
+	// First open loads (skeleton until then); reopening a kind the live poll skipped refreshes it in place
+	function ensureTabResource(kind: TabResourceKind) {
+		const key = resourceKey;
+		if (!key || requestedKinds.has(kind)) return;
+		const stale = staleKinds.has(kind);
+		if (tabLoaded[kind] && !stale) return;
+		if (!tabLoaded[kind]) {
+			const cached = peekTabResource<unknown>(key, kind);
+			if (cached !== undefined) {
+				applyTabResource(kind, cached);
+				return;
+			}
+		}
+		const url = tabResourceUrl(kind, isCurrentlyLive);
+		if (!url) return;
+		if (stale) invalidateTabResource(key, kind);
+		requestedKinds.add(kind);
+		loadTabResource<unknown>(key, kind, url)
+			.then((res) => {
+				if (res.uuid !== resourceKey) return;
+				requestedKinds.delete(kind);
+				staleKinds.delete(kind);
+				applyTabResource(kind, res.data);
+			})
+			.catch((e) => {
+				if (key !== resourceKey) return;
+				requestedKinds.delete(kind);
+				// Joined a poll request that navigation aborted: ask again on our own
+				if (isAbortError(e)) {
+					if (!destroyed) ensureTabResource(kind);
+					return;
+				}
+				console.error(`Failed to load ${kind}:`, e);
+				// Show the empty state like the old server fallback, and retry on the next open
+				if (!tabLoaded[kind]) applyTabResource(kind, []);
+				staleKinds.add(kind);
+			});
+	}
+
+	$effect(() => {
+		if (!browser || !resourceKey) return;
+		const kinds = tabResourceKinds(activeTab);
+		untrack(() => kinds.forEach(ensureTabResource));
+	});
+
+	// Live poll: refresh the open tab's heavy data; drop the rest so it refetches on reopen
+	function pollTabResourceKinds(key: string): TabResourceKind[] {
+		const active = tabResourceKinds(activeTab);
+		const kinds: TabResourceKind[] = [];
+		for (const kind of TAB_RESOURCE_KINDS) {
+			if (active.includes(kind)) {
+				if (tabLoaded[kind] && !requestedKinds.has(kind)) kinds.push(kind);
+			} else {
+				invalidateTabResource(key, kind);
+				if (tabLoaded[kind]) staleKinds.add(kind);
+			}
+		}
+		return kinds;
+	}
+
+	async function refreshTabResource(
+		key: string,
+		kind: TabResourceKind,
+		signal?: AbortSignal
+	): Promise<TabResourceResult<unknown> | null> {
+		const url = tabResourceUrl(kind, true);
+		if (!url) return null;
+		invalidateTabResource(key, kind);
+		try {
+			return await loadTabResource<unknown>(key, kind, url, (u) => fetch(u, { signal }));
+		} catch (e) {
+			if (!isAbortError(e)) console.error(`Failed to refresh ${kind}:`, e);
+			return null;
+		}
+	}
+
+	function applyPolledTabResources(results: (TabResourceResult<unknown> | null)[]) {
+		for (const res of results) {
+			if (res && res.uuid === resourceKey) {
+				staleKinds.delete(res.kind);
+				applyTabResource(res.kind, res.data);
+			}
+		}
+	}
 
 	// Continuation session linking state (sessions only)
 	let continuationSession = $state<ContinuationSessionInfo | null>(null);
@@ -769,6 +889,7 @@
 	});
 
 	onDestroy(() => {
+		destroyed = true;
 		stopPolling();
 	});
 
@@ -894,13 +1015,11 @@
 
 	// Group subagents by type (sessions only)
 	let groupedSubagents = $derived.by<[string, SubagentSummary[]][]>(() => {
-		if (!entity || isSubagentSession(entity)) return [];
-		const subagents = entity.subagents as SubagentSummary[] | undefined;
-		if (!subagents) return [];
+		if (!isMainEntity) return [];
 
 		const groups: Record<string, SubagentSummary[]> = {};
 
-		subagents.forEach((agent) => {
+		subagentsArray.forEach((agent) => {
 			const type = agent.subagent_type || 'Other';
 			if (!groups[type]) groups[type] = [];
 			groups[type].push(agent);
@@ -928,12 +1047,26 @@
 
 	// Map of agent_id -> subagent_type for color lookup in file activity table
 	let subagentTypes = $derived.by<Record<string, string | null>>(() => {
-		if (!entity || !isMainSession(entity)) return {};
-		const subagents = entity.subagents;
-		if (!subagents) return {};
-		return Object.fromEntries(subagents.map((a) => [a.agent_id, a.subagent_type]));
+		if (!isMainEntity) return {};
+		return Object.fromEntries(subagentsArray.map((a) => [a.agent_id, a.subagent_type]));
 	});
 </script>
+
+{#snippet tabSkeleton(label: string)}
+	<div class="space-y-3" role="status" aria-busy="true" aria-label={label}>
+		{#each Array(4) as _, i (i)}
+			<div
+				class="flex gap-4 p-4 bg-[var(--bg-base)] border border-[var(--border)] rounded-lg"
+			>
+				<SkeletonBox width="32px" height="32px" rounded="md" />
+				<div class="flex-1">
+					<SkeletonText width="200px" size="sm" class="mb-2" />
+					<SkeletonText lines={2} size="xs" />
+				</div>
+			</div>
+		{/each}
+	</div>
+{/snippet}
 
 <div class="space-y-6">
 	{#if isStarting && liveSession}
@@ -1118,7 +1251,9 @@
 							{/if}
 						</div>
 
-						{#if timelineEvents.length > 0}
+						{#if !tabLoaded.timeline}
+							{@render tabSkeleton('Loading timeline')}
+						{:else if timelineEvents.length > 0}
 							<TimelineRail
 								events={timelineEvents}
 								isLive={isCurrentlyLive}
@@ -1170,7 +1305,9 @@
 							</p>
 						</div>
 
-						{#if fileActivities.length > 0}
+						{#if !tabLoaded['file-activity']}
+							{@render tabSkeleton('Loading file activity')}
+						{:else if fileActivities.length > 0}
 							<FileActivityTable
 								activities={fileActivities}
 								{projectPath}
@@ -1193,14 +1330,18 @@
 						<div class="space-y-4">
 							<div>
 								<h2 class="text-lg font-semibold text-[var(--text-primary)]">
-									Subagents ({entity.subagents?.length || 0})
+									Subagents ({tabLoaded.subagents
+										? subagentsArray.length
+										: entity.subagent_count || 0})
 								</h2>
 								<p class="text-sm text-[var(--text-muted)]">
 									Agents spawned during this session, grouped by type
 								</p>
 							</div>
 
-							{#if groupedSubagents.length > 0}
+							{#if !tabLoaded.subagents}
+								{@render tabSkeleton('Loading subagents')}
+							{:else if groupedSubagents.length > 0}
 								<div class="space-y-4">
 									{#each groupedSubagents as [type, agents] (type)}
 										<SubagentGroup

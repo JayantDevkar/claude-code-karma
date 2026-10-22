@@ -86,23 +86,9 @@ export async function load({ params, fetch }) {
 	// the system identifier (e.g., ConversationView's encodedName prop).
 	const projectEncodedName = sessionLookup.project_encoded_name;
 
-	// Step 4: Fetch detailed session data using UUID
-	// Use safeFetch for the main session, fetchWithFallback for supplementary data
-	// Plan is optional (404 is not an error), so we use safeFetch and handle it separately
-	const [
-		sessionResult,
-		timelineData,
-		fileActivityData,
-		subagentsData,
-		toolsData,
-		tasksData,
-		planResult,
-		ticketsData
-	] = await Promise.all([
+	// Timeline, file activity and subagents load client-side when their tab opens (#135)
+	const [sessionResult, toolsData, tasksData, planResult, ticketsData] = await Promise.all([
 		safeFetch<Record<string, unknown>>(fetch, `${API_BASE}/sessions/${sessionUuid}`),
-		fetchWithFallback(fetch, `${API_BASE}/sessions/${sessionUuid}/timeline`, []),
-		fetchWithFallback(fetch, `${API_BASE}/sessions/${sessionUuid}/file-activity`, []),
-		fetchWithFallback(fetch, `${API_BASE}/sessions/${sessionUuid}/subagents`, []),
 		fetchWithFallback(fetch, `${API_BASE}/sessions/${sessionUuid}/tools`, []),
 		fetchWithFallback(fetch, `${API_BASE}/sessions/${sessionUuid}/tasks`, []),
 		safeFetch<PlanDetail>(fetch, `${API_BASE}/sessions/${sessionUuid}/plan`),
@@ -139,55 +125,6 @@ export async function load({ params, fetch }) {
 		by_session: t.by_session
 	}));
 
-	// Transform file activity to files_accessed format
-	const filesByPath: Record<
-		string,
-		{ path: string; operations: Set<string>; read: number; write: number; edit: number }
-	> = {};
-
-	(fileActivityData as Array<{ path: string; operation: string }>).forEach((activity) => {
-		if (!filesByPath[activity.path]) {
-			filesByPath[activity.path] = {
-				path: activity.path,
-				operations: new Set(),
-				read: 0,
-				write: 0,
-				edit: 0
-			};
-		}
-		const file = filesByPath[activity.path];
-		file.operations.add(activity.operation);
-
-		if (activity.operation === 'read') file.read++;
-		else if (activity.operation === 'write') file.write++;
-		else if (activity.operation === 'edit') file.edit++;
-	});
-
-	const files_accessed = Object.values(filesByPath).map((f) => ({
-		path: f.path,
-		operations: Array.from(f.operations),
-		read_count: f.read,
-		write_count: f.write,
-		edit_count: f.edit
-	}));
-
-	// Extract messages from timeline for the Messages tab
-	const messages = (
-		timelineData as Array<{
-			event_type: string;
-			actor_type: string;
-			metadata?: { full_content?: string; full_text?: string };
-			summary?: string;
-			timestamp: string;
-		}>
-	)
-		.filter((e) => e.event_type === 'prompt' || e.event_type === 'response')
-		.map((e) => ({
-			role: e.actor_type === 'user' ? 'user' : 'assistant',
-			content: e.metadata?.full_content || e.metadata?.full_text || e.summary || '',
-			timestamp: e.timestamp
-		}));
-
 	// Extract plan data (null if 404 or error - plan is optional)
 	const plan = planResult.ok ? planResult.data : null;
 
@@ -196,11 +133,6 @@ export async function load({ params, fetch }) {
 		...sessionData,
 		project_path: projectPath,
 		tools_used,
-		files_accessed,
-		file_activity: fileActivityData,
-		timeline: timelineData,
-		messages,
-		subagents: subagentsData,
 		tasks: tasksData
 	};
 

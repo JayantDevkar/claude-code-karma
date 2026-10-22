@@ -2,8 +2,6 @@
 	import { ConversationView } from '$lib/components/conversation';
 	import type {
 		SubagentSessionDetail,
-		TimelineEvent,
-		FileActivity,
 		ToolUsage,
 		Task,
 		LiveSessionSummary
@@ -55,8 +53,6 @@
 		projectPath={data.project_path ?? undefined}
 		sessionUuid={data.session_uuid ?? undefined}
 		liveSession={data.liveSession as LiveSessionSummary | null}
-		timeline={data.timeline as TimelineEvent[]}
-		fileActivity={data.fileActivity as FileActivity[]}
 		tools={data.tools as ToolUsage[]}
 		tasks={data.tasks as Task[]}
 	/>

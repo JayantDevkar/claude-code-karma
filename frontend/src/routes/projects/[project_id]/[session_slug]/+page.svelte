@@ -58,8 +58,6 @@
 		projectPath={session?.project_path}
 		liveSession={data.liveSession as LiveSessionSummary | null}
 		isStarting={data.isStarting}
-		timeline={session?.timeline}
-		fileActivity={session?.file_activity}
 		tools={session?.tools_used as unknown as ToolUsage[] | undefined}
 		tasks={session?.tasks as Task[] | undefined}
 		{plan}

@@ -1,11 +1,4 @@
-import type {
-	SubagentSessionDetail,
-	TimelineEvent,
-	FileActivity,
-	ToolUsage,
-	Task,
-	LiveSessionSummary
-} from '$lib/api-types';
+import type { SubagentSessionDetail, ToolUsage, Task, LiveSessionSummary } from '$lib/api-types';
 import { API_BASE } from '$lib/config';
 import { safeFetch, fetchWithFallback } from '$lib/utils/api-fetch';
 import { cleanAgentIdForDisplay } from '$lib/utils';
@@ -36,8 +29,6 @@ export async function load({ params, fetch }) {
 	if (!lookupResult.ok) {
 		return {
 			agent: null,
-			timeline: [],
-			fileActivity: [],
 			tools: [],
 			tasks: [],
 			project_id,
@@ -55,27 +46,22 @@ export async function load({ params, fetch }) {
 	const encodedName = sessionLookup.project_encoded_name;
 	const agentBaseUrl = `${API_BASE}/agents/${encodedName}/${sessionUuid}/agents/${agent_id}`;
 
-	// Step 2: Fetch all agent data and live session status in parallel
-	const [liveSessionResult, agentResult, timelineData, fileActivityData, toolsData, tasksData] =
-		await Promise.all([
-			safeFetch<LiveSessionSummary>(fetch, `${API_BASE}/live-sessions/${sessionUuid}`),
-			safeFetch<SubagentSessionDetail>(fetch, agentBaseUrl),
-			fetchWithFallback<TimelineEvent[]>(fetch, `${agentBaseUrl}/timeline`, []),
-			fetchWithFallback<FileActivity[]>(fetch, `${agentBaseUrl}/file-activity`, []),
-			fetchWithFallback<Array<{ tool_name: string; count: number }>>(
-				fetch,
-				`${agentBaseUrl}/tools`,
-				[]
-			),
-			fetchWithFallback<Task[]>(fetch, `${agentBaseUrl}/tasks`, [])
-		]);
+	// Step 2: Timeline and file activity load client-side when their tab opens (#135)
+	const [liveSessionResult, agentResult, toolsData, tasksData] = await Promise.all([
+		safeFetch<LiveSessionSummary>(fetch, `${API_BASE}/live-sessions/${sessionUuid}`),
+		safeFetch<SubagentSessionDetail>(fetch, agentBaseUrl),
+		fetchWithFallback<Array<{ tool_name: string; count: number }>>(
+			fetch,
+			`${agentBaseUrl}/tools`,
+			[]
+		),
+		fetchWithFallback<Task[]>(fetch, `${agentBaseUrl}/tasks`, [])
+	]);
 
 	if (!agentResult.ok) {
 		console.error('Failed to fetch agent:', agentResult.message);
 		return {
 			agent: null,
-			timeline: [],
-			fileActivity: [],
 			tools: [],
 			tasks: [],
 			liveSession: null,
@@ -98,8 +84,6 @@ export async function load({ params, fetch }) {
 	return {
 		agent: agentResult.data,
 		title: joinTitle([cleanAgentIdForDisplay(agentResult.data.agent_id), 'Subagent']),
-		timeline: timelineData,
-		fileActivity: fileActivityData,
 		tools: tools_used,
 		tasks: tasksData,
 		liveSession: liveSessionResult.ok ? liveSessionResult.data : null,
