@@ -642,8 +642,8 @@
 	// Analytics tab: 'own' is the session's own work, 'total' adds every subagent
 	let analyticsScope = $state<'own' | 'total'>('own');
 	const scopeOptions = [
-		{ value: 'own', label: 'Own' },
-		{ value: 'total', label: 'Total' }
+		{ value: 'own', label: 'This session' },
+		{ value: 'total', label: 'With subagents' }
 	];
 	let tabsReady = $state(true); // Initialize to true for SSR rendering
 	let isMounted = $state(false); // Track if component is mounted (router ready)
