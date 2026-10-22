@@ -2,9 +2,8 @@ export const APP_NAME = 'Claude Karma';
 
 const SEPARATOR = ' · ';
 
-// Labels match each page's H1.
+// Labels match each page's H1; the home page has none so its tab reads just the app name.
 const ROUTE_TITLES = new Map<string, string>([
-	['', 'Home'],
 	['projects', 'Projects'],
 	['sessions', 'Sessions'],
 	['agents', 'Agents'],

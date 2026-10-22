@@ -28,6 +28,7 @@
 		AlarmClock
 	} from 'lucide-svelte';
 	import TabsTrigger from '$lib/components/ui/TabsTrigger.svelte';
+	import SegmentedControl from '$lib/components/ui/SegmentedControl.svelte';
 	import { SessionDetailSkeleton } from '$lib/components/skeleton';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import PageHeader from '$lib/components/layout/PageHeader.svelte';
@@ -640,6 +641,10 @@
 	let activeTab = $state('overview');
 	// Analytics tab: 'own' is the session's own work, 'total' adds every subagent
 	let analyticsScope = $state<'own' | 'total'>('own');
+	const scopeOptions = [
+		{ value: 'own', label: 'Own' },
+		{ value: 'total', label: 'Total' }
+	];
 	let tabsReady = $state(true); // Initialize to true for SSR rendering
 	let isMounted = $state(false); // Track if component is mounted (router ready)
 
@@ -782,7 +787,7 @@
 			url.searchParams.set('tab', tab);
 		}
 
-		if (analyticsScope === 'total' && canShowTotal) {
+		if (tab === 'analytics' && analyticsScope === 'total' && canShowTotal) {
 			url.searchParams.set('scope', 'total');
 		} else {
 			url.searchParams.delete('scope');
@@ -1288,29 +1293,20 @@
 								</h2>
 								<p class="text-sm text-[var(--text-muted)]">
 									{showTotal
-										? `Usage for this ${entityLabel} plus all ${subagentCount} subagents`
+										? `Usage for this ${entityLabel} plus ${subagentCount === 1 ? 'its 1 subagent' : `all ${subagentCount} subagents`}`
 										: `Detailed usage metrics for this ${entityLabel}`}
 								</p>
 							</div>
 							{#if canShowTotal}
-								<div
-									class="flex items-center gap-1.5"
-									role="group"
+								<SegmentedControl
+									options={scopeOptions}
+									value={analyticsScope}
+									size="sm"
 									aria-label="Analytics scope"
-								>
-									{#each [{ value: 'own', label: 'Own' }, { value: 'total', label: 'Total' }] as const as option (option.value)}
-										<button
-											onclick={() => (analyticsScope = option.value)}
-											class="px-3 py-1 text-xs font-medium rounded-full transition-all {analyticsScope ===
-											option.value
-												? 'bg-[var(--accent-subtle)] text-[var(--accent)] border border-[var(--accent)]/30'
-												: 'bg-[var(--bg-subtle)] text-[var(--text-muted)] border border-transparent hover:border-[var(--border)] hover:text-[var(--text-secondary)]'}"
-											aria-pressed={analyticsScope === option.value}
-										>
-											{option.label}
-										</button>
-									{/each}
-								</div>
+									onchange={(v) => {
+										if (v === 'own' || v === 'total') analyticsScope = v;
+									}}
+								/>
 							{/if}
 						</div>
 

@@ -10,6 +10,7 @@
 		disabled?: boolean;
 		size?: 'sm' | 'md';
 		class?: string;
+		'aria-label'?: string;
 		onchange?: (value: string) => void;
 	}
 
@@ -19,6 +20,7 @@
 		disabled = false,
 		size = 'md',
 		class: className = '',
+		'aria-label': ariaLabel,
 		onchange
 	}: Props = $props();
 
@@ -37,6 +39,7 @@
 		{className}
 	"
 	role="radiogroup"
+	aria-label={ariaLabel}
 >
 	{#each options as option}
 		<button

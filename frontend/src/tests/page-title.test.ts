@@ -7,6 +7,10 @@ describe('formatTitle', () => {
 		expect(formatTitle([null, undefined, '  '])).toBe(APP_NAME);
 	});
 
+	it('returns just the app name for a null page part', () => {
+		expect(formatTitle([null])).toBe('Claude Karma');
+	});
+
 	it('appends the app name to one part', () => {
 		expect(formatTitle(['Projects'])).toBe('Projects · Claude Karma');
 	});
@@ -23,8 +27,9 @@ describe('formatTitle', () => {
 });
 
 describe('routeTitle', () => {
-	it('labels the home page', () => {
-		expect(routeTitle('/')).toBe('Home');
+	it('leaves the home page unlabelled', () => {
+		expect(routeTitle('/')).toBeNull();
+		expect(formatTitle([routeTitle('/')])).toBe('Claude Karma');
 	});
 
 	it('falls back to the first segment for nested paths', () => {

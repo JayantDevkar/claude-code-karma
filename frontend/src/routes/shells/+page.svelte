@@ -71,6 +71,47 @@
 
 	// ---- kill ----
 	let killing = $state<Set<string>>(new Set());
+	// Two-step kill: the first click arms the button, a second within CONFIRM_MS kills
+	const CONFIRM_MS = 4000;
+	let armed = $state<Set<string>>(new Set());
+	const armTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+	function disarm(toolUseId: string) {
+		clearTimeout(armTimers.get(toolUseId));
+		armTimers.delete(toolUseId);
+		if (armed.has(toolUseId)) armed = new Set([...armed].filter((id) => id !== toolUseId));
+	}
+
+	function onKillClick(toolUseId: string) {
+		if (!armed.has(toolUseId)) {
+			armed = new Set([...armed, toolUseId]);
+			armTimers.set(
+				toolUseId,
+				setTimeout(() => disarm(toolUseId), CONFIRM_MS)
+			);
+			return;
+		}
+		disarm(toolUseId);
+		killShell(toolUseId);
+	}
+
+	function onKillKeydown(e: KeyboardEvent, toolUseId: string) {
+		if (e.key !== 'Escape' || !armed.has(toolUseId)) return;
+		e.stopPropagation();
+		disarm(toolUseId);
+	}
+
+	function shellName(s: Shell): string {
+		const cmd = s.command.trim();
+		if (!cmd) return s.toolUseId;
+		return cmd.length > 40 ? `${cmd.slice(0, 40)}…` : cmd;
+	}
+
+	function killLabel(s: Shell): string {
+		if (killing.has(s.toolUseId)) return `Killing shell: ${shellName(s)}`;
+		if (armed.has(s.toolUseId)) return `Confirm killing shell ${shellName(s)}`;
+		return `Kill shell: ${shellName(s)}`;
+	}
 
 	async function killShell(toolUseId: string) {
 		killing = new Set([...killing, toolUseId]);
@@ -249,6 +290,7 @@
 		return () => {
 			clearInterval(tick);
 			clearInterval(refresh);
+			armTimers.forEach(clearTimeout);
 		};
 	});
 </script>
@@ -417,14 +459,20 @@
 								<button
 									type="button"
 									disabled={killing.has(s.toolUseId)}
-									onclick={() => killShell(s.toolUseId)}
+									aria-label={killLabel(s)}
+									onclick={() => onKillClick(s.toolUseId)}
+									onkeydown={(e) => onKillKeydown(e, s.toolUseId)}
+									onblur={() => disarm(s.toolUseId)}
 									class="sA-kill disabled:opacity-50"
+									class:is-armed={armed.has(s.toolUseId)}
 								>
 									{#if killing.has(s.toolUseId)}
 										<svg class="kill-spinner mr-1" xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
 											<path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
 										</svg>
 										Killing…
+									{:else if armed.has(s.toolUseId)}
+										Kill?
 									{:else}
 										Kill
 									{/if}
@@ -651,20 +699,29 @@
 
 	.sA-caret { display: flex; justify-content: flex-end; align-items: center; }
 	.caret-btn {
+		position: relative;
+		min-width: 24px;
+		min-height: 24px;
 		color: var(--text-faint);
 		background: transparent;
 		border: 0;
+		padding: 0;
 		cursor: pointer;
 		display: inline-flex;
+		align-items: center;
+		justify-content: center;
 		transition: transform 140ms ease, color 120ms ease;
 	}
 	.caret-btn:hover { color: var(--text-primary); }
 
 	/* ── Inline kill ─────────────────────────────────────────────────────────── */
 	.sA-kill {
+		position: relative;
 		display: inline-flex;
 		align-items: center;
+		justify-content: center;
 		height: 24px;
+		min-width: 24px;
 		padding: 0 9px;
 		border-radius: 6px;
 		font-size: 11.5px;
@@ -682,6 +739,23 @@
 		transform: scale(1.03);
 	}
 	.sA-kill:active:not(:disabled) { transform: scale(0.97); }
+	.sA-kill.is-armed,
+	.sA-kill.is-armed:hover:not(:disabled) {
+		color: var(--bg-base);
+		background: var(--error);
+		border-color: var(--error);
+	}
+
+	/* Invisible 44px touch area; the kill inset counts from inside its 1px border. */
+	@media (pointer: coarse) {
+		.caret-btn::before,
+		.sA-kill::before {
+			content: '';
+			position: absolute;
+		}
+		.caret-btn::before { inset: -10px; }
+		.sA-kill::before { inset: -11px; }
+	}
 
 	/* Below 768 the fixed columns no longer fit: stack each row as main + action, then status + metric. */
 	@media (max-width: 767px) {

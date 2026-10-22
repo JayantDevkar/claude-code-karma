@@ -91,6 +91,14 @@
 		registerWebMCPTools();
 	});
 
+	const pageTitle = $derived(
+		$page.error
+			? $page.status === 404
+				? 'Not found'
+				: 'Error'
+			: ($page.data.title ?? routeTitle($page.url.pathname))
+	);
+
 	// Keyboard help modal state
 	let showKeyboardHelp = $state(false);
 
@@ -109,7 +117,7 @@
 </script>
 
 <svelte:head>
-	<title>{formatTitle([$page.data.title ?? routeTitle($page.url.pathname)])}</title>
+	<title>{formatTitle([pageTitle])}</title>
 	<link rel="icon" href={favicon} />
 </svelte:head>
 
