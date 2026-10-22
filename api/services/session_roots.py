@@ -107,7 +107,7 @@ class _State:
     roots: tuple[SessionRoot, ...] = ()
     remote_dirs: tuple[RemoteDir, ...] = ()
     by_canonical: dict[str, list[RemoteDir]] = field(default_factory=dict)
-    # False when the last load failed and ``roots`` is the previous known-good list
+    # False when the last load failed (``roots`` is then the previous list) or rejected an entry
     config_ok: bool = True
 
 
@@ -174,12 +174,17 @@ def roots_file() -> Path:
 
 
 def _load_root_entries() -> list:
-    """Configured root entries. Raises when the roots file is unreadable or malformed.
+    """Configured root entries. Raises when the env value or roots file is malformed.
 
     A mid-edit or corrupt file must not look like "no roots": the indexer would
     then drop every synced session as belonging to a removed root.
     """
-    entries = list(settings.extra_roots or [])
+    entries = settings.extra_roots or []
+    if isinstance(entries, str):  # raw CLAUDE_KARMA_EXTRA_ROOTS value
+        entries = json.loads(entries)
+    if not isinstance(entries, list):
+        raise ValueError("CLAUDE_KARMA_EXTRA_ROOTS must hold a JSON list")
+    entries = list(entries)
     path = roots_file()
     if path.is_file():
         data = json.loads(path.read_text(encoding="utf-8"))
@@ -197,12 +202,14 @@ def _is_within(path: Path, other: Path) -> bool:
         return False
 
 
-def _load_roots() -> tuple[SessionRoot, ...]:
+def _load_roots() -> tuple[tuple[SessionRoot, ...], bool]:
+    """Valid roots, and False if any entry was rejected (its sessions must not look removed)."""
     local = _resolve(settings.claude_base)
     roots: list[SessionRoot] = []
     seen_names: set[str] = set()
     seen_paths: set[Path] = set()
-    for entry in _load_root_entries():
+    entries = _load_root_entries()
+    for entry in entries:
         try:
             root = _parse_root(entry)
         except Exception as e:  # one bad entry must not break session loading
@@ -225,7 +232,7 @@ def _load_roots() -> tuple[SessionRoot, ...]:
         seen_names.add(root.name)
         seen_paths.add(root.base)
         roots.append(root)
-    return tuple(roots)
+    return tuple(roots), len(roots) == len(entries)
 
 
 # =============================================================================
@@ -481,9 +488,8 @@ def _refresh(force: bool = False) -> _State:
             return state  # built while we waited
         generation = _generation
         # Disk I/O happens outside _lock. On failure keep the last roots (see _load_root_entries)
-        config_ok = True
         try:
-            roots = _load_roots()
+            roots, config_ok = _load_roots()
         except Exception as e:
             logger.warning("Failed to load extra session roots, keeping the previous list: %s", e)
             roots, config_ok = state.roots, False
@@ -545,7 +551,7 @@ def get_extra_roots() -> tuple[SessionRoot, ...]:
 
 
 def roots_config_ok() -> bool:
-    """False while the roots config fails to load and the previous list is being served."""
+    """False while the roots config fails to load or rejects an entry: no removed-root cleanup."""
     return _refresh().config_ok
 
 

@@ -686,3 +686,88 @@ def test_extra_roots_endpoints(machines):
     assert (
         client.post("/extra-roots/refresh", headers={"origin": "https://evil"}).status_code == 403
     )
+
+
+def test_root_dir_that_fails_to_list_does_not_abort_the_pass(tmp_path, monkeypatch, mem_db):
+    local = tmp_path / "local" / ".claude"
+    (local / "projects").mkdir(parents=True)
+    monkeypatch.setattr(settings, "claude_base", local)
+    roots = []
+    for name in ("alpha", "beta"):
+        base = tmp_path / name / ".claude"
+        _write_session(base / "projects" / "-home-me-solo", f"{name}-1", "/home/me/solo")
+        roots.append({"name": name, "path": str(base)})
+    monkeypatch.setattr(settings, "extra_roots", roots)
+    session_roots.clear_cache()
+    dropped = tmp_path / "alpha" / ".claude" / "projects" / "-home-me-solo"
+    real_glob, real_get_remote_dirs = Path.glob, session_roots.get_remote_dirs
+
+    def glob(self, pattern, *args, **kwargs):
+        if self == dropped:
+            raise OSError("stale file handle")
+        return real_glob(self, pattern, *args, **kwargs)
+
+    def get_remote_dirs():
+        remote_dirs = real_get_remote_dirs()
+        monkeypatch.setattr(Path, "glob", glob)  # mount drops after the dirs were mapped
+        return remote_dirs
+
+    monkeypatch.setattr(session_roots, "get_remote_dirs", get_remote_dirs)
+    stats = indexer.sync_all_projects(mem_db)
+
+    assert stats["errors"] == 1
+    assert [r[0] for r in mem_db.execute("SELECT source_root FROM sessions")] == ["beta"]
+
+
+def test_extra_roots_env_takes_plain_paths_and_bad_json_does_not_stop_startup(
+    tmp_path, monkeypatch
+):
+    from config import Settings
+
+    (tmp_path / "local" / ".claude" / "projects").mkdir(parents=True)
+    monkeypatch.setattr(settings, "claude_base", tmp_path / "local" / ".claude")
+    monkeypatch.setattr(session_roots, "roots_file", lambda: tmp_path / "extra-roots.json")
+    remote = tmp_path / "sync" / "laptop" / ".claude"
+    (remote / "projects").mkdir(parents=True)
+
+    monkeypatch.setattr(settings, "extra_roots", Settings(extra_roots=[str(remote)]).extra_roots)
+    session_roots.clear_cache()
+    assert [r.name for r in session_roots.get_extra_roots()] == ["laptop"]
+
+    monkeypatch.setenv("CLAUDE_KARMA_EXTRA_ROOTS", json.dumps([str(remote)]))
+    monkeypatch.setattr(settings, "extra_roots", Settings().extra_roots)
+    session_roots.clear_cache()
+    assert [r.name for r in session_roots.get_extra_roots()] == ["laptop"]
+    assert session_roots.roots_config_ok()
+
+    for bad in ("[{bad json", '{"path": "/x"}'):
+        monkeypatch.setenv("CLAUDE_KARMA_EXTRA_ROOTS", bad)
+        monkeypatch.setattr(settings, "extra_roots", Settings().extra_roots)
+        session_roots.invalidate()
+        assert [r.name for r in session_roots.get_extra_roots()] == ["laptop"]  # previous list
+        assert not session_roots.roots_config_ok()
+
+
+def test_rejected_root_entry_keeps_valid_roots_and_deletes_nothing(tmp_path, monkeypatch, mem_db):
+    local = tmp_path / "local" / ".claude"
+    (local / "projects").mkdir(parents=True)
+    monkeypatch.setattr(settings, "claude_base", local)
+    entries = []
+    for name in ("laptop", "box"):
+        base = tmp_path / "sync" / name / ".claude"
+        _write_session(base / "projects" / f"-home-me-{name}", f"{name}-1", f"/home/me/{name}")
+        entries.append({"name": name, "path": str(base)})
+    roots = _roots_file(tmp_path, monkeypatch, json.dumps(entries))
+    indexer.sync_all_projects(mem_db)
+    assert session_roots.roots_config_ok()
+
+    entries[1]["path_map"] = ["typo"]  # box's entry is now invalid
+    roots.write_text(json.dumps(entries), encoding="utf-8")
+    indexer.sync_all_projects(mem_db)
+
+    assert [r.name for r in session_roots.get_extra_roots()] == ["laptop"]
+    assert not session_roots.roots_config_ok()
+    assert sorted(r[0] for r in mem_db.execute("SELECT source_root FROM sessions")) == [
+        "box",
+        "laptop",
+    ]

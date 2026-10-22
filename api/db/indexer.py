@@ -747,9 +747,12 @@ def _sync_extra_roots(
             logger.warning("Error syncing %s from root %s: %s", rd.path.name, rd.root.name, e)
             stats["errors"] += 1
         # The same session synced via two roots: the first root keeps it
-        local_uuids.update(
-            p.stem for p in rd.path.glob("*.jsonl") if not p.name.startswith("agent-")
-        )
+        try:
+            local_uuids.update(
+                p.stem for p in rd.path.glob("*.jsonl") if not p.name.startswith("agent-")
+            )
+        except OSError as e:  # a dropped mount must not abort the whole pass
+            logger.warning("Error listing %s from root %s: %s", rd.path.name, rd.root.name, e)
 
 
 def _cleanup_stale_sessions(conn: sqlite3.Connection, projects_dir: Path) -> None:

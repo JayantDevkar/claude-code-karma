@@ -6,7 +6,7 @@ Example: CLAUDE_KARMA_MAX_AGENT_SIZE=200000
 """
 
 from pathlib import Path
-from typing import List
+from typing import Any, List
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -61,7 +61,8 @@ class Settings(BaseSettings):
     )
 
     # Entry format: SETUP.md "Multiple Machines"; also read from ~/.claude_karma/extra-roots.json
-    extra_roots: List[dict] = Field(
+    # Any: env JSON stays raw text, parsed by session_roots, so bad JSON cannot stop startup
+    extra_roots: Any = Field(
         default_factory=list,
         description="Synced ~/.claude dirs of other machines to merge into this dashboard",
     )

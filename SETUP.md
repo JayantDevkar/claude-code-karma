@@ -841,7 +841,7 @@ Create `~/.claude_karma/extra-roots.json` (or set `CLAUDE_KARMA_EXTRA_ROOTS` to 
 ]
 ```
 
-Only `path` is required. `name` (letters, digits, `._-`) identifies that machine; it defaults to the name of the folder containing `.claude` (`laptop` above). A root that is a file, duplicates another root's path, or overlaps this machine's own `~/.claude` is ignored with a warning; a path that does not exist yet (drive unmounted, sync paused) is kept. If the file fails to parse, Karma keeps the last roots it loaded and skips the "removed root" cleanup until it parses again.
+Only `path` is required. `name` (letters, digits, `._-`) identifies that machine; it defaults to the name of the folder containing `.claude` (`laptop` above). A root that is a file, duplicates another root's path, or overlaps this machine's own `~/.claude` is ignored with a warning; a path that does not exist yet (drive unmounted, sync paused) is kept. If the file or `CLAUDE_KARMA_EXTRA_ROOTS` fails to parse, Karma keeps the last roots it loaded and skips the "removed root" cleanup until it parses again. While any entry is ignored, that cleanup is skipped too, so a typo never deletes a root's sessions.
 
 ### Step M3: How Sessions Are Matched to Projects
 
