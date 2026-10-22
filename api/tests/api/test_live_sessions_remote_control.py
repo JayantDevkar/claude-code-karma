@@ -356,7 +356,10 @@ def test_pane_ownership_against_real_tmux(monkeypatch):
     monkeypatch.setenv("TMUX_TMPDIR", tmpdir)
     monkeypatch.delenv("TMUX", raising=False)
     name = f"karma-rc-test-{os.getpid()}"
-    created = subprocess.run(["tmux", "new-session", "-d", "-s", name], capture_output=True)
+    # fixed pane command: a login shell's startup files fork short-lived helpers that pgrep -P can pick
+    created = subprocess.run(
+        ["tmux", "new-session", "-d", "-s", name, "sleep 30 & wait"], capture_output=True
+    )
     if created.returncode != 0:
         subprocess.run(["tmux", "kill-server"], capture_output=True)
         shutil.rmtree(tmpdir, ignore_errors=True)
@@ -388,11 +391,10 @@ def test_pane_ownership_against_real_tmux(monkeypatch):
             time.sleep(0.1)
         assert owned is True
 
-        subprocess.run(["tmux", "send-keys", "-t", pane, "sleep 30", "Enter"], capture_output=True)
         child = None
         for _ in range(30):
             out = subprocess.run(
-                ["pgrep", "-P", str(pane_pid)], capture_output=True, text=True
+                ["pgrep", "-x", "-P", str(pane_pid), "sleep"], capture_output=True, text=True
             ).stdout.split()
             if out:
                 child = int(out[0])
