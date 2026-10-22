@@ -10,9 +10,11 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import subprocess
 import sys
 import threading
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -91,15 +93,25 @@ def _seed_shell(
     spawned_at: str = "2026-05-25T00:00:00Z",
     terminated_at: str | None = None,
     terminated_by: str | None = None,
+    output_file_path: str | None = None,
 ) -> int:
     cur = conn.execute(
         """
         INSERT INTO background_shells
             (session_uuid, tool_use_id, tool_name, command, spawned_at,
-             terminated_at, terminated_by)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+             terminated_at, terminated_by, output_file_path)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        (session_uuid, tool_use_id, tool_name, command, spawned_at, terminated_at, terminated_by),
+        (
+            session_uuid,
+            tool_use_id,
+            tool_name,
+            command,
+            spawned_at,
+            terminated_at,
+            terminated_by,
+            output_file_path,
+        ),
     )
     return cur.lastrowid  # type: ignore[return-value]
 
@@ -432,3 +444,98 @@ class TestSessionShells:
         # With include_polls=False, the 'polls' key should not be set
         shell = body["shells"][0]
         assert "polls" not in shell
+
+
+# ---------------------------------------------------------------------------
+# POST /shells/{tool_use_id}/kill
+# ---------------------------------------------------------------------------
+
+_OUT = "/private/tmp/claude-501/-test-proj/tasks/bx93dg00s.output"
+
+
+class TestKillShell:
+    @pytest.fixture
+    def procs(self, monkeypatch):
+        """Stub lsof/kill: set .lsof_stdout, read the argv of every subprocess.run from .calls."""
+        from routers import background_shells
+
+        stub = SimpleNamespace(calls=[], lsof_stdout="")
+
+        def fake_run(cmd, **kwargs):
+            stub.calls.append(cmd)
+            stdout = stub.lsof_stdout if cmd[0] == "lsof" else ""
+            return subprocess.CompletedProcess(cmd, 0, stdout=stdout, stderr="")
+
+        monkeypatch.setattr(background_shells.shutil, "which", lambda name: f"/usr/sbin/{name}")
+        monkeypatch.setattr(background_shells.subprocess, "run", fake_run)
+        return stub
+
+    @staticmethod
+    def _seed(client, **kwargs) -> None:
+        conn = _writer(client)
+        _seed_session(conn, "sess-k")
+        _seed_shell(conn, session_uuid="sess-k", tool_use_id="toolu_k", **kwargs)
+        conn.commit()
+
+    @staticmethod
+    def _row(client) -> sqlite3.Row:
+        return (
+            _writer(client)
+            .execute(
+                "SELECT terminated_at, terminated_by FROM background_shells "
+                "WHERE tool_use_id = 'toolu_k'"
+            )
+            .fetchone()
+        )
+
+    def test_no_pid_from_lsof_still_marks_killed(self, client, procs):
+        self._seed(client, output_file_path=_OUT)
+
+        r = client.post("/shells/toolu_k/kill")
+
+        assert r.status_code == 200
+        assert r.json()["killed"] is True
+        assert r.json()["pids_signalled"] == []
+        assert procs.calls == [["lsof", "-F", "p", _OUT]]
+        assert self._row(client)["terminated_by"] == "kill"
+        assert self._row(client)["terminated_at"] is not None
+
+    def test_signals_every_pid_lsof_reports(self, client, procs):
+        self._seed(client, output_file_path=_OUT)
+        procs.lsof_stdout = "p4242\nf1\np4343\nf1\n"
+
+        r = client.post("/shells/toolu_k/kill")
+
+        assert r.json()["pids_signalled"] == [4242, 4343]
+        assert procs.calls[1:] == [["kill", "-TERM", "4242"], ["kill", "-TERM", "4343"]]
+        assert self._row(client)["terminated_by"] == "kill"
+
+    def test_without_lsof_marks_killed_and_runs_nothing(self, client, procs, monkeypatch):
+        from routers import background_shells
+
+        monkeypatch.setattr(background_shells.shutil, "which", lambda name: None)
+        self._seed(client, output_file_path=_OUT)
+
+        r = client.post("/shells/toolu_k/kill")
+
+        assert r.json()["pids_signalled"] == []
+        assert procs.calls == []
+        assert self._row(client)["terminated_by"] == "kill"
+
+    def test_already_terminated_shell_is_left_alone(self, client, procs):
+        self._seed(
+            client,
+            output_file_path=_OUT,
+            terminated_at="2026-05-25T00:05:00Z",
+            terminated_by="natural",
+        )
+
+        r = client.post("/shells/toolu_k/kill")
+
+        assert r.json() == {"killed": False, "reason": "already terminated"}
+        assert procs.calls == []
+        assert self._row(client)["terminated_by"] == "natural"
+
+    def test_unknown_shell_returns_404(self, client, procs):
+        assert client.post("/shells/toolu_missing/kill").status_code == 404
+        assert procs.calls == []

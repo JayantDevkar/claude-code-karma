@@ -473,6 +473,47 @@ class TestGetUsageSummary:
         # Opus 4.8: $5/$25 per 1M tokens
         assert agent.get_total_cost() == pytest.approx((100 * 5.0 + 50 * 25.0) / 1_000_000)
 
+    def test_mixed_model_cost_prices_each_response_by_its_own_model(
+        self, temp_project_dir: Path
+    ) -> None:
+        """Each response is priced by its own model, never one model picked from a set (#78)."""
+        agent_path = temp_project_dir / "agent-mixed-models.jsonl"
+        responses = [
+            ("msg_a", "claude-opus-4-8", 1000, 200),
+            ("msg_b", "claude-haiku-4-5-20251001", 3000, 900),
+            ("msg_c", "claude-opus-4-8", 500, 100),
+        ]
+        with open(agent_path, "w") as f:
+            for i, (msg_id, model, input_tokens, output_tokens) in enumerate(responses):
+                msg = {
+                    "type": "assistant",
+                    "message": {
+                        "id": msg_id,
+                        "model": model,
+                        "role": "assistant",
+                        "content": [{"type": "text", "text": f"response {i}"}],
+                        "usage": {"input_tokens": input_tokens, "output_tokens": output_tokens},
+                    },
+                    "uuid": f"uuid-{i}",
+                    "timestamp": f"2026-01-08T13:0{i}:00.000Z",
+                }
+                f.write(json.dumps(msg) + "\n")
+
+        expected = sum(
+            TokenUsage(input_tokens=i, output_tokens=o).calculate_cost(m)
+            for _, m, i, o in responses
+        )
+        summed = TokenUsage(input_tokens=4500, output_tokens=1200)
+        for model in ("claude-opus-4-8", "claude-haiku-4-5-20251001"):
+            assert expected != pytest.approx(summed.calculate_cost(model))
+
+        agent = Agent.from_path(agent_path)
+        assert agent.get_models_used() == {"claude-opus-4-8", "claude-haiku-4-5-20251001"}
+        assert agent.get_total_cost() == pytest.approx(expected)
+        assert agent.get_total_cost() == pytest.approx(expected)
+        Agent.clear_all_caches()
+        assert Agent.from_path(agent_path).get_total_cost() == pytest.approx(expected)
+
     def test_get_usage_summary_zero_for_user_only(self, temp_project_dir: Path) -> None:
         """Test usage is zero when only user messages exist."""
         agent_path = temp_project_dir / "agent-user-only.jsonl"

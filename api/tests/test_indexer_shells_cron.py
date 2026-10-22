@@ -3,10 +3,12 @@ Tests for the v13 background-shells + cron extraction and query layer.
 
 Covers:
 - JSONL extraction: spawn/poll/kill/cron-create/cron-delete pairing
+- Natural exit (<task-notification>), Read-on-output-file polls, `!`-backgrounded shells
+- Live-vs-ended session detection and the v19 background_shells rebuild
 - UPSERT idempotency (parent ids preserved across re-index)
 - DB CHECK constraints (coherence, terminated_by, recurring)
 - Hook ingestion: events.jsonl → cron_state_snapshots
-- On-read cron fire inference (croniter)
+- On-read cron fire inference (croniter), including croniter being absent
 - Query helpers: per-session, global, project rollups
 
 All tests use an in-memory SQLite DB. Synthetic JSONLs are written to a
@@ -19,14 +21,16 @@ import json
 import logging
 import sqlite3
 import sys
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from db.indexer import _LIVE_FALLBACK_SECS, _is_session_ended
 from db.indexer_shells_cron import (
     _CRON_ID_RE,
     _SHELL_ID_RE,
@@ -44,8 +48,9 @@ from db.queries_shells_cron import (
     get_shells_global,
     get_shells_project_rollup,
     infer_cron_fires,
+    infer_cron_fires_bulk,
 )
-from db.schema import ensure_schema
+from db.schema import SCHEMA_SQL, SCHEMA_VERSION, ensure_schema
 
 # ============================================================================
 # Fixtures + helpers
@@ -126,6 +131,77 @@ def _api_request_blob(blocks: List[Dict[str, Any]], role: str = "assistant") -> 
 def _write_jsonl(path: Path, lines: List[Dict[str, Any]]) -> Path:
     path.write_text("\n".join(json.dumps(line) for line in lines) + "\n")
     return path
+
+
+def _bg_bash_spawn(
+    tool_use_id: str, shell_id: str, minute: int = 0, output_file: Optional[str] = None
+) -> List[Dict[str, Any]]:
+    """Bash{run_in_background} call plus its result, in current Claude Code wording."""
+    result = f"Command running in background with ID: {shell_id}."
+    if output_file:
+        result += f" Output is being written to: {output_file}"
+    return [
+        _assistant_tool_use(
+            "Bash",
+            tool_use_id,
+            {"command": f"run {shell_id}", "run_in_background": True},
+            ts=_ts(minute),
+            msg_uuid=f"msg-{tool_use_id}",
+        ),
+        _tool_result(tool_use_id, result, ts=_ts(minute, 1)),
+    ]
+
+
+def _manual_bg(
+    task_id: str, command: str, output_file: Path, minute: int = 0
+) -> List[Dict[str, Any]]:
+    """The two user lines Claude Code writes when the user backgrounds a `!` command."""
+    return [
+        {
+            "type": "user",
+            "uuid": f"bash-in-{task_id}",
+            "timestamp": _ts(minute),
+            "message": {"role": "user", "content": f"<bash-input>{command}</bash-input>"},
+        },
+        {
+            "type": "user",
+            "uuid": f"bash-out-{task_id}",
+            "parentUuid": f"bash-in-{task_id}",
+            "timestamp": _ts(minute, 2),
+            "message": {
+                "role": "user",
+                "content": (
+                    f"<bash-stdout>Command was manually backgrounded by user with ID: {task_id}. "
+                    f"Output is being written to: {output_file}</bash-stdout>"
+                    "<bash-stderr></bash-stderr>"
+                ),
+            },
+        },
+    ]
+
+
+def _task_notification(
+    status: str,
+    *,
+    task_id: str,
+    tool_use_id: Optional[str] = None,
+    exit_code: Optional[int] = None,
+    ts: str = _ts(5),
+) -> Dict[str, Any]:
+    """Raw-string user line Claude Code writes when a background shell exits."""
+    lines = ["<task-notification>", f"<task-id>{task_id}</task-id>"]
+    if tool_use_id:
+        lines.append(f"<tool-use-id>{tool_use_id}</tool-use-id>")
+    summary = f'Background command "run {task_id}" {status}'
+    if exit_code is not None:
+        summary += f" (exit code {exit_code})"
+    lines += [f"<status>{status}</status>", f"<summary>{summary}</summary>", "</task-notification>"]
+    return {
+        "type": "user",
+        "uuid": f"notif-{task_id}",
+        "timestamp": ts,
+        "message": {"role": "user", "content": "\n".join(lines)},
+    }
 
 
 # ============================================================================
@@ -430,6 +506,181 @@ class TestExtraction:
 
 
 # ============================================================================
+# Natural exit via <task-notification>
+# ============================================================================
+
+
+class TestTaskNotification:
+    @pytest.mark.parametrize(
+        "status, exit_code, expected_by",
+        [("completed", 0, "natural"), ("failed", 2, "natural"), ("timeout", None, "timeout")],
+    )
+    def test_tool_use_id_closes_the_matching_shell(self, tmp_path, status, exit_code, expected_by):
+        jsonl = _write_jsonl(
+            tmp_path / "s.jsonl",
+            _bg_bash_spawn("toolu_a", "bx93dg00s")
+            + _bg_bash_spawn("toolu_b", "bq71kd22a", minute=1)
+            + [
+                _task_notification(
+                    status, task_id="bq71kd22a", tool_use_id="toolu_b", exit_code=exit_code
+                )
+            ],
+        )
+        shells, _, _ = extract_shells_and_cron(jsonl, "s1", session_ended=False)
+        by_tu = {s["tool_use_id"]: s for s in shells}
+
+        assert by_tu["toolu_b"]["terminated_by"] == expected_by
+        assert by_tu["toolu_b"]["terminated_at"] == _ts(5)
+        assert by_tu["toolu_b"]["exit_code"] == exit_code
+        assert by_tu["toolu_a"]["terminated_at"] is None
+
+    def test_task_id_fallback_for_user_backgrounded_shell(self, tmp_path):
+        # User-initiated shells get a notification with no <tool-use-id>.
+        jsonl = _write_jsonl(
+            tmp_path / "s.jsonl",
+            _bg_bash_spawn("toolu_bg", "bx93dg00s")
+            + _manual_bg("m4n5o6p7", "npm run dev", tmp_path / "m4n5o6p7.output", minute=1)
+            + [_task_notification("failed", task_id="m4n5o6p7", exit_code=1)],
+        )
+        shells, _, _ = extract_shells_and_cron(jsonl, "s1", session_ended=False)
+        by_tu = {s["tool_use_id"]: s for s in shells}
+
+        manual = by_tu["manual:m4n5o6p7"]
+        assert manual["terminated_by"] == "natural"
+        assert manual["exit_code"] == 1
+        assert manual["terminated_at"] == _ts(5)
+        assert by_tu["toolu_bg"]["terminated_at"] is None
+
+
+# ============================================================================
+# Modern polling: Read on the shell's output file
+# ============================================================================
+
+
+class TestReadOutputFilePolls:
+    def test_read_on_output_file_is_a_poll(self, mem_db, tmp_path):
+        out = "/private/tmp/claude-501/-foo/tasks/bx93dg00s.output"
+        jsonl = _write_jsonl(
+            tmp_path / "s.jsonl",
+            _bg_bash_spawn("toolu_bg", "bx93dg00s", output_file=out)
+            + [
+                _assistant_tool_use(
+                    "Read", "toolu_r1", {"file_path": out}, ts=_ts(2), msg_uuid="msg-r1"
+                ),
+                _tool_result("toolu_r1", "building...\ndone", ts=_ts(2, 1)),
+                _assistant_tool_use(
+                    "Read",
+                    "toolu_r2",
+                    {"file_path": "/repo/README.md"},
+                    ts=_ts(3),
+                    msg_uuid="msg-r2",
+                ),
+                _tool_result("toolu_r2", "unrelated file", ts=_ts(3, 1)),
+            ],
+        )
+        shells, polls, _ = extract_shells_and_cron(jsonl, "s1", session_ended=False)
+
+        assert len(shells) == 1
+        shell = shells[0]
+        assert shell["output_file_path"] == out
+        assert shell["poll_count"] == 1
+        assert shell["total_output_bytes"] == len("building...\ndone")
+        assert shell["last_output_at"] == _ts(2)
+        assert [p["tool_use_id"] for p in polls] == ["toolu_r1"]
+        assert polls[0]["_parent_tool_use_id"] == "toolu_bg"
+        assert polls[0]["output_excerpt"] == "building...\ndone"
+        assert polls[0]["filter_pattern"] is None
+
+        _seed_session(mem_db)
+        persist_shells_and_cron(mem_db, "s1", shells, polls, [])
+        rows = mem_db.execute(
+            "SELECT p.tool_use_id FROM shell_polls p JOIN background_shells s "
+            "ON s.id = p.shell_row_id WHERE s.tool_use_id = 'toolu_bg'"
+        ).fetchall()
+        assert [tuple(r) for r in rows] == [("toolu_r1",)]
+
+
+# ============================================================================
+# User-backgrounded (`!`) shells
+# ============================================================================
+
+
+class TestManualShells:
+    def test_bang_backgrounded_command_becomes_manual_shell(self, mem_db, tmp_path):
+        out = tmp_path / "tasks" / "m4n5o6p7.output"
+        out.parent.mkdir()
+        out.write_text("ready on :5180\n")
+        jsonl = _write_jsonl(tmp_path / "s.jsonl", _manual_bg("m4n5o6p7", "npm run dev", out))
+
+        shells, polls, _ = extract_shells_and_cron(jsonl, "s1", session_ended=False)
+
+        assert len(shells) == 1
+        shell = shells[0]
+        assert shell["tool_name"] == "Manual"
+        assert shell["tool_use_id"] == "manual:m4n5o6p7"
+        assert shell["shell_id"] == "m4n5o6p7"
+        assert shell["command"] == "npm run dev"
+        assert shell["output_file_path"] == str(out)
+        assert shell["spawned_at"] == _ts(0, 2)
+        assert shell["poll_count"] == 1
+        assert shell["total_output_bytes"] == len("ready on :5180\n")
+        assert len(polls) == 1
+        assert polls[0]["tool_use_id"] == "manual_poll:m4n5o6p7"
+        assert polls[0]["_parent_tool_use_id"] == "manual:m4n5o6p7"
+        assert polls[0]["output_excerpt"] == "ready on :5180\n"
+
+        _seed_session(mem_db)
+        persist_shells_and_cron(mem_db, "s1", shells, polls, [])
+        shell_rows = mem_db.execute("SELECT tool_name, command FROM background_shells").fetchall()
+        assert [tuple(r) for r in shell_rows] == [("Manual", "npm run dev")]
+        poll_rows = mem_db.execute("SELECT tool_use_id FROM shell_polls").fetchall()
+        assert [tuple(r) for r in poll_rows] == [("manual_poll:m4n5o6p7",)]
+
+    def test_missing_output_file_records_shell_without_poll(self, tmp_path):
+        jsonl = _write_jsonl(
+            tmp_path / "s.jsonl", _manual_bg("m4n5o6p7", "npm run dev", tmp_path / "gone.output")
+        )
+        shells, polls, _ = extract_shells_and_cron(jsonl, "s1", session_ended=False)
+
+        assert [s["tool_name"] for s in shells] == ["Manual"]
+        assert shells[0]["poll_count"] == 0
+        assert polls == []
+
+
+# ============================================================================
+# Live vs ended session detection (indexer._is_session_ended)
+# ============================================================================
+
+
+class TestIsSessionEnded:
+    @pytest.fixture
+    def live_dir(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        d = tmp_path / ".claude_karma" / "live-sessions"
+        d.mkdir(parents=True)
+        return d
+
+    @staticmethod
+    def _write_state(live_dir: Path, state: str) -> None:
+        (live_dir / "s1.json").write_text(json.dumps({"session_id": "s1", "state": state}))
+
+    def test_ended_state_wins_over_fresh_mtime(self, live_dir):
+        self._write_state(live_dir, "ENDED")
+        assert _is_session_ended("s1", time.time()) is True
+
+    @pytest.mark.parametrize("state", ["LIVE", "WAITING", "STALE"])
+    def test_open_state_wins_over_stale_mtime(self, live_dir, state):
+        self._write_state(live_dir, state)
+        assert _is_session_ended("s1", time.time() - 10 * _LIVE_FALLBACK_SECS) is False
+
+    def test_no_state_file_and_stale_mtime_is_ended(self, live_dir):
+        assert _is_session_ended("s1", time.time() - _LIVE_FALLBACK_SECS - 60) is True
+
+    def test_no_state_file_and_fresh_mtime_is_open(self, live_dir):
+        assert _is_session_ended("s1", time.time() - 60) is False
+
+
+# ============================================================================
 # api-request-blob replay lines (#124)
 # ============================================================================
 
@@ -667,6 +918,23 @@ class TestSchemaConstraints:
                 "WHERE tool_use_id='toolu_x'"
             )
 
+    def test_cron_coherence_check_blocks_half_set_state(self, mem_db):
+        """deleted_at and deleted_via must be set together, in either direction."""
+        _seed_session(mem_db)
+        mem_db.execute("""
+            INSERT INTO cron_jobs
+            (session_uuid, tool_use_id, cron_expression, prompt, created_at, ttl_expires_at)
+            VALUES ('s1', 'toolu_c', '* * * * *', 'p',
+                    '2026-05-25T00:00:00Z', '2026-06-01T00:00:00Z')
+        """)
+        for half_set in ("deleted_at='2026-05-25T00:01:00Z'", "deleted_via='CronDelete'"):
+            with pytest.raises(sqlite3.IntegrityError, match="CHECK constraint failed"):
+                mem_db.execute(f"UPDATE cron_jobs SET {half_set} WHERE tool_use_id='toolu_c'")
+        mem_db.execute(
+            "UPDATE cron_jobs SET deleted_at='2026-05-25T00:01:00Z', deleted_via='CronDelete' "
+            "WHERE tool_use_id='toolu_c'"
+        )
+
     def test_recurring_must_be_boolean(self, mem_db):
         _seed_session(mem_db)
         with pytest.raises(sqlite3.IntegrityError):
@@ -716,6 +984,124 @@ class TestSchemaConstraints:
         mem_db.execute("DELETE FROM sessions WHERE uuid='s1'")
         assert mem_db.execute("SELECT COUNT(*) FROM background_shells").fetchone()[0] == 0
         assert mem_db.execute("SELECT COUNT(*) FROM shell_polls").fetchone()[0] == 0
+
+
+# ============================================================================
+# v19 background_shells table-recreate migration
+# ============================================================================
+
+# background_shells as v13 created it; v18 appended output_file_path, v19 added 'Manual'.
+_PRE_V19_SHELLS_DDL = """
+CREATE TABLE background_shells (
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_uuid       TEXT    NOT NULL,
+    tool_use_id        TEXT    NOT NULL,
+    shell_id           TEXT,
+    tool_name          TEXT    NOT NULL CHECK (tool_name IN ('Bash','Monitor')),
+    command            TEXT    NOT NULL,
+    command_truncated  INTEGER NOT NULL DEFAULT 0 CHECK (command_truncated IN (0,1)),
+    description        TEXT,
+    is_persistent      INTEGER NOT NULL DEFAULT 0 CHECK (is_persistent IN (0,1)),
+    timeout_ms         INTEGER,
+    spawned_at         TEXT    NOT NULL,
+    terminated_at      TEXT,
+    terminated_by      TEXT    CHECK (terminated_by IN ('kill','natural','timeout','session_end')),
+    exit_code          INTEGER,
+    poll_count         INTEGER NOT NULL DEFAULT 0,
+    total_output_bytes INTEGER NOT NULL DEFAULT 0,
+    last_output_at     TEXT,
+    spawn_message_uuid TEXT,
+    {v18_column}
+    CHECK ((terminated_at IS NULL) = (terminated_by IS NULL)),
+    FOREIGN KEY (session_uuid) REFERENCES sessions(uuid) ON DELETE CASCADE,
+    UNIQUE(tool_use_id)
+)
+"""
+
+
+def _pre_v19_db(start_version: int) -> sqlite3.Connection:
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.executescript(SCHEMA_SQL)
+    conn.execute("DROP TABLE background_shells")
+    v18_column = "output_file_path TEXT," if start_version >= 18 else ""
+    conn.execute(_PRE_V19_SHELLS_DDL.format(v18_column=v18_column))
+    conn.execute("DELETE FROM schema_version")
+    conn.execute("INSERT INTO schema_version (version) VALUES (?)", (start_version,))
+    conn.commit()
+    conn.execute("PRAGMA foreign_keys=ON")
+    return conn
+
+
+class TestV19ShellsMigration:
+    @pytest.mark.parametrize("start_version", [13, 18])
+    def test_recreate_keeps_rows_and_polls_and_accepts_manual(self, start_version):
+        conn = _pre_v19_db(start_version)
+        _seed_project(conn)
+        _seed_session(conn)
+        conn.execute("UPDATE sessions SET needs_shell_cron_reindex = 0")
+        conn.execute("""
+            INSERT INTO background_shells
+            (session_uuid, tool_use_id, shell_id, tool_name, command, command_truncated,
+             description, is_persistent, timeout_ms, spawned_at, terminated_at, terminated_by,
+             exit_code, poll_count, total_output_bytes, last_output_at, spawn_message_uuid)
+            VALUES
+            ('s1', 'toolu_bash', 'bx93dg00s', 'Bash', 'npm test', 1, 'tests', 0, 600000,
+             '2026-05-25T00:00:00Z', '2026-05-25T00:05:00Z', 'natural', 0, 2, 2048,
+             '2026-05-25T00:04:00Z', 'msg-1'),
+            ('s1', 'toolu_mon', NULL, 'Monitor', 'tail -f log', 0, NULL, 1, NULL,
+             '2026-05-25T00:01:00Z', NULL, NULL, NULL, 1, 10, '2026-05-25T00:02:00Z', 'msg-2')
+        """)
+        bash_id, mon_id = [
+            r[0] for r in conn.execute("SELECT id FROM background_shells ORDER BY tool_use_id")
+        ]
+        conn.executemany(
+            "INSERT INTO shell_polls (shell_row_id, polled_at, output_bytes, tool_use_id) "
+            "VALUES (?, ?, ?, ?)",
+            [
+                (bash_id, "2026-05-25T00:02:00Z", 1024, "toolu_p1"),
+                (bash_id, "2026-05-25T00:04:00Z", 1024, "toolu_p2"),
+                (mon_id, "2026-05-25T00:02:00Z", 10, "toolu_p3"),
+            ],
+        )
+        with pytest.raises(sqlite3.IntegrityError, match="CHECK constraint failed"):
+            conn.execute(
+                "INSERT INTO background_shells (session_uuid, tool_use_id, tool_name, command, "
+                "spawned_at) VALUES ('s1', 'manual:pre', 'Manual', 'x', '2026-05-25T00:00:00Z')"
+            )
+        conn.commit()
+        shells_before = [
+            dict(r) for r in conn.execute("SELECT * FROM background_shells ORDER BY id")
+        ]
+        polls_before = [dict(r) for r in conn.execute("SELECT * FROM shell_polls ORDER BY id")]
+
+        ensure_schema(conn)
+
+        assert (
+            conn.execute("SELECT MAX(version) FROM schema_version").fetchone()[0] == SCHEMA_VERSION
+        )
+        shells_after = [
+            dict(r) for r in conn.execute("SELECT * FROM background_shells ORDER BY id")
+        ]
+        assert [{k: r[k] for k in shells_before[0]} for r in shells_after] == shells_before
+        assert all(r["output_file_path"] is None for r in shells_after)
+        assert [
+            dict(r) for r in conn.execute("SELECT * FROM shell_polls ORDER BY id")
+        ] == polls_before
+        assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+        assert conn.execute("PRAGMA foreign_keys").fetchone()[0] == 1
+        assert conn.execute("SELECT needs_shell_cron_reindex FROM sessions").fetchone()[0] == 1
+
+        conn.execute(
+            "INSERT INTO background_shells (session_uuid, tool_use_id, tool_name, command, "
+            "spawned_at) VALUES ('s1', 'manual:m4n5o6p7', 'Manual', 'npm run dev', "
+            "'2026-05-25T00:06:00Z')"
+        )
+        with pytest.raises(sqlite3.IntegrityError, match="CHECK constraint failed"):
+            conn.execute(
+                "INSERT INTO background_shells (session_uuid, tool_use_id, tool_name, command, "
+                "spawned_at) VALUES ('s1', 'toolu_zsh', 'Zsh', 'x', '2026-05-25T00:00:00Z')"
+            )
 
 
 # ============================================================================
@@ -904,6 +1290,16 @@ class TestFireInference:
         cron = self._make_cron(expr="not a cron")
         jsonl = self._make_jsonl_with_turns(tmp_path / "s.jsonl", [(15, 0)])
         assert infer_cron_fires(jsonl, cron) == []
+
+    def test_missing_croniter_returns_empty_without_raising(self, tmp_path, monkeypatch):
+        cron = self._make_cron()
+        jsonl = self._make_jsonl_with_turns(tmp_path / "s.jsonl", [(15, 2)])
+        assert len(infer_cron_fires(jsonl, cron)) == 1
+
+        monkeypatch.setitem(sys.modules, "croniter", None)
+
+        assert infer_cron_fires(jsonl, cron) == []
+        assert infer_cron_fires_bulk(jsonl, [{**cron, "tool_use_id": "toolu_c"}]) == {"toolu_c": []}
 
     def test_missing_jsonl_returns_empty(self, tmp_path):
         cron = self._make_cron()
