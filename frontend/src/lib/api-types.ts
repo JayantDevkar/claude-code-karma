@@ -302,6 +302,11 @@ export interface SessionDetail extends SessionSummary {
 	commands_used?: CommandUsage[];
 	// Image attachments from the initial prompt
 	initial_prompt_images?: ImageAttachment[];
+	// Usage summed across all subagents at every spawn depth
+	subagent_input_tokens?: number;
+	subagent_output_tokens?: number;
+	subagent_cache_read_tokens?: number;
+	subagent_cost?: number;
 }
 
 /**

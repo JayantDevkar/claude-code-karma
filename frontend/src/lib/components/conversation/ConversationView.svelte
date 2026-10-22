@@ -638,6 +638,8 @@
 		return base;
 	});
 	let activeTab = $state('overview');
+	// Analytics tab: 'own' is the session's own work, 'total' adds every subagent
+	let analyticsScope = $state<'own' | 'total'>('own');
 	let tabsReady = $state(true); // Initialize to true for SSR rendering
 	let isMounted = $state(false); // Track if component is mounted (router ready)
 
@@ -719,6 +721,7 @@
 		if (tabParam && validTabs.includes(tabParam)) {
 			activeTab = tabParam;
 		}
+		analyticsScope = params.get('scope') === 'total' ? 'total' : 'own';
 
 		const handlePopState = () => {
 			const params = new URLSearchParams(window.location.search);
@@ -767,7 +770,7 @@
 	$effect(() => {
 		if (!browser || !tabsReady || !isMounted) return;
 
-		// Capture activeTab to track only this dependency (not $page.state)
+		// Capture activeTab (and analyticsScope below) to track only these dependencies (not $page.state)
 		const tab = activeTab;
 
 		const url = new URL(window.location.href);
@@ -776,6 +779,12 @@
 			url.searchParams.delete('tab');
 		} else {
 			url.searchParams.set('tab', tab);
+		}
+
+		if (analyticsScope === 'total') {
+			url.searchParams.set('scope', 'total');
+		} else {
+			url.searchParams.delete('scope');
 		}
 
 		try {
@@ -788,9 +797,16 @@
 	// Derived values
 	let totalToolCalls = $derived(toolsArray.reduce((acc, t) => acc + t.count, 0));
 
-	// Overview counts subagent tool calls; the Analytics tab is the session's own work
+	// Total scope only applies to main sessions that spawned subagents
+	let subagentCount = $derived(entity && isMainSession(entity) ? entity.subagent_count : 0);
+	let canShowTotal = $derived(subagentCount > 0);
+	let showTotal = $derived(canShowTotal && analyticsScope === 'total');
+
+	// Overview counts subagent tool calls; the Analytics tab defaults to the session's own work
 	let analyticsTools = $derived(
-		entity && isSubagentSession(entity) ? toolsArray : sessionOnlyTools(toolsArray)
+		(entity && isSubagentSession(entity)) || showTotal
+			? toolsArray
+			: sessionOnlyTools(toolsArray)
 	);
 	let analyticsToolCalls = $derived(analyticsTools.reduce((acc, t) => acc + t.count, 0));
 	let analyticsToolsRecord = $derived.by<Record<string, number>>(() => {
@@ -803,13 +819,19 @@
 		return seconds >= 86400 ? `${(seconds / 86400).toFixed(1)} days` : formatDuration(seconds);
 	}
 
-	// Analytics stats (each subagent's usage is on its own analytics page)
+	// Analytics stats: own work by default, plus all subagents in Total scope
 	let analyticsStats = $derived.by<StatItem[]>(() => {
 		if (!entity) return [];
 		const isAgent = isSubagentSession(entity);
-		const tokenIn = entity.total_input_tokens || 0;
-		const tokenOut = entity.total_output_tokens || 0;
-		const cacheReads = entity.cache_read_tokens || 0;
+		const sub = showTotal && isMainSession(entity) ? entity : null;
+		const tokenIn = (entity.total_input_tokens || 0) + (sub?.subagent_input_tokens || 0);
+		const tokenOut = (entity.total_output_tokens || 0) + (sub?.subagent_output_tokens || 0);
+		const cacheReads = (entity.cache_read_tokens || 0) + (sub?.subagent_cache_read_tokens || 0);
+		const cost = (entity.total_cost || 0) + (sub?.subagent_cost || 0);
+		// Recompute from summed counts; averaging per-agent rates would be wrong
+		const cacheHitRate = sub
+			? cacheReads / (tokenIn + cacheReads || 1)
+			: entity.cache_hit_rate || 0;
 		const toolsCount = isAgent
 			? Object.keys(entity.tools_used || {}).length
 			: analyticsTools.length;
@@ -826,7 +848,7 @@
 			{
 				title: 'Total Cost',
 				description: 'API pricing',
-				value: formatCost(entity.total_cost),
+				value: formatCost(cost),
 				icon: DollarSign,
 				color: 'purple'
 			},
@@ -857,7 +879,7 @@
 			},
 			{
 				title: 'Cache Hit Rate',
-				value: `${((entity.cache_hit_rate || 0) * 100).toFixed(1)}%`,
+				value: `${(cacheHitRate * 100).toFixed(1)}%`,
 				icon: Percent,
 				color: 'accent'
 			}
@@ -1258,13 +1280,37 @@
 				<!-- Analytics Tab -->
 				<Tabs.Content value="analytics" class="animate-fade-in">
 					<div class="space-y-6">
-						<div>
-							<h2 class="text-lg font-semibold text-[var(--text-primary)]">
-								{isSubagentSession(entity) ? 'Agent' : 'Session'} Analytics
-							</h2>
-							<p class="text-sm text-[var(--text-muted)]">
-								Detailed usage metrics for this {entityLabel}
-							</p>
+						<div class="flex flex-wrap items-start justify-between gap-3">
+							<div>
+								<h2 class="text-lg font-semibold text-[var(--text-primary)]">
+									{isSubagentSession(entity) ? 'Agent' : 'Session'} Analytics
+								</h2>
+								<p class="text-sm text-[var(--text-muted)]">
+									{showTotal
+										? `Usage for this ${entityLabel} plus all ${subagentCount} subagents`
+										: `Detailed usage metrics for this ${entityLabel}`}
+								</p>
+							</div>
+							{#if canShowTotal}
+								<div
+									class="flex items-center gap-1.5"
+									role="group"
+									aria-label="Analytics scope"
+								>
+									{#each [{ value: 'own', label: 'Own' }, { value: 'total', label: 'Total' }] as const as option (option.value)}
+										<button
+											onclick={() => (analyticsScope = option.value)}
+											class="px-3 py-1 text-xs font-medium rounded-full transition-all {analyticsScope ===
+											option.value
+												? 'bg-[var(--accent-subtle)] text-[var(--accent)] border border-[var(--accent)]/30'
+												: 'bg-[var(--bg-subtle)] text-[var(--text-muted)] border border-transparent hover:border-[var(--border)] hover:text-[var(--text-secondary)]'}"
+											aria-pressed={analyticsScope === option.value}
+										>
+											{option.label}
+										</button>
+									{/each}
+								</div>
+							{/if}
 						</div>
 
 						<StatsGrid stats={analyticsStats} columns={5} />

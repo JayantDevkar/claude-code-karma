@@ -233,6 +233,11 @@ class SessionDetail(SessionSummary):
     cache_hit_rate: float = 0.0
     cache_read_tokens: int = Field(0, description="Input tokens served from cache")
     total_cost: float = Field(0.0, description="Total estimated cost in USD")
+    # Summed across all subagents at every spawn depth (Claude Code stores them flat)
+    subagent_input_tokens: int = 0
+    subagent_output_tokens: int = 0
+    subagent_cache_read_tokens: int = 0
+    subagent_cost: float = Field(0.0, description="Estimated subagent cost in USD")
     todos: list[TodoItemSchema] = Field(
         default_factory=list, description="Todo items for this session"
     )
