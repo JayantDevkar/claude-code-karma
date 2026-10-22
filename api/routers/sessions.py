@@ -974,8 +974,11 @@ def get_session(uuid: str, request: Request, fresh: bool = False):
     if fresh:
         session.clear_cache()
 
-    # Phase 3: Check conditional request headers (single stat() call)
-    etag, last_modified = get_file_cache_info(session.jsonl_path)
+    # Phase 3: Check conditional request headers. Subagent files count too:
+    # they feed the subagent totals and can change while the main JSONL is idle.
+    etag, last_modified = get_file_cache_info(
+        session.jsonl_path, session.subagents_dir.glob("agent-*.jsonl")
+    )
 
     conditional_response = check_conditional_request(request, etag, last_modified)
     if conditional_response:

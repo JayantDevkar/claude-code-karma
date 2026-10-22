@@ -3,6 +3,7 @@ Tests for the subagent usage totals in GET /sessions/{uuid}.
 """
 
 import json
+import os
 
 import pytest
 from fastapi.testclient import TestClient
@@ -84,3 +85,44 @@ def test_session_detail_reports_subagent_totals(client, session_with_nested_suba
     assert data["subagent_output_tokens"] == 50
     assert data["subagent_cache_read_tokens"] == 110
     assert data["subagent_cost"] > 0
+
+
+def test_session_detail_without_subagents_reports_zero(client, mock_claude_base):
+    project_dir = mock_claude_base / "projects" / "-Users-test-totalsproject"
+    project_dir.mkdir(parents=True, exist_ok=True)
+    (project_dir / "no-subagents-uuid.jsonl").write_text(
+        json.dumps(_assistant_line("main-1", {"input_tokens": 100, "output_tokens": 10})) + "\n"
+    )
+
+    data = client.get("/sessions/no-subagents-uuid").json()
+
+    assert data["total_input_tokens"] == 100
+    assert data["subagent_input_tokens"] == 0
+    assert data["subagent_output_tokens"] == 0
+    assert data["subagent_cache_read_tokens"] == 0
+    assert data["subagent_cost"] == 0.0
+
+
+def test_etag_changes_when_a_subagent_writes(
+    client, session_with_nested_subagents, mock_claude_base
+):
+    # A subagent can run for minutes while the main JSONL sits idle
+    first = client.get(f"/sessions/{session_with_nested_subagents}")
+    etag = first.headers["etag"]
+
+    subagent = (
+        mock_claude_base
+        / "projects"
+        / "-Users-test-totalsproject"
+        / SESSION_UUID
+        / "subagents"
+        / "agent-a2.jsonl"
+    )
+    stat = subagent.stat()
+    os.utime(subagent, ns=(stat.st_atime_ns, stat.st_mtime_ns + 5_000_000_000))
+
+    second = client.get(
+        f"/sessions/{session_with_nested_subagents}", headers={"If-None-Match": etag}
+    )
+    assert second.status_code == 200
+    assert second.headers["etag"] != etag

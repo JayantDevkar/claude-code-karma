@@ -14,7 +14,7 @@ import json
 from datetime import datetime, timezone
 from functools import wraps
 from pathlib import Path
-from typing import Any, Callable, List, Optional
+from typing import Any, Callable, Iterable, List, Optional
 
 from fastapi import Request, Response
 from fastapi.responses import JSONResponse
@@ -105,7 +105,9 @@ def get_file_mtime(file_path: Path) -> Optional[datetime]:
     return datetime.fromtimestamp(mtime, tz=timezone.utc)
 
 
-def get_file_cache_info(file_path: Path) -> tuple[Optional[str], Optional[datetime]]:
+def get_file_cache_info(
+    file_path: Path, related: Iterable[Path] = ()
+) -> tuple[Optional[str], Optional[datetime]]:
     """
     Get both ETag and mtime from a file with a single stat() call.
 
@@ -114,6 +116,8 @@ def get_file_cache_info(file_path: Path) -> tuple[Optional[str], Optional[dateti
 
     Args:
         file_path: Path to the file
+        related: Other files the response is built from (e.g. subagent JSONLs);
+            a change to any of them, or one added or removed, changes the ETag
 
     Returns:
         Tuple of (etag, last_modified) where both are None if file doesn't exist
@@ -121,8 +125,15 @@ def get_file_cache_info(file_path: Path) -> tuple[Optional[str], Optional[dateti
     if not file_path.exists():
         return None, None
     mtime = file_path.stat().st_mtime
-    hash_input = f"{file_path}:{mtime}".encode()
-    etag = f'"{hashlib.md5(hash_input).hexdigest()}"'
+    hash_input = f"{file_path}:{mtime}"
+    for path in sorted(related):
+        try:
+            related_mtime = path.stat().st_mtime
+        except OSError:
+            continue
+        hash_input += f"|{path}:{related_mtime}"
+        mtime = max(mtime, related_mtime)
+    etag = f'"{hashlib.md5(hash_input.encode()).hexdigest()}"'
     last_modified = datetime.fromtimestamp(mtime, tz=timezone.utc)
     return etag, last_modified
 

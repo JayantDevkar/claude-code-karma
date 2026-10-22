@@ -731,6 +731,7 @@
 			} else {
 				activeTab = 'overview';
 			}
+			analyticsScope = params.get('scope') === 'total' ? 'total' : 'own';
 		};
 
 		function handleKeydown(e: KeyboardEvent) {
