@@ -29,6 +29,7 @@
 		liveStatusCounts?: LiveStatusCounts;
 		/** Count of completed sessions */
 		completedCount?: number;
+		allCount?: number;
 		/** Whether data is currently loading/updating */
 		isLoading?: boolean;
 		class?: string;
@@ -47,6 +48,7 @@
 		onLiveSubStatusChange,
 		liveStatusCounts,
 		completedCount,
+		allCount,
 		isLoading = false,
 		class: className = ''
 	}: Props = $props();
@@ -115,6 +117,7 @@
 		{onLiveSubStatusChange}
 		{liveStatusCounts}
 		{completedCount}
+		{allCount}
 		variant="desktop"
 	/>
 

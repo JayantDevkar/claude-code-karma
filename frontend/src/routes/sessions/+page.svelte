@@ -1111,6 +1111,7 @@
 					onLiveSubStatusChange={handleLiveSubStatusChange}
 					{liveStatusCounts}
 					completedCount={contextualTotal}
+					allCount={contextualTotal + countLiveOnly(activeLiveSessions)}
 				/>
 			{/if}
 		</div>
@@ -1131,6 +1132,7 @@
 				onLiveSubStatusChange={handleLiveSubStatusChange}
 				{liveStatusCounts}
 				completedCount={contextualTotal}
+				allCount={contextualTotal + countLiveOnly(activeLiveSessions)}
 			/>
 		{/if}
 

@@ -27,6 +27,8 @@
 		liveStatusCounts?: LiveStatusCounts;
 		/** Count of completed sessions */
 		completedCount?: number;
+		/** Overrides the "All" count (e.g. deduped live + historical) */
+		allCount?: number;
 		/** Variant for different visual styles */
 		variant?: 'desktop' | 'mobile';
 	}
@@ -42,6 +44,7 @@
 		onLiveSubStatusChange,
 		liveStatusCounts,
 		completedCount,
+		allCount,
 		variant = 'desktop'
 	}: Props = $props();
 
@@ -65,6 +68,7 @@
 
 	// Calculate total count for "All" option
 	let totalCount = $derived(() => {
+		if (typeof allCount === 'number') return allCount;
 		const liveTotal = liveStatusCounts?.total ?? 0;
 		const completed = completedCount ?? 0;
 		return liveTotal + completed;

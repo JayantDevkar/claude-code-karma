@@ -31,6 +31,7 @@
 		liveStatusCounts?: LiveStatusCounts;
 		/** Count of completed sessions */
 		completedCount?: number;
+		allCount?: number;
 	}
 
 	let {
@@ -46,7 +47,8 @@
 		liveSubStatuses = ALL_LIVE_SUB_STATUSES,
 		onLiveSubStatusChange,
 		liveStatusCounts,
-		completedCount
+		completedCount,
+		allCount
 	}: Props = $props();
 
 	// Prevent body scroll when sheet is open
@@ -135,6 +137,7 @@
 				{onLiveSubStatusChange}
 				{liveStatusCounts}
 				{completedCount}
+				{allCount}
 				variant="mobile"
 			/>
 		</div>
