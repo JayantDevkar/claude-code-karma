@@ -119,7 +119,7 @@
 			<!-- Left: Brand -->
 			<a href="/" class="flex items-center gap-2 hover:opacity-80 transition-opacity">
 				<div class="logo-wrap">
-					<img src="/logo.png" alt="Claude Code Karma" class="w-7 h-7 object-contain" />
+					<img src="/logo-64.png" alt="Claude Code Karma" class="w-7 h-7 object-contain" />
 				</div>
 				<span class="hidden sm:block text-sm font-semibold tracking-tight text-[var(--text-primary)]">
 					Claude <span class="font-bold">Code Karma</span>

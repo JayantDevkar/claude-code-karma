@@ -347,6 +347,7 @@
 			<span class="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-faint)]">⌕</span>
 			<input
 				bind:value={query}
+				aria-label="Search shells"
 				placeholder="Search shell id, command, project…"
 				class="search-input"
 			/>

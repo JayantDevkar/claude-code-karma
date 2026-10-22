@@ -46,7 +46,8 @@
 		getSubagentColorVars,
 		getPluginChartHex,
 		getProjectNameFromEncoded,
-		renderMarkdownEffect
+		renderMarkdownEffect,
+		stripFrontmatter
 	} from '$lib/utils';
 	import { parseMcpTool } from '$lib/utils/mcp';
 	import {
@@ -449,7 +450,7 @@
 	let renderedAgentContent = $state('');
 	$effect(() => {
 		if (agentInfo?.content) {
-			renderMarkdownEffect(agentInfo.content, {}, (html) => {
+			renderMarkdownEffect(stripFrontmatter(agentInfo.content), {}, (html) => {
 				renderedAgentContent = html;
 			});
 		}

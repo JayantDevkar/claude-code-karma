@@ -285,6 +285,7 @@
 			</div>
 			<input
 				type="text"
+				aria-label="Search projects"
 				placeholder="Search projects..."
 				bind:value={searchQuery}
 				class="w-full pl-8 pr-3 h-9 text-sm font-medium bg-[var(--bg-base)] border border-[var(--border)] rounded-[6px] focus:outline-none focus:border-[var(--border-hover)] focus:ring-1 focus:ring-[var(--border-subtle)] transition-all placeholder:text-[var(--text-faint)] placeholder:font-normal text-[var(--text-primary)]"

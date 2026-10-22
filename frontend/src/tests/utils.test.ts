@@ -31,7 +31,8 @@ import {
 	isKnownSubagentType,
 	calculateSubagentDuration,
 	activeTimeWasCapped,
-	sessionOnlyTools
+	sessionOnlyTools,
+	stripFrontmatter
 } from '$lib/utils';
 
 // ============================================================
@@ -139,6 +140,51 @@ describe('formatTokens', () => {
 
 	it('formats 1000 as 1.0K', () => {
 		expect(formatTokens(1000)).toBe('1.0K');
+	});
+
+	it('formats billions with a B suffix', () => {
+		expect(formatTokens(1_000_000_000)).toBe('1.0B');
+		expect(formatTokens(1_538_500_000)).toBe('1.5B');
+	});
+
+	it('keeps values just under a billion in M', () => {
+		expect(formatTokens(999_000_000)).toBe('999.0M');
+	});
+});
+
+// ============================================================
+// stripFrontmatter
+// ============================================================
+describe('stripFrontmatter', () => {
+	it('removes a leading frontmatter block', () => {
+		const raw = '---\nname: agent\ndescription: Does things\n---\n\n# Title\n\nBody';
+		expect(stripFrontmatter(raw)).toBe('\n# Title\n\nBody');
+	});
+
+	it('handles CRLF line endings and an empty block', () => {
+		expect(stripFrontmatter('---\r\nname: x\r\n---\r\nBody')).toBe('Body');
+		expect(stripFrontmatter('---\n---\nBody')).toBe('Body');
+		expect(stripFrontmatter('\uFEFF---\nname: x\n---\nBody')).toBe('Body');
+	});
+
+	it('handles a file that is only frontmatter', () => {
+		expect(stripFrontmatter('---\nname: x\n---')).toBe('');
+	});
+
+	it('leaves content without leading frontmatter untouched', () => {
+		const text = '# Title\n\n---\nname: not frontmatter\n---\n';
+		expect(stripFrontmatter(text)).toBe(text);
+		expect(stripFrontmatter('')).toBe('');
+	});
+
+	it('leaves an unclosed block untouched', () => {
+		const text = '---\nname: x\n# Title';
+		expect(stripFrontmatter(text)).toBe(text);
+	});
+
+	it('does not treat a longer dash rule as the closing fence', () => {
+		const text = '---\nname: x\n----\nBody';
+		expect(stripFrontmatter(text)).toBe(text);
 	});
 });
 

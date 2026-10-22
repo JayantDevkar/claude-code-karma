@@ -93,6 +93,7 @@
 				<Search size={12} class="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
 				<input
 					type="search"
+					aria-label="Search tickets"
 					placeholder="Search title or key…"
 					bind:value={q}
 					class="w-full pl-7 pr-3 py-1.5 text-xs rounded-md border border-[var(--border)] bg-[var(--bg-base)] focus-ring"

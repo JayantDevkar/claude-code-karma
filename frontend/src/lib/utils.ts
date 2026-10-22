@@ -78,11 +78,14 @@ export function formatDurationCompact(seconds?: number | null): string {
 // ============================================
 
 /**
- * Format token count with appropriate suffix (K, M)
+ * Format token count with appropriate suffix (K, M, B)
  */
 export function formatTokens(tokens?: number | null): string {
 	if (tokens == null || tokens <= 0) return '--';
 
+	if (tokens >= 1_000_000_000) {
+		return `${(tokens / 1_000_000_000).toFixed(1)}B`;
+	}
 	if (tokens >= 1_000_000) {
 		return `${(tokens / 1_000_000).toFixed(1)}M`;
 	}
@@ -1433,6 +1436,14 @@ export function findSessionByIdentifier<T extends SessionIdentifier>(
 export interface RenderMarkdownOptions {
 	/** Strip H1 headings from the output (useful for content that already has a title) */
 	stripH1?: boolean;
+}
+
+/**
+ * Remove a YAML frontmatter block (`---` ... `---`) at the very start of a markdown file.
+ */
+export function stripFrontmatter(text: string): string {
+	const match = /^\uFEFF?---[ \t]*\r?\n(?:[\s\S]*?\r?\n)?---[ \t]*(?:\r?\n|$)/.exec(text);
+	return match ? text.slice(match[0].length) : text;
 }
 
 /**

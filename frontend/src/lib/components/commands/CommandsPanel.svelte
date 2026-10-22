@@ -5,7 +5,7 @@
 	import type { CommandUsage } from '$lib/api-types';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import Modal from '$lib/components/ui/Modal.svelte';
-	import { cleanSkillName, getCommandColorVars, getCommandCategoryColorVars, getCommandCategoryLabel } from '$lib/utils';
+	import { cleanSkillName, stripFrontmatter, getCommandColorVars, getCommandCategoryColorVars, getCommandCategoryLabel } from '$lib/utils';
 	import { API_BASE } from '$lib/config';
 	import { markdownCopyButtons } from '$lib/actions/markdownCopyButtons';
 
@@ -42,14 +42,7 @@
 
 	// Strip YAML frontmatter and leading h1 that duplicates the modal title
 	function stripFrontmatterAndTitle(raw: string, commandName: string): string {
-		let text = raw;
-		// Remove YAML frontmatter
-		if (text.startsWith('---')) {
-			const end = text.indexOf('---', 3);
-			if (end !== -1) {
-				text = text.slice(end + 3).trimStart();
-			}
-		}
+		let text = stripFrontmatter(raw).trimStart();
 		// Remove leading h1 if it matches the command name
 		const h1Match = text.match(/^#\s+(.+)\n*/);
 		if (h1Match) {

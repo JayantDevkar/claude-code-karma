@@ -419,6 +419,7 @@
 			<span class="search-icon-wrap"><Search size={14} /></span>
 			<input
 				class="search-input"
+				aria-label="Search cron jobs"
 				placeholder="Search cron id, prompt, schedule…"
 				bind:value={query}
 			/>

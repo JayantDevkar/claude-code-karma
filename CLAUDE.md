@@ -165,7 +165,7 @@ Project (entry point)
 | POST | `/live-sessions/{id}/focus-terminal` | Raise the session's terminal window |
 | GET | `/agents` | Agent listing |
 | GET | `/skills` | Skill usage |
-| GET | `/history` | File history |
+| GET | `/history/archived` | Prompts kept in `~/.claude/history.jsonl` after their sessions were cleaned up (powers `/archived`) |
 | GET | `/settings` | User preferences |
 | GET/POST/PUT/DELETE | `/desktop-app/{status,install,autostart}` | Install/manage the native desktop launcher (localhost-only) |
 
@@ -180,7 +180,6 @@ Project (entry point)
 | `/projects/[encoded_name]/skills` | Project skills |
 | `/agents` | Global agents view |
 | `/analytics` | Global analytics |
-| `/history` | File history |
 | `/hooks` | Hooks browser |
 | `/plugins` | Plugins browser |
 | `/tools` | Tools browser |

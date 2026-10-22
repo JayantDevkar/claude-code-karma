@@ -57,7 +57,12 @@
 	{:else}
 		<div class="search">
 			<Search size={15} strokeWidth={2} />
-			<input type="text" placeholder="Search projects…" bind:value={query} />
+			<input
+				type="text"
+				aria-label="Search projects"
+				placeholder="Search projects…"
+				bind:value={query}
+			/>
 		</div>
 
 		{#if filtered.length === 0}

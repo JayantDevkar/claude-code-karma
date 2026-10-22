@@ -57,7 +57,6 @@ frontend/
 │   │   │   └── [encoded_name]/    # Dynamic project routes
 │   │   ├── agents/                # /agents routes
 │   │   ├── analytics/             # /analytics
-│   │   ├── history/               # /history
 │   │   ├── settings/              # /settings
 │   │   └── skills/                # /skills routes
 │   ├── lib/
@@ -148,7 +147,6 @@ Filters and view state persisted via URL search params for shareable links.
 | `/projects/[encoded_name]/skills/[...path]` | Skill detail                 |
 | `/agents`                                   | Global agents view           |
 | `/analytics`                                | Global analytics             |
-| `/history`                                  | File history                 |
 | `/settings`                                 | User settings                |
 | `/skills`                                   | Global skills view           |
 | `/skills/[...path]`                         | Skill detail                 |

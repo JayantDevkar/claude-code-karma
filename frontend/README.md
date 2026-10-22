@@ -116,8 +116,6 @@ The frontend follows a layered architecture pattern with clear separation of con
 │   │   ├── skills/                   # /skills (global)
 │   │   │   ├── +page.svelte
 │   │   │   └── [...path]/+page.svelte
-│   │   ├── history/                  # /history
-│   │   │   └── +page.svelte
 │   │   └── settings/                 # /settings
 │   │       └── +page.svelte
 │   │
@@ -307,7 +305,6 @@ Date range filter with preset buttons and custom date picker.
 | `/agents/[name]`               | `agents/[name]/+page.svelte`    | Client fetch      | Agent editor                         |
 | `/skills`                      | `skills/+page.svelte`           | Client fetch      | Global skills browser                |
 | `/skills/[...path]`            | `skills/[...path]/+page.svelte` | Client fetch      | Skill editor                         |
-| `/history`                     | `history/+page.svelte`          | -                 | Session history                      |
 | `/settings`                    | `settings/+page.svelte`         | -                 | App settings (coming soon)           |
 
 ### Data Loading Patterns

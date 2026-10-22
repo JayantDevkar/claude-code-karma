@@ -8,6 +8,7 @@
 		list?: string;
 		onkeydown?: (e: KeyboardEvent) => void;
 		oninput?: (e: Event) => void;
+		'aria-label'?: string;
 	}
 
 	let {
@@ -18,7 +19,8 @@
 		type = 'text',
 		list,
 		onkeydown,
-		oninput
+		oninput,
+		'aria-label': ariaLabel
 	}: Props = $props();
 </script>
 
@@ -26,6 +28,7 @@
 	{type}
 	bind:value
 	{placeholder}
+	aria-label={ariaLabel || placeholder || undefined}
 	{disabled}
 	{list}
 	{onkeydown}

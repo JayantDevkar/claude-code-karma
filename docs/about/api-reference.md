@@ -101,7 +101,8 @@ Returns session state objects with fields: session ID, project, status (STARTING
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/history` | File history across all sessions — which files were touched, when, and by whom |
+| GET | `/history/archived` | Prompts from sessions Claude Code's retention cleanup deleted, read from `~/.claude/history.jsonl` |
+| GET | `/history/archived/{encoded_name}` | The same, for one project |
 
 ---
 

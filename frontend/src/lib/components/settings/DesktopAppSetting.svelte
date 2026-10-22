@@ -222,7 +222,7 @@
 			hint="Only useful without autostart — and pinning briefly restarts the Dock."
 		>
 			{#snippet control()}
-				<Switch bind:checked={pinToDock} />
+				<Switch bind:checked={pinToDock} aria-label="Pin the launcher to the Dock" />
 			{/snippet}
 		</SettingItem>
 	{/if}
@@ -234,7 +234,12 @@
 		saving={busy}
 	>
 		{#snippet control()}
-			<Switch bind:checked={autostart} disabled={busy} onCheckedChange={(v) => setAutostart(v)} />
+			<Switch
+				bind:checked={autostart}
+				disabled={busy}
+				onCheckedChange={(v) => setAutostart(v)}
+				aria-label="Start Karma at login"
+			/>
 		{/snippet}
 	</SettingItem>
 {/if}

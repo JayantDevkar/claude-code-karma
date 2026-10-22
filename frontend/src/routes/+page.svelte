@@ -95,9 +95,9 @@
 		<!-- Header -->
 		<div class="header">
 			<div class="logo-mark">
-				<img src="/logo.png" alt="Claude Code Karma" />
+				<img src="/logo-256.png" alt="Claude Code Karma" />
 			</div>
-			<div class="app-name">Claude Code Karma</div>
+			<h1 class="app-name">Claude Code Karma</h1>
 			<div class="tagline">Track work, not terminals</div>
 		</div>
 

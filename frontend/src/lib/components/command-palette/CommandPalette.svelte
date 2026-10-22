@@ -219,7 +219,11 @@
 					<!-- Search Input -->
 					<div class="cmd-search">
 						<Search size={20} class="cmd-search-icon" />
-						<Command.Input placeholder="Search..." class="cmd-input" />
+						<Command.Input
+							placeholder="Search..."
+							aria-label="Search pages and commands"
+							class="cmd-input"
+						/>
 						<KeyIndicator keys={['esc']} class="cmd-esc" />
 					</div>
 

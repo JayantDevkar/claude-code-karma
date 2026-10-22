@@ -68,6 +68,7 @@
 			<TextInput
 				bind:value={newPermission}
 				placeholder="mcp__server__tool"
+				aria-label="New permission rule"
 				onkeydown={handleKeydown}
 				class="flex-1 font-mono text-xs"
 			/>

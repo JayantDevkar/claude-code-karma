@@ -256,6 +256,7 @@
 				type="text"
 				value={searchQuery}
 				oninput={(e) => handleSearchInput(e.currentTarget.value)}
+				aria-label="Search events"
 				placeholder="Search events..."
 				data-timeline-search="true"
 				class="

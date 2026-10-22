@@ -8,6 +8,7 @@
 		placeholder?: string;
 		class?: string;
 		isLoading?: boolean;
+		'aria-label'?: string;
 	}
 
 	let {
@@ -15,7 +16,8 @@
 		onTokensChange,
 		placeholder = 'Search by title or prompt...',
 		class: className = '',
-		isLoading = false
+		isLoading = false,
+		'aria-label': ariaLabel
 	}: Props = $props();
 
 	let inputValue = $state('');
@@ -199,6 +201,7 @@
 				type="text"
 				bind:value={inputValue}
 				onkeydown={handleKeydown}
+				aria-label={ariaLabel || placeholder.replace(/(\.\.\.|…)$/, '')}
 				placeholder={tokens.length === 0
 					? placeholder
 					: isAtLimit

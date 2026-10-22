@@ -23,7 +23,7 @@
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import Badge from '$lib/components/ui/Badge.svelte';
 	import CollapsibleGroup from '$lib/components/ui/CollapsibleGroup.svelte';
-	import { renderMarkdownEffect, getCommandCategoryColorVars, getCommandCategoryLabel, getCommandChartHex, getPluginColorVars, getPluginChartHex, getProjectNameFromEncoded, toSessionWithContext } from '$lib/utils';
+	import { renderMarkdownEffect, stripFrontmatter, getCommandCategoryColorVars, getCommandCategoryLabel, getCommandChartHex, getPluginColorVars, getPluginChartHex, getProjectNameFromEncoded, toSessionWithContext } from '$lib/utils';
 	import SkeletonBox from '$lib/components/skeleton/SkeletonBox.svelte';
 	import SkeletonText from '$lib/components/skeleton/SkeletonText.svelte';
 	import { SkeletonGlobalSessionCard } from '$lib/components/skeleton';
@@ -147,7 +147,7 @@
 	let renderedContent = $state('');
 	$effect(() => {
 		if (detail?.content) {
-			renderMarkdownEffect(detail.content, {}, (html) => {
+			renderMarkdownEffect(stripFrontmatter(detail.content), {}, (html) => {
 				renderedContent = html;
 			});
 		}

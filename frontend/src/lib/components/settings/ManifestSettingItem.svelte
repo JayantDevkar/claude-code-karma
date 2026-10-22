@@ -44,6 +44,7 @@
 		<div class="flex flex-col items-end gap-1.5">
 			{#if entry.type === 'boolean'}
 				<Switch
+					aria-label={entry.title}
 					checked={Boolean(value ?? entry.default)}
 					onCheckedChange={(checked) => onchange(checked)}
 					disabled={saving || blocked}
@@ -60,6 +61,7 @@
 					<TextInput
 						value={(value as string | undefined) ?? ''}
 						placeholder={entry.placeholder}
+						aria-label={entry.title}
 						list={entry.datalist ? `${entry.key}-suggestions` : undefined}
 						oninput={(e) => {
 							const next = (e.target as HTMLInputElement).value;

@@ -14,7 +14,7 @@
 	let isLoading = $derived(!data.plugins && !data.error);
 
 	// Progressive usage loading state
-	let usageLoaded = $state(false);
+	let usageState = $state<'loading' | 'ready' | 'missing'>('loading');
 	let pluginUsageMap = $state<Record<string, { total_runs: number; estimated_cost_usd: number }>>(
 		{}
 	);
@@ -34,10 +34,10 @@
 						};
 					}
 					pluginUsageMap = map;
-					usageLoaded = true;
+					usageState = 'ready';
 				})
 				.catch(() => {
-					usageLoaded = true;
+					usageState = 'missing';
 				});
 		}
 	});
@@ -45,7 +45,7 @@
 	// Merge usage data into the initial plugin list once loaded
 	let enrichedPlugins = $derived.by<PluginSummary[]>(() => {
 		const plugins = data.plugins?.plugins || [];
-		if (!usageLoaded) return plugins;
+		if (usageState !== 'ready') return plugins;
 		return plugins.map((p) => ({
 			...p,
 			total_runs: pluginUsageMap[p.name]?.total_runs ?? p.total_runs,
@@ -147,6 +147,7 @@
 			<input
 				type="text"
 				bind:value={searchQuery}
+				aria-label="Search plugins"
 				placeholder="Search plugins..."
 				class="pl-9 pr-4 py-2 w-full bg-[var(--bg-base)] border border-[var(--border)] rounded-lg text-sm focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20 text-[var(--text-primary)] placeholder:text-[var(--text-faint)] transition-all"
 			/>
@@ -190,7 +191,12 @@
 	{:else}
 		<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 stagger-children">
 			{#each filteredPlugins as plugin (plugin.name)}
-				<PluginCard {plugin} {usageLoaded} />
+				<PluginCard
+					{plugin}
+					usage={usageState === 'ready' && !(plugin.name in pluginUsageMap)
+						? 'missing'
+						: usageState}
+				/>
 			{/each}
 		</div>
 	{/if}

@@ -467,22 +467,15 @@
 		return filteredSessions.filter((s) => !recentlyEndedUuids.has(s.uuid));
 	});
 
-	// Count live sessions that have corresponding historical records (for deduplication)
-	// These sessions appear in both live and historical, so we count them once
-	const liveHistoricalOverlap = $derived.by(() => {
-		let count = 0;
-		for (const ls of currentLiveSessions) {
-			// Skip ended sessions outside the 45-min timeout
-			if (ls.status === 'ended' && !shouldShowEndedStatus(ls.updated_at)) continue;
-			// Check if this live session has a matching historical session
-			const hasHistorical = data.sessions.some(
-				(s) =>
-					(ls.slug && s.slug === ls.slug) || (ls.session_id && s.uuid === ls.session_id)
-			);
-			if (hasHistorical) count++;
-		}
-		return count;
-	});
+	// Live sessions within the 45-min ended timeout, before client-side filters
+	const activeLiveSessions = $derived(
+		currentLiveSessions.filter((s) => s.status !== 'ended' || shouldShowEndedStatus(s.updated_at))
+	);
+
+	// Live sessions with a historical row are already in data.total, so both counts skip them
+	function countLiveOnly(sessions: LiveSessionSummary[]): number {
+		return sessions.filter((ls) => !getHistoricalSession(ls)).length;
+	}
 
 	// Derived: selected project details (must be defined before displayTotalCount)
 	const selectedProjectDetails = $derived(
@@ -509,15 +502,11 @@
 		} else {
 			// Both live and historical visible
 			// Note: data.total from server already includes filtered historical sessions
-			return data.total + visibleLiveSessions.length;
+			return data.total + countLiveOnly(visibleLiveSessions);
 		}
 	});
 
 	const displayTotalCount = $derived.by(() => {
-		// Filter ended sessions by timeout - only count recently ended (within 45 min)
-		const activeLiveSessions = currentLiveSessions.filter(
-			(s) => s.status !== 'ended' || shouldShowEndedStatus(s.updated_at)
-		);
 		if (selectedStatus === 'live') {
 			// Total live sessions (before client-side filters like search)
 			return activeLiveSessions.length;
@@ -525,11 +514,17 @@
 			// Total historical sessions (contextual to project if selected)
 			return contextualTotal;
 		} else {
-			// Both: historical total + live total - overlap (avoid double-counting)
+			// Both: historical total + live sessions not yet in it
 			// Using data.total here because it reflects the current server-side filter state
-			return data.total + activeLiveSessions.length - liveHistoricalOverlap;
+			return data.total + countLiveOnly(activeLiveSessions);
 		}
 	});
+
+	const sessionCountLabel = $derived(
+		displayFilteredCount === displayTotalCount
+			? `${displayTotalCount} ${displayTotalCount === 1 ? 'session' : 'sessions'}`
+			: `${displayFilteredCount} of ${displayTotalCount} sessions`
+	);
 
 	// Scroll save/restore + page restore + last-opened highlight
 	// Page must be saved to sessionStorage because reloadSessions() bypasses SvelteKit
@@ -1281,7 +1276,7 @@
 			<span
 				class="ml-auto text-xs text-[var(--text-muted)] font-mono tabular-nums flex items-center gap-2"
 			>
-				{displayFilteredCount} of {displayTotalCount} sessions
+				{sessionCountLabel}
 			</span>
 		</div>
 	{/if}
@@ -1356,7 +1351,7 @@
 				<span class="text-xs text-[var(--text-faint)]"> (within 45 min) </span>
 				<!-- Session count - shown on first visible section header -->
 				<span class="ml-auto text-xs text-[var(--text-muted)] font-mono tabular-nums">
-					{displayFilteredCount} of {displayTotalCount} sessions
+					{sessionCountLabel}
 				</span>
 			</div>
 
@@ -1439,7 +1434,7 @@
 							<span
 								class="ml-auto text-xs text-[var(--text-muted)] font-mono tabular-nums"
 							>
-								{displayFilteredCount} of {displayTotalCount} sessions
+								{sessionCountLabel}
 							</span>
 						{/if}
 					</div>
@@ -1473,7 +1468,7 @@
 							<span
 								class="ml-auto text-xs text-[var(--text-muted)] font-mono tabular-nums"
 							>
-								{displayFilteredCount} of {displayTotalCount} sessions
+								{sessionCountLabel}
 							</span>
 						{/if}
 					</div>

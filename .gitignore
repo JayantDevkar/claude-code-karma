@@ -36,6 +36,8 @@ Thumbs.db
 # App icons are shipped assets, not screenshots — the web manifest references
 # them by path, so a clone without them serves a PWA with broken icons.
 !frontend/static/icons/*.png
+# Header and home-hero logo sizes, also shipped assets
+!frontend/static/logo-*.png
 
 # Python
 __pycache__/

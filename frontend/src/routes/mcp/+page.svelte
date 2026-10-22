@@ -314,6 +314,7 @@
 					<input
 						type="text"
 						bind:value={searchQuery}
+						aria-label="Search servers or tools"
 						placeholder="Search servers or tools..."
 						class="
 							pl-9 pr-4 py-2

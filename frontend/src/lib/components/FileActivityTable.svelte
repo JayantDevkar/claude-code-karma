@@ -142,6 +142,7 @@
 				/>
 				<input
 					type="text"
+					aria-label="Filter file activity"
 					placeholder="Filter by path, actor, or operation..."
 					bind:value={filterQuery}
 					class="

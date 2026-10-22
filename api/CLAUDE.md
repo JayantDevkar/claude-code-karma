@@ -132,7 +132,7 @@ Real-time state tracked in `~/.claude_karma/live-sessions/{slug}.json` via Claud
 | `/analytics` | Project/session analytics, usage stats |
 | `/agents` | Agent listing and subagent sessions |
 | `/live-sessions` | Real-time session state (+ `POST /live-sessions/{id}/focus-terminal` to raise the session's terminal window) |
-| `/history` | File history snapshots |
+| `/history` | Archived prompts from cleaned-up sessions (`/history/archived`) |
 | `/settings` | User preferences |
 | `/skills` | Skill usage tracking |
 | `/desktop-app` | Install/manage the native desktop launcher — `GET status`, `POST install`, `PUT autostart`, `DELETE install` (localhost-only) |

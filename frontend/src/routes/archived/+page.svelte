@@ -188,6 +188,7 @@
 				type="text"
 				value={searchInput}
 				oninput={handleSearchInput}
+				aria-label="Search archived prompts"
 				placeholder="Search archived prompts..."
 				class="
 					pl-9 pr-4 py-2

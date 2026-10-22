@@ -109,6 +109,7 @@
 		<div class="relative flex-1 min-w-0">
 			<input
 				type="text"
+				aria-label="Ticket URL or reference"
 				placeholder="Paste URL or ref (e.g. LINEAR-123, owner/repo#42)"
 				value={ref}
 				oninput={onInput}

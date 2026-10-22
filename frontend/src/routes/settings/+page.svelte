@@ -317,6 +317,7 @@
 				>
 					{#snippet control()}
 						<Switch
+							aria-label="Extended Thinking"
 							checked={settings.alwaysThinkingEnabled ?? false}
 							onCheckedChange={handleThinkingToggle}
 							disabled={savingField === 'alwaysThinkingEnabled'}
@@ -458,6 +459,7 @@
 						>
 							{#snippet control()}
 								<Switch
+									aria-label={pluginName}
 									checked={enabled}
 									onCheckedChange={(checked) =>
 										handlePluginToggle(pluginName, checked)}
@@ -494,6 +496,7 @@
 							<TextInput
 								value={statusLineCommand}
 								placeholder="~/.claude/statusline-command.sh"
+								aria-label="Status Line Command"
 								oninput={handleStatusLineChange}
 								disabled={savingField === 'statusLine'}
 								class="w-64 font-mono text-xs"

@@ -103,13 +103,13 @@
 			{#if waitingCount > 0}
 				<span class="waiting-dot" aria-hidden="true"></span>
 				<span class="dock-waiting"
-					>{waitingCount} waiting<span class="sr-only"> on you,</span></span
+					>{waitingCount} waiting<span class="sr-only">{' on you,'}</span></span
 				>
 				<span class="dock-sep" aria-hidden="true">·</span>
 			{/if}
 			<span class="dock-count"
-				>{sessions.length} live<span class="sr-only">
-					{sessions.length === 1 ? 'session' : 'sessions'}</span
+				>{sessions.length} live<span class="sr-only"
+					>{sessions.length === 1 ? ' session' : ' sessions'}</span
 				></span
 			>
 			<span class="dock-chevron" aria-hidden="true"
@@ -128,7 +128,7 @@
 						<Radio size={15} strokeWidth={2} class="text-[var(--success)]" />
 						Live sessions
 					</span>
-					<button class="dock-close" onclick={collapse} aria-label="Collapse">
+					<button class="dock-close" onclick={collapse} aria-label="Close live sessions">
 						<X size={17} strokeWidth={2} />
 					</button>
 				</div>

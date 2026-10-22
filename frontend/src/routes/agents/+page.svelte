@@ -399,6 +399,7 @@
 					<input
 						type="text"
 						bind:value={searchQuery}
+						aria-label="Search agents"
 						placeholder="Search agents..."
 						class="
 							pl-9 pr-4 py-2

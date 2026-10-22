@@ -95,6 +95,7 @@
 			oninput={handleInput}
 			onkeydown={handleKeydown}
 			{placeholder}
+			aria-label={placeholder}
 			class="
 				w-full pl-9 pr-16 py-2 text-sm
 				bg-[var(--bg-base)] text-[var(--text-primary)]

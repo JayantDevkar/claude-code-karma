@@ -167,6 +167,7 @@
 						/>
 						<input
 							type="search"
+							aria-label="Search tickets"
 							placeholder="Search title or key…"
 							bind:value={q}
 							class="w-full pl-7 pr-3 py-1.5 text-xs rounded-md border border-[var(--border)] bg-[var(--bg-base)] focus-ring"

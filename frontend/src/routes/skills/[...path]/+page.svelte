@@ -14,6 +14,7 @@
 		ExternalLink
 	} from 'lucide-svelte';
 	import { marked } from 'marked';
+	import { stripFrontmatter } from '$lib/utils';
 	import { markdownCopyButtons } from '$lib/actions/markdownCopyButtons';
 	import DOMPurify from 'isomorphic-dompurify';
 	import { formatDistanceToNow } from 'date-fns';
@@ -125,7 +126,7 @@
 	let renderedContent = $state('');
 
 	$effect(() => {
-		const parsed = marked.parse(content || '');
+		const parsed = marked.parse(stripFrontmatter(content || ''));
 		if (parsed instanceof Promise) {
 			parsed.then((html) => (renderedContent = DOMPurify.sanitize(html)));
 		} else {

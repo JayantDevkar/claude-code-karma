@@ -5,11 +5,12 @@
 
 	interface Props {
 		plugin: PluginSummary;
-		usageLoaded?: boolean;
+		/** 'loading' while usage stats are in flight, 'missing' when they could not be loaded */
+		usage?: 'loading' | 'ready' | 'missing';
 		class?: string;
 	}
 
-	let { plugin, usageLoaded = true, class: className = '' }: Props = $props();
+	let { plugin, usage = 'ready', class: className = '' }: Props = $props();
 
 	// Get consistent OKLCH colors based on plugin name
 	let colorVars = $derived(getPluginColorVars(plugin.name));
@@ -98,24 +99,28 @@
 	<div class="grid grid-cols-2 gap-3 mb-4">
 		<div class="flex items-center gap-2 text-xs">
 			<Package size={14} class="text-[var(--text-muted)]" />
-			{#if usageLoaded}
+			{#if usage === 'loading'}
+				<span class="inline-block w-12 h-3 bg-[var(--bg-muted)] rounded animate-pulse"
+				></span>
+			{:else if usage === 'missing'}
+				<span class="text-[var(--text-muted)]">—</span>
+			{:else}
 				<span class="text-[var(--text-secondary)]"
 					>{plugin.total_runs.toLocaleString()} runs</span
 				>
-			{:else}
-				<span class="inline-block w-12 h-3 bg-[var(--bg-muted)] rounded animate-pulse"
-				></span>
 			{/if}
 		</div>
 		<div class="flex items-center gap-2 text-xs">
 			<DollarSign size={14} class="text-[var(--text-muted)]" />
-			{#if usageLoaded}
+			{#if usage === 'loading'}
+				<span class="inline-block w-12 h-3 bg-[var(--bg-muted)] rounded animate-pulse"
+				></span>
+			{:else if usage === 'missing'}
+				<span class="text-[var(--text-muted)]">—</span>
+			{:else}
 				<span class="text-[var(--text-secondary)]"
 					>{formatCost(plugin.estimated_cost_usd)}</span
 				>
-			{:else}
-				<span class="inline-block w-12 h-3 bg-[var(--bg-muted)] rounded animate-pulse"
-				></span>
 			{/if}
 		</div>
 	</div>
@@ -129,7 +134,7 @@
 			<span>{updateLabel}</span>
 		</span>
 		<span class="font-mono text-[10px] bg-[var(--bg-subtle)] px-2 py-0.5 rounded">
-			v{plugin.latest_version.substring(0, 7)}
+			{plugin.latest_version ? `v${plugin.latest_version.substring(0, 7)}` : '—'}
 		</span>
 	</div>
 </a>

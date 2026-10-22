@@ -33,7 +33,7 @@
 	import FiltersDropdown from '$lib/components/FiltersDropdown.svelte';
 	import FiltersBottomSheet from '$lib/components/FiltersBottomSheet.svelte';
 	import ActiveFilterChips from '$lib/components/ActiveFilterChips.svelte';
-	import { renderMarkdownEffect, cleanSkillName, getPluginColorVars, getPluginChartHex, getProjectNameFromEncoded, getSkillCategoryLabel, getSkillCategoryColorVars, toSessionWithContext } from '$lib/utils';
+	import { renderMarkdownEffect, stripFrontmatter, cleanSkillName, getPluginColorVars, getPluginChartHex, getProjectNameFromEncoded, getSkillCategoryLabel, getSkillCategoryColorVars, toSessionWithContext } from '$lib/utils';
 	import SkeletonBox from '$lib/components/skeleton/SkeletonBox.svelte';
 	import SkeletonText from '$lib/components/skeleton/SkeletonText.svelte';
 	import { SkeletonGlobalSessionCard } from '$lib/components/skeleton';
@@ -458,7 +458,7 @@
 	let renderedContent = $state('');
 	$effect(() => {
 		if (detail?.content) {
-			renderMarkdownEffect(detail.content, {}, (html) => {
+			renderMarkdownEffect(stripFrontmatter(detail.content), {}, (html) => {
 				renderedContent = html;
 			});
 		}
