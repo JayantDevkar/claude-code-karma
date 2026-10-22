@@ -221,6 +221,11 @@ Deep dive into individual Claude Code sessions with comprehensive analysis.
 - **Color-coded categories** — Easy identification
 - **Search/filter** — Find specific tools
 
+#### Analytics Tab
+
+- **Usage stats** — Cost, tokens, duration, tools used, cache hit rate
+- **Own / Total toggle** — For sessions with subagents, Total adds every subagent at any spawn depth (`?scope=total`); duration stays the session's own
+
 #### Subagents Tab
 
 - **Subagent activity** — All spawned agents:

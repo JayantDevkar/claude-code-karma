@@ -116,8 +116,7 @@ def get_file_cache_info(
 
     Args:
         file_path: Path to the file
-        related: Other files the response is built from (e.g. subagent JSONLs);
-            a change to any of them, or one added or removed, changes the ETag
+        related: Other files the response is built from (e.g. subagent JSONLs)
 
     Returns:
         Tuple of (etag, last_modified) where both are None if file doesn't exist
