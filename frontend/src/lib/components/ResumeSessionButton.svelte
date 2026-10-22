@@ -48,10 +48,16 @@
 
 		// Synced sessions resume only on their own machine (the API 409s); alt-click copies too.
 		if (machine || event.altKey) {
-			await copyToClipboard(`claude --resume ${sessionUuid}`);
-			feedback = 'copied';
-			announcement = 'Copied the claude --resume command';
-			scheduleReset(700);
+			const copied = await copyToClipboard(`claude --resume ${sessionUuid}`);
+			if (copied) {
+				feedback = 'copied';
+				announcement = 'Copied the claude --resume command';
+				scheduleReset(700);
+			} else {
+				feedback = 'err';
+				resultTitle = announcement = `Could not copy. Run this manually: claude --resume ${sessionUuid}`;
+				scheduleReset();
+			}
 			return;
 		}
 

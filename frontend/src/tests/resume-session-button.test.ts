@@ -49,6 +49,17 @@ describe('ResumeSessionButton', () => {
 		expect(fetchMock).not.toHaveBeenCalled();
 	});
 
+	it('announces a copy failure and never posts when the clipboard rejects', async () => {
+		writeText.mockRejectedValue(new Error('denied'));
+		const { button, label, live } = setup({ sessionUuid: UUID, machine: 'other-mac.local' });
+
+		await fireEvent.click(button);
+
+		await waitFor(() => expect(label()).toBe('failed'));
+		expect(live).toHaveTextContent(`Run this manually: claude --resume ${UUID}`);
+		expect(fetchMock).not.toHaveBeenCalled();
+	});
+
 	it('announces the API detail when the resume is refused', async () => {
 		const detail = 'This session was synced from x; resume it there.';
 		fetchMock.mockResolvedValue({ ok: false, status: 409, json: async () => ({ detail }) });
