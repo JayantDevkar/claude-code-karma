@@ -376,7 +376,10 @@ def stop_process_tree(pid: int, force: bool = False) -> None:
 
 
 def pid_is_alive(pid: int) -> bool:
-    """Whether a process with this pid is running. When unsure, say it is."""
+    """Whether a process with this pid is running. When unsure, say it is.
+
+    A dead process's pid reused by an unrelated process reads as alive.
+    """
     if pid == os.getpid():
         return True
     if not 0 < pid < 2**31:

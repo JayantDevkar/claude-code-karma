@@ -1084,6 +1084,28 @@ def test_spawn_lock_reclaims_a_fresh_lock_whose_owner_is_dead(monkeypatch, tmp_p
     assert not lock.exists()
 
 
+def test_spawn_lock_loses_when_another_reclaimer_renames_first(monkeypatch, tmp_path):
+    """FileNotFoundError from the rename means another launch won the reclaim."""
+    import os
+
+    from karma_desktop import launcher
+
+    monkeypatch.setattr(core, "log_dir", lambda: tmp_path)
+    proc = subprocess.Popen([sys.executable, "-c", "pass"])
+    proc.wait()
+    lock = tmp_path / "launch.lock"
+    lock.write_bytes(f"{proc.pid}:deadlaunch".encode())
+
+    def lost(src, dst):
+        raise FileNotFoundError
+
+    monkeypatch.setattr(os, "rename", lost)
+    with launcher._spawn_lock() as owned:
+        assert owned is False
+        assert lock.read_bytes() == f"{proc.pid}:deadlaunch".encode()
+    assert lock.exists()
+
+
 def test_spawn_lock_keeps_a_fresh_lock_whose_owner_is_alive(monkeypatch, tmp_path):
     """A fresh lock stamped with a live pid (here our own) is never reclaimed."""
     import os

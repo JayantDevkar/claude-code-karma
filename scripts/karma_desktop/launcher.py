@@ -535,8 +535,10 @@ def _spawn_lock():
 
     Uses an exclusively-created lock file stamped with a per-launch token. A
     stale one (its owner pid is gone, or it is older than ``_STALE_LOCK_SECONDS``)
-    is reclaimed by unlinking and re-creating it exclusively, so only one of
-    several waiting launches wins the takeover. The ``finally`` only removes the
+    is reclaimed by renaming it aside (atomic, so exactly one reclaimer wins;
+    the rest see FileNotFoundError and stay non-owners) and then re-creating it
+    exclusively. A dead launcher's pid reused by an unrelated process reads as
+    alive, and then the age rule applies. The ``finally`` only removes the
     lock if it *still carries this launch's token*: if a stale-reclaim handed
     ownership to another launch, deleting by path would wipe that launch's live
     lock and let a third launch spawn a duplicate. On any unexpected error the
@@ -544,7 +546,8 @@ def _spawn_lock():
     double-spawn is a far milder failure than never starting at all.
     """
     lock = _lock_path()
-    token = f"{os.getpid()}:{uuid.uuid4().hex}".encode()
+    token_suffix = uuid.uuid4().hex
+    token = f"{os.getpid()}:{token_suffix}".encode()
     acquired = False
     owned = True  # default to spawning if the lock machinery itself fails
 
@@ -569,10 +572,12 @@ def _spawn_lock():
                     # Stale lock from a crashed launch. Reclaim it atomically so
                     # exactly one waiter wins; a loser of this race falls through
                     # as a non-owner and won't unlink the winner's fresh lock.
-                    lock.unlink(missing_ok=True)
+                    stale = lock.with_name(f"launch.lock.stale-{token_suffix}")
+                    os.rename(lock, stale)
                     _create_exclusive()
                     acquired = True
                     owned = True
+                    stale.unlink(missing_ok=True)
             except (OSError, FileExistsError):
                 pass
     except OSError:
