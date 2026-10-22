@@ -386,7 +386,7 @@
 						title={`Synced from ${session.machine}`}
 					>
 						<Laptop size={10} strokeWidth={2} />
-						<span class="font-medium text-[11px]">{session.machine}</span>
+						<span class="font-medium text-[11px] max-w-[10rem] truncate">{session.machine}</span>
 					</div>
 				{/if}
 				<!-- Model Badge -->

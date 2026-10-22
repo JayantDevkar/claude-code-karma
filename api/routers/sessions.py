@@ -192,6 +192,14 @@ def _count_subagents_fast(project_dir: Path, session_uuid: str) -> int:
     return len(list(subagents_dir.glob("agent-*.jsonl")))
 
 
+def _has_messages(session: Session) -> bool:
+    """False for an empty session or one whose file cannot be read (a synced copy mid-sync)."""
+    try:
+        return session.message_count > 0
+    except Exception:
+        return False
+
+
 def _list_all_projects_with_sessions_optimized() -> tuple[
     list[SessionMetadata], list[ProjectFilterOption]
 ]:
@@ -288,7 +296,7 @@ def _list_all_projects_with_sessions_optimized() -> tuple[
                 # Fallback: load sessions the traditional way
                 # (index missing, empty, or stale)
                 sessions = project.list_sessions()
-                valid_sessions = [s for s in sessions if s.message_count > 0]
+                valid_sessions = [s for s in sessions if _has_messages(s)]
 
                 if valid_sessions:
                     project_options.append(
@@ -919,12 +927,14 @@ def get_continuation_session(session_uuid: str) -> ContinuationSessionInfo:
 
     # Search for continuation session with same slug
     candidates = []
+    seen: set[str] = set()
     for jsonl_path in (p for d in project_dirs for p in d.glob("*.jsonl")):
         if not _is_valid_session_filename(jsonl_path):
             continue
-        # Skip the source session itself
-        if jsonl_path.stem == session_uuid:
+        # Skip the source session itself, and synced copies of a session already checked
+        if jsonl_path.stem == session_uuid or jsonl_path.stem in seen:
             continue
+        seen.add(jsonl_path.stem)
 
         try:
             candidate = Session.from_path(jsonl_path)
@@ -2006,11 +2016,13 @@ def resume_session_in_terminal(uuid: str, request: Request) -> TerminalResumeRes
     The shell command is built entirely server-side from the validated UUID
     and Karma's own project path resolution; the request body carries nothing.
     Returns 404 if the session is unknown, 409 if its project directory no
-    longer exists, 403 for cross-origin browser requests.
+    longer exists or it was synced from another machine, 403 for cross-origin
+    browser requests.
     """
     from models import Project
     from models.live_session import load_live_session
     from routers.live_sessions import _reject_cross_origin
+    from services.session_roots import machine_for_path
     from services.terminal_focus import focus_terminal, pid_is_live_claude
     from services.terminal_launch import launch_resume_in_terminal
 
@@ -2035,7 +2047,13 @@ def resume_session_in_terminal(uuid: str, request: Request) -> TerminalResumeRes
     matches = _find_session_files(uuid)
     if not matches:
         raise HTTPException(status_code=404, detail=f"Session not found: {uuid}")
+    # An exact local match returns before any synced copy is considered
     jsonl_path, encoded_name = matches[0]
+    machine = machine_for_path(jsonl_path)
+    if machine:
+        raise HTTPException(
+            status_code=409, detail=f"This session was synced from {machine}; resume it there."
+        )
 
     # Per-session cwd first (worktrees), then the live record, then the
     # project-level path recovered from other sessions.

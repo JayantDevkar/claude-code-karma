@@ -782,7 +782,7 @@ def _query_item_detail(
             s.uuid, s.slug, s.project_encoded_name, s.project_path,
             s.message_count, s.start_time, s.end_time, s.duration_seconds,
             s.models_used, s.subagent_count, s.initial_prompt,
-            s.git_branch, s.session_titles,
+            s.git_branch, s.session_titles, s.source_root AS machine,
             agg.has_main, agg.has_sub, agg.agent_ids,
             ss.invocation_sources
         FROM sessions s

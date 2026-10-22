@@ -1555,6 +1555,7 @@ export function toSessionWithContext(s: McpSessionSummary | SessionSummary): Ses
 		session_titles: s.session_titles,
 		project_encoded_name: encoded,
 		project_path: encoded ?? '',
-		project_name: displayName || getProjectNameFromEncoded(encoded ?? '')
+		project_name: displayName || getProjectNameFromEncoded(encoded ?? ''),
+		machine: 'machine' in s ? s.machine : undefined
 	};
 }

@@ -620,7 +620,7 @@ async def get_skill_detail(
             sessions.append(
                 SessionSummary(
                     uuid=row["uuid"],
-                    machine=row.get("source_root"),
+                    machine=row.get("machine"),
                     slug=row.get("slug"),
                     project_encoded_name=project_encoded_name,
                     project_slug=project_encoded_name,
