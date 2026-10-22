@@ -224,7 +224,7 @@
 				</p>
 			{/if}
 			{#if session.session_source === 'desktop' || session.machine}
-				<div class="flex items-center gap-2 mt-1 text-[10px] text-[var(--text-muted)]">
+				<div class="flex items-center gap-2 mt-1 text-[10px] text-[var(--text-muted)] min-w-0">
 					{#if session.session_source === 'desktop'}
 						<div class="flex items-center gap-0.5" title="Claude Desktop session">
 							<Monitor size={10} strokeWidth={2} />
@@ -232,9 +232,9 @@
 						</div>
 					{/if}
 					{#if session.machine}
-						<div class="flex items-center gap-0.5" title="Synced from {session.machine}">
-							<Laptop size={10} strokeWidth={2} />
-							<span>{session.machine}</span>
+						<div class="flex items-center gap-0.5 min-w-0" title="Synced from {session.machine}">
+							<Laptop size={10} strokeWidth={2} class="shrink-0" />
+							<span class="truncate">{session.machine}</span>
 						</div>
 					{/if}
 				</div>
@@ -311,10 +311,10 @@
 
 		<!-- FOOTER ZONE: Stats row -->
 		<div
-			class="px-4 py-2.5 pl-5 border-t border-[var(--border)] flex items-center justify-between gap-3 text-xs text-[var(--text-muted)]"
+			class="px-4 py-2.5 pl-5 border-t border-[var(--border)] flex flex-wrap items-center justify-between gap-x-2 gap-y-2 text-xs text-[var(--text-muted)]"
 		>
-			<!-- Stats Group (compact: icon + number only) -->
-			<div class="flex items-center gap-3">
+			<!-- Stats Group: flex-1 squeezes the stats before the badges drop to their own row -->
+			<div class="flex flex-1 items-center gap-3">
 				<!-- Messages -->
 				<div class="flex items-center gap-1" title="{displayMessageCount} messages">
 					<MessageSquare size={13} strokeWidth={2} class="text-[var(--nav-blue)]" />
@@ -344,10 +344,10 @@
 			</div>
 
 			<!-- Badges -->
-			<div class="flex items-center gap-1.5 shrink-0">
+			<div class="flex flex-wrap items-center justify-end gap-1.5 min-w-0 ml-auto">
 				<!-- Resume chip: only for ended sessions -->
 				{#if showResumeChip}
-					<ResumeSessionButton sessionUuid={session.uuid} />
+					<ResumeSessionButton sessionUuid={session.uuid} machine={session.machine} />
 				{/if}
 				{#if session.session_source === 'desktop'}
 					<div

@@ -1,9 +1,10 @@
 <script lang="ts">
-	import { Check, Play, X } from 'lucide-svelte';
+	import { Check, Copy, Play, X } from 'lucide-svelte';
 	import { API_BASE } from '$lib/config';
 	import { copyToClipboard } from '$lib/utils';
 
-	let { sessionUuid }: { sessionUuid: string } = $props();
+	let { sessionUuid, machine = null }: { sessionUuid: string; machine?: string | null } =
+		$props();
 
 	const IDLE_TITLE =
 		'Resume this session: opens a terminal, cds into the project, and runs claude --resume. ' +
@@ -12,8 +13,14 @@
 
 	let busy = $state(false);
 	let feedback = $state<'idle' | 'ok' | 'err' | 'copied'>('idle');
-	let title = $state(IDLE_TITLE);
+	let resultTitle = $state<string | null>(null);
 	let announcement = $state('');
+	const idleTitle = $derived(
+		machine
+			? `Synced from ${machine}: resume it there. Click copies the claude --resume command.`
+			: IDLE_TITLE
+	);
+	const title = $derived(resultTitle ?? idleTitle);
 	let resetTimeout: ReturnType<typeof setTimeout> | null = null;
 	let abort: AbortController | null = null;
 	let destroyed = false;
@@ -28,7 +35,7 @@
 		if (resetTimeout) clearTimeout(resetTimeout);
 		resetTimeout = setTimeout(() => {
 			feedback = 'idle';
-			title = IDLE_TITLE;
+			resultTitle = null;
 			announcement = '';
 		}, delay);
 	}
@@ -39,10 +46,11 @@
 		event.stopPropagation();
 		if (busy) return;
 
-		// Escape hatch: alt-click keeps the old copy-the-command behavior.
-		if (event.altKey) {
+		// Synced sessions resume only on their own machine (the API 409s); alt-click copies too.
+		if (machine || event.altKey) {
 			await copyToClipboard(`claude --resume ${sessionUuid}`);
 			feedback = 'copied';
+			announcement = 'Copied the claude --resume command';
 			scheduleReset(700);
 			return;
 		}
@@ -50,6 +58,7 @@
 		busy = true;
 		abort = new AbortController();
 		const abortTimer = setTimeout(() => abort?.abort(), FETCH_TIMEOUT_MS);
+		let detail: string | null = null;
 		try {
 			const res = await fetch(`${API_BASE}/sessions/${sessionUuid}/resume-in-terminal`, {
 				method: 'POST',
@@ -57,10 +66,11 @@
 			});
 			const data = await res.json().catch(() => null);
 			feedback = res.ok && data?.ok === true ? 'ok' : 'err';
-			title = data?.detail || (res.ok ? title : 'The resume request failed.');
+			detail = typeof data?.detail === 'string' && data.detail ? data.detail : null;
+			resultTitle = detail ?? (res.ok ? null : 'The resume request failed.');
 		} catch {
 			feedback = 'err';
-			title = 'Could not reach the API to resume this session.';
+			resultTitle = 'Could not reach the API to resume this session.';
 		} finally {
 			clearTimeout(abortTimer);
 			if (!destroyed) {
@@ -68,7 +78,7 @@
 				announcement =
 					feedback === 'ok'
 						? 'Session opened in terminal'
-						: 'Could not resume the session';
+						: (detail ?? 'Could not resume the session');
 				scheduleReset();
 			}
 		}
@@ -79,13 +89,17 @@
 	type="button"
 	onclick={handleClick}
 	disabled={busy}
-	aria-label="Resume this session in a terminal"
+	aria-label={machine
+		? `Copy the claude --resume command (session synced from ${machine})`
+		: 'Resume this session in a terminal'}
 	class="resume-btn"
 	class:ok={feedback === 'ok'}
 	class:err={feedback === 'err'}
 	{title}
 >
-	{#if feedback === 'ok'}
+	{#if machine}
+		<Copy size={10} strokeWidth={2} />
+	{:else if feedback === 'ok'}
 		<Check size={10} strokeWidth={2} />
 	{:else if feedback === 'err'}
 		<X size={10} strokeWidth={2} />
@@ -101,6 +115,8 @@
 			failed
 		{:else if feedback === 'copied'}
 			copied!
+		{:else if machine}
+			copy
 		{:else}
 			resume
 		{/if}

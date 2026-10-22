@@ -469,7 +469,8 @@
 								strokeWidth={2}
 								class="text-[var(--text-secondary)]"
 							/>
-							<span class="text-xs font-medium text-[var(--text-secondary)]"
+							<span
+								class="text-xs font-medium text-[var(--text-secondary)] max-w-[12rem] truncate"
 								>{entity.machine}</span
 							>
 						</div>
@@ -532,7 +533,10 @@
 						</button>
 						{#if showResume}
 							<!-- Resume: focuses the terminal if still live, else opens a new one -->
-							<ResumeSessionButton sessionUuid={mainSessionUuid} />
+							<ResumeSessionButton
+								sessionUuid={mainSessionUuid}
+								machine={isMainSession(entity) ? entity.machine : null}
+							/>
 						{/if}
 					{/if}
 				</div>
