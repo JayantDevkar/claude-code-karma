@@ -510,6 +510,20 @@ def _preflight(root: Path, need_api: bool, need_web: bool) -> str | None:
     return None
 
 
+def _lock_path() -> Path:
+    return core.log_dir() / "launch.lock"
+
+
+def _lock_holder_pid(lock: Path) -> int | None:
+    """The pid in a lock token (``<pid>:<hex>``), or None if missing or malformed."""
+    try:
+        head, sep, _ = lock.read_bytes().partition(b":")
+        pid = int(head) if sep else 0
+    except (OSError, ValueError):
+        return None
+    return pid if pid > 0 else None
+
+
 @contextlib.contextmanager
 def _spawn_lock():
     """Cross-launch lock around the server-spawn critical section.
@@ -520,7 +534,7 @@ def _spawn_lock():
     set of servers and fight for the port.
 
     Uses an exclusively-created lock file stamped with a per-launch token. A
-    stale one (from a crashed launch, i.e. older than ``_STALE_LOCK_SECONDS``)
+    stale one (its owner pid is gone, or it is older than ``_STALE_LOCK_SECONDS``)
     is reclaimed by unlinking and re-creating it exclusively, so only one of
     several waiting launches wins the takeover. The ``finally`` only removes the
     lock if it *still carries this launch's token*: if a stale-reclaim handed
@@ -529,7 +543,7 @@ def _spawn_lock():
     lock is skipped (yields ``True``) rather than blocking the launch -- a rare
     double-spawn is a far milder failure than never starting at all.
     """
-    lock = core.log_dir() / "launch.lock"
+    lock = _lock_path()
     token = f"{os.getpid()}:{uuid.uuid4().hex}".encode()
     acquired = False
     owned = True  # default to spawning if the lock machinery itself fails
@@ -548,7 +562,10 @@ def _spawn_lock():
         except FileExistsError:
             owned = False  # another launch holds the lock: don't spawn
             try:
-                if time.time() - lock.stat().st_mtime > _STALE_LOCK_SECONDS:
+                holder = _lock_holder_pid(lock)
+                # A killed launcher (launchctl kickstart -k) leaves a fresh lock behind.
+                dead = holder is not None and not core.pid_is_alive(holder)
+                if dead or time.time() - lock.stat().st_mtime > _STALE_LOCK_SECONDS:
                     # Stale lock from a crashed launch. Reclaim it atomically so
                     # exactly one waiter wins; a loser of this race falls through
                     # as a non-owner and won't unlink the winner's fresh lock.
@@ -572,6 +589,19 @@ def _spawn_lock():
                     lock.unlink(missing_ok=True)
             except OSError:
                 pass
+
+
+def _start_failure(label: str, port: int, log_name: str, own_spawn: bool) -> str:
+    """Why a server never answered: its log, or the other launch that holds the spawn."""
+    message = f"The {label} did not start on port {port}. "
+    lock = _lock_path()
+    holder = None if own_spawn else _lock_holder_pid(lock)
+    if holder is not None:
+        return message + (
+            f"Another launch holds {lock} (pid {holder}); "
+            "wait for it or delete the file if that pid is gone."
+        )
+    return message + f"Check {core.log_dir() / log_name}"
 
 
 def _repair_autostart() -> None:
@@ -698,14 +728,12 @@ def main(argv: list[str] | None = None) -> int:
 
         if not core.wait_for_port(args.api_port, API_TIMEOUT):
             return _fail(
-                f"The API did not start on port {args.api_port}. "
-                f"Check {core.log_dir() / 'api.log'}",
+                _start_failure("API", args.api_port, "api.log", own_spawn),
                 headless or args.quiet,
             )
         if not core.wait_for_port(args.web_port, _web_wait_seconds(own_spawn)):
             return _fail(
-                f"The frontend did not start on port {args.web_port}. "
-                f"Check {core.log_dir() / 'web.log'}",
+                _start_failure("frontend", args.web_port, "web.log", own_spawn),
                 headless or args.quiet,
             )
 

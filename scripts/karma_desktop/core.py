@@ -373,3 +373,53 @@ def stop_process_tree(pid: int, force: bool = False) -> None:
             os.killpg(pid, signal.SIGKILL if force else signal.SIGTERM)
     except (OSError, subprocess.SubprocessError):
         pass
+
+
+def pid_is_alive(pid: int) -> bool:
+    """Whether a process with this pid is running. When unsure, say it is."""
+    if pid == os.getpid():
+        return True
+    if not 0 < pid < 2**31:
+        return False
+    if sys.platform == "win32":
+        # os.kill(pid, 0) on Windows sends CTRL_C_EVENT, so ask the kernel instead.
+        return _windows_pid_is_alive(pid)
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except OSError:
+        return True  # PermissionError: it exists but belongs to another user
+    return True
+
+
+def _windows_pid_is_alive(pid: int) -> bool:
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    except (ImportError, AttributeError, OSError, ValueError):
+        return True
+    process_query_limited_information = 0x1000
+    error_invalid_parameter = 87
+    still_active = 259
+    kernel32.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    kernel32.GetExitCodeProcess.argtypes = (
+        wintypes.HANDLE,
+        ctypes.POINTER(wintypes.DWORD),
+    )
+    kernel32.GetExitCodeProcess.restype = wintypes.BOOL
+    kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
+    handle = kernel32.OpenProcess(process_query_limited_information, False, pid)
+    if not handle:
+        # No such pid reads as invalid parameter; access denied means it exists.
+        return ctypes.get_last_error() != error_invalid_parameter
+    try:
+        code = wintypes.DWORD()
+        if not kernel32.GetExitCodeProcess(handle, ctypes.byref(code)):
+            return True
+        return code.value == still_active
+    finally:
+        kernel32.CloseHandle(handle)

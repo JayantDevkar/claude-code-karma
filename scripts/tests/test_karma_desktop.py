@@ -1067,6 +1067,69 @@ def test_spawn_lock_finally_does_not_delete_a_reclaimed_lock(monkeypatch, tmp_pa
     assert lock.read_bytes() == b"another-launchs-token"
 
 
+def test_spawn_lock_reclaims_a_fresh_lock_whose_owner_is_dead(monkeypatch, tmp_path):
+    """A launcher killed mid-hold (launchctl kickstart -k) leaves a fresh lock;
+    its dead pid makes it stale at once instead of after _STALE_LOCK_SECONDS."""
+    from karma_desktop import launcher
+
+    monkeypatch.setattr(core, "log_dir", lambda: tmp_path)
+    proc = subprocess.Popen([sys.executable, "-c", "pass"])
+    proc.wait()
+    assert core.pid_is_alive(proc.pid) is False
+    lock = tmp_path / "launch.lock"
+    lock.write_bytes(f"{proc.pid}:killedlaunch".encode())
+
+    with launcher._spawn_lock() as owned:
+        assert owned is True
+    assert not lock.exists()
+
+
+def test_spawn_lock_keeps_a_fresh_lock_whose_owner_is_alive(monkeypatch, tmp_path):
+    """A fresh lock stamped with a live pid (here our own) is never reclaimed."""
+    import os
+
+    from karma_desktop import launcher
+
+    monkeypatch.setattr(core, "log_dir", lambda: tmp_path)
+    lock = tmp_path / "launch.lock"
+    token = f"{os.getpid()}:livelaunch".encode()
+    lock.write_bytes(token)
+
+    with launcher._spawn_lock() as owned:
+        assert owned is False
+    assert lock.read_bytes() == token
+
+
+def test_lost_lock_timeout_names_the_holder_not_api_log(monkeypatch, tmp_path):
+    """A launch that lost the spawn and timed out points at the lock holder's pid;
+    one that owned the spawn still points at api.log."""
+    from karma_desktop import launcher
+
+    monkeypatch.setattr(core, "log_dir", lambda: tmp_path)
+    monkeypatch.setattr(core, "pid_is_alive", lambda pid: True)
+    monkeypatch.setattr(core, "port_is_up", lambda *a, **k: False)
+    monkeypatch.setattr(core, "wait_for_port", lambda *a, **k: False)
+    monkeypatch.setattr(launcher, "_repair_autostart", lambda: None)
+    monkeypatch.setattr(launcher, "_claim_port", lambda *a: None)
+    monkeypatch.setattr(launcher, "_preflight", lambda *a, **k: None)
+    monkeypatch.setattr(launcher, "start_api", lambda *a: None)
+    monkeypatch.setattr(launcher, "_ensure_web", lambda *a, **k: None)
+    failures = []
+    monkeypatch.setattr(
+        launcher, "_fail", lambda message, quiet: failures.append(message) or 1
+    )
+
+    lock = tmp_path / "launch.lock"
+    lock.write_bytes(b"4242:otherlaunch")
+    assert launcher.main(["--no-open", "--quiet"]) == 1
+    assert "launch.lock (pid 4242)" in failures[-1]
+    assert "api.log" not in failures[-1]
+
+    lock.unlink()
+    assert launcher.main(["--no-open", "--quiet"]) == 1
+    assert "api.log" in failures[-1]
+
+
 # --------------------------------------------------------------------------
 # PWA discovery: exact label only, and across Chrome / Edge / Brave
 # --------------------------------------------------------------------------
