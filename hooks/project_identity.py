@@ -183,8 +183,15 @@ def main() -> None:
         return
 
     project_dir = Path(transcript_path).parent
-    # Only ever write into a Claude Code project dir (~/.claude/projects/<encoded>)
-    if project_dir.parent.name != "projects" or not project_dir.is_dir():
+    # Only ever write into <claude config dir>/projects/<encoded>
+    try:
+        config_dir = Path(
+            os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude"
+        )
+        projects_dir = (config_dir / "projects").resolve()
+        if project_dir.resolve().parent != projects_dir or not project_dir.is_dir():
+            return
+    except (OSError, RuntimeError):
         return
 
     data = build_identity(cwd)

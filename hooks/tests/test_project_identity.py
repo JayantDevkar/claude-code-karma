@@ -44,7 +44,10 @@ NORMALIZE_CASES = [
     ("git@ssh.dev.azure.com:v3/org/Project/Repo", "project/repo"),
     ("https://github.com/Owner/_git", "owner/_git"),
     ("ssh://git@host:2222/repo.git", None),
-    ("ssh://git@host:2222/_git/repo", "_git/repo"),
+    (
+        "ssh://git@host:2222/_git/repo",
+        "_git/repo",
+    ),  # _git drop only applies at parts[-2] with 3+ segments
     ("", None),
     (None, None),
     ("/local/path/repo", None),
@@ -132,7 +135,8 @@ def _run_hook(payload: dict) -> subprocess.CompletedProcess:
 
 
 @pytest.fixture
-def project_dir(tmp_path) -> Path:
+def project_dir(tmp_path, monkeypatch) -> Path:
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude"))
     d = tmp_path / "claude" / "projects" / "-encoded"
     d.mkdir(parents=True)
     return d
@@ -156,7 +160,7 @@ def test_end_to_end_writes_sidecar(tmp_path, project_dir):
         "project_path": cwd,
         "written_by": "hook",
     }
-    assert not (project_dir / pi.TMP_NAME).exists()
+    assert not list(project_dir.glob(pi.TMP_NAME + "*"))
 
 
 @requires_git
@@ -227,6 +231,21 @@ def test_end_to_end_refuses_non_project_dir(tmp_path):
     )
     assert result.returncode == 0
     assert not (elsewhere / pi.SIDECAR_NAME).exists()
+
+
+@requires_git
+def test_end_to_end_refuses_projects_dir_outside_config(tmp_path, monkeypatch):
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude"))
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-q")
+    _git(repo, "remote", "add", "origin", "https://github.com/a/b.git")
+    other = tmp_path / "anything" / "projects" / "x"
+    other.mkdir(parents=True)
+
+    result = _run_hook({"cwd": str(repo), "transcript_path": str(other / "abc.jsonl")})
+    assert result.returncode == 0
+    assert not (other / pi.SIDECAR_NAME).exists()
 
 
 def test_end_to_end_missing_project_dir_is_silent(tmp_path):
