@@ -31,6 +31,7 @@
 	bind:open={isOpen}
 	onOpenChange={handleOpenChange}
 	title={group.displayName}
+	headingLevel={3}
 	class={className}
 >
 	{#snippet icon()}

@@ -450,7 +450,7 @@
 	let renderedAgentContent = $state('');
 	$effect(() => {
 		if (agentInfo?.content) {
-			renderMarkdownEffect(stripFrontmatter(agentInfo.content), {}, (html) => {
+			renderMarkdownEffect(stripFrontmatter(agentInfo.content), { demoteH1: true }, (html) => {
 				renderedAgentContent = html;
 			});
 		}
@@ -551,11 +551,11 @@
 
 				{#if agentInfo?.capabilities && agentInfo.capabilities.length > 0}
 					<div class="mb-4 pb-4 border-b border-[var(--border)]">
-						<h4
+						<h3
 							class="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-2"
 						>
 							Capabilities
-						</h4>
+						</h3>
 						<div class="flex flex-wrap gap-2">
 							{#each agentInfo.capabilities as capability}
 								<span
@@ -596,7 +596,7 @@
 				>
 					<div class="flex items-center gap-2 mb-4">
 						<TrendingUp size={18} style="color: {colorVars.color};" />
-						<h3 class="text-lg font-bold text-[var(--text-primary)]">Usage Trend</h3>
+						<h2 class="text-lg font-bold text-[var(--text-primary)]">Usage Trend</h2>
 						<span class="text-xs text-[var(--text-muted)] ml-auto">Last 90 days</span>
 					</div>
 					<AgentTrendChart trend={trendData} cssColor={chartHex ?? colorVars.color} />
@@ -609,9 +609,9 @@
 			>
 				<div class="flex items-center gap-2 mb-6">
 					<FolderOpen size={18} class="text-[var(--text-muted)]" />
-					<h3 class="text-lg font-bold text-[var(--text-primary)]">
+					<h2 class="text-lg font-bold text-[var(--text-primary)]">
 						Usage by Project
-					</h3>
+					</h2>
 				</div>
 
 				{#if sortedProjects.length === 0}
@@ -656,7 +656,7 @@
 				>
 					<div class="flex items-center gap-2 mb-6">
 						<Hash size={18} class="text-[var(--text-muted)]" />
-						<h3 class="text-lg font-bold text-[var(--text-primary)]">Token Usage</h3>
+						<h2 class="text-lg font-bold text-[var(--text-primary)]">Token Usage</h2>
 					</div>
 
 					<!-- Total tokens with gradient text -->
@@ -728,9 +728,9 @@
 				>
 					<div class="flex items-center gap-2 mb-6">
 						<TrendingUp size={18} class="text-[var(--text-muted)]" />
-						<h3 class="text-lg font-bold text-[var(--text-primary)]">
+						<h2 class="text-lg font-bold text-[var(--text-primary)]">
 							Activity & Stats
-						</h3>
+						</h2>
 					</div>
 
 					<div class="grid grid-cols-2 gap-3">
@@ -834,7 +834,7 @@
 			>
 				<div class="flex items-center gap-2 mb-6">
 					<Wrench size={18} style="color: {colorVars.color};" />
-					<h3 class="text-lg font-bold text-[var(--text-primary)]">Top Tools Used</h3>
+					<h2 class="text-lg font-bold text-[var(--text-primary)]">Top Tools Used</h2>
 					<span class="text-xs text-[var(--text-muted)] ml-auto tabular-nums">{sortedTools.length} unique tools</span>
 				</div>
 
@@ -889,7 +889,7 @@
 				>
 					<div class="flex items-center gap-2 mb-6">
 						<Zap size={18} style="color: {colorVars.color};" />
-						<h3 class="text-lg font-bold text-[var(--text-primary)]">Top Skills Used</h3>
+						<h2 class="text-lg font-bold text-[var(--text-primary)]">Top Skills Used</h2>
 					</div>
 
 					{#if sortedSkills.length === 0}
@@ -936,7 +936,7 @@
 				>
 					<div class="flex items-center gap-2 mb-6">
 						<Terminal size={18} style="color: {colorVars.color};" />
-						<h3 class="text-lg font-bold text-[var(--text-primary)]">Top Commands Used</h3>
+						<h2 class="text-lg font-bold text-[var(--text-primary)]">Top Commands Used</h2>
 					</div>
 
 					{#if sortedCommands.length === 0}

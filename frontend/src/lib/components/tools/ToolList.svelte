@@ -107,9 +107,9 @@
 						{/if}
 					</div>
 
-					<h3 class="font-semibold text-[var(--text-primary)] mb-2 truncate pr-4">
+					<h2 class="font-semibold text-[var(--text-primary)] mb-2 truncate pr-4">
 						{server.display_name}
-					</h3>
+					</h2>
 
 					<div class="flex items-center gap-4 text-xs text-[var(--text-muted)]">
 						<span class="flex items-center gap-1">

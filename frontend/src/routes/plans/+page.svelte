@@ -489,9 +489,9 @@
 				>
 					<FileText size={28} class="text-[var(--text-faint)]" />
 				</div>
-				<h3 class="text-base font-semibold text-[var(--text-primary)] mb-2">
+				<h2 class="text-base font-semibold text-[var(--text-primary)] mb-2">
 					No plans found
-				</h3>
+				</h2>
 				<p class="text-sm font-medium text-[var(--text-muted)]">
 					Plans will appear here when you use Claude Code's plan mode
 				</p>
@@ -504,9 +504,9 @@
 				>
 					<Search size={28} class="text-[var(--text-faint)]" />
 				</div>
-				<h3 class="text-base font-semibold text-[var(--text-primary)] mb-2">
+				<h2 class="text-base font-semibold text-[var(--text-primary)] mb-2">
 					No matching plans
-				</h3>
+				</h2>
 				<p class="text-sm font-medium text-[var(--text-muted)]">
 					Try adjusting your search query or filters
 				</p>

@@ -11,7 +11,7 @@
 		ChevronRight
 	} from 'lucide-svelte';
 	import { marked } from 'marked';
-	import { stripFrontmatter } from '$lib/utils';
+	import { demoteH1, stripFrontmatter } from '$lib/utils';
 	import { markdownCopyButtons } from '$lib/actions/markdownCopyButtons';
 	import DOMPurify from 'isomorphic-dompurify';
 	import { formatDistanceToNow } from 'date-fns';
@@ -60,9 +60,9 @@
 		if (data.skill?.content) {
 			const parsed = marked.parse(stripFrontmatter(data.skill.content));
 			if (parsed instanceof Promise) {
-				parsed.then((html) => (renderedContent = DOMPurify.sanitize(html)));
+				parsed.then((html) => (renderedContent = demoteH1(DOMPurify.sanitize(html))));
 			} else {
-				renderedContent = DOMPurify.sanitize(parsed);
+				renderedContent = demoteH1(DOMPurify.sanitize(parsed));
 			}
 		}
 	});

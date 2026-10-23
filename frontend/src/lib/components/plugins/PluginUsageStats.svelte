@@ -388,7 +388,7 @@
 <div class="space-y-6">
 	<!-- Header -->
 	<div class="flex items-center justify-between">
-		<h3 class="text-sm font-semibold text-[var(--text-primary)]">Usage Analytics</h3>
+		<h2 class="text-sm font-semibold text-[var(--text-primary)]">Usage Analytics</h2>
 		{#if firstUsedLabel}
 			<span class="flex items-center gap-1.5 text-xs text-[var(--text-muted)]">
 				<Calendar size={12} />
@@ -480,7 +480,7 @@
 		{#if usage.trend.length > 0 && itemTrends.length > 0}
 			<div class="bg-[var(--bg-subtle)] rounded-xl p-4">
 				<div class="flex items-center justify-between mb-4">
-					<h4 class="text-sm font-medium text-[var(--text-primary)]">Activity Trend</h4>
+					<h3 class="text-sm font-medium text-[var(--text-primary)]">Activity Trend</h3>
 					<SegmentedControl options={rangeOptions} bind:value={selectedRange} size="sm" />
 				</div>
 
@@ -518,7 +518,7 @@
 			<div class="bg-[var(--bg-subtle)] rounded-xl p-4">
 				<div class="flex items-center gap-2 mb-4">
 					<Bot size={16} class="text-[var(--text-muted)]" />
-					<h4 class="text-sm font-medium text-[var(--text-primary)]">Top Agents</h4>
+					<h3 class="text-sm font-medium text-[var(--text-primary)]">Top Agents</h3>
 				</div>
 				{#if topAgents.length === 0}
 					<p class="text-xs text-[var(--text-muted)] text-center py-4">No agent usage</p>
@@ -558,7 +558,7 @@
 			<div class="bg-[var(--bg-subtle)] rounded-xl p-4">
 				<div class="flex items-center gap-2 mb-4">
 					<Zap size={16} class="text-[var(--text-muted)]" />
-					<h4 class="text-sm font-medium text-[var(--text-primary)]">Top Skills</h4>
+					<h3 class="text-sm font-medium text-[var(--text-primary)]">Top Skills</h3>
 				</div>
 				{#if topSkills.length === 0}
 					<p class="text-xs text-[var(--text-muted)] text-center py-4">No skill usage</p>
@@ -598,7 +598,7 @@
 			<div class="bg-[var(--bg-subtle)] rounded-xl p-4">
 				<div class="flex items-center gap-2 mb-4">
 					<Terminal size={16} class="text-[var(--text-muted)]" />
-					<h4 class="text-sm font-medium text-[var(--text-primary)]">Top Commands</h4>
+					<h3 class="text-sm font-medium text-[var(--text-primary)]">Top Commands</h3>
 				</div>
 				{#if topCommands.length === 0}
 					<p class="text-xs text-[var(--text-muted)] text-center py-4">No command usage</p>
@@ -638,7 +638,7 @@
 			<div class="bg-[var(--bg-subtle)] rounded-xl p-4">
 				<div class="flex items-center gap-2 mb-4">
 					<Wrench size={16} class="text-[var(--text-muted)]" />
-					<h4 class="text-sm font-medium text-[var(--text-primary)]">Top MCP Tools</h4>
+					<h3 class="text-sm font-medium text-[var(--text-primary)]">Top MCP Tools</h3>
 				</div>
 				{#if topMcpTools.length === 0}
 					<p class="text-xs text-[var(--text-muted)] text-center py-4">

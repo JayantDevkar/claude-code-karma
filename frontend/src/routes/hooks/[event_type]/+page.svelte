@@ -212,11 +212,11 @@
 					<!-- Input Fields -->
 					{#if schemaInfo.input_fields.length > 0}
 						<div>
-							<h4
+							<h3
 								class="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-3"
 							>
 								Input Fields
-							</h4>
+							</h3>
 							<div class="overflow-x-auto">
 								<table class="w-full text-sm">
 									<thead
@@ -289,11 +289,11 @@
 					<!-- Output Fields -->
 					{#if schemaInfo.output_fields.length > 0}
 						<div>
-							<h4
+							<h3
 								class="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-3"
 							>
 								Output Fields
-							</h4>
+							</h3>
 							<div class="overflow-x-auto">
 								<table class="w-full text-sm">
 									<thead
@@ -366,11 +366,11 @@
 					<!-- Base Fields -->
 					{#if schemaInfo.base_fields.length > 0}
 						<div>
-							<h4
+							<h3
 								class="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-3"
 							>
 								Base Fields (All Hooks)
-							</h4>
+							</h3>
 							<div class="overflow-x-auto">
 								<table class="w-full text-sm">
 									<thead

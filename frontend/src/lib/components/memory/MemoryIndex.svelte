@@ -22,7 +22,7 @@
 			renderedContent = '';
 			return;
 		}
-		renderMarkdownEffect(content, {}, (html) => {
+		renderMarkdownEffect(content, { demoteH1: true }, (html) => {
 			renderedContent = html;
 		});
 	});

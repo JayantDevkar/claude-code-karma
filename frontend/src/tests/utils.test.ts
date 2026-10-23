@@ -32,7 +32,9 @@ import {
 	calculateSubagentDuration,
 	activeTimeWasCapped,
 	sessionOnlyTools,
-	stripFrontmatter
+	stripFrontmatter,
+	demoteH1,
+	renderMarkdown
 } from '$lib/utils';
 
 // ============================================================
@@ -185,6 +187,31 @@ describe('stripFrontmatter', () => {
 	it('does not treat a longer dash rule as the closing fence', () => {
 		const text = '---\nname: x\n----\nBody';
 		expect(stripFrontmatter(text)).toBe(text);
+	});
+});
+
+// ============================================================
+// demoteH1
+// ============================================================
+describe('demoteH1', () => {
+	it('turns every h1 into an h2 tagged with its markdown level', () => {
+		expect(demoteH1('<h1>Title</h1><p>x</p><h1 id="b">Second</h1>')).toBe(
+			'<h2 data-md-level="1">Title</h2><p>x</p><h2 data-md-level="1" id="b">Second</h2>'
+		);
+	});
+
+	it('leaves other headings and escaped h1 text alone', () => {
+		const html = '<h2>A</h2><h3>B</h3><pre><code>&lt;h1&gt;x&lt;/h1&gt;</code></pre><h10>';
+		expect(demoteH1(html)).toBe(html);
+	});
+
+	it('is applied by renderMarkdown when asked, and only then', async () => {
+		const md = '# Title\n\n## Section\n\nBody';
+		const demoted = await renderMarkdown(md, { demoteH1: true });
+		expect(demoted).not.toMatch(/<h1/);
+		expect(demoted).toContain('<h2 data-md-level="1">Title</h2>');
+		expect(demoted).toContain('<h2>Section</h2>');
+		expect(await renderMarkdown(md)).toContain('<h1>Title</h1>');
 	});
 });
 

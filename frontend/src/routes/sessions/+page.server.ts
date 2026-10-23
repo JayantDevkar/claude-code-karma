@@ -6,6 +6,7 @@ import type {
 } from '$lib/api-types';
 import { API_BASE } from '$lib/config';
 import { safeFetch, fetchWithFallback } from '$lib/utils/api-fetch';
+import { paramsToFilters, sessionsApiFilters } from '$lib/search';
 
 export async function load({ fetch, url }) {
 	// Extract query parameters for filtering
@@ -16,12 +17,13 @@ export async function load({ fetch, url }) {
 	const page = parseInt(url.searchParams.get('page') || '1', 10);
 	const perPage = parseInt(url.searchParams.get('per_page') || '50', 10);
 
-	// Additional filter params (kept in URL for shareability)
-	// Search and scope are forwarded to API; status/date/live filters are applied client-side
+	// Additional filter params (kept in URL for shareability); Live and the range preset are mapped for the API
 	const scope = (url.searchParams.get('scope') as SearchScope) || undefined;
-	const status = (url.searchParams.get('status') as SessionStatusFilter) || undefined;
-	const start_ts = url.searchParams.get('start_ts') || undefined;
-	const end_ts = url.searchParams.get('end_ts') || undefined;
+	const { status: pageStatus, dateRange } = paramsToFilters(url.searchParams);
+	const status: SessionStatusFilter | undefined = pageStatus === 'all' ? undefined : pageStatus;
+	const api = sessionsApiFilters(pageStatus, dateRange);
+	const start_ts = api.start_ts ?? (url.searchParams.get('start_ts') || undefined);
+	const end_ts = api.end_ts ?? (url.searchParams.get('end_ts') || undefined);
 
 	// Build query string
 	const params = new URLSearchParams();
@@ -35,7 +37,7 @@ export async function load({ fetch, url }) {
 
 	const filters = { search, project, branch, scope, status, start_ts, end_ts, page, perPage };
 
-	if (status) params.set('status', status);
+	if (api.status) params.set('status', api.status);
 	if (start_ts) params.set('start_ts', start_ts);
 	if (end_ts) params.set('end_ts', end_ts);
 

@@ -11,6 +11,8 @@
 		metadata?: Snippet;
 		children: Snippet;
 		accentColor?: string;
+		/** Use 3 when the group sits under a section h2. */
+		headingLevel?: 2 | 3 | 4;
 		class?: string;
 	}
 
@@ -22,6 +24,7 @@
 		metadata,
 		children,
 		accentColor,
+		headingLevel = 2,
 		class: className = ''
 	}: Props = $props();
 
@@ -85,9 +88,12 @@
 			{/if}
 
 			<!-- Title -->
-			<h3 class="flex-1 text-sm font-medium text-[var(--text-primary)]">
+			<svelte:element
+				this={`h${headingLevel}`}
+				class="flex-1 text-sm font-medium text-[var(--text-primary)]"
+			>
 				{title}
-			</h3>
+			</svelte:element>
 
 			<!-- Metadata Slot -->
 			<!-- Phones: metadata gets its own line, indented past the chevron, so chips never clip. -->

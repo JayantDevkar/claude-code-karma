@@ -65,6 +65,7 @@
 		hasActiveFilters as checkHasActiveFilters,
 		filterSessionsByStatus,
 		filterSessionsByDateRange,
+		sessionsApiFilters,
 		calculateLiveStatusCounts,
 		createHistoricalSessionLookup,
 		shouldShowEndedStatus
@@ -238,9 +239,8 @@
 	// This is for DISPLAY - excludes sessions shown in Live section to avoid duplicates
 	// Filtered sessions - now uses server data directly (already filtered)
 	// Only client-side logic is to exclude sessions shown in Live section
-	const filteredSessions = $derived.by(() => {
-		return historicalSessions;
-	});
+	// Live shows only the live feed: sessions still live are already removed from historicalSessions
+	const filteredSessions = $derived(selectedStatus === 'live' ? [] : historicalSessions);
 
 	// Detect mobile viewport
 	$effect(() => {
@@ -810,6 +810,13 @@
 			params.delete('q');
 		}
 
+		// The API has no live status and takes start_ts/end_ts instead of the range preset
+		const apiFilters = sessionsApiFilters(selectedStatus, selectedDateRange);
+		for (const key of ['status', 'range', 'from', 'to', 'substatus']) params.delete(key);
+		if (apiFilters.status) params.set('status', apiFilters.status);
+		if (apiFilters.start_ts) params.set('start_ts', apiFilters.start_ts);
+		if (apiFilters.end_ts) params.set('end_ts', apiFilters.end_ts);
+
 		// Map 'branches' (comma-separated) to 'branch' (single for now, until API supports multi)
 		// API currently only supports single branch filtering, so we take the first one
 		if (selectedBranchFilters.size > 0) {
@@ -839,6 +846,8 @@
 					project: selectedProject || undefined,
 					scope: currentFiltersState.scope,
 					status: selectedStatus,
+					start_ts: apiFilters.start_ts,
+					end_ts: apiFilters.end_ts,
 					page: opts.page ?? 1
 				};
 			}
@@ -1409,7 +1418,7 @@
 				</button>
 			{/if}
 		</EmptyState>
-	{:else if dedupedFilteredSessions.length === 0 && !showRecentlyEnded}
+	{:else if dedupedFilteredSessions.length === 0 && !showRecentlyEnded && selectedStatus !== 'live'}
 		<!-- No filtered sessions but have live ones (not recently ended) - show minimal message -->
 		<div class="text-center py-8 text-sm text-[var(--text-muted)]">
 			No completed sessions match your filters

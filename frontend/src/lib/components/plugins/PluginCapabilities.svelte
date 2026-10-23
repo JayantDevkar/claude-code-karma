@@ -98,7 +98,7 @@
 
 <div class="space-y-3">
 	<div class="flex items-center justify-between mb-4">
-		<h3 class="text-sm font-semibold text-[var(--text-primary)]">What This Plugin Provides</h3>
+		<h2 class="text-sm font-semibold text-[var(--text-primary)]">What This Plugin Provides</h2>
 		<span class="text-xs text-[var(--text-muted)] bg-[var(--bg-subtle)] px-2 py-1 rounded-full">
 			{totalCount} total
 		</span>

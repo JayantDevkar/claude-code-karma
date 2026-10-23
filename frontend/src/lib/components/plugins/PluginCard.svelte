@@ -12,6 +12,12 @@
 
 	let { plugin, usage = 'ready', class: className = '' }: Props = $props();
 
+	// A known zero reads "$0.00"; "—" is kept for a value that is absent
+	function costLabel(cost: number | null | undefined): string {
+		if (cost == null || !Number.isFinite(cost)) return '—';
+		return cost <= 0 ? '$0.00' : formatCost(cost);
+	}
+
 	// Get consistent OKLCH colors based on plugin name
 	let colorVars = $derived(getPluginColorVars(plugin.name));
 
@@ -66,11 +72,11 @@
 	</div>
 
 	<!-- Plugin name -->
-	<h3
+	<h2
 		class="text-lg font-bold text-[var(--text-primary)] mb-2 truncate pr-4 tracking-tight group-hover:text-[var(--accent)] transition-colors"
 	>
 		{plugin.name.split('@')[0]}
-	</h3>
+	</h2>
 
 	<!-- Description if available -->
 	{#if plugin.description}
@@ -119,7 +125,7 @@
 				<span class="text-[var(--text-muted)]">—</span>
 			{:else}
 				<span class="text-[var(--text-secondary)]"
-					>{formatCost(plugin.estimated_cost_usd)}</span
+					>{costLabel(plugin.estimated_cost_usd)}</span
 				>
 			{/if}
 		</div>

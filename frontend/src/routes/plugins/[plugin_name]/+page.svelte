@@ -178,9 +178,9 @@
 		<!-- Usage Stats Section -->
 		<div class="bg-[var(--bg-base)] border border-[var(--border)] rounded-2xl p-6">
 			{#if usageLoading}
-				<h3 class="text-sm font-semibold text-[var(--text-primary)] mb-4">
+				<h2 class="text-sm font-semibold text-[var(--text-primary)] mb-4">
 					Usage Analytics
-				</h3>
+				</h2>
 				<div class="grid grid-cols-2 md:grid-cols-4 gap-4">
 					{#each Array(4) as _}
 						<SkeletonBox height="80px" rounded="lg" />
@@ -216,7 +216,7 @@
 		<!-- Installations Section -->
 		{#if plugin.installations.length > 0}
 			<div class="bg-[var(--bg-base)] border border-[var(--border)] rounded-2xl p-6">
-				<h3 class="text-sm font-semibold text-[var(--text-primary)] mb-4">Installations</h3>
+				<h2 class="text-sm font-semibold text-[var(--text-primary)] mb-4">Installations</h2>
 				<div class="space-y-3">
 					{#each plugin.installations as installation}
 						<div

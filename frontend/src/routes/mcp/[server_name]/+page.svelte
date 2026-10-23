@@ -520,9 +520,9 @@
 					>
 						<div class="flex items-center gap-2 mb-6">
 							<TrendingUp size={18} class="text-[var(--text-muted)]" />
-							<h3 class="text-lg font-bold text-[var(--text-primary)]">
+							<h2 class="text-lg font-bold text-[var(--text-primary)]">
 								Usage Trend
-							</h3>
+							</h2>
 							<span class="text-xs text-[var(--text-muted)] ml-auto"
 								>Last {detail.trend.length} days</span
 							>
@@ -538,7 +538,7 @@
 				>
 					<div class="flex items-center gap-2 mb-6">
 						<Wrench size={18} class="text-[var(--text-muted)]" />
-						<h3 class="text-lg font-bold text-[var(--text-primary)]">Tool Breakdown</h3>
+						<h2 class="text-lg font-bold text-[var(--text-primary)]">Tool Breakdown</h2>
 					</div>
 
 					{#if sortedTools.length === 0}

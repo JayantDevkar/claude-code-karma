@@ -33,12 +33,12 @@
 >
 	<!-- Tool Name -->
 	<div class="flex items-center justify-between mb-2">
-		<h4
+		<h3
 			class="text-sm font-semibold text-[var(--text-primary)] truncate pr-2"
 			title={tool.full_name}
 		>
 			{tool.name}
-		</h4>
+		</h3>
 		<ChevronRight
 			size={14}
 			class="text-[var(--text-faint)] group-hover:text-[var(--text-muted)] transition-colors flex-shrink-0"

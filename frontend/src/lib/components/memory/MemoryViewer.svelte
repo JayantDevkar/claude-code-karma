@@ -122,9 +122,9 @@
 				>
 					<Brain size={26} class="text-[var(--text-muted)]" />
 				</div>
-				<h3 class="text-base font-semibold text-[var(--text-primary)] mb-2">
+				<h2 class="text-base font-semibold text-[var(--text-primary)] mb-2">
 					No Project Memory Yet
-				</h3>
+				</h2>
 				<p class="text-sm text-[var(--text-muted)] max-w-md mx-auto leading-relaxed">
 					Claude Code hasn't saved any memory for this project yet. Memory files store
 					persistent context — patterns, conventions, and decisions — that Claude remembers
@@ -138,9 +138,9 @@
 			<div class="px-6 py-4 border-b border-[var(--border)]">
 				<div class="flex items-center gap-2.5">
 					<Terminal size={16} class="text-[var(--accent)]" />
-					<h4 class="text-sm font-semibold text-[var(--text-primary)]">
+					<h3 class="text-sm font-semibold text-[var(--text-primary)]">
 						How to Create Project Memory
-					</h4>
+					</h3>
 				</div>
 			</div>
 			<div class="px-6 py-4 space-y-3">
@@ -174,9 +174,9 @@
 					<Brain size={18} class="text-[var(--accent)]" />
 				</div>
 				<div>
-					<h3 class="text-sm font-semibold text-[var(--text-primary)]">
+					<h2 class="text-sm font-semibold text-[var(--text-primary)]">
 						Orphan memory files
-					</h3>
+					</h2>
 					<p class="text-xs text-[var(--text-muted)]">
 						{memory.files.length} file{memory.files.length === 1 ? '' : 's'} present, no MEMORY.md index
 					</p>
@@ -201,7 +201,7 @@
 						<Brain size={18} class="text-[var(--accent)]" />
 					</div>
 					<div>
-						<h3 class="text-sm font-semibold text-[var(--text-primary)]">MEMORY.md</h3>
+						<h2 class="text-sm font-semibold text-[var(--text-primary)]">MEMORY.md</h2>
 						<p class="text-xs text-[var(--text-muted)]">
 							{memory.index.word_count.toLocaleString()} words · Updated {formatDate(
 								memory.index.modified

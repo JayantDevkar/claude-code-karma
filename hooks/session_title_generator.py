@@ -21,6 +21,7 @@ API_BASE = os.environ.get("CLAUDE_KARMA_API", "http://localhost:8020")
 MAX_PROMPT_LENGTH = 500
 MAX_RESPONSE_LENGTH = 300
 TITLE_MAX_WORDS = 10
+FALLBACK_TITLE_MAX_CHARS = 60
 
 
 def _strip_system_tags(text: str) -> str:
@@ -34,6 +35,19 @@ def _strip_system_tags(text: str) -> str:
     # Also strip self-closing variants
     cleaned = re.sub(r"<(?:command-message|system-reminder|command-name|user-prompt-submit-hook)[^/]*/?>", "", cleaned)
     return cleaned.strip()
+
+
+def truncate_title(text: str, limit: int = FALLBACK_TITLE_MAX_CHARS) -> str:
+    """Collapse whitespace and cut at a word boundary to at most `limit` chars, ending in one "…"."""
+    text = " ".join(text.split())
+    if len(text) <= limit:
+        return text
+    cut = text[: limit - 1]
+    space = cut.rfind(" ")
+    # Back up to the last space unless a word ends right at the cut; a lone long word (path, URL) is cut mid-word
+    if text[limit - 1] != " " and space >= limit // 2:
+        cut = cut[:space]
+    return cut.rstrip(" ,.;:-") + "…"
 
 
 def _extract_text(msg: dict) -> str:
@@ -232,10 +246,7 @@ Title:"""
         pass
 
     # 3. Fallback: truncated initial prompt
-    fallback = initial_prompt[:60]
-    if len(initial_prompt) > 60:
-        fallback += "..."
-    return fallback, "fallback"
+    return truncate_title(initial_prompt), "fallback"
 
 
 def post_title(session_id: str, title: str) -> bool:

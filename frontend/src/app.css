@@ -89,7 +89,9 @@ body {
 	color: var(--text-primary);
 }
 
-.markdown-preview h1 {
+/* Embedded markdown h1s render as h2[data-md-level='1'] (one h1 per page) but keep the h1 look. */
+.markdown-preview h1,
+.markdown-preview h2[data-md-level='1'] {
 	@apply text-2xl font-semibold mt-8 mb-4 tracking-tight pb-2;
 	color: var(--text-primary);
 	border-bottom: 1px solid var(--border);
@@ -252,9 +254,12 @@ body {
 }
 
 .md-copy-btn {
+	position: relative;
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
+	min-width: 24px;
+	min-height: 24px;
 	padding: 0.25rem;
 	border-radius: 0.375rem;
 	border: 1px solid var(--border);
@@ -296,6 +301,15 @@ body {
 /* All section copy buttons — always visible */
 .md-copy-btn--section {
 	opacity: 1;
+}
+
+/* Invisible 44px touch area; the inset counts from inside the 1px border. */
+@media (pointer: coarse) {
+	.md-copy-btn::before {
+		content: '';
+		position: absolute;
+		inset: -11px;
+	}
 }
 
 

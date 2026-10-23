@@ -147,7 +147,7 @@
 	let renderedContent = $state('');
 	$effect(() => {
 		if (detail?.content) {
-			renderMarkdownEffect(stripFrontmatter(detail.content), {}, (html) => {
+			renderMarkdownEffect(stripFrontmatter(detail.content), { demoteH1: true }, (html) => {
 				renderedContent = html;
 			});
 		}
@@ -333,7 +333,7 @@
 					>
 						<div class="flex items-center gap-2 mb-6">
 							<TrendingUp size={18} class="text-[var(--text-muted)]" />
-							<h3 class="text-lg font-bold text-[var(--text-primary)]">Usage Trend</h3>
+							<h2 class="text-lg font-bold text-[var(--text-primary)]">Usage Trend</h2>
 							<span class="text-xs text-[var(--text-muted)] ml-auto"
 								>Last {detail.trend.length} days</span
 							>
@@ -366,7 +366,7 @@
 						>
 							<div class="flex items-center gap-2 mb-6">
 								<Zap size={18} class="text-[var(--text-muted)]" />
-								<h3 class="text-lg font-bold text-[var(--text-primary)]">Invocation Breakdown</h3>
+								<h2 class="text-lg font-bold text-[var(--text-primary)]">Invocation Breakdown</h2>
 							</div>
 
 							<!-- Stacked bar -->

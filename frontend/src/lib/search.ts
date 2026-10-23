@@ -395,6 +395,19 @@ export function getDateRangeTimestamps(
 	}
 }
 
+/** /sessions/all filters for the page's status and date range; Live has no API value, so it is filtered client-side. */
+export function sessionsApiFilters(
+	status: SessionStatusFilter,
+	dateRange: SearchDateRange
+): { status?: 'completed'; start_ts?: string; end_ts?: string } {
+	const { start_ts, end_ts } = getDateRangeTimestamps(dateRange);
+	return {
+		status: status === 'completed' ? status : undefined,
+		start_ts: start_ts?.toString(),
+		end_ts: end_ts?.toString()
+	};
+}
+
 // ============================================================================
 // Filter State Helpers
 // ============================================================================

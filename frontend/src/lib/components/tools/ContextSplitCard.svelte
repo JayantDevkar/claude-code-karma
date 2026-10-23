@@ -48,7 +48,7 @@
 
 <div class="flex items-center gap-2 mb-6">
 	<Bot size={18} class="text-[var(--text-muted)]" />
-	<h3 class="text-lg font-bold text-[var(--text-primary)]">Context Split</h3>
+	<h2 class="text-lg font-bold text-[var(--text-primary)]">Context Split</h2>
 </div>
 
 <!-- Main vs Subagent bar -->

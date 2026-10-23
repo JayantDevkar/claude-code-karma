@@ -101,7 +101,7 @@
 			renderedContent = '';
 			return;
 		}
-		renderMarkdownEffect(fileData.content, {}, (html) => {
+		renderMarkdownEffect(fileData.content, { demoteH1: true }, (html) => {
 			renderedContent = html;
 		});
 	});

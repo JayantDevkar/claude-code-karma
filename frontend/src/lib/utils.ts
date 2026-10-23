@@ -1436,6 +1436,15 @@ export function findSessionByIdentifier<T extends SessionIdentifier>(
 export interface RenderMarkdownOptions {
 	/** Strip H1 headings from the output (useful for content that already has a title) */
 	stripH1?: boolean;
+	/** Render H1 headings as h2[data-md-level="1"] so the page keeps its single h1 */
+	demoteH1?: boolean;
+}
+
+/** Turn every h1 into h2[data-md-level="1"]; CSS keeps the h1 look, the outline gets one h1. */
+export function demoteH1(html: string): string {
+	return html
+		.replace(/<h1(\s[^>]*)?>/gi, '<h2 data-md-level="1"$1>')
+		.replace(/<\/h1\s*>/gi, '</h2>');
 }
 
 /**
@@ -1482,6 +1491,7 @@ export async function renderMarkdown(
 	if (options.stripH1) {
 		html = html.replace(/<h1[^>]*>.*?<\/h1>/gi, '');
 	}
+	if (options.demoteH1) html = demoteH1(html);
 
 	return html;
 }
@@ -1516,6 +1526,7 @@ export function renderMarkdownEffect(
 		if (options.stripH1) {
 			html = html.replace(/<h1[^>]*>.*?<\/h1>/gi, '');
 		}
+		if (options.demoteH1) html = demoteH1(html);
 		callback(html);
 	};
 

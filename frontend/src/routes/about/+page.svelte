@@ -54,7 +54,7 @@
 	// Render markdown when content changes
 	$effect(() => {
 		if (docContent) {
-			renderMarkdownEffect(docContent, {}, (html) => {
+			renderMarkdownEffect(docContent, { demoteH1: true }, (html) => {
 				renderedHtml = html;
 			});
 		} else {
@@ -151,8 +151,10 @@
 </div>
 
 <style>
-	.markdown-content :global(h1) {
+	.markdown-content :global(h1),
+	.markdown-content :global(h2[data-md-level='1']) {
 		font-size: 1.75rem;
+		margin-top: 0;
 		font-weight: 700;
 		color: var(--text-primary);
 		margin-bottom: 1rem;

@@ -375,9 +375,9 @@
 <div class="space-y-5">
 	<!-- Header -->
 	<div class="flex items-center justify-between">
-		<h3 class="text-sm font-semibold text-[var(--text-primary)]">
+		<h2 class="text-sm font-semibold text-[var(--text-primary)]">
 			{itemLabel} Usage Analytics
-		</h3>
+		</h2>
 		{#if firstUsedLabel}
 			<span class="flex items-center gap-1.5 text-xs text-[var(--text-muted)]">
 				<Calendar size={12} />
@@ -451,9 +451,9 @@
 		{#if data.trend.length > 0}
 			<div class="bg-[var(--bg-subtle)] rounded-xl p-4">
 				<div class="mb-4">
-					<h4 class="text-sm font-medium text-[var(--text-primary)]">
+					<h3 class="text-sm font-medium text-[var(--text-primary)]">
 						Activity Trend
-					</h4>
+					</h3>
 				</div>
 				<!-- Mini legend -->
 				{#if legendItems.length > 0}
@@ -478,9 +478,9 @@
 		<!-- Top items bar chart -->
 		{#if topItems.length > 0}
 			<div class="bg-[var(--bg-subtle)] rounded-xl p-4">
-				<h4 class="text-sm font-medium text-[var(--text-primary)] mb-4">
+				<h3 class="text-sm font-medium text-[var(--text-primary)] mb-4">
 					Top {itemLabel}
-				</h4>
+				</h3>
 				<div class="space-y-3">
 					{#each topItems as { name, count, pct, color }, i}
 						{@const displayName = itemDisplayFn ? itemDisplayFn(name) : name}

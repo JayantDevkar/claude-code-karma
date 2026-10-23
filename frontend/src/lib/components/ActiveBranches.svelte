@@ -49,12 +49,12 @@
 		<div class="p-1.5 rounded-md bg-[var(--nav-purple-subtle)]">
 			<GitBranch size={14} strokeWidth={2} class="text-[var(--nav-purple)]" />
 		</div>
-		<h3 class="text-sm font-medium text-[var(--text-primary)]">
+		<h2 class="text-sm font-medium text-[var(--text-primary)]">
 			Active Branches
 			<span class="ml-1.5 text-xs font-normal text-[var(--text-muted)]">
 				({activeBranches.length})
 			</span>
-		</h3>
+		</h2>
 		{#if isLoading}
 			<div
 				class="flex items-center gap-2 ml-auto text-xs font-medium text-[var(--nav-purple)] animate-pulse"
