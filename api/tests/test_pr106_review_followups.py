@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from db import indexer
 from db.queries import query_analytics, query_dashboard_stats
-from db.schema import SCHEMA_SQL, ensure_schema
+from db.schema import SCHEMA_SQL, SCHEMA_VERSION, ensure_schema
 from models.agent import Agent
 from models.session_index import SessionIndexEntry
 from models.usage import TokenUsage
@@ -72,7 +72,7 @@ GAPPED_ACTIVE_SECONDS = 40 * 60
 
 @pytest.fixture
 def db_ahead_without_columns():
-    """A DB stamped by a parallel branch at v24 whose sessions table predates this PR."""
+    """A DB stamped by a parallel branch ahead of us whose sessions table predates this PR."""
     conn = sqlite3.connect(":memory:")
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys=ON")
@@ -81,7 +81,7 @@ def db_ahead_without_columns():
         if column in _columns(conn):
             conn.execute(f"ALTER TABLE sessions DROP COLUMN {column}")
     conn.execute("DELETE FROM schema_version")
-    conn.execute("INSERT INTO schema_version (version) VALUES (24)")
+    conn.execute("INSERT INTO schema_version (version) VALUES (?)", (SCHEMA_VERSION + 1,))
     conn.execute(
         "INSERT INTO sessions (uuid, project_encoded_name, jsonl_mtime) VALUES ('old', '-p', 100.0)"
     )

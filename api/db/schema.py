@@ -10,7 +10,7 @@ import sqlite3
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 24
+SCHEMA_VERSION = 25
 
 SCHEMA_SQL = """
 -- Schema versioning
@@ -835,6 +835,10 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
                     "OR initial_prompt LIKE '<command-name>%'"
                 )
 
+        if current_version < 25:
+            logger.info("Migrating → v25: restore background_shells → sessions FK (issue #132)")
+            _restore_background_shells_fk(conn)
+
     # Record version
     conn.execute(
         "INSERT OR REPLACE INTO schema_version (version) VALUES (?)",
@@ -909,8 +913,8 @@ _ORPHAN_RULES = [
 ]
 
 
-def _delete_orphan_rows(conn: sqlite3.Connection) -> int:
-    """Delete child rows whose parent no longer exists. Returns rows removed."""
+def _delete_orphan_rows(conn: sqlite3.Connection, tables: tuple = ()) -> int:
+    """Delete child rows whose parent no longer exists (only in `tables` if given). Returns rows removed."""
     existing = {
         r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
     }
@@ -918,10 +922,79 @@ def _delete_orphan_rows(conn: sqlite3.Connection) -> int:
         return 0
     removed = 0
     for table, predicate in _ORPHAN_RULES:
-        if table not in existing:
+        if table not in existing or (tables and table not in tables):
             continue
         count = conn.execute(f"DELETE FROM {table} WHERE {predicate}").rowcount
         if count:
             logger.info("Removed %d orphaned rows from %s", count, table)
         removed += count
     return removed
+
+
+def _restore_background_shells_fk(conn: sqlite3.Connection) -> bool:
+    """Rebuild background_shells with its sessions FK, which the v19 rebuild dropped. True if rebuilt."""
+    if not conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='background_shells'"
+    ).fetchone():
+        return False
+    fks = conn.execute("PRAGMA foreign_key_list(background_shells)").fetchall()
+    if any(fk[2] == "sessions" for fk in fks):
+        return False
+
+    # PRAGMA foreign_keys is a no-op inside a transaction, so commit first.
+    conn.commit()
+    # FK off so the DROP doesn't cascade-delete shell_polls.
+    conn.execute("PRAGMA foreign_keys=OFF")
+    # Rows the new FK would reject; #107 already treats them as orphans.
+    _delete_orphan_rows(conn, ("shell_polls", "background_shells"))
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS background_shells_v25 (
+            id                       INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_uuid             TEXT    NOT NULL,
+            tool_use_id              TEXT    NOT NULL,
+            shell_id                 TEXT,
+            tool_name                TEXT    NOT NULL CHECK (tool_name IN ('Bash','Monitor','Manual')),
+            command                  TEXT    NOT NULL,
+            command_truncated        INTEGER NOT NULL DEFAULT 0 CHECK (command_truncated IN (0,1)),
+            description              TEXT,
+            is_persistent            INTEGER NOT NULL DEFAULT 0 CHECK (is_persistent IN (0,1)),
+            timeout_ms               INTEGER,
+            spawned_at               TEXT    NOT NULL,
+            terminated_at            TEXT,
+            terminated_by            TEXT    CHECK (terminated_by IN ('kill','natural','timeout','session_end')),
+            exit_code                INTEGER,
+            poll_count               INTEGER NOT NULL DEFAULT 0,
+            total_output_bytes       INTEGER NOT NULL DEFAULT 0,
+            last_output_at           TEXT,
+            spawn_message_uuid       TEXT,
+            output_file_path         TEXT,
+            CHECK ((terminated_at IS NULL) = (terminated_by IS NULL)),
+            FOREIGN KEY (session_uuid) REFERENCES sessions(uuid) ON DELETE CASCADE,
+            UNIQUE(tool_use_id)
+        )
+    """)
+    old_cols = {r[1] for r in conn.execute("PRAGMA table_info(background_shells)").fetchall()}
+    cols = ", ".join(
+        r[1]
+        for r in conn.execute("PRAGMA table_info(background_shells_v25)").fetchall()
+        if r[1] in old_cols
+    )
+    conn.execute(
+        f"INSERT OR IGNORE INTO background_shells_v25 ({cols}) SELECT {cols} FROM background_shells"
+    )
+    conn.execute("DROP TABLE background_shells")
+    conn.execute("ALTER TABLE background_shells_v25 RENAME TO background_shells")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_bg_shells_session "
+        "ON background_shells(session_uuid, spawned_at DESC)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_bg_shells_shell_id "
+        "ON background_shells(shell_id) WHERE shell_id IS NOT NULL"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_bg_shells_spawned ON background_shells(spawned_at DESC)"
+    )
+    conn.commit()
+    conn.execute("PRAGMA foreign_keys=ON")
+    return True

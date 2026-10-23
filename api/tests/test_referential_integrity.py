@@ -338,11 +338,12 @@ class TestHealthReportsForeignKeyViolations:
         assert metrics["fk_violations"] == 0
 
     def test_health_counts_orphan_shells_on_upgraded_db(self):
-        # The v19 rebuild left background_shells without an FK to sessions, so
-        # pragma_foreign_key_check alone cannot see orphaned shells there.
+        # v19 dropped the background_shells FK to sessions and v25 restores it.
         conn = _db_at_version(18, foreign_keys=True)
         ensure_schema(conn)
-        assert conn.execute("PRAGMA foreign_key_list(background_shells)").fetchall() == []
+        assert [
+            fk["table"] for fk in conn.execute("PRAGMA foreign_key_list(background_shells)")
+        ] == ["sessions"]
         conn.execute("PRAGMA foreign_keys=OFF")
         conn.execute(
             "INSERT INTO background_shells (session_uuid, tool_use_id, tool_name, command, spawned_at) "
