@@ -36,9 +36,11 @@ SIDECAR_NAME = "karma-project.json"
 TMP_NAME = ".karma-project.json.tmp"
 
 # Claude Code names a project dir after the session's start cwd: every
-# non-alphanumeric char becomes '-', long names are cut and get a hash suffix.
-_ENCODE_RE = re.compile(r"[^A-Za-z0-9]")
+# non-alphanumeric UTF-16 unit becomes '-', names over 200 chars are cut and
+# get a hash suffix.
+_ALNUM_RE = re.compile(r"[A-Za-z0-9]")
 _MAX_ENCODED_LEN = 200
+_BASE36 = "0123456789abcdefghijklmnopqrstuvwxyz"
 
 # Inlined from api/services/git_identity.py (hooks can't import api).
 _SCP_RE = re.compile(r"^[^@]+@[^:]+:(?P<path>.+)$")
@@ -141,6 +143,36 @@ def build_identity(cwd: str) -> Optional[dict]:
     }
 
 
+def _utf16_units(s: str) -> list:
+    data = s.encode("utf-16-le", "surrogatepass")
+    return [int.from_bytes(data[i : i + 2], "little") for i in range(0, len(data), 2)]
+
+
+def _base36(n: int) -> str:
+    out = ""
+    while True:
+        n, r = divmod(n, 36)
+        out = _BASE36[r] + out
+        if not n:
+            return out
+
+
+def encode_project_dir(path: str) -> str:
+    """Claude Code's project dir name for a cwd (JS string semantics)."""
+    units = _utf16_units(path)
+    encoded = "".join(
+        chr(u) if u < 128 and _ALNUM_RE.match(chr(u)) else "-" for u in units
+    )
+    if len(encoded) <= _MAX_ENCODED_LEN:
+        return encoded
+    h = 0
+    for u in units:  # (h << 5) - h + u, as a signed 32-bit int
+        h = (h * 31 + u) & 0xFFFFFFFF
+    if h >= 0x80000000:
+        h -= 0x100000000
+    return encoded[:_MAX_ENCODED_LEN] + "-" + _base36(abs(h))
+
+
 def dir_matches_cwd(dir_name: str, cwd: str) -> bool:
     """True if dir_name is the project dir Claude Code uses for cwd.
 
@@ -148,11 +180,32 @@ def dir_matches_cwd(dir_name: str, cwd: str) -> bool:
     have cd'd elsewhere while its transcript stays in the start dir's project
     dir; writing cwd's identity there would merge that project into cwd's repo.
     """
-    encoded = _ENCODE_RE.sub("-", cwd).lower()
     name = dir_name.lower()
-    if len(encoded) > _MAX_ENCODED_LEN:
-        return name.startswith(encoded[:_MAX_ENCODED_LEN] + "-")
-    return name == encoded
+    candidates = {cwd}
+    try:
+        candidates.add(os.path.realpath(cwd))
+    except (OSError, ValueError):
+        pass
+    # Drive letters show up in either case on Windows
+    return any(encode_project_dir(c).lower() == name for c in candidates)
+
+
+def drop_misplaced_sidecar(project_dir: Path) -> None:
+    """Delete a sidecar whose project_path does not belong to this dir.
+
+    Older versions of this hook wrote them after a cd (see dir_matches_cwd).
+    """
+    target = project_dir / SIDECAR_NAME
+    try:
+        existing = json.loads(target.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    path = existing.get("project_path") if isinstance(existing, dict) else None
+    if isinstance(path, str) and path and not dir_matches_cwd(project_dir.name, path):
+        try:
+            target.unlink()
+        except OSError:
+            pass
 
 
 def write_sidecar(project_dir: Path, data: dict) -> bool:
@@ -212,6 +265,7 @@ def main() -> None:
             return
     except (OSError, RuntimeError):
         return
+    drop_misplaced_sidecar(project_dir)
     if not dir_matches_cwd(project_dir.name, cwd):
         return
 

@@ -1015,6 +1015,8 @@ The branch detector has no timeout entry because it self-times-out at 2 seconds 
 
 `project_identity.py` writes `karma-project.json` (normalized git remote, subdir within the repo, project path) into the session's project dir on each session start. The file records which repository a project dir belongs to, independent of where the repo lives on disk; tools that read synced copies of `~/.claude` from several machines can use it to match the same project across different paths. The hook writes nothing else.
 
+It writes only into the project dir Claude Code made for the current working directory. A session resumed or compacted after a `cd` into another repo gets no sidecar in its start dir's project dir, and a sidecar an older version wrote there is removed on the next session start in that dir.
+
 ```bash
 ln -sf "$(cd hooks && pwd)/project_identity.py" ~/.claude/hooks/project_identity.py
 ```

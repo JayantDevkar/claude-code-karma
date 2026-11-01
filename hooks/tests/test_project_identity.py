@@ -8,7 +8,6 @@ end-to-end run against a real tmp git repo (skipped without git).
 from __future__ import annotations
 
 import json
-import re
 import shutil
 import subprocess
 import sys
@@ -78,6 +77,63 @@ def test_compute_subdir(cwd, root, expected):
     assert pi.compute_subdir(cwd, root) == expected
 
 
+# Dir names as Claude Code writes them (real dirs, or its encoder run under node)
+_LONG_CWD = "/srv/" + "a" * 120 + "/" + "b" * 120
+
+
+@pytest.mark.parametrize(
+    "cwd,dir_name",
+    [
+        ("/opt", "-opt"),
+        ("/opt/acme-app", "-opt-acme-app"),
+        ("/opt/acme-app/.worktrees/phase1", "-opt-acme-app--worktrees-phase1"),
+        ("C:\\Users\\alice\\.agents\\skills\\caveman-compress", "C--Users-alice--agents-skills-caveman-compress"),
+        ("C:\\Users\\alice\\acme-app", "c--Users-alice-acme-app"),
+        ("/home/me/caf\u00e9/\U0001f600x", "-home-me-caf----x"),
+        (_LONG_CWD, "-srv-" + "a" * 120 + "-" + "b" * 74 + "-ak6yfc"),
+    ],
+)
+def test_dir_matches_cwd_real_names(cwd, dir_name):
+    assert pi.dir_matches_cwd(dir_name, cwd)
+
+
+@pytest.mark.parametrize(
+    "cwd,dir_name",
+    [
+        ("/opt/acme-app", "-opt"),
+        ("/opt", "-opt-acme-app"),
+        # same first 200 chars, different hash
+        (_LONG_CWD + "c", "-srv-" + "a" * 120 + "-" + "b" * 74 + "-ak6yfc"),
+    ],
+)
+def test_dir_matches_cwd_rejects_other_dirs(cwd, dir_name):
+    assert not pi.dir_matches_cwd(dir_name, cwd)
+
+
+def _sidecar_at(project_dir: Path, project_path: str) -> Path:
+    target = project_dir / pi.SIDECAR_NAME
+    target.write_text(
+        json.dumps({"git_identity": "a/b", "subdir": "", "project_path": project_path}),
+        encoding="utf-8",
+    )
+    return target
+
+
+def test_drop_misplaced_sidecar(tmp_path):
+    misplaced = tmp_path / "-opt"
+    misplaced.mkdir()
+    _sidecar_at(misplaced, "/opt/acme-app")
+    own = tmp_path / "-opt-acme-app"
+    own.mkdir()
+    _sidecar_at(own, "/opt/acme-app")
+
+    pi.drop_misplaced_sidecar(misplaced)
+    pi.drop_misplaced_sidecar(own)
+
+    assert not (misplaced / pi.SIDECAR_NAME).exists()
+    assert (own / pi.SIDECAR_NAME).exists()
+
+
 def _api_normalize_git_url():
     """Load the API's normalize_git_url without importing the API package.
 
@@ -143,7 +199,7 @@ def projects_root(tmp_path, monkeypatch) -> Path:
 
 def _project_dir(projects_root: Path, cwd: Path) -> Path:
     """The dir Claude Code keeps a session's transcript in when it starts in cwd."""
-    d = projects_root / re.sub(r"[^A-Za-z0-9]", "-", str(cwd))
+    d = projects_root / pi.encode_project_dir(str(cwd))
     d.mkdir(parents=True)
     return d
 
@@ -236,12 +292,18 @@ def test_end_to_end_cwd_moved_into_repo_writes_nothing(tmp_path, projects_root):
     _git(repo, "init", "-q")
     _git(repo, "remote", "add", "origin", "https://github.com/a/b.git")
     parent_dir = _project_dir(projects_root, tmp_path)
+    repo_dir = _project_dir(projects_root, repo)
+    # Written by an older hook version; removed on the next start
+    _sidecar_at(parent_dir, str(repo))
 
-    result = _run_hook(
-        {"cwd": str(repo), "transcript_path": str(parent_dir / "abc.jsonl")}
-    )
-    assert result.returncode == 0
+    for project_dir in (parent_dir, repo_dir):
+        result = _run_hook(
+            {"cwd": str(repo), "transcript_path": str(project_dir / "abc.jsonl")}
+        )
+        assert result.returncode == 0
     assert not (parent_dir / pi.SIDECAR_NAME).exists()
+    # Same hook run, cwd's own dir: still written
+    assert (repo_dir / pi.SIDECAR_NAME).exists()
 
 
 @requires_git
