@@ -35,6 +35,11 @@ from typing import Optional
 SIDECAR_NAME = "karma-project.json"
 TMP_NAME = ".karma-project.json.tmp"
 
+# Claude Code names a project dir after the session's start cwd: every
+# non-alphanumeric char becomes '-', long names are cut and get a hash suffix.
+_ENCODE_RE = re.compile(r"[^A-Za-z0-9]")
+_MAX_ENCODED_LEN = 200
+
 # Inlined from api/services/git_identity.py (hooks can't import api).
 _SCP_RE = re.compile(r"^[^@]+@[^:]+:(?P<path>.+)$")
 _URL_RE = re.compile(r"^[a-z]+://(?:[^@/]+@)?[^/]+/(?P<path>.+)$", re.IGNORECASE)
@@ -136,6 +141,20 @@ def build_identity(cwd: str) -> Optional[dict]:
     }
 
 
+def dir_matches_cwd(dir_name: str, cwd: str) -> bool:
+    """True if dir_name is the project dir Claude Code uses for cwd.
+
+    SessionStart also fires on resume/compact/clear. By then the session may
+    have cd'd elsewhere while its transcript stays in the start dir's project
+    dir; writing cwd's identity there would merge that project into cwd's repo.
+    """
+    encoded = _ENCODE_RE.sub("-", cwd).lower()
+    name = dir_name.lower()
+    if len(encoded) > _MAX_ENCODED_LEN:
+        return name.startswith(encoded[:_MAX_ENCODED_LEN] + "-")
+    return name == encoded
+
+
 def write_sidecar(project_dir: Path, data: dict) -> bool:
     """Atomically write the sidecar; skip if unchanged. Never raises."""
     target = project_dir / SIDECAR_NAME
@@ -192,6 +211,8 @@ def main() -> None:
         if project_dir.resolve().parent != projects_dir or not project_dir.is_dir():
             return
     except (OSError, RuntimeError):
+        return
+    if not dir_matches_cwd(project_dir.name, cwd):
         return
 
     data = build_identity(cwd)

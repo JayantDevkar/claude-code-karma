@@ -8,6 +8,7 @@ end-to-end run against a real tmp git repo (skipped without git).
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -135,20 +136,26 @@ def _run_hook(payload: dict) -> subprocess.CompletedProcess:
 
 
 @pytest.fixture
-def project_dir(tmp_path, monkeypatch) -> Path:
+def projects_root(tmp_path, monkeypatch) -> Path:
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude"))
-    d = tmp_path / "claude" / "projects" / "-encoded"
+    return tmp_path / "claude" / "projects"
+
+
+def _project_dir(projects_root: Path, cwd: Path) -> Path:
+    """The dir Claude Code keeps a session's transcript in when it starts in cwd."""
+    d = projects_root / re.sub(r"[^A-Za-z0-9]", "-", str(cwd))
     d.mkdir(parents=True)
     return d
 
 
 @requires_git
-def test_end_to_end_writes_sidecar(tmp_path, project_dir):
+def test_end_to_end_writes_sidecar(tmp_path, projects_root):
     repo = tmp_path / "repo"
     (repo / "api").mkdir(parents=True)
     _git(repo, "init", "-q")
     _git(repo, "remote", "add", "origin", "git@github.com:Owner/Repo.git")
     cwd = str(repo / "api")
+    project_dir = _project_dir(projects_root, repo / "api")
 
     result = _run_hook({"cwd": cwd, "transcript_path": str(project_dir / "abc.jsonl")})
     assert result.returncode == 0
@@ -164,11 +171,12 @@ def test_end_to_end_writes_sidecar(tmp_path, project_dir):
 
 
 @requires_git
-def test_end_to_end_skips_unchanged(tmp_path, project_dir):
+def test_end_to_end_skips_unchanged(tmp_path, projects_root):
     repo = tmp_path / "repo"
     repo.mkdir()
     _git(repo, "init", "-q")
     _git(repo, "remote", "add", "origin", "https://github.com/a/b.git")
+    project_dir = _project_dir(projects_root, repo)
     sidecar = project_dir / pi.SIDECAR_NAME
     sidecar.write_text(
         json.dumps(
@@ -190,10 +198,11 @@ def test_end_to_end_skips_unchanged(tmp_path, project_dir):
 
 
 @requires_git
-def test_end_to_end_no_remote_writes_nothing(tmp_path, project_dir):
+def test_end_to_end_no_remote_writes_nothing(tmp_path, projects_root):
     repo = tmp_path / "repo"
     repo.mkdir()
     _git(repo, "init", "-q")
+    project_dir = _project_dir(projects_root, repo)
 
     result = _run_hook(
         {"cwd": str(repo), "transcript_path": str(project_dir / "abc.jsonl")}
@@ -203,11 +212,12 @@ def test_end_to_end_no_remote_writes_nothing(tmp_path, project_dir):
 
 
 @requires_git
-def test_end_to_end_non_ascii_cwd(tmp_path, project_dir):
+def test_end_to_end_non_ascii_cwd(tmp_path, projects_root):
     repo = tmp_path / "repö-ü"
     repo.mkdir()
     _git(repo, "init", "-q")
     _git(repo, "remote", "add", "origin", "https://github.com/a/b.git")
+    project_dir = _project_dir(projects_root, repo)
 
     result = _run_hook(
         {"cwd": str(repo), "transcript_path": str(project_dir / "abc.jsonl")}
@@ -215,6 +225,23 @@ def test_end_to_end_non_ascii_cwd(tmp_path, project_dir):
     assert result.returncode == 0
     data = json.loads((project_dir / pi.SIDECAR_NAME).read_text(encoding="utf-8"))
     assert data["project_path"] == str(repo)
+
+
+@requires_git
+def test_end_to_end_cwd_moved_into_repo_writes_nothing(tmp_path, projects_root):
+    # Session started in the parent dir, then cd'd into a repo; SessionStart fires
+    # again on resume/compact with the repo cwd but the parent's transcript dir.
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-q")
+    _git(repo, "remote", "add", "origin", "https://github.com/a/b.git")
+    parent_dir = _project_dir(projects_root, tmp_path)
+
+    result = _run_hook(
+        {"cwd": str(repo), "transcript_path": str(parent_dir / "abc.jsonl")}
+    )
+    assert result.returncode == 0
+    assert not (parent_dir / pi.SIDECAR_NAME).exists()
 
 
 @requires_git
