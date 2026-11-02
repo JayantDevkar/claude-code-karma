@@ -853,7 +853,7 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
                 conn.execute(
                     "UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1 "
                     "WHERE project_path <> (SELECT p.project_path FROM projects p "
-                    "WHERE p.encoded_name = sessions.project_encoded_name)"
+                    "WHERE p.encoded_name = sessions.project_encoded_name) COLLATE NOCASE"
                 )
 
     # Record version

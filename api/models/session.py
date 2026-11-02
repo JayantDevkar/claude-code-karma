@@ -204,7 +204,7 @@ class SessionCache(BaseCache):
         )
         self.commands_used: Optional[Dict[tuple, int]] = None  # {(name, source): count}
         self.git_branches: Optional[Set[str]] = None
-        self.working_dirs: Optional[Set[str]] = None
+        self.working_dirs: Optional[List[str]] = None
         self.models_used: Optional[Set[str]] = None
         self.message_count: Optional[int] = None
         self.total_cost: Optional[float] = None
@@ -368,7 +368,7 @@ class Session(BaseModel):
             set()
         )  # plugin prefixes from most recent UserMessage command
         git_branches: Set[str] = set()
-        working_dirs: Set[str] = set()
+        working_dirs: Dict[str, None] = {}  # insertion-ordered set
         models_used: Set[str] = set()
         message_count = 0
 
@@ -497,7 +497,7 @@ class Session(BaseModel):
             # Working directories
             cwd = getattr(msg, "cwd", None)
             if cwd:
-                working_dirs.add(cwd)
+                working_dirs.setdefault(cwd)
 
         # Merge user-prompt detected commands/skills (avoid double-counting)
         # user_prompt_skills/commands now contain (name, source) tuples
@@ -540,7 +540,7 @@ class Session(BaseModel):
         cache.skills_mentioned = dict(skills_mentioned)
         cache.commands_used = dict(commands)
         cache.git_branches = git_branches
-        cache.working_dirs = working_dirs
+        cache.working_dirs = list(working_dirs)
         cache.models_used = models_used
         cache.message_count = message_count
         cache.total_cost = usage_acc.cost
@@ -967,15 +967,15 @@ class Session(BaseModel):
         self._load_metadata()
         return self._get_cache().git_branches or set()
 
-    def get_working_directories(self) -> Set[str]:
+    def get_working_directories(self) -> List[str]:
         """
         Get all working directories used in this session (cached).
 
         Returns:
-            Set of directory paths
+            Distinct directory paths in first-seen order; the first is where the session started
         """
         self._load_metadata()
-        return self._get_cache().working_dirs or set()
+        return self._get_cache().working_dirs or []
 
     @property
     def slug(self) -> Optional[str]:

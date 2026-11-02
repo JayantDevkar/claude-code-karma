@@ -886,16 +886,15 @@ class TestGitBranchesAndWorkingDirs:
         assert "feature/new-stuff" in branches
 
     def test_get_working_directories(self, temp_claude_dir: Path, sample_session_jsonl: Path):
-        """Test get_working_directories returns set of cwd paths."""
+        """Test get_working_directories returns the cwd paths."""
         session = Session.from_path(sample_session_jsonl, claude_base_dir=temp_claude_dir)
 
         cwds = session.get_working_directories()
 
-        assert isinstance(cwds, set)
         assert "/Users/test/project" in cwds
 
     def test_get_working_directories_empty(self, temp_claude_dir: Path, temp_project_dir: Path):
-        """Test get_working_directories returns empty set for empty session."""
+        """Test get_working_directories returns nothing for empty session."""
         empty_path = temp_project_dir / "empty.jsonl"
         empty_path.write_text("")
 
@@ -903,12 +902,12 @@ class TestGitBranchesAndWorkingDirs:
 
         cwds = session.get_working_directories()
 
-        assert cwds == set()
+        assert not cwds
 
     def test_get_working_directories_multiple(
         self, temp_claude_dir: Path, temp_project_dir: Path, sample_user_message_data
     ):
-        """Test get_working_directories returns all unique directories."""
+        """Test get_working_directories returns unique directories, the starting one first."""
         jsonl_path = temp_project_dir / "multi-cwd.jsonl"
 
         msg1 = sample_user_message_data.copy()
@@ -927,9 +926,7 @@ class TestGitBranchesAndWorkingDirs:
 
         cwds = session.get_working_directories()
 
-        assert len(cwds) == 2
-        assert "/Users/test/project1" in cwds
-        assert "/Users/test/project2" in cwds
+        assert list(cwds) == ["/Users/test/project1", "/Users/test/project2"]
 
 
 # =============================================================================

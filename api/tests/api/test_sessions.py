@@ -403,7 +403,7 @@ def mock_session() -> MagicMock:
 
     # Mock git branches and working directories
     session.get_git_branches.return_value = {"main", "feature/test"}
-    session.get_working_directories.return_value = {"/Users/test/project"}
+    session.get_working_directories.return_value = ["/Users/test/project"]
 
     # Mock subagents
     session.list_subagents.return_value = []
