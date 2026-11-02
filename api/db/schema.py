@@ -10,7 +10,7 @@ import sqlite3
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 25
+SCHEMA_VERSION = 26
 
 SCHEMA_SQL = """
 -- Schema versioning
@@ -838,6 +838,20 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
         if current_version < 25:
             logger.info("Migrating → v25: restore background_shells → sessions FK (issue #132)")
             _restore_background_shells_fk(conn)
+
+        if current_version < 26:
+            logger.info(
+                "Migrating → v26: re-index coordinator-spawned sessions whose initial "
+                "prompt is the <wake> message instead of the spawn relay note"
+            )
+            has_sessions = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='sessions'"
+            ).fetchone()
+            if has_sessions and not columns_added:
+                conn.execute(
+                    "UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1 "
+                    "WHERE initial_prompt LIKE '<wake %'"
+                )
 
     # Record version
     conn.execute(
