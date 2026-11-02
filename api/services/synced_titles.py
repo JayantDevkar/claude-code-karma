@@ -81,9 +81,8 @@ def title_synced_sessions(conn: sqlite3.Connection, now: Optional[datetime] = No
           AND end_time IS NOT NULL
           AND julianday(?) - julianday(end_time) <= ? / 24.0
         ORDER BY end_time DESC
-        LIMIT ?
         """,
-        (*enabled, now_iso, AUTO_TITLE_WINDOW_HOURS, AUTO_TITLE_BATCH),
+        (*enabled, now_iso, AUTO_TITLE_WINDOW_HOURS),
     ).fetchall()
     if not rows:
         return 0
@@ -91,13 +90,17 @@ def title_synced_sessions(conn: sqlite3.Connection, now: Optional[datetime] = No
     if generate is None:
         return 0
 
-    titled = 0
+    # No SQL LIMIT: unended sessions stay candidates and would crowd out ended ones
+    titled = attempted = 0
     for uuid, encoded_name, prompt in rows:
+        if attempted >= AUTO_TITLE_BATCH:
+            break
         if not _ended_cleanly(session_jsonl_path(encoded_name, uuid)):
             continue
         # Mark before the Haiku call so a crash or reindex never causes a second call
         conn.execute("UPDATE sessions SET title_attempted_at = ? WHERE uuid = ?", (now_iso, uuid))
         conn.commit()
+        attempted += 1
         if not prompt:
             continue
         title, _source = generate(prompt, None, None)

@@ -164,6 +164,19 @@ def test_not_titled(case, machines, mem_db, fake):
     assert title_synced_sessions(mem_db, now=NOW) == 0 and fake.calls == []
 
 
+def test_unended_sessions_do_not_starve_ended_ones(machines, mem_db, fake):
+    _, remote, configure = machines
+    configure(auto_titles=True)
+    for i in range(synced_titles.AUTO_TITLE_BATCH):
+        end = f"2026-11-02T10:{10 + i:02d}:05.000Z"
+        _write_synced(remote / PROJECT, f"live{i}", "Still running", end=end, cost_state=False)
+    _write_synced(remote / PROJECT, "r1", "Fix the login redirect")
+    indexer.sync_all_projects(mem_db)
+
+    assert title_synced_sessions(mem_db, now=NOW) == 1
+    assert fake.calls == [("Fix the login redirect", None, None)]
+
+
 def test_mid_copy_file_is_retried_once_complete(machines, mem_db, fake):
     _, remote, configure = machines
     configure(auto_titles=True)
