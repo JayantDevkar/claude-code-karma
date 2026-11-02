@@ -58,13 +58,10 @@ def test_tool_sessions_name_windows_project_by_folder(seeded_db):
     assert [s["project_display_name"] for s in resp.json()["sessions"]] == ["ClaudKarma"]
 
 
-def test_project_filter_names_windows_project_by_folder(seeded_db, monkeypatch):
+def test_project_filter_names_windows_project_by_folder(seeded_db):
     # Bug: Path(x).name on a POSIX API host returned the whole synced Windows path.
-    import pathlib
+    from db.queries import query_all_sessions
 
-    import db.queries as queries
-
-    monkeypatch.setattr(queries, "Path", pathlib.PurePosixPath, raising=False)
-    options = queries.query_all_sessions(seeded_db)["project_options"]
+    options = query_all_sessions(seeded_db)["project_options"]
 
     assert [o["name"] for o in options] == ["ClaudKarma"]
