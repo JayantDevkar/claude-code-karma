@@ -142,12 +142,9 @@ def sync_all_projects(conn: sqlite3.Connection) -> dict:
                 stats["errors"] += 1
 
             # Collect project_path for worktree remapping
-            row = conn.execute(
-                "SELECT project_path FROM sessions WHERE project_encoded_name = ? AND project_path IS NOT NULL LIMIT 1",
-                (encoded_dir.name,),
-            ).fetchone()
-            if row:
-                real_project_paths[encoded_dir.name] = row[0]
+            paths = _session_project_paths(conn, encoded_dir.name)
+            if paths:
+                real_project_paths[encoded_dir.name] = _resolve_project_path(encoded_dir.name, paths)
 
         # Second pass: worktree dirs -> resolve -> index under real project
         for wt_dir in worktree_dirs:
@@ -894,6 +891,15 @@ def _delete_session_rows(conn: sqlite3.Connection, uuids: list) -> None:
         conn.execute(f"DELETE FROM sessions WHERE uuid IN ({ph})", chunk)
 
 
+def _session_project_paths(conn: sqlite3.Connection, encoded_name: str) -> list[str]:
+    """Distinct non-null project_path values of a project's sessions."""
+    rows = conn.execute(
+        "SELECT DISTINCT project_path FROM sessions WHERE project_encoded_name = ? AND project_path IS NOT NULL",
+        (encoded_name,),
+    ).fetchall()
+    return [r[0] for r in rows]
+
+
 def _resolve_project_path(encoded_name: str, candidate_paths: list) -> str:
     """Pick the project_path whose encoding matches the encoded_name.
 
@@ -911,11 +917,13 @@ def _resolve_project_path(encoded_name: str, candidate_paths: list) -> str:
 
     # Find all paths whose encoding matches the encoded_name
     # (multiple paths can match due to lossy encoding: / and - both become -)
+    # Windows drive letters appear as both C-- and c--
+    fold = str.lower if sys.platform == "win32" else str
     matches = []
     for path in candidate_paths:
         if not path:
             continue
-        if Project.encode_path(path) == encoded_name:
+        if fold(Project.encode_path(path)) == fold(encoded_name):
             matches.append(path)
 
     if matches:
@@ -969,11 +977,7 @@ def _update_project_summaries(conn: sqlite3.Connection) -> None:
         last_activity = row[2]
 
         # Find the correct project_path by encoding-match (not arbitrary GROUP BY)
-        path_rows = conn.execute(
-            "SELECT DISTINCT project_path FROM sessions WHERE project_encoded_name = ? AND project_path IS NOT NULL",
-            (encoded_name,),
-        ).fetchall()
-        project_path = _resolve_project_path(encoded_name, [r[0] for r in path_rows])
+        project_path = _resolve_project_path(encoded_name, _session_project_paths(conn, encoded_name))
 
         slug = compute_project_slug(encoded_name, project_path)
         display_name = Path(project_path).name if project_path else encoded_name
