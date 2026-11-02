@@ -102,6 +102,8 @@ def test_dir_matches_cwd_real_names(cwd, dir_name):
     [
         ("/opt/acme-app", "-opt"),
         ("/opt", "-opt-acme-app"),
+        # POSIX paths are case-sensitive
+        ("/opt/Acme", "-opt-acme"),
         # same first 200 chars, different hash
         (_LONG_CWD + "c", "-srv-" + "a" * 120 + "-" + "b" * 74 + "-ak6yfc"),
     ],
@@ -285,8 +287,7 @@ def test_end_to_end_non_ascii_cwd(tmp_path, projects_root):
 
 @requires_git
 def test_end_to_end_cwd_moved_into_repo_writes_nothing(tmp_path, projects_root):
-    # Session started in the parent dir, then cd'd into a repo; SessionStart fires
-    # again on resume/compact with the repo cwd but the parent's transcript dir.
+    # Started in the parent, cd'd into the repo, then resumed: repo cwd, parent's dir
     repo = tmp_path / "repo"
     repo.mkdir()
     _git(repo, "init", "-q")

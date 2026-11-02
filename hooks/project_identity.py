@@ -35,10 +35,9 @@ from typing import Optional
 SIDECAR_NAME = "karma-project.json"
 TMP_NAME = ".karma-project.json.tmp"
 
-# Claude Code names a project dir after the session's start cwd: every
-# non-alphanumeric UTF-16 unit becomes '-', names over 200 chars are cut and
-# get a hash suffix.
+# Claude Code's project dir naming (see encode_project_dir)
 _ALNUM_RE = re.compile(r"[A-Za-z0-9]")
+_DRIVE_RE = re.compile(r"^[A-Za-z]:")
 _MAX_ENCODED_LEN = 200
 _BASE36 = "0123456789abcdefghijklmnopqrstuvwxyz"
 
@@ -158,7 +157,7 @@ def _base36(n: int) -> str:
 
 
 def encode_project_dir(path: str) -> str:
-    """Claude Code's project dir name for a cwd (JS string semantics)."""
+    """Claude Code's project dir name for a cwd (per UTF-16 unit; long names hashed)."""
     units = _utf16_units(path)
     encoded = "".join(
         chr(u) if u < 128 and _ALNUM_RE.match(chr(u)) else "-" for u in units
@@ -174,27 +173,20 @@ def encode_project_dir(path: str) -> str:
 
 
 def dir_matches_cwd(dir_name: str, cwd: str) -> bool:
-    """True if dir_name is the project dir Claude Code uses for cwd.
-
-    SessionStart also fires on resume/compact/clear. By then the session may
-    have cd'd elsewhere while its transcript stays in the start dir's project
-    dir; writing cwd's identity there would merge that project into cwd's repo.
-    """
-    name = dir_name.lower()
+    """True if dir_name is cwd's own project dir, not a start dir left after a cd."""
     candidates = {cwd}
     try:
         candidates.add(os.path.realpath(cwd))
     except (OSError, ValueError):
         pass
-    # Drive letters show up in either case on Windows
-    return any(encode_project_dir(c).lower() == name for c in candidates)
+    # Windows paths (drive letters show up in either case) compare case-insensitively
+    if _DRIVE_RE.match(cwd):
+        return any(encode_project_dir(c).lower() == dir_name.lower() for c in candidates)
+    return any(encode_project_dir(c) == dir_name for c in candidates)
 
 
 def drop_misplaced_sidecar(project_dir: Path) -> None:
-    """Delete a sidecar whose project_path does not belong to this dir.
-
-    Older versions of this hook wrote them after a cd (see dir_matches_cwd).
-    """
+    """Delete a sidecar an older version wrote after a cd (project_path of another dir)."""
     target = project_dir / SIDECAR_NAME
     try:
         existing = json.loads(target.read_text(encoding="utf-8"))
