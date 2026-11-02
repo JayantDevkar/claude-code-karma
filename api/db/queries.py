@@ -11,10 +11,10 @@ import logging
 import re
 import sqlite3
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Optional
 
 from services.session_filter import ACTIVE_THRESHOLD_SECONDS
+from utils import path_basename
 
 logger = logging.getLogger(__name__)
 
@@ -289,7 +289,7 @@ def _query_project_options(conn: sqlite3.Connection) -> list[dict]:
             {
                 "encoded_name": row["encoded_name"],
                 "path": path,
-                "name": Path(path).name if path else row["encoded_name"],
+                "name": path_basename(path) if path else row["encoded_name"],
                 "slug": row["slug"],
                 "display_name": row["display_name"],
                 "session_count": row["session_count"],

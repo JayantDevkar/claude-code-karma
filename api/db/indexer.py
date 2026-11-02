@@ -948,7 +948,7 @@ def _update_project_summaries(conn: sqlite3.Connection) -> None:
         read_sidecar,
         write_sidecar,
     )
-    from utils import compute_project_slug, resolve_git_root
+    from utils import compute_project_slug, path_basename, resolve_git_root
 
     # Never write into ~/.claude/projects unless the user opted into extra roots
     publish_sidecars = bool(get_extra_roots())
@@ -976,7 +976,7 @@ def _update_project_summaries(conn: sqlite3.Connection) -> None:
         project_path = _resolve_project_path(encoded_name, [r[0] for r in path_rows])
 
         slug = compute_project_slug(encoded_name, project_path)
-        display_name = Path(project_path).name if project_path else encoded_name
+        display_name = path_basename(project_path) if project_path else encoded_name
         git_identity = read_git_identity(project_path)
         # Warm the cache /projects reads, so the page never waits on git
         if project_path and Path(project_path).is_dir():

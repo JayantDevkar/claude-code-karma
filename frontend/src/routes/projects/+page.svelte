@@ -167,7 +167,6 @@
 		return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 	}
 
-
 	function getSortLabel(sort: typeof sortBy) {
 		const labels = {
 			'name-asc': 'Name (A-Z)',

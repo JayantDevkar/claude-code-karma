@@ -41,6 +41,7 @@ from schemas import (
     UsageTrendResponse,
     paginate,
 )
+from utils import path_basename
 
 logger = logging.getLogger(__name__)
 
@@ -129,7 +130,7 @@ def _build_server_schema(server_data: dict) -> McpServer:
 def _build_session_summary(session_data: dict) -> SessionSummary:
     """Convert a session dict from query results into a SessionSummary schema."""
     project_path = session_data.get("project_path") or ""
-    project_display_name = project_path.rstrip("/").split("/")[-1] if project_path else None
+    project_display_name = path_basename(project_path) if project_path else None
 
     return SessionSummary(
         uuid=session_data["uuid"],

@@ -383,7 +383,9 @@ class Project(BaseModel):
     @cached_property
     def display_name(self) -> str:
         """Human-readable project name (last path component)."""
-        return Path(self.path).name
+        from utils import path_basename
+
+        return path_basename(self.path)
 
     @property
     def claude_base_dir(self) -> Path:

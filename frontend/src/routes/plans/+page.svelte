@@ -251,8 +251,6 @@
 		searchTokens.length > 0 || selectedProject !== null || selectedBranch !== null
 	);
 
-	// Helper to get project name from path
-
 	// Helper to get selected project path for display
 	let selectedProjectPath = $derived(
 		availableProjects.find((p) => p.encoded_name === selectedProject)?.path || ''

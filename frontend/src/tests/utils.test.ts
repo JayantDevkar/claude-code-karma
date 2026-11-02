@@ -619,6 +619,11 @@ describe('getProjectName', () => {
 	it('takes the last segment of a Windows path', () => {
 		expect(getProjectName('C:\\Users\\me\\ClaudKarma')).toBe('ClaudKarma');
 	});
+
+	it('ignores a trailing separator', () => {
+		expect(getProjectName('C:\\Users\\me\\ClaudKarma\\')).toBe('ClaudKarma');
+		expect(getProjectName('/Users/me/claude-karma/')).toBe('claude-karma');
+	});
 });
 
 // ============================================================

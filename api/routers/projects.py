@@ -85,6 +85,7 @@ from utils import (
     list_all_projects,
     normalize_timezone,
     parse_timestamp_range,
+    path_basename,
     resolve_git_root,
 )
 
@@ -1510,7 +1511,7 @@ def _extract_index_link_targets(content: str) -> set[str]:
         if not raw:
             continue
         # Take the basename (handle relative-style paths like "./file.md" or "subdir/file.md").
-        basename = raw.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
+        basename = path_basename(raw)
         if basename.endswith(".md"):
             targets.add(basename)
     return targets
