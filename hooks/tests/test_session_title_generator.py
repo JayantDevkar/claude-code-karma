@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import builtins
+import io
 import json
 import subprocess
 import sys
@@ -108,7 +110,15 @@ def test_git_context_keeps_non_ascii(monkeypatch, tmp_path):
     )
 
 
-def test_transcript_prompt_keeps_non_ascii(tmp_path):
+def _open_with_windows_locale(file, mode="r", *args, encoding=None, **kwargs):
+    """open() that falls back to cp1252 like a Windows locale when no encoding is given."""
+    if "b" not in mode:
+        encoding = encoding or "cp1252"
+    return builtins.open(file, mode, *args, encoding=encoding, **kwargs)
+
+
+def test_transcript_prompt_keeps_non_ascii(monkeypatch, tmp_path):
+    monkeypatch.setattr(stg, "open", _open_with_windows_locale, raising=False)
     transcript = tmp_path / "s.jsonl"
     entry = {
         "type": "user",
@@ -119,3 +129,20 @@ def test_transcript_prompt_keeps_non_ascii(tmp_path):
     )
     prompt, _ = stg.extract_session_context(str(transcript))
     assert prompt == "Apply the ≥80% rule to the café list"
+
+
+def test_hook_input_with_non_ascii_path_gets_a_title(monkeypatch, tmp_path):
+    project = tmp_path / "café"
+    project.mkdir()
+    transcript = project / "s.jsonl"
+    entry = {"type": "user", "message": {"role": "user", "content": "Fix the login bug"}}
+    transcript.write_text(json.dumps(entry) + "\n", encoding="utf-8")
+    payload = {"session_id": "s1", "transcript_path": str(transcript), "cwd": str(project)}
+    raw = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    monkeypatch.setattr(sys, "stdin", io.TextIOWrapper(io.BytesIO(raw), encoding="cp1252"))
+    monkeypatch.setattr(stg, "get_git_context", lambda *_a: None)
+    monkeypatch.setattr(stg, "generate_title", lambda prompt, *_a: (prompt, "haiku"))
+    posted = []
+    monkeypatch.setattr(stg, "post_title", lambda sid, title: posted.append((sid, title)))
+    stg.main()
+    assert posted == [("s1", "Fix the login bug")]

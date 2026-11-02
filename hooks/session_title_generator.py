@@ -81,7 +81,8 @@ def _get_session_start_iso(transcript_path: str) -> Optional[str]:
 
 def main():
     try:
-        data = json.loads(sys.stdin.read())
+        # Claude Code sends UTF-8; the locale codec (cp1252 on Windows) would mangle paths
+        data = json.loads(sys.stdin.buffer.read().decode("utf-8", errors="replace"))
     except (json.JSONDecodeError, EOFError):
         return
 
