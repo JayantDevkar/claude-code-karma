@@ -81,9 +81,11 @@ the endpoint and the service call. It updates `SessionTitleCache` and SQLite.
 - `run_periodic_sync()` calls `title_synced_sessions(conn)` in a worker thread
   (`asyncio.to_thread`) after each `sync_all_projects()` pass. Calls run one at a time
   and at most `AUTO_TITLE_BATCH = 20` sessions per pass, so a pass stays bounded.
-- Schema **v28** (PRs #148 and #149 take v26 and v27) adds
-  `sessions.title_attempted_at TEXT`. The service sets it before calling Haiku, whatever
-  the outcome, so each session gets at most one call. Rows are not reset on reindex.
+- A new column `sessions.title_attempted_at TEXT` goes into `_SESSION_COLUMNS`, which
+  adds it regardless of `SCHEMA_VERSION`, so no version bump (and no clash with the
+  v26/v27 PRs). The service sets it before calling Haiku, whatever the outcome, so each
+  session gets at most one call. The indexer's upsert does not touch it, so a reindex
+  keeps it.
 - A session indexed from this machine (`source_root IS NULL`) is never touched; the
   hook owns it.
 
