@@ -1,10 +1,4 @@
-"""Haiku titles for sessions synced from other machines, opt-in per extra root.
-
-The SessionEnd title hook runs on the machine that ran the session, where no
-Karma API listens, so synced sessions arrive untitled. Roots with
-``"auto_titles": true`` get their cleanly ended sessions titled here, at most
-one Haiku call per session, only for sessions that ended in the last day.
-"""
+"""Haiku titles for sessions synced from other machines, opt-in per extra root."""
 
 from __future__ import annotations
 
@@ -103,8 +97,9 @@ def title_synced_sessions(conn: sqlite3.Connection, now: Optional[datetime] = No
         attempted += 1
         if not prompt:
             continue
-        title, _source = generate(prompt, None, None)
-        if title:
+        title, source = generate(prompt, None, None)
+        # The truncated-prompt fallback would block a real title from backfill later
+        if title and source != "fallback":
             store_session_title(encoded_name, uuid, title, conn=conn)
             titled += 1
     return titled

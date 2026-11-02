@@ -164,6 +164,20 @@ def test_not_titled(case, machines, mem_db, fake):
     assert title_synced_sessions(mem_db, now=NOW) == 0 and fake.calls == []
 
 
+def test_fallback_title_is_not_stored(machines, mem_db, fake, monkeypatch):
+    _, remote, configure = machines
+    configure(auto_titles=True)
+    _write_synced(remote / PROJECT, "r1", "Fix the login redirect")
+    indexer.sync_all_projects(mem_db)
+    monkeypatch.setattr(
+        _FakeGenerator, "__call__", lambda self, p, r, g: ("Fix the lo", "fallback")
+    )
+
+    assert title_synced_sessions(mem_db, now=NOW) == 0
+    row = _row(mem_db, "r1")
+    assert row["session_titles"] in (None, "", "[]") and row["title_attempted_at"] is not None
+
+
 def test_unended_sessions_do_not_starve_ended_ones(machines, mem_db, fake):
     _, remote, configure = machines
     configure(auto_titles=True)
