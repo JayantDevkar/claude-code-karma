@@ -33,7 +33,6 @@ import asyncio
 import logging
 import re
 import sys
-from datetime import datetime
 from pathlib import Path
 from typing import Annotated
 
@@ -91,10 +90,9 @@ _project_sessions_cache: BoundedCache[dict] = BoundedCache(
     BoundedCacheConfig(max_size=50, ttl_seconds=60)
 )
 
-# Cache for active durations: session_id -> (updated_at, active seconds at that updated_at).
-# Refreshed from the JSONL at most every 30s; in between, hook activity is added on top.
-_active_duration_cache: BoundedCache[tuple[datetime, float]] = BoundedCache(
-    BoundedCacheConfig(max_size=200, ttl_seconds=30)
+# Cache for active durations: transcript path -> (st_mtime_ns, st_size, active seconds)
+_active_duration_cache: BoundedCache[tuple[int, int, float]] = BoundedCache(
+    BoundedCacheConfig(max_size=200, ttl_seconds=3600)
 )
 
 # Activity threshold (seconds)
@@ -174,29 +172,27 @@ def determine_status(state: LiveSessionState) -> SessionStatus:
 
 
 def live_active_duration(state: LiveSessionState) -> float:
-    """Active session time with idle gaps capped, matching Session.duration_seconds.
-
-    The tracker's started_at → updated_at span is wall clock: a session left open
-    overnight would show 13h on its card but 33m on its page. Falls back to that
-    span only when the transcript can't be read.
-    """
-    cached = _active_duration_cache.get(state.session_id)
-    if cached is not None:
-        cached_updated_at, cached_active = cached
-        delta = (state.updated_at - cached_updated_at).total_seconds()
-        return cached_active + min(max(delta, 0.0), ACTIVE_IDLE_CAP_SECONDS)
-
-    active = None
-    if state.transcript_path:
-        try:
-            active = active_duration_seconds(
-                Path(state.transcript_path), state.started_at, state.updated_at
-            )
-        except Exception as e:
-            logger.debug("Could not compute active duration for %s: %s", state.session_id, e)
+    """Idle-capped active time, as on the session page; wall clock if the transcript can't be read."""
+    span = state.duration_seconds
+    # No gap inside a span shorter than the cap can be trimmed, so skip the file read
+    if span <= ACTIVE_IDLE_CAP_SECONDS or not state.transcript_path:
+        return span
+    path = Path(state.transcript_path)
+    try:
+        st = path.stat()
+    except OSError:
+        return span
+    cached = _active_duration_cache.get(str(path))
+    if cached is not None and cached[:2] == (st.st_mtime_ns, st.st_size):
+        return cached[2]
+    try:
+        active = active_duration_seconds(path, state.started_at, state.updated_at)
+    except Exception as e:
+        logger.debug("Could not compute active duration for %s: %s", state.session_id, e)
+        return span
     if active is None:
-        active = state.duration_seconds
-    _active_duration_cache[state.session_id] = (state.updated_at, active)
+        return span
+    _active_duration_cache[str(path)] = (st.st_mtime_ns, st.st_size, active)
     return active
 
 

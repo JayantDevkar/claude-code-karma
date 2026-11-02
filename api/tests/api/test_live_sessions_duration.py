@@ -7,6 +7,8 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import pytest
+
 _api_dir = Path(__file__).resolve().parent.parent.parent
 if str(_api_dir) not in sys.path:
     sys.path.insert(0, str(_api_dir))
@@ -39,39 +41,74 @@ def _message(uuid: str, ts: datetime) -> dict:
     }
 
 
-def test_ended_session_left_open_overnight_reports_active_time(tmp_path, monkeypatch):
-    # 33 minutes of work, then the window sat open until the session ended 14h later
-    transcript = tmp_path / "s-overnight.jsonl"
-    times = [T0, T0 + timedelta(minutes=20), T0 + timedelta(minutes=33)]
-    transcript.write_text(
-        "".join(json.dumps(_message(f"m{i}", t)) + "\n" for i, t in enumerate(times))
-    )
+def _write_transcript(path: Path, times: list[datetime]) -> None:
+    path.write_text("".join(json.dumps(_message(f"m{i}", t)) + "\n" for i, t in enumerate(times)))
 
+
+@pytest.fixture
+def client(tmp_path, monkeypatch):
+    import models.live_session as live_model
+    from routers import live_sessions
+
+    live_sessions._active_duration_cache.clear()
     live_dir = tmp_path / "live-sessions"
     live_dir.mkdir()
+    monkeypatch.setattr(live_model, "get_live_sessions_dir", lambda: live_dir)
+    app = FastAPI()
+    app.include_router(live_sessions.router, prefix="/live-sessions")
+    yield TestClient(app), live_dir
+    live_sessions._active_duration_cache.clear()
+
+
+def _write_state(live_dir: Path, transcript: Path, updated_at: datetime) -> None:
     (live_dir / "s-overnight.json").write_text(
         json.dumps(
             {
                 "session_id": "s-overnight",
                 "state": "ENDED",
-                "cwd": str(tmp_path),
+                "cwd": str(transcript.parent),
                 "transcript_path": str(transcript),
                 "permission_mode": "default",
                 "last_hook": "SessionEnd",
                 "started_at": _iso(T0),
-                "updated_at": _iso(T0 + timedelta(hours=13, minutes=57)),
+                "updated_at": _iso(updated_at),
                 "session_ids": ["s-overnight"],
             }
         )
     )
 
-    import models.live_session as live_model
-    from routers import live_sessions
 
-    monkeypatch.setattr(live_model, "get_live_sessions_dir", lambda: live_dir)
-    app = FastAPI()
-    app.include_router(live_sessions.router, prefix="/live-sessions")
+def test_ended_session_left_open_overnight_reports_active_time(tmp_path, client):
+    # 33 minutes of work, then the window sat open until the session ended 14h later
+    http, live_dir = client
+    transcript = tmp_path / "s-overnight.jsonl"
+    _write_transcript(transcript, [T0, T0 + timedelta(minutes=20), T0 + timedelta(minutes=33)])
+    _write_state(live_dir, transcript, T0 + timedelta(hours=13, minutes=57))
 
-    body = TestClient(app).get("/live-sessions/s-overnight").json()
+    body = http.get("/live-sessions/s-overnight").json()
 
     assert body["duration_seconds"] == Session.from_path(transcript).duration_seconds == 33 * 60
+
+
+def test_duration_follows_transcript_growth_between_polls(tmp_path, client):
+    http, live_dir = client
+    transcript = tmp_path / "s-overnight.jsonl"
+    times = [T0, T0 + timedelta(minutes=20), T0 + timedelta(minutes=33)]
+    _write_transcript(transcript, times)
+    _write_state(live_dir, transcript, T0 + timedelta(hours=10))
+    assert http.get("/live-sessions/s-overnight").json()["duration_seconds"] == 33 * 60
+
+    # Work resumes the next morning: 10 more minutes after the overnight gap
+    later = T0 + timedelta(hours=10)
+    _write_transcript(transcript, times + [later, later + timedelta(minutes=10)])
+    _write_state(live_dir, transcript, later + timedelta(minutes=10))
+
+    expected = 33 * 60 + 30 * 60 + 10 * 60
+    assert http.get("/live-sessions/s-overnight").json()["duration_seconds"] == expected
+
+
+def test_missing_transcript_falls_back_to_tracker_span(tmp_path, client):
+    http, live_dir = client
+    _write_state(live_dir, tmp_path / "gone.jsonl", T0 + timedelta(hours=2))
+
+    assert http.get("/live-sessions/s-overnight").json()["duration_seconds"] == 2 * 3600
