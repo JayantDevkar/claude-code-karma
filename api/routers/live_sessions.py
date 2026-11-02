@@ -33,6 +33,7 @@ import asyncio
 import logging
 import re
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Annotated
 
@@ -44,6 +45,7 @@ sys.path.insert(0, str(api_path))
 
 from config import Settings, settings
 from http_caching import cacheable
+from models.active_time import ACTIVE_IDLE_CAP_SECONDS
 from models.bounded_cache import BoundedCache, BoundedCacheConfig
 from models.live_session import (
     LiveSessionState,
@@ -55,6 +57,7 @@ from models.live_session import (
     load_live_session,
 )
 from models.project import Project
+from models.session import active_duration_seconds
 from routers.projects import safely_resolve_project
 from schemas import (
     LiveSessionsResponse,
@@ -86,6 +89,12 @@ _session_stats_cache: BoundedCache[tuple[int | None, int | None, str | None]] = 
 # Slightly longer TTL since project structure changes less often
 _project_sessions_cache: BoundedCache[dict] = BoundedCache(
     BoundedCacheConfig(max_size=50, ttl_seconds=60)
+)
+
+# Cache for active durations: session_id -> (updated_at, active seconds at that updated_at).
+# Refreshed from the JSONL at most every 30s; in between, hook activity is added on top.
+_active_duration_cache: BoundedCache[tuple[datetime, float]] = BoundedCache(
+    BoundedCacheConfig(max_size=200, ttl_seconds=30)
 )
 
 # Activity threshold (seconds)
@@ -164,6 +173,33 @@ def determine_status(state: LiveSessionState) -> SessionStatus:
     return SessionStatus.ACTIVE
 
 
+def live_active_duration(state: LiveSessionState) -> float:
+    """Active session time with idle gaps capped, matching Session.duration_seconds.
+
+    The tracker's started_at → updated_at span is wall clock: a session left open
+    overnight would show 13h on its card but 33m on its page. Falls back to that
+    span only when the transcript can't be read.
+    """
+    cached = _active_duration_cache.get(state.session_id)
+    if cached is not None:
+        cached_updated_at, cached_active = cached
+        delta = (state.updated_at - cached_updated_at).total_seconds()
+        return cached_active + min(max(delta, 0.0), ACTIVE_IDLE_CAP_SECONDS)
+
+    active = None
+    if state.transcript_path:
+        try:
+            active = active_duration_seconds(
+                Path(state.transcript_path), state.started_at, state.updated_at
+            )
+        except Exception as e:
+            logger.debug("Could not compute active duration for %s: %s", state.session_id, e)
+    if active is None:
+        active = state.duration_seconds
+    _active_duration_cache[state.session_id] = (state.updated_at, active)
+    return active
+
+
 def state_to_summary(
     state: LiveSessionState,
     message_count: int | None = None,
@@ -224,7 +260,7 @@ def state_to_summary(
         project_encoded_name=state.resolved_project_encoded_name,
         started_at=state.started_at,
         updated_at=state.updated_at,
-        duration_seconds=state.duration_seconds,
+        duration_seconds=live_active_duration(state),
         idle_seconds=state.idle_seconds,
         last_hook=state.last_hook,
         permission_mode=state.permission_mode,
