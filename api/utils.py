@@ -347,9 +347,7 @@ def prompt_from_user_message(
     messages without arguments (e.g., /clear), and the built-in command a
     caveat introduces, even with arguments (e.g., /model fable).
 
-    One meta message counts: the <relay reason="spawn"> that opens a session
-    a coordinator spawned. Its <note> is the brief the session works from;
-    the <wake> message after it only holds the user's last chat line.
+    Exception: a coordinator's <relay reason="spawn"> returns its <note>.
 
     Args:
         msg: The user message to inspect
