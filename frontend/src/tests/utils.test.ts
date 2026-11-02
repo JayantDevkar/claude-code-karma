@@ -15,6 +15,7 @@ import {
 	formatDisplayPath,
 	decodeProjectPath,
 	getProjectNameFromEncoded,
+	getProjectName,
 	getSessionDisplayName,
 	sessionHasTitle,
 	getModelColor,
@@ -607,6 +608,16 @@ describe('getProjectNameFromEncoded', () => {
 	it('extracts from Windows D: drive path', () => {
 		const result = getProjectNameFromEncoded('D--Projects-myapp');
 		expect(result).toBe('Projects-myapp');
+	});
+});
+
+describe('getProjectName', () => {
+	it('takes the last segment of a POSIX path', () => {
+		expect(getProjectName('/Users/me/claude-karma')).toBe('claude-karma');
+	});
+
+	it('takes the last segment of a Windows path', () => {
+		expect(getProjectName('C:\\Users\\me\\ClaudKarma')).toBe('ClaudKarma');
 	});
 });
 

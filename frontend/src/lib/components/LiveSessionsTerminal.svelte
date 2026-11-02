@@ -3,6 +3,7 @@
 	import { FolderOpen, Bot, Trash2 } from 'lucide-svelte';
 	import type { LiveSessionSummary } from '$lib/api-types';
 	import { projectHrefFromSession } from '$lib/utils/project-url';
+	import { getProjectDisplayName } from '$lib/utils/live-session-display';
 	import { getSessionDisplayLabel } from '$lib/utils/sessionIdentifier';
 	import { statusConfig } from '$lib/live-session-config';
 	import { API_BASE } from '$lib/config';
@@ -82,39 +83,6 @@
 		if (hrs > 0) return `${hrs}h ${mins % 60}m`;
 		if (mins > 0) return `${mins}m`;
 		return `${Math.floor(seconds)}s`;
-	}
-
-	function getProjectDisplayName(session: LiveSessionSummary): string {
-		// Use cwd which has proper path separators
-		// cwd: /Users/username/projects/claude-karma/frontend
-		// We want the git root name, not the subdirectory
-		const parts = session.cwd.split('/').filter(Boolean);
-
-		// Try to find a meaningful project name (skip common directories)
-		const skipDirs = ['Users', 'home', 'Documents', 'GitHub', 'Projects', 'repos', 'src'];
-
-		// Walk backwards to find the first meaningful directory
-		for (let i = parts.length - 1; i >= 0; i--) {
-			const part = parts[i];
-			// Skip common directories and short names
-			if (!skipDirs.includes(part) && part.length > 2) {
-				// Check if this looks like a project root (has hyphen or is capitalized)
-				// For paths like /GitHub/claude-karma/frontend, prefer claude-karma over frontend
-				if (
-					i > 0 &&
-					(part === 'frontend' ||
-						part === 'backend' ||
-						part === 'api' ||
-						part === 'src' ||
-						part === 'app')
-				) {
-					return parts[i - 1] || part;
-				}
-				return part;
-			}
-		}
-
-		return parts[parts.length - 1] || 'Unknown';
 	}
 
 	function getSessionUrl(session: LiveSessionSummary): string {

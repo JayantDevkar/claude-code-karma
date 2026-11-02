@@ -12,6 +12,7 @@
 	import { keyboardOverrides } from '$lib/stores/keyboardOverrides';
 	import { API_BASE } from '$lib/config';
 	import type { PlanListResponse, PlanWithContext, Project } from '$lib/api-types';
+	import { getProjectName } from '$lib/utils';
 	import { isToday, isYesterday, isThisWeek, isThisMonth } from 'date-fns';
 
 	// Server data (used for initial load only)
@@ -251,9 +252,6 @@
 	);
 
 	// Helper to get project name from path
-	function getProjectName(path: string): string {
-		return path.split('/').pop() || path;
-	}
 
 	// Helper to get selected project path for display
 	let selectedProjectPath = $derived(

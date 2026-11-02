@@ -2,6 +2,7 @@
 	import { FolderOpen, GitBranch, Activity, Search, ChevronDown, ChevronUp } from 'lucide-svelte';
 	import { navigating } from '$app/stores';
 	import type { Project } from '$lib/api-types';
+	import { getProjectName } from '$lib/utils';
 	import { groupProjects } from '$lib/utils/grouped-projects';
 	import ProjectTreeGroup from '$lib/components/ProjectTreeGroup.svelte';
 	import ProjectCard from '$lib/components/ProjectCard.svelte';
@@ -166,9 +167,6 @@
 		return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 	}
 
-	function getProjectName(path: string) {
-		return path.split('/').pop() || path;
-	}
 
 	function getSortLabel(sort: typeof sortBy) {
 		const labels = {
