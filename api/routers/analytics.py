@@ -24,7 +24,7 @@ sys.path.insert(0, str(models_path))
 from http_caching import cacheable
 from models import AssistantMessage, Project, ToolUseBlock
 from schemas import DashboardStats, ProjectAnalytics, WorkModeDistribution
-from utils import list_all_projects, local_timezone, parse_timestamp_range
+from utils import list_all_projects, local_timezone, parse_timestamp_range, path_basename
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -817,7 +817,7 @@ def verify_analytics(
                     sessions_debug.append(
                         {
                             "uuid": session.uuid[:8],
-                            "project": project.path.split("/")[-1],
+                            "project": path_basename(project.path),
                             "start_time_utc": session.start_time.isoformat(),
                             "start_time_ts": int(session.start_time.timestamp() * 1000),
                             "duration_seconds": session.duration_seconds,

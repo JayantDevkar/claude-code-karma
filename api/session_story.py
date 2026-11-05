@@ -27,6 +27,7 @@ from models import (
     Session,
     ToolUseBlock,
 )
+from utils import path_basename
 
 
 def format_duration(seconds: Optional[float]) -> str:
@@ -294,7 +295,7 @@ def generate_story(session: Session) -> str:
         if files_written:
             lines.append(f"   📝 Files written/edited: {len(files_written)}")
             for f in sorted(files_written)[:8]:
-                lines.append(f"      • {Path(f).name}")
+                lines.append(f"      • {path_basename(f)}")
             if len(files_written) > 8:
                 lines.append(f"      ... and {len(files_written) - 8} more")
 
@@ -302,14 +303,14 @@ def generate_story(session: Session) -> str:
             read_only = files_read - files_written
             lines.append(f"   👁️  Files read: {len(read_only)}")
             for f in sorted(read_only)[:5]:
-                lines.append(f"      • {Path(f).name}")
+                lines.append(f"      • {path_basename(f)}")
             if len(read_only) > 5:
                 lines.append(f"      ... and {len(read_only) - 5} more")
 
         if files_deleted:
             lines.append(f"   🗑️  Files deleted: {len(files_deleted)}")
             for f in sorted(files_deleted):
-                lines.append(f"      • {Path(f).name}")
+                lines.append(f"      • {path_basename(f)}")
 
         lines.append("")
 

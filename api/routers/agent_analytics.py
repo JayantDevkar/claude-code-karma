@@ -23,7 +23,7 @@ from schemas import (
     AgentUsageListResponse,
     AgentUsageSummary,
 )
-from utils import is_encoded_project_dir
+from utils import is_encoded_project_dir, path_basename
 
 logger = logging.getLogger(__name__)
 
@@ -301,7 +301,7 @@ def _get_agent_history_sqlite(
         invocations = []
         for row in data["invocations"]:
             project_path = row.get("project_path") or ""
-            project_display_name = project_path.rstrip("/").split("/")[-1] if project_path else None
+            project_display_name = path_basename(project_path) if project_path else None
             invocations.append(
                 AgentInvocation(
                     agent_id=row["agent_id"],

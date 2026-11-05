@@ -105,9 +105,14 @@ def clear_git_caches() -> None:
     clear_git_identity_cache()
 
 
+def path_basename(path: str) -> str:
+    """Last segment of a POSIX or Windows path, whatever OS the API runs on."""
+    return re.split(r"[\\/]", path.rstrip("\\/"))[-1]
+
+
 def compute_project_slug(encoded_name: str, project_path: str) -> str:
     """Compute a URL-friendly project slug: lowercased name + 4-char md5 hash."""
-    name = Path(project_path).name.lower() if project_path else encoded_name.lower()
+    name = path_basename(project_path).lower() if project_path else encoded_name.lower()
     name = re.sub(r"[^a-z0-9-]", "-", name).strip("-")
     name = re.sub(r"-+", "-", name)
     short_hash = hashlib.md5(encoded_name.encode()).hexdigest()[:4]
@@ -981,7 +986,7 @@ def get_tool_summary(block, working_dirs: list[str] | None = None) -> tuple[str,
         cell_idx = tool_input.get("cell_idx", 0)
         is_new = tool_input.get("is_new_cell", False)
         action = "Create cell" if is_new else "Edit cell"
-        summary = f"{action} {cell_idx} in {notebook.split('/')[-1] if notebook else 'notebook'}"
+        summary = f"{action} {cell_idx} in {path_basename(notebook) if notebook else 'notebook'}"
         return (
             "Edit notebook",
             summary,

@@ -48,6 +48,7 @@ from schemas import (
     UsageTrendResponse,
 )
 from services.session_title_cache import title_cache
+from utils import path_basename
 
 logger = logging.getLogger(__name__)
 
@@ -615,7 +616,7 @@ async def get_skill_detail(
             project_path = row.get("project_path") or ""
             if not project_path and project_encoded_name:
                 project_path = "/" + project_encoded_name.lstrip("-").replace("-", "/")
-            project_name = project_path.rstrip("/").split("/")[-1] if project_path else ""
+            project_name = path_basename(project_path) if project_path else ""
 
             sessions.append(
                 SessionSummary(
@@ -710,7 +711,7 @@ def get_skill_sessions(
                     project_path = row.get("project_path") or ""
                     if not project_path and project_encoded_name:
                         project_path = "/" + project_encoded_name.lstrip("-").replace("-", "/")
-                    project_name = project_path.rstrip("/").split("/")[-1] if project_path else ""
+                    project_name = path_basename(project_path) if project_path else ""
 
                     sessions.append(
                         SessionWithContext(
@@ -761,7 +762,7 @@ def get_skill_sessions(
                 slug=session.slug,
                 project_encoded_name=project.encoded_name,
                 project_path=project.path,
-                project_name=project.path.rstrip("/").split("/")[-1],
+                project_name=path_basename(project.path),
                 message_count=session.message_count,
                 start_time=session.start_time,
                 end_time=session.end_time,

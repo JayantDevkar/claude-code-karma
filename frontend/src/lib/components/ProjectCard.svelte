@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { FolderOpen, GitBranch, Activity, MessageSquare } from 'lucide-svelte';
 	import type { Project } from '$lib/api-types';
+	import { getProjectName } from '$lib/utils';
 
 	interface Props {
 		project: Project;
@@ -35,10 +36,6 @@
 		if (days < 7) return `${days}d ago`;
 		if (days < 30) return `${Math.floor(days / 7)}w ago`;
 		return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-	}
-
-	function getProjectName(path: string) {
-		return path.split('/').pop() || path;
 	}
 
 	// Get the latest activity time - prefer latest_session_time (from list API),

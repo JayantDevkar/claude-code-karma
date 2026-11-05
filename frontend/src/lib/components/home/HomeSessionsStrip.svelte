@@ -2,6 +2,7 @@
 	import { onMount, onDestroy } from 'svelte';
 	import type { LiveSessionSummary } from '$lib/api-types';
 	import { projectHrefFromSession } from '$lib/utils/project-url';
+	import { getProjectDisplayName as projectName } from '$lib/utils/live-session-display';
 	import { getSessionDisplayLabel } from '$lib/utils/sessionIdentifier';
 	import { statusConfig } from '$lib/live-session-config';
 	import TerminalFocusButton from '$lib/components/TerminalFocusButton.svelte';
@@ -74,21 +75,6 @@
 		if (hrs > 0) return `${hrs}h ${mins % 60}m`;
 		if (mins > 0) return `${mins}m`;
 		return `${Math.floor(seconds)}s`;
-	}
-
-	function projectName(session: LiveSessionSummary): string {
-		const parts = session.cwd.split('/').filter(Boolean);
-		const skip = ['Users', 'home', 'Documents', 'GitHub', 'Projects', 'repos', 'src'];
-		for (let i = parts.length - 1; i >= 0; i--) {
-			const part = parts[i];
-			if (!skip.includes(part) && part.length > 2) {
-				if (i > 0 && ['frontend', 'backend', 'api', 'src', 'app'].includes(part)) {
-					return parts[i - 1] || part;
-				}
-				return part;
-			}
-		}
-		return parts[parts.length - 1] || 'Unknown';
 	}
 
 	function sessionUrl(session: LiveSessionSummary): string {

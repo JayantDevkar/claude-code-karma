@@ -120,6 +120,7 @@ from utils import (
     is_encoded_project_dir,
     normalize_timezone,
     parse_timestamp_range,
+    path_basename,
     prompt_from_user_message,
 )
 
@@ -171,7 +172,7 @@ def detect_command_source(
 
 def _get_project_name(path: str) -> str:
     """Extract human-readable project name from path (last path component)."""
-    return Path(path).name
+    return path_basename(path)
 
 
 def _count_subagents_fast(project_dir: Path, session_uuid: str) -> int:
@@ -259,9 +260,9 @@ def _list_all_projects_with_sessions_optimized() -> tuple[
                         ProjectFilterOption(
                             encoded_name=encoded_dir.name,
                             path=project_path,
-                            name=Path(project_path).name,
+                            name=path_basename(project_path),
                             slug=compute_project_slug(encoded_dir.name, project_path),
-                            display_name=Path(project_path).name,
+                            display_name=path_basename(project_path),
                             session_count=len(valid_entries),
                         )
                     )
@@ -309,9 +310,9 @@ def _list_all_projects_with_sessions_optimized() -> tuple[
                         ProjectFilterOption(
                             encoded_name=encoded_dir.name,
                             path=project.path,
-                            name=Path(project.path).name,
+                            name=path_basename(project.path),
                             slug=compute_project_slug(encoded_dir.name, project.path),
-                            display_name=Path(project.path).name,
+                            display_name=path_basename(project.path),
                             session_count=len(valid_sessions),
                         )
                     )
@@ -363,9 +364,9 @@ def _list_all_projects_with_sessions_optimized() -> tuple[
                 option = ProjectFilterOption(
                     encoded_name=rd.canonical,
                     path=remote_path,
-                    name=Path(remote_path).name,
+                    name=path_basename(remote_path),
                     slug=compute_project_slug(rd.canonical, remote_path),
-                    display_name=Path(remote_path).name,
+                    display_name=path_basename(remote_path),
                     session_count=0,
                 )
                 project_options.append(option)
@@ -1044,9 +1045,7 @@ def get_session(uuid: str, request: Request, fresh: bool = False):
     project_display_name = None
     working_dirs = list(session.get_working_directories())
     if working_dirs:
-        from pathlib import Path
-
-        project_display_name = Path(working_dirs[0]).name
+        project_display_name = path_basename(working_dirs[0])
 
     # Clear session cache for fresh requests (live session polling)
     # This ensures message_count, duration, tokens, etc. are recomputed
