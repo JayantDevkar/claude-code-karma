@@ -67,39 +67,6 @@ CREATE INDEX IF NOT EXISTS idx_sessions_slug ON sessions(slug);
 CREATE INDEX IF NOT EXISTS idx_sessions_branch ON sessions(project_encoded_name, git_branch);
 CREATE INDEX IF NOT EXISTS idx_sessions_mtime ON sessions(jsonl_mtime);
 
--- Full-text search (FTS5)
--- This is an external content FTS5 table (content=sessions) that mirrors the sessions table.
--- Triggers below keep it in sync with INSERT, UPDATE, DELETE operations on sessions.
--- If the FTS index becomes out of sync with the sessions table, rebuild with:
---   INSERT INTO sessions_fts(sessions_fts) VALUES('rebuild');
-CREATE VIRTUAL TABLE IF NOT EXISTS sessions_fts USING fts5(
-    uuid,
-    slug,
-    initial_prompt,
-    session_titles,
-    project_path,
-    content=sessions,
-    content_rowid=rowid
-);
-
--- Triggers to keep FTS in sync with sessions table
-CREATE TRIGGER IF NOT EXISTS sessions_fts_insert AFTER INSERT ON sessions BEGIN
-    INSERT INTO sessions_fts(rowid, uuid, slug, initial_prompt, session_titles, project_path)
-    VALUES (new.rowid, new.uuid, new.slug, new.initial_prompt, new.session_titles, new.project_path);
-END;
-
-CREATE TRIGGER IF NOT EXISTS sessions_fts_delete AFTER DELETE ON sessions BEGIN
-    INSERT INTO sessions_fts(sessions_fts, rowid, uuid, slug, initial_prompt, session_titles, project_path)
-    VALUES ('delete', old.rowid, old.uuid, old.slug, old.initial_prompt, old.session_titles, old.project_path);
-END;
-
-CREATE TRIGGER IF NOT EXISTS sessions_fts_update AFTER UPDATE ON sessions BEGIN
-    INSERT INTO sessions_fts(sessions_fts, rowid, uuid, slug, initial_prompt, session_titles, project_path)
-    VALUES ('delete', old.rowid, old.uuid, old.slug, old.initial_prompt, old.session_titles, old.project_path);
-    INSERT INTO sessions_fts(rowid, uuid, slug, initial_prompt, session_titles, project_path)
-    VALUES (new.rowid, new.uuid, new.slug, new.initial_prompt, new.session_titles, new.project_path);
-END;
-
 -- Tool usage per session (denormalized for fast aggregation)
 CREATE TABLE IF NOT EXISTS session_tools (
     session_uuid TEXT NOT NULL,
@@ -411,6 +378,44 @@ CREATE INDEX IF NOT EXISTS idx_cron_state_session
 # Append to canonical fresh-install schema.
 SCHEMA_SQL = SCHEMA_SQL + _SHELLS_CRON_SCHEMA_SQL
 
+# FTS5 index over sessions and its sync triggers; also re-applied by _ensure_sessions_fts.
+_SESSIONS_FTS_SQL = """
+-- Full-text search (FTS5)
+-- This is an external content FTS5 table (content=sessions) that mirrors the sessions table.
+-- Triggers below keep it in sync with INSERT, UPDATE, DELETE operations on sessions.
+-- If the FTS index becomes out of sync with the sessions table, rebuild with:
+--   INSERT INTO sessions_fts(sessions_fts) VALUES('rebuild');
+CREATE VIRTUAL TABLE IF NOT EXISTS sessions_fts USING fts5(
+    uuid,
+    slug,
+    initial_prompt,
+    session_titles,
+    project_path,
+    content=sessions,
+    content_rowid=rowid
+);
+
+-- Triggers to keep FTS in sync with sessions table
+CREATE TRIGGER IF NOT EXISTS sessions_fts_insert AFTER INSERT ON sessions BEGIN
+    INSERT INTO sessions_fts(rowid, uuid, slug, initial_prompt, session_titles, project_path)
+    VALUES (new.rowid, new.uuid, new.slug, new.initial_prompt, new.session_titles, new.project_path);
+END;
+
+CREATE TRIGGER IF NOT EXISTS sessions_fts_delete AFTER DELETE ON sessions BEGIN
+    INSERT INTO sessions_fts(sessions_fts, rowid, uuid, slug, initial_prompt, session_titles, project_path)
+    VALUES ('delete', old.rowid, old.uuid, old.slug, old.initial_prompt, old.session_titles, old.project_path);
+END;
+
+CREATE TRIGGER IF NOT EXISTS sessions_fts_update AFTER UPDATE ON sessions BEGIN
+    INSERT INTO sessions_fts(sessions_fts, rowid, uuid, slug, initial_prompt, session_titles, project_path)
+    VALUES ('delete', old.rowid, old.uuid, old.slug, old.initial_prompt, old.session_titles, old.project_path);
+    INSERT INTO sessions_fts(rowid, uuid, slug, initial_prompt, session_titles, project_path)
+    VALUES (new.rowid, new.uuid, new.slug, new.initial_prompt, new.session_titles, new.project_path);
+END;
+"""
+
+SCHEMA_SQL = SCHEMA_SQL + _SESSIONS_FTS_SQL
+
 
 def ensure_schema(conn: sqlite3.Connection) -> None:
     """
@@ -434,6 +439,9 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
 
     # Same cross-branch guard for sessions columns added after v19.
     columns_added = _ensure_session_columns(conn)
+
+    # Upgraded DBs can lose the sessions_fts triggers, which freezes search (issue #145).
+    _ensure_sessions_fts(conn)
 
     # Check current version
     try:
@@ -881,6 +889,46 @@ def _ensure_session_columns(conn: sqlite3.Connection) -> bool:
     if missing:
         conn.commit()
     return bool(needs_reindex)
+
+
+_SESSIONS_FTS_OBJECTS = {
+    "sessions_fts",
+    "sessions_fts_insert",
+    "sessions_fts_delete",
+    "sessions_fts_update",
+}
+
+
+def _ensure_sessions_fts(conn: sqlite3.Connection) -> bool:
+    """Recreate missing sessions_fts objects and rebuild a stale index; True if rebuilt."""
+    names = {
+        r[0]
+        for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE name IN (?, ?, ?, ?, ?)",
+            ("sessions", *sorted(_SESSIONS_FTS_OBJECTS)),
+        ).fetchall()
+    }
+    if "sessions" not in names:
+        return False
+    missing = sorted(_SESSIONS_FTS_OBJECTS - names)
+    if missing:
+        logger.warning("Recreating missing sessions FTS objects %s", missing)
+        conn.executescript(_SESSIONS_FTS_SQL)
+    else:
+        try:
+            # rank=1 also checks the index against the sessions rows
+            conn.execute(
+                "INSERT INTO sessions_fts(sessions_fts, rank) VALUES('integrity-check', 1)"
+            )
+            conn.commit()
+            return False
+        except sqlite3.DatabaseError:
+            conn.rollback()
+            logger.warning("sessions_fts is out of sync with sessions")
+    conn.execute("INSERT INTO sessions_fts(sessions_fts) VALUES('rebuild')")
+    conn.commit()
+    logger.info("Rebuilt the sessions_fts index")
+    return True
 
 
 # Child rows whose parent is gone; (table, parent-existence subquery).
