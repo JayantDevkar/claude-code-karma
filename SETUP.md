@@ -836,12 +836,15 @@ Create `~/.claude_karma/extra-roots.json` (or set `CLAUDE_KARMA_EXTRA_ROOTS` to 
     "path": "D:/Sync/laptop/.claude",
     "path_map": { "/home/me/code": "C:/Users/me/code" },
     "project_map": { "-home-me-scratch": "C--Users-me-code-playground" },
-    "match_by_name": false
+    "match_by_name": false,
+    "auto_titles": false
   }
 ]
 ```
 
 Only `path` is required. `name` (letters, digits, `._-`) identifies that machine; it defaults to the name of the folder containing `.claude` (`laptop` above). A root that is a file, duplicates another root's path, or overlaps this machine's own `~/.claude` is ignored with a warning; a path that does not exist yet (drive unmounted, sync paused) is kept. If the file or `CLAUDE_KARMA_EXTRA_ROOTS` fails to parse, Karma keeps the last roots it loaded and skips the "removed root" cleanup until it parses again. While any entry is ignored, that cleanup is skipped too, so a typo never deletes a root's sessions.
+
+**Titles.** The session title hook runs on the machine that ran the session, where no Karma API listens, so synced sessions arrive untitled. With `"auto_titles": true` Karma titles that root's sessions itself through Haiku once they end cleanly: one call per session through this machine's `claude` login, only sessions that ended in the last 24 hours, checked after each re-index. Older sessions are titled only by hand: `python api/scripts/backfill_titles.py --synced --dry-run` lists them, drop `--dry-run` to title them (`--limit N` caps the cost).
 
 ### Step M3: How Sessions Are Matched to Projects
 
@@ -1015,6 +1018,8 @@ The branch detector has no timeout entry because it self-times-out at 2 seconds 
 
 `project_identity.py` writes `karma-project.json` (normalized git remote, subdir within the repo, project path) into the session's project dir on each session start. The file records which repository a project dir belongs to, independent of where the repo lives on disk; tools that read synced copies of `~/.claude` from several machines can use it to match the same project across different paths. The hook writes nothing else.
 
+It writes only into the project dir Claude Code made for the current working directory. A session resumed or compacted after a `cd` into another repo gets no sidecar in its start dir's project dir, and a sidecar an older version wrote there is removed on the next session start in that dir.
+
 ```bash
 ln -sf "$(cd hooks && pwd)/project_identity.py" ~/.claude/hooks/project_identity.py
 ```
@@ -1033,11 +1038,11 @@ ln -sf "$(cd hooks && pwd)/project_identity.py" ~/.claude/hooks/project_identity
 ]
 ```
 
-Like the branch detector, it is silent on every failure; each of its two git calls self-times-out at 2 seconds (4 seconds worst case), so the 10-second timeout is a safety net. It only writes when the identity changed, and only into the session's project dir (a dir inside a `projects` dir).
+Like the branch detector, it is silent on every failure; each of its two git calls self-times-out at 2 seconds (4 seconds worst case), so the 10-second timeout is a safety net. It only writes when the identity changed, and only into the project dir Claude Code made for the session's cwd.
 
 Two things to know about the sidecar's lifecycle:
 
-- The hook only ever writes. If the `origin` remote is later removed (or the directory stops being a git checkout), the hook writes nothing and the existing `karma-project.json` stays as it was. Delete it by hand if the stale identity matters.
+- The hook removes a sidecar only when its `project_path` belongs to another dir. If the `origin` remote is later removed (or the directory stops being a git checkout), the hook writes nothing and the existing `karma-project.json` stays as it was. Delete it by hand if the stale identity matters.
 - The hook compares only `git_identity`, `subdir` and `project_path`. When any of those changed, it rewrites the whole file, so any extra keys another tool added are lost.
 
 ### Removing a Hook

@@ -209,6 +209,30 @@ class TestV24ReindexesLocalCommandPrompts:
         assert mtimes == {"caveat": 9.0, "command": 9.0, "typed": 10.0}
 
 
+class TestV26ReindexesWakePrompts:
+    def test_only_sessions_with_a_wake_prompt_are_reindexed(self):
+        conn = _db_at_version(25, foreign_keys=True)
+        conn.execute(
+            "INSERT INTO projects (encoded_name, display_name, slug) VALUES ('-foo', 'foo', 'foo')"
+        )
+        for uuid, prompt in [
+            ("wake", '<wake reason="mention">\n  <message from="human">yes</message>\n</wake>'),
+            ("quoted", "Why does Karma show <wake reason=...> as the prompt?"),
+            ("typed", "Fix the login bug"),
+        ]:
+            conn.execute(
+                "INSERT INTO sessions (uuid, project_encoded_name, jsonl_mtime, initial_prompt) "
+                "VALUES (?, '-foo', 10.0, ?)",
+                (uuid, prompt),
+            )
+        conn.commit()
+
+        ensure_schema(conn)
+
+        mtimes = dict(conn.execute("SELECT uuid, jsonl_mtime FROM sessions").fetchall())
+        assert mtimes == {"wake": 9.0, "quoted": 10.0, "typed": 10.0}
+
+
 # ============================================================================
 # 2. Indexer delete paths must not depend on the cascade
 # ============================================================================

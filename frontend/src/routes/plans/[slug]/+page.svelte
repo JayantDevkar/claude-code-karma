@@ -5,6 +5,7 @@
 	import Card from '$lib/components/ui/Card.svelte';
 	import { PlanViewer } from '$lib/components/plan';
 	import { projectHrefFromSession } from '$lib/utils/project-url';
+	import { getProjectName } from '$lib/utils';
 	import { navigating } from '$app/stores';
 	import { PlanDetailSkeleton } from '$lib/components/skeleton';
 
@@ -25,7 +26,7 @@
 	// Build breadcrumbs based on session context availability
 	let breadcrumbs = $derived(() => {
 		if (data.sessionContext) {
-			const projectName = data.sessionContext.project_path.split('/').pop() || 'Project';
+			const projectName = getProjectName(data.sessionContext.project_path) || 'Project';
 			return [
 				{ label: 'Dashboard', href: '/' },
 				{ label: 'Projects', href: '/projects' },

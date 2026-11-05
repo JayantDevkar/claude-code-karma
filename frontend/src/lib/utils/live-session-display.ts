@@ -24,7 +24,7 @@ const SKIP_DIRS = ['Users', 'home', 'Documents', 'GitHub', 'Projects', 'repos', 
 const NESTED_DIRS = new Set(['frontend', 'backend', 'api', 'src', 'app']);
 
 export function getProjectDisplayName(session: LiveSessionSummary): string {
-	const parts = session.cwd.split('/').filter(Boolean);
+	const parts = session.cwd.split(/[\\/]/).filter(Boolean);
 
 	for (let i = parts.length - 1; i >= 0; i--) {
 		const part = parts[i];

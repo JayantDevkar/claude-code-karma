@@ -70,7 +70,7 @@
 		createHistoricalSessionLookup,
 		shouldShowEndedStatus
 	} from '$lib/search';
-	import { getProjectNameFromEncoded } from '$lib/utils';
+	import { getProjectName as getPathName, getProjectNameFromEncoded } from '$lib/utils';
 
 	interface PageData {
 		sessions: SessionWithContext[];
@@ -380,7 +380,7 @@
 		if (searchTokens.length > 0) {
 			result = result.filter((s) => {
 				const slug = (s.slug || s.session_id || '').toLowerCase();
-				const projectName = (s.cwd || '').split('/').pop()?.toLowerCase() || '';
+				const projectName = getPathName(s.cwd || '').toLowerCase();
 				const combinedText = `${slug} ${projectName}`;
 				// AND logic: all tokens must match
 				return searchTokens.every((token) => combinedText.includes(token.toLowerCase()));
@@ -426,7 +426,7 @@
 		if (searchTokens.length > 0) {
 			endedLive = endedLive.filter((s) => {
 				const slug = (s.slug || s.session_id || '').toLowerCase();
-				const projectName = (s.cwd || '').split('/').pop()?.toLowerCase() || '';
+				const projectName = getPathName(s.cwd || '').toLowerCase();
 				const combinedText = `${slug} ${projectName}`;
 				// AND logic: all tokens must match
 				return searchTokens.every((token) => combinedText.includes(token.toLowerCase()));

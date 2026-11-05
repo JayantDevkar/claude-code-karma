@@ -350,7 +350,7 @@ export function formatDisplayPath(filePath: string, projectPath?: string | null)
  * Get project name from path
  */
 export function getProjectName(path: string): string {
-	return path.split('/').pop() || path;
+	return path.split(/[\\/]/).filter(Boolean).pop() || path;
 }
 
 /**

@@ -26,6 +26,7 @@
 		cleanAgentIdForDisplay,
 		formatDuration,
 		calculateSubagentDuration,
+		getProjectName,
 		truncate
 	} from '$lib/utils';
 
@@ -361,7 +362,7 @@
 							class="rounded bg-[var(--bg-muted)] px-1.5 py-0.5 font-mono text-[var(--text-primary)] text-[10px] truncate max-w-[200px]"
 							title={transcript_path}
 						>
-							{transcript_path.split('/').pop()}
+							{getProjectName(transcript_path)}
 						</code>
 					</div>
 				{/if}

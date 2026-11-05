@@ -9,6 +9,7 @@ import type {
 import { API_BASE } from '$lib/config';
 import { fetchWithFallback } from '$lib/utils/api-fetch';
 import { joinTitle } from '$lib/page-title';
+import { getProjectName } from '$lib/utils';
 
 const PER_PAGE = 20;
 
@@ -54,8 +55,7 @@ export async function load({ params, fetch, url }) {
 	// Create a mapping from encoded_name to project name (last segment of path)
 	const projectNameMap: Record<string, string> = {};
 	for (const project of projects) {
-		const name = project.path.split('/').pop() || project.path;
-		projectNameMap[project.encoded_name] = name;
+		projectNameMap[project.encoded_name] = getProjectName(project.path);
 	}
 
 	// Enrich sessions with project context

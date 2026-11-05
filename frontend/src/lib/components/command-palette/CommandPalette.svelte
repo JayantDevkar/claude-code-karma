@@ -23,6 +23,7 @@
 	import { commandPalette } from '$lib/stores/commandPalette';
 	import KeyIndicator from '$lib/components/ui/KeyIndicator.svelte';
 	import type { Project } from '$lib/api-types';
+	import { getProjectName } from '$lib/utils';
 	import { projectHref } from '$lib/utils/project-url';
 	import { API_BASE } from '$lib/config';
 
@@ -175,7 +176,7 @@
 
 	// Get display name for project (last part of path)
 	function getProjectDisplayName(project: Project): string {
-		return project.path.split('/').pop() || project.path;
+		return getProjectName(project.path);
 	}
 
 	function getRelativeTime(dateStr: string): string {

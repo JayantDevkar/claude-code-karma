@@ -275,7 +275,7 @@ class LiveSessionState(BaseModel):
 
     @property
     def duration_seconds(self) -> float:
-        """Calculate current session duration."""
+        """Wall-clock span from started_at to updated_at; the API reports active time instead."""
         return (self.updated_at - self.started_at).total_seconds()
 
     @property

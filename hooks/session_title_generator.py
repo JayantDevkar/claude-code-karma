@@ -188,6 +188,7 @@ def generate_title(
     initial_prompt: str,
     first_response: Optional[str],
     git_context: Optional[str],
+    claude_bin: str = "claude",
 ) -> Tuple[Optional[str], str]:
     """Generate a concise session title.
 
@@ -228,9 +229,12 @@ Title:"""
     try:
         env = os.environ.copy()
         env.pop("CLAUDECODE", None)  # Allow nested claude invocation
+        if os.path.dirname(claude_bin):
+            # An npm-installed claude needs its sibling node on PATH
+            env["PATH"] = os.path.dirname(claude_bin) + os.pathsep + env.get("PATH", "")
 
         result = subprocess.run(
-            ["claude", "-p", prompt, "--model", "haiku", "--no-session-persistence", "--output-format", "text"],
+            [claude_bin, "-p", prompt, "--model", "haiku", "--no-session-persistence", "--output-format", "text"],
             capture_output=True,
             text=True,
             encoding="utf-8",

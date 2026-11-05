@@ -146,3 +146,17 @@ def test_hook_input_with_non_ascii_path_gets_a_title(monkeypatch, tmp_path):
     monkeypatch.setattr(stg, "post_title", lambda sid, title: posted.append((sid, title)))
     stg.main()
     assert posted == [("s1", "Fix the login bug")]
+
+
+def test_generate_title_runs_given_claude_bin_with_its_dir_on_path(monkeypatch):
+    seen = {}
+
+    def run(cmd, **kwargs):
+        seen["cmd"], seen["path"] = cmd, kwargs["env"]["PATH"]
+        return stg.subprocess.CompletedProcess(cmd, 0, stdout="Fix login redirect\n", stderr="")
+
+    monkeypatch.setattr(stg.subprocess, "run", run)
+    monkeypatch.setenv("PATH", "/usr/bin:/bin")
+    title, source = stg.generate_title("Fix the login", None, None, claude_bin="/opt/x/bin/claude")
+    assert (title, source) == ("Fix login redirect", "haiku")
+    assert seen["cmd"][0] == "/opt/x/bin/claude" and seen["path"] == "/opt/x/bin:/usr/bin:/bin"

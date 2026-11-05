@@ -105,9 +105,14 @@ def clear_git_caches() -> None:
     clear_git_identity_cache()
 
 
+def path_basename(path: str) -> str:
+    """Last segment of a POSIX or Windows path, whatever OS the API runs on."""
+    return re.split(r"[\\/]", path.rstrip("\\/"))[-1]
+
+
 def compute_project_slug(encoded_name: str, project_path: str) -> str:
     """Compute a URL-friendly project slug: lowercased name + 4-char md5 hash."""
-    name = Path(project_path).name.lower() if project_path else encoded_name.lower()
+    name = path_basename(project_path).lower() if project_path else encoded_name.lower()
     name = re.sub(r"[^a-z0-9-]", "-", name).strip("-")
     name = re.sub(r"-+", "-", name)
     short_hash = hashlib.md5(encoded_name.encode()).hexdigest()[:4]
@@ -325,6 +330,17 @@ def extract_prompt_from_content(content: str) -> str:
     return ""
 
 
+_SPAWN_RELAY_NOTE = re.compile(
+    r'\A\s*<relay\b[^>]*\breason="spawn"[^>]*>.*?<note>(.*?)</note>', re.DOTALL
+)
+
+
+def _spawn_relay_note(content: str) -> Optional[str]:
+    """Return the coordinator's note from a spawn relay, or None for any other content."""
+    match = _SPAWN_RELAY_NOTE.match(content)
+    return (match.group(1).strip() or None) if match else None
+
+
 def prompt_from_user_message(
     msg: "UserMessage", prev: Optional["UserMessage"] = None
 ) -> Optional[str]:
@@ -336,6 +352,8 @@ def prompt_from_user_message(
     messages without arguments (e.g., /clear), and the built-in command a
     caveat introduces, even with arguments (e.g., /model fable).
 
+    Exception: a coordinator's <relay reason="spawn"> returns its <note>.
+
     Args:
         msg: The user message to inspect
         prev: The user message before msg, if any
@@ -343,8 +361,10 @@ def prompt_from_user_message(
     Returns:
         The extracted prompt, or None if the message is not a real user prompt
     """
-    if not msg.content or msg.is_tool_result or msg.is_meta:
+    if not msg.content or msg.is_tool_result:
         return None
+    if msg.is_meta:
+        return _spawn_relay_note(msg.content)
     if msg.content.lstrip().startswith("<local-command-stdout>"):
         return None
     if (
@@ -966,7 +986,7 @@ def get_tool_summary(block, working_dirs: list[str] | None = None) -> tuple[str,
         cell_idx = tool_input.get("cell_idx", 0)
         is_new = tool_input.get("is_new_cell", False)
         action = "Create cell" if is_new else "Edit cell"
-        summary = f"{action} {cell_idx} in {notebook.split('/')[-1] if notebook else 'notebook'}"
+        summary = f"{action} {cell_idx} in {path_basename(notebook) if notebook else 'notebook'}"
         return (
             "Edit notebook",
             summary,
