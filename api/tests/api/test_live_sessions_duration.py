@@ -60,7 +60,9 @@ def client(tmp_path, monkeypatch):
     live_sessions._active_duration_cache.clear()
 
 
-def _write_state(live_dir: Path, transcript: Path, updated_at: datetime) -> None:
+def _write_state(
+    live_dir: Path, transcript: Path, updated_at: datetime, started_at: datetime = T0
+) -> None:
     (live_dir / "s-overnight.json").write_text(
         json.dumps(
             {
@@ -70,7 +72,7 @@ def _write_state(live_dir: Path, transcript: Path, updated_at: datetime) -> None
                 "transcript_path": str(transcript),
                 "permission_mode": "default",
                 "last_hook": "SessionEnd",
-                "started_at": _iso(T0),
+                "started_at": _iso(started_at),
                 "updated_at": _iso(updated_at),
                 "session_ids": ["s-overnight"],
             }
@@ -112,3 +114,33 @@ def test_missing_transcript_falls_back_to_tracker_span(tmp_path, client):
     _write_state(live_dir, tmp_path / "gone.jsonl", T0 + timedelta(hours=2))
 
     assert http.get("/live-sessions/s-overnight").json()["duration_seconds"] == 2 * 3600
+
+
+@pytest.mark.parametrize("work_minutes", [10, 40])
+def test_resumed_session_matches_session_page(tmp_path, client, work_minutes):
+    # The transcript keeps 2h40m of earlier history; the tracker restarted its clock on resume
+    http, live_dir = client
+    transcript = tmp_path / "s-overnight.jsonl"
+    history = [T0 - timedelta(hours=5) + timedelta(minutes=20 * i) for i in range(9)]
+    resumed = [T0 + timedelta(minutes=m) for m in range(0, work_minutes + 1, 5)]
+    _write_transcript(transcript, history + resumed)
+    _write_state(live_dir, transcript, resumed[-1])
+
+    expected = Session.from_path(transcript).duration_seconds
+    assert http.get("/live-sessions/s-overnight").json()["duration_seconds"] == expected
+    # The async list endpoint builds the same summary off the event loop
+    assert http.get("/live-sessions").json()["sessions"][0]["duration_seconds"] == expected
+
+
+@pytest.mark.parametrize("wall_minutes", [25, 45])
+def test_wait_before_first_prompt_matches_session_page(tmp_path, client, wall_minutes):
+    # The window opened at T0 but the first prompt came 5 minutes before updated_at
+    http, live_dir = client
+    transcript = tmp_path / "s-overnight.jsonl"
+    end = T0 + timedelta(minutes=wall_minutes)
+    _write_transcript(transcript, [end - timedelta(minutes=5), end])
+    _write_state(live_dir, transcript, end)
+
+    body = http.get("/live-sessions/s-overnight").json()
+
+    assert body["duration_seconds"] == Session.from_path(transcript).duration_seconds == 5 * 60

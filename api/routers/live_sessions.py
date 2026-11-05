@@ -44,7 +44,6 @@ sys.path.insert(0, str(api_path))
 
 from config import Settings, settings
 from http_caching import cacheable
-from models.active_time import ACTIVE_IDLE_CAP_SECONDS
 from models.bounded_cache import BoundedCache, BoundedCacheConfig
 from models.live_session import (
     LiveSessionState,
@@ -56,7 +55,7 @@ from models.live_session import (
     load_live_session,
 )
 from models.project import Project
-from models.session import active_duration_seconds
+from models.session import Session
 from routers.projects import safely_resolve_project
 from schemas import (
     LiveSessionsResponse,
@@ -91,7 +90,7 @@ _project_sessions_cache: BoundedCache[dict] = BoundedCache(
 )
 
 # Cache for active durations: transcript path -> (st_mtime_ns, st_size, active seconds)
-_active_duration_cache: BoundedCache[tuple[int, int, float]] = BoundedCache(
+_active_duration_cache: BoundedCache[tuple[int, int, float | None]] = BoundedCache(
     BoundedCacheConfig(max_size=200, ttl_seconds=3600)
 )
 
@@ -172,10 +171,9 @@ def determine_status(state: LiveSessionState) -> SessionStatus:
 
 
 def live_active_duration(state: LiveSessionState) -> float:
-    """Idle-capped active time, as on the session page; wall clock if the transcript can't be read."""
+    """Active time from the transcript, as on the session page; wall clock if it can't be read."""
     span = state.duration_seconds
-    # No gap inside a span shorter than the cap can be trimmed, so skip the file read
-    if span <= ACTIVE_IDLE_CAP_SECONDS or not state.transcript_path:
+    if not state.transcript_path:
         return span
     path = Path(state.transcript_path)
     try:
@@ -184,16 +182,15 @@ def live_active_duration(state: LiveSessionState) -> float:
         return span
     cached = _active_duration_cache.get(str(path))
     if cached is not None and cached[:2] == (st.st_mtime_ns, st.st_size):
-        return cached[2]
-    try:
-        active = active_duration_seconds(path, state.started_at, state.updated_at)
-    except Exception as e:
-        logger.debug("Could not compute active duration for %s: %s", state.session_id, e)
-        return span
-    if active is None:
-        return span
-    _active_duration_cache[str(path)] = (st.st_mtime_ns, st.st_size, active)
-    return active
+        active = cached[2]
+    else:
+        try:
+            active = Session.from_path(path).duration_seconds
+        except Exception as e:
+            logger.debug("Could not compute active duration for %s: %s", state.session_id, e)
+            return span
+        _active_duration_cache[str(path)] = (st.st_mtime_ns, st.st_size, active)
+    return span if active is None else active
 
 
 def state_to_summary(
@@ -420,7 +417,9 @@ async def list_live_sessions(
     for state in states:
         # Get stats from batch-loaded map
         message_count, subagent_count, slug = stats_map.get(state.session_id, (None, None, None))
-        summary = state_to_summary(state, message_count, subagent_count, slug)
+        summary = await asyncio.to_thread(
+            state_to_summary, state, message_count, subagent_count, slug
+        )
         sessions.append(summary)
 
         # Count by status category
@@ -485,9 +484,17 @@ async def list_active_sessions(
         # Include ended sessions for 5 minutes, then filter them out
         if status == SessionStatus.ENDED:
             if state.idle_seconds <= ENDED_DISPLAY_THRESHOLD:
-                active_sessions.append(state_to_summary(state, message_count, subagent_count, slug))
+                active_sessions.append(
+                    await asyncio.to_thread(
+                        state_to_summary, state, message_count, subagent_count, slug
+                    )
+                )
         else:
-            active_sessions.append(state_to_summary(state, message_count, subagent_count, slug))
+            active_sessions.append(
+                await asyncio.to_thread(
+                    state_to_summary, state, message_count, subagent_count, slug
+                )
+            )
 
     # Sort by last activity (most recent first)
     active_sessions.sort(key=lambda s: s.updated_at, reverse=True)
@@ -544,10 +551,16 @@ async def list_project_live_sessions(
         if status == SessionStatus.ENDED:
             if state.idle_seconds <= PROJECT_ENDED_DISPLAY_THRESHOLD:
                 project_sessions.append(
-                    state_to_summary(state, message_count, subagent_count, slug)
+                    await asyncio.to_thread(
+                        state_to_summary, state, message_count, subagent_count, slug
+                    )
                 )
         else:
-            project_sessions.append(state_to_summary(state, message_count, subagent_count, slug))
+            project_sessions.append(
+                await asyncio.to_thread(
+                    state_to_summary, state, message_count, subagent_count, slug
+                )
+            )
 
     # Sort by last activity (most recent first)
     project_sessions.sort(key=lambda s: s.updated_at, reverse=True)
