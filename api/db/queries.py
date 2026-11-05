@@ -1257,6 +1257,14 @@ def query_project_chains(
 # ---------------------------------------------------------------------------
 
 
+# project_path is the project's (breadcrumb), not the session's own cwd-derived one
+_LOOKUP_SELECT = """SELECT uuid, slug, project_encoded_name,
+       COALESCE((SELECT p.project_path FROM projects p
+                 WHERE p.encoded_name = sessions.project_encoded_name), project_path) AS project_path,
+       message_count, start_time, end_time, initial_prompt
+    FROM sessions"""
+
+
 def query_session_lookup(
     conn: sqlite3.Connection,
     project: str,
@@ -1275,9 +1283,7 @@ def query_session_lookup(
     if is_uuid_like:
         # Try exact UUID match
         row = conn.execute(
-            """SELECT uuid, slug, project_encoded_name, project_path,
-                   message_count, start_time, end_time, initial_prompt
-            FROM sessions
+            f"""{_LOOKUP_SELECT}
             WHERE uuid = :id AND project_encoded_name = :project AND message_count > 0""",
             {"id": identifier, "project": project},
         ).fetchone()
@@ -1288,9 +1294,7 @@ def query_session_lookup(
 
         # Try UUID prefix match
         row = conn.execute(
-            """SELECT uuid, slug, project_encoded_name, project_path,
-                   message_count, start_time, end_time, initial_prompt
-            FROM sessions
+            f"""{_LOOKUP_SELECT}
             WHERE uuid LIKE :prefix AND project_encoded_name = :project AND message_count > 0
             LIMIT 1""",
             {"prefix": f"{identifier}%", "project": project},
@@ -1302,9 +1306,7 @@ def query_session_lookup(
 
     # Fix 3: Always try slug match as fallback (slugs like "abc-def" look UUID-like)
     row = conn.execute(
-        """SELECT uuid, slug, project_encoded_name, project_path,
-               message_count, start_time, end_time, initial_prompt
-        FROM sessions
+        f"""{_LOOKUP_SELECT}
         WHERE slug = :slug AND project_encoded_name = :project AND message_count > 0
         ORDER BY start_time DESC
         LIMIT 1""",

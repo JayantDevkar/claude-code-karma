@@ -123,7 +123,7 @@ session.get_usage_summary() # TokenUsage (aggregated)
 session.get_models_used()   # Set[str]
 session.get_tools_used()    # Counter[str]
 session.get_git_branches()  # Set[str]
-session.get_working_directories() # Set[str]
+session.get_working_directories() # List[str], first-seen order
 ```
 
 ### Agent

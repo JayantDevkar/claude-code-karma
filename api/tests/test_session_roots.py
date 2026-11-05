@@ -405,6 +405,103 @@ def test_project_map_to_missing_local_dir_is_listed(machines):
     assert session_roots.standalone_canonicals() == ["C--nowhere"]
 
 
+def test_worktree_sessions_get_the_projects_path_not_a_stray_one(machines, mem_db):
+    """One session started elsewhere (a Desktop scratch dir) must not hand its path to worktrees."""
+    local, _, _ = machines
+    _write_session(local / "-Users-me-repo", "a0", "/Users/me/scratch-2026-10-13")
+    _write_session(local / "-Users-me-repo", "l1", "/Users/me/repo")
+    wt = local / "-Users-me-repo--claude-worktrees-feature"
+    _write_session(wt, "w1", "/Users/me/repo/.claude/worktrees/feature")
+    indexer.sync_all_projects(mem_db)
+
+    row = mem_db.execute(
+        "SELECT project_encoded_name, project_path FROM sessions WHERE uuid = 'w1'"
+    ).fetchone()
+    assert tuple(row) == ("-Users-me-repo", "/Users/me/repo")
+
+
+def test_session_path_is_where_it_started_not_a_later_subdir(machines, mem_db):
+    local, _, _ = machines
+    path = _write_session(local / "-Users-me-repo", "s1", "/Users/me/repo")
+    with path.open("a", encoding="utf-8") as f:
+        for i, sub in enumerate(("hooks", "api", "frontend", "docs", "scripts")):
+            line = {
+                "type": "user",
+                "uuid": f"s1-cd{i}",
+                "sessionId": "s1",
+                "cwd": f"/Users/me/repo/{sub}",
+                "timestamp": f"2026-10-01T10:01:0{i}.000Z",
+                "message": {"role": "user", "content": "next"},
+            }
+            f.write(json.dumps(line) + "\n")
+    indexer.sync_all_projects(mem_db)
+
+    row = mem_db.execute("SELECT project_path FROM sessions WHERE uuid = 's1'").fetchone()
+    assert row[0] == "/Users/me/repo"
+
+
+def test_session_started_in_a_scratch_dir_gets_the_projects_path(machines, mem_db):
+    local, _, _ = machines
+    path = _write_session(local / "-Users-me-repo", "s2", "/Users/me/scratch-2026-10-13")
+    with path.open("a", encoding="utf-8") as f:
+        line = {
+            "type": "user",
+            "uuid": "s2-cd",
+            "sessionId": "s2",
+            "cwd": "/Users/me/repo",
+            "timestamp": "2026-10-01T10:01:00.000Z",
+            "message": {"role": "user", "content": "next"},
+        }
+        f.write(json.dumps(line) + "\n")
+    indexer.sync_all_projects(mem_db)
+
+    row = mem_db.execute("SELECT project_path FROM sessions WHERE uuid = 's2'").fetchone()
+    assert row[0] == "/Users/me/repo"
+
+
+def test_upgrade_reindexes_sessions_stored_with_a_stray_path(mem_db):
+    mem_db.execute(
+        "INSERT INTO projects (encoded_name, project_path) VALUES ('-Users-me-repo', '/Users/me/repo')"
+    )
+    rows = (
+        ("good", "-Users-me-repo", "/Users/me/repo"),
+        ("stray", "-Users-me-repo", "/Users/me/scratch"),
+        ("no-path", "-Users-me-repo", None),
+        ("no-project", "-Users-me-other", "/Users/me/other"),
+        ("case-only", "-Users-me-repo", "/USERS/me/repo"),
+    )
+    for uuid, encoded, path in rows:
+        mem_db.execute(
+            "INSERT INTO sessions (uuid, project_encoded_name, project_path, jsonl_mtime) "
+            "VALUES (?, ?, ?, 100.0)",
+            (uuid, encoded, path),
+        )
+    mem_db.execute("DELETE FROM schema_version")
+    mem_db.execute("INSERT INTO schema_version (version) VALUES (26)")
+    mem_db.commit()
+
+    ensure_schema(mem_db)
+
+    mtimes = dict(mem_db.execute("SELECT uuid, jsonl_mtime FROM sessions").fetchall())
+    assert mtimes == {
+        "good": 100.0,
+        "stray": 99.0,
+        "no-path": 100.0,
+        "no-project": 100.0,
+        "case-only": 100.0,
+    }
+
+
+def test_drive_letter_case_still_matches_on_windows(monkeypatch):
+    monkeypatch.setattr(indexer.sys, "platform", "win32")
+    # Without the match, the shortest-path fallback would pick the stray path
+    picked = indexer._resolve_project_path("c--work-repo", ["C:\\s", "C:\\work\\repo"])
+    assert picked == "C:\\work\\repo"
+    # Both cases match: the one spelled like the folder name wins
+    picked = indexer._resolve_project_path("C--work-repo", ["c:\\work\\repo", "C:\\work\\repo"])
+    assert picked == "C:\\work\\repo"
+
+
 def test_offline_root_keeps_its_sessions(machines, mem_db):
     local, remote, _ = machines
     _write_session(local / "-Users-me-repo", "l1", "/Users/me/repo")

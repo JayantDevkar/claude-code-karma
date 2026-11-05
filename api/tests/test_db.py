@@ -1409,6 +1409,24 @@ class TestSessionLookup:
         assert result["message_count"] == 10
         assert result["initial_prompt"] == "Fix the auth bug"
 
+    def test_project_path_is_the_projects_not_the_sessions(self, mem_db):
+        """The breadcrumb shows the project, even for a session stored with a subdir/stray path."""
+        from db.queries import query_session_lookup
+
+        self._populate(mem_db)
+        mem_db.execute(
+            "UPDATE sessions SET project_path = '/proj/a/hooks' WHERE slug = 'breezy-morning'"
+        )
+        mem_db.execute(
+            "INSERT INTO projects (encoded_name, project_path) VALUES ('-proj-a', '/proj/a')"
+        )
+        mem_db.commit()
+
+        assert (
+            query_session_lookup(mem_db, "-proj-a", "breezy-morning")["project_path"] == "/proj/a"
+        )
+        assert query_session_lookup(mem_db, "-proj-a", "abc12345")["project_path"] == "/proj/a"
+
 
 class TestAgentUsageQuery:
     """Tests for db.queries.query_agent_usage — agent aggregation."""
