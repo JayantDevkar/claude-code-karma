@@ -59,6 +59,10 @@ const browserGlobals = {
 	DOMParser: 'readonly'
 };
 
+const nodeGlobals = {
+	process: 'readonly'
+};
+
 /** Svelte 5 runes — needed in .svelte and .svelte.ts files */
 const svelteRuneGlobals = {
 	$state: 'readonly',
@@ -96,6 +100,13 @@ export default [
 				}
 			],
 			'no-unused-vars': 'off'
+		}
+	},
+	{
+		// Vite config is executed by Node, so it may reach for process.env
+		files: ['vite.config.ts'],
+		languageOptions: {
+			globals: { ...browserGlobals, ...nodeGlobals }
 		}
 	},
 	{
