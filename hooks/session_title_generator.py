@@ -62,7 +62,7 @@ def _extract_text(msg: dict) -> str:
 def _get_session_start_iso(transcript_path: str) -> Optional[str]:
     """Extract the ISO timestamp of the first entry in a JSONL transcript."""
     try:
-        with open(transcript_path, "r") as f:
+        with open(transcript_path, "r", encoding="utf-8", errors="replace") as f:
             for line in f:
                 line = line.strip()
                 if not line:
@@ -81,7 +81,8 @@ def _get_session_start_iso(transcript_path: str) -> Optional[str]:
 
 def main():
     try:
-        data = json.loads(sys.stdin.read())
+        # Claude Code sends UTF-8; the locale codec (cp1252 on Windows) would mangle paths
+        data = json.loads(sys.stdin.buffer.read().decode("utf-8", errors="replace"))
     except (json.JSONDecodeError, EOFError):
         return
 
@@ -117,7 +118,7 @@ def extract_session_context(transcript_path: str) -> Tuple[Optional[str], Option
     first_response = None
 
     try:
-        with open(transcript_path, "r") as f:
+        with open(transcript_path, "r", encoding="utf-8", errors="replace") as f:
             for line in f:
                 line = line.strip()
                 if not line:
@@ -171,6 +172,8 @@ def get_git_context(cwd: str, transcript_path: str) -> Optional[str]:
             cwd=cwd,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=5,
         )
         if result.returncode == 0 and result.stdout.strip():
@@ -234,6 +237,8 @@ Title:"""
             [claude_bin, "-p", prompt, "--model", "haiku", "--no-session-persistence", "--output-format", "text"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=12,
             env=env,
         )
