@@ -888,9 +888,9 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
                 "SELECT 1 FROM sqlite_master WHERE type='table' AND name='sessions'"
             ).fetchone()
             if has_sessions and not columns_added:
-                from db.indexer import _encodes_to
+                from models.project import Project
 
-                conn.create_function("encodes_to", 2, _encodes_to, deterministic=True)
+                conn.create_function("encodes_to", 2, Project.encodes_to, deterministic=True)
                 conn.execute(
                     "UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1 "
                     "WHERE project_path IS NOT NULL "

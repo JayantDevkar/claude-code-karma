@@ -318,7 +318,9 @@ class LiveSessionState(BaseModel):
         # Fallback: check under the git_root-derived project dir
         # e.g., transcript_path encodes worktree cwd, but JSONL is under git_root project
         if self.git_root and self.session_id:
-            git_encoded = "-" + self.git_root.lstrip("/").replace("/", "-")
+            from models.project import Project
+
+            git_encoded = Project.encode_path(self.git_root)
             fallback = tp.parent.parent / git_encoded / tp.name
             if fallback.exists():
                 return True
@@ -360,8 +362,9 @@ class LiveSessionState(BaseModel):
         # Fallback: use git_root to compute parent project name
         # This handles submodule sessions (JSONL stored under parent repo)
         if self.git_root:
-            encoded = "-" + self.git_root.lstrip("/").replace("/", "-")
-            return encoded
+            from models.project import Project
+
+            return Project.encode_path(self.git_root)
 
         return primary  # Best effort
 

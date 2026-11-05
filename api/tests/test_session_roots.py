@@ -591,8 +591,7 @@ def test_upgrade_leaves_paths_that_encode_to_their_project_alone(mem_db):
     assert mtimes == {"good": 100.0, "no-path": 100.0, "case-only": 100.0, "stray": 99.0}
 
 
-def test_drive_letter_case_still_matches_on_windows(monkeypatch):
-    monkeypatch.setattr(indexer.sys, "platform", "win32")
+def test_drive_letter_case_still_matches_for_windows_paths():
     # Without the match, the shortest-path fallback would pick the stray path
     picked = indexer._resolve_project_path("c--work-repo", ["C:\\s", "C:\\work\\repo"])
     assert picked == "C:\\work\\repo"
@@ -765,6 +764,25 @@ def test_nested_duplicate_and_file_roots_are_rejected(tmp_path, monkeypatch):
     )
     session_roots.clear_cache()
     assert [r.name for r in session_roots.get_extra_roots()] == ["good", "missing"]
+
+
+@pytest.mark.parametrize(
+    "local_dir, local_cwd, remote_dir, remote_cwd",
+    [
+        ("-work-my-repo", "/work/my_repo", "-home-me-my-repo", "/home/me/my_repo"),
+        ("-work-site-v1-2", "/work/site.v1.2", "-home-me-site-v1-2", "/home/me/site.v1.2"),
+    ],
+)
+def test_path_map_matches_paths_with_punctuation(
+    machines, local_dir, local_cwd, remote_dir, remote_cwd
+):
+    local, remote, configure = machines
+    configure(path_map={"/home/me": "/work"})
+    _write_session(local / local_dir, "l1", local_cwd)
+    _write_session(remote / remote_dir, "r1", remote_cwd)
+
+    (rd,) = get_remote_dirs()
+    assert (rd.canonical, rd.matched_by) == (local_dir, "path_map")
 
 
 def test_path_map_root_prefix_is_ignored(machines):

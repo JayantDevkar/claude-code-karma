@@ -106,12 +106,12 @@ Claude Code Karma reads from these locations on disk:
 
 ## Path Encoding
 
-Claude Code encodes project paths for use as directory names. The encoding replaces the leading `/` with `-` and all subsequent `/` characters with `-`:
+Claude Code encodes project paths for use as directory names. Every character except ASCII letters and digits becomes `-`, and names over 200 characters are cut and get a hash suffix:
 
 | Original Path | Encoded |
 |---------------|---------|
 | `/Users/me/repo` | `-Users-me-repo` |
-| `/home/dev/my-project` | `-home-dev-my-project` |
+| `/home/dev/my_project` | `-home-dev-my-project` |
 
 The API decodes these paths when presenting project names to the frontend.
 

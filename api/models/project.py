@@ -16,6 +16,10 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from config import settings
 
+# Claude Code's project dir naming (see Project.encode_path)
+_MAX_DIR_NAME_LEN = 200
+_BASE36 = "0123456789abcdefghijklmnopqrstuvwxyz"
+
 # Thread-safe TTL cache for JSONL file counts (Phase 2 fix)
 # - maxsize=1000 prevents unbounded memory growth
 # - ttl=5.0 ensures freshness checks are accurate
@@ -107,28 +111,40 @@ class Project(BaseModel):
     @staticmethod
     def encode_path(path: PathLike) -> str:
         """
-        Encode a project path to Claude's directory name format.
+        Claude Code's project dir name for a path (same as hooks/project_identity.py).
 
-        Unix:    /Users/me/repo  -> -Users-me-repo   (leading / -> leading -)
-        Windows: C:\\Code\\Tools -> C--Code-Tools     (colon -> dash, backslash -> dash)
+        Unix:    /Users/me/my_repo -> -Users-me-my-repo
+        Windows: C:\\Code\\Tools   -> C--Code-Tools
 
         Args:
             path: Absolute project path
 
         Returns:
-            Encoded directory name (e.g., -Users-me-repo or C--Code-Tools)
+            Encoded directory name
         """
-        p = str(path)
-        # Normalise Windows backslashes
-        p = p.replace("\\", "/")
-        if p.startswith("/"):
-            # Unix absolute path: strip leading slash, prepend dash
-            p = p[1:]
-            return "-" + p.replace("/", "-")
-        else:
-            # Windows absolute path like C:/Code/Tools
-            # Claude Code encodes colon and slash both as dash -> C--Code-Tools
-            return p.replace(":", "-").replace("/", "-")
+        data = str(path).encode("utf-16-le", "surrogatepass")
+        units = [int.from_bytes(data[i : i + 2], "little") for i in range(0, len(data), 2)]
+        encoded = "".join(chr(u) if u < 128 and chr(u).isalnum() else "-" for u in units)
+        if len(encoded) <= _MAX_DIR_NAME_LEN:
+            return encoded
+        h = 0
+        for u in units:  # (h << 5) - h + u, as a signed 32-bit int
+            h = (h * 31 + u) & 0xFFFFFFFF
+        if h >= 0x80000000:
+            h -= 0x100000000
+        h, suffix = abs(h), ""
+        while True:
+            h, r = divmod(h, 36)
+            suffix = _BASE36[r] + suffix
+            if not h:
+                return f"{encoded[:_MAX_DIR_NAME_LEN]}-{suffix}"
+
+    @classmethod
+    def encodes_to(cls, path: PathLike, encoded_name: str) -> bool:
+        """Whether Claude Code would name a project dir `encoded_name` for `path`."""
+        # Windows paths (drive letters show up in either case) compare case-insensitively
+        fold = str.lower if re.match(r"^[A-Za-z]:", str(path)) else str
+        return fold(cls.encode_path(path)) == fold(encoded_name)
 
     @staticmethod
     def decode_path(encoded: str) -> str:
@@ -280,7 +296,7 @@ class Project(BaseModel):
             real_path = cls._extract_real_path_from_sessions(project_dir)
 
             # Validate extracted path matches encoded name (catch corrupted sessions)
-            if real_path is not None and cls.encode_path(real_path) != encoded_name:
+            if real_path is not None and not cls.encodes_to(real_path, encoded_name):
                 real_path = None
 
             # Fall back to lossy decode if no valid path found

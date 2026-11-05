@@ -173,7 +173,7 @@ Errors follow standard HTTP status codes with JSON bodies:
 
 ### Path Encoding
 
-Project endpoints use encoded path names. The encoding converts filesystem paths to URL-safe strings by replacing `/` with `-` and prefixing with `-`:
+Project endpoints use encoded path names. They are Claude Code's project dir names, where every character except ASCII letters and digits becomes `-`:
 
 ```
 /Users/me/project  -->  -Users-me-project

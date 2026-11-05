@@ -14,7 +14,6 @@ The indexer is designed to be:
 
 import json
 import logging
-import re
 import sqlite3
 import sys
 import threading
@@ -693,16 +692,18 @@ def _detect_project_path(session, encoded_name: str) -> Optional[str]:
 
     Tries working directories first, then decodes the encoded name.
     """
+    from models.project import Project
+
     # The cwd Claude Code named the dir after, else the one the session started in
     working_dirs = session.get_working_directories()
     if working_dirs:
-        return next((d for d in working_dirs if _encodes_to(d, encoded_name)), working_dirs[0])
+        return next(
+            (d for d in working_dirs if Project.encodes_to(d, encoded_name)), working_dirs[0]
+        )
 
     # Fallback: Decode from encoded name (lossy for paths with hyphens).
     # Only use the decoded path if it actually exists on disk, to avoid
     # storing wrong paths (e.g. "claude-karma" → "claude/karma").
-    from models.project import Project
-
     decoded = Project.decode_path(encoded_name)
     if Path(decoded).is_dir():
         return decoded
@@ -901,18 +902,6 @@ def _session_project_paths(conn: sqlite3.Connection, encoded_name: str) -> list[
     return [r[0] for r in rows]
 
 
-def _claude_dir_name(path: str) -> str:
-    """The dir name Claude Code gives a project: every non-alphanumeric becomes a dash."""
-    return re.sub(r"[^a-zA-Z0-9]", "-", path)
-
-
-def _encodes_to(path: str, encoded_name: str) -> bool:
-    """Whether Claude Code would name a project dir `encoded_name` for `path`."""
-    # Windows drive letters appear as both C-- and c--
-    fold = str.lower if sys.platform == "win32" else str
-    return fold(_claude_dir_name(path)) == fold(encoded_name)
-
-
 def _resolve_project_path(encoded_name: str, candidate_paths: list) -> str:
     """Pick the project_path whose encoding matches the encoded_name.
 
@@ -930,10 +919,10 @@ def _resolve_project_path(encoded_name: str, candidate_paths: list) -> str:
 
     # Find all paths whose encoding matches the encoded_name
     # (multiple paths can match due to lossy encoding: / and - both become -)
-    matches = [p for p in candidate_paths if p and _encodes_to(p, encoded_name)]
+    matches = [p for p in candidate_paths if p and Project.encodes_to(p, encoded_name)]
 
     if matches:
-        matches.sort(key=lambda p: _claude_dir_name(p) != encoded_name)  # exact case first
+        matches.sort(key=lambda p: Project.encode_path(p) != encoded_name)  # exact case first
         # Prefer the match that exists on disk
         for path in matches:
             if Path(path).is_dir():
@@ -1021,6 +1010,11 @@ def _update_project_summaries(conn: sqlite3.Connection) -> None:
             ),
         )
 
+    # A project whose sessions moved or were removed must not stay listed
+    conn.execute(
+        "DELETE FROM projects WHERE encoded_name NOT IN "
+        "(SELECT project_encoded_name FROM sessions WHERE project_encoded_name IS NOT NULL)"
+    )
     conn.commit()
 
 

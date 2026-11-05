@@ -1297,6 +1297,48 @@ class TestExtractRealPathFromSessions:
         assert result == "C:/Users/test/myproject"
 
 
+class TestFromEncodedNameRecoversRealPath:
+    """from_encoded_name() checks a session's cwd against Claude Code's dir naming."""
+
+    @staticmethod
+    def _project_with_cwd(base: Path, encoded: str, cwd: str, **kwargs) -> Project:
+        project_dir = base / "projects" / encoded
+        project_dir.mkdir(parents=True)
+        (project_dir / "session-1.jsonl").write_text(
+            json.dumps({"type": "user", "cwd": cwd}) + "\n", encoding="utf-8"
+        )
+        return Project.from_encoded_name(encoded, claude_projects_dir=base / "projects", **kwargs)
+
+    @pytest.mark.parametrize(
+        "encoded, cwd, expected",
+        [
+            ("-Users-me-my-repo", "/Users/me/my_repo", "/Users/me/my_repo"),
+            ("-Users-me-site-v1-2", "/Users/me/site.v1.2", "/Users/me/site.v1.2"),
+            ("-Users-me-my-repo--2-", "/Users/me/my repo (2)", "/Users/me/my repo (2)"),
+            (
+                "-Users-me-repo--claude-worktrees-wt",
+                "/Users/me/repo/.claude/worktrees/wt",
+                "/Users/me/repo/.claude/worktrees/wt",
+            ),
+            ("C--Users-me-my-repo", "C:\\Users\\me\\my_repo", "C:/Users/me/my_repo"),
+        ],
+    )
+    def test_path_with_punctuation_is_recovered(self, tmp_path, encoded, cwd, expected):
+        assert self._project_with_cwd(tmp_path, encoded, cwd).path == expected
+
+    def test_cwd_of_another_project_falls_back_to_decode(self, tmp_path):
+        project = self._project_with_cwd(tmp_path, "-Users-me-my-repo", "/Users/me/other_repo")
+        assert project.path == "/Users/me/my/repo"
+
+    def test_drive_letter_case_is_ignored_for_windows_paths(self, tmp_path):
+        project = self._project_with_cwd(tmp_path, "c--Users-me-my-repo", "C:\\Users\\me\\my-repo")
+        assert project.path == "C:/Users/me/my-repo"
+
+    def test_case_matters_for_posix_paths(self, tmp_path):
+        project = self._project_with_cwd(tmp_path, "-Users-me-my-repo", "/users/me/my-repo")
+        assert project.path == "/Users/me/my/repo"
+
+
 class TestFromEncodedNameSkipPathRecovery:
     """Tests for Project.from_encoded_name() with skip_path_recovery parameter."""
 
