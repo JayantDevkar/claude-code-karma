@@ -485,15 +485,113 @@ def test_upgrade_reindexes_sessions_stored_with_a_stray_path(mem_db):
     mtimes = dict(mem_db.execute("SELECT uuid, jsonl_mtime FROM sessions").fetchall())
     assert mtimes == {
         "good": 100.0,
-        "stray": 99.0,
+        "stray": 98.0,  # v27 and v28 both flag it
         "no-path": 100.0,
         "no-project": 100.0,
         "case-only": 100.0,
     }
 
 
-def test_drive_letter_case_still_matches_on_windows(monkeypatch):
-    monkeypatch.setattr(indexer.sys, "platform", "win32")
+def _add_cwd(path, cwd):
+    with path.open("a", encoding="utf-8") as f:
+        line = {
+            "type": "user",
+            "uuid": f"{path.stem}-cd",
+            "sessionId": path.stem,
+            "cwd": cwd,
+            "timestamp": "2026-10-01T10:01:00.000Z",
+            "message": {"role": "user", "content": "next"},
+        }
+        f.write(json.dumps(line) + "\n")
+
+
+def _downgrade_to_v26(conn, stray_paths, project_path):
+    """Put back what the old indexer stored, leaving jsonl_mtime as it is."""
+    for uuid, path in stray_paths.items():
+        conn.execute("UPDATE sessions SET project_path = ? WHERE uuid = ?", (path, uuid))
+    conn.execute("UPDATE projects SET project_path = ?", (project_path,))
+    conn.execute("DELETE FROM schema_version")
+    conn.execute("INSERT INTO schema_version (version) VALUES (26)")
+    conn.commit()
+
+
+def test_upgrade_repairs_a_session_sharing_its_projects_stray_path(machines, mem_db):
+    local, _, _ = machines
+    scratch = "/Users/me/scratch"
+    shared = _write_session(local / "-Users-me-repo", "shared", scratch)
+    _add_cwd(shared, "/Users/me/repo")
+    subdir = _write_session(local / "-Users-me-repo", "subdir", "/Users/me/repo")
+    _add_cwd(subdir, "/Users/me/repo/hooks")
+    indexer.sync_all_projects(mem_db)
+    _downgrade_to_v26(mem_db, {"shared": scratch, "subdir": "/Users/me/repo/hooks"}, scratch)
+
+    ensure_schema(mem_db)
+    indexer.sync_all_projects(mem_db)
+
+    paths = dict(mem_db.execute("SELECT uuid, project_path FROM sessions").fetchall())
+    assert paths == {"shared": "/Users/me/repo", "subdir": "/Users/me/repo"}
+    row = mem_db.execute("SELECT project_path FROM projects").fetchone()
+    assert row[0] == "/Users/me/repo"
+
+
+def test_upgrade_repairs_a_projects_only_session_with_a_stray_path(machines, mem_db):
+    """Session and project agree, so comparing them finds nothing wrong."""
+    local, _, _ = machines
+    only = _write_session(local / "-Users-me-repo", "only", "/Users/me/repo")
+    _add_cwd(only, "/Users/me/repo/hooks")
+    indexer.sync_all_projects(mem_db)
+    stray = "/Users/me/repo/hooks"
+    _downgrade_to_v26(mem_db, {"only": stray}, stray)
+
+    ensure_schema(mem_db)
+    indexer.sync_all_projects(mem_db)
+
+    row = mem_db.execute("SELECT project_path FROM sessions WHERE uuid = 'only'").fetchone()
+    assert row[0] == "/Users/me/repo"
+    row = mem_db.execute("SELECT project_path FROM projects").fetchone()
+    assert row[0] == "/Users/me/repo"
+
+
+@pytest.mark.parametrize("name", ["my_repo", "my.repo"])
+def test_session_in_a_scratch_dir_finds_a_project_dir_with_punctuation(machines, mem_db, name):
+    """Claude Code names the dir with every non-alphanumeric character as a dash."""
+    local, _, _ = machines
+    path = _write_session(local / "-Users-me-my-repo", "s3", "/Users/me/scratch")
+    _add_cwd(path, f"/Users/me/{name}")
+    indexer.sync_all_projects(mem_db)
+
+    row = mem_db.execute("SELECT project_path FROM sessions WHERE uuid = 's3'").fetchone()
+    assert row[0] == f"/Users/me/{name}"
+
+
+def test_upgrade_leaves_paths_that_encode_to_their_project_alone(mem_db):
+    mem_db.execute(
+        "INSERT INTO projects (encoded_name, project_path) "
+        "VALUES ('-Users-me-my-repo', '/Users/me/my_repo')"
+    )
+    rows = (
+        ("good", "/Users/me/my_repo"),
+        ("no-path", None),
+        ("case-only", "/USERS/me/my_repo"),
+        ("stray", "/Users/me/scratch"),
+    )
+    for uuid, path in rows:
+        mem_db.execute(
+            "INSERT INTO sessions (uuid, project_encoded_name, project_path, jsonl_mtime) "
+            "VALUES (?, '-Users-me-my-repo', ?, 100.0)",
+            (uuid, path),
+        )
+    mem_db.execute("DELETE FROM schema_version")
+    mem_db.execute("INSERT INTO schema_version (version) VALUES (27)")
+    mem_db.commit()
+
+    ensure_schema(mem_db)
+
+    mtimes = dict(mem_db.execute("SELECT uuid, jsonl_mtime FROM sessions").fetchall())
+    assert mtimes == {"good": 100.0, "no-path": 100.0, "case-only": 100.0, "stray": 99.0}
+
+
+def test_drive_letter_case_still_matches_for_windows_paths():
     # Without the match, the shortest-path fallback would pick the stray path
     picked = indexer._resolve_project_path("c--work-repo", ["C:\\s", "C:\\work\\repo"])
     assert picked == "C:\\work\\repo"
@@ -666,6 +764,25 @@ def test_nested_duplicate_and_file_roots_are_rejected(tmp_path, monkeypatch):
     )
     session_roots.clear_cache()
     assert [r.name for r in session_roots.get_extra_roots()] == ["good", "missing"]
+
+
+@pytest.mark.parametrize(
+    "local_dir, local_cwd, remote_dir, remote_cwd",
+    [
+        ("-work-my-repo", "/work/my_repo", "-home-me-my-repo", "/home/me/my_repo"),
+        ("-work-site-v1-2", "/work/site.v1.2", "-home-me-site-v1-2", "/home/me/site.v1.2"),
+    ],
+)
+def test_path_map_matches_paths_with_punctuation(
+    machines, local_dir, local_cwd, remote_dir, remote_cwd
+):
+    local, remote, configure = machines
+    configure(path_map={"/home/me": "/work"})
+    _write_session(local / local_dir, "l1", local_cwd)
+    _write_session(remote / remote_dir, "r1", remote_cwd)
+
+    (rd,) = get_remote_dirs()
+    assert (rd.canonical, rd.matched_by) == (local_dir, "path_map")
 
 
 def test_path_map_root_prefix_is_ignored(machines):

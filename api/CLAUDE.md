@@ -101,8 +101,8 @@ Project (entry point)
 
 ### Path Encoding
 
-Project paths are URL-encoded: leading `/` becomes `-`, all `/` become `-`
-- `/Users/me/repo` → `-Users-me-repo`
+Project paths are encoded: every character except ASCII letters and digits becomes `-`; names over 200 characters are cut and get a hash suffix (`Project.encode_path`)
+- `/Users/me/my_repo` → `-Users-me-my-repo`
 
 ## Key Patterns
 

@@ -10,7 +10,7 @@ import sqlite3
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 27
+SCHEMA_VERSION = 28
 
 SCHEMA_SQL = """
 -- Schema versioning
@@ -877,6 +877,24 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
                     "UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1 "
                     "WHERE project_path <> (SELECT p.project_path FROM projects p "
                     "WHERE p.encoded_name = sessions.project_encoded_name) COLLATE NOCASE"
+                )
+
+        if current_version < 28:
+            logger.info(
+                "Migrating → v28: re-index sessions whose project_path isn't their project "
+                "dir's (v27 compared against a project path that could be stray too)"
+            )
+            has_sessions = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='sessions'"
+            ).fetchone()
+            if has_sessions and not columns_added:
+                from models.project import Project
+
+                conn.create_function("encodes_to", 2, Project.encodes_to, deterministic=True)
+                conn.execute(
+                    "UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1 "
+                    "WHERE project_path IS NOT NULL "
+                    "AND NOT encodes_to(LOWER(project_path), LOWER(project_encoded_name))"
                 )
 
     # Record version

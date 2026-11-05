@@ -130,8 +130,7 @@ class TestIsWorktreeProject:
     def test_worktree_with_dot_encoding(self):
         from services.desktop_sessions import is_worktree_project
 
-        # Our encode_path preserves dots: -.claude-worktrees- does NOT
-        # contain -claude-worktrees- (dot != dash), so this is False
+        # -.claude-worktrees- does NOT contain -claude-worktrees- (dot != dash)
         assert not is_worktree_project("-Users-test-.claude-worktrees-myproject-focused-jepsen")
 
     def test_worktree_with_dash_encoding(self):
@@ -292,8 +291,8 @@ class TestExtractWorktreeInfo:
             assert result["project_name"] == "myproject"
             assert result["worktree_name"] == "focused-jepsen"
 
-    def test_dot_dash_encoding_variant(self, tmp_path):
-        """Test that dots-replaced-by-dashes encoding also matches."""
+    def test_dotted_worktree_base_matches(self, tmp_path):
+        """The real ~/.claude-worktrees base has a dot, which Claude Code encodes as a dash."""
         wt_base = tmp_path / ".claude-worktrees"
         project_dir = wt_base / "myproject"
         worktree_dir = project_dir / "focused-jepsen"
@@ -302,13 +301,12 @@ class TestExtractWorktreeInfo:
         from models.project import Project
 
         encoded = Project.encode_path(str(worktree_dir))
-        # Simulate Claude Code's dot->dash encoding
-        encoded_dots = encoded.replace(".", "-")
+        assert "--claude-worktrees-" in encoded
 
         with patch("services.desktop_sessions.WORKTREE_BASE", wt_base):
             from services.desktop_sessions import extract_worktree_info
 
-            result = extract_worktree_info(encoded_dots)
+            result = extract_worktree_info(encoded)
             assert result is not None
             assert result["project_name"] == "myproject"
             assert result["worktree_name"] == "focused-jepsen"
