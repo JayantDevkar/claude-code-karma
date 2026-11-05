@@ -55,6 +55,7 @@ from models.live_session import (
     load_live_session,
 )
 from models.project import Project
+from models.session import Session
 from routers.projects import safely_resolve_project
 from schemas import (
     LiveSessionsResponse,
@@ -86,6 +87,11 @@ _session_stats_cache: BoundedCache[tuple[int | None, int | None, str | None]] = 
 # Slightly longer TTL since project structure changes less often
 _project_sessions_cache: BoundedCache[dict] = BoundedCache(
     BoundedCacheConfig(max_size=50, ttl_seconds=60)
+)
+
+# Cache for active durations: transcript path -> (st_mtime_ns, st_size, active seconds)
+_active_duration_cache: BoundedCache[tuple[int, int, float | None]] = BoundedCache(
+    BoundedCacheConfig(max_size=200, ttl_seconds=3600)
 )
 
 # Activity threshold (seconds)
@@ -164,6 +170,29 @@ def determine_status(state: LiveSessionState) -> SessionStatus:
     return SessionStatus.ACTIVE
 
 
+def live_active_duration(state: LiveSessionState) -> float:
+    """Active time from the transcript, as on the session page; wall clock if it can't be read."""
+    span = state.duration_seconds
+    if not state.transcript_path:
+        return span
+    path = Path(state.transcript_path)
+    try:
+        st = path.stat()
+    except OSError:
+        return span
+    cached = _active_duration_cache.get(str(path))
+    if cached is not None and cached[:2] == (st.st_mtime_ns, st.st_size):
+        active = cached[2]
+    else:
+        try:
+            active = Session.from_path(path).duration_seconds
+        except Exception as e:
+            logger.debug("Could not compute active duration for %s: %s", state.session_id, e)
+            return span
+        _active_duration_cache[str(path)] = (st.st_mtime_ns, st.st_size, active)
+    return span if active is None else active
+
+
 def state_to_summary(
     state: LiveSessionState,
     message_count: int | None = None,
@@ -224,7 +253,7 @@ def state_to_summary(
         project_encoded_name=state.resolved_project_encoded_name,
         started_at=state.started_at,
         updated_at=state.updated_at,
-        duration_seconds=state.duration_seconds,
+        duration_seconds=live_active_duration(state),
         idle_seconds=state.idle_seconds,
         last_hook=state.last_hook,
         permission_mode=state.permission_mode,
@@ -388,7 +417,9 @@ async def list_live_sessions(
     for state in states:
         # Get stats from batch-loaded map
         message_count, subagent_count, slug = stats_map.get(state.session_id, (None, None, None))
-        summary = state_to_summary(state, message_count, subagent_count, slug)
+        summary = await asyncio.to_thread(
+            state_to_summary, state, message_count, subagent_count, slug
+        )
         sessions.append(summary)
 
         # Count by status category
@@ -453,9 +484,17 @@ async def list_active_sessions(
         # Include ended sessions for 5 minutes, then filter them out
         if status == SessionStatus.ENDED:
             if state.idle_seconds <= ENDED_DISPLAY_THRESHOLD:
-                active_sessions.append(state_to_summary(state, message_count, subagent_count, slug))
+                active_sessions.append(
+                    await asyncio.to_thread(
+                        state_to_summary, state, message_count, subagent_count, slug
+                    )
+                )
         else:
-            active_sessions.append(state_to_summary(state, message_count, subagent_count, slug))
+            active_sessions.append(
+                await asyncio.to_thread(
+                    state_to_summary, state, message_count, subagent_count, slug
+                )
+            )
 
     # Sort by last activity (most recent first)
     active_sessions.sort(key=lambda s: s.updated_at, reverse=True)
@@ -512,10 +551,16 @@ async def list_project_live_sessions(
         if status == SessionStatus.ENDED:
             if state.idle_seconds <= PROJECT_ENDED_DISPLAY_THRESHOLD:
                 project_sessions.append(
-                    state_to_summary(state, message_count, subagent_count, slug)
+                    await asyncio.to_thread(
+                        state_to_summary, state, message_count, subagent_count, slug
+                    )
                 )
         else:
-            project_sessions.append(state_to_summary(state, message_count, subagent_count, slug))
+            project_sessions.append(
+                await asyncio.to_thread(
+                    state_to_summary, state, message_count, subagent_count, slug
+                )
+            )
 
     # Sort by last activity (most recent first)
     project_sessions.sort(key=lambda s: s.updated_at, reverse=True)
