@@ -1018,6 +1018,8 @@ The branch detector has no timeout entry because it self-times-out at 2 seconds 
 
 `project_identity.py` writes `karma-project.json` (normalized git remote, subdir within the repo, project path) into the session's project dir on each session start. The file records which repository a project dir belongs to, independent of where the repo lives on disk; tools that read synced copies of `~/.claude` from several machines can use it to match the same project across different paths. The hook writes nothing else.
 
+It writes only into the project dir Claude Code made for the current working directory. A session resumed or compacted after a `cd` into another repo gets no sidecar in its start dir's project dir, and a sidecar an older version wrote there is removed on the next session start in that dir.
+
 ```bash
 ln -sf "$(cd hooks && pwd)/project_identity.py" ~/.claude/hooks/project_identity.py
 ```
@@ -1036,11 +1038,11 @@ ln -sf "$(cd hooks && pwd)/project_identity.py" ~/.claude/hooks/project_identity
 ]
 ```
 
-Like the branch detector, it is silent on every failure; each of its two git calls self-times-out at 2 seconds (4 seconds worst case), so the 10-second timeout is a safety net. It only writes when the identity changed, and only into the session's project dir (a dir inside a `projects` dir).
+Like the branch detector, it is silent on every failure; each of its two git calls self-times-out at 2 seconds (4 seconds worst case), so the 10-second timeout is a safety net. It only writes when the identity changed, and only into the project dir Claude Code made for the session's cwd.
 
 Two things to know about the sidecar's lifecycle:
 
-- The hook only ever writes. If the `origin` remote is later removed (or the directory stops being a git checkout), the hook writes nothing and the existing `karma-project.json` stays as it was. Delete it by hand if the stale identity matters.
+- The hook removes a sidecar only when its `project_path` belongs to another dir. If the `origin` remote is later removed (or the directory stops being a git checkout), the hook writes nothing and the existing `karma-project.json` stays as it was. Delete it by hand if the stale identity matters.
 - The hook compares only `git_identity`, `subdir` and `project_path`. When any of those changed, it rewrites the whole file, so any extra keys another tool added are lost.
 
 ### Removing a Hook

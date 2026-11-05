@@ -35,6 +35,12 @@ from typing import Optional
 SIDECAR_NAME = "karma-project.json"
 TMP_NAME = ".karma-project.json.tmp"
 
+# Claude Code's project dir naming (see encode_project_dir)
+_ALNUM_RE = re.compile(r"[A-Za-z0-9]")
+_DRIVE_RE = re.compile(r"^[A-Za-z]:")
+_MAX_ENCODED_LEN = 200
+_BASE36 = "0123456789abcdefghijklmnopqrstuvwxyz"
+
 # Inlined from api/services/git_identity.py (hooks can't import api).
 _SCP_RE = re.compile(r"^[^@]+@[^:]+:(?P<path>.+)$")
 _URL_RE = re.compile(r"^[a-z]+://(?:[^@/]+@)?[^/]+/(?P<path>.+)$", re.IGNORECASE)
@@ -136,6 +142,64 @@ def build_identity(cwd: str) -> Optional[dict]:
     }
 
 
+def _utf16_units(s: str) -> list:
+    data = s.encode("utf-16-le", "surrogatepass")
+    return [int.from_bytes(data[i : i + 2], "little") for i in range(0, len(data), 2)]
+
+
+def _base36(n: int) -> str:
+    out = ""
+    while True:
+        n, r = divmod(n, 36)
+        out = _BASE36[r] + out
+        if not n:
+            return out
+
+
+def encode_project_dir(path: str) -> str:
+    """Claude Code's project dir name for a cwd (per UTF-16 unit; long names hashed)."""
+    units = _utf16_units(path)
+    encoded = "".join(
+        chr(u) if u < 128 and _ALNUM_RE.match(chr(u)) else "-" for u in units
+    )
+    if len(encoded) <= _MAX_ENCODED_LEN:
+        return encoded
+    h = 0
+    for u in units:  # (h << 5) - h + u, as a signed 32-bit int
+        h = (h * 31 + u) & 0xFFFFFFFF
+    if h >= 0x80000000:
+        h -= 0x100000000
+    return encoded[:_MAX_ENCODED_LEN] + "-" + _base36(abs(h))
+
+
+def dir_matches_cwd(dir_name: str, cwd: str) -> bool:
+    """True if dir_name is cwd's own project dir, not a start dir left after a cd."""
+    candidates = {cwd}
+    try:
+        candidates.add(os.path.realpath(cwd))
+    except (OSError, ValueError):
+        pass
+    # Windows paths (drive letters show up in either case) compare case-insensitively
+    if _DRIVE_RE.match(cwd):
+        return any(encode_project_dir(c).lower() == dir_name.lower() for c in candidates)
+    return any(encode_project_dir(c) == dir_name for c in candidates)
+
+
+def drop_misplaced_sidecar(project_dir: Path) -> None:
+    """Delete a sidecar an older version wrote after a cd (project_path of another dir)."""
+    target = project_dir / SIDECAR_NAME
+    try:
+        existing = json.loads(target.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    path = existing.get("project_path") if isinstance(existing, dict) else None
+    if isinstance(path, str) and path and not dir_matches_cwd(project_dir.name, path):
+        try:
+            target.unlink()
+        except OSError:
+            pass
+
+
 def write_sidecar(project_dir: Path, data: dict) -> bool:
     """Atomically write the sidecar; skip if unchanged. Never raises."""
     target = project_dir / SIDECAR_NAME
@@ -192,6 +256,9 @@ def main() -> None:
         if project_dir.resolve().parent != projects_dir or not project_dir.is_dir():
             return
     except (OSError, RuntimeError):
+        return
+    drop_misplaced_sidecar(project_dir)
+    if not dir_matches_cwd(project_dir.name, cwd):
         return
 
     data = build_identity(cwd)
