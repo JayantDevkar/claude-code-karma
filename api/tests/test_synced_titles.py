@@ -30,6 +30,7 @@ def _write_synced(
     end: str = "2026-11-02T10:00:05.000Z",
     cost_state: bool = True,
     truncated: bool = False,
+    trailing: tuple[str, ...] = (),
 ) -> Path:
     project_dir.mkdir(parents=True, exist_ok=True)
     lines = [
@@ -62,6 +63,7 @@ def _write_synced(
         text += '{"type": "cost-st'
     elif cost_state:
         text += json.dumps({"type": "cost-state", "sessionId": uuid}) + "\n"
+    text += "".join(json.dumps({"type": kind, "sessionId": uuid}) + "\n" for kind in trailing)
     path = project_dir / f"{uuid}.jsonl"
     path.write_text(text, encoding="utf-8")
     return path
@@ -103,16 +105,20 @@ def mem_db():
 class _FakeGenerator:
     def __init__(self):
         self.calls = []
+        self.result = ("Fix login redirect", "haiku")
 
-    def __call__(self, prompt, response, git):
+    def __call__(self, prompt, response, git, claude_bin="claude"):
         self.calls.append((prompt, response, git))
-        return "Fix login redirect", "haiku"
+        self.claude_bin = claude_bin
+        return self.result
 
 
 @pytest.fixture
 def fake(monkeypatch):
     gen = _FakeGenerator()
     monkeypatch.setattr(synced_titles, "load_title_generator", lambda: gen)
+    monkeypatch.setattr(synced_titles, "find_claude_cli", lambda: "/opt/claude/bin/claude")
+    monkeypatch.setattr(synced_titles, "_fallbacks", {})
     return gen
 
 
@@ -147,7 +153,9 @@ def test_reindex_does_not_retitle(machines, mem_db, fake):
     assert len(fake.calls) == 1 and _row(mem_db, "r1")["title_attempted_at"] is not None
 
 
-@pytest.mark.parametrize("case", ["flag_off", "no_cost_state", "ended_25h_ago", "local_session"])
+@pytest.mark.parametrize(
+    "case", ["flag_off", "no_cost_state", "resumed", "ended_25h_ago", "local_session"]
+)
 def test_not_titled(case, machines, mem_db, fake):
     local, remote, configure = machines
     configure(auto_titles=case != "flag_off")
@@ -155,6 +163,8 @@ def test_not_titled(case, machines, mem_db, fake):
         _write_synced(local / PROJECT, "l1", "Add a cart page")
     elif case == "no_cost_state":
         _write_synced(remote / PROJECT, "r1", "Add a cart page", cost_state=False)
+    elif case == "resumed":
+        _write_synced(remote / PROJECT, "r1", "Add a cart page", trailing=("system", "user"))
     elif case == "ended_25h_ago":
         _write_synced(remote / PROJECT, "r1", "Add a cart page", end="2026-11-01T10:00:05.000Z")
     else:
@@ -164,18 +174,80 @@ def test_not_titled(case, machines, mem_db, fake):
     assert title_synced_sessions(mem_db, now=NOW) == 0 and fake.calls == []
 
 
-def test_fallback_title_is_not_stored(machines, mem_db, fake, monkeypatch):
+def test_resolved_cli_is_passed_to_the_generator(machines, mem_db, fake):
     _, remote, configure = machines
     configure(auto_titles=True)
     _write_synced(remote / PROJECT, "r1", "Fix the login redirect")
     indexer.sync_all_projects(mem_db)
-    monkeypatch.setattr(
-        _FakeGenerator, "__call__", lambda self, p, r, g: ("Fix the lo", "fallback")
-    )
 
+    assert title_synced_sessions(mem_db, now=NOW) == 1
+    assert fake.claude_bin == "/opt/claude/bin/claude"
+
+
+def test_cli_found_outside_path(monkeypatch, tmp_path):
+    cli = tmp_path / "bin" / "claude"
+    cli.parent.mkdir()
+    cli.write_text("#!/bin/sh\n")
+    cli.chmod(0o755)
+    monkeypatch.setattr(synced_titles.shutil, "which", lambda name: None)
+    monkeypatch.setattr(synced_titles, "_CLAUDE_DIRS", (tmp_path / "nope", cli.parent))
+    assert synced_titles.find_claude_cli() == str(cli)
+
+
+def test_missing_cli_marks_nothing_and_warns_once(machines, mem_db, fake, monkeypatch, caplog):
+    _, remote, configure = machines
+    configure(auto_titles=True)
+    _write_synced(remote / PROJECT, "r1", "Fix the login redirect")
+    indexer.sync_all_projects(mem_db)
+    monkeypatch.setattr(synced_titles, "find_claude_cli", lambda: None)
+    monkeypatch.setattr(synced_titles, "_warned_no_cli", False)
+
+    with caplog.at_level("WARNING", logger="services.synced_titles"):
+        assert title_synced_sessions(mem_db, now=NOW) == 0
+        assert title_synced_sessions(mem_db, now=NOW) == 0
+    assert fake.calls == [] and _row(mem_db, "r1")["title_attempted_at"] is None
+    assert len([r for r in caplog.records if "claude CLI" in r.message]) == 1
+
+
+def test_fallback_is_retried_then_given_up(machines, mem_db, fake):
+    _, remote, configure = machines
+    configure(auto_titles=True)
+    _write_synced(remote / PROJECT, "r1", "Fix the login redirect")
+    indexer.sync_all_projects(mem_db)
+    fake.result = ("Fix the lo", "fallback")
+
+    for _ in range(synced_titles.MAX_FALLBACKS - 1):
+        assert title_synced_sessions(mem_db, now=NOW) == 0
+        assert _row(mem_db, "r1")["title_attempted_at"] is None
     assert title_synced_sessions(mem_db, now=NOW) == 0
     row = _row(mem_db, "r1")
     assert row["session_titles"] in (None, "", "[]") and row["title_attempted_at"] is not None
+    title_synced_sessions(mem_db, now=NOW)
+    assert len(fake.calls) == synced_titles.MAX_FALLBACKS
+
+
+def test_fallback_ends_the_pass(machines, mem_db, fake):
+    _, remote, configure = machines
+    configure(auto_titles=True)
+    _write_synced(remote / PROJECT, "r1", "Fix the login redirect", end="2026-11-02T10:30:05.000Z")
+    _write_synced(remote / PROJECT, "r2", "Add a cart page")
+    indexer.sync_all_projects(mem_db)
+    fake.result = ("Fix the lo", "fallback")
+
+    assert title_synced_sessions(mem_db, now=NOW) == 0
+    assert len(fake.calls) == 1 and _row(mem_db, "r2")["title_attempted_at"] is None
+    fake.result = ("Fix login redirect", "haiku")
+    assert title_synced_sessions(mem_db, now=NOW) == 2
+
+
+def test_bookkeeping_after_cost_state_still_counts_as_ended(machines, mem_db, fake):
+    _, remote, configure = machines
+    configure(auto_titles=True)
+    trailing = ("file-history-snapshot", "system", "pr-link", "queue-operation")
+    _write_synced(remote / PROJECT, "r1", "Fix the login redirect", trailing=trailing)
+    indexer.sync_all_projects(mem_db)
+
+    assert title_synced_sessions(mem_db, now=NOW) == 1
 
 
 def test_unended_sessions_do_not_starve_ended_ones(machines, mem_db, fake):
