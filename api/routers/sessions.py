@@ -58,6 +58,7 @@ from services.session_filter import (
     determine_session_status,
 )
 from services.session_title_cache import title_cache
+from services.session_title_store import store_session_title
 
 logger = logging.getLogger(__name__)
 
@@ -1856,45 +1857,8 @@ def set_session_title(uuid: str, request: SetTitleRequest):
     if not result:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    encoded_name = result.project_encoded_name
     title = request.title
-
-    # Update SessionTitleCache
-    title_cache.set_title(encoded_name, uuid, title)
-
-    # Update SQLite if available
-    if settings.use_sqlite:
-        try:
-            from db.connection import get_writer_db
-
-            conn = get_writer_db()
-            # Get existing titles, prepend new one
-            row = conn.execute(
-                "SELECT session_titles FROM sessions WHERE uuid = ?", (uuid,)
-            ).fetchone()
-
-            if row:
-                existing_titles = []
-                if row["session_titles"]:
-                    try:
-                        existing_titles = json.loads(row["session_titles"])
-                    except json.JSONDecodeError:
-                        pass
-
-                # Prepend new title if not already present
-                if title not in existing_titles:
-                    new_titles = [title] + existing_titles
-                else:
-                    new_titles = existing_titles
-
-                conn.execute(
-                    "UPDATE sessions SET session_titles = ? WHERE uuid = ?",
-                    (json.dumps(new_titles), uuid),
-                )
-                conn.commit()
-        except Exception as e:
-            logger.warning("Failed to update SQLite for session %s: %s", uuid, e)
-            # Don't fail the request if SQLite update fails
+    store_session_title(result.project_encoded_name, uuid, title)
 
     return JSONResponse(
         content={"status": "ok", "uuid": uuid, "title": title},

@@ -325,6 +325,17 @@ def extract_prompt_from_content(content: str) -> str:
     return ""
 
 
+_SPAWN_RELAY_NOTE = re.compile(
+    r'\A\s*<relay\b[^>]*\breason="spawn"[^>]*>.*?<note>(.*?)</note>', re.DOTALL
+)
+
+
+def _spawn_relay_note(content: str) -> Optional[str]:
+    """Return the coordinator's note from a spawn relay, or None for any other content."""
+    match = _SPAWN_RELAY_NOTE.match(content)
+    return (match.group(1).strip() or None) if match else None
+
+
 def prompt_from_user_message(
     msg: "UserMessage", prev: Optional["UserMessage"] = None
 ) -> Optional[str]:
@@ -336,6 +347,8 @@ def prompt_from_user_message(
     messages without arguments (e.g., /clear), and the built-in command a
     caveat introduces, even with arguments (e.g., /model fable).
 
+    Exception: a coordinator's <relay reason="spawn"> returns its <note>.
+
     Args:
         msg: The user message to inspect
         prev: The user message before msg, if any
@@ -343,8 +356,10 @@ def prompt_from_user_message(
     Returns:
         The extracted prompt, or None if the message is not a real user prompt
     """
-    if not msg.content or msg.is_tool_result or msg.is_meta:
+    if not msg.content or msg.is_tool_result:
         return None
+    if msg.is_meta:
+        return _spawn_relay_note(msg.content)
     if msg.content.lstrip().startswith("<local-command-stdout>"):
         return None
     if (

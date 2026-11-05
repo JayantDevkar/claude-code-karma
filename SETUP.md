@@ -836,12 +836,15 @@ Create `~/.claude_karma/extra-roots.json` (or set `CLAUDE_KARMA_EXTRA_ROOTS` to 
     "path": "D:/Sync/laptop/.claude",
     "path_map": { "/home/me/code": "C:/Users/me/code" },
     "project_map": { "-home-me-scratch": "C--Users-me-code-playground" },
-    "match_by_name": false
+    "match_by_name": false,
+    "auto_titles": false
   }
 ]
 ```
 
 Only `path` is required. `name` (letters, digits, `._-`) identifies that machine; it defaults to the name of the folder containing `.claude` (`laptop` above). A root that is a file, duplicates another root's path, or overlaps this machine's own `~/.claude` is ignored with a warning; a path that does not exist yet (drive unmounted, sync paused) is kept. If the file or `CLAUDE_KARMA_EXTRA_ROOTS` fails to parse, Karma keeps the last roots it loaded and skips the "removed root" cleanup until it parses again. While any entry is ignored, that cleanup is skipped too, so a typo never deletes a root's sessions.
+
+**Titles.** The session title hook runs on the machine that ran the session, where no Karma API listens, so synced sessions arrive untitled. With `"auto_titles": true` Karma titles that root's sessions itself through Haiku once they end cleanly: one call per session through this machine's `claude` login, only sessions that ended in the last 24 hours, checked after each re-index. Older sessions are titled only by hand: `python api/scripts/backfill_titles.py --synced --dry-run` lists them, drop `--dry-run` to title them (`--limit N` caps the cost).
 
 ### Step M3: How Sessions Are Matched to Projects
 

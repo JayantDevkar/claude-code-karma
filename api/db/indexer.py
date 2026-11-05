@@ -1128,6 +1128,15 @@ async def run_periodic_sync(interval_seconds: int = 300) -> None:
             logger.info("Periodic reindex complete: %s", stats)
         except Exception as e:
             logger.warning("Periodic reindex failed: %s", e)
+            continue
+        try:
+            from services.synced_titles import title_synced_sessions
+
+            titled = await asyncio.to_thread(title_synced_sessions, conn)
+            if titled:
+                logger.info("Titled %d synced sessions", titled)
+        except Exception as e:
+            logger.warning("Synced session titling failed: %s", e)
 
 
 def run_background_sync() -> None:
