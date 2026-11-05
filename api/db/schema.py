@@ -54,6 +54,8 @@ CREATE TABLE IF NOT EXISTS sessions (
     source_encoded_name TEXT,
     -- Extra session root the JSONL was synced from; NULL = this machine
     source_root TEXT,
+    -- When Karma last asked Haiku for a synced session's title; NULL = never
+    title_attempted_at TEXT,
     indexed_at TEXT DEFAULT (datetime('now')),
     -- Per-session flag set to 1 when a session needs the bg-shells/cron
     -- extraction pass (v13). Cleared by the indexer after processing.
@@ -882,10 +884,11 @@ _SESSION_COLUMNS = [
     ("subagent_cache_read_tokens", "INTEGER DEFAULT 0"),
     ("subagent_cache_creation_tokens", "INTEGER DEFAULT 0"),
     ("source_root", "TEXT"),
+    ("title_attempted_at", "TEXT"),
 ]
 
 # Columns whose NULL default is already right for existing rows (all local).
-_NO_REINDEX_COLUMNS = {"source_root"}
+_NO_REINDEX_COLUMNS = {"source_root", "title_attempted_at"}
 
 
 def _ensure_session_columns(conn: sqlite3.Connection) -> bool:

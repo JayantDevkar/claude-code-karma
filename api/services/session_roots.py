@@ -69,6 +69,8 @@ class SessionRoot:
     path_map: tuple[tuple[str, str], ...] = ()
     project_map: tuple[tuple[str, str], ...] = ()
     match_by_name: bool = False
+    # Title this root's ended sessions through Haiku (one call each)
+    auto_titles: bool = False
     # claude_base resolved once at load time; root_for_path runs per session file
     resolved_base: Optional[Path] = None
 
@@ -165,6 +167,7 @@ def _parse_root(entry: object) -> Optional[SessionRoot]:
         path_map=tuple(path_map),
         project_map=project_map,
         match_by_name=bool(entry.get("match_by_name", False)),
+        auto_titles=bool(entry.get("auto_titles", False)),
     )
 
 

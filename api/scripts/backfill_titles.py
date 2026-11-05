@@ -11,6 +11,7 @@ Usage:
     python scripts/backfill_titles.py --dry-run
     python scripts/backfill_titles.py --limit 10
     python scripts/backfill_titles.py --project -Users-me-repo
+    python scripts/backfill_titles.py --synced --dry-run
 """
 
 import argparse
@@ -31,10 +32,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # Config
 API_BASE = os.environ.get("CLAUDE_KARMA_API", "http://localhost:8020")
-HAIKU_MODEL = "claude-haiku-4-5-20251001"
 MAX_PROMPT_LENGTH = 500
 MAX_RESPONSE_LENGTH = 300
-TITLE_MAX_WORDS = 10
 RATE_LIMIT_DELAY = 0.5  # seconds between Haiku calls
 
 
@@ -54,6 +53,11 @@ def main():
         "--project",
         help="Filter by project encoded name (e.g., -Users-me-repo)",
     )
+    parser.add_argument(
+        "--synced",
+        action="store_true",
+        help="Only sessions synced from other machines (extra roots), any age",
+    )
     args = parser.parse_args()
 
     # Get DB path
@@ -66,7 +70,7 @@ def main():
         sys.exit(1)
 
     # Query titleless sessions
-    sessions = get_titleless_sessions(db_path, args.project, args.limit)
+    sessions = get_titleless_sessions(db_path, args.project, args.limit, synced_only=args.synced)
 
     if not sessions:
         print("No sessions need titles.")
@@ -81,41 +85,52 @@ def main():
             print(f"  {uuid} ({encoded_name}): {prompt_preview}...")
         return
 
+    from services.synced_titles import load_title_generator
+
+    generate_title = load_title_generator()
+    if generate_title is None:
+        print("Error: cannot load hooks/session_title_generator.py")
+        sys.exit(1)
+
     # Process each session
     processed = 0
     errors = 0
 
     for uuid, encoded_name, initial_prompt in sessions:
         try:
-            # JSONL path: local file, else a copy synced from another machine
-            from services.session_roots import session_jsonl_path
+            if args.synced:
+                # Synced sessions: indexed prompt only, no git context (see the design spec)
+                user_prompt, assistant_response, git_context = initial_prompt, None, None
+            else:
+                # JSONL path: local file, else a copy synced from another machine
+                from services.session_roots import session_jsonl_path
 
-            jsonl_path = session_jsonl_path(encoded_name, uuid)
+                jsonl_path = session_jsonl_path(encoded_name, uuid)
 
-            if not jsonl_path.exists():
-                print(f"⚠ Skipping {uuid}: JSONL not found")
-                errors += 1
-                continue
+                if not jsonl_path.exists():
+                    print(f"⚠ Skipping {uuid}: JSONL not found")
+                    errors += 1
+                    continue
 
-            # Extract context from JSONL
-            user_prompt, assistant_response = extract_session_context(jsonl_path)
+                # Extract context from JSONL
+                user_prompt, assistant_response = extract_session_context(jsonl_path)
 
-            if not user_prompt:
-                # Fallback to DB initial_prompt if JSONL extraction failed
-                user_prompt = initial_prompt
+                if not user_prompt:
+                    # Fallback to DB initial_prompt if JSONL extraction failed
+                    user_prompt = initial_prompt
+
+                # Get git context (optional, may be None)
+                git_context = get_git_context(jsonl_path)
 
             if not user_prompt:
                 print(f"⚠ Skipping {uuid}: No prompt found")
                 errors += 1
                 continue
 
-            # Get git context (optional, may be None)
-            git_context = get_git_context(jsonl_path)
+            # Generate title; the hook's truncated-prompt fallback is not stored
+            title, source = generate_title(user_prompt, assistant_response, git_context)
 
-            # Generate title
-            title = generate_title(user_prompt, assistant_response, git_context)
-
-            if not title:
+            if not title or source == "fallback":
                 print(f"⚠ Skipping {uuid}: Title generation failed")
                 errors += 1
                 continue
@@ -145,6 +160,7 @@ def get_titleless_sessions(
     db_path: Path,
     project_filter: Optional[str] = None,
     limit: Optional[int] = None,
+    synced_only: bool = False,
 ) -> list[Tuple[str, str, Optional[str]]]:
     """
     Query SQLite for sessions without titles.
@@ -167,6 +183,9 @@ def get_titleless_sessions(
     if project_filter:
         query += " AND project_encoded_name = ?"
         params.append(project_filter)
+
+    if synced_only:
+        query += " AND source_root IS NOT NULL"
 
     query += " ORDER BY start_time DESC"
 
@@ -260,80 +279,6 @@ def get_git_context(jsonl_path: Path) -> Optional[str]:
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
         pass
 
-    return None
-
-
-def generate_title(
-    initial_prompt: str,
-    first_response: Optional[str],
-    git_context: Optional[str],
-) -> Optional[str]:
-    """
-    Generate a concise session title.
-
-    Priority:
-    1. Git commit messages (if available) — free, no LLM needed
-    2. Claude Haiku via `claude -p --no-session-persistence` (matches hook logic)
-    3. Returns None on failure (does NOT fall back to truncated prompt)
-    """
-    # 1. Use most recent git commit message as title if available
-    if git_context:
-        first_commit = git_context.split("\n")[0].strip()
-        if first_commit:
-            parts = first_commit.split(" ", 1)
-            title = parts[1] if len(parts) > 1 else parts[0]
-            words = title.split()
-            if len(words) > TITLE_MAX_WORDS:
-                title = " ".join(words[:TITLE_MAX_WORDS])
-            return title
-
-    # 2. Claude Haiku via CLI (matches session_title_generator.py hook)
-    parts = [f"User asked: {initial_prompt}"]
-    if first_response:
-        parts.append(f"Assistant did: {first_response}")
-    context = "\n".join(parts)
-
-    prompt = f"""Generate a concise 5-{TITLE_MAX_WORDS} word title for this coding session.
-The title should describe what was accomplished or attempted.
-Return ONLY the title, no quotes, no explanation.
-
-{context}
-
-Title:"""
-
-    try:
-        env = os.environ.copy()
-        env.pop("CLAUDECODE", None)  # Allow nested claude invocation
-
-        result = subprocess.run(
-            [
-                "claude",
-                "-p",
-                prompt,
-                "--model",
-                "haiku",
-                "--no-session-persistence",
-                "--output-format",
-                "text",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=15,
-            env=env,
-        )
-
-        if result.returncode == 0 and result.stdout.strip():
-            title = result.stdout.strip()
-            title = title.strip("\"'")
-            words = title.split()
-            if len(words) > TITLE_MAX_WORDS:
-                title = " ".join(words[:TITLE_MAX_WORDS])
-            return title
-
-    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
-        pass
-
-    # 3. No fallback — return None so we don't store garbage
     return None
 
 
