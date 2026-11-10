@@ -1263,7 +1263,7 @@ def get_project_analytics(
     else:
         sessions = project.list_sessions()
 
-    return _calculate_analytics_from_sessions(sessions)
+    return _calculate_analytics_from_sessions(sessions, start_dt=start_dt, end_dt=end_dt)
 
 
 @router.get("/projects/{encoded_name}/agents", response_model=list[AgentSummary])
