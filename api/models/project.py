@@ -304,10 +304,7 @@ class Project(BaseModel):
         return dirs
 
     def _iter_session_jsonl(self) -> List[Path]:
-        """Main session JSONL files across all session dirs; a UUID found locally wins.
-
-        A UUID in several synced dirs (a worktree copy) uses its most complete copy.
-        """
+        """Main session JSONLs across session dirs; local wins, else the most complete synced copy."""
         from services.session_copies import most_complete
 
         copies: dict[str, List[Path]] = {}

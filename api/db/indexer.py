@@ -734,8 +734,7 @@ def _sync_extra_roots(
     local_uuids = {
         row[0] for row in conn.execute("SELECT uuid FROM sessions WHERE source_root IS NULL")
     }
-    # The same session in several synced dirs (a worktree copy, or two roots):
-    # only the most complete copy is indexed; the first dir wins a tie
+    # One session in several synced dirs (worktree copy, two roots): index its most complete copy
     superseded = superseded_copies(rd.path for rd in remote_dirs)
     for rd in remote_dirs:
         try:

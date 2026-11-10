@@ -1,22 +1,19 @@
-"""Pick one file when a session UUID has a JSONL in several project dirs.
-
-Claude Code copies a session's transcript when the session moves into a
-worktree: the repo dir keeps the history up to the move, the worktree dir
-holds that same history plus everything after it. Reading the first copy
-found undercounts tokens and cost, so every UUID-to-file lookup picks the
-copy holding the most messages. Copies seen so far are always prefixes of
-each other, so that copy is also the union of both.
-
-Subagent JSONLs can land under the other dir than the session's own JSONL,
-so a session's subagents are the union over the repo dir and its worktree dirs.
-"""
+"""Resolve a session spread over a repo's project dir and its worktree dirs."""
 
 from __future__ import annotations
 
 import json
+import os
+import threading
+import time
 from functools import lru_cache
 from pathlib import Path
 from typing import Iterable, Optional
+
+_SIBLING_TTL = 30.0  # seconds a projects dir's sibling index is reused
+
+_sibling_cache: dict[str, tuple[float, int, dict[str, list[tuple[str, str]]]]] = {}
+_sibling_lock = threading.Lock()
 
 
 @lru_cache(maxsize=512)
@@ -51,47 +48,64 @@ def most_complete(paths: Iterable[Path]) -> Optional[Path]:
     return max(existing, key=_completeness)  # max keeps the first of equal keys
 
 
-@lru_cache(maxsize=32)
-def _worktree_dirs_by_repo(projects_dir: str, mtime_ns: int) -> dict[str, tuple[str, ...]]:
-    """Worktree dir names per repo dir name in one projects dir (keyed on its mtime)."""
+def _build_sibling_index(projects_dir: Path) -> dict[str, list[tuple[str, str]]]:
     from services.desktop_sessions import _extract_project_prefix_from_worktree
 
-    by_repo: dict[str, list[str]] = {}
-    for d in Path(projects_dir).iterdir():
-        repo = _extract_project_prefix_from_worktree(d.name)
-        if repo and d.is_dir():
-            by_repo.setdefault(repo, []).append(d.name)
-    return {repo: tuple(sorted(names)) for repo, names in by_repo.items()}
+    names = {d.name for d in projects_dir.iterdir() if d.is_dir()}
+    repo_of: dict[str, str] = {}
+    for name in names:
+        repo = _extract_project_prefix_from_worktree(name)
+        if repo:
+            repo_of[name] = repo
+            if repo in names:
+                repo_of[repo] = repo
+    index: dict[str, list[tuple[str, str]]] = {}
+    for name, repo in repo_of.items():
+        try:
+            with os.scandir(projects_dir / name) as entries:
+                for entry in entries:
+                    if entry.is_dir():
+                        index.setdefault(entry.name, []).append((name, repo))
+        except OSError:
+            continue
+    return index
 
 
-def _sibling_dirs(project_dir: Path) -> list[Path]:
-    """project_dir, then its repo dir and that repo's worktree dirs in the same projects dir."""
-    from services.desktop_sessions import _extract_project_prefix_from_worktree
-
-    parent = project_dir.parent
+def _sibling_index(projects_dir: Path) -> dict[str, list[tuple[str, str]]]:
+    """Session UUID -> (dir, repo) for every repo or worktree dir holding a ``{uuid}/`` folder."""
+    key = str(projects_dir)
     try:
-        worktrees = _worktree_dirs_by_repo(str(parent), parent.stat().st_mtime_ns)
+        mtime = projects_dir.stat().st_mtime_ns
     except OSError:
-        return [project_dir]
-    repo = _extract_project_prefix_from_worktree(project_dir.name) or project_dir.name
-    names = [project_dir.name, repo, *worktrees.get(repo, ())]
-    return [parent / n for n in dict.fromkeys(names)]
+        return {}
+    now = time.monotonic()
+    hit = _sibling_cache.get(key)
+    if hit and hit[1] == mtime and now - hit[0] < _SIBLING_TTL:
+        return hit[2]
+    try:
+        index = _build_sibling_index(projects_dir)
+    except OSError:
+        return hit[2] if hit else {}
+    with _sibling_lock:
+        _sibling_cache[key] = (now, mtime, index)
+    return index
 
 
 def subagent_files(jsonl_path: Path) -> list[Path]:
-    """A session's subagent JSONLs, sorted by name.
+    """Subagent JSONLs from the session's dir plus its repo and worktree dirs; best copy per agent."""
+    from services.desktop_sessions import _extract_project_prefix_from_worktree
 
-    A session that moves into a worktree keeps its JSONL in one dir while its
-    subagents may be written under the other, so this takes the union over the
-    repo dir and its worktree dirs. An agent found in several dirs uses its
-    most complete copy; the session's own dir wins a tie.
-    """
-    uuid = jsonl_path.stem
+    own, uuid = jsonl_path.parent, jsonl_path.stem
+    repo = _extract_project_prefix_from_worktree(own.name) or own.name
+    dirs = [own] + [
+        own.parent / name
+        for name, r in _sibling_index(own.parent).get(uuid, ())
+        if r == repo and name != own.name
+    ]
     copies: dict[str, list[Path]] = {}
-    for d in _sibling_dirs(jsonl_path.parent):
-        subagents = d / uuid / "subagents"
+    for d in dirs:
         try:
-            agent_paths = list(subagents.glob("agent-*.jsonl"))
+            agent_paths = list((d / uuid / "subagents").glob("agent-*.jsonl"))
         except OSError:
             continue
         for p in agent_paths:

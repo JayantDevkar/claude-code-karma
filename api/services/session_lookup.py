@@ -222,8 +222,7 @@ def _find_session_jsonl(projects_dir: Path, encoded_name: str, session_uuid: str
     Returns:
         Path to the session JSONL file, or None if not found.
     """
-    # The project dir itself, then worktree dirs grouped under it; a session copied
-    # into a worktree is in both, and its most complete copy wins
+    # Project dir, then its worktree dirs; a session copied into a worktree uses its fullest copy
     from utils import get_worktree_mappings_for_project
 
     dirs = [encoded_name, *get_worktree_mappings_for_project(encoded_name)]

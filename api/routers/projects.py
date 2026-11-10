@@ -774,18 +774,9 @@ def _lookup_session_in_project(
         # Slug match
         slug_cache = _get_slug_cache(project)
         if identifier in slug_cache:
-            session_uuid = slug_cache[identifier]
-            jsonl_path = next(
-                (
-                    d / f"{session_uuid}.jsonl"
-                    for d in project.session_dirs
-                    if (d / f"{session_uuid}.jsonl").exists()
-                ),
-                project.project_dir / f"{session_uuid}.jsonl",
-            )
-            if jsonl_path.exists():
+            session = project.get_session(slug_cache[identifier])
+            if session is not None:
                 try:
-                    session = Session.from_path(jsonl_path)
                     return SessionLookupResult(
                         uuid=session.uuid,
                         slug=session.slug,
