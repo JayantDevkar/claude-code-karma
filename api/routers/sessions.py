@@ -601,6 +601,8 @@ def _get_all_sessions_sqlite(
                 or [],
                 session_source=get_session_source(row["uuid"]),
                 machine=row.get("source_root"),
+                tokens_with_subagents=row.get("tokens_with_subagents"),
+                cost_with_subagents=row.get("cost_with_subagents"),
             )
             sessions_with_context.append(session_context)
 

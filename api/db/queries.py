@@ -18,6 +18,20 @@ from utils import path_basename
 
 logger = logging.getLogger(__name__)
 
+# All tokens incl. subagents over alias `s`; input_tokens already includes cache writes.
+TOKENS_WITH_SUBAGENTS_SQL = (
+    "(COALESCE(s.input_tokens, 0) + COALESCE(s.output_tokens, 0)"
+    " + COALESCE(s.cache_read_tokens, 0) + COALESCE(s.subagent_input_tokens, 0)"
+    " + COALESCE(s.subagent_output_tokens, 0) + COALESCE(s.subagent_cache_read_tokens, 0))"
+)
+# Own cost plus subagent cost over alias `s`.
+COST_WITH_SUBAGENTS_SQL = "(COALESCE(s.total_cost, 0) + COALESCE(s.subagent_cost, 0))"
+# Per-session usage columns for session-list SELECTs (session cards).
+SESSION_USAGE_SELECT = (
+    f"{TOKENS_WITH_SUBAGENTS_SQL} AS tokens_with_subagents,"
+    f" {COST_WITH_SUBAGENTS_SQL} AS cost_with_subagents"
+)
+
 
 def _local_tz_modifier() -> str:
     """Return SQLite time modifier for the machine's local timezone.
@@ -209,7 +223,8 @@ def query_all_sessions(
             s.input_tokens, s.output_tokens, s.total_cost,
             s.initial_prompt, s.git_branch, s.models_used,
             s.session_titles, s.is_continuation_marker, s.was_compacted,
-            s.subagent_count, s.session_source, s.source_root
+            s.subagent_count, s.session_source, s.source_root,
+            {SESSION_USAGE_SELECT}
         FROM sessions s
         {fts_join}
         {where}
@@ -602,11 +617,12 @@ def query_sessions_by_skill(
 
     # Paginated results (exclude mention-only sessions)
     rows = conn.execute(
-        """SELECT
+        f"""SELECT
             s.uuid, s.slug, s.project_encoded_name, s.project_path,
             s.message_count, s.start_time, s.end_time, s.duration_seconds,
             s.models_used, s.subagent_count, s.initial_prompt,
-            s.git_branch, s.session_titles, s.source_root
+            s.git_branch, s.session_titles, s.source_root,
+            {SESSION_USAGE_SELECT}
         FROM sessions s
         JOIN session_skills sk ON s.uuid = sk.session_uuid
         WHERE sk.skill_name = :skill AND sk.invocation_source != 'text_detection'
@@ -784,7 +800,7 @@ def _query_item_detail(
             s.models_used, s.subagent_count, s.initial_prompt,
             s.git_branch, s.session_titles, s.source_root AS machine,
             agg.has_main, agg.has_sub, agg.agent_ids,
-            ss.invocation_sources
+            ss.invocation_sources, {SESSION_USAGE_SELECT}
         FROM sessions s
         JOIN aggregated_sessions agg ON s.uuid = agg.session_uuid
         LEFT JOIN session_sources ss ON s.uuid = ss.session_uuid
@@ -1145,7 +1161,7 @@ def query_project_sessions(
             s.initial_prompt, s.git_branch, s.session_titles,
             s.is_continuation_marker, s.was_compacted, s.input_tokens,
             s.output_tokens, s.total_cost, s.compaction_count,
-            s.session_source, s.source_root
+            s.session_source, s.source_root, {SESSION_USAGE_SELECT}
         FROM sessions s
         {fts_join}
         WHERE {where}
@@ -2072,11 +2088,12 @@ def query_sessions_by_agent(
 
     # Paginated results - join sessions for full session data
     rows = conn.execute(
-        """SELECT
+        f"""SELECT
             s.uuid, s.slug, s.project_encoded_name, s.project_path,
             s.message_count, s.start_time, s.end_time, s.duration_seconds,
             s.models_used, s.subagent_count, s.initial_prompt,
-            s.git_branch, s.session_titles, s.source_root
+            s.git_branch, s.session_titles, s.source_root,
+            {SESSION_USAGE_SELECT}
         FROM sessions s
         JOIN (SELECT DISTINCT session_uuid FROM subagent_invocations WHERE subagent_type = :type) si
             ON s.uuid = si.session_uuid
@@ -2851,7 +2868,7 @@ def query_sessions_by_mcp_server(
             s.message_count, s.start_time, s.end_time, s.duration_seconds,
             s.models_used, s.subagent_count, s.initial_prompt,
             s.git_branch, s.session_titles, s.source_root,
-            agg.has_main, agg.has_sub, agg.agent_ids
+            agg.has_main, agg.has_sub, agg.agent_ids, {SESSION_USAGE_SELECT}
         FROM sessions s
         JOIN aggregated_sessions agg ON s.uuid = agg.session_uuid
         ORDER BY s.start_time DESC
@@ -3336,7 +3353,7 @@ def query_sessions_by_mcp_tool(
             s.message_count, s.start_time, s.end_time, s.duration_seconds,
             s.models_used, s.subagent_count, s.initial_prompt,
             s.git_branch, s.session_titles, s.source_root,
-            agg.has_main, agg.has_sub, agg.agent_ids
+            agg.has_main, agg.has_sub, agg.agent_ids, {SESSION_USAGE_SELECT}
         FROM sessions s
         JOIN aggregated_sessions agg ON s.uuid = agg.session_uuid
         ORDER BY s.start_time DESC
@@ -3814,7 +3831,7 @@ def query_sessions_by_builtin_server(
             s.message_count, s.start_time, s.end_time, s.duration_seconds,
             s.models_used, s.subagent_count, s.initial_prompt,
             s.git_branch, s.session_titles, s.source_root,
-            agg.has_main, agg.has_sub, agg.agent_ids
+            agg.has_main, agg.has_sub, agg.agent_ids, {SESSION_USAGE_SELECT}
         FROM sessions s
         JOIN aggregated_sessions agg ON s.uuid = agg.session_uuid
         ORDER BY s.start_time DESC
@@ -3889,7 +3906,7 @@ def query_sessions_by_builtin_tool(
             s.message_count, s.start_time, s.end_time, s.duration_seconds,
             s.models_used, s.subagent_count, s.initial_prompt,
             s.git_branch, s.session_titles, s.source_root,
-            agg.has_main, agg.has_sub, agg.agent_ids
+            agg.has_main, agg.has_sub, agg.agent_ids, {SESSION_USAGE_SELECT}
         FROM sessions s
         JOIN aggregated_sessions agg ON s.uuid = agg.session_uuid
         ORDER BY s.start_time DESC

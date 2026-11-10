@@ -641,6 +641,8 @@ async def get_skill_detail(
                     tool_source=row.get("tool_source"),
                     subagent_agent_ids=row.get("subagent_agent_ids", []),
                     invocation_sources=row.get("invocation_sources", []),
+                    tokens_with_subagents=row.get("tokens_with_subagents"),
+                    cost_with_subagents=row.get("cost_with_subagents"),
                 )
             )
 
@@ -733,6 +735,8 @@ def get_skill_sessions(
                             session_titles=row.get("session_titles", [])
                             or title_cache.get_titles(project_encoded_name, row["uuid"])
                             or [],
+                            tokens_with_subagents=row.get("tokens_with_subagents"),
+                            cost_with_subagents=row.get("cost_with_subagents"),
                         )
                     )
                 return SkillSessionsResponse(
