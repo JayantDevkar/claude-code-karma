@@ -484,6 +484,34 @@ def _index_session(
         ),
     )
 
+    # Replace usage buckets for the session plus all its subagents
+    from models.usage import merge_usage_buckets
+
+    buckets = merge_usage_buckets(
+        session.get_usage_buckets(), *(agent.get_usage_buckets() for agent in subagents)
+    )
+    conn.execute("DELETE FROM session_usage_buckets WHERE session_uuid = ?", (uuid,))
+    if buckets:
+        conn.executemany(
+            """INSERT INTO session_usage_buckets
+               (session_uuid, bucket_start, model, input_tokens, output_tokens,
+                cache_creation_tokens, cache_read_tokens, cost_usd)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            [
+                (
+                    uuid,
+                    start,
+                    model,
+                    b.usage.input_tokens,
+                    b.usage.output_tokens,
+                    b.usage.cache_creation_input_tokens,
+                    b.usage.cache_read_input_tokens,
+                    b.cost,
+                )
+                for (start, model), b in buckets.items()
+            ],
+        )
+
     # Upsert tool usage (INSERT OR REPLACE + cleanup to avoid DELETE gap)
     if tools_used:
         for tool_name, count in tools_used.items():
