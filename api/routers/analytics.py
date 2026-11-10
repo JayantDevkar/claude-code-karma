@@ -45,8 +45,15 @@ def _get_analytics_sqlite(
         with sqlite_read() as conn:
             if conn is None:
                 return None
-            data = query_analytics(conn, project=project, start_dt=start_dt, end_dt=end_dt)
+            data = query_analytics(
+                conn,
+                project=project,
+                start_dt=start_dt,
+                end_dt=end_dt,
+                tz_offset_minutes=tz_offset_minutes,
+            )
         totals = data["totals"]
+        usage = usage_breakdown(data["usage_rows"])
 
         models_used_counter, models_categorized_counter = count_models(data["session_models"])
 
@@ -97,6 +104,7 @@ def _get_analytics_sqlite(
             time_distribution=time_distribution,
             work_mode_distribution=work_mode_distribution,
             projects_active=totals.get("projects_active", 0),
+            **usage,
         )
     except sqlite3.Error as e:
         logger.warning("SQLite analytics query failed, falling back: %s", e)
@@ -302,6 +310,26 @@ def count_models(
         used.update(ids)
         models_categorized.update({_categorize_model(m) for m in ids})
     return used, models_categorized
+
+
+def usage_breakdown(rows: Iterable[tuple[str, str, int, float]]) -> dict[str, dict]:
+    """Fold (local_day, model, tokens, cost) rows into per-day and per-family dicts."""
+    tokens_by_date: Counter[str] = Counter()
+    cost_by_date: Counter[str] = Counter()
+    family_tokens: Counter[str] = Counter()
+    family_cost: Counter[str] = Counter()
+    for day, model, tokens, cost in rows:
+        family = _categorize_model(model)
+        tokens_by_date[day] += tokens
+        cost_by_date[day] += cost
+        family_tokens[family] += tokens
+        family_cost[family] += cost
+    return {
+        "tokens_by_date": dict(tokens_by_date),
+        "cost_by_date": {k: round(v, 4) for k, v in cost_by_date.items()},
+        "models_categorized_tokens": dict(family_tokens),
+        "models_categorized_cost": {k: round(v, 4) for k, v in family_cost.items()},
+    }
 
 
 def _calculate_time_distribution(temporal_heatmap: list) -> dict:
