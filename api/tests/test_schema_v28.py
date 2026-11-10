@@ -67,11 +67,18 @@ def test_v27_upgrade_creates_table_and_forces_reindex():
     assert _mtime(conn) == 99.0
 
 
-def test_db_ahead_gets_table_without_reindex():
+def test_db_ahead_missing_table_gets_table_and_reindex():
     conn = _db_at(SCHEMA_VERSION + 1)
     ensure_schema(conn)
     assert _has_table(conn)
-    assert _mtime(conn) == 100.0
+    assert _mtime(conn) == 99.0
+
+
+def test_db_ahead_with_table_is_not_reindexed():
+    conn = _db_at(SCHEMA_VERSION + 1)
+    ensure_schema(conn)
+    ensure_schema(conn)
+    assert _mtime(conn) == 99.0
 
 
 def test_upgrade_is_idempotent():

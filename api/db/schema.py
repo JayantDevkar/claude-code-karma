@@ -459,10 +459,25 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
     conn.executescript(_SHELLS_CRON_SCHEMA_SQL)
 
     # Same cross-branch guard for the usage buckets table (CREATE IF NOT EXISTS).
+    buckets_existed = (
+        conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='session_usage_buckets'"
+        ).fetchone()
+        is not None
+    )
     conn.executescript(_USAGE_BUCKETS_SCHEMA_SQL)
 
     # Same cross-branch guard for sessions columns added after v19.
     columns_added = _ensure_session_columns(conn)
+
+    # A freshly created buckets table is empty; re-index so it fills.
+    if not buckets_existed and not columns_added:
+        has_sessions = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='sessions'"
+        ).fetchone()
+        if has_sessions:
+            conn.execute("UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1")
+            conn.commit()
 
     # Upgraded DBs can lose the sessions_fts triggers, which freezes search (issue #145).
     _ensure_sessions_fts(conn)
@@ -902,13 +917,8 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
                 )
 
         if current_version < 28:
-            logger.info("Migrating → v28: add session_usage_buckets, re-index to fill it")
-            conn.executescript(_USAGE_BUCKETS_SCHEMA_SQL)
-            has_sessions = conn.execute(
-                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='sessions'"
-            ).fetchone()
-            if has_sessions and not columns_added:
-                conn.execute("UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1")
+            # session_usage_buckets is created, and the re-index forced, above.
+            logger.info("Migrating → v28: session_usage_buckets")
 
     # Record version
     conn.execute(
