@@ -12,7 +12,8 @@
 	import PageHeader from '$lib/components/layout/PageHeader.svelte';
 	import StatsGrid from '$lib/components/StatsGrid.svelte';
 	import CollapsibleGroup from '$lib/components/ui/CollapsibleGroup.svelte';
-	import type { AnalyticsFilterPeriod, StatItem } from '$lib/api-types';
+	import SegmentedControl from '$lib/components/ui/SegmentedControl.svelte';
+	import type { AnalyticsFilterPeriod, AnalyticsMetric, StatItem } from '$lib/api-types';
 	import {
 		analyticsFilterOptions,
 		getTimestampRangeForFilter,
@@ -28,6 +29,27 @@
 		}
 		return 'all';
 	});
+
+	const metricOptions = [
+		{ label: 'Sessions', value: 'sessions' },
+		{ label: 'Tokens', value: 'tokens' },
+		{ label: 'Cost', value: 'cost' }
+	];
+
+	let selectedMetric = $derived.by((): AnalyticsMetric => {
+		const m = $page.url.searchParams.get('metric');
+		return m === 'tokens' || m === 'cost' ? m : 'sessions';
+	});
+
+	const handleMetricChange = (m: AnalyticsMetric) => {
+		const url = new URL($page.url);
+		if (m === 'sessions') {
+			url.searchParams.delete('metric');
+		} else {
+			url.searchParams.set('metric', m);
+		}
+		goto(url.toString(), { replaceState: true, noScroll: true, keepFocus: true });
+	};
 
 	const handleFilterChange = (filter: AnalyticsFilterPeriod) => {
 		const url = new URL($page.url);
@@ -68,10 +90,14 @@
 		cache_hit_rate: number;
 		tools_used: Record<string, number>;
 		sessions_by_date: Record<string, number>;
+		tokens_by_date: Record<string, number>;
+		cost_by_date: Record<string, number>;
 		projects_active: number;
 		temporal_heatmap: number[][];
 		peak_hours: number[];
 		models_categorized: Record<string, number>;
+		models_categorized_tokens: Record<string, number>;
+		models_categorized_cost: Record<string, number>;
 		time_distribution: {
 			morning_pct: number;
 			afternoon_pct: number;
@@ -95,10 +121,14 @@
 		cache_hit_rate: 0,
 		tools_used: {},
 		sessions_by_date: {},
+		tokens_by_date: {},
+		cost_by_date: {},
 		projects_active: 0,
 		temporal_heatmap: [],
 		peak_hours: [],
 		models_categorized: {},
+		models_categorized_tokens: {},
+		models_categorized_cost: {},
 		time_distribution: {
 			morning_pct: 0,
 			afternoon_pct: 0,
@@ -445,7 +475,16 @@
 		subtitle="Your coding patterns and AI collaboration"
 	>
 		{#snippet headerRight()}
-			<TimeFilterDropdown {selectedFilter} onFilterChange={handleFilterChange} />
+			<div class="flex items-center gap-2">
+				<SegmentedControl
+					options={metricOptions}
+					value={selectedMetric}
+					size="sm"
+					aria-label="Metric"
+					onchange={(v) => handleMetricChange(v as AnalyticsMetric)}
+				/>
+				<TimeFilterDropdown {selectedFilter} onFilterChange={handleFilterChange} />
+			</div>
 		{/snippet}
 	</PageHeader>
 
