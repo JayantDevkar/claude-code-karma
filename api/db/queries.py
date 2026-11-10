@@ -18,6 +18,15 @@ from utils import path_basename
 
 logger = logging.getLogger(__name__)
 
+# All tokens incl. subagents over alias `s`; input_tokens already includes cache writes.
+TOKENS_WITH_SUBAGENTS_SQL = (
+    "(COALESCE(s.input_tokens, 0) + COALESCE(s.output_tokens, 0)"
+    " + COALESCE(s.cache_read_tokens, 0) + COALESCE(s.subagent_input_tokens, 0)"
+    " + COALESCE(s.subagent_output_tokens, 0) + COALESCE(s.subagent_cache_read_tokens, 0))"
+)
+# Own cost plus subagent cost over alias `s`.
+COST_WITH_SUBAGENTS_SQL = "(COALESCE(s.total_cost, 0) + COALESCE(s.subagent_cost, 0))"
+
 
 def _local_tz_modifier() -> str:
     """Return SQLite time modifier for the machine's local timezone.
@@ -303,12 +312,22 @@ def query_all_projects(conn: sqlite3.Connection) -> list[dict]:
     Get all projects from the precomputed projects table.
 
     Returns list of dicts with keys matching ProjectSummary needs:
-    encoded_name, project_path, slug, display_name, session_count, last_activity.
+    encoded_name, project_path, slug, display_name, session_count, last_activity,
+    total_tokens, total_cost.
     """
     rows = conn.execute(
-        """SELECT encoded_name, project_path, slug, display_name,
-                  session_count, last_activity
+        f"""SELECT encoded_name, project_path, slug, display_name,
+                  session_count, last_activity,
+                  COALESCE(u.total_tokens, 0) AS total_tokens,
+                  COALESCE(u.total_cost, 0) AS total_cost
            FROM projects
+           LEFT JOIN (
+               SELECT s.project_encoded_name,
+                      SUM({TOKENS_WITH_SUBAGENTS_SQL}) AS total_tokens,
+                      SUM({COST_WITH_SUBAGENTS_SQL}) AS total_cost
+               FROM sessions s
+               GROUP BY s.project_encoded_name
+           ) u ON u.project_encoded_name = projects.encoded_name
            ORDER BY last_activity DESC NULLS LAST"""
     ).fetchall()
     return [dict(row) for row in rows]
@@ -393,15 +412,13 @@ def query_dashboard_stats(
 ) -> dict | None:
     """Dashboard stats for a date range. Returns None if no sessions found."""
     row = conn.execute(
-        """SELECT
+        f"""SELECT
             COUNT(*) as session_count,
             COUNT(DISTINCT project_encoded_name) as projects_active,
             COALESCE(SUM(duration_seconds), 0) as total_duration,
-            COALESCE(SUM(input_tokens + output_tokens + cache_read_tokens
-                + COALESCE(subagent_input_tokens, 0) + COALESCE(subagent_output_tokens, 0)
-                + COALESCE(subagent_cache_read_tokens, 0)), 0) as total_tokens,
-            COALESCE(SUM(total_cost + COALESCE(subagent_cost, 0)), 0) as total_cost
-        FROM sessions
+            COALESCE(SUM({TOKENS_WITH_SUBAGENTS_SQL}), 0) as total_tokens,
+            COALESCE(SUM({COST_WITH_SUBAGENTS_SQL}), 0) as total_cost
+        FROM sessions s
         WHERE start_time >= :start AND start_time <= :end""",
         {"start": start_dt.isoformat(), "end": end_dt.isoformat()},
     ).fetchone()
