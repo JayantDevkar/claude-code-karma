@@ -177,7 +177,7 @@
 			Object.keys(series).length === 0 &&
 			analytics.total_sessions > 0
 	);
-	const emptyMessage = 'Token data appears after the index rebuild finishes';
+	const emptyMessage = 'Token and cost data appear after the index rebuild finishes';
 
 	const formatMetric = (n: number) =>
 		selectedMetric === 'tokens'
@@ -239,7 +239,7 @@
 	let sparkMax = $derived(Math.max(...sparklineData, 1));
 
 	// --- Model Distribution ---
-	// Use models_categorized if it has data, otherwise fall back to models_used
+	// Per-metric model map; models_used fallback for sessions only
 	let modelsData = $derived(() => {
 		const categorized =
 			selectedMetric === 'tokens'
@@ -372,7 +372,7 @@
 		const textPrimary = style.getPropertyValue('--text-primary').trim() || '#0f172a';
 		const border = style.getPropertyValue('--border').trim() || 'rgba(0,0,0,0.08)';
 
-		const sessionCounts = sortedDates.map((date) => series[date]);
+		const counts = sortedDates.map((date) => series[date]);
 
 		chartInstance = new Chart(chartCanvas, {
 			type: 'bar',
@@ -381,7 +381,7 @@
 				datasets: [
 					{
 						label: metricLabel,
-						data: sessionCounts,
+						data: counts,
 						backgroundColor: textMuted,
 						hoverBackgroundColor: colors[0],
 						borderRadius: 3,
@@ -510,7 +510,7 @@
 		subtitle="Your coding patterns and AI collaboration"
 	>
 		{#snippet headerRight()}
-			<div class="flex items-center gap-2">
+			<div class="flex flex-wrap items-center gap-2">
 				<SegmentedControl
 					options={metricOptions}
 					value={selectedMetric}
