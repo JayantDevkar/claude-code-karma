@@ -324,10 +324,9 @@ class TestCalculateCost:
 
     def test_cost_with_unknown_model_uses_default(self):
         """Test that unknown model falls back to default pricing."""
-        # Using default pricing (claude-sonnet-4-6): $3/M input, $15/M output
-        # 1M input triggers long context: $6/$22.50
+        # Default pricing (claude-sonnet-4-6): $3/M input, $15/M output, no long-context premium
         cost = calculate_cost(1_000_000, 1_000_000, "unknown-model")
-        assert cost == pytest.approx(28.5)
+        assert cost == pytest.approx(18.0)
 
     def test_input_only(self):
         """Test cost calculation with only input tokens."""
