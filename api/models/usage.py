@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import logging
 import re
+from dataclasses import dataclass
+from datetime import datetime
 from functools import lru_cache
 from typing import Any, Optional
 
@@ -301,6 +303,20 @@ class TokenUsage(BaseModel):
         return uncached_input_cost + cache_write_cost + cache_read_cost + output_cost
 
 
+BUCKET_SECONDS = 900
+
+
+@dataclass(frozen=True)
+class UsageBucket:
+    """Token usage and cost summed over one (bucket, model) cell."""
+
+    usage: TokenUsage
+    cost: float
+
+
+UsageBuckets = dict[tuple[int, str], UsageBucket]
+
+
 class UsageAccumulator:
     """
     Sums token usage and cost once per API response.
@@ -311,22 +327,46 @@ class UsageAccumulator:
     """
 
     def __init__(self) -> None:
-        self._responses: dict[str, tuple[TokenUsage, Optional[str]]] = {}
+        self._responses: dict[str, tuple[TokenUsage, Optional[str], Optional[datetime]]] = {}
 
     def add(self, msg: Any) -> None:
         """Record an AssistantMessage's usage under its response id."""
         if msg.usage is None:
             return
         key = msg.message_id or msg.request_id or msg.uuid
-        self._responses[key] = (msg.usage, msg.model)
+        self._responses[key] = (msg.usage, msg.model, msg.timestamp)
 
     @property
     def usage(self) -> TokenUsage:
         total = TokenUsage.zero()
-        for usage, _ in self._responses.values():
+        for usage, _, _ in self._responses.values():
             total = total + usage
         return total
 
     @property
     def cost(self) -> float:
-        return sum(usage.calculate_cost(model) for usage, model in self._responses.values())
+        return sum(usage.calculate_cost(model) for usage, model, _ in self._responses.values())
+
+    def buckets(self) -> UsageBuckets:
+        """Group per-response usage and cost by (15-minute bucket start, model)."""
+        out: UsageBuckets = {}
+        for usage, model, ts in self._responses.values():
+            if ts is None or usage.total_tokens == 0:
+                continue
+            key = (int(ts.timestamp()) // BUCKET_SECONDS * BUCKET_SECONDS, model or "")
+            out = merge_usage_buckets(out, {key: UsageBucket(usage, usage.calculate_cost(model))})
+        return out
+
+
+def merge_usage_buckets(*maps: UsageBuckets) -> UsageBuckets:
+    """Sum usage and cost key by key across bucket maps."""
+    merged: UsageBuckets = {}
+    for m in maps:
+        for key, bucket in m.items():
+            prev = merged.get(key)
+            merged[key] = (
+                bucket
+                if prev is None
+                else UsageBucket(prev.usage + bucket.usage, prev.cost + bucket.cost)
+            )
+    return merged

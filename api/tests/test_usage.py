@@ -5,11 +5,13 @@ Tests cover instantiation, computed properties, aggregation,
 immutability, validation, and edge cases.
 """
 
+from datetime import datetime, timezone
+
 import pytest
 from pydantic import ValidationError
 
 from models import TokenUsage
-from models.usage import UsageAccumulator
+from models.usage import MODEL_PRICING, UsageAccumulator, UsageBucket, merge_usage_buckets
 
 # =============================================================================
 # Fixtures
@@ -758,7 +760,10 @@ class TestCurrentModelPricing:
 
 
 class _Msg:
-    def __init__(self, message_id, usage, model="claude-opus-4-8", request_id=None, uuid="u"):
+    def __init__(
+        self, message_id, usage, model="claude-opus-4-8", request_id=None, uuid="u", timestamp=None
+    ):
+        self.timestamp = timestamp
         self.message_id = message_id
         self.request_id = request_id
         self.uuid = uuid
@@ -795,3 +800,68 @@ class TestUsageAccumulator:
         acc.add(_Msg("msg_1", None))
         assert acc.usage == TokenUsage.zero()
         assert acc.cost == 0.0
+
+
+def _at(hour, minute, second=0):
+    return datetime(2026, 3, 2, hour, minute, second, tzinfo=timezone.utc)
+
+
+def _epoch(hour, minute):
+    return int(_at(hour, minute).timestamp())
+
+
+class TestUsageBuckets:
+    """UsageAccumulator.buckets() groups per-response usage by 15 minutes and model."""
+
+    def test_buckets_floor_to_quarter_hour(self):
+        acc = UsageAccumulator()
+        acc.add(_Msg("m1", TokenUsage(output_tokens=1), timestamp=_at(10, 14, 59)))
+        acc.add(_Msg("m2", TokenUsage(output_tokens=1), timestamp=_at(10, 15, 0)))
+        starts = sorted(start for start, _ in acc.buckets())
+        assert starts == [_epoch(10, 0), _epoch(10, 15)]
+
+    def test_repeated_message_id_counted_once_last_wins(self):
+        acc = UsageAccumulator()
+        acc.add(_Msg("m1", TokenUsage(output_tokens=5), timestamp=_at(10, 1)))
+        acc.add(_Msg("m1", TokenUsage(output_tokens=50), timestamp=_at(10, 2)))
+        buckets = acc.buckets()
+        assert len(buckets) == 1
+        assert next(iter(buckets.values())).usage.output_tokens == 50
+
+    def test_bucket_cost_is_per_response(self):
+        model = next(m for m, p in MODEL_PRICING.items() if "long_context_threshold" in p)
+        threshold = MODEL_PRICING[model]["long_context_threshold"]
+        u1 = TokenUsage(input_tokens=threshold + 1_000, output_tokens=1_000)
+        u2 = TokenUsage(input_tokens=threshold // 2, output_tokens=1_000)
+        acc = UsageAccumulator()
+        acc.add(_Msg("m1", u1, model=model, timestamp=_at(10, 1)))
+        acc.add(_Msg("m2", u2, model=model, timestamp=_at(10, 2)))
+        bucket = acc.buckets()[(_epoch(10, 0), model)]
+        assert bucket.cost == pytest.approx(u1.calculate_cost(model) + u2.calculate_cost(model))
+        assert bucket.cost != pytest.approx((u1 + u2).calculate_cost(model))
+
+    def test_missing_model_kept_under_empty_string(self):
+        acc = UsageAccumulator()
+        acc.add(_Msg("m1", TokenUsage(output_tokens=100), model=None, timestamp=_at(10, 1)))
+        acc.add(_Msg("m2", TokenUsage(output_tokens=100), timestamp=_at(10, 20)))
+        buckets = acc.buckets()
+        assert (_epoch(10, 0), "") in buckets
+        assert sum(b.cost for b in buckets.values()) == pytest.approx(acc.cost)
+
+    def test_zero_usage_response_skipped(self):
+        acc = UsageAccumulator()
+        acc.add(_Msg("m1", TokenUsage(), model="<synthetic>", timestamp=_at(10, 1)))
+        assert acc.buckets() == {}
+
+    def test_merge_sums_matching_keys(self):
+        key_a = (_epoch(10, 0), "model-a")
+        key_b = (_epoch(10, 15), "model-b")
+        one = {key_a: UsageBucket(TokenUsage(output_tokens=10), 0.5)}
+        two = {
+            key_a: UsageBucket(TokenUsage(output_tokens=5), 0.25),
+            key_b: UsageBucket(TokenUsage(output_tokens=7), 1.0),
+        }
+        merged = merge_usage_buckets(one, two)
+        assert merged[key_a].usage.output_tokens == 15
+        assert merged[key_a].cost == pytest.approx(0.75)
+        assert merged[key_b].usage.output_tokens == 7
