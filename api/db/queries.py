@@ -482,15 +482,17 @@ def query_analytics(
     # 3. Models used (use json_each for efficient parsing)
     model_conditions = list(conditions) + ["models_used IS NOT NULL"]
     model_where = "WHERE " + " AND ".join(model_conditions)
-    # Use SQLite's json_each() to parse JSON arrays directly in SQL
     model_rows = conn.execute(
-        f"""SELECT DISTINCT je.value as model_name
+        f"""SELECT s.uuid, je.value as model_name
         FROM sessions s, json_each(s.models_used) AS je
         {model_where}""",
         params,
     ).fetchall()
-    # Return as list of model names (already parsed by SQLite)
-    models_used_list = [row["model_name"] for row in model_rows]
+    # One list of model ids per session, so callers count sessions rather than ids
+    models_by_session: dict[str, list[str]] = {}
+    for row in model_rows:
+        models_by_session.setdefault(row["uuid"], []).append(row["model_name"])
+    session_models = list(models_by_session.values())
 
     # 4. Start times for temporal heatmap
     time_conditions = list(conditions) + ["start_time IS NOT NULL"]
@@ -501,7 +503,7 @@ def query_analytics(
     return {
         "totals": totals,
         "tools": tools,
-        "models_used_list": models_used_list,
+        "session_models": session_models,
         "start_times": start_times,
     }
 

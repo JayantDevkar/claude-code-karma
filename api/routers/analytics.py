@@ -8,6 +8,7 @@ import logging
 import sqlite3
 import sys
 from collections import Counter
+from collections.abc import Iterable
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
@@ -47,12 +48,7 @@ def _get_analytics_sqlite(
             data = query_analytics(conn, project=project, start_dt=start_dt, end_dt=end_dt)
         totals = data["totals"]
 
-        # Models already parsed by SQLite's json_each()
-        models_used_counter: Counter[str] = Counter()
-        models_categorized_counter: Counter[str] = Counter()
-        for model in data["models_used_list"]:
-            models_used_counter[model] += 1
-            models_categorized_counter[_categorize_model(model)] += 1
+        models_used_counter, models_categorized_counter = count_models(data["session_models"])
 
         # Build temporal heatmap from start_times
         local_tz = timezone(timedelta(minutes=-tz_offset_minutes))
@@ -295,6 +291,19 @@ def _categorize_model(model_name: str) -> str:
         return "Other"
 
 
+def count_models(
+    session_models: Iterable[Iterable[str]],
+) -> tuple[Counter[str], Counter[str]]:
+    """Count sessions per model id and per model family, once per session."""
+    used: Counter[str] = Counter()
+    models_categorized: Counter[str] = Counter()
+    for models in session_models:
+        ids = set(models)
+        used.update(ids)
+        models_categorized.update({_categorize_model(m) for m in ids})
+    return used, models_categorized
+
+
 def _calculate_time_distribution(temporal_heatmap: list) -> dict:
     """Calculate simplified time-of-day distribution percentages."""
     # Sum across all 7 days for each time period
@@ -507,8 +516,7 @@ def _calculate_analytics_from_sessions(
     total_cacheable = 0
     total_duration = 0.0
     total_cost = 0.0
-    models_used: Counter[str] = Counter()
-    models_categorized: Counter[str] = Counter()
+    session_models: list[list[str]] = []
     tools_used: Counter[str] = Counter()
     sessions_by_date: Counter[str] = Counter()
 
@@ -536,10 +544,7 @@ def _calculate_analytics_from_sessions(
             total_duration += session.duration_seconds
 
         # Track models used
-        session_models = session.get_models_used()
-        for model in session_models:
-            models_used[model] += 1
-            models_categorized[_categorize_model(model)] += 1
+        session_models.append(list(session.get_models_used()))
 
         total_cost += session.get_total_cost() + subagent_cost
 
@@ -577,6 +582,7 @@ def _calculate_analytics_from_sessions(
     peak_hours = [h for _, h in hour_totals[:3] if hour_totals[0][0] > 0]
 
     total_sessions = len(sessions)
+    models_used, models_categorized = count_models(session_models)
 
     # Calculate time distribution (simplified view)
     time_distribution = _calculate_time_distribution(temporal_heatmap)
