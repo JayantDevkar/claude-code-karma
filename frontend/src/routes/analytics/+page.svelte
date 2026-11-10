@@ -181,7 +181,7 @@
 
 	const formatMetric = (n: number) =>
 		selectedMetric === 'tokens'
-			? formatK(n)
+			? formatK(Math.round(n))
 			: selectedMetric === 'cost'
 				? formatCurrency(n)
 				: n.toLocaleString();
@@ -236,7 +236,7 @@
 
 	// Sparkline
 	let sparklineData = $derived(sortedDates.slice(-14).map((d) => series[d] || 0));
-	let sparkMax = $derived(Math.max(...sparklineData, 1));
+	let sparkMax = $derived(Math.max(0, ...sparklineData) || 1);
 
 	// --- Model Distribution ---
 	// Per-metric model map; models_used fallback for sessions only
