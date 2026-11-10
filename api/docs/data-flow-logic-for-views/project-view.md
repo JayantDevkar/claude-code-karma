@@ -108,6 +108,10 @@ interface ProjectAnalytics {
   cache_hit_rate: number;               // 0.0 to 1.0
   tools_used: Record<string, number>;   // tool_name -> usage count
   sessions_by_date: Record<string, number>; // YYYY-MM-DD -> session count
+  tokens_by_date: Record<string, number>;   // local YYYY-MM-DD -> tokens spent that day
+  cost_by_date: Record<string, number>;     // local YYYY-MM-DD -> USD spent that day
+  models_categorized_tokens: Record<string, number>; // model family -> tokens
+  models_categorized_cost: Record<string, number>;   // model family -> USD
 }
 ```
 

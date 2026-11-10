@@ -428,6 +428,7 @@ def query_analytics(
     project: Optional[str] = None,
     start_dt: Optional[datetime] = None,
     end_dt: Optional[datetime] = None,
+    tz_offset_minutes: int = 0,
 ) -> dict:
     """
     Aggregated analytics from SQLite. Returns dict with keys:
@@ -435,6 +436,7 @@ def query_analytics(
     - tools: {tool_name: count}
     - models_used_raw: list of JSON-encoded model arrays (parse in caller)
     - start_times: list of ISO start_time strings (for temporal heatmap)
+    - usage_rows: (local_day, model, tokens, cost) per day and model, by bucket time
     """
     conditions: list[str] = []
     params: dict = {}
@@ -482,15 +484,17 @@ def query_analytics(
     # 3. Models used (use json_each for efficient parsing)
     model_conditions = list(conditions) + ["models_used IS NOT NULL"]
     model_where = "WHERE " + " AND ".join(model_conditions)
-    # Use SQLite's json_each() to parse JSON arrays directly in SQL
     model_rows = conn.execute(
-        f"""SELECT DISTINCT je.value as model_name
+        f"""SELECT s.uuid, je.value as model_name
         FROM sessions s, json_each(s.models_used) AS je
         {model_where}""",
         params,
     ).fetchall()
-    # Return as list of model names (already parsed by SQLite)
-    models_used_list = [row["model_name"] for row in model_rows]
+    # One list of model ids per session, so callers count sessions rather than ids
+    models_by_session: dict[str, list[str]] = {}
+    for row in model_rows:
+        models_by_session.setdefault(row["uuid"], []).append(row["model_name"])
+    session_models = list(models_by_session.values())
 
     # 4. Start times for temporal heatmap
     time_conditions = list(conditions) + ["start_time IS NOT NULL"]
@@ -498,11 +502,41 @@ def query_analytics(
     time_rows = conn.execute(f"SELECT start_time FROM sessions s {time_where}", params).fetchall()
     start_times = [row["start_time"] for row in time_rows]
 
+    # 5. Tokens and cost per local day and model; the window applies to bucket time
+    bucket_conditions: list[str] = []
+    bucket_params: dict = {"tz": tz_offset_minutes}
+    if project:
+        bucket_conditions.append("s.project_encoded_name = :project")
+        bucket_params["project"] = project
+    if start_dt:
+        # A bucket holds the 15 minutes after its start, so round the window start down
+        bucket_conditions.append("b.bucket_start >= :start_bucket")
+        bucket_params["start_bucket"] = int(start_dt.timestamp() // 900 * 900)
+    if end_dt:
+        bucket_conditions.append("b.bucket_start <= :end_s")
+        bucket_params["end_s"] = int(end_dt.timestamp())
+    bucket_where = "WHERE " + " AND ".join(bucket_conditions) if bucket_conditions else ""
+    usage_rows = [
+        (row["day"], row["model"], row["tokens"], row["cost"])
+        for row in conn.execute(
+            f"""SELECT date(b.bucket_start - :tz * 60, 'unixepoch') AS day, b.model AS model,
+                SUM(b.input_tokens + b.cache_creation_tokens + b.cache_read_tokens
+                    + b.output_tokens) AS tokens,
+                SUM(b.cost_usd) AS cost
+            FROM session_usage_buckets b
+            JOIN sessions s ON s.uuid = b.session_uuid
+            {bucket_where}
+            GROUP BY day, b.model""",
+            bucket_params,
+        ).fetchall()
+    ]
+
     return {
         "totals": totals,
         "tools": tools,
-        "models_used_list": models_used_list,
+        "session_models": session_models,
         "start_times": start_times,
+        "usage_rows": usage_rows,
     }
 
 

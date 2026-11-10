@@ -12,7 +12,8 @@
 	import PageHeader from '$lib/components/layout/PageHeader.svelte';
 	import StatsGrid from '$lib/components/StatsGrid.svelte';
 	import CollapsibleGroup from '$lib/components/ui/CollapsibleGroup.svelte';
-	import type { AnalyticsFilterPeriod, StatItem } from '$lib/api-types';
+	import SegmentedControl from '$lib/components/ui/SegmentedControl.svelte';
+	import type { AnalyticsFilterPeriod, AnalyticsMetric, StatItem } from '$lib/api-types';
 	import {
 		analyticsFilterOptions,
 		getTimestampRangeForFilter,
@@ -28,6 +29,27 @@
 		}
 		return 'all';
 	});
+
+	const metricOptions = [
+		{ label: 'Sessions', value: 'sessions' },
+		{ label: 'Tokens', value: 'tokens' },
+		{ label: 'Cost', value: 'cost' }
+	];
+
+	let selectedMetric = $derived.by((): AnalyticsMetric => {
+		const m = $page.url.searchParams.get('metric');
+		return m === 'tokens' || m === 'cost' ? m : 'sessions';
+	});
+
+	const handleMetricChange = (m: AnalyticsMetric) => {
+		const url = new URL($page.url);
+		if (m === 'sessions') {
+			url.searchParams.delete('metric');
+		} else {
+			url.searchParams.set('metric', m);
+		}
+		goto(url.toString(), { replaceState: true, noScroll: true, keepFocus: true });
+	};
 
 	const handleFilterChange = (filter: AnalyticsFilterPeriod) => {
 		const url = new URL($page.url);
@@ -68,10 +90,14 @@
 		cache_hit_rate: number;
 		tools_used: Record<string, number>;
 		sessions_by_date: Record<string, number>;
+		tokens_by_date: Record<string, number>;
+		cost_by_date: Record<string, number>;
 		projects_active: number;
 		temporal_heatmap: number[][];
 		peak_hours: number[];
 		models_categorized: Record<string, number>;
+		models_categorized_tokens: Record<string, number>;
+		models_categorized_cost: Record<string, number>;
 		time_distribution: {
 			morning_pct: number;
 			afternoon_pct: number;
@@ -95,10 +121,14 @@
 		cache_hit_rate: 0,
 		tools_used: {},
 		sessions_by_date: {},
+		tokens_by_date: {},
+		cost_by_date: {},
 		projects_active: 0,
 		temporal_heatmap: [],
 		peak_hours: [],
 		models_categorized: {},
+		models_categorized_tokens: {},
+		models_categorized_cost: {},
 		time_distribution: {
 			morning_pct: 0,
 			afternoon_pct: 0,
@@ -134,37 +164,65 @@
 		new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n);
 
 	// --- Date Processing ---
-	let sortedDates = $derived(Object.keys(analytics.sessions_by_date).sort());
+	let metricLabel = $derived(metricOptions.find((o) => o.value === selectedMetric)!.label);
+	let series = $derived<Record<string, number>>(
+		selectedMetric === 'tokens'
+			? analytics.tokens_by_date
+			: selectedMetric === 'cost'
+				? analytics.cost_by_date
+				: analytics.sessions_by_date
+	);
+	let seriesEmpty = $derived(
+		selectedMetric !== 'sessions' &&
+			Object.keys(series).length === 0 &&
+			analytics.total_sessions > 0
+	);
+	const emptyMessage = 'Token and cost data appear after the index rebuild finishes';
+
+	const formatMetric = (n: number) =>
+		selectedMetric === 'tokens'
+			? formatK(Math.round(n))
+			: selectedMetric === 'cost'
+				? formatCurrency(n)
+				: n.toLocaleString();
+
+	let sortedDates = $derived(Object.keys(series).sort());
 
 	// Stats - context-aware based on filter
 	let last30Days = $derived(sortedDates.slice(-30));
 
-	// For hour-based filters, show sessions per hour; for day-based, show per day
+	// For hour-based filters, show the metric per hour; for day-based, show per day
 	let avgDisplay = $derived.by(() => {
 		const numDays = sortedDates.length;
-		const totalSessions = analytics.total_sessions;
+		const total = sortedDates.reduce((sum, d) => sum + (series[d] || 0), 0);
 
-		if (numDays === 0 || totalSessions === 0) {
-			return { value: '0', unit: '/day' };
+		if (numDays === 0 || total === 0) {
+			return { value: formatMetric(0), unit: '/day' };
 		}
 
 		// For single-day (hour-based) filters, calculate per-hour rate
 		if (isHourBasedFilter(selectedFilter)) {
 			const hours = parseInt(selectedFilter) || 6;
-			const perHour = (totalSessions / hours).toFixed(1);
-			return { value: perHour, unit: '/hour' };
+			const perHour = total / hours;
+			return {
+				value: selectedMetric === 'sessions' ? perHour.toFixed(1) : formatMetric(perHour),
+				unit: '/hour'
+			};
 		}
 
 		// For multi-day filters, show per-day average
-		const perDay = (totalSessions / numDays).toFixed(1);
-		return { value: perDay, unit: '/day' };
+		const perDay = total / numDays;
+		return {
+			value: selectedMetric === 'sessions' ? perDay.toFixed(1) : formatMetric(perDay),
+			unit: '/day'
+		};
 	});
 
 	// Legacy movingAvg for backward compatibility
 	let movingAvg = $derived(
 		last30Days.length > 0
 			? (
-					last30Days.reduce((sum, d) => sum + (analytics.sessions_by_date[d] || 0), 0) /
+					last30Days.reduce((sum, d) => sum + (series[d] || 0), 0) /
 					last30Days.length
 				).toFixed(1)
 			: '0'
@@ -177,19 +235,22 @@
 	);
 
 	// Sparkline
-	let sparklineData = $derived(
-		sortedDates.slice(-14).map((d) => analytics.sessions_by_date[d] || 0)
-	);
-	let sparkMax = $derived(Math.max(...sparklineData, 1));
+	let sparklineData = $derived(sortedDates.slice(-14).map((d) => series[d] || 0));
+	let sparkMax = $derived(Math.max(0, ...sparklineData) || 1);
 
 	// --- Model Distribution ---
-	// Use models_categorized if it has data, otherwise fall back to models_used
+	// Per-metric model map; models_used fallback for sessions only
 	let modelsData = $derived(() => {
-		const categorized = analytics.models_categorized;
+		const categorized =
+			selectedMetric === 'tokens'
+				? analytics.models_categorized_tokens
+				: selectedMetric === 'cost'
+					? analytics.models_categorized_cost
+					: analytics.models_categorized;
 		const used = analytics.models_used;
 		// Check for non-empty objects (empty {} is truthy but has no keys)
 		if (categorized && Object.keys(categorized).length > 0) return categorized;
-		if (used && Object.keys(used).length > 0) return used;
+		if (selectedMetric === 'sessions' && used && Object.keys(used).length > 0) return used;
 		return {};
 	});
 
@@ -293,10 +354,11 @@
 
 	$effect(() => {
 		if (chartInstance && sortedDates) {
-			const newCounts = sortedDates.map((date) => analytics.sessions_by_date[date]);
+			const newCounts = sortedDates.map((date) => series[date]);
 			const newLabels = sortedDates.map((date) => formatDateLabel(date));
 
 			chartInstance.data.labels = newLabels;
+			chartInstance.data.datasets[0].label = metricLabel;
 			chartInstance.data.datasets[0].data = newCounts;
 			chartInstance.update();
 		}
@@ -310,7 +372,7 @@
 		const textPrimary = style.getPropertyValue('--text-primary').trim() || '#0f172a';
 		const border = style.getPropertyValue('--border').trim() || 'rgba(0,0,0,0.08)';
 
-		const sessionCounts = sortedDates.map((date) => analytics.sessions_by_date[date]);
+		const counts = sortedDates.map((date) => series[date]);
 
 		chartInstance = new Chart(chartCanvas, {
 			type: 'bar',
@@ -318,8 +380,8 @@
 				labels: sortedDates.map((date) => formatDateLabel(date)),
 				datasets: [
 					{
-						label: 'Sessions',
-						data: sessionCounts,
+						label: metricLabel,
+						data: counts,
 						backgroundColor: textMuted,
 						hoverBackgroundColor: colors[0],
 						borderRadius: 3,
@@ -337,7 +399,10 @@
 						backgroundColor: textPrimary,
 						padding: 10,
 						cornerRadius: 6,
-						displayColors: false
+						displayColors: false,
+						callbacks: {
+							label: (ctx: any) => `${ctx.dataset.label}: ${formatMetric(ctx.parsed.y)}`
+						}
 					}
 				},
 				scales: {
@@ -445,7 +510,16 @@
 		subtitle="Your coding patterns and AI collaboration"
 	>
 		{#snippet headerRight()}
-			<TimeFilterDropdown {selectedFilter} onFilterChange={handleFilterChange} />
+			<div class="flex flex-wrap items-center gap-2">
+				<SegmentedControl
+					options={metricOptions}
+					value={selectedMetric}
+					size="sm"
+					aria-label="Metric"
+					onchange={(v) => handleMetricChange(v as AnalyticsMetric)}
+				/>
+				<TimeFilterDropdown {selectedFilter} onFilterChange={handleFilterChange} />
+			</div>
 		{/snippet}
 	</PageHeader>
 
@@ -508,7 +582,10 @@
 			</div>
 
 			<!-- Bar chart -->
-			<div class="h-40 w-full">
+			{#if seriesEmpty}
+				<p class="text-xs text-[var(--text-muted)]">{emptyMessage}</p>
+			{/if}
+			<div class="h-40 w-full" class:hidden={seriesEmpty}>
 				<canvas bind:this={chartCanvas}></canvas>
 			</div>
 		</div>
@@ -599,14 +676,17 @@
 						>Compute DNA</span
 					>
 				</div>
-				<div class="w-full flex h-5 rounded overflow-hidden mb-3">
+				{#if seriesEmpty}
+						<p class="text-xs text-[var(--text-muted)]">{emptyMessage}</p>
+					{/if}
+					<div class="w-full flex h-5 rounded overflow-hidden mb-3" class:hidden={seriesEmpty}>
 					{#each modelDist as model}
 						<div
 							class="h-full"
 							style="width: {model.perc}%; background-color: {getModelColor(
 								model.name
 							)};"
-							title="{model.name}: {model.perc.toFixed(0)}%"
+							title="{model.name}: {model.perc.toFixed(0)}% · {formatMetric(model.count)}"
 						></div>
 					{/each}
 				</div>

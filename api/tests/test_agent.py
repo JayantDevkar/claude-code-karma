@@ -402,6 +402,17 @@ class TestExistsProperty:
 class TestGetUsageSummary:
     """Test get_usage_summary() method."""
 
+    def test_agent_usage_buckets_match_totals(self, standalone_agent_jsonl: Path) -> None:
+        """Bucketed cost and tokens sum to the agent's total cost and usage."""
+        agent = Agent.from_path(standalone_agent_jsonl)
+
+        buckets = agent.get_usage_buckets()
+
+        assert sum(b.cost for b in buckets.values()) == pytest.approx(agent.get_total_cost())
+        assert sum(b.usage.total_tokens for b in buckets.values()) == (
+            agent.get_usage_summary().total_tokens
+        )
+
     def test_get_usage_summary_aggregates_usage(self, standalone_agent_jsonl: Path) -> None:
         """Test that usage is aggregated from all assistant messages."""
         agent = Agent.from_path(standalone_agent_jsonl)
