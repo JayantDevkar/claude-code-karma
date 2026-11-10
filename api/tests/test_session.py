@@ -729,6 +729,19 @@ class TestUsageSummary:
 
         assert session.get_subagent_totals()[1] == pytest.approx(2 * session.get_total_cost())
 
+    def test_session_usage_buckets_match_totals(
+        self, temp_claude_dir: Path, sample_session_jsonl: Path
+    ):
+        """Bucketed cost and tokens sum to the session's total cost and usage."""
+        session = Session.from_path(sample_session_jsonl, claude_base_dir=temp_claude_dir)
+
+        buckets = session.get_usage_buckets()
+
+        assert sum(b.cost for b in buckets.values()) == pytest.approx(session.get_total_cost())
+        assert sum(b.usage.total_tokens for b in buckets.values()) == (
+            session.get_usage_summary().total_tokens
+        )
+
 
 # =============================================================================
 # Models and Tools Used Tests

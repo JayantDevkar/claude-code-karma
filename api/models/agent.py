@@ -29,7 +29,7 @@ from .message import Message
 from .task import Task, reconstruct_tasks_from_jsonl
 
 if TYPE_CHECKING:
-    from .usage import TokenUsage
+    from .usage import TokenUsage, UsageBuckets
 
 
 class AgentCache(BaseCache):
@@ -51,6 +51,7 @@ class AgentCache(BaseCache):
         "active_duration_seconds",
         "usage_summary",
         "total_cost",
+        "usage_buckets",
         "message_count",
         "tasks",
         "skills_used",
@@ -65,6 +66,7 @@ class AgentCache(BaseCache):
         self.active_duration_seconds: Optional[float] = None
         self.usage_summary: Optional["TokenUsage"] = None
         self.total_cost: Optional[float] = None
+        self.usage_buckets: Optional["UsageBuckets"] = None
         self.message_count: Optional[int] = None
         self.tasks: Optional[List["Task"]] = None
         self.skills_used: Optional[Dict[tuple, int]] = None  # {(name, source): count}
@@ -78,6 +80,7 @@ class AgentCache(BaseCache):
         self.active_duration_seconds = None
         self.usage_summary = None
         self.total_cost = None
+        self.usage_buckets = None
         self.message_count = None
         self.tasks = None
         self.skills_used = None
@@ -264,6 +267,7 @@ class Agent(BaseModel):
         cache.active_duration_seconds = active_time.seconds
         cache.usage_summary = usage_acc.usage
         cache.total_cost = usage_acc.cost
+        cache.usage_buckets = usage_acc.buckets()
         cache.message_count = message_count
         cache.models_used = models
         cache.skills_used = dict(skills)
@@ -338,6 +342,11 @@ class Agent(BaseModel):
         """Sum per-response costs, each priced by its own model (cached)."""
         self._load_metadata()
         return self._get_cache().total_cost or 0.0
+
+    def get_usage_buckets(self) -> "UsageBuckets":
+        """Usage and cost keyed by (15-minute bucket start, model) (cached)."""
+        self._load_metadata()
+        return self._get_cache().usage_buckets or {}
 
     def get_skills_used(self) -> Dict[tuple, int]:
         """Get skill usage counts with invocation source (cached).

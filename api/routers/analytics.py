@@ -8,6 +8,7 @@ import logging
 import sqlite3
 import sys
 from collections import Counter
+from collections.abc import Iterable
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
@@ -23,6 +24,7 @@ sys.path.insert(0, str(models_path))
 # Phase 3: HTTP caching
 from http_caching import cacheable
 from models import AssistantMessage, Project, ToolUseBlock
+from models.usage import BUCKET_SECONDS, merge_usage_buckets
 from schemas import DashboardStats, ProjectAnalytics, WorkModeDistribution
 from utils import list_all_projects, local_timezone, parse_timestamp_range, path_basename
 
@@ -44,15 +46,17 @@ def _get_analytics_sqlite(
         with sqlite_read() as conn:
             if conn is None:
                 return None
-            data = query_analytics(conn, project=project, start_dt=start_dt, end_dt=end_dt)
+            data = query_analytics(
+                conn,
+                project=project,
+                start_dt=start_dt,
+                end_dt=end_dt,
+                tz_offset_minutes=tz_offset_minutes,
+            )
         totals = data["totals"]
+        usage = usage_breakdown(data["usage_rows"])
 
-        # Models already parsed by SQLite's json_each()
-        models_used_counter: Counter[str] = Counter()
-        models_categorized_counter: Counter[str] = Counter()
-        for model in data["models_used_list"]:
-            models_used_counter[model] += 1
-            models_categorized_counter[_categorize_model(model)] += 1
+        models_used_counter, models_categorized_counter = count_models(data["session_models"])
 
         # Build temporal heatmap from start_times
         local_tz = timezone(timedelta(minutes=-tz_offset_minutes))
@@ -101,6 +105,7 @@ def _get_analytics_sqlite(
             time_distribution=time_distribution,
             work_mode_distribution=work_mode_distribution,
             projects_active=totals.get("projects_active", 0),
+            **usage,
         )
     except sqlite3.Error as e:
         logger.warning("SQLite analytics query failed, falling back: %s", e)
@@ -188,7 +193,7 @@ def get_global_analytics(
             continue
 
     analytics = _calculate_analytics_from_sessions(
-        all_sessions, tz_offset or 0, use_index=use_index
+        all_sessions, tz_offset or 0, use_index=use_index, start_dt=start_dt, end_dt=end_dt
     )
     analytics.projects_active = projects_active
     return analytics
@@ -279,7 +284,9 @@ def get_project_analytics(
             status_code=500, detail=f"CRASH in list_sessions: {str(e)} TB: {tb[:200]}"
         ) from e
 
-    return _calculate_analytics_from_sessions(sessions, tz_offset or 0, use_index=False)
+    return _calculate_analytics_from_sessions(
+        sessions, tz_offset or 0, use_index=False, start_dt=start_dt, end_dt=end_dt
+    )
 
 
 def _categorize_model(model_name: str) -> str:
@@ -293,6 +300,75 @@ def _categorize_model(model_name: str) -> str:
         return "Haiku"
     else:
         return "Other"
+
+
+def count_models(
+    session_models: Iterable[Iterable[str]],
+) -> tuple[Counter[str], Counter[str]]:
+    """Count sessions per model id and per model family, once per session."""
+    used: Counter[str] = Counter()
+    models_categorized: Counter[str] = Counter()
+    for models in session_models:
+        ids = set(models)
+        used.update(ids)
+        models_categorized.update({_categorize_model(m) for m in ids})
+    return used, models_categorized
+
+
+def usage_breakdown(rows: Iterable[tuple[str, str, int, float]]) -> dict[str, dict]:
+    """Fold (local_day, model, tokens, cost) rows into per-day and per-family dicts."""
+    tokens_by_date: Counter[str] = Counter()
+    cost_by_date: Counter[str] = Counter()
+    family_tokens: Counter[str] = Counter()
+    family_cost: Counter[str] = Counter()
+    for day, model, tokens, cost in rows:
+        family = _categorize_model(model)
+        tokens_by_date[day] += tokens
+        cost_by_date[day] += cost
+        family_tokens[family] += tokens
+        family_cost[family] += cost
+    return {
+        "tokens_by_date": dict(tokens_by_date),
+        "cost_by_date": {k: round(v, 4) for k, v in cost_by_date.items()},
+        "models_categorized_tokens": dict(family_tokens),
+        "models_categorized_cost": {k: round(v, 4) for k, v in family_cost.items()},
+    }
+
+
+def local_day(bucket_start: int, tz_offset_minutes: int) -> str:
+    """Local calendar day of a bucket start; twin of the SQL date(bucket_start - tz*60)."""
+    return datetime.fromtimestamp(bucket_start - tz_offset_minutes * 60, timezone.utc).strftime(
+        "%Y-%m-%d"
+    )
+
+
+def _session_usage_rows(
+    session,
+    subagents: list,
+    tz_offset_minutes: int,
+    start_dt: Optional[datetime],
+    end_dt: Optional[datetime],
+) -> list[tuple[str, str, int, float]]:
+    """(local_day, model, tokens, cost) rows for a session and its subagents inside the window."""
+    buckets = merge_usage_buckets(
+        session.get_usage_buckets(), *(a.get_usage_buckets() for a in subagents)
+    )
+    # Same window as the SQL path: a bucket covers the 15 minutes after its start
+    start_bucket = (
+        int(start_dt.timestamp() // BUCKET_SECONDS * BUCKET_SECONDS) if start_dt else None
+    )
+    end_s = int(end_dt.timestamp()) if end_dt else None
+    return [
+        (
+            local_day(bucket_start, tz_offset_minutes),
+            model,
+            bucket.usage.total_tokens,
+            bucket.cost,
+        )
+        for (bucket_start, model), bucket in buckets.items()
+        if (start_bucket is None or bucket_start >= start_bucket)
+        and (end_s is None or bucket_start <= end_s)
+    ]
 
 
 def _calculate_time_distribution(temporal_heatmap: list) -> dict:
@@ -480,7 +556,11 @@ def _calculate_analytics_from_index(
 
 
 def _calculate_analytics_from_sessions(
-    sessions: list, tz_offset_minutes: int = 0, use_index: bool = True
+    sessions: list,
+    tz_offset_minutes: int = 0,
+    use_index: bool = True,
+    start_dt: Optional[datetime] = None,
+    end_dt: Optional[datetime] = None,
 ) -> ProjectAnalytics:
     """
     Calculate analytics from a list of sessions.
@@ -493,6 +573,7 @@ def _calculate_analytics_from_sessions(
         use_index: If True, attempt to use SessionIndexEntry data for lightweight metrics
                    (session count, durations, temporal patterns) without parsing JSONL.
                    Falls back to full parsing for token/tool counts.
+        start_dt, end_dt: Window applied to the token and cost breakdown buckets.
     """
     # Try fast path using SessionIndexEntry if available
     # Check if all sessions are actually SessionIndexEntry objects
@@ -507,10 +588,10 @@ def _calculate_analytics_from_sessions(
     total_cacheable = 0
     total_duration = 0.0
     total_cost = 0.0
-    models_used: Counter[str] = Counter()
-    models_categorized: Counter[str] = Counter()
+    session_models: list[list[str]] = []
     tools_used: Counter[str] = Counter()
     sessions_by_date: Counter[str] = Counter()
+    usage_rows: list[tuple[str, str, int, float]] = []
 
     # Temporal heatmap: 7 days (Mon=0) x 24 hours
     # Uses local time when tz_offset is provided
@@ -522,8 +603,12 @@ def _calculate_analytics_from_sessions(
     local_tz = timezone(timedelta(minutes=-tz_offset_minutes))
 
     for session in sessions:
+        subagents = session.list_subagents()
+        usage_rows.extend(
+            _session_usage_rows(session, subagents, tz_offset_minutes, start_dt, end_dt)
+        )
         # Totals cover the session plus its subagents, same scope as the SQLite path
-        subagent_usage, subagent_cost = session.get_subagent_totals()
+        subagent_usage, subagent_cost = session.get_subagent_totals(subagents)
         usage = session.get_usage_summary() + subagent_usage
         total_input_tokens += usage.total_input
         total_output_tokens += usage.output_tokens
@@ -536,10 +621,7 @@ def _calculate_analytics_from_sessions(
             total_duration += session.duration_seconds
 
         # Track models used
-        session_models = session.get_models_used()
-        for model in session_models:
-            models_used[model] += 1
-            models_categorized[_categorize_model(model)] += 1
+        session_models.append(list(session.get_models_used()))
 
         total_cost += session.get_total_cost() + subagent_cost
 
@@ -561,7 +643,7 @@ def _calculate_analytics_from_sessions(
             temporal_heatmap[day_of_week][hour] += 1
 
         # Also count subagent tool usage
-        for subagent in session.list_subagents():
+        for subagent in subagents:
             for msg in subagent.iter_messages():
                 if isinstance(msg, AssistantMessage):
                     for block in msg.content_blocks:
@@ -577,6 +659,7 @@ def _calculate_analytics_from_sessions(
     peak_hours = [h for _, h in hour_totals[:3] if hour_totals[0][0] > 0]
 
     total_sessions = len(sessions)
+    models_used, models_categorized = count_models(session_models)
 
     # Calculate time distribution (simplified view)
     time_distribution = _calculate_time_distribution(temporal_heatmap)
@@ -600,6 +683,7 @@ def _calculate_analytics_from_sessions(
         models_categorized=dict(models_categorized),
         time_distribution=time_distribution,
         work_mode_distribution=work_mode_distribution,
+        **usage_breakdown(usage_rows),
     )
 
 
