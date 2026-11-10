@@ -553,6 +553,8 @@ def get_project(
                             chain_info=chain_info,
                             session_source=row.get("session_source"),
                             machine=row.get("source_root"),
+                            tokens_with_subagents=row.get("tokens_with_subagents"),
+                            cost_with_subagents=row.get("cost_with_subagents"),
                         )
                     )
 

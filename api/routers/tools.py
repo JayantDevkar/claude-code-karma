@@ -149,6 +149,8 @@ def _build_session_summary(session_data: dict) -> SessionSummary:
         session_titles=session_data.get("session_titles", []),
         tool_source=session_data.get("tool_source"),
         subagent_agent_ids=session_data.get("subagent_agent_ids", []),
+        tokens_with_subagents=session_data.get("tokens_with_subagents"),
+        cost_with_subagents=session_data.get("cost_with_subagents"),
     )
 
 
