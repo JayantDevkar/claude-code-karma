@@ -261,6 +261,10 @@ export interface SessionSummary {
 	session_source?: 'desktop' | null;
 	/** Name of the other computer this session was synced from; null = this machine */
 	machine?: string | null;
+	/** Input + output + cache reads/writes incl. subagents (SQLite-backed lists only) */
+	tokens_with_subagents?: number | null;
+	/** Cost incl. subagents in USD (SQLite-backed lists only) */
+	cost_with_subagents?: number | null;
 }
 
 /**
