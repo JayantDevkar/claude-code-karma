@@ -376,6 +376,10 @@ export interface Project {
 	is_nested_project: boolean;
 	/** Start time of the most recent session (from project list API) */
 	latest_session_time?: string;
+	/** Input + output + cache reads/writes incl. subagents (project list API, SQLite only) */
+	total_tokens?: number | null;
+	/** Cost incl. subagents in USD (project list API, SQLite only) */
+	total_cost?: number | null;
 	/** Sessions array (only populated in project detail API) */
 	sessions?: SessionSummary[];
 }

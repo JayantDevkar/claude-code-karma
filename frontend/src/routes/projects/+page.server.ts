@@ -5,8 +5,8 @@ interface Project {
 	encoded_name: string;
 	path: string;
 	session_count: number;
-	total_cost: number;
-	total_tokens: number;
+	total_cost?: number | null;
+	total_tokens?: number | null;
 	latest_session_time: string | null;
 }
 
