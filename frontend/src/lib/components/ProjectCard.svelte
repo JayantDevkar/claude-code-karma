@@ -144,7 +144,7 @@
 
 				<!-- Stats row -->
 				<div class="flex items-center justify-between text-xs text-[var(--text-muted)]">
-					<div class="flex items-center gap-4">
+					<div class="flex flex-wrap items-center gap-x-4 gap-y-1 whitespace-nowrap">
 						<div class="flex items-center gap-1.5">
 							<MessageSquare size={12} strokeWidth={2} />
 							<span class="tabular-nums">{project.session_count} sessions</span>
@@ -234,7 +234,9 @@
 				</p>
 
 				<!-- Stats row (inline like SubagentCard) -->
-				<div class="flex items-center gap-4 text-xs text-[var(--text-muted)]">
+				<div
+					class="flex flex-wrap items-center gap-x-4 gap-y-1 whitespace-nowrap text-xs text-[var(--text-muted)]"
+				>
 					<div class="flex items-center gap-1.5">
 						<MessageSquare size={14} strokeWidth={2} />
 						<span class="tabular-nums">{project.session_count} sessions</span>
