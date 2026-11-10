@@ -644,14 +644,6 @@ class TestTokenUsageCalculateCost:
         output = (100_000 / 1_000_000) * 22.5
         assert cost == pytest.approx(uncached + cache_write + cache_read + output)
 
-    def test_long_context_applied_to_opus_4_6(self):
-        """Opus 4.6 with >200K input tokens should use long-context rates."""
-        usage = TokenUsage(input_tokens=500_000, output_tokens=1_000_000)
-        cost = usage.calculate_cost("claude-opus-4-6")
-        # Long-context: $10/$37.50
-        expected = (500_000 / 1_000_000) * 10.0 + (1_000_000 / 1_000_000) * 37.5
-        assert cost == pytest.approx(expected)
-
     def test_long_context_not_applied_to_opus_4_5(self):
         """Opus 4.5 should not have long-context pricing."""
         usage = TokenUsage(input_tokens=500_000, output_tokens=1_000_000)
@@ -667,8 +659,11 @@ class TestCurrentModelPricing:
     @pytest.mark.parametrize(
         "model,input_price,output_price",
         [
+            ("claude-fable-5-2", 8.0, 40.0),
+            ("claude-mythos-5-2", 8.0, 40.0),
             ("claude-fable-5-1", 10.0, 50.0),
             ("claude-fable-5", 10.0, 50.0),
+            ("claude-mythos-5", 10.0, 50.0),
             ("claude-opus-5-5", 4.0, 20.0),
             ("claude-opus-5", 5.0, 25.0),
             ("claude-opus-4-8", 5.0, 25.0),
@@ -689,8 +684,8 @@ class TestCurrentModelPricing:
             ("claude-opus-6", "claude-opus-5-5"),
             ("claude-sonnet-6", "claude-sonnet-5-5"),
             ("claude-haiku-6", "claude-haiku-5-5"),
-            ("claude-fable-6", "claude-fable-5-1"),
-            ("claude-mythos-5", "claude-mythos-5-1"),
+            ("claude-fable-6", "claude-fable-5-2"),
+            ("claude-mythos-6", "claude-mythos-5-2"),
             ("us.anthropic.claude-opus-4-8-v1", "claude-opus-4-8"),
         ],
     )
@@ -716,8 +711,10 @@ class TestCurrentModelPricing:
         assert usage.calculate_cost(model) == pytest.approx(usage.calculate_cost(canonical))
 
     def test_no_long_context_premium_for_1m_models(self):
-        """Opus 4.7+ and Claude 5 bill 1M context at standard rates."""
+        """Claude 4.6+ (except Haiku 5.5) bills 1M context at standard rates."""
         usage = TokenUsage(input_tokens=500_000, output_tokens=0)
+        assert usage.calculate_cost("claude-opus-4-6") == pytest.approx(0.5 * 5.0)
+        assert usage.calculate_cost("claude-sonnet-4-6") == pytest.approx(0.5 * 3.0)
         assert usage.calculate_cost("claude-opus-4-8") == pytest.approx(0.5 * 5.0)
         assert usage.calculate_cost("claude-fable-5-1") == pytest.approx(0.5 * 10.0)
 
@@ -728,11 +725,21 @@ class TestCurrentModelPricing:
 
     @pytest.mark.parametrize(
         "model,cache_read_multiplier",
-        [("claude-fable-5-1", 0.025), ("claude-opus-5-5", 0.05), ("claude-opus-4-8", 0.10)],
+        [
+            ("claude-fable-5-2", 0.025),
+            ("claude-fable-5-1", 0.025),
+            ("claude-opus-5-5", 0.05),
+            ("claude-opus-4-8", 0.10),
+        ],
     )
     def test_cache_read_rate_per_model(self, model, cache_read_multiplier):
         usage = TokenUsage(cache_read_input_tokens=1_000_000)
-        input_price = {"claude-fable-5-1": 10.0, "claude-opus-5-5": 4.0, "claude-opus-4-8": 5.0}
+        input_price = {
+            "claude-fable-5-2": 8.0,
+            "claude-fable-5-1": 10.0,
+            "claude-opus-5-5": 4.0,
+            "claude-opus-4-8": 5.0,
+        }
         expected = input_price[model] * cache_read_multiplier
         assert usage.calculate_cost(model) == pytest.approx(expected)
 
