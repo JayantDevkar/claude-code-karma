@@ -49,7 +49,7 @@ from .message import (
 from .task import Task, load_tasks_from_directory, reconstruct_tasks_from_jsonl
 from .todo import TodoItem, load_todos_from_file
 from .tool_result import ToolResult
-from .usage import TokenUsage, UsageAccumulator
+from .usage import TokenUsage, UsageAccumulator, UsageBuckets
 
 if TYPE_CHECKING:
     pass
@@ -171,6 +171,7 @@ class SessionCache(BaseCache):
         "models_used",
         "message_count",
         "total_cost",
+        "usage_buckets",
         "active_duration_seconds",
         # Continuation session detection
         "user_message_count",
@@ -208,6 +209,7 @@ class SessionCache(BaseCache):
         self.models_used: Optional[Set[str]] = None
         self.message_count: Optional[int] = None
         self.total_cost: Optional[float] = None
+        self.usage_buckets: Optional[UsageBuckets] = None
         self.active_duration_seconds: Optional[float] = None
         # Continuation session detection
         self.user_message_count: int = 0
@@ -243,6 +245,7 @@ class SessionCache(BaseCache):
         self.models_used = None
         self.message_count = None
         self.total_cost = None
+        self.usage_buckets = None
         self.active_duration_seconds = None
         self.user_message_count = 0
         self.assistant_message_count = 0
@@ -544,6 +547,7 @@ class Session(BaseModel):
         cache.models_used = models_used
         cache.message_count = message_count
         cache.total_cost = usage_acc.cost
+        cache.usage_buckets = usage_acc.buckets()
         cache.active_duration_seconds = active_time.seconds
         # Message type counts
         cache.user_message_count = user_msg_count
@@ -883,6 +887,11 @@ class Session(BaseModel):
         """
         self._load_metadata()
         return self._get_cache().total_cost or 0.0
+
+    def get_usage_buckets(self) -> UsageBuckets:
+        """Usage and cost keyed by (15-minute bucket start, model) (cached)."""
+        self._load_metadata()
+        return self._get_cache().usage_buckets or {}
 
     def get_subagent_totals(self) -> tuple[TokenUsage, float]:
         """Token usage and estimated cost summed across this session's subagents."""
