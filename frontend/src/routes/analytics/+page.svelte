@@ -209,6 +209,7 @@
 		if (lower.includes('opus')) return 'var(--model-opus)';
 		if (lower.includes('sonnet')) return 'var(--model-sonnet)';
 		if (lower.includes('haiku')) return 'var(--model-haiku)';
+		if (lower.includes('fable')) return 'var(--model-fable)';
 		return '#14b8a6'; // Teal for 'Other' models
 	};
 
