@@ -87,6 +87,25 @@ def get_last_sync_time() -> float:
     return _last_sync_complete
 
 
+def _reprice_if_pricing_changed(conn: sqlite3.Connection) -> bool:
+    """Force a re-parse of every session when model prices differ from those stored costs used."""
+    from models.usage import pricing_fingerprint
+
+    current = pricing_fingerprint()
+    row = conn.execute("SELECT value FROM index_meta WHERE key = 'pricing_fingerprint'").fetchone()
+    if row is not None and row[0] == current:
+        return False
+    reset = conn.execute("UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1").rowcount
+    conn.execute(
+        "INSERT OR REPLACE INTO index_meta (key, value) VALUES ('pricing_fingerprint', ?)",
+        (current,),
+    )
+    conn.commit()
+    if reset:
+        logger.info("Model pricing changed: re-pricing %d sessions", reset)
+    return True
+
+
 def sync_all_projects(conn: sqlite3.Connection) -> dict:
     """
     Sync all project directories into SQLite.
@@ -113,6 +132,7 @@ def sync_all_projects(conn: sqlite3.Connection) -> dict:
             return {"status": "no_projects_dir"}
 
         stats = {"total": 0, "indexed": 0, "skipped": 0, "errors": 0}
+        _reprice_if_pricing_changed(conn)
 
         from services.desktop_sessions import (
             get_real_project_encoded_name,

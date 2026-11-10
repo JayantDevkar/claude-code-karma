@@ -10,7 +10,7 @@ import sqlite3
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 27
+SCHEMA_VERSION = 28
 
 SCHEMA_SQL = """
 -- Schema versioning
@@ -418,6 +418,16 @@ END;
 
 SCHEMA_SQL = SCHEMA_SQL + _SESSIONS_FTS_SQL
 
+# v28: key/value state of the index itself, e.g. the pricing fingerprint behind stored costs
+_INDEX_META_SQL = """
+CREATE TABLE IF NOT EXISTS index_meta (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+"""
+
+SCHEMA_SQL = SCHEMA_SQL + _INDEX_META_SQL
+
 
 def ensure_schema(conn: sqlite3.Connection) -> None:
     """
@@ -438,6 +448,9 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
     # sessions.needs_shell_cron_reindex ALTER is handled separately in the
     # v13 incremental block below (ALTER is not idempotent).
     conn.executescript(_SHELLS_CRON_SCHEMA_SQL)
+
+    # Same cross-branch guard for the v28 index_meta table.
+    conn.executescript(_INDEX_META_SQL)
 
     # Same cross-branch guard for sessions columns added after v19.
     columns_added = _ensure_session_columns(conn)
@@ -878,6 +891,8 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
                     "WHERE project_path <> (SELECT p.project_path FROM projects p "
                     "WHERE p.encoded_name = sessions.project_encoded_name) COLLATE NOCASE"
                 )
+
+        # v28: index_meta comes from the guard above; the first sync then re-prices every session
 
     # Record version
     conn.execute(
