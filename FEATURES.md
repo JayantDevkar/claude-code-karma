@@ -84,7 +84,7 @@ Comprehensive project overview with tabbed navigation.
   - Token usage
   - Live status indicators
   - Git branch badges
-  - Model badges (Opus, Sonnet, Haiku)
+  - Model badges (Opus, Sonnet, Haiku, Fable)
 
 #### Agents Tab
 
@@ -230,7 +230,7 @@ Deep dive into individual Claude Code sessions with comprehensive analysis.
 
 - **Subagent activity** — All spawned agents:
   - Agent type (explore, executor, planner, etc.)
-  - Model used (Opus, Sonnet, Haiku)
+  - Model used (Opus, Sonnet, Haiku, Fable)
   - Start time and duration
   - Status (completed, failed, etc.)
   - Token usage
@@ -318,7 +318,7 @@ Global analytics dashboard for coding patterns and AI collaboration insights.
   - Cache hit rate with progress bar
   - Active projects count
   - Compute DNA (model distribution):
-    - Opus/Sonnet/Haiku usage percentages
+    - Opus/Sonnet/Haiku/Fable usage percentages
     - Visual distribution bar
 - **Rhythm Section:**
   - Time distribution (morning, afternoon, evening, night)

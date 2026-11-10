@@ -291,6 +291,8 @@ def _categorize_model(model_name: str) -> str:
         return "Sonnet"
     elif "haiku" in model_lower:
         return "Haiku"
+    elif "fable" in model_lower:
+        return "Fable"
     else:
         return "Other"
 
