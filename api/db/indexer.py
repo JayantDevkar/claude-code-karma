@@ -410,10 +410,8 @@ def _index_session(
     initial_prompt = get_initial_prompt(session, max_length=500)
 
     # Count subagents via filesystem (fast, no JSONL parse)
-    subagent_count = 0
-    subagents_dir = jsonl_path.parent / uuid / "subagents"
-    if subagents_dir.exists():
-        subagent_count = len(list(subagents_dir.glob("agent-*.jsonl")))
+    subagent_paths = session.list_subagent_paths()
+    subagent_count = len(subagent_paths)
     subagents = session.list_subagents() if subagent_count else []
     subagent_cost = sum(agent.get_total_cost() for agent in subagents)
     subagent_usage = sum((agent.get_usage_summary() for agent in subagents), TokenUsage.zero())
@@ -557,7 +555,7 @@ def _index_session(
         try:
             from services.subagent_types import get_all_subagent_types
 
-            subagent_types = get_all_subagent_types(jsonl_path, subagents_dir)
+            subagent_types = get_all_subagent_types(jsonl_path, subagent_paths)
             for subagent in subagents:
                 subagent_type = subagent_types.get(subagent.agent_id, "_unknown")
                 if subagent_type == "_unknown":

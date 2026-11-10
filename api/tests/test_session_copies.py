@@ -122,6 +122,64 @@ def test_index_and_detail_count_the_complete_copy(claude_dirs, mem_db, monkeypat
     assert body["total_output_tokens"] == 5 * OUT_PER_TURN
 
 
+SUPERPOWERS_WT = "-home-alice-myrepo--worktrees-phase1"
+SUB_IN_PER_AGENT = 1000
+
+
+def _write_agent(project_dir: Path, uuid: str, agent_id: str, turns: int = 1) -> Path:
+    subagents = project_dir / uuid / "subagents"
+    subagents.mkdir(parents=True, exist_ok=True)
+    lines = [
+        {
+            "type": "assistant",
+            "uuid": f"{agent_id}-a{i}",
+            "agentId": agent_id,
+            "sessionId": uuid,
+            "isSidechain": True,
+            "timestamp": f"2026-10-01T10:00:{i:02d}.000Z",
+            "message": {
+                "id": f"msg-{agent_id}-{i}",
+                "role": "assistant",
+                "model": "claude-sonnet-4-5",
+                "content": [{"type": "text", "text": "found it"}],
+                "usage": {"input_tokens": SUB_IN_PER_AGENT, "output_tokens": 1},
+            },
+        }
+        for i in range(turns)
+    ]
+    path = subagents / f"agent-{agent_id}.jsonl"
+    path.write_text("\n".join(json.dumps(line) for line in lines) + "\n", encoding="utf-8")
+    return path
+
+
+@pytest.mark.parametrize("side", ["local", "synced"])
+@pytest.mark.parametrize("worktree", [SUPERPOWERS_WT, WORKTREE])
+def test_subagents_in_a_worktree_dir_count_for_the_session(
+    claude_dirs, mem_db, monkeypatch, side, worktree
+):
+    """The session JSONL stays in the repo dir; its subagents land in a worktree dir."""
+    local, remote = claude_dirs
+    base = local if side == "local" else remote
+    uuid = f"s-sub-{side}-{len(worktree)}"
+    _write_turns(base / REPO, uuid, 1)
+    _write_agent(base / REPO, uuid, "a1")
+    _write_agent(base / worktree, uuid, "a2")
+    _write_agent(base / worktree, uuid, "a3")
+    # The same agent in both dirs counts once, from its complete copy
+    _write_agent(base / REPO, uuid, "a4", turns=1)
+    _write_agent(base / worktree, uuid, "a4", turns=2)
+    expected = 5 * SUB_IN_PER_AGENT
+
+    indexer.sync_all_projects(mem_db)
+
+    row = mem_db.execute(
+        "SELECT subagent_count, subagent_input_tokens FROM sessions WHERE uuid = ?", (uuid,)
+    ).fetchone()
+    assert tuple(row) == (4, expected)
+    body = _client(monkeypatch).get(f"/sessions/{uuid}").json()
+    assert body["subagent_input_tokens"] == expected
+
+
 def test_second_pass_does_not_reindex_duplicate_copies(claude_dirs, mem_db):
     """Two copies under one project must not overwrite each other on every sync."""
     local, _ = claude_dirs

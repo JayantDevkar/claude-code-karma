@@ -266,10 +266,11 @@ def find_subagent(
     parent_session = Session.from_path(session_jsonl)
 
     # Find subagent
-    subagents_dir = parent_session.subagents_dir
-    agent_jsonl = subagents_dir / f"agent-{agent_id}.jsonl"
-
-    if not agent_jsonl.exists():
+    agent_name = f"agent-{agent_id}.jsonl"
+    agent_jsonl = next(
+        (p for p in parent_session.list_subagent_paths() if p.name == agent_name), None
+    )
+    if agent_jsonl is None:
         return None
 
     agent = Agent.from_path(agent_jsonl)

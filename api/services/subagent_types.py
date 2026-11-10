@@ -25,7 +25,9 @@ logger = logging.getLogger(__name__)
 AGENT_ID_PATTERN = re.compile(r"agentId:\s*([a-fA-F0-9]+)")
 
 
-def get_all_subagent_types(jsonl_path: Path, subagents_dir: Path | None = None) -> dict[str, str]:
+def get_all_subagent_types(
+    jsonl_path: Path, agent_files: list[Path] | None = None
+) -> dict[str, str]:
     """
     Extract agent_id -> subagent_type mapping from a session and its subagents.
 
@@ -37,20 +39,16 @@ def get_all_subagent_types(jsonl_path: Path, subagents_dir: Path | None = None) 
 
     Args:
         jsonl_path: Path to the parent session's JSONL file
-        subagents_dir: Path to the subagents/ directory (may not exist)
+        agent_files: The session's subagent JSONLs (Session.list_subagent_paths())
 
     Returns:
         Dict mapping agent_id -> subagent_type
     """
     result: dict[str, str] = {}
+    agent_files = agent_files or []
 
     # Phase 1: Scan parent session JSONL
     result.update(_extract_types_from_raw_jsonl(jsonl_path))
-
-    # Collect agent files once if subagents_dir exists
-    agent_files = []
-    if subagents_dir and subagents_dir.exists():
-        agent_files = list(subagents_dir.glob("agent-*.jsonl"))
 
     # Phase 2: Scan ALL subagent JSONLs (catches nested agents)
     for agent_file in agent_files:
