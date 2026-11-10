@@ -606,21 +606,19 @@ def iter_session_dirs(
 
 
 def find_remote_session_jsonl(canonical: str, uuid: str) -> Optional[Path]:
-    """Find a session JSONL in the remote dirs mapped to a project."""
-    for rd in remote_dirs_for(canonical):
-        p = rd.path / f"{uuid}.jsonl"
-        if p.exists():
-            return p
-    return None
+    """Find a session JSONL in the remote dirs mapped to a project; its most complete copy."""
+    from services.session_copies import most_complete
+
+    return most_complete(rd.path / f"{uuid}.jsonl" for rd in remote_dirs_for(canonical))
 
 
 def find_any_remote_session(uuid: str) -> Optional[tuple[RemoteDir, Path]]:
-    """Find a session JSONL by UUID in any extra root."""
-    for rd in get_remote_dirs():
-        p = rd.path / f"{uuid}.jsonl"
-        if p.exists():
-            return rd, p
-    return None
+    """Find a session JSONL by UUID in any extra root; its most complete copy."""
+    from services.session_copies import most_complete
+
+    by_path = {rd.path / f"{uuid}.jsonl": rd for rd in get_remote_dirs()}
+    best = most_complete(by_path)
+    return (by_path[best], best) if best else None
 
 
 def session_jsonl_path(encoded_name: str, uuid: str) -> Path:

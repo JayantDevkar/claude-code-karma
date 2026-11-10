@@ -13,6 +13,7 @@ from typing import Optional
 
 from config import settings
 from models import Agent, Session
+from services.session_copies import most_complete
 from utils import is_encoded_project_dir
 
 logger = logging.getLogger(__name__)
@@ -80,14 +81,17 @@ def find_session_with_project(uuid: str) -> Optional[SessionLookupResult]:
 
     projects_dir = settings.projects_dir
     if projects_dir.exists():
-        for encoded_dir in projects_dir.iterdir():
-            if encoded_dir.is_dir() and is_encoded_project_dir(encoded_dir.name):
-                jsonl_path = encoded_dir / f"{uuid}.jsonl"
-                if jsonl_path.exists():
-                    return SessionLookupResult(
-                        session=Session.from_path(jsonl_path),
-                        project_encoded_name=encoded_dir.name,
-                    )
+        # A worktree dir can hold a longer copy of a repo dir's session: take the complete one
+        jsonl_path = most_complete(
+            d / f"{uuid}.jsonl"
+            for d in projects_dir.iterdir()
+            if d.is_dir() and is_encoded_project_dir(d.name)
+        )
+        if jsonl_path is not None:
+            return SessionLookupResult(
+                session=Session.from_path(jsonl_path),
+                project_encoded_name=jsonl_path.parent.name,
+            )
 
     # Synced from another machine: report the project it is shown under
     remote = find_any_remote_session(uuid)
@@ -110,18 +114,24 @@ def _indexed_location(uuid: str) -> Optional[SessionLookupResult]:
             if conn is None:
                 return None
             row = conn.execute(
-                "SELECT project_encoded_name, source_root FROM sessions WHERE uuid = ?", (uuid,)
+                "SELECT project_encoded_name, source_encoded_name, source_root "
+                "FROM sessions WHERE uuid = ?",
+                (uuid,),
             ).fetchone()
     except Exception as e:
         logger.debug("Index lookup for %s failed, scanning instead: %s", uuid, e)
         return None
     if row is None:
         return None
-    encoded_name, source_root = row[0], row[1]
-    # A local copy wins even when the index still says synced (indexed before it appeared)
-    jsonl_path = settings.projects_dir / encoded_name / f"{uuid}.jsonl"
-    if source_root is not None and not jsonl_path.exists():
-        jsonl_path = find_remote_session_jsonl(encoded_name, uuid)
+    encoded_name, source_dir, source_root = row[0], row[1], row[2]
+    if source_root is None:
+        # The dir the indexer read: a worktree dir when it holds the complete copy
+        jsonl_path = settings.projects_dir / (source_dir or encoded_name) / f"{uuid}.jsonl"
+    else:
+        # A local copy wins even when the index still says synced (indexed before it appeared)
+        jsonl_path = settings.projects_dir / encoded_name / f"{uuid}.jsonl"
+        if not jsonl_path.exists():
+            jsonl_path = find_remote_session_jsonl(encoded_name, uuid)
     if jsonl_path is None or not jsonl_path.exists():
         return None  # index stale: fall back to the scan
     return SessionLookupResult(
@@ -212,18 +222,14 @@ def _find_session_jsonl(projects_dir: Path, encoded_name: str, session_uuid: str
     Returns:
         Path to the session JSONL file, or None if not found.
     """
-    # Primary: check the project directory itself
-    session_jsonl = projects_dir / encoded_name / f"{session_uuid}.jsonl"
-    if session_jsonl.exists():
-        return session_jsonl
-
-    # Worktree fallback: session may live in a worktree dir grouped under this project
+    # The project dir itself, then worktree dirs grouped under it; a session copied
+    # into a worktree is in both, and its most complete copy wins
     from utils import get_worktree_mappings_for_project
 
-    for wt_enc in get_worktree_mappings_for_project(encoded_name):
-        wt_jsonl = projects_dir / wt_enc / f"{session_uuid}.jsonl"
-        if wt_jsonl.exists():
-            return wt_jsonl
+    dirs = [encoded_name, *get_worktree_mappings_for_project(encoded_name)]
+    session_jsonl = most_complete(projects_dir / d / f"{session_uuid}.jsonl" for d in dirs)
+    if session_jsonl is not None:
+        return session_jsonl
 
     # Synced from another machine (extra session root)
     from services.session_roots import find_remote_session_jsonl
