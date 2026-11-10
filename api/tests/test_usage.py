@@ -857,11 +857,15 @@ class TestUsageBuckets:
         key_a = (_epoch(10, 0), "model-a")
         key_b = (_epoch(10, 15), "model-b")
         one = {key_a: UsageBucket(TokenUsage(output_tokens=10), 0.5)}
+        key_c = (_epoch(10, 30), "model-c")
+        one[key_c] = UsageBucket(TokenUsage(output_tokens=3), 0.125)
         two = {
             key_a: UsageBucket(TokenUsage(output_tokens=5), 0.25),
             key_b: UsageBucket(TokenUsage(output_tokens=7), 1.0),
         }
         merged = merge_usage_buckets(one, two)
+        assert merged[key_c].usage.output_tokens == 3
+        assert merged[key_c].cost == pytest.approx(0.125)
         assert merged[key_a].usage.output_tokens == 15
         assert merged[key_a].cost == pytest.approx(0.75)
         assert merged[key_b].usage.output_tokens == 7

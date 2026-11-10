@@ -354,7 +354,13 @@ class UsageAccumulator:
             if ts is None or usage.total_tokens == 0:
                 continue
             key = (int(ts.timestamp()) // BUCKET_SECONDS * BUCKET_SECONDS, model or "")
-            out = merge_usage_buckets(out, {key: UsageBucket(usage, usage.calculate_cost(model))})
+            cost = usage.calculate_cost(model)
+            prev = out.get(key)
+            out[key] = (
+                UsageBucket(usage, cost)
+                if prev is None
+                else UsageBucket(prev.usage + usage, prev.cost + cost)
+            )
         return out
 
 
