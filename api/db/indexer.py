@@ -118,21 +118,28 @@ def sync_all_projects(conn: sqlite3.Connection) -> dict:
             get_real_project_encoded_name,
             is_worktree_project,
         )
+        from services.session_copies import superseded_copies
 
         # Two-pass indexing: normal projects first, then worktrees
-        worktree_dirs = []
+        project_dirs = [
+            d for d in projects_dir.iterdir() if d.is_dir() and is_encoded_project_dir(d.name)
+        ]
+        worktree_dirs = [d for d in project_dirs if is_worktree_project(d.name)]
         real_project_paths = {}
+        # A session copied into a worktree dir: index only its most complete copy
+        superseded = superseded_copies(
+            [d for d in project_dirs if d not in worktree_dirs] + worktree_dirs
+        )
 
         # First pass: normal projects
-        for encoded_dir in projects_dir.iterdir():
-            if not encoded_dir.is_dir() or not is_encoded_project_dir(encoded_dir.name):
-                continue
-            if is_worktree_project(encoded_dir.name):
-                worktree_dirs.append(encoded_dir)
+        for encoded_dir in project_dirs:
+            if encoded_dir in worktree_dirs:
                 continue
 
             try:
-                project_stats = sync_project(conn, encoded_dir)
+                project_stats = sync_project(
+                    conn, encoded_dir, skip_uuids=superseded.get(encoded_dir)
+                )
                 stats["total"] += project_stats["total"]
                 stats["indexed"] += project_stats["indexed"]
                 stats["skipped"] += project_stats["skipped"]
@@ -172,6 +179,7 @@ def sync_all_projects(conn: sqlite3.Connection) -> dict:
                         encoded_name_override=real_encoded,
                         project_path_override=real_path,
                         session_source=wt_source,
+                        skip_uuids=superseded.get(wt_dir),
                     )
                 else:
                     # Can't resolve — index as standalone (graceful degradation)
@@ -179,7 +187,7 @@ def sync_all_projects(conn: sqlite3.Connection) -> dict:
                         "Cannot resolve worktree %s to real project, indexing standalone",
                         wt_dir.name,
                     )
-                    project_stats = sync_project(conn, wt_dir)
+                    project_stats = sync_project(conn, wt_dir, skip_uuids=superseded.get(wt_dir))
                 stats["total"] += project_stats["total"]
                 stats["indexed"] += project_stats["indexed"]
                 stats["skipped"] += project_stats["skipped"]
@@ -402,10 +410,8 @@ def _index_session(
     initial_prompt = get_initial_prompt(session, max_length=500)
 
     # Count subagents via filesystem (fast, no JSONL parse)
-    subagent_count = 0
-    subagents_dir = jsonl_path.parent / uuid / "subagents"
-    if subagents_dir.exists():
-        subagent_count = len(list(subagents_dir.glob("agent-*.jsonl")))
+    subagent_paths = session.list_subagent_paths()
+    subagent_count = len(subagent_paths)
     subagents = session.list_subagents() if subagent_count else []
     subagent_cost = sum(agent.get_total_cost() for agent in subagents)
     subagent_usage = sum((agent.get_usage_summary() for agent in subagents), TokenUsage.zero())
@@ -549,7 +555,7 @@ def _index_session(
         try:
             from services.subagent_types import get_all_subagent_types
 
-            subagent_types = get_all_subagent_types(jsonl_path, subagents_dir)
+            subagent_types = get_all_subagent_types(jsonl_path, subagent_paths)
             for subagent in subagents:
                 subagent_type = subagent_types.get(subagent.agent_id, "_unknown")
                 if subagent_type == "_unknown":
@@ -715,6 +721,7 @@ def _sync_extra_roots(
     conn: sqlite3.Connection, stats: dict, real_project_paths: dict[str, str]
 ) -> None:
     """Index project dirs from extra session roots under their canonical project."""
+    from services.session_copies import superseded_copies
     from services.session_roots import get_remote_dirs, invalidate
 
     # Pick up roots-config edits and new remote dirs on every full index pass
@@ -727,6 +734,8 @@ def _sync_extra_roots(
     local_uuids = {
         row[0] for row in conn.execute("SELECT uuid FROM sessions WHERE source_root IS NULL")
     }
+    # One session in several synced dirs (worktree copy, two roots): index its most complete copy
+    superseded = superseded_copies(rd.path for rd in remote_dirs)
     for rd in remote_dirs:
         try:
             project_stats = sync_project(
@@ -736,20 +745,13 @@ def _sync_extra_roots(
                 project_path_override=real_project_paths.get(rd.canonical) if rd.merged else None,
                 session_source=None,
                 source_root=rd.root.name,
-                skip_uuids=local_uuids,
+                skip_uuids=local_uuids | superseded.get(rd.path, set()),
             )
             for key in ("total", "indexed", "skipped", "errors"):
                 stats[key] += project_stats[key]
         except Exception as e:
             logger.warning("Error syncing %s from root %s: %s", rd.path.name, rd.root.name, e)
             stats["errors"] += 1
-        # The same session synced via two roots: the first root keeps it
-        try:
-            local_uuids.update(
-                p.stem for p in rd.path.glob("*.jsonl") if not p.name.startswith("agent-")
-            )
-        except OSError as e:  # a dropped mount must not abort the whole pass
-            logger.warning("Error listing %s from root %s: %s", rd.path.name, rd.root.name, e)
 
 
 def _cleanup_stale_sessions(conn: sqlite3.Connection, projects_dir: Path) -> None:

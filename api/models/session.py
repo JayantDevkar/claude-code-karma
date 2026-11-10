@@ -663,7 +663,7 @@ class Session(BaseModel):
     @property
     def has_subagents(self) -> bool:
         """Check if session has any subagents."""
-        return self.subagents_dir.exists() and any(self.subagents_dir.glob("agent-*.jsonl"))
+        return bool(self.list_subagent_paths())
 
     @property
     def has_tool_results(self) -> bool:
@@ -718,6 +718,12 @@ class Session(BaseModel):
     # Related resources
     # =========================================================================
 
+    def list_subagent_paths(self) -> List[Path]:
+        """Subagent JSONLs, including ones written under the repo's or a worktree's dir."""
+        from services.session_copies import subagent_files
+
+        return subagent_files(self.jsonl_path)
+
     def list_subagents(self) -> List[Agent]:
         """
         List all subagents for this session.
@@ -725,11 +731,8 @@ class Session(BaseModel):
         Returns:
             List of Agent instances
         """
-        if not self.subagents_dir.exists():
-            return []
-
         return sorted(
-            [Agent.from_path(p) for p in self.subagents_dir.glob("agent-*.jsonl") if p.is_file()],
+            [Agent.from_path(p) for p in self.list_subagent_paths() if p.is_file()],
             key=lambda a: a.agent_id,
         )
 
@@ -739,10 +742,7 @@ class Session(BaseModel):
 
         More efficient than len(list_subagents()) when only the count is needed.
         """
-        subagents_dir = self.session_dir / "subagents"
-        if not subagents_dir.exists():
-            return 0
-        return len(list(subagents_dir.glob("agent-*.jsonl")))
+        return len(self.list_subagent_paths())
 
     def list_tool_results(self) -> List[ToolResult]:
         """

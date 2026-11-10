@@ -304,18 +304,21 @@ class Project(BaseModel):
         return dirs
 
     def _iter_session_jsonl(self) -> List[Path]:
-        """Main session JSONL files across all session dirs; a UUID found locally wins."""
-        seen: set[str] = set()
-        paths: List[Path] = []
+        """Main session JSONLs across session dirs; local wins, else the most complete synced copy."""
+        from services.session_copies import most_complete
+
+        copies: dict[str, List[Path]] = {}
         for d in self.session_dirs:
             if not d.exists():
                 continue
             for p in d.glob("*.jsonl"):
-                if p.name.startswith("agent-") or p.name in seen or not p.is_file():
+                if p.name.startswith("agent-") or not p.is_file():
                     continue
-                seen.add(p.name)
-                paths.append(p)
-        return paths
+                copies.setdefault(p.name, []).append(p)
+        return [
+            ps[0] if len(ps) == 1 or ps[0].parent == self.project_dir else most_complete(ps)
+            for ps in copies.values()
+        ]
 
     def _session_base(self, jsonl_path: Path) -> Optional[Path]:
         """claude_base_dir for a session file; None lets Session detect its extra root."""
@@ -492,13 +495,16 @@ class Project(BaseModel):
         Returns:
             Session instance or None if not found
         """
+        from services.session_copies import most_complete
+
         from .session import Session
 
-        for d in self.session_dirs:
-            jsonl_path = d / f"{uuid}.jsonl"
-            if jsonl_path.exists():
-                return Session.from_path(jsonl_path, claude_base_dir=self._session_base(jsonl_path))
-        return None
+        # A local copy wins; among synced copies (a worktree copy) the most complete one
+        local, *synced = (d / f"{uuid}.jsonl" for d in self.session_dirs)
+        jsonl_path = local if local.exists() else most_complete(synced)
+        if jsonl_path is None:
+            return None
+        return Session.from_path(jsonl_path, claude_base_dir=self._session_base(jsonl_path))
 
     # =========================================================================
     # Agent listing

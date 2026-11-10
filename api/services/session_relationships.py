@@ -94,10 +94,11 @@ class SessionRelationshipResolver:
     def _get_session(self, uuid: str) -> Optional[Session]:
         """Load session with caching."""
         if uuid not in self._session_cache:
-            jsonl_path = next(
-                (p for p in (d / f"{uuid}.jsonl" for d in self.session_dirs) if p.exists()),
-                None,
-            )
+            from services.session_copies import most_complete
+
+            # First dir (local) wins; among the rest, the most complete copy
+            first, *others = (d / f"{uuid}.jsonl" for d in self.session_dirs)
+            jsonl_path = first if first.exists() else most_complete(others)
             if jsonl_path is not None:
                 try:
                     self._session_cache[uuid] = Session.from_path(jsonl_path)
