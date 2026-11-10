@@ -135,6 +135,17 @@ def test_bucket_sums_equal_session_totals(mem_db, session_path):
     assert sums["cost"] == pytest.approx(cost)
     assert sums["tokens"] == tokens
 
+    columns = mem_db.execute(
+        """SELECT SUM(input_tokens) AS inp, SUM(output_tokens) AS out,
+                  SUM(cache_creation_tokens) AS cc, SUM(cache_read_tokens) AS cr
+           FROM session_usage_buckets WHERE session_uuid = ?""",
+        (UUID,),
+    ).fetchone()
+    assert columns["inp"] == 100 + 10 + 40 + 3
+    assert columns["out"] == 50 + 5 + 8 + 2
+    assert columns["cc"] == 30 + 9
+    assert columns["cr"] == 20 + 7
+
 
 def test_reindex_replaces_rows(mem_db, session_path):
     _index(mem_db, session_path)
