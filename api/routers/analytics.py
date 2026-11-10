@@ -344,13 +344,14 @@ def local_day(bucket_start: int, tz_offset_minutes: int) -> str:
 
 def _session_usage_rows(
     session,
+    subagents: list,
     tz_offset_minutes: int,
     start_dt: Optional[datetime],
     end_dt: Optional[datetime],
 ) -> list[tuple[str, str, int, float]]:
     """(local_day, model, tokens, cost) rows for a session and its subagents inside the window."""
     buckets = merge_usage_buckets(
-        session.get_usage_buckets(), *(a.get_usage_buckets() for a in session.list_subagents())
+        session.get_usage_buckets(), *(a.get_usage_buckets() for a in subagents)
     )
     # Same window as the SQL path: a bucket covers the 15 minutes after its start
     start_bucket = (
@@ -602,9 +603,12 @@ def _calculate_analytics_from_sessions(
     local_tz = timezone(timedelta(minutes=-tz_offset_minutes))
 
     for session in sessions:
-        usage_rows.extend(_session_usage_rows(session, tz_offset_minutes, start_dt, end_dt))
+        subagents = session.list_subagents()
+        usage_rows.extend(
+            _session_usage_rows(session, subagents, tz_offset_minutes, start_dt, end_dt)
+        )
         # Totals cover the session plus its subagents, same scope as the SQLite path
-        subagent_usage, subagent_cost = session.get_subagent_totals()
+        subagent_usage, subagent_cost = session.get_subagent_totals(subagents)
         usage = session.get_usage_summary() + subagent_usage
         total_input_tokens += usage.total_input
         total_output_tokens += usage.output_tokens
@@ -639,7 +643,7 @@ def _calculate_analytics_from_sessions(
             temporal_heatmap[day_of_week][hour] += 1
 
         # Also count subagent tool usage
-        for subagent in session.list_subagents():
+        for subagent in subagents:
             for msg in subagent.iter_messages():
                 if isinstance(msg, AssistantMessage):
                     for block in msg.content_blocks:

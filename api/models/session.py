@@ -893,11 +893,11 @@ class Session(BaseModel):
         self._load_metadata()
         return self._get_cache().usage_buckets or {}
 
-    def get_subagent_totals(self) -> tuple[TokenUsage, float]:
-        """Token usage and estimated cost summed across this session's subagents."""
+    def get_subagent_totals(self, subagents=None) -> tuple[TokenUsage, float]:
+        """Token usage and estimated cost summed across subagents (listed here unless given)."""
         usage = TokenUsage.zero()
         cost = 0.0
-        for agent in self.list_subagents():
+        for agent in self.list_subagents() if subagents is None else subagents:
             usage = usage + agent.get_usage_summary()
             cost += agent.get_total_cost()
         return usage, cost
