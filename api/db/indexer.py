@@ -846,6 +846,7 @@ _SESSION_CHILD_TABLES = (
     "background_shells",
     "cron_jobs",
     "cron_state_snapshots",
+    "session_usage_buckets",
 )
 _DELETE_CHUNK = 500
 
