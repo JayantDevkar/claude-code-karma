@@ -1,8 +1,4 @@
-"""Live sessions stopped by an API error or usage limit (StopFailure hook).
-
-Covers the computed ``interrupted`` status, the ``stop_error`` record, and
-subagents left ``running`` in a session that has already ended.
-"""
+"""Live sessions stopped by an API error or usage limit (StopFailure hook)."""
 
 from __future__ import annotations
 

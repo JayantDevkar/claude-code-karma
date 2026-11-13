@@ -320,10 +320,7 @@ def _close_subagent(
     Fixes the always-0-duration bug: if SubagentStart was never seen for
     this agent (e.g. tracker started mid-flight), record ``started_at=None``
     and ``duration_ms=None`` instead of falling back to ``now`` (which would
-    yield duration 0 once the start hook arrived).
-
-    A subagent already marked ``error`` by StopFailure stays ``error`` when a
-    later SubagentStop arrives; only its transcript path is filled in.
+    yield duration 0 once the start hook arrived). An ``error`` record stays ``error``.
     """
     now_dt = datetime.now(timezone.utc)
     now = now_dt.isoformat()
@@ -558,8 +555,7 @@ def _handle_event(data: Dict[str, Any]) -> None:
         write_state(session_id, "LIVE", data)
 
     elif hook_name == "PostToolUse":
-        # A straggling tool hook (e.g. a background subagent's) must not undo
-        # INTERRUPTED; only a new prompt or a finished turn does.
+        # A straggling tool hook (e.g. a background subagent's) must not undo INTERRUPTED.
         write_state(session_id, "LIVE", data, skip_if_current_state=("INTERRUPTED",))
 
     elif hook_name == "Notification":

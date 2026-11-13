@@ -589,8 +589,7 @@ def test_waiting_input_409(client):
 
 
 def test_interrupted_409(client):
-    # After a usage limit Claude Code may show a rate-limit options menu; a
-    # stray /remote-control could pick one of its options. Blocked.
+    # A rate-limit options menu may be open; a stray /remote-control could pick an option.
     _write_session(client.live_dir, "s", {"tmux_pane": "%2", "pid": 1}, state="INTERRUPTED")
     r = _post(client, "s")
     assert r.status_code == 409
