@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { Hourglass, Ban, CloudOff } from 'lucide-svelte';
 	import { endedByLabel, type EndedBy } from '$lib/utils/endedBy';
+	import { getNow } from '$lib/stores/clock.svelte';
 
 	interface Props {
 		endedBy?: EndedBy | null;
@@ -10,7 +11,7 @@
 
 	let { endedBy = null, resetsAt = null, size = 'sm' }: Props = $props();
 
-	let info = $derived(endedByLabel(endedBy, resetsAt, new Date()));
+	let info = $derived(endedByLabel(endedBy, resetsAt, getNow()));
 	let iconSize = $derived(size === 'md' ? 12 : 10);
 	let textClass = $derived(size === 'md' ? 'text-xs' : 'text-[11px]');
 	let color = $derived(
@@ -24,9 +25,9 @@
 
 {#if info}
 	<div
-		class="flex items-center gap-1 px-2 py-0.5 rounded-full border max-w-full"
+		class="flex items-center gap-1 px-2 py-0.5 rounded-full border max-w-full min-w-0"
 		style="color: {color}; background: color-mix(in srgb, {color} 12%, transparent); border-color: color-mix(in srgb, {color} 35%, transparent);"
-		title={info.tooltip}
+		title="{info.label}. {info.tooltip}"
 	>
 		{#if endedBy === 'limit'}
 			<Hourglass size={iconSize} strokeWidth={2} aria-hidden="true" class="shrink-0" />
@@ -35,6 +36,6 @@
 		{:else}
 			<CloudOff size={iconSize} strokeWidth={2} aria-hidden="true" class="shrink-0" />
 		{/if}
-		<span class="font-medium {textClass} truncate">{info.label}</span>
+		<span class="font-medium {textClass} truncate min-w-0">{info.label}</span>
 	</div>
 {/if}
