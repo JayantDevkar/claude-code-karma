@@ -33,6 +33,7 @@ Example usage:
 """
 
 from .agent import Agent
+from .api_error import ApiError, classify_api_error
 from .batch_loader import BatchSessionLoader, load_sessions_metadata_batch
 from .bounded_cache import BoundedCache, BoundedCacheConfig
 from .content import (
@@ -120,6 +121,8 @@ __all__ = [
     "FileSnapshot",
     "SessionTitleMessage",
     "parse_message",
+    "ApiError",
+    "classify_api_error",
     # Content blocks
     "ContentBlock",
     "TextBlock",
