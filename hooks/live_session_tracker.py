@@ -10,6 +10,7 @@ Session states:
 - LIVE: Session actively running (tool execution)
 - WAITING: Claude needs user input (AskUserQuestion, permission dialog)
 - STOPPED: Agent finished but session still open
+- INTERRUPTED: Turn ended on an API error or usage limit (``stop_error`` says why)
 - STALE: User has been idle for 60+ seconds
 - ENDED: Session terminated
 
@@ -20,6 +21,7 @@ Hook → state mapping:
 - Notification(permission_prompt) → WAITING
 - Notification(idle_prompt) → STALE (unless already WAITING)
 - Stop (stop_hook_active=false) → STOPPED
+- StopFailure → INTERRUPTED (with agent_id: that subagent → error instead)
 - SessionEnd → ENDED (with end_reason)
 
 Files are always keyed by ``session_id``. The legacy slug-based filename
@@ -38,7 +40,7 @@ import sys
 import traceback
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Collection, Dict, Optional
 
 # Vendored captain-hook subset — self-contained, no /api or /captain-hook deps.
 from _captain_hook_lite import parse_hook_event
@@ -305,17 +307,23 @@ def add_subagent(
     write_state_atomic(target_path, update_fn)
 
 
-def complete_subagent(
+def _close_subagent(
     session_id: str,
     agent_id: str,
-    agent_transcript_path: Optional[str],
+    status: str,
+    hook_name: str,
+    agent_transcript_path: Optional[str] = None,
+    stop_error: Optional[Dict[str, Any]] = None,
 ) -> None:
-    """Mark a subagent as completed.
+    """Mark a subagent finished (``completed`` or ``error``).
 
     Fixes the always-0-duration bug: if SubagentStart was never seen for
     this agent (e.g. tracker started mid-flight), record ``started_at=None``
     and ``duration_ms=None`` instead of falling back to ``now`` (which would
     yield duration 0 once the start hook arrived).
+
+    A subagent already marked ``error`` by StopFailure stays ``error`` when a
+    later SubagentStop arrives; only its transcript path is filled in.
     """
     now_dt = datetime.now(timezone.utc)
     now = now_dt.isoformat()
@@ -333,17 +341,18 @@ def complete_subagent(
             # SubagentStart was never observed for this agent — record the
             # completion but leave started_at/duration null instead of
             # creating a fake zero-duration entry.
-            subagents[agent_id] = {
+            record = {
                 "agent_id": agent_id,
                 "agent_type": "unknown",
-                "status": "completed",
+                "status": status,
                 "transcript_path": agent_transcript_path,
                 "started_at": None,
                 "completed_at": now,
                 "duration_ms": None,
             }
-        else:
-            record["status"] = "completed"
+            subagents[agent_id] = record
+        elif record.get("status") != "error":
+            record["status"] = status
             record["completed_at"] = now
             if agent_transcript_path:
                 record["transcript_path"] = agent_transcript_path
@@ -354,12 +363,49 @@ def complete_subagent(
                 )
             else:
                 record["duration_ms"] = None
+        elif agent_transcript_path:
+            record["transcript_path"] = agent_transcript_path
+        if stop_error is not None:
+            record["stop_error"] = stop_error
         state["subagents"] = subagents
         state["updated_at"] = now
-        state["last_hook"] = "SubagentStop"
+        state["last_hook"] = hook_name
         return state
 
     write_state_atomic(target_path, update_fn)
+
+
+def complete_subagent(
+    session_id: str,
+    agent_id: str,
+    agent_transcript_path: Optional[str],
+) -> None:
+    """Mark a subagent as completed (SubagentStop)."""
+    _close_subagent(
+        session_id, agent_id, "completed", "SubagentStop", agent_transcript_path
+    )
+
+
+def mark_subagent_error(
+    session_id: str, agent_id: str, stop_error: Dict[str, Any]
+) -> None:
+    """Mark a subagent as ended by an API error (StopFailure with agent_id)."""
+    _close_subagent(
+        session_id, agent_id, "error", "StopFailure", stop_error=stop_error
+    )
+
+
+def _stop_error(hook: Any) -> Dict[str, Any]:
+    """Build the ``stop_error`` record from a StopFailure payload."""
+    code = _get(hook, "error") or "unknown"
+    return {
+        # Kind names match the transcript-side detection (limit / api_error).
+        "kind": "limit" if code == "rate_limit" else "api_error",
+        "code": code,
+        "details": _get(hook, "error_details"),
+        "message": _get(hook, "last_assistant_message"),
+        "at": datetime.now(timezone.utc).isoformat(),
+    }
 
 
 def write_state(
@@ -374,21 +420,22 @@ def write_state(
     last_notification_message: Optional[str] = None,
     pending_permission_message: Optional[str] = None,
     terminal: Optional[Dict[str, Any]] = None,
-    skip_if_current_state: Optional[str] = None,
+    skip_if_current_state: Collection[str] = (),
+    stop_error: Optional[Dict[str, Any]] = None,
 ) -> None:
     """Write session state to disk under an exclusive lock.
 
     Files are always keyed by ``session_id``. Preserves ``started_at``,
     ``subagents``, and previously-resolved fields across updates.
     ``skip_if_current_state`` makes the write a no-op when the on-disk state
-    matches — checked inside the lock, so racing hooks can't interleave
-    between a read and this write.
+    is one of those states — checked inside the lock, so racing hooks can't
+    interleave between a read and this write.
     """
     now = datetime.now(timezone.utc).isoformat()
     target_path = get_state_path(session_id)
 
     def update_fn(existing: dict) -> dict:
-        if skip_if_current_state and existing.get("state") == skip_if_current_state:
+        if existing.get("state") in skip_if_current_state:
             return existing
         # NB: keep `slug` writable so legacy callers don't lose it, but we
         # never SET it here — the field stays whatever it was (usually None).
@@ -428,6 +475,14 @@ def write_state(
             new_data["last_notification_message"] = last_notification_message
         else:
             new_data["last_notification_message"] = existing.get("last_notification_message")
+
+        # Why the last turn failed: kept through ENDED, cleared once work resumes.
+        if stop_error is not None:
+            new_data["stop_error"] = stop_error
+        elif state in ("LIVE", "STOPPED"):
+            new_data["stop_error"] = None
+        else:
+            new_data["stop_error"] = existing.get("stop_error")
 
         session_ids = existing.get("session_ids", [])
         if session_id not in session_ids:
@@ -498,7 +553,9 @@ def _handle_event(data: Dict[str, Any]) -> None:
         write_state(session_id, "LIVE", data)
 
     elif hook_name == "PostToolUse":
-        write_state(session_id, "LIVE", data)
+        # A straggling tool hook (e.g. a background subagent's) must not undo
+        # INTERRUPTED; only a new prompt or a finished turn does.
+        write_state(session_id, "LIVE", data, skip_if_current_state=("INTERRUPTED",))
 
     elif hook_name == "Notification":
         notification_type = _get(hook, "notification_type", "") or ""
@@ -512,13 +569,13 @@ def _handle_event(data: Dict[str, Any]) -> None:
                 last_notification_message=message,
             )
         elif notification_type == "idle_prompt":
-            # WAITING outranks STALE; the check runs inside the write lock.
+            # WAITING and INTERRUPTED outrank STALE; the check runs inside the write lock.
             write_state(
                 session_id,
                 "STALE",
                 data,
                 last_notification_message=message,
-                skip_if_current_state="WAITING",
+                skip_if_current_state=("WAITING", "INTERRUPTED"),
             )
 
     elif hook_name == "PermissionRequest":
@@ -538,6 +595,15 @@ def _handle_event(data: Dict[str, Any]) -> None:
         # that's a natural stop, so the default must be False.
         if not _get(hook, "stop_hook_active", False):
             write_state(session_id, "STOPPED", data)
+
+    elif hook_name == "StopFailure":
+        # Fires instead of Stop when the turn ends on an API error or limit.
+        stop_error = _stop_error(hook)
+        agent_id = _get(hook, "agent_id")
+        if agent_id:
+            mark_subagent_error(session_id, agent_id, stop_error)
+        else:
+            write_state(session_id, "INTERRUPTED", data, stop_error=stop_error)
 
     elif hook_name == "SubagentStart":
         agent_id = _get(hook, "agent_id")
