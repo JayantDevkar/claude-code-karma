@@ -119,7 +119,7 @@
 					<div class="subagent-pair grid gap-4 lg:grid-cols-2 items-start">
 						{#each pair as subagent (subagent.agent_id)}
 							{@const liveState = liveSubagents[subagent.agent_id]}
-							<div class="subagent-card-wrapper">
+							<div class="subagent-card-wrapper min-w-0">
 								<SubagentCard
 									{subagent}
 									{projectEncoded}
