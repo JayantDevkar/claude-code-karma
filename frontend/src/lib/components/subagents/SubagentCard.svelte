@@ -20,6 +20,7 @@
 		MessageCircle
 	} from 'lucide-svelte';
 	import type { SubagentSummary, SubagentStatus } from '$lib/api-types';
+	import EndedByBadge from '$lib/components/EndedByBadge.svelte';
 	import {
 		getSubagentColorVars,
 		getSubagentTypeDisplayName,
@@ -220,6 +221,7 @@
 								{statusStyle.label}
 							</span>
 						{/if}
+						<EndedByBadge endedBy={subagent.ended_by} resetsAt={subagent.ended_resets_at} />
 					</div>
 
 					<!-- Duration & expand/collapse indicator -->

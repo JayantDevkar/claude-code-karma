@@ -19,6 +19,7 @@
 	import PageHeader from '$lib/components/layout/PageHeader.svelte';
 	import TerminalFocusButton from '$lib/components/TerminalFocusButton.svelte';
 	import ResumeSessionButton from '$lib/components/ResumeSessionButton.svelte';
+	import EndedByBadge from '$lib/components/EndedByBadge.svelte';
 	import RemoteControlToggle from '$lib/components/RemoteControlToggle.svelte';
 	import type {
 		ConversationEntity,
@@ -305,6 +306,13 @@
 								{getSubagentTypeDisplayName(effectiveSubagentType)}
 							</span>
 						</a>
+					{/if}
+					{#if entity.ended_by}
+						<EndedByBadge endedBy={entity.ended_by} resetsAt={entity.ended_resets_at} size="md" />
+					{:else if (entity.limit_hit_count ?? 0) > 0}
+						<span class="text-xs text-[var(--text-muted)]">
+							hit limit {entity.limit_hit_count}×, resumed
+						</span>
 					{/if}
 				{/snippet}
 				{#snippet headerRight()}

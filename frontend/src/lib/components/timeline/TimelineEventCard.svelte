@@ -12,7 +12,7 @@
 	import DOMPurify from 'isomorphic-dompurify';
 	import type { TimelineEvent, EventImportance, TodoItem } from '$lib/api-types';
 	import { formatElapsedTime, formatDate, truncate } from '$lib/utils';
-	import { eventTypeConfig, getToolIcon } from './tool-icons';
+	import { eventTypeConfig, apiErrorToneConfig, getToolIcon } from './tool-icons';
 	import ToolCallDetail from './ToolCallDetail.svelte';
 	import TodoUpdateDetail from './TodoUpdateDetail.svelte';
 	import ImageAttachments from '$lib/components/ImageAttachments.svelte';
@@ -108,7 +108,17 @@
 			(event.metadata?.tool_name === 'ExitPlanMode' ||
 				event.metadata?.tool_name === 'EnterPlanMode')
 	);
-	const config = $derived(eventTypeConfig[event.event_type] || eventTypeConfig.tool_call);
+	const isHealedApiError = $derived(
+		event.event_type === 'api_error' && event.metadata?.healed === true
+	);
+	// Loud only for the final (unhealed) limit/refusal turn; other api_error stays muted.
+	const config = $derived.by(() => {
+		if (event.event_type === 'api_error' && !event.metadata?.healed) {
+			if (event.metadata?.kind === 'limit') return apiErrorToneConfig.warning;
+			if (event.metadata?.kind === 'refusal') return apiErrorToneConfig.error;
+		}
+		return eventTypeConfig[event.event_type] || eventTypeConfig.tool_call;
+	});
 
 	// Get tool-specific icon for tool_call events
 	const toolName = $derived(event.metadata?.tool_name as string | undefined);
@@ -255,6 +265,21 @@
 				<div class="flex items-center gap-2 min-w-0">
 					<span class="text-sm font-medium text-[var(--text-muted)]">Thinking</span>
 					<span class="text-xs text-[var(--text-muted)]/50 truncate">· content not stored</span>
+				</div>
+				<span
+					class="whitespace-nowrap font-mono text-xs text-[var(--text-muted)]/50 tabular-nums shrink-0"
+					title={formatDate(event.timestamp)}
+				>
+					{formatElapsedTime(event.timestamp, sessionStartTime)}
+				</span>
+			</div>
+		</div>
+	{:else if isHealedApiError}
+		<div class="mb-4 flex-1 min-w-0 rounded-lg border border-dashed border-[var(--border)] border-l-[3px] border-l-[var(--text-muted)]/40 bg-[var(--bg-subtle)]/50 px-4 py-2.5 pl-5">
+			<div class="flex items-center justify-between gap-3">
+				<div class="flex items-center gap-2 min-w-0">
+					<span class="text-sm font-medium text-[var(--text-muted)] shrink-0">{displayTitle}</span>
+					<span class="text-xs text-[var(--text-muted)]/70 truncate">· resumed</span>
 				</div>
 				<span
 					class="whitespace-nowrap font-mono text-xs text-[var(--text-muted)]/50 tabular-nums shrink-0"

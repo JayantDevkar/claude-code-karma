@@ -16,7 +16,10 @@ export type TimelineEventType =
 	| 'todo_update'
 	| 'command_invocation'
 	| 'skill_invocation'
-	| 'builtin_command';
+	| 'builtin_command'
+	| 'api_error';
+
+export type EndedBy = 'limit' | 'refusal' | 'api_error';
 
 export type EventImportance = 'high' | 'medium' | 'low';
 
@@ -53,6 +56,12 @@ export interface TimelineEventMetadata {
 	is_plugin?: boolean;
 	plugin?: string;
 	image_attachments?: ImageAttachment[];
+	// api_error events
+	kind?: EndedBy;
+	code?: string | null;
+	status?: number | null;
+	resets_at?: string | null;
+	healed?: boolean;
 	[key: string]: unknown;
 }
 
@@ -227,6 +236,9 @@ export interface SessionChainInfoSummary {
 }
 
 export interface SessionSummary {
+	ended_by?: EndedBy | null;
+	ended_resets_at?: string | null;
+	limit_hit_count?: number;
 	uuid: string;
 	slug: string;
 	message_count: number;
@@ -333,6 +345,9 @@ export interface FileActivitySummary {
  * SubagentSummary matches the API response from /sessions/{uuid}/subagents
  */
 export interface SubagentSummary {
+	ended_by?: EndedBy | null;
+	ended_resets_at?: string | null;
+	limit_hit_count?: number;
 	agent_id: string;
 	slug: string | null;
 	subagent_type: string | null;
@@ -412,6 +427,7 @@ export type FilterCategory =
 	| 'subagent'
 	| 'todo_update'
 	| 'error'
+	| 'api_error'
 	| 'thinking'
 	| 'response'
 	| 'big_response'
@@ -427,6 +443,7 @@ export interface FilterCounts {
 	subagent: number;
 	todo_update: number;
 	error: number;
+	api_error: number;
 	thinking: number;
 	response: number;
 	big_response: number;
@@ -751,6 +768,9 @@ export interface ConversationContext {
  * Mirrors SessionDetail but for subagent JSONL files.
  */
 export interface SubagentSessionDetail {
+	ended_by?: EndedBy | null;
+	ended_resets_at?: string | null;
+	limit_hit_count?: number;
 	agent_id: string;
 	slug: string | null;
 	is_subagent: true;
