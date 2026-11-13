@@ -397,13 +397,18 @@ def mark_subagent_error(
 
 def _stop_error(hook: Any) -> Dict[str, Any]:
     """Build the ``stop_error`` record from a StopFailure payload."""
-    code = _get(hook, "error") or "unknown"
+    def text(name: str) -> Optional[str]:
+        # Stored as text: the API types these as str and rejects the whole file otherwise.
+        value = _get(hook, name)
+        return None if value is None else str(value)
+
+    code = text("error") or "unknown"
     return {
         # Kind names match the transcript-side detection (limit / api_error).
         "kind": "limit" if code == "rate_limit" else "api_error",
         "code": code,
-        "details": _get(hook, "error_details"),
-        "message": _get(hook, "last_assistant_message"),
+        "details": text("error_details"),
+        "message": text("last_assistant_message"),
         "at": datetime.now(timezone.utc).isoformat(),
     }
 

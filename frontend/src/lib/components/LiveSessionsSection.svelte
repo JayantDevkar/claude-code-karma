@@ -163,7 +163,9 @@
 			(s) => s.status === 'active' || s.status === 'waiting' || s.status === 'starting'
 		).length,
 		idle: sessions.filter((s) => s.status === 'idle').length,
-		stopped: sessions.filter((s) => s.status === 'stopped' || s.status === 'stale').length
+		stopped: sessions.filter(
+			(s) => s.status === 'stopped' || s.status === 'stale' || s.status === 'interrupted'
+		).length
 	});
 
 	const activeSessions = $derived(visibleLiveSessions(sessions));
@@ -359,8 +361,8 @@
 										>
 										<span class="status-label" style="color: {config.color}">
 											{config.label.toUpperCase()}{#if session.status === 'interrupted' && session.stop_error}<span
-													class="idle-time"
-													title={stopErrorTooltip(session.stop_error)}
+													class="stop-reason"
+													title={`${stopErrorReason(session.stop_error)} (${stopErrorTooltip(session.stop_error)})`}
 													>{stopErrorReason(session.stop_error)}</span
 												>{/if}
 											{#if session.status === 'idle' && session.idle_seconds > 0}
@@ -605,6 +607,20 @@
 	.idle-time {
 		font-weight: 500;
 		margin-left: 2px;
+		opacity: 0.8;
+	}
+
+	/* Full API error text lives in the tooltip; the row shows one truncated line. */
+	.stop-reason {
+		display: inline-block;
+		max-width: 22ch;
+		margin-left: 6px;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		vertical-align: bottom;
+		font-weight: 500;
+		letter-spacing: 0;
 		opacity: 0.8;
 	}
 

@@ -668,6 +668,7 @@ def focus_session_terminal(
 # Typed at any status except these (open dialog, no REPL yet, no process); ACTIVE is allowed since Claude Code queues the command.
 _RC_BLOCKED_STATUSES = {
     SessionStatus.WAITING_INPUT,
+    SessionStatus.INTERRUPTED,  # a rate-limit options menu may be open
     SessionStatus.STARTING,
     SessionStatus.ENDED,
 }
@@ -812,6 +813,7 @@ async def toggle_session_remote_control(
             reason = {
                 SessionStatus.WAITING_INPUT: "has a prompt open waiting for your answer",
                 SessionStatus.STARTING: "is still starting up",
+                SessionStatus.INTERRUPTED: "stopped on an API error or usage limit",
             }.get(status, f"is {status.value}")
             raise HTTPException(
                 status_code=409,

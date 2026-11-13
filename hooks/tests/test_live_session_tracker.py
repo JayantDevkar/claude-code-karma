@@ -246,6 +246,20 @@ def test_stop_failure_without_optional_fields(live_dir, no_terminal):
     assert tracker._parse_iso(err["at"]) is not None
 
 
+def test_stop_failure_non_string_fields_are_stored_as_text(live_dir, no_terminal):
+    # The API types these as str; a dict here would hide the session from the live view.
+    tracker._handle_event(
+        _stop_failure(
+            "s-int-6",
+            error={"type": "rate_limit"},
+            error_details={"status": 429},
+            last_assistant_message=["limit"],
+        )
+    )
+    err = _read_state(live_dir, "s-int-6")["stop_error"]
+    assert all(isinstance(err[k], str) for k in ("code", "details", "message"))
+
+
 def test_subagent_stop_failure_marks_only_that_subagent(live_dir, no_terminal):
     tracker._handle_event(_event("UserPromptSubmit", "s-int-5", prompt="hi"))
     tracker._handle_event(
