@@ -31,6 +31,12 @@ def test_refusal_wins_over_category():
     assert m.api_error.code == "invalid_request"
 
 
+def test_refusal_wins_over_rate_limit_error():
+    line = refusal_line("a1", "u1", TS)
+    line["error"] = "rate_limit"
+    assert parse_message(line).api_error.kind == "refusal"
+
+
 def test_other_error_is_api_error():
     m = parse_message(server_error_line("a1", "u1", TS))
     assert m.api_error.kind == "api_error"

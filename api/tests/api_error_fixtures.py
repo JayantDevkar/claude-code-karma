@@ -101,15 +101,15 @@ def no_response_line(uid, parent, ts) -> Dict[str, Any]:
 
 
 def bookkeeping_line(kind: str) -> Dict[str, Any]:
-    """Non-message line. Only `queue-operation` parses via parse_message; `last-prompt` is unknown."""
-    if kind == "queue-operation":
-        return {
-            "type": kind,
-            "operation": "enqueue",
-            "timestamp": "2026-01-10T09:59:00.000Z",
-            "sessionId": SESSION_ID,
-        }
-    return {"type": kind, "sessionId": SESSION_ID, "lastPrompt": "hello"}
+    """Non-message line; only `queue-operation` parses via parse_message."""
+    if kind != "queue-operation":
+        raise ValueError(f"unsupported bookkeeping kind: {kind}")
+    return {
+        "type": kind,
+        "operation": "enqueue",
+        "timestamp": "2026-01-10T09:59:00.000Z",
+        "sessionId": SESSION_ID,
+    }
 
 
 def write_jsonl(path, lines: List[Dict[str, Any]]) -> Path:

@@ -1,8 +1,4 @@
-"""
-API-error assistant turns (usage limits, refusals, server errors).
-
-Claude Code writes these as synthetic assistant lines flagged `isApiErrorMessage`.
-"""
+"""Synthetic assistant turns flagged `isApiErrorMessage` (usage limits, refusals, server errors)."""
 
 from __future__ import annotations
 
