@@ -87,13 +87,16 @@ def process_subagent_data(subagent: Any) -> dict:
     from collections import Counter
 
     from models import AssistantMessage, ToolUseBlock, UserMessage
+    from models.api_error import ApiErrorTracker
 
     tool_counts: Counter = Counter()
     initial_prompt = None
     message_count = 0
+    api_errors = ApiErrorTracker(skip_sidechain=False)
 
     for msg in subagent.iter_messages():
         message_count += 1
+        api_errors.feed(msg)
         if isinstance(msg, UserMessage):
             if initial_prompt is None:
                 initial_prompt = msg.content[:5000] if msg.content else None
@@ -108,6 +111,7 @@ def process_subagent_data(subagent: Any) -> dict:
         "tool_counts": dict(tool_counts),
         "initial_prompt": initial_prompt,
         "message_count": message_count,
+        "api_error_summary": api_errors.summary(),
     }
 
 

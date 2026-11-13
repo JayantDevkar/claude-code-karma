@@ -295,8 +295,12 @@ def session_to_summary(
     from services.session_roots import machine_for_path
 
     initial_prompt = get_initial_prompt(session, max_length=500)
+    api_errors = session.api_error_summary
 
     return SessionSummary(
+        ended_by=api_errors.ended_by,
+        ended_resets_at=api_errors.ended_resets_at,
+        limit_hit_count=api_errors.limit_hit_count,
         uuid=session.uuid,
         slug=session.slug,
         message_count=session.message_count,
@@ -553,6 +557,9 @@ def get_project(
                             chain_info=chain_info,
                             session_source=row.get("session_source"),
                             machine=row.get("source_root"),
+                            ended_by=row.get("ended_by"),
+                            ended_resets_at=row.get("ended_resets_at"),
+                            limit_hit_count=row.get("limit_hit_count") or 0,
                         )
                     )
 

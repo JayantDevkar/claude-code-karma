@@ -23,7 +23,13 @@ from command_helpers import (
     parse_command_from_content,
     strip_command_tags,
 )
-from models import AssistantMessage, ConversationEntity, ToolUseBlock, UserMessage
+from models import (
+    ApiErrorSummary,
+    AssistantMessage,
+    ConversationEntity,
+    ToolUseBlock,
+    UserMessage,
+)
 from models.content import TextBlock, ThinkingBlock
 from schemas import FileActivity, TimelineEvent, ToolUsageSummary
 from utils import (
@@ -90,6 +96,9 @@ def build_conversation_timeline(
     event_counter = 0
 
     is_first_user_message = True
+    # Both Session and Agent expose api_error_summary; computed once for the whole loop.
+    api_errors = getattr(conversation, "api_error_summary", ApiErrorSummary.EMPTY)
+    ended_turn_uuid = api_errors.ended_turn_uuid
 
     for msg in conversation.iter_messages():
         if isinstance(msg, UserMessage):
@@ -156,6 +165,30 @@ def build_conversation_timeline(
             else:
                 msg_actor = actor
                 msg_actor_type = actor_type
+
+            # An API-error turn is one event; its synthetic text block is not a response.
+            if msg.api_error is not None:
+                event_counter += 1
+                err = msg.api_error
+                events.append(
+                    TimelineEvent(
+                        id=f"evt-{event_counter}",
+                        event_type="api_error",
+                        timestamp=msg.timestamp,
+                        actor=msg_actor,
+                        actor_type=msg_actor_type,
+                        title=err.text[:120],
+                        summary=err.text,
+                        metadata={
+                            "kind": err.kind,
+                            "code": err.code,
+                            "status": err.status,
+                            "resets_at": err.resets_at.isoformat() if err.resets_at else None,
+                            "healed": msg.uuid != ended_turn_uuid,
+                        },
+                    )
+                )
+                continue
 
             # Process content blocks
             for block in msg.content_blocks:
