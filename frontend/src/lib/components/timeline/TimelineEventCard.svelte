@@ -278,8 +278,8 @@
 		<div class="mb-4 flex-1 min-w-0 rounded-lg border border-dashed border-[var(--border)] border-l-[3px] border-l-[var(--text-muted)]/40 bg-[var(--bg-subtle)]/50 px-4 py-2.5 pl-5">
 			<div class="flex items-center justify-between gap-3">
 				<div class="flex items-center gap-2 min-w-0">
-					<span class="text-sm font-medium text-[var(--text-muted)] truncate min-w-0">{displayTitle}</span>
-					<span class="text-xs text-[var(--text-muted)]/70 shrink-0">· resumed</span>
+					<span class="text-sm font-medium text-[var(--text-secondary)] truncate min-w-0">{displayTitle}</span>
+					<span class="text-xs text-[var(--text-secondary)] shrink-0">· resumed</span>
 				</div>
 				<span
 					class="whitespace-nowrap font-mono text-xs text-[var(--text-muted)]/50 tabular-nums shrink-0"

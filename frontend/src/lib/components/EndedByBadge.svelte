@@ -19,14 +19,21 @@
 			? 'var(--warning)'
 			: info?.tone === 'error'
 				? 'var(--error)'
-				: 'var(--text-muted)'
+				: 'var(--text-secondary)'
+	);
+	let background = $derived(
+		info?.tone === 'warning'
+			? 'var(--warning-subtle)'
+			: info?.tone === 'error'
+				? 'var(--error-subtle)'
+				: 'var(--bg-muted)'
 	);
 </script>
 
 {#if info}
 	<div
 		class="flex items-center gap-1 px-2 py-0.5 rounded-full border max-w-full min-w-0"
-		style="color: {color}; background: color-mix(in srgb, {color} 12%, transparent); border-color: color-mix(in srgb, {color} 35%, transparent);"
+		style="color: {color}; background: {background}; border-color: color-mix(in srgb, {color} 35%, transparent);"
 		title="{info.label}. {info.tooltip}"
 	>
 		{#if endedBy === 'limit'}
