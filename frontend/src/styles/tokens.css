@@ -138,6 +138,7 @@
 	--status-stopped-bg: rgba(100, 116, 139, 0.03);
 	--status-ended-bg: rgba(148, 163, 184, 0.03);
 	--status-stale-bg: rgba(239, 68, 68, 0.05);
+	--status-interrupted-bg: rgba(245, 158, 11, 0.1);
 
 	/* Subagent Type Colors (light mode - vibrant, high contrast) */
 	--subagent-explore: #0284c7;
@@ -320,6 +321,7 @@
 	--status-stopped-bg: rgba(148, 163, 184, 0.05);
 	--status-ended-bg: rgba(148, 163, 184, 0.04);
 	--status-stale-bg: rgba(248, 113, 113, 0.08);
+	--status-interrupted-bg: rgba(251, 191, 36, 0.14);
 
 	/* Shadows (deeper for dark mode) */
 	--shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
@@ -439,6 +441,7 @@
 		--status-stopped-bg: rgba(148, 163, 184, 0.05);
 		--status-ended-bg: rgba(148, 163, 184, 0.04);
 		--status-stale-bg: rgba(248, 113, 113, 0.08);
+	--status-interrupted-bg: rgba(251, 191, 36, 0.14);
 		/* Subagent Type Colors (dark mode - lighter for contrast) */
 		--subagent-explore: #22d3ee;
 		--subagent-explore-subtle: rgba(34, 211, 238, 0.2);

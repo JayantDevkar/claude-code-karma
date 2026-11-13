@@ -8,7 +8,8 @@
 		Check,
 		AlertCircle,
 		Minimize2,
-		MessageCircle
+		MessageCircle,
+		Ban
 	} from 'lucide-svelte';
 	import { getSubagentColorVars, getSubagentTypeDisplayName } from '$lib/utils';
 	import type { SubagentStatus } from '$lib/api-types';
@@ -73,6 +74,12 @@
 						size={statusDotSize + 2}
 						strokeWidth={3}
 						class="text-[var(--error)]"
+					/>
+				{:else if status === 'interrupted'}
+					<Ban
+						size={statusDotSize + 2}
+						strokeWidth={3}
+						class="text-[var(--text-muted)]"
 					/>
 				{/if}
 			</span>

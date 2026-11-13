@@ -7,7 +7,12 @@
 		LiveSubStatus,
 		SessionSummary
 	} from '$lib/api-types';
-	import { statusConfig } from '$lib/live-session-config';
+	import {
+		statusConfig,
+		liveStatusTitle,
+		stopErrorReason,
+		stopErrorTooltip
+	} from '$lib/live-session-config';
 	import TerminalFocusButton from '$lib/components/TerminalFocusButton.svelte';
 	import { API_BASE } from '$lib/config';
 	import { liveSessionsFeed } from '$lib/stores/liveSessionsFeed';
@@ -342,7 +347,7 @@
 									class="status-dot"
 									class:pulse={config.pulse}
 									style="background: {config.color}"
-									title={config.label}
+									title={liveStatusTitle(session)}
 								></span>
 
 								<!-- Session Info -->
@@ -353,7 +358,11 @@
 											>{getDisplayName(session)}</span
 										>
 										<span class="status-label" style="color: {config.color}">
-											{config.label.toUpperCase()}
+											{config.label.toUpperCase()}{#if session.status === 'interrupted' && session.stop_error}<span
+													class="idle-time"
+													title={stopErrorTooltip(session.stop_error)}
+													>{stopErrorReason(session.stop_error)}</span
+												>{/if}
 											{#if session.status === 'idle' && session.idle_seconds > 0}
 												<span class="idle-time"
 													>{formatIdleTime(session.idle_seconds)}</span

@@ -278,7 +278,7 @@
 	const isSubagentCompleted = $derived.by(() => {
 		if (!entity || !isSubagentSession(entity) || !liveStatus) return false;
 		const agentState = liveStatus.subagents?.[entity.agent_id];
-		return agentState?.status === 'completed' || agentState?.status === 'error';
+		return !!agentState && agentState.status !== 'running';
 	});
 
 	// Timeline tailing state

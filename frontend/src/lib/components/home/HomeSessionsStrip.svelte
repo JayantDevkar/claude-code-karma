@@ -4,7 +4,7 @@
 	import { projectHrefFromSession } from '$lib/utils/project-url';
 	import { getProjectDisplayName as projectName } from '$lib/utils/live-session-display';
 	import { getSessionDisplayLabel } from '$lib/utils/sessionIdentifier';
-	import { statusConfig } from '$lib/live-session-config';
+	import { statusConfig, liveStatusTitle } from '$lib/live-session-config';
 	import TerminalFocusButton from '$lib/components/TerminalFocusButton.svelte';
 	import { API_BASE } from '$lib/config';
 
@@ -114,6 +114,12 @@
 					<span class="legend-item"
 						><span class="dot" style="background: var(--error)"></span>stale</span
 					>
+					{#if sessions.some((s) => s.status === 'interrupted')}
+						<span class="legend-item"
+							><span class="dot" style="background: {statusConfig.interrupted.color}"
+							></span>interrupted</span
+						>
+					{/if}
 				</span>
 				<span class="count">
 					{#if loading}
@@ -149,6 +155,7 @@
 						<span class="left">
 							<span
 								class="dot"
+								title={liveStatusTitle(session)}
 								class:pulse={config.pulse}
 								style="background: {config.color}"
 							></span>

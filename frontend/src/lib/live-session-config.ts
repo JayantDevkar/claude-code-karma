@@ -3,7 +3,7 @@
  * Used by LiveSessionsTerminal and SessionCard components
  */
 
-import type { LiveSessionStatus } from './api-types';
+import type { LiveSessionStatus, LiveSessionSummary, StopError } from './api-types';
 
 export interface StatusConfig {
 	/** Primary color for status indicator and text */
@@ -62,8 +62,36 @@ export const statusConfig: Record<LiveSessionStatus, StatusConfig> = {
 		label: 'stale',
 		pulse: false,
 		bgTint: 'var(--status-stale-bg)'
+	},
+	// No pulse: a usage limit usually can't be acted on until it resets.
+	interrupted: {
+		color: 'var(--nav-orange)',
+		label: 'interrupted',
+		pulse: false,
+		bgTint: 'var(--status-interrupted-bg)'
 	}
 };
+
+/** One-line reason a live session or subagent stopped on an API error or limit. */
+export function stopErrorReason(err: StopError | null | undefined): string | null {
+	if (!err) return null;
+	if (err.message) return err.message;
+	return err.kind === 'limit' ? 'Stopped by usage limit' : 'Stopped by API error';
+}
+
+/** Status dot tooltip: the reason when interrupted, else the status label. */
+export function liveStatusTitle(session: LiveSessionSummary): string {
+	if (session.status === 'interrupted') {
+		return stopErrorReason(session.stop_error) ?? statusConfig.interrupted.label;
+	}
+	return statusConfig[session.status].label;
+}
+
+/** Tooltip text: error code plus details. */
+export function stopErrorTooltip(err: StopError | null | undefined): string | undefined {
+	if (!err) return undefined;
+	return err.details ? `${err.code}: ${err.details}` : err.code;
+}
 
 /** 45 minutes in milliseconds - stop showing ended status after this */
 export const ENDED_STATUS_TIMEOUT_MS = 45 * 60 * 1000;
