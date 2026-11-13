@@ -174,3 +174,119 @@ def test_idle_prompt_marks_live_session_stale(live_dir, monkeypatch):
     )
     tracker._handle_event(_notification("s5", "idle_prompt"))
     assert _read_state(live_dir, "s5")["state"] == "STALE"
+
+
+# ---------------------------------------------------------------------------
+# StopFailure (API error / usage limit)
+# ---------------------------------------------------------------------------
+
+
+def _event(name: str, session_id: str, **extra) -> dict:
+    return {"hook_event_name": name, "session_id": session_id, **extra}
+
+
+def _stop_failure(session_id: str, error: str = "rate_limit", **extra) -> dict:
+    return _event("StopFailure", session_id, error=error, **extra)
+
+
+@pytest.fixture
+def no_terminal(monkeypatch):
+    monkeypatch.setattr(tracker, "resolve_terminal", lambda: {"tty": None})
+
+
+def test_stop_failure_interrupts_until_next_prompt(live_dir, no_terminal):
+    tracker._handle_event(_event("UserPromptSubmit", "s-int-1", prompt="hi"))
+    tracker._handle_event(
+        _stop_failure(
+            "s-int-1",
+            error_details="429 Too Many Requests",
+            last_assistant_message="You've hit your limit",
+        )
+    )
+    state = _read_state(live_dir, "s-int-1")
+    assert state["state"] == "INTERRUPTED"
+    err = state["stop_error"]
+    assert err["kind"] == "limit"
+    assert err["code"] == "rate_limit"
+    assert err["details"] == "429 Too Many Requests"
+    assert err["message"] == "You've hit your limit"
+
+    tracker._handle_event(_event("UserPromptSubmit", "s-int-1", prompt="go on"))
+    state = _read_state(live_dir, "s-int-1")
+    assert state["state"] == "LIVE"
+    assert state["stop_error"] is None
+
+
+def test_stop_failure_survives_idle_prompt_and_post_tool_use(live_dir, no_terminal):
+    tracker._handle_event(_stop_failure("s-int-2"))
+    before = _read_state(live_dir, "s-int-2")
+
+    tracker._handle_event(_notification("s-int-2", "idle_prompt"))
+    tracker._handle_event(_event("PostToolUse", "s-int-2", tool_name="Bash"))
+    after = _read_state(live_dir, "s-int-2")
+    assert after["state"] == "INTERRUPTED"
+    assert after["stop_error"] == before["stop_error"]
+
+
+def test_session_end_keeps_stop_error(live_dir, no_terminal):
+    tracker._handle_event(_stop_failure("s-int-3", error="server_error"))
+    tracker._handle_event(_event("SessionEnd", "s-int-3", reason="other"))
+    state = _read_state(live_dir, "s-int-3")
+    assert state["state"] == "ENDED"
+    assert state["stop_error"]["kind"] == "api_error"
+    assert state["stop_error"]["code"] == "server_error"
+
+
+def test_stop_failure_without_optional_fields(live_dir, no_terminal):
+    tracker._handle_event(_stop_failure("s-int-4", error="overloaded"))
+    err = _read_state(live_dir, "s-int-4")["stop_error"]
+    assert err["kind"] == "api_error"
+    assert err["details"] is None
+    assert err["message"] is None
+    assert tracker._parse_iso(err["at"]) is not None
+
+
+def test_stop_failure_non_string_fields_are_stored_as_text(live_dir, no_terminal):
+    # The API types these as str; a dict here would hide the session from the live view.
+    tracker._handle_event(
+        _stop_failure(
+            "s-int-6",
+            error={"type": "rate_limit"},
+            error_details={"status": 429},
+            last_assistant_message=["limit"],
+        )
+    )
+    err = _read_state(live_dir, "s-int-6")["stop_error"]
+    assert all(isinstance(err[k], str) for k in ("code", "details", "message"))
+
+
+def test_subagent_stop_failure_marks_only_that_subagent(live_dir, no_terminal):
+    tracker._handle_event(_event("UserPromptSubmit", "s-int-5", prompt="hi"))
+    tracker._handle_event(
+        _event("SubagentStart", "s-int-5", agent_id="agent-x1", agent_type="Explore")
+    )
+    tracker._handle_event(
+        _event("SubagentStart", "s-int-5", agent_id="agent-x2", agent_type="Explore")
+    )
+    tracker._handle_event(_stop_failure("s-int-5", agent_id="agent-x1"))
+
+    state = _read_state(live_dir, "s-int-5")
+    assert state["state"] == "LIVE"
+    x1 = state["subagents"]["agent-x1"]
+    assert x1["status"] == "error"
+    assert x1["stop_error"]["kind"] == "limit"
+    assert x1["completed_at"] is not None
+    assert isinstance(x1["duration_ms"], int) and x1["duration_ms"] >= 0
+    assert state["subagents"]["agent-x2"]["status"] == "running"
+
+    tracker._handle_event(
+        _event(
+            "SubagentStop",
+            "s-int-5",
+            agent_id="agent-x1",
+            agent_transcript_path="/home/alice/t/agent-x1.jsonl",
+        )
+    )
+    x1 = _read_state(live_dir, "s-int-5")["subagents"]["agent-x1"]
+    assert x1["status"] == "error"
+    assert x1["transcript_path"] == "/home/alice/t/agent-x1.jsonl"

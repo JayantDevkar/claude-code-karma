@@ -588,6 +588,13 @@ def test_waiting_input_409(client):
     assert "waiting for your answer" in r.json()["detail"]
 
 
+def test_interrupted_409(client):
+    # A rate-limit options menu may be open; a stray /remote-control could pick an option.
+    _write_session(client.live_dir, "s", {"tmux_pane": "%2", "pid": 1}, state="INTERRUPTED")
+    r = _post(client, "s")
+    assert r.status_code == 409
+
+
 def test_unknown_state_409(client, monkeypatch):
     from routers import live_sessions
 

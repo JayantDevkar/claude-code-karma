@@ -49,6 +49,8 @@ from models.live_session import (
     LiveSessionState,
     SessionState,
     SessionStatus,
+    SubagentState,
+    SubagentStatus,
     cleanup_old_session_files,
     delete_live_session,
     load_all_live_sessions_async,
@@ -129,6 +131,7 @@ def determine_status(state: LiveSessionState) -> SessionStatus:
     - ENDED state → ended
     - STALE state → stale
     - WAITING state → waiting (persists until session ends)
+    - INTERRUPTED state → interrupted (no idle decay)
     - STOPPED + idle > 60s → stale (computed)
     - STOPPED state → stopped
     - LIVE + idle > 30s → idle
@@ -156,6 +159,10 @@ def determine_status(state: LiveSessionState) -> SessionStatus:
     if state.state == SessionState.WAITING:
         return SessionStatus.WAITING_INPUT
 
+    # INTERRUPTED - turn died on an API error/limit; waits on the user like WAITING
+    if state.state == SessionState.INTERRUPTED:
+        return SessionStatus.INTERRUPTED
+
     # STOPPED that's been idle 60+ seconds becomes STALE
     # This handles cases where idle_prompt hook doesn't fire
     if state.state == SessionState.STOPPED:
@@ -168,6 +175,13 @@ def determine_status(state: LiveSessionState) -> SessionStatus:
         return SessionStatus.IDLE
 
     return SessionStatus.ACTIVE
+
+
+def reported_subagent_status(s: SubagentState, session_status: SessionStatus) -> SubagentStatus:
+    """A subagent can't outlive its session: still ``running`` once it ended means interrupted."""
+    if s.status == SubagentStatus.RUNNING and session_status == SessionStatus.ENDED:
+        return SubagentStatus.INTERRUPTED
+    return s.status
 
 
 def live_active_duration(state: LiveSessionState) -> float:
@@ -224,14 +238,18 @@ def state_to_summary(
             agent_id: {
                 "agent_id": s.agent_id,
                 "agent_type": s.agent_type,
-                "status": s.status.value if hasattr(s.status, "value") else str(s.status),
+                "status": reported_subagent_status(s, status).value,
                 "transcript_path": s.transcript_path,
                 "started_at": s.started_at.isoformat() if s.started_at else None,
                 "completed_at": s.completed_at.isoformat() if s.completed_at else None,
                 "duration_ms": getattr(s, "duration_ms", None),
+                "stop_error": s.stop_error.model_dump(mode="json") if s.stop_error else None,
             }
             for agent_id, s in state.subagents.items()
         }
+    active_subagent_count = sum(
+        1 for s in (subagents_dict or {}).values() if s["status"] == SubagentStatus.RUNNING.value
+    )
 
     # Terminal identity (for the "open terminal" button). can_focus reflects
     # whether the *host running the API* has an identifier it could act on.
@@ -266,8 +284,9 @@ def state_to_summary(
         session_ids=state.session_ids,
         # Rich subagent tracking (from hooks - real-time)
         subagents=subagents_dict,
-        active_subagent_count=state.active_subagent_count,
+        active_subagent_count=active_subagent_count,
         total_subagent_count=state.total_subagent_count,
+        stop_error=state.stop_error.model_dump(mode="json") if state.stop_error else None,
         terminal=terminal_dict,
         can_focus_terminal=can_focus(terminal_dict),
         remote_control=remote_control,
@@ -649,6 +668,7 @@ def focus_session_terminal(
 # Typed at any status except these (open dialog, no REPL yet, no process); ACTIVE is allowed since Claude Code queues the command.
 _RC_BLOCKED_STATUSES = {
     SessionStatus.WAITING_INPUT,
+    SessionStatus.INTERRUPTED,  # a rate-limit options menu may be open
     SessionStatus.STARTING,
     SessionStatus.ENDED,
 }
@@ -793,6 +813,7 @@ async def toggle_session_remote_control(
             reason = {
                 SessionStatus.WAITING_INPUT: "has a prompt open waiting for your answer",
                 SessionStatus.STARTING: "is still starting up",
+                SessionStatus.INTERRUPTED: "stopped on an API error or usage limit",
             }.get(status, f"is {status.value}")
             raise HTTPException(
                 status_code=409,

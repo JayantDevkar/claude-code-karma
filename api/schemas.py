@@ -1065,11 +1065,18 @@ class LiveSessionSummary(BaseModel):
 
     session_id: str = Field(..., description="Session UUID")
     project_slug: Optional[str] = Field(None, description="URL-friendly project slug")
-    state: Literal["STARTING", "LIVE", "WAITING", "STOPPED", "STALE", "ENDED"] = Field(
-        ..., description="Current session state"
+    state: Literal["STARTING", "LIVE", "WAITING", "STOPPED", "STALE", "INTERRUPTED", "ENDED"] = (
+        Field(..., description="Current session state")
     )
-    status: Literal["starting", "active", "idle", "waiting", "stopped", "stale", "ended"] = Field(
-        ..., description="Computed session status based on state and activity"
+    status: Literal[
+        "starting", "active", "idle", "waiting", "stopped", "stale", "interrupted", "ended"
+    ] = Field(..., description="Computed session status based on state and activity")
+    stop_error: Optional[Dict[str, Any]] = Field(
+        None,
+        description=(
+            "Why the last turn ended on an API error or usage limit "
+            "(kind, code, details, message, at)"
+        ),
     )
 
     # Project context
