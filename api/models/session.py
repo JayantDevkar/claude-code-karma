@@ -26,6 +26,7 @@ from command_helpers import (
 
 from .active_time import ACTIVE_IDLE_CAP_SECONDS, ActiveTimeAccumulator
 from .agent import Agent
+from .api_error import ApiErrorSummary, ApiErrorTracker
 from .base_cache import (
     BaseCache,
     clear_all_caches,
@@ -169,6 +170,7 @@ class SessionCache(BaseCache):
         "git_branches",
         "working_dirs",
         "models_used",
+        "api_error_summary",
         "message_count",
         "total_cost",
         "active_duration_seconds",
@@ -206,6 +208,7 @@ class SessionCache(BaseCache):
         self.git_branches: Optional[Set[str]] = None
         self.working_dirs: Optional[List[str]] = None
         self.models_used: Optional[Set[str]] = None
+        self.api_error_summary: ApiErrorSummary = ApiErrorSummary.EMPTY
         self.message_count: Optional[int] = None
         self.total_cost: Optional[float] = None
         self.active_duration_seconds: Optional[float] = None
@@ -241,6 +244,7 @@ class SessionCache(BaseCache):
         self.git_branches = None
         self.working_dirs = None
         self.models_used = None
+        self.api_error_summary = ApiErrorSummary.EMPTY
         self.message_count = None
         self.total_cost = None
         self.active_duration_seconds = None
@@ -371,6 +375,7 @@ class Session(BaseModel):
         working_dirs: Dict[str, None] = {}  # insertion-ordered set
         models_used: Set[str] = set()
         message_count = 0
+        api_errors = ApiErrorTracker(skip_sidechain=True)
 
         # Message type counters for continuation session detection
         user_msg_count = 0
@@ -438,7 +443,8 @@ class Session(BaseModel):
                             if ":" in cmd_name:
                                 pending_command_plugins.add(cmd_name.split(":")[0])
             elif isinstance(msg, AssistantMessage):
-                assistant_msg_count += 1
+                if not msg.is_synthetic:
+                    assistant_msg_count += 1
             elif isinstance(msg, FileHistorySnapshot):
                 file_snapshot_count += 1
             elif isinstance(msg, SessionTitleMessage):
@@ -466,7 +472,8 @@ class Session(BaseModel):
             # Assistant message specific data
             if isinstance(msg, AssistantMessage):
                 usage_acc.add(msg)
-                if msg.model:
+                api_errors.feed(msg)
+                if msg.model and not msg.is_synthetic:
                     models_used.add(msg.model)
                 for block in msg.content_blocks:
                     if isinstance(block, ToolUseBlock):
@@ -542,6 +549,7 @@ class Session(BaseModel):
         cache.git_branches = git_branches
         cache.working_dirs = list(working_dirs)
         cache.models_used = models_used
+        cache.api_error_summary = api_errors.summary()
         cache.message_count = message_count
         cache.total_cost = usage_acc.cost
         cache.active_duration_seconds = active_time.seconds
@@ -902,6 +910,12 @@ class Session(BaseModel):
         """
         self._load_metadata()
         return self._get_cache().models_used or set()
+
+    @property
+    def api_error_summary(self) -> ApiErrorSummary:
+        """How the session ended (limit/refusal/api_error) and its limit-hit count (cached)."""
+        self._load_metadata()
+        return self._get_cache().api_error_summary
 
     def get_tools_used(self) -> Counter[str]:
         """

@@ -107,7 +107,7 @@ class AsyncSession:
             msg_data = data.get("message", {})
             if isinstance(msg_data, dict):
                 model = msg_data.get("model")
-                if model:
+                if model and model != "<synthetic>":
                     models_used.add(model)
 
         return {
