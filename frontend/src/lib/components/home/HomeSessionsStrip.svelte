@@ -202,8 +202,11 @@
 
 	.meta {
 		display: flex;
+		flex-wrap: wrap;
+		justify-content: flex-end;
 		align-items: center;
-		gap: 10px;
+		gap: 2px 10px;
+		min-width: 0;
 	}
 
 	.count {
@@ -267,8 +270,10 @@
 
 	.legend {
 		display: flex;
+		flex-wrap: wrap;
+		justify-content: flex-end;
 		align-items: center;
-		gap: 10px;
+		gap: 2px 10px;
 	}
 
 	.legend-item {
