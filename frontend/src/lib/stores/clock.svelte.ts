@@ -3,7 +3,8 @@ const clock = $state({ now: new Date() });
 let timer: ReturnType<typeof setInterval> | null = null;
 
 export function getNow(): Date {
-	if (timer === null && typeof window !== 'undefined') {
+	if (typeof window === 'undefined') return new Date();
+	if (timer === null) {
 		timer = setInterval(() => {
 			clock.now = new Date();
 		}, 60_000);

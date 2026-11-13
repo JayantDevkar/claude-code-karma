@@ -393,6 +393,7 @@
 					</div>
 				{/if}
 				<!-- Model Badge -->
+				{#if session.models_used?.length}
 				<div
 					class="flex items-center gap-1 px-2 py-0.5 rounded-full border {modelColorConfig[
 						modelColor
@@ -407,6 +408,7 @@
 						{getModelBadgeLabel(session.models_used[0] || '')}
 					</span>
 				</div>
+				{/if}
 			</div>
 		</div>
 	{/if}

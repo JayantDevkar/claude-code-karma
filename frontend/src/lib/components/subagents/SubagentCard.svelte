@@ -174,14 +174,14 @@
 
 			<div class="flex-1 min-w-0">
 				<div class="flex items-center justify-between gap-2">
-					<div class="flex items-center gap-2 min-w-0">
+					<div class="flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0">
 						{#if agentHref}
 							<a
 								href={agentHref}
 								class="
 									inline-flex items-center gap-1.5
 									text-sm font-mono font-medium text-[var(--accent)]
-									hover:text-[var(--accent-hover)] hover:underline
+									hover:text-[var(--accent-hover)] hover:underline min-w-0 max-w-full
 									transition-colors truncate
 								"
 								title={subagent.agent_id}
@@ -195,7 +195,7 @@
 							</a>
 						{:else}
 							<code
-								class="text-sm font-mono font-medium text-[var(--accent)] truncate"
+								class="text-sm font-mono font-medium text-[var(--accent)] truncate min-w-0 max-w-full"
 								title={subagent.agent_id}
 							>
 								{displayAgentId}
@@ -225,7 +225,7 @@
 					</div>
 
 					<!-- Duration & expand/collapse indicator -->
-					<div class="flex items-center gap-2">
+					<div class="flex items-center gap-2 shrink-0">
 						{#if duration !== null}
 							<span
 								class="flex items-center gap-1 text-[10px] text-[var(--text-muted)]"
