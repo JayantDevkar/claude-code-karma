@@ -149,6 +149,9 @@ def _build_session_summary(session_data: dict) -> SessionSummary:
         session_titles=session_data.get("session_titles", []),
         tool_source=session_data.get("tool_source"),
         subagent_agent_ids=session_data.get("subagent_agent_ids", []),
+        ended_by=session_data.get("ended_by"),
+        ended_resets_at=session_data.get("ended_resets_at"),
+        limit_hit_count=session_data.get("limit_hit_count") or 0,
     )
 
 

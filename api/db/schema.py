@@ -10,7 +10,7 @@ import sqlite3
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 27
+SCHEMA_VERSION = 28
 
 SCHEMA_SQL = """
 -- Schema versioning
@@ -56,6 +56,10 @@ CREATE TABLE IF NOT EXISTS sessions (
     source_root TEXT,
     -- When Karma last asked Haiku for a synced session's title; NULL = never
     title_attempted_at TEXT,
+    -- How the session ended when the last turn was an API error: limit/refusal/api_error
+    ended_by TEXT,
+    ended_resets_at TEXT,
+    limit_hit_count INTEGER DEFAULT 0,
     indexed_at TEXT DEFAULT (datetime('now')),
     -- Per-session flag set to 1 when a session needs the bg-shells/cron
     -- extraction pass (v13). Cleared by the indexer after processing.
@@ -119,6 +123,9 @@ CREATE TABLE IF NOT EXISTS subagent_invocations (
     cost_usd REAL DEFAULT 0,
     duration_seconds REAL DEFAULT 0,
     started_at TEXT,
+    ended_by TEXT,
+    ended_resets_at TEXT,
+    limit_hit_count INTEGER DEFAULT 0,
     FOREIGN KEY (session_uuid) REFERENCES sessions(uuid) ON DELETE CASCADE
 );
 
@@ -441,6 +448,10 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
 
     # Same cross-branch guard for sessions columns added after v19.
     columns_added = _ensure_session_columns(conn)
+    if _ensure_subagent_columns(conn) and not columns_added:
+        # Existing subagent rows need the new values; the session columns did not nudge.
+        conn.execute("UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1")
+        conn.commit()
 
     # Upgraded DBs can lose the sessions_fts triggers, which freezes search (issue #145).
     _ensure_sessions_fts(conn)
@@ -901,7 +912,30 @@ _SESSION_COLUMNS = [
     ("subagent_cache_creation_tokens", "INTEGER DEFAULT 0"),
     ("source_root", "TEXT"),
     ("title_attempted_at", "TEXT"),
+    ("ended_by", "TEXT"),
+    ("ended_resets_at", "TEXT"),
+    ("limit_hit_count", "INTEGER DEFAULT 0"),
 ]
+
+# subagent_invocations columns added after v27; also in SCHEMA_SQL for fresh installs.
+_SUBAGENT_COLUMNS = [
+    ("ended_by", "TEXT"),
+    ("ended_resets_at", "TEXT"),
+    ("limit_hit_count", "INTEGER DEFAULT 0"),
+]
+
+
+def _ensure_subagent_columns(conn: sqlite3.Connection) -> bool:
+    """Add missing subagent_invocations columns regardless of schema version; True if any added."""
+    existing = {r[1] for r in conn.execute("PRAGMA table_info(subagent_invocations)").fetchall()}
+    if not existing:
+        return False
+    missing = [(n, d) for n, d in _SUBAGENT_COLUMNS if n not in existing]
+    for name, ddl in missing:
+        conn.execute(f"ALTER TABLE subagent_invocations ADD COLUMN {name} {ddl}")
+    if missing:
+        conn.commit()
+    return bool(missing)
 
 # Columns whose NULL default is already right for existing rows (all local).
 _NO_REINDEX_COLUMNS = {"source_root", "title_attempted_at"}

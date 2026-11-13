@@ -14,6 +14,7 @@ from typing import Any, Callable, Dict, List, Literal, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from .api_error import ApiError, classify_api_error
 from .content import ContentBlock, parse_content_block
 from .usage import TokenUsage
 
@@ -187,6 +188,14 @@ class AssistantMessage(MessageBase):
         default=None, alias="agentId", description="Agent ID if from subagent"
     )
     slug: Optional[str] = Field(default=None, description="Subagent slug name")
+    api_error: Optional[ApiError] = Field(
+        default=None, description="Set when this turn is a synthetic API-error turn"
+    )
+
+    @property
+    def is_synthetic(self) -> bool:
+        """True for Claude Code's own placeholder turns (model `<synthetic>`)."""
+        return self.model == "<synthetic>"
 
     @model_validator(mode="before")
     @classmethod
@@ -196,10 +205,18 @@ class AssistantMessage(MessageBase):
             return data
         # If content_blocks already set (direct instantiation), skip extraction
         if "content_blocks" in data:
+            if "api_error" not in data:
+                api_error = classify_api_error(data)
+                if api_error is not None:
+                    return {**data, "api_error": api_error}
             return data
 
         nested_msg = data.get("message", {})
         result = dict(data)
+
+        # Classify from the raw top-level dict
+        if "api_error" not in result:
+            result["api_error"] = classify_api_error(data)
 
         # Extract fields from nested message
         if "model" not in result and "model" in nested_msg:

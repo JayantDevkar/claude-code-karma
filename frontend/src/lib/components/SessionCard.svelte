@@ -9,6 +9,7 @@
 		Laptop
 	} from 'lucide-svelte';
 	import ResumeSessionButton from './ResumeSessionButton.svelte';
+	import EndedByBadge from './EndedByBadge.svelte';
 	import type { SessionSummary, LiveSessionSummary } from '$lib/api-types';
 	import { statusConfig } from '$lib/live-session-config';
 	import {
@@ -223,8 +224,9 @@
 					{displayPrompt}
 				</p>
 			{/if}
-			{#if session.session_source === 'desktop' || session.machine}
-				<div class="flex items-center gap-2 mt-1 text-[10px] text-[var(--text-muted)] min-w-0">
+			{#if session.ended_by || session.session_source === 'desktop' || session.machine}
+				<div class="flex flex-wrap items-center gap-2 mt-1 text-[10px] text-[var(--text-muted)] min-w-0">
+					<EndedByBadge endedBy={session.ended_by} resetsAt={session.ended_resets_at} />
 					{#if session.session_source === 'desktop'}
 						<div class="flex items-center gap-0.5" title="Claude Desktop session">
 							<Monitor size={10} strokeWidth={2} />
@@ -349,6 +351,7 @@
 				{#if showResumeChip}
 					<ResumeSessionButton sessionUuid={session.uuid} machine={session.machine} />
 				{/if}
+				<EndedByBadge endedBy={session.ended_by} resetsAt={session.ended_resets_at} />
 				{#if session.session_source === 'desktop'}
 					<div
 						class="flex items-center gap-1 px-2 py-0.5 rounded-full border bg-[var(--bg-muted)] text-[var(--text-secondary)] border-[var(--border)]"
@@ -368,6 +371,7 @@
 					</div>
 				{/if}
 				<!-- Model Badge -->
+				{#if session.models_used?.length}
 				<div
 					class="flex items-center gap-1 px-2 py-0.5 rounded-full border {modelColorConfig[
 						modelColor
@@ -382,6 +386,7 @@
 						>{getModelBadgeLabel(session.models_used[0] || '')}</span
 					>
 				</div>
+				{/if}
 			</div>
 		</div>
 	{/if}

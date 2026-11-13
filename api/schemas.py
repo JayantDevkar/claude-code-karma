@@ -81,6 +81,11 @@ class SubagentSummary(BaseModel):
     tools_used: dict[str, int] = Field(default_factory=dict, description="Tool name -> usage count")
     message_count: int = Field(0, description="Total messages in subagent conversation")
     initial_prompt: Optional[str] = Field(None, description="First user message to subagent")
+    ended_by: Optional[Literal["limit", "refusal", "api_error"]] = Field(
+        None, description="Why the conversation stopped on an unhealed API error turn"
+    )
+    ended_resets_at: Optional[datetime] = Field(None, description="When the usage limit resets")
+    limit_hit_count: int = Field(0, description="Usage-limit turns seen in the conversation")
 
 
 class ToolUsageSummary(BaseModel):
@@ -211,6 +216,11 @@ class SessionSummary(BaseModel):
         None,
         description="Extra session root the session was synced from; None for this machine",
     )
+    ended_by: Optional[Literal["limit", "refusal", "api_error"]] = Field(
+        None, description="Why the session stopped on an unhealed API error turn"
+    )
+    ended_resets_at: Optional[datetime] = Field(None, description="When the usage limit resets")
+    limit_hit_count: int = Field(0, description="Usage-limit turns seen in the session")
 
 
 class CompactionSummary(BaseModel):
@@ -494,6 +504,7 @@ class TimelineEvent(BaseModel):
         "skill_invocation",
         "command_invocation",
         "builtin_command",
+        "api_error",
     ] = Field(..., description="Type of timeline event")
     timestamp: datetime = Field(..., description="When the event occurred")
     actor: str = Field(
@@ -574,6 +585,11 @@ class SubagentSessionDetail(BaseModel):
     initial_prompt: Optional[str] = Field(
         None, description="First user message to subagent (truncated)"
     )
+    ended_by: Optional[Literal["limit", "refusal", "api_error"]] = Field(
+        None, description="Why the subagent stopped on an unhealed API error turn"
+    )
+    ended_resets_at: Optional[datetime] = Field(None, description="When the usage limit resets")
+    limit_hit_count: int = Field(0, description="Usage-limit turns seen in the subagent")
 
 
 # =============================================================================

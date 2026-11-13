@@ -641,6 +641,9 @@ async def get_skill_detail(
                     tool_source=row.get("tool_source"),
                     subagent_agent_ids=row.get("subagent_agent_ids", []),
                     invocation_sources=row.get("invocation_sources", []),
+                    ended_by=row.get("ended_by"),
+                    ended_resets_at=row.get("ended_resets_at"),
+                    limit_hit_count=row.get("limit_hit_count") or 0,
                 )
             )
 
@@ -733,6 +736,9 @@ def get_skill_sessions(
                             session_titles=row.get("session_titles", [])
                             or title_cache.get_titles(project_encoded_name, row["uuid"])
                             or [],
+                            ended_by=row.get("ended_by"),
+                            ended_resets_at=row.get("ended_resets_at"),
+                            limit_hit_count=row.get("limit_hit_count") or 0,
                         )
                     )
                 return SkillSessionsResponse(
@@ -757,7 +763,11 @@ def get_skill_sessions(
                 return None
 
             initial_prompt = get_initial_prompt(session, max_length=500)
+            api_errors = session.api_error_summary
             return SessionWithContext(
+                ended_by=api_errors.ended_by,
+                ended_resets_at=api_errors.ended_resets_at,
+                limit_hit_count=api_errors.limit_hit_count,
                 uuid=session.uuid,
                 slug=session.slug,
                 project_encoded_name=project.encoded_name,
