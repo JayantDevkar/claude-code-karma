@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Iterator, Optional, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
+    from .api_error import ApiErrorSummary
     from .message import Message
     from .usage import TokenUsage
 
@@ -51,6 +52,11 @@ class ConversationEntity(Protocol):
 
     def get_usage_summary(self) -> "TokenUsage":
         """Aggregated token usage."""
+        ...
+
+    @property
+    def api_error_summary(self) -> "ApiErrorSummary":
+        """How the conversation ended and its usage-limit hit count."""
         ...
 
 

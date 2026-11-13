@@ -334,6 +334,7 @@ def session_index_to_summary(
     """
     from services.session_roots import machine_for_path
 
+    # sessions-index.json has no error data, so ended_by/limit_hit_count stay at defaults.
     return SessionSummary(
         uuid=entry.session_id,
         slug=None,  # Not in index, will need Session for this

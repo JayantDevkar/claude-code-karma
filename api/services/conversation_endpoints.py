@@ -23,13 +23,7 @@ from command_helpers import (
     parse_command_from_content,
     strip_command_tags,
 )
-from models import (
-    ApiErrorSummary,
-    AssistantMessage,
-    ConversationEntity,
-    ToolUseBlock,
-    UserMessage,
-)
+from models import AssistantMessage, ConversationEntity, ToolUseBlock, UserMessage
 from models.content import TextBlock, ThinkingBlock
 from schemas import FileActivity, TimelineEvent, ToolUsageSummary
 from utils import (
@@ -97,8 +91,7 @@ def build_conversation_timeline(
 
     is_first_user_message = True
     # Both Session and Agent expose api_error_summary; computed once for the whole loop.
-    api_errors = getattr(conversation, "api_error_summary", ApiErrorSummary.EMPTY)
-    ended_turn_uuid = api_errors.ended_turn_uuid
+    ended_turn_uuid = conversation.api_error_summary.ended_turn_uuid
 
     for msg in conversation.iter_messages():
         if isinstance(msg, UserMessage):

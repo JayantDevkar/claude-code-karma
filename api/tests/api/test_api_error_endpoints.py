@@ -88,6 +88,23 @@ def test_subagent_list_has_ended_by(client, session_files):
     assert by_id["bbb2"]["limit_hit_count"] == 0
 
 
+def test_parallel_subagent_list_has_ended_by(client, session_files):
+    sub_dir = session_files.parent / SESSION_ID / "subagents"
+    for i in range(3):
+        write_jsonl(
+            sub_dir / f"agent-ccc{i}.jsonl",
+            [_u(11 + i), reply_line(f"c{i}", f"u{11 + i}", _ts(20), "ok")],
+        )
+
+    resp = client.get(f"/sessions/{SESSION_ID}/subagents/parallel")
+
+    assert resp.status_code == 200
+    by_id = {s["agent_id"]: s for s in resp.json()}
+    assert len(by_id) == 5
+    assert by_id["aaa1"]["ended_by"] == "limit"
+    assert by_id["bbb2"]["ended_by"] is None
+
+
 def test_subagent_detail_and_timeline_mark_final_error(client, session_files):
     base = f"/agents/{ENCODED}/{SESSION_ID}/agents/aaa1"
 

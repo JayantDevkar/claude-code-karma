@@ -733,6 +733,7 @@ def _get_all_sessions_jsonl(
         )
         models_used: list[str] = []
         subagent_count = 0
+        # Error fields only when the session is already loaded: no transcript read per row.
         api_errors = ApiErrorSummary.EMPTY
 
         from services.session_roots import machine_for_path, session_jsonl_path
