@@ -158,9 +158,14 @@ def test_db_stamped_28_without_subagent_columns_gains_them():
     ensure_schema(conn)
     for col in _NEW_COLUMNS:
         conn.execute(f"ALTER TABLE subagent_invocations DROP COLUMN {col}")
+    conn.execute("INSERT INTO projects (encoded_name, project_path) VALUES ('-p', '/home/alice/p')")
+    conn.execute(
+        "INSERT INTO sessions (uuid, project_encoded_name, jsonl_mtime) VALUES ('s1', '-p', 100)"
+    )
     conn.commit()
     assert conn.execute("SELECT MAX(version) FROM schema_version").fetchone()[0] == 28
 
     ensure_schema(conn)
 
     assert set(_NEW_COLUMNS) <= _cols(conn, "subagent_invocations")
+    assert conn.execute("SELECT jsonl_mtime FROM sessions").fetchone()[0] == 99

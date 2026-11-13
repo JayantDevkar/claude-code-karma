@@ -448,7 +448,10 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
 
     # Same cross-branch guard for sessions columns added after v19.
     columns_added = _ensure_session_columns(conn)
-    _ensure_subagent_columns(conn)
+    if _ensure_subagent_columns(conn) and not columns_added:
+        # Existing subagent rows need the new values; the session columns did not nudge.
+        conn.execute("UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1")
+        conn.commit()
 
     # Upgraded DBs can lose the sessions_fts triggers, which freezes search (issue #145).
     _ensure_sessions_fts(conn)
@@ -922,15 +925,17 @@ _SUBAGENT_COLUMNS = [
 ]
 
 
-def _ensure_subagent_columns(conn: sqlite3.Connection) -> None:
-    """Add missing subagent_invocations columns regardless of schema version."""
+def _ensure_subagent_columns(conn: sqlite3.Connection) -> bool:
+    """Add missing subagent_invocations columns regardless of schema version; True if any added."""
     existing = {r[1] for r in conn.execute("PRAGMA table_info(subagent_invocations)").fetchall()}
     if not existing:
-        return
-    for name, ddl in _SUBAGENT_COLUMNS:
-        if name not in existing:
-            conn.execute(f"ALTER TABLE subagent_invocations ADD COLUMN {name} {ddl}")
-    conn.commit()
+        return False
+    missing = [(n, d) for n, d in _SUBAGENT_COLUMNS if n not in existing]
+    for name, ddl in missing:
+        conn.execute(f"ALTER TABLE subagent_invocations ADD COLUMN {name} {ddl}")
+    if missing:
+        conn.commit()
+    return bool(missing)
 
 # Columns whose NULL default is already right for existing rows (all local).
 _NO_REINDEX_COLUMNS = {"source_root", "title_attempted_at"}
