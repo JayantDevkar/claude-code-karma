@@ -193,9 +193,16 @@ lists.
 ## Follow-up (after thread 1 merges)
 
 `live_active_duration` already parses each live transcript through a cache.
-Thread 1 adds `Session.ended_resets_at`. Read it from that same parse and add
+Thread 1 adds `Session.api_error_summary` (`ended_by`, `ended_resets_at`,
+`limit_hit_count`, `ended_turn_uuid`). Read it from that same parse and add
 `resets_at` to the live `stop_error` when `kind == "limit"`, so the card can
 show "resets 23:30" as a time and "reset passed" afterwards. Small PR; not here.
+
+The same follow-up can take `kind` from `ended_by`. The hook can't tell a hard
+refusal from other errors: Claude Code reports safeguard refusals as
+`error: invalid_request`, and the hook payload has no `stop_reason`. So until
+then the live view calls them `api_error`, while thread 1's session page calls
+them `refusal`. Known and accepted; no text matching in the hook.
 
 ## Tests (synthetic fixtures only)
 
