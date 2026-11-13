@@ -164,7 +164,7 @@ def _mock_liveness(monkeypatch, alive: bool):
 
 def test_reap_ends_nonterminal_sessions_with_dead_pid(tmp_live_dir: Path, monkeypatch):
     _mock_liveness(monkeypatch, alive=False)
-    for state in ("LIVE", "WAITING", "STOPPED", "STALE", "STARTING"):
+    for state in ("LIVE", "WAITING", "STOPPED", "STALE", "STARTING", "INTERRUPTED"):
         _write_raw(
             tmp_live_dir,
             f"dead-{state.lower()}",
@@ -174,8 +174,8 @@ def test_reap_ends_nonterminal_sessions_with_dead_pid(tmp_live_dir: Path, monkey
             terminal={"pid": 4242},
         )
 
-    assert live_session_store.reap_dead_sessions() == 5
-    for state in ("LIVE", "WAITING", "STOPPED", "STALE", "STARTING"):
+    assert live_session_store.reap_dead_sessions() == 6
+    for state in ("LIVE", "WAITING", "STOPPED", "STALE", "STARTING", "INTERRUPTED"):
         data = json.loads((tmp_live_dir / f"dead-{state.lower()}.json").read_text())
         assert data["state"] == "ENDED"
         assert data["end_reason"] == "process_died"
