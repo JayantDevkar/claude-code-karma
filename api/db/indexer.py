@@ -144,9 +144,7 @@ def sync_all_projects(conn: sqlite3.Connection) -> dict:
             # Collect project_path for worktree remapping
             paths = _session_project_paths(conn, encoded_dir.name)
             if paths:
-                real_project_paths[encoded_dir.name] = _resolve_project_path(
-                    encoded_dir.name, paths
-                )
+                real_project_paths[encoded_dir.name] = _resolve_project_path(encoded_dir.name, paths)
 
         # Second pass: worktree dirs -> resolve -> index under real project
         for wt_dir in worktree_dirs:
@@ -993,9 +991,7 @@ def _update_project_summaries(conn: sqlite3.Connection) -> None:
         last_activity = row[2]
 
         # Find the correct project_path by encoding-match (not arbitrary GROUP BY)
-        project_path = _resolve_project_path(
-            encoded_name, _session_project_paths(conn, encoded_name)
-        )
+        project_path = _resolve_project_path(encoded_name, _session_project_paths(conn, encoded_name))
 
         slug = compute_project_slug(encoded_name, project_path)
         display_name = path_basename(project_path) if project_path else encoded_name

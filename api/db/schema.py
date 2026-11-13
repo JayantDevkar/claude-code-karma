@@ -448,6 +448,7 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
 
     # Same cross-branch guard for sessions columns added after v19.
     columns_added = _ensure_session_columns(conn)
+    _ensure_subagent_columns(conn)
 
     # Upgraded DBs can lose the sessions_fts triggers, which freezes search (issue #145).
     _ensure_sessions_fts(conn)
@@ -644,7 +645,9 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             conn.execute("UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1")
 
         if current_version < 10:
-            logger.info("Migrating → v10: re-index skills for command_triggered invocation source")
+            logger.info(
+                "Migrating → v10: re-index skills for command_triggered invocation source"
+            )
             # Clear skill/command tables so they get repopulated with new linkage logic
             conn.execute("DELETE FROM session_skills")
             conn.execute("DELETE FROM session_commands")
@@ -693,7 +696,8 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
 
         if current_version < 12:
             logger.info(
-                "Migrating → v12: adding projects.git_identity for cross-encoded ticket aggregation"
+                "Migrating → v12: adding projects.git_identity for cross-encoded "
+                "ticket aggregation"
             )
             # The minimum-fixture schema test (test_migration_from_v10) seeds
             # only schema_version and skips SCHEMA_SQL, so projects/sessions
@@ -708,7 +712,8 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
                 if "git_identity" not in projects_cols:
                     conn.execute("ALTER TABLE projects ADD COLUMN git_identity TEXT")
                 conn.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_projects_git_identity ON projects(git_identity)"
+                    "CREATE INDEX IF NOT EXISTS idx_projects_git_identity "
+                    "ON projects(git_identity)"
                 )
                 # Nudge mtimes so the next periodic indexer pass re-runs
                 # _update_project_summaries for every project and populates
@@ -719,13 +724,16 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
 
         if current_version < 13:
             logger.info(
-                "Migrating → v13: bg-shells/cron tables + sessions.needs_shell_cron_reindex flag"
+                "Migrating → v13: bg-shells/cron tables + "
+                "sessions.needs_shell_cron_reindex flag"
             )
             # The CREATE TABLE block for the new tables already ran in the
             # unconditional executescript() above, so we only need the ALTER
             # here. Guarded against the minimum-fixture case where sessions
             # may not exist (same pattern as v12).
-            sessions_cols = {r[1] for r in conn.execute("PRAGMA table_info(sessions)").fetchall()}
+            sessions_cols = {
+                r[1] for r in conn.execute("PRAGMA table_info(sessions)").fetchall()
+            }
             if sessions_cols and "needs_shell_cron_reindex" not in sessions_cols:
                 # NOT NULL DEFAULT 1 flags every existing row for the bg-shells/
                 # cron extraction pass. The indexer clears the flag after
@@ -740,7 +748,9 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             logger.info("Migrating → v18: add output_file_path to background_shells")
             cols = {r[1] for r in conn.execute("PRAGMA table_info(background_shells)").fetchall()}
             if "output_file_path" not in cols:
-                conn.execute("ALTER TABLE background_shells ADD COLUMN output_file_path TEXT")
+                conn.execute(
+                    "ALTER TABLE background_shells ADD COLUMN output_file_path TEXT"
+                )
 
         if current_version < 19:
             logger.info(
@@ -749,8 +759,7 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             # SQLite can't ALTER a CHECK constraint — must recreate the table.
             # Disable FK enforcement so the DROP isn't blocked by shell_polls.
             existing = {
-                r[0]
-                for r in conn.execute(
+                r[0] for r in conn.execute(
                     "SELECT name FROM sqlite_master WHERE type='table'"
                 ).fetchall()
             }
@@ -791,7 +800,9 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
                     "INSERT OR IGNORE INTO background_shells_v19 SELECT * FROM background_shells"
                 )
                 conn.execute("DROP TABLE background_shells")
-                conn.execute("ALTER TABLE background_shells_v19 RENAME TO background_shells")
+                conn.execute(
+                    "ALTER TABLE background_shells_v19 RENAME TO background_shells"
+                )
                 conn.execute(
                     "CREATE INDEX IF NOT EXISTS idx_bg_shells_session "
                     "ON background_shells(session_uuid, spawned_at DESC)"
@@ -876,17 +887,6 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
                     "WHERE p.encoded_name = sessions.project_encoded_name) COLLATE NOCASE"
                 )
 
-        if current_version < 28:
-            logger.info("Migrating → v28: ended-by / limit-hit columns on subagent_invocations")
-            existing = {r[1] for r in conn.execute("PRAGMA table_info(subagent_invocations)")}
-            for name, ddl in (
-                ("ended_by", "TEXT"),
-                ("ended_resets_at", "TEXT"),
-                ("limit_hit_count", "INTEGER DEFAULT 0"),
-            ):
-                if existing and name not in existing:
-                    conn.execute(f"ALTER TABLE subagent_invocations ADD COLUMN {name} {ddl}")
-
     # Record version
     conn.execute(
         "INSERT OR REPLACE INTO schema_version (version) VALUES (?)",
@@ -913,6 +913,24 @@ _SESSION_COLUMNS = [
     ("ended_resets_at", "TEXT"),
     ("limit_hit_count", "INTEGER DEFAULT 0"),
 ]
+
+# subagent_invocations columns added after v27; also in SCHEMA_SQL for fresh installs.
+_SUBAGENT_COLUMNS = [
+    ("ended_by", "TEXT"),
+    ("ended_resets_at", "TEXT"),
+    ("limit_hit_count", "INTEGER DEFAULT 0"),
+]
+
+
+def _ensure_subagent_columns(conn: sqlite3.Connection) -> None:
+    """Add missing subagent_invocations columns regardless of schema version."""
+    existing = {r[1] for r in conn.execute("PRAGMA table_info(subagent_invocations)").fetchall()}
+    if not existing:
+        return
+    for name, ddl in _SUBAGENT_COLUMNS:
+        if name not in existing:
+            conn.execute(f"ALTER TABLE subagent_invocations ADD COLUMN {name} {ddl}")
+    conn.commit()
 
 # Columns whose NULL default is already right for existing rows (all local).
 _NO_REINDEX_COLUMNS = {"source_root", "title_attempted_at"}

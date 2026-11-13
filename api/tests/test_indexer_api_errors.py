@@ -151,3 +151,16 @@ def test_v27_db_migrates_and_reindexes():
         assert set(_NEW_COLUMNS) <= _cols(conn, table)
     assert conn.execute("SELECT MAX(version) FROM schema_version").fetchone()[0] == SCHEMA_VERSION
     assert conn.execute("SELECT jsonl_mtime FROM sessions").fetchone()[0] == 99
+
+
+def test_db_stamped_28_without_subagent_columns_gains_them():
+    conn = sqlite3.connect(":memory:")
+    ensure_schema(conn)
+    for col in _NEW_COLUMNS:
+        conn.execute(f"ALTER TABLE subagent_invocations DROP COLUMN {col}")
+    conn.commit()
+    assert conn.execute("SELECT MAX(version) FROM schema_version").fetchone()[0] == 28
+
+    ensure_schema(conn)
+
+    assert set(_NEW_COLUMNS) <= _cols(conn, "subagent_invocations")
