@@ -127,7 +127,7 @@ def test_session_ends_on_limit_after_healed_hit(tmp_path):
     assert sm.ended_turn_uuid == "a3"
     assert "<synthetic>" not in s.get_models_used()
     assert s.message_count == 6
-    assert s._get_cache().assistant_message_count == 1
+    assert s.get_message_type_breakdown()["assistant"] == 1
 
 
 def test_healed_limit_is_not_ended(tmp_path):
@@ -189,6 +189,17 @@ def test_sidechain_turn_ignored_for_session(tmp_path):
         ],
     )
     assert s.api_error_summary.ended_by == "limit"
+
+
+def test_snapshot_plus_synthetic_turn_is_not_continuation_marker(tmp_path):
+    snapshot = {
+        "type": "file-history-snapshot",
+        "messageId": "m1",
+        "snapshot": {"messageId": "m1", "trackedFileBackups": {}, "timestamp": _ts(1)},
+        "isSnapshotUpdate": False,
+    }
+    s = _session(tmp_path, [snapshot, limit_line("a1", None, _ts(2))])
+    assert not s.is_continuation_marker
 
 
 def test_agent_ends_on_limit(tmp_path):

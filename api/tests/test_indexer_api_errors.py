@@ -131,6 +131,12 @@ def _cols(conn, table):
     return {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
 
 
+needs_drop_column = pytest.mark.skipif(
+    sqlite3.sqlite_version_info < (3, 35), reason="ALTER TABLE DROP COLUMN needs SQLite 3.35"
+)
+
+
+@needs_drop_column
 def test_v27_db_migrates_and_reindexes():
     conn = sqlite3.connect(":memory:")
     ensure_schema(conn)
@@ -153,6 +159,7 @@ def test_v27_db_migrates_and_reindexes():
     assert conn.execute("SELECT jsonl_mtime FROM sessions").fetchone()[0] == 99
 
 
+@needs_drop_column
 def test_db_stamped_28_without_subagent_columns_gains_them():
     conn = sqlite3.connect(":memory:")
     ensure_schema(conn)

@@ -177,6 +177,7 @@ class SessionCache(BaseCache):
         # Continuation session detection
         "user_message_count",
         "assistant_message_count",
+        "synthetic_assistant_count",
         "file_snapshot_count",
         "summary_count",  # SessionTitleMessage count (type: "summary")
         "compact_boundary_count",  # CompactBoundaryMessage count (real compaction)
@@ -215,6 +216,7 @@ class SessionCache(BaseCache):
         # Continuation session detection
         self.user_message_count: int = 0
         self.assistant_message_count: int = 0
+        self.synthetic_assistant_count: int = 0
         self.file_snapshot_count: int = 0
         self.summary_count: int = 0  # SessionTitleMessage count
         self.compact_boundary_count: int = 0  # CompactBoundaryMessage count
@@ -250,6 +252,7 @@ class SessionCache(BaseCache):
         self.active_duration_seconds = None
         self.user_message_count = 0
         self.assistant_message_count = 0
+        self.synthetic_assistant_count = 0
         self.file_snapshot_count = 0
         self.summary_count = 0
         self.compact_boundary_count = 0
@@ -380,6 +383,7 @@ class Session(BaseModel):
         # Message type counters for continuation session detection
         user_msg_count = 0
         assistant_msg_count = 0
+        synthetic_assistant_count = 0
         file_snapshot_count = 0
         summary_count = 0  # SessionTitleMessage (type: "summary")
         compact_boundary_count = 0  # CompactBoundaryMessage (real compaction)
@@ -443,7 +447,9 @@ class Session(BaseModel):
                             if ":" in cmd_name:
                                 pending_command_plugins.add(cmd_name.split(":")[0])
             elif isinstance(msg, AssistantMessage):
-                if not msg.is_synthetic:
+                if msg.is_synthetic:
+                    synthetic_assistant_count += 1
+                else:
                     assistant_msg_count += 1
             elif isinstance(msg, FileHistorySnapshot):
                 file_snapshot_count += 1
@@ -556,6 +562,7 @@ class Session(BaseModel):
         # Message type counts
         cache.user_message_count = user_msg_count
         cache.assistant_message_count = assistant_msg_count
+        cache.synthetic_assistant_count = synthetic_assistant_count
         cache.file_snapshot_count = file_snapshot_count
         cache.summary_count = summary_count  # SessionTitleMessage count
         cache.compact_boundary_count = compact_boundary_count  # CompactBoundaryMessage count
@@ -1028,6 +1035,7 @@ class Session(BaseModel):
             cache.file_snapshot_count > 0
             and cache.user_message_count == 0
             and cache.assistant_message_count == 0
+            and cache.synthetic_assistant_count == 0
         )
 
     @property

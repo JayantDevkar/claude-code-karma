@@ -16,7 +16,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from datetime import datetime, timezone
 from typing import Iterator, List
 
-from models.api_error import ApiErrorSummary
 from models.content import ToolUseBlock
 from models.message import AssistantMessage, UserMessage
 from services.conversation_endpoints import build_conversation_timeline
@@ -75,7 +74,6 @@ class FakeConversation:
         self._messages = messages
         # Attributes expected by build_conversation_timeline callers
         self.cwd = "/fake/project"
-        self.api_error_summary = ApiErrorSummary.EMPTY
 
     def iter_messages(self) -> Iterator:
         return iter(self._messages)

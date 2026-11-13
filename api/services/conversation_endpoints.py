@@ -24,7 +24,9 @@ from command_helpers import (
     strip_command_tags,
 )
 from models import AssistantMessage, ConversationEntity, ToolUseBlock, UserMessage
+from models.api_error import ApiErrorTracker
 from models.content import TextBlock, ThinkingBlock
+from models.conversation import is_session
 from schemas import FileActivity, TimelineEvent, ToolUsageSummary
 from utils import (
     FileOperation,
@@ -90,10 +92,12 @@ def build_conversation_timeline(
     event_counter = 0
 
     is_first_user_message = True
-    # Both Session and Agent expose api_error_summary; computed once for the whole loop.
-    ended_turn_uuid = conversation.api_error_summary.ended_turn_uuid
+    # Same sidechain policy as Session (skip) and Agent (keep) summaries.
+    api_errors = ApiErrorTracker(skip_sidechain=is_session(conversation))
+    api_error_events: list[tuple[TimelineEvent, str]] = []
 
     for msg in conversation.iter_messages():
+        api_errors.feed(msg)
         if isinstance(msg, UserMessage):
             # For subagents, the first UserMessage is always the Task prompt.
             # Don't skip it even if is_internal_message is a false positive
@@ -163,24 +167,24 @@ def build_conversation_timeline(
             if msg.api_error is not None:
                 event_counter += 1
                 err = msg.api_error
-                events.append(
-                    TimelineEvent(
-                        id=f"evt-{event_counter}",
-                        event_type="api_error",
-                        timestamp=msg.timestamp,
-                        actor=msg_actor,
-                        actor_type=msg_actor_type,
-                        title=err.text[:120],
-                        summary=err.text,
-                        metadata={
-                            "kind": err.kind,
-                            "code": err.code,
-                            "status": err.status,
-                            "resets_at": err.resets_at.isoformat() if err.resets_at else None,
-                            "healed": msg.uuid != ended_turn_uuid,
-                        },
-                    )
+                api_event = TimelineEvent(
+                    id=f"evt-{event_counter}",
+                    event_type="api_error",
+                    timestamp=msg.timestamp,
+                    actor=msg_actor,
+                    actor_type=msg_actor_type,
+                    title=err.text[:120],
+                    summary=err.text,
+                    metadata={
+                        "kind": err.kind,
+                        "code": err.code,
+                        "status": err.status,
+                        "resets_at": err.resets_at.isoformat() if err.resets_at else None,
+                        "healed": True,
+                    },
                 )
+                events.append(api_event)
+                api_error_events.append((api_event, msg.uuid))
                 continue
 
             # Process content blocks
@@ -288,6 +292,10 @@ def build_conversation_timeline(
                                 metadata=resp_metadata,
                             )
                         )
+
+    ended_turn_uuid = api_errors.summary().ended_turn_uuid
+    for api_event, turn_uuid in api_error_events:
+        api_event.metadata["healed"] = turn_uuid != ended_turn_uuid
 
     # Sort by timestamp
     events.sort(key=lambda e: e.timestamp)

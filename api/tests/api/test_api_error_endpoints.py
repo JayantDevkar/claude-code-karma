@@ -63,7 +63,7 @@ def test_timeline_marks_error_turns(client, session_files):
     assert errs[1]["metadata"]["kind"] == "limit"
     assert errs[1]["metadata"]["code"] == "usage_limit_reached"
     assert errs[1]["metadata"]["status"] == 429
-    assert errs[1]["metadata"]["resets_at"].startswith("2026-01-10T12:00:00")
+    assert errs[1]["metadata"]["resets_at"] == "2026-01-10T12:00:00+00:00"
     assert "hit your session limit" in errs[1]["summary"]
     assert not any(e["event_type"] == "response" and "hit your" in (e["summary"] or "") for e in ev)
     assert any(e["event_type"] == "response" for e in ev)
@@ -74,7 +74,7 @@ def test_session_detail_has_ended_by(client, session_files):
 
     assert body["ended_by"] == "limit"
     assert body["limit_hit_count"] == 2
-    assert body["ended_resets_at"].startswith("2026-01-10T12:00:00")
+    assert body["ended_resets_at"] == "2026-01-10T12:00:00Z"
     assert "<synthetic>" not in body["models_used"]
 
 
@@ -130,7 +130,7 @@ def test_session_list_rows_carry_ended_by(client, session_files, monkeypatch):
     listed = client.get("/sessions/all").json()["sessions"]
     assert [s["ended_by"] for s in listed] == ["limit"]
     assert listed[0]["limit_hit_count"] == 2
-    assert listed[0]["ended_resets_at"].startswith("2026-01-10T12:00:00")
+    assert listed[0]["ended_resets_at"] == "2026-01-10T12:00:00Z"
 
     project = client.get(f"/projects/{ENCODED}").json()
     assert [s["ended_by"] for s in project["sessions"]] == ["limit"]
