@@ -873,6 +873,7 @@ export function calculateLiveStatusCounts(liveSessions: LiveSessionSummary[]): L
 		waiting: visibleSessions.filter((s) => s.status === 'waiting').length,
 		stopped: visibleSessions.filter((s) => s.status === 'stopped').length,
 		stale: visibleSessions.filter((s) => s.status === 'stale').length,
+		interrupted: visibleSessions.filter((s) => s.status === 'interrupted').length,
 		ended: visibleSessions.filter((s) => s.status === 'ended').length
 	};
 }

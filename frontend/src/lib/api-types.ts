@@ -666,7 +666,14 @@ export interface ProjectArchivedResponse {
 // Live Sessions
 // ============================================
 
-export type LiveSessionState = 'STARTING' | 'LIVE' | 'WAITING' | 'STOPPED' | 'STALE' | 'ENDED';
+export type LiveSessionState =
+	| 'STARTING'
+	| 'LIVE'
+	| 'WAITING'
+	| 'STOPPED'
+	| 'STALE'
+	| 'INTERRUPTED'
+	| 'ENDED';
 export type LiveSessionStatus =
 	| 'starting'
 	| 'active'
@@ -674,9 +681,20 @@ export type LiveSessionStatus =
 	| 'waiting'
 	| 'stopped'
 	| 'ended'
-	| 'stale';
+	| 'stale'
+	| 'interrupted';
 
-export type SubagentStatus = 'running' | 'completed' | 'error';
+/** error: ended by an API error/limit; interrupted: still running when its session ended. */
+export type SubagentStatus = 'running' | 'completed' | 'error' | 'interrupted';
+
+/** Why a turn ended on an API error or usage limit (StopFailure hook). */
+export interface StopError {
+	kind: 'limit' | 'api_error';
+	code: string;
+	details: string | null;
+	message: string | null;
+	at: string | null;
+}
 
 export interface SubagentState {
 	agent_id: string;
@@ -686,6 +704,7 @@ export interface SubagentState {
 	started_at: string | null;
 	completed_at: string | null;
 	duration_ms: number | null;
+	stop_error?: StopError | null;
 }
 
 export interface LiveSessionSummary {
@@ -702,6 +721,7 @@ export interface LiveSessionSummary {
 	last_hook: string;
 	permission_mode: string;
 	end_reason: string | null;
+	stop_error?: StopError | null;
 	// Session stats (from JSONL for live updates)
 	message_count: number | null;
 	subagent_count: number | null;
@@ -1369,6 +1389,7 @@ export type LiveSubStatus =
 	| 'waiting'
 	| 'stopped'
 	| 'stale'
+	| 'interrupted'
 	| 'ended';
 
 /**
@@ -1381,6 +1402,7 @@ export const ALL_LIVE_SUB_STATUSES: LiveSubStatus[] = [
 	'waiting',
 	'stopped',
 	'stale',
+	'interrupted',
 	'ended'
 ];
 
@@ -1395,6 +1417,7 @@ export interface LiveStatusCounts {
 	waiting: number;
 	stopped: number;
 	stale: number;
+	interrupted: number;
 	ended: number;
 }
 

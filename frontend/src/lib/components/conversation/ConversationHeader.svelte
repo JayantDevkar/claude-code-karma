@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { stopErrorReason } from '$lib/live-session-config';
 	import {
 		Calendar,
 		Clock,
@@ -98,7 +99,7 @@
 	// Status configuration for live sessions
 	const statusConfig: Record<
 		LiveSessionStatus,
-		{ color: string; label: string; pulse: boolean }
+		{ color: string; textColor?: string; label: string; pulse: boolean }
 	> = {
 		starting: { color: 'var(--nav-purple)', label: 'starting', pulse: true },
 		active: { color: 'var(--success)', label: 'active', pulse: true },
@@ -106,6 +107,12 @@
 		waiting: { color: 'var(--info)', label: 'waiting', pulse: false },
 		stopped: { color: 'var(--text-muted)', label: 'stopped', pulse: false },
 		stale: { color: 'var(--error)', label: 'stale', pulse: false },
+		interrupted: {
+			color: 'var(--nav-orange)',
+			textColor: 'var(--status-interrupted-text)',
+			label: 'interrupted',
+			pulse: false
+		},
 		ended: { color: 'var(--text-faint)', label: 'ended', pulse: false }
 	};
 
@@ -116,7 +123,8 @@
 	> = {
 		running: { color: 'var(--success)', label: 'running', pulse: true },
 		completed: { color: 'var(--info)', label: 'completed', pulse: false },
-		error: { color: 'var(--error)', label: 'error', pulse: false }
+		error: { color: 'var(--error)', label: 'error', pulse: false },
+		interrupted: { color: 'var(--text-muted)', label: 'interrupted', pulse: false }
 	};
 
 	// Derive subagent's own status from parent session's liveStatus.subagents
@@ -491,12 +499,15 @@
 				</div>
 			{/snippet}
 			{#snippet headerRight()}
-				<div class="flex items-center gap-2">
+				<div class="flex flex-wrap items-center gap-2">
 					{#if liveStatus && liveStatus.status !== 'ended'}
 						{@const config = statusConfig[liveStatus.status]}
 						<div
 							class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full"
 							style="background: color-mix(in srgb, {config.color} 10%, transparent); border: 1px solid color-mix(in srgb, {config.color} 30%, transparent);"
+							title={liveStatus.status === 'interrupted'
+								? (stopErrorReason(liveStatus.stop_error) ?? undefined)
+								: undefined}
 						>
 							<span
 								class="w-2 h-2 rounded-full"
@@ -505,7 +516,7 @@
 							></span>
 							<span
 								class="text-xs font-medium uppercase tracking-wide"
-								style="color: {config.color}"
+								style="color: {config.textColor ?? config.color}"
 							>
 								{config.label}
 							</span>

@@ -17,10 +17,12 @@
 		AlertCircle,
 		FileCode,
 		Minimize2,
-		MessageCircle
+		MessageCircle,
+		Ban
 	} from 'lucide-svelte';
-	import type { SubagentSummary, SubagentStatus } from '$lib/api-types';
+	import type { SubagentSummary, SubagentStatus, StopError } from '$lib/api-types';
 	import EndedByBadge from '$lib/components/EndedByBadge.svelte';
+	import { stopErrorReason, stopErrorTooltip } from '$lib/live-session-config';
 	import {
 		getSubagentColorVars,
 		getSubagentTypeDisplayName,
@@ -40,6 +42,8 @@
 		sessionSlug?: string;
 		/** Live status from hooks (optional - for real-time status display) */
 		status?: SubagentStatus;
+		/** Why the subagent ended, when status is error (optional) */
+		stopError?: StopError | null;
 		/** Start timestamp for duration calculation (optional, null when SubagentStart never fired) */
 		started_at?: string | null;
 		/** Completion timestamp (optional) */
@@ -54,6 +58,7 @@
 		projectEncoded,
 		sessionSlug,
 		status,
+		stopError,
 		started_at,
 		completed_at,
 		transcript_path
@@ -66,7 +71,8 @@
 	const statusColors: Record<SubagentStatus, { color: string; label: string }> = {
 		running: { color: 'var(--success)', label: 'Running' },
 		completed: { color: 'var(--info)', label: 'Completed' },
-		error: { color: 'var(--error)', label: 'Error' }
+		error: { color: 'var(--error)', label: 'Error' },
+		interrupted: { color: 'var(--text-muted)', label: 'Interrupted' }
 	};
 
 	// Navigation is enabled if both projectEncoded and sessionSlug are provided
@@ -207,6 +213,13 @@
 							<span
 								class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium"
 								style="background: color-mix(in srgb, {statusStyle.color} 15%, transparent); color: {statusStyle.color};"
+								title={status === 'error'
+									? [stopErrorReason(stopError), stopErrorTooltip(stopError)]
+											.filter(Boolean)
+											.join(' · ') || undefined
+									: status === 'interrupted'
+										? 'Still running when its session ended'
+										: undefined}
 							>
 								{#if status === 'running'}
 									<span
@@ -217,6 +230,8 @@
 									<Check size={10} strokeWidth={3} />
 								{:else if status === 'error'}
 									<AlertCircle size={10} strokeWidth={3} />
+								{:else if status === 'interrupted'}
+									<Ban size={10} strokeWidth={3} />
 								{/if}
 								{statusStyle.label}
 							</span>

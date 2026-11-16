@@ -31,7 +31,7 @@
 	const STAGED_TIMEOUT_MS = 15_000;
 	const MENU_TIMEOUT_MS = 40_000; // "go finish it in your terminal" — give more room
 	// The backend types /remote-control at any status except these (open dialog, no REPL, no process).
-	const BLOCKED = new Set<LiveSessionStatus>(['waiting', 'starting', 'ended']);
+	const BLOCKED = new Set<LiveSessionStatus>(['waiting', 'interrupted', 'starting', 'ended']);
 	const CLAUDE_URL = /^https:\/\/claude\.ai\//i;
 
 	let busy = $state(false); // request in flight or cooldown
@@ -93,9 +93,11 @@
 		if (BLOCKED.has(sessionStatus))
 			return sessionStatus === 'waiting'
 				? 'Answer the open prompt first, then toggle Remote Control.'
-				: sessionStatus === 'starting'
-					? 'Session is still starting up — try again in a moment.'
-					: 'Session has ended.';
+				: sessionStatus === 'interrupted'
+					? 'Session stopped on an API error or usage limit — send a prompt first.'
+					: sessionStatus === 'starting'
+						? 'Session is still starting up — try again in a moment.'
+						: 'Session has ended.';
 		return '';
 	});
 

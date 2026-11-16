@@ -125,6 +125,7 @@
 									{projectEncoded}
 									{sessionSlug}
 									status={liveState?.status}
+									stopError={liveState?.stop_error}
 									started_at={liveState?.started_at}
 									completed_at={liveState?.completed_at}
 									transcript_path={liveState?.transcript_path}

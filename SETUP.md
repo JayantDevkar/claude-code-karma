@@ -266,7 +266,7 @@ ls -la ~/.claude/hooks/live_session_tracker.py
 **What:** Register the tracker to listen for Claude Code events.
 **Why:** Tells Claude Code to call the tracker when sessions start, change state, or end.
 
-The tracker needs **8 of Claude Code's 24 hook events** registered in `~/.claude/settings.json`:
+The tracker needs **9 of Claude Code's hook events** registered in `~/.claude/settings.json`:
 
 | Hook Event | Tracks |
 |-----------|--------|
@@ -275,6 +275,7 @@ The tracker needs **8 of Claude Code's 24 hook events** registered in `~/.claude
 | `PostToolUse` | Tool completed |
 | `Notification` | Waiting for user input |
 | `Stop` | Agent finished |
+| `StopFailure` | Turn ended by an API error or usage limit (shows the session as interrupted, with the reason) |
 | `SubagentStart` | Subagent spawned (requires Claude Code 2.1.19+) |
 | `SubagentStop` | Subagent finished (requires Claude Code 2.1.19+) |
 | `SessionEnd` | Session terminated |
@@ -339,6 +340,17 @@ The tracker needs **8 of Claude Code's 24 hook events** registered in `~/.claude
         ]
       }
     ],
+    "StopFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/live_session_tracker.py",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
     "SubagentStart": [
       {
         "hooks": [
@@ -391,7 +403,7 @@ echo '{"hook_event_name":"SessionStart","session_id":"test-123","cwd":"/tmp","tr
 ls ~/.claude_karma/live-sessions/
 ```
 
-> **Agent notes:** Confirm settings.json has all 8 events. Test manual invocation — should not error. Check live-sessions directory exists after test.
+> **Agent notes:** Confirm settings.json has all 9 events. Test manual invocation — should not error. Check live-sessions directory exists after test.
 
 ---
 
@@ -930,6 +942,17 @@ The full `~/.claude/settings.json` for Tier 2 + 3:
       }
     ],
     "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/live_session_tracker.py",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "StopFailure": [
       {
         "hooks": [
           {

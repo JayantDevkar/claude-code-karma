@@ -5,7 +5,7 @@
 	import { projectHrefFromSession } from '$lib/utils/project-url';
 	import { getProjectDisplayName } from '$lib/utils/live-session-display';
 	import { getSessionDisplayLabel } from '$lib/utils/sessionIdentifier';
-	import { statusConfig } from '$lib/live-session-config';
+	import { statusConfig, liveStatusTitle } from '$lib/live-session-config';
 	import { API_BASE } from '$lib/config';
 
 	let sessions = $state<LiveSessionSummary[]>([]);
@@ -214,7 +214,7 @@
 						class="dot"
 						class:pulse={config.pulse}
 						style="background: {config.color}"
-						title={config.label}
+						title={liveStatusTitle(session)}
 					></span>
 
 					<!-- Session Info -->

@@ -192,7 +192,7 @@ Project (entry point)
 
 ## Captain Hook
 
-Type-safe Pydantic models for Claude Code's 24 hook types (see `captain-hook/CLAUDE.md` for the full list). Karma's own hooks only use 8 of them:
+Type-safe Pydantic models for Claude Code's 24 hook types (see `captain-hook/CLAUDE.md` for the full list). Karma's own hooks only use 9 of them:
 
 | Hook | Fires | Can Block? |
 |------|-------|------------|
@@ -201,6 +201,7 @@ Type-safe Pydantic models for Claude Code's 24 hook types (see `captain-hook/CLA
 | UserPromptSubmit | User message | Yes |
 | SessionStart/End | Session lifecycle | No |
 | Stop/SubagentStop | Agent completion | No |
+| StopFailure | Turn ended by API error or limit | No |
 | PreCompact | Context compaction | No |
 | PermissionRequest | Permission dialog | Yes |
 | Notification | System notification | No |

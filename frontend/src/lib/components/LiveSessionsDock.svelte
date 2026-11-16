@@ -163,7 +163,9 @@
 										>{getDisplayName(session)}</span
 									>
 									<!-- Status as text too — dot color alone fails color-blind and reduced-motion users. -->
-									<span class="status-label" style="color: {config.color}"
+									<span
+										class="status-label"
+										style="color: {config.textColor ?? config.color}"
 										>{config.label.toUpperCase()}</span
 									>
 									{#if current}

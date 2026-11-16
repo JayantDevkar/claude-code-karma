@@ -231,7 +231,7 @@ def purge_old_files(
 
 
 # States that mean "the session is (supposedly) still going".
-_NON_TERMINAL_STATES = ("LIVE", "WAITING", "STOPPED", "STALE", "STARTING")
+_NON_TERMINAL_STATES = ("LIVE", "WAITING", "STOPPED", "STALE", "STARTING", "INTERRUPTED")
 
 # Files younger than this are never reaped — protects freshly-written state
 # from racing its own hook events (and pathological clock skew).

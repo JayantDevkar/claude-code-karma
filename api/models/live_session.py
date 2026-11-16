@@ -52,6 +52,7 @@ class SessionState(str, Enum):
     WAITING = "WAITING"
     STOPPED = "STOPPED"
     STALE = "STALE"
+    INTERRUPTED = "INTERRUPTED"  # Turn ended on an API error or usage limit
     ENDED = "ENDED"
 
 
@@ -64,6 +65,7 @@ class SessionStatus(str, Enum):
     WAITING_INPUT = "waiting"  # Claude needs user input (AskUserQuestion, permission)
     STOPPED = "stopped"  # Agent stopped but session open
     STALE = "stale"  # User has been idle for 60+ seconds
+    INTERRUPTED = "interrupted"  # Turn ended on an API error or usage limit
     ENDED = "ended"  # Session terminated
 
 
@@ -72,7 +74,20 @@ class SubagentStatus(str, Enum):
 
     RUNNING = "running"
     COMPLETED = "completed"
-    ERROR = "error"
+    ERROR = "error"  # Ended by an API error or usage limit (StopFailure)
+    INTERRUPTED = "interrupted"  # Still running when its session ended (computed)
+
+
+class StopError(BaseModel):
+    """Why a turn ended on an API error or usage limit (StopFailure hook)."""
+
+    model_config = ConfigDict(frozen=True, extra="allow")
+
+    kind: str = Field(..., description="limit or api_error")
+    code: str = Field(..., description="Claude Code error type, e.g. rate_limit")
+    details: Optional[str] = Field(None, description="Error details, e.g. HTTP status text")
+    message: Optional[str] = Field(None, description="Error text shown to the user")
+    at: Optional[datetime] = Field(None, description="When the hook fired")
 
 
 class SubagentState(BaseModel):
@@ -104,6 +119,9 @@ class SubagentState(BaseModel):
             "Duration in ms between SubagentStart and SubagentStop. Null when started_at is "
             "unknown."
         ),
+    )
+    stop_error: Optional[StopError] = Field(
+        None, description="Why the subagent ended, when status is error"
     )
 
 
@@ -204,6 +222,13 @@ class LiveSessionState(BaseModel):
     )
     last_notification_message: Optional[str] = Field(
         None, description="Last Notification or PermissionRequest message text"
+    )
+    stop_error: Optional[StopError] = Field(
+        None,
+        description=(
+            "Why the last turn ended on an API error or limit. Kept through ENDED, "
+            "cleared when work resumes."
+        ),
     )
 
     # Terminal identity (resolved at SessionStart) — powers "open terminal"
