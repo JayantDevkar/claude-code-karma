@@ -20,7 +20,7 @@ Full conversation playback showing user and assistant messages in sequence. Supp
 
 ### Token Usage and Cost Tracking
 
-Per-session and per-project token breakdowns: input tokens, output tokens, and cache reads/writes. Cost estimates based on model pricing. Aggregate views across all sessions for trend analysis.
+Per-session and per-project token breakdowns: input tokens, output tokens, and cache reads/writes. Cost estimates based on model pricing, which you can override in `~/.claude_karma/pricing.json`. Aggregate views across all sessions for trend analysis.
 
 ### File Activity Tracking
 

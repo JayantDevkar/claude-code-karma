@@ -493,6 +493,8 @@ async def get_agent_sessions(
                             ended_by=row.get("ended_by"),
                             ended_resets_at=row.get("ended_resets_at"),
                             limit_hit_count=row.get("limit_hit_count") or 0,
+                            tokens_with_subagents=row.get("tokens_with_subagents"),
+                            cost_with_subagents=row.get("cost_with_subagents"),
                         )
                     )
 

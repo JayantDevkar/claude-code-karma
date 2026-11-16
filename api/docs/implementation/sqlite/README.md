@@ -129,6 +129,22 @@ Composite PK: `(session_uuid, tool_name)`. Cascades on session delete.
 #### `session_skills` — Skill usage per session
 Same structure as `session_tools` but for skills (commit, review-pr, etc.)
 
+#### `session_usage_buckets` — Tokens and cost per 15 minutes
+One row per session, 15-minute UTC bucket and model. A session's rows include all of its subagents. Powers `tokens_by_date`, `cost_by_date`, `models_categorized_tokens` and `models_categorized_cost` on `/analytics`.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `session_uuid` | TEXT FK | References `sessions.uuid` |
+| `bucket_start` | INTEGER | UTC epoch seconds, a multiple of 900 |
+| `model` | TEXT | Model id, `''` when the response had none |
+| `input_tokens` | INTEGER | Uncached input only |
+| `output_tokens` | INTEGER | Output tokens |
+| `cache_creation_tokens` | INTEGER | Cache creation tokens |
+| `cache_read_tokens` | INTEGER | Cache read tokens |
+| `cost_usd` | REAL | Sum of each response's own cost |
+
+Composite PK: `(session_uuid, bucket_start, model)`. Index on `bucket_start`. Cascades on session delete. Per session, `SUM(cost_usd) = total_cost + subagent_cost`.
+
 #### `subagent_invocations` — Subagent details
 Replaces `AgentUsageIndex` for agent analytics.
 

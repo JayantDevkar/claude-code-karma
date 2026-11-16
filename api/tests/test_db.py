@@ -797,9 +797,8 @@ class TestAnalyticsQuery:
 
         self._populate(mem_db)
         result = query_analytics(mem_db)
-        # models_used_list now contains pre-parsed model names from json_each()
-        assert len(result["models_used_list"]) > 0
-        assert "claude-opus-4-5-20250514" in result["models_used_list"]
+        flat = [m for models in result["session_models"] for m in models]
+        assert "claude-opus-4-5-20250514" in flat
 
     def test_start_times(self, mem_db):
         from db.queries import query_analytics
@@ -815,7 +814,7 @@ class TestAnalyticsQuery:
         result = query_analytics(mem_db)
         assert result["totals"]["total_sessions"] == 0
         assert result["tools"] == {}
-        assert result["models_used_list"] == []
+        assert result["session_models"] == []
         assert result["start_times"] == []
 
 

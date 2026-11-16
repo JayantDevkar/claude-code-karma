@@ -221,6 +221,12 @@ class SessionSummary(BaseModel):
     )
     ended_resets_at: Optional[datetime] = Field(None, description="When the usage limit resets")
     limit_hit_count: int = Field(0, description="Usage-limit turns seen in the session")
+    tokens_with_subagents: Optional[int] = Field(
+        None, description="Input + output + cache reads/writes, incl. subagents (SQLite lists)"
+    )
+    cost_with_subagents: Optional[float] = Field(
+        None, description="Session cost incl. subagents, in USD (SQLite lists)"
+    )
 
 
 class CompactionSummary(BaseModel):
@@ -372,6 +378,12 @@ class ProjectSummary(BaseModel):
     latest_session_time: Optional[datetime] = Field(
         default=None, description="Start time of the most recent session"
     )
+    total_tokens: Optional[int] = Field(
+        default=None, description="Input + output + cache reads/writes, incl. subagents"
+    )
+    total_cost: Optional[float] = Field(
+        default=None, description="Session cost incl. subagents, in USD"
+    )
 
 
 class ProjectDetail(ProjectSummary):
@@ -438,6 +450,18 @@ class ProjectAnalytics(BaseModel):
     work_mode_distribution: WorkModeDistribution = Field(
         default_factory=WorkModeDistribution,
         description="Work mode distribution based on tool usage",
+    )
+    tokens_by_date: dict[str, int] = Field(
+        default_factory=dict, description="Local day -> tokens spent that day"
+    )
+    cost_by_date: dict[str, float] = Field(
+        default_factory=dict, description="Local day -> USD spent that day"
+    )
+    models_categorized_tokens: dict[str, int] = Field(
+        default_factory=dict, description="Model family -> tokens"
+    )
+    models_categorized_cost: dict[str, float] = Field(
+        default_factory=dict, description="Model family -> USD"
     )
 
 

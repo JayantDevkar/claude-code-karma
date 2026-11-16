@@ -76,6 +76,8 @@
 	--model-sonnet-subtle: rgba(59, 130, 246, 0.1);
 	--model-haiku: #047857; /* emerald-700: AA 4.99:1 on model-haiku-subtle */
 	--model-haiku-subtle: rgba(16, 185, 129, 0.1);
+	--model-fable: #b45309; /* amber-700: AA 4.65:1 on model-fable-subtle */
+	--model-fable-subtle: rgba(245, 158, 11, 0.1);
 
 	/* Event Type Colors */
 	--event-prompt: #2563eb;
@@ -265,6 +267,8 @@
 	--model-sonnet-subtle: rgba(96, 165, 250, 0.2);
 	--model-haiku: #34d399;
 	--model-haiku-subtle: rgba(52, 211, 153, 0.2);
+	--model-fable: #fbbf24;
+	--model-fable-subtle: rgba(251, 191, 36, 0.2);
 
 	/* Event Colors (lighter) */
 	--event-prompt: #60a5fa;
@@ -389,6 +393,8 @@
 		--model-sonnet-subtle: rgba(96, 165, 250, 0.2);
 		--model-haiku: #34d399;
 		--model-haiku-subtle: rgba(52, 211, 153, 0.2);
+		--model-fable: #fbbf24;
+		--model-fable-subtle: rgba(251, 191, 36, 0.2);
 		--event-prompt: #60a5fa;
 		--event-prompt-subtle: rgba(96, 165, 250, 0.25);
 		--event-tool: #34d399;

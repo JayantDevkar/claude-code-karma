@@ -75,7 +75,7 @@ def is_worktree_project(encoded_name: str) -> bool:
 
     3. Superpowers/custom worktrees ({project}/.worktrees/{name}):
        Encoded as '--worktrees-' (dot -> dash by Claude Code encoder)
-       or '-.worktrees-' (dots preserved by our encode_path)
+       or '-.worktrees-' (dots preserved, as older Karma versions encoded it)
     """
     if "-claude-worktrees-" in encoded_name:
         return True
@@ -111,16 +111,7 @@ def extract_worktree_info(encoded_name: str) -> Optional[dict]:
         for worktree_dir in project_dir.iterdir():
             if not worktree_dir.is_dir():
                 continue
-            # Try standard encode_path (dots preserved)
-            expected = Project.encode_path(str(worktree_dir))
-            if expected == encoded_name:
-                return {
-                    "project_name": project_dir.name,
-                    "worktree_name": worktree_dir.name,
-                }
-            # Try with dots replaced by dashes (Claude Code's actual encoding)
-            expected_dots = expected.replace(".", "-")
-            if expected_dots == encoded_name:
+            if Project.encodes_to(str(worktree_dir), encoded_name):
                 return {
                     "project_name": project_dir.name,
                     "worktree_name": worktree_dir.name,
@@ -137,9 +128,9 @@ def extract_worktree_info(encoded_name: str) -> Optional[dict]:
 # worktree suffix. Ordered longest-first so we split on the most specific match.
 _WORKTREE_MARKERS = [
     "--claude-worktrees-",  # .claude/worktrees/ (CLI EnterWorktree)
-    "-.claude-worktrees-",  # .claude/worktrees/ (our encode_path, dots preserved)
+    "-.claude-worktrees-",  # .claude/worktrees/ (dots preserved, older Karma versions)
     "--worktrees-",  # .worktrees/ (superpowers pattern)
-    "-.worktrees-",  # .worktrees/ (our encode_path, dots preserved)
+    "-.worktrees-",  # .worktrees/ (dots preserved, older Karma versions)
 ]
 
 
@@ -292,7 +283,7 @@ def get_real_project_encoded_name(
                 # Check if encoded name ends with the project name
                 # e.g., "-Users-username-projects-claude-karma"
                 # ends with "-claude-karma" for project_name="claude-karma"
-                if encoded_dir.name.endswith("-" + project_name):
+                if encoded_dir.name.endswith("-" + Project.encode_path(project_name)):
                     matches.append(encoded_dir.name)
         except OSError:
             pass

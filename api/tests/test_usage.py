@@ -5,11 +5,13 @@ Tests cover instantiation, computed properties, aggregation,
 immutability, validation, and edge cases.
 """
 
+from datetime import datetime, timezone
+
 import pytest
 from pydantic import ValidationError
 
 from models import TokenUsage
-from models.usage import UsageAccumulator
+from models.usage import MODEL_PRICING, UsageAccumulator, UsageBucket, merge_usage_buckets
 
 # =============================================================================
 # Fixtures
@@ -644,14 +646,6 @@ class TestTokenUsageCalculateCost:
         output = (100_000 / 1_000_000) * 22.5
         assert cost == pytest.approx(uncached + cache_write + cache_read + output)
 
-    def test_long_context_applied_to_opus_4_6(self):
-        """Opus 4.6 with >200K input tokens should use long-context rates."""
-        usage = TokenUsage(input_tokens=500_000, output_tokens=1_000_000)
-        cost = usage.calculate_cost("claude-opus-4-6")
-        # Long-context: $10/$37.50
-        expected = (500_000 / 1_000_000) * 10.0 + (1_000_000 / 1_000_000) * 37.5
-        assert cost == pytest.approx(expected)
-
     def test_long_context_not_applied_to_opus_4_5(self):
         """Opus 4.5 should not have long-context pricing."""
         usage = TokenUsage(input_tokens=500_000, output_tokens=1_000_000)
@@ -667,8 +661,11 @@ class TestCurrentModelPricing:
     @pytest.mark.parametrize(
         "model,input_price,output_price",
         [
+            ("claude-fable-5-2", 8.0, 40.0),
+            ("claude-mythos-5-2", 8.0, 40.0),
             ("claude-fable-5-1", 10.0, 50.0),
             ("claude-fable-5", 10.0, 50.0),
+            ("claude-mythos-5", 10.0, 50.0),
             ("claude-opus-5-5", 4.0, 20.0),
             ("claude-opus-5", 5.0, 25.0),
             ("claude-opus-4-8", 5.0, 25.0),
@@ -689,8 +686,8 @@ class TestCurrentModelPricing:
             ("claude-opus-6", "claude-opus-5-5"),
             ("claude-sonnet-6", "claude-sonnet-5-5"),
             ("claude-haiku-6", "claude-haiku-5-5"),
-            ("claude-fable-6", "claude-fable-5-1"),
-            ("claude-mythos-5", "claude-mythos-5-1"),
+            ("claude-fable-6", "claude-fable-5-2"),
+            ("claude-mythos-6", "claude-mythos-5-2"),
             ("us.anthropic.claude-opus-4-8-v1", "claude-opus-4-8"),
         ],
     )
@@ -716,8 +713,10 @@ class TestCurrentModelPricing:
         assert usage.calculate_cost(model) == pytest.approx(usage.calculate_cost(canonical))
 
     def test_no_long_context_premium_for_1m_models(self):
-        """Opus 4.7+ and Claude 5 bill 1M context at standard rates."""
+        """Claude 4.6+ (except Haiku 5.5) bills 1M context at standard rates."""
         usage = TokenUsage(input_tokens=500_000, output_tokens=0)
+        assert usage.calculate_cost("claude-opus-4-6") == pytest.approx(0.5 * 5.0)
+        assert usage.calculate_cost("claude-sonnet-4-6") == pytest.approx(0.5 * 3.0)
         assert usage.calculate_cost("claude-opus-4-8") == pytest.approx(0.5 * 5.0)
         assert usage.calculate_cost("claude-fable-5-1") == pytest.approx(0.5 * 10.0)
 
@@ -728,11 +727,21 @@ class TestCurrentModelPricing:
 
     @pytest.mark.parametrize(
         "model,cache_read_multiplier",
-        [("claude-fable-5-1", 0.025), ("claude-opus-5-5", 0.05), ("claude-opus-4-8", 0.10)],
+        [
+            ("claude-fable-5-2", 0.025),
+            ("claude-fable-5-1", 0.025),
+            ("claude-opus-5-5", 0.05),
+            ("claude-opus-4-8", 0.10),
+        ],
     )
     def test_cache_read_rate_per_model(self, model, cache_read_multiplier):
         usage = TokenUsage(cache_read_input_tokens=1_000_000)
-        input_price = {"claude-fable-5-1": 10.0, "claude-opus-5-5": 4.0, "claude-opus-4-8": 5.0}
+        input_price = {
+            "claude-fable-5-2": 8.0,
+            "claude-fable-5-1": 10.0,
+            "claude-opus-5-5": 4.0,
+            "claude-opus-4-8": 5.0,
+        }
         expected = input_price[model] * cache_read_multiplier
         assert usage.calculate_cost(model) == pytest.approx(expected)
 
@@ -758,7 +767,10 @@ class TestCurrentModelPricing:
 
 
 class _Msg:
-    def __init__(self, message_id, usage, model="claude-opus-4-8", request_id=None, uuid="u"):
+    def __init__(
+        self, message_id, usage, model="claude-opus-4-8", request_id=None, uuid="u", timestamp=None
+    ):
+        self.timestamp = timestamp
         self.message_id = message_id
         self.request_id = request_id
         self.uuid = uuid
@@ -795,3 +807,72 @@ class TestUsageAccumulator:
         acc.add(_Msg("msg_1", None))
         assert acc.usage == TokenUsage.zero()
         assert acc.cost == 0.0
+
+
+def _at(hour, minute, second=0):
+    return datetime(2026, 3, 2, hour, minute, second, tzinfo=timezone.utc)
+
+
+def _epoch(hour, minute):
+    return int(_at(hour, minute).timestamp())
+
+
+class TestUsageBuckets:
+    """UsageAccumulator.buckets() groups per-response usage by 15 minutes and model."""
+
+    def test_buckets_floor_to_quarter_hour(self):
+        acc = UsageAccumulator()
+        acc.add(_Msg("m1", TokenUsage(output_tokens=1), timestamp=_at(10, 14, 59)))
+        acc.add(_Msg("m2", TokenUsage(output_tokens=1), timestamp=_at(10, 15, 0)))
+        starts = sorted(start for start, _ in acc.buckets())
+        assert starts == [_epoch(10, 0), _epoch(10, 15)]
+
+    def test_repeated_message_id_counted_once_last_wins(self):
+        acc = UsageAccumulator()
+        acc.add(_Msg("m1", TokenUsage(output_tokens=5), timestamp=_at(10, 1)))
+        acc.add(_Msg("m1", TokenUsage(output_tokens=50), timestamp=_at(10, 2)))
+        buckets = acc.buckets()
+        assert len(buckets) == 1
+        assert next(iter(buckets.values())).usage.output_tokens == 50
+
+    def test_bucket_cost_is_per_response(self):
+        model = next(m for m, p in MODEL_PRICING.items() if "long_context_threshold" in p)
+        threshold = MODEL_PRICING[model]["long_context_threshold"]
+        u1 = TokenUsage(input_tokens=threshold + 1_000, output_tokens=1_000)
+        u2 = TokenUsage(input_tokens=threshold // 2, output_tokens=1_000)
+        acc = UsageAccumulator()
+        acc.add(_Msg("m1", u1, model=model, timestamp=_at(10, 1)))
+        acc.add(_Msg("m2", u2, model=model, timestamp=_at(10, 2)))
+        bucket = acc.buckets()[(_epoch(10, 0), model)]
+        assert bucket.cost == pytest.approx(u1.calculate_cost(model) + u2.calculate_cost(model))
+        assert bucket.cost != pytest.approx((u1 + u2).calculate_cost(model))
+
+    def test_missing_model_kept_under_empty_string(self):
+        acc = UsageAccumulator()
+        acc.add(_Msg("m1", TokenUsage(output_tokens=100), model=None, timestamp=_at(10, 1)))
+        acc.add(_Msg("m2", TokenUsage(output_tokens=100), timestamp=_at(10, 20)))
+        buckets = acc.buckets()
+        assert (_epoch(10, 0), "") in buckets
+        assert sum(b.cost for b in buckets.values()) == pytest.approx(acc.cost)
+
+    def test_zero_usage_response_skipped(self):
+        acc = UsageAccumulator()
+        acc.add(_Msg("m1", TokenUsage(), model="<synthetic>", timestamp=_at(10, 1)))
+        assert acc.buckets() == {}
+
+    def test_merge_sums_matching_keys(self):
+        key_a = (_epoch(10, 0), "model-a")
+        key_b = (_epoch(10, 15), "model-b")
+        one = {key_a: UsageBucket(TokenUsage(output_tokens=10), 0.5)}
+        key_c = (_epoch(10, 30), "model-c")
+        one[key_c] = UsageBucket(TokenUsage(output_tokens=3), 0.125)
+        two = {
+            key_a: UsageBucket(TokenUsage(output_tokens=5), 0.25),
+            key_b: UsageBucket(TokenUsage(output_tokens=7), 1.0),
+        }
+        merged = merge_usage_buckets(one, two)
+        assert merged[key_c].usage.output_tokens == 3
+        assert merged[key_c].cost == pytest.approx(0.125)
+        assert merged[key_a].usage.output_tokens == 15
+        assert merged[key_a].cost == pytest.approx(0.75)
+        assert merged[key_b].usage.output_tokens == 7

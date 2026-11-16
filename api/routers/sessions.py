@@ -188,15 +188,14 @@ def _count_subagents_fast(project_dir: Path, session_uuid: str) -> int:
     Returns:
         Number of subagent JSONL files
     """
-    subagents_dir = project_dir / session_uuid / "subagents"
-    if not subagents_dir.exists():
-        return 0
-    return len(list(subagents_dir.glob("agent-*.jsonl")))
+    from services.session_copies import subagent_files
+
+    return len(subagent_files(project_dir / f"{session_uuid}.jsonl"))
 
 
 def _session_cache_info(session: Session):
     """ETag and Last-Modified over the session JSONL and its subagent JSONLs."""
-    return get_file_cache_info(session.jsonl_path, session.subagents_dir.glob("agent-*.jsonl"))
+    return get_file_cache_info(session.jsonl_path, session.list_subagent_paths())
 
 
 def _has_messages(session: Session) -> bool:
@@ -604,6 +603,8 @@ def _get_all_sessions_sqlite(
                 ended_by=row.get("ended_by"),
                 ended_resets_at=_parse_iso(row.get("ended_resets_at")),
                 limit_hit_count=row.get("limit_hit_count") or 0,
+                tokens_with_subagents=row.get("tokens_with_subagents"),
+                cost_with_subagents=row.get("cost_with_subagents"),
             )
             sessions_with_context.append(session_context)
 

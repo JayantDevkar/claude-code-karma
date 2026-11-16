@@ -50,7 +50,7 @@ from .message import (
 from .task import Task, load_tasks_from_directory, reconstruct_tasks_from_jsonl
 from .todo import TodoItem, load_todos_from_file
 from .tool_result import ToolResult
-from .usage import TokenUsage, UsageAccumulator
+from .usage import TokenUsage, UsageAccumulator, UsageBuckets
 
 if TYPE_CHECKING:
     pass
@@ -173,6 +173,7 @@ class SessionCache(BaseCache):
         "api_error_summary",
         "message_count",
         "total_cost",
+        "usage_buckets",
         "active_duration_seconds",
         # Continuation session detection
         "user_message_count",
@@ -212,6 +213,7 @@ class SessionCache(BaseCache):
         self.api_error_summary: ApiErrorSummary = ApiErrorSummary.EMPTY
         self.message_count: Optional[int] = None
         self.total_cost: Optional[float] = None
+        self.usage_buckets: Optional[UsageBuckets] = None
         self.active_duration_seconds: Optional[float] = None
         # Continuation session detection
         self.user_message_count: int = 0
@@ -249,6 +251,7 @@ class SessionCache(BaseCache):
         self.api_error_summary = ApiErrorSummary.EMPTY
         self.message_count = None
         self.total_cost = None
+        self.usage_buckets = None
         self.active_duration_seconds = None
         self.user_message_count = 0
         self.assistant_message_count = 0
@@ -558,6 +561,7 @@ class Session(BaseModel):
         cache.api_error_summary = api_errors.summary()
         cache.message_count = message_count
         cache.total_cost = usage_acc.cost
+        cache.usage_buckets = usage_acc.buckets()
         cache.active_duration_seconds = active_time.seconds
         # Message type counts
         cache.user_message_count = user_msg_count
@@ -678,7 +682,7 @@ class Session(BaseModel):
     @property
     def has_subagents(self) -> bool:
         """Check if session has any subagents."""
-        return self.subagents_dir.exists() and any(self.subagents_dir.glob("agent-*.jsonl"))
+        return bool(self.list_subagent_paths())
 
     @property
     def has_tool_results(self) -> bool:
@@ -733,6 +737,12 @@ class Session(BaseModel):
     # Related resources
     # =========================================================================
 
+    def list_subagent_paths(self) -> List[Path]:
+        """Subagent JSONLs, including ones written under the repo's or a worktree's dir."""
+        from services.session_copies import subagent_files
+
+        return subagent_files(self.jsonl_path)
+
     def list_subagents(self) -> List[Agent]:
         """
         List all subagents for this session.
@@ -740,11 +750,8 @@ class Session(BaseModel):
         Returns:
             List of Agent instances
         """
-        if not self.subagents_dir.exists():
-            return []
-
         return sorted(
-            [Agent.from_path(p) for p in self.subagents_dir.glob("agent-*.jsonl") if p.is_file()],
+            [Agent.from_path(p) for p in self.list_subagent_paths() if p.is_file()],
             key=lambda a: a.agent_id,
         )
 
@@ -754,10 +761,7 @@ class Session(BaseModel):
 
         More efficient than len(list_subagents()) when only the count is needed.
         """
-        subagents_dir = self.session_dir / "subagents"
-        if not subagents_dir.exists():
-            return 0
-        return len(list(subagents_dir.glob("agent-*.jsonl")))
+        return len(self.list_subagent_paths())
 
     def list_tool_results(self) -> List[ToolResult]:
         """
@@ -899,11 +903,16 @@ class Session(BaseModel):
         self._load_metadata()
         return self._get_cache().total_cost or 0.0
 
-    def get_subagent_totals(self) -> tuple[TokenUsage, float]:
-        """Token usage and estimated cost summed across this session's subagents."""
+    def get_usage_buckets(self) -> UsageBuckets:
+        """Usage and cost keyed by (15-minute bucket start, model) (cached)."""
+        self._load_metadata()
+        return self._get_cache().usage_buckets or {}
+
+    def get_subagent_totals(self, subagents=None) -> tuple[TokenUsage, float]:
+        """Token usage and estimated cost summed across subagents (listed here unless given)."""
         usage = TokenUsage.zero()
         cost = 0.0
-        for agent in self.list_subagents():
+        for agent in self.list_subagents() if subagents is None else subagents:
             usage = usage + agent.get_usage_summary()
             cost += agent.get_total_cost()
         return usage, cost

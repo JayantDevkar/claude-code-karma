@@ -152,6 +152,8 @@ def _build_session_summary(session_data: dict) -> SessionSummary:
         ended_by=session_data.get("ended_by"),
         ended_resets_at=session_data.get("ended_resets_at"),
         limit_hit_count=session_data.get("limit_hit_count") or 0,
+        tokens_with_subagents=session_data.get("tokens_with_subagents"),
+        cost_with_subagents=session_data.get("cost_with_subagents"),
     )
 
 

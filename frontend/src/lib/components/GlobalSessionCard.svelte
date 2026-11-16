@@ -9,7 +9,8 @@
 		Folder,
 		Monitor,
 		Bot,
-		Laptop
+		Laptop,
+		Coins
 	} from 'lucide-svelte';
 	import type { SessionWithContext, LiveSessionSummary } from '$lib/api-types';
 	import EndedByBadge from './EndedByBadge.svelte';
@@ -26,7 +27,9 @@
 		getProjectNameFromEncoded,
 		getSessionDisplayName,
 		sessionHasTitle,
-		getSessionDisplayPrompt
+		getSessionDisplayPrompt,
+		formatCost,
+		formatTokens
 	} from '$lib/utils';
 
 	interface Props {
@@ -80,6 +83,9 @@
 	const displayDuration = $derived(liveSession?.duration_seconds ?? session.duration_seconds);
 	const displayMessageCount = $derived(liveSession?.message_count ?? session.message_count);
 	const displaySubagentCount = $derived(liveSession?.subagent_count ?? session.subagent_count);
+	const costTitle = $derived(
+		`${formatTokens(session.tokens_with_subagents)} tokens · ${formatCost(session.cost_with_subagents)}\nInput + output + cache reads/writes, incl. subagents`
+	);
 	const displaySlug = $derived(liveSession?.slug ?? session.slug);
 
 	// Session title display (shared logic from utils)
@@ -204,6 +210,12 @@
 					<MessageSquare size={10} strokeWidth={2} class="text-[var(--nav-blue)]" />
 					<span class="tabular-nums">{displayMessageCount}</span>
 				</div>
+				{#if session.cost_with_subagents}
+					<div class="flex items-center gap-1" title={costTitle}>
+						<Coins size={10} strokeWidth={2} class="text-[var(--nav-green)]" />
+						<span class="tabular-nums">{formatCost(session.cost_with_subagents)}</span>
+					</div>
+				{/if}
 				{#if displaySubagentCount > 0}
 					<div class="flex items-center gap-1">
 						<Users size={10} strokeWidth={2} class="text-[var(--nav-purple)]" />
@@ -333,7 +345,7 @@
 				</div>
 
 				{#if durationDisplay}
-					<div class="flex items-center gap-1" title="Duration: {durationDisplay}">
+					<div class="flex items-center gap-1 whitespace-nowrap" title="Duration: {durationDisplay}">
 						<Clock size={13} strokeWidth={2} class="text-[var(--nav-orange)]" />
 						<span class="tabular-nums font-medium">{durationDisplay}</span>
 					</div>
@@ -343,6 +355,16 @@
 					<div class="flex items-center gap-1" title="{displaySubagentCount} agents">
 						<Users size={13} strokeWidth={2} class="text-[var(--nav-purple)]" />
 						<span class="tabular-nums font-medium">{displaySubagentCount}</span>
+					</div>
+				{/if}
+
+				<!-- Cost incl. subagents; tokens on hover -->
+				{#if session.cost_with_subagents}
+					<div class="flex items-center gap-1" title={costTitle}>
+						<Coins size={13} strokeWidth={2} class="text-[var(--nav-green)]" />
+						<span class="tabular-nums font-medium"
+							>{formatCost(session.cost_with_subagents)}</span
+						>
 					</div>
 				{/if}
 			</div>
