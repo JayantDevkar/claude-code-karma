@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Dict, Iterator, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from .api_error import ApiErrorSummary, ApiErrorTracker
 from .base_cache import (
     BaseCache,
     clear_all_caches,
@@ -57,6 +58,7 @@ class AgentCache(BaseCache):
         "skills_used",
         "commands_used",
         "models_used",
+        "api_error_summary",
     )
 
     def __init__(self) -> None:
@@ -72,6 +74,7 @@ class AgentCache(BaseCache):
         self.skills_used: Optional[Dict[tuple, int]] = None  # {(name, source): count}
         self.commands_used: Optional[Dict[tuple, int]] = None  # {(name, source): count}
         self.models_used: Optional[set] = None
+        self.api_error_summary: ApiErrorSummary = ApiErrorSummary.EMPTY
 
     def reset(self) -> None:
         """Reset all cache values to initial state."""
@@ -86,6 +89,7 @@ class AgentCache(BaseCache):
         self.skills_used = None
         self.commands_used = None
         self.models_used = None
+        self.api_error_summary = ApiErrorSummary.EMPTY
         super().reset()
 
 
@@ -231,6 +235,7 @@ class Agent(BaseModel):
         usage_acc = UsageAccumulator()
         message_count = 0
         models: set = set()
+        api_errors = ApiErrorTracker(skip_sidechain=False)
         # Skills/commands use (name, source) tuple keys for invocation tracking
         skills: Counter = Counter()  # {(name, source): count}
         commands: Counter = Counter()  # {(name, source): count}
@@ -247,7 +252,8 @@ class Agent(BaseModel):
             # Usage (assistant messages only)
             if isinstance(msg, AssistantMessage):
                 usage_acc.add(msg)
-                if msg.model:
+                api_errors.feed(msg)
+                if msg.model and not msg.is_synthetic:
                     models.add(msg.model)
 
                 # Extract skills/commands from Skill tool uses
@@ -270,6 +276,7 @@ class Agent(BaseModel):
         cache.usage_buckets = usage_acc.buckets()
         cache.message_count = message_count
         cache.models_used = models
+        cache.api_error_summary = api_errors.summary()
         cache.skills_used = dict(skills)
         cache.commands_used = dict(commands)
         cache.mark_loaded(self._get_file_mtime())
@@ -368,6 +375,12 @@ class Agent(BaseModel):
         """Get set of all models seen in assistant messages (cached)."""
         self._load_metadata()
         return self._get_cache().models_used or set()
+
+    @property
+    def api_error_summary(self) -> ApiErrorSummary:
+        """How the agent ended (limit/refusal/api_error) and its limit-hit count (cached)."""
+        self._load_metadata()
+        return self._get_cache().api_error_summary
 
     @property
     def start_time(self) -> Optional[datetime]:

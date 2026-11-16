@@ -19,6 +19,7 @@
 	import PageHeader from '$lib/components/layout/PageHeader.svelte';
 	import TerminalFocusButton from '$lib/components/TerminalFocusButton.svelte';
 	import ResumeSessionButton from '$lib/components/ResumeSessionButton.svelte';
+	import EndedByBadge from '$lib/components/EndedByBadge.svelte';
 	import RemoteControlToggle from '$lib/components/RemoteControlToggle.svelte';
 	import type {
 		ConversationEntity,
@@ -274,6 +275,16 @@
 	);
 </script>
 
+{#snippet endedBy()}
+	{#if entity.ended_by}
+		<EndedByBadge endedBy={entity.ended_by} resetsAt={entity.ended_resets_at} size="md" />
+	{:else if (entity.limit_hit_count ?? 0) > 0}
+		<span class="text-xs text-[var(--text-muted)]">
+			hit limit {entity.limit_hit_count}×, resumed
+		</span>
+	{/if}
+{/snippet}
+
 <!-- Agent Session Header with colored background -->
 {#if isSubagentSession(entity) && colorVars}
 	<div
@@ -306,6 +317,7 @@
 							</span>
 						</a>
 					{/if}
+					{@render endedBy()}
 				{/snippet}
 				{#snippet headerRight()}
 					<div class="flex items-center gap-2">
@@ -411,6 +423,7 @@
 							</span>
 						</div>
 					{/if}
+					{@render endedBy()}
 					<!-- Compaction Badge (if session was compacted) -->
 					{#if isMainSession(entity) && entity.was_compacted}
 						{@const compactionCount = entity.compaction_summary_count || 1}

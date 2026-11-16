@@ -46,6 +46,8 @@ function matchesSingleFilter(
 					event.metadata?.has_result === true &&
 					!event.metadata.result_status) // Fallback for error detection if needed
 			);
+		case 'api_error':
+			return event.event_type === 'api_error';
 		case 'thinking':
 			return event.event_type === 'thinking';
 		case 'response':
@@ -193,6 +195,7 @@ function calculateFilterCounts(
 		subagent: 0,
 		todo_update: 0,
 		error: 0,
+		api_error: 0,
 		thinking: 0,
 		response: 0,
 		big_response: 0,
@@ -210,6 +213,7 @@ function calculateFilterCounts(
 		if (type === 'prompt') counts.prompt++;
 		if (type === 'tool_call') counts.tool_call++;
 		if (type === 'todo_update') counts.todo_update++;
+		if (type === 'api_error') counts.api_error++;
 		if (type === 'thinking') counts.thinking++;
 		if (type === 'response') counts.response++;
 
@@ -343,6 +347,7 @@ export function createTimelineLogic(
 			'subagent',
 			'todo_update',
 			'error',
+			'api_error',
 			'thinking',
 			'response',
 			'big_response',

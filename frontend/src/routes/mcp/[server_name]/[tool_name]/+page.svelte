@@ -227,7 +227,10 @@
 			session_titles: s.session_titles,
 			project_encoded_name: s.project_encoded_name ?? undefined,
 			project_path: s.project_encoded_name ?? '',
-			project_name: s.project_display_name || getProjectNameFromEncoded(s.project_encoded_name ?? '')
+			project_name: s.project_display_name || getProjectNameFromEncoded(s.project_encoded_name ?? ''),
+			ended_by: s.ended_by,
+			ended_resets_at: s.ended_resets_at,
+			limit_hit_count: s.limit_hit_count
 		};
 	}
 

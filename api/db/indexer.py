@@ -445,6 +445,8 @@ def _index_session(
 
         session_source = get_session_source(uuid)
 
+    err = session.api_error_summary
+
     # Upsert session. ON CONFLICT instead of INSERT OR REPLACE: REPLACE deletes the
     # row and cascades to every child table, churning shell/cron ids on each re-index.
     conn.execute(
@@ -459,7 +461,7 @@ def _index_session(
             session_titles, is_continuation_marker, was_compacted,
             compaction_count, file_snapshot_count, subagent_count,
             jsonl_mtime, jsonl_size, session_source, source_encoded_name,
-            source_root, indexed_at
+            source_root, ended_by, ended_resets_at, limit_hit_count, indexed_at
         ) VALUES (
             ?, ?, ?, ?,
             ?, ?, ?, ?,
@@ -470,7 +472,7 @@ def _index_session(
             ?, ?, ?,
             ?, ?, ?,
             ?, ?, ?, ?,
-            ?, datetime('now')
+            ?, ?, ?, ?, datetime('now')
         )
         ON CONFLICT(uuid) DO UPDATE SET {_SESSION_UPSERT_SET}
         """,
@@ -507,6 +509,9 @@ def _index_session(
             session_source,
             source_encoded_name,
             source_root,
+            err.ended_by,
+            err.ended_resets_at.isoformat() if err.ended_resets_at else None,
+            err.limit_hit_count,
         ),
     )
 
@@ -613,11 +618,13 @@ def _index_session(
                     continue
                 usage = subagent.get_usage_summary()
                 duration = subagent.duration_seconds or 0.0
+                sub_err = subagent.api_error_summary
                 conn.execute(
                     """INSERT INTO subagent_invocations
                        (session_uuid, agent_id, subagent_type, input_tokens,
-                        output_tokens, cost_usd, duration_seconds, started_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                        output_tokens, cost_usd, duration_seconds, started_at,
+                        ended_by, ended_resets_at, limit_hit_count)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         uuid,
                         subagent.agent_id,
@@ -627,6 +634,9 @@ def _index_session(
                         subagent.get_total_cost(),
                         duration,
                         subagent.start_time.isoformat() if subagent.start_time else None,
+                        sub_err.ended_by,
+                        sub_err.ended_resets_at.isoformat() if sub_err.ended_resets_at else None,
+                        sub_err.limit_hit_count,
                     ),
                 )
 
@@ -883,7 +893,8 @@ _SESSION_UPSERT_SET = ", ".join(
         "subagent_cache_read_tokens subagent_cache_creation_tokens "
         "initial_prompt git_branch models_used session_titles is_continuation_marker "
         "was_compacted compaction_count file_snapshot_count subagent_count jsonl_mtime jsonl_size "
-        "session_source source_encoded_name source_root indexed_at"
+        "session_source source_encoded_name source_root ended_by ended_resets_at "
+        "limit_hit_count indexed_at"
     ).split()
 )
 

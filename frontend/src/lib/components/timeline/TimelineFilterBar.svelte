@@ -5,6 +5,7 @@
 		Bot,
 		ListTodo,
 		AlertCircle,
+		CloudOff,
 		X,
 		Search,
 		Brain,
@@ -101,6 +102,13 @@
 			icon: 'text-[var(--error)]',
 			hoverBg: 'hover:bg-[var(--error-subtle)]/50'
 		},
+		api_error: {
+			active: 'bg-[var(--bg-muted)] border-[var(--text-muted)]/50 text-[var(--text-secondary)]',
+			inactive:
+				'bg-[var(--bg-base)] border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--text-muted)]/40',
+			icon: 'text-[var(--text-muted)]',
+			hoverBg: 'hover:bg-[var(--bg-muted)]/50'
+		},
 		thinking: {
 			active: 'bg-[var(--event-thinking-subtle)] border-[var(--event-thinking)]/50 text-[var(--event-thinking)]',
 			inactive:
@@ -181,6 +189,7 @@
 			countKey: 'todo_update' as const
 		},
 		{ id: 'error' as const, label: 'Errors', icon: AlertCircle, countKey: 'error' as const },
+		{ id: 'api_error' as const, label: 'API errors', icon: CloudOff, countKey: 'api_error' as const },
 		{
 			id: 'thinking' as const,
 			label: 'Thinking',

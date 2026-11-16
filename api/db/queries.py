@@ -222,6 +222,7 @@ def query_all_sessions(
             s.message_count, s.start_time, s.end_time, s.duration_seconds,
             s.input_tokens, s.output_tokens, s.total_cost,
             s.initial_prompt, s.git_branch, s.models_used,
+            s.ended_by, s.ended_resets_at, s.limit_hit_count,
             s.session_titles, s.is_continuation_marker, s.was_compacted,
             s.subagent_count, s.session_source, s.source_root,
             {SESSION_USAGE_SELECT}
@@ -663,6 +664,7 @@ def query_sessions_by_skill(
             s.uuid, s.slug, s.project_encoded_name, s.project_path,
             s.message_count, s.start_time, s.end_time, s.duration_seconds,
             s.models_used, s.subagent_count, s.initial_prompt,
+            s.ended_by, s.ended_resets_at, s.limit_hit_count,
             s.git_branch, s.session_titles, s.source_root,
             {SESSION_USAGE_SELECT}
         FROM sessions s
@@ -840,6 +842,7 @@ def _query_item_detail(
             s.uuid, s.slug, s.project_encoded_name, s.project_path,
             s.message_count, s.start_time, s.end_time, s.duration_seconds,
             s.models_used, s.subagent_count, s.initial_prompt,
+            s.ended_by, s.ended_resets_at, s.limit_hit_count,
             s.git_branch, s.session_titles, s.source_root AS machine,
             agg.has_main, agg.has_sub, agg.agent_ids,
             ss.invocation_sources, {SESSION_USAGE_SELECT}
@@ -1200,6 +1203,7 @@ def query_project_sessions(
         f"""SELECT
             s.uuid, s.slug, s.message_count, s.start_time, s.end_time,
             s.duration_seconds, s.models_used, s.subagent_count,
+            s.ended_by, s.ended_resets_at, s.limit_hit_count,
             s.initial_prompt, s.git_branch, s.session_titles,
             s.is_continuation_marker, s.was_compacted, s.input_tokens,
             s.output_tokens, s.total_cost, s.compaction_count,
@@ -2134,6 +2138,7 @@ def query_sessions_by_agent(
             s.uuid, s.slug, s.project_encoded_name, s.project_path,
             s.message_count, s.start_time, s.end_time, s.duration_seconds,
             s.models_used, s.subagent_count, s.initial_prompt,
+            s.ended_by, s.ended_resets_at, s.limit_hit_count,
             s.git_branch, s.session_titles, s.source_root,
             {SESSION_USAGE_SELECT}
         FROM sessions s
@@ -2909,6 +2914,7 @@ def query_sessions_by_mcp_server(
             s.uuid, s.slug, s.project_encoded_name, s.project_path,
             s.message_count, s.start_time, s.end_time, s.duration_seconds,
             s.models_used, s.subagent_count, s.initial_prompt,
+            s.ended_by, s.ended_resets_at, s.limit_hit_count,
             s.git_branch, s.session_titles, s.source_root,
             agg.has_main, agg.has_sub, agg.agent_ids, {SESSION_USAGE_SELECT}
         FROM sessions s
@@ -3394,6 +3400,7 @@ def query_sessions_by_mcp_tool(
             s.uuid, s.slug, s.project_encoded_name, s.project_path,
             s.message_count, s.start_time, s.end_time, s.duration_seconds,
             s.models_used, s.subagent_count, s.initial_prompt,
+            s.ended_by, s.ended_resets_at, s.limit_hit_count,
             s.git_branch, s.session_titles, s.source_root,
             agg.has_main, agg.has_sub, agg.agent_ids, {SESSION_USAGE_SELECT}
         FROM sessions s
@@ -3872,6 +3879,7 @@ def query_sessions_by_builtin_server(
             s.uuid, s.slug, s.project_encoded_name, s.project_path,
             s.message_count, s.start_time, s.end_time, s.duration_seconds,
             s.models_used, s.subagent_count, s.initial_prompt,
+            s.ended_by, s.ended_resets_at, s.limit_hit_count,
             s.git_branch, s.session_titles, s.source_root,
             agg.has_main, agg.has_sub, agg.agent_ids, {SESSION_USAGE_SELECT}
         FROM sessions s
@@ -3947,6 +3955,7 @@ def query_sessions_by_builtin_tool(
             s.uuid, s.slug, s.project_encoded_name, s.project_path,
             s.message_count, s.start_time, s.end_time, s.duration_seconds,
             s.models_used, s.subagent_count, s.initial_prompt,
+            s.ended_by, s.ended_resets_at, s.limit_hit_count,
             s.git_branch, s.session_titles, s.source_root,
             agg.has_main, agg.has_sub, agg.agent_ids, {SESSION_USAGE_SELECT}
         FROM sessions s

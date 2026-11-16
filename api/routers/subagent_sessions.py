@@ -128,6 +128,9 @@ def get_subagent_detail(
         working_directories=list(agent_data.working_directories),
         subagent_type=subagent_type,
         initial_prompt=agent_data.initial_prompt,
+        ended_by=agent.api_error_summary.ended_by,
+        ended_resets_at=agent.api_error_summary.ended_resets_at,
+        limit_hit_count=agent.api_error_summary.limit_hit_count,
     )
 
     # Add cache headers
