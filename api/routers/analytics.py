@@ -112,6 +112,15 @@ def _get_analytics_sqlite(
         return None
 
 
+def _current_index_entries(project) -> list:
+    """Index entries, or [] when the project has transcripts the index doesn't list."""
+    entries = project.list_session_index_entries()
+    listed = {e.session_id for e in entries}
+    if any(path.stem not in listed for path in project.list_session_paths()):
+        return []
+    return entries
+
+
 @router.get("")
 @cacheable(max_age=120, stale_while_revalidate=300, private=True)
 def get_global_analytics(
@@ -156,7 +165,7 @@ def get_global_analytics(
             if use_index:
                 # Try index-based fast path first
                 try:
-                    index_entries = project.list_session_index_entries()
+                    index_entries = _current_index_entries(project)
 
                     # Apply date filtering to index entries
                     if start_dt or end_dt:
@@ -248,7 +257,7 @@ def get_project_analytics(
     # Try index-based fast path first if requested
     if use_index:
         try:
-            index_entries = project.list_session_index_entries()
+            index_entries = _current_index_entries(project)
 
             # Apply date filtering to index entries
             if start_dt or end_dt:

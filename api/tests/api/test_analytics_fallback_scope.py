@@ -186,3 +186,106 @@ def test_fallback_handles_index_entries_mixed_with_sessions(tmp_path: Path):
     assert analytics.total_input_tokens == 300
     assert analytics.total_output_tokens == 150
     assert analytics.total_sessions == 2
+
+
+def _write_index(project_dir: Path, *session_ids: str) -> None:
+    ts = "2026-02-06T09:00:00Z"
+    entries = [
+        {
+            "sessionId": sid,
+            "fullPath": str(project_dir / f"{sid}.jsonl"),
+            "fileMtime": 0,
+            "created": ts,
+            "modified": ts,
+        }
+        for sid in session_ids
+    ]
+    (project_dir / "sessions-index.json").write_text(json.dumps({"version": 1, "entries": entries}))
+
+
+def _transcript(project_dir: Path, sid: str, usage: dict) -> None:
+    t = datetime(2026, 10, 1, 9, 0, tzinfo=timezone.utc)
+    line = _usage_line(f"m-{sid}", t, "claude-opus-4-5-20251101", usage)
+    (project_dir / f"{sid}.jsonl").write_text(line + "\n")
+
+
+def _project(base: Path, encoded: str):
+    from models.project import Project
+
+    (base / encoded).mkdir(parents=True, exist_ok=True)
+    return Project.from_encoded_name(encoded, claude_projects_dir=base)
+
+
+def test_current_index_entries_ignores_a_stale_index(tmp_path: Path):
+    from routers.analytics import _current_index_entries
+
+    project = _project(tmp_path, "-stale")
+    _write_index(project.project_dir, "old")
+    _transcript(project.project_dir, "new", {"input_tokens": 1, "output_tokens": 1})
+
+    assert _current_index_entries(project) == []
+
+
+def test_current_index_entries_keeps_an_index_covering_the_transcripts(tmp_path: Path):
+    from routers.analytics import _current_index_entries
+
+    project = _project(tmp_path, "-fresh")
+    _write_index(project.project_dir, "a", "b")
+    _transcript(project.project_dir, "a", {"input_tokens": 1, "output_tokens": 1})
+    _transcript(project.project_dir, "b", {"input_tokens": 1, "output_tokens": 1})
+    (project.project_dir / "agent-x.jsonl").write_text(_assistant_line("x") + "\n")
+
+    assert {e.session_id for e in _current_index_entries(project)} == {"a", "b"}
+
+
+def test_current_index_entries_keeps_an_index_listing_deleted_transcripts(tmp_path: Path):
+    from routers.analytics import _current_index_entries
+
+    project = _project(tmp_path, "-shrunk")
+    _write_index(project.project_dir, "kept", "gone")
+    _transcript(project.project_dir, "kept", {"input_tokens": 1, "output_tokens": 1})
+
+    assert {e.session_id for e in _current_index_entries(project)} == {"kept", "gone"}
+
+
+@pytest.fixture
+def stale_index_claude(mock_claude_base, monkeypatch):
+    """Fallback mode: SQLite off, one project with a stale index, one without any index."""
+    from config import settings
+    from utils import clear_project_cache
+
+    monkeypatch.setattr(settings, "use_sqlite", False)
+    projects = mock_claude_base / "projects"
+    stale = _project(projects, "-Users-test-stale")
+    _write_index(stale.project_dir, "old")
+    _transcript(stale.project_dir, "new", {"input_tokens": 100, "output_tokens": 50})
+    plain = _project(projects, "-Users-test-plain")
+    _transcript(plain.project_dir, "only", {"input_tokens": 10, "output_tokens": 5})
+    clear_project_cache()
+    yield
+    clear_project_cache()
+
+
+def test_global_fallback_counts_transcripts_missing_from_a_stale_index(stale_index_claude):
+    from fastapi.testclient import TestClient
+
+    from main import app
+
+    body = TestClient(app).get("/analytics").json()
+
+    assert body["total_sessions"] == 2
+    assert body["total_input_tokens"] == 110
+    assert body["total_output_tokens"] == 55
+
+
+def test_project_fallback_counts_transcripts_missing_from_a_stale_index(stale_index_claude):
+    from fastapi.testclient import TestClient
+
+    from main import app
+
+    body = TestClient(app).get("/analytics/projects/-Users-test-stale").json()
+
+    assert body["sessions_by_date"] == {"2026-10-01": 1}
+    assert body["total_sessions"] == 1
+    assert body["total_input_tokens"] == 100
+    assert body["total_output_tokens"] == 50
