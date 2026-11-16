@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import json
 import os
 import threading
 import time
-from functools import lru_cache
 from pathlib import Path
 from typing import Iterable, Optional
 
@@ -16,26 +14,9 @@ _sibling_cache: dict[str, tuple[float, int, dict[str, list[tuple[str, str]]]]] =
 _sibling_lock = threading.Lock()
 
 
-@lru_cache(maxsize=512)
-def _message_count(path: str, mtime_ns: int, size: int) -> int:
-    uuids: set[str] = set()
-    with open(path, "rb") as f:
-        for line in f:
-            if b'"uuid"' not in line:
-                continue
-            try:
-                entry = json.loads(line)
-            except ValueError:
-                continue
-            if isinstance(entry, dict) and isinstance(entry.get("uuid"), str):
-                uuids.add(entry["uuid"])
-    return len(uuids)
-
-
 def _completeness(path: Path) -> int:
     try:
-        st = path.stat()
-        return _message_count(str(path), st.st_mtime_ns, st.st_size)
+        return path.stat().st_size  # a shorter copy is a byte prefix of the fuller one
     except OSError:
         return -1
 

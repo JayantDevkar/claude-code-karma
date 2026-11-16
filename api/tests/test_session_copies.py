@@ -8,6 +8,8 @@ count the complete copy, not whichever dir it happens to read first.
 
 from __future__ import annotations
 
+import builtins
+import io
 import json
 import os
 import sqlite3
@@ -22,6 +24,7 @@ from config import settings
 from db import indexer
 from db.schema import ensure_schema
 from services import session_roots
+from services.session_copies import most_complete
 
 REPO = "-home-alice-myrepo"
 WORKTREE = "-home-alice-myrepo--claude-worktrees-feature"
@@ -191,3 +194,37 @@ def test_second_pass_does_not_reindex_duplicate_copies(claude_dirs, mem_db):
     stats = indexer.sync_all_projects(mem_db)
 
     assert stats["indexed"] == 0
+
+
+def _forbid_reads(monkeypatch, root: Path) -> None:
+    """Fail any open() of a path under `root`; stat() and is_file() stay allowed."""
+
+    def guarded(real):
+        def wrapper(target, *args, **kwargs):
+            if str(target).startswith(str(root)):
+                raise AssertionError(f"opened {target}")
+            return real(target, *args, **kwargs)
+
+        return wrapper
+
+    monkeypatch.setattr(builtins, "open", guarded(builtins.open))
+    monkeypatch.setattr(io, "open", guarded(io.open))
+    monkeypatch.setattr(Path, "open", guarded(Path.open))
+
+
+def test_most_complete_ranks_by_size_without_opening_the_files(tmp_path, monkeypatch):
+    """A shorter copy is a byte prefix of the fuller one, so size alone picks the winner."""
+    shorter = _write_turns(tmp_path / REPO, "s-size", 2)
+    longer = _write_turns(tmp_path / WORKTREE, "s-size", 5)
+    _forbid_reads(monkeypatch, tmp_path)
+
+    assert most_complete([shorter, longer]) == longer
+    assert most_complete([longer, shorter]) == longer
+
+
+def test_most_complete_keeps_the_first_of_equal_size_copies(tmp_path):
+    first = _write_turns(tmp_path / REPO, "s-tie", 3)
+    second = _write_turns(tmp_path / WORKTREE, "s-tie", 3)
+
+    assert most_complete([first, second]) == first
+    assert most_complete([second, first]) == second
