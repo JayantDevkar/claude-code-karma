@@ -1,4 +1,4 @@
-"""Tests for the v28 migration adding session_usage_buckets and forcing a reindex."""
+"""Tests for the v30 migration adding session_usage_buckets and forcing a reindex."""
 
 from __future__ import annotations
 
@@ -60,8 +60,8 @@ def test_fresh_db_has_usage_buckets_table():
     ]
 
 
-def test_v27_upgrade_creates_table_and_forces_reindex():
-    conn = _db_at(27)
+def test_v29_upgrade_creates_table_and_forces_reindex():
+    conn = _db_at(29)
     ensure_schema(conn)
     assert _has_table(conn)
     assert _mtime(conn) == 99.0
@@ -82,7 +82,7 @@ def test_db_ahead_with_table_is_not_reindexed():
 
 
 def test_upgrade_is_idempotent():
-    conn = _db_at(27)
+    conn = _db_at(29)
     ensure_schema(conn)
     ensure_schema(conn)
     assert _mtime(conn) == 99.0
