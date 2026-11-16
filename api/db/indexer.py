@@ -14,6 +14,7 @@ The indexer is designed to be:
 
 import json
 import logging
+import re
 import sqlite3
 import sys
 import threading
@@ -900,13 +901,16 @@ def _session_project_paths(conn: sqlite3.Connection, encoded_name: str) -> list[
     return [r[0] for r in rows]
 
 
+def _claude_dir_name(path: str) -> str:
+    """The dir name Claude Code gives a project: every non-alphanumeric becomes a dash."""
+    return re.sub(r"[^a-zA-Z0-9]", "-", path)
+
+
 def _encodes_to(path: str, encoded_name: str) -> bool:
     """Whether Claude Code would name a project dir `encoded_name` for `path`."""
-    from models.project import Project
-
     # Windows drive letters appear as both C-- and c--
     fold = str.lower if sys.platform == "win32" else str
-    return fold(Project.encode_path(path)) == fold(encoded_name)
+    return fold(_claude_dir_name(path)) == fold(encoded_name)
 
 
 def _resolve_project_path(encoded_name: str, candidate_paths: list) -> str:
@@ -929,7 +933,7 @@ def _resolve_project_path(encoded_name: str, candidate_paths: list) -> str:
     matches = [p for p in candidate_paths if p and _encodes_to(p, encoded_name)]
 
     if matches:
-        matches.sort(key=lambda p: Project.encode_path(p) != encoded_name)  # exact case first
+        matches.sort(key=lambda p: _claude_dir_name(p) != encoded_name)  # exact case first
         # Prefer the match that exists on disk
         for path in matches:
             if Path(path).is_dir():
