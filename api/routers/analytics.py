@@ -112,6 +112,15 @@ def _get_analytics_sqlite(
         return None
 
 
+def _current_index_entries(project) -> list:
+    """Index entries, or [] when the project has transcripts the index doesn't list."""
+    entries = project.list_session_index_entries()
+    listed = {e.session_id for e in entries}
+    if any(path.stem not in listed for path in project.list_session_paths()):
+        return []
+    return entries
+
+
 @router.get("")
 @cacheable(max_age=120, stale_while_revalidate=300, private=True)
 def get_global_analytics(
@@ -156,7 +165,7 @@ def get_global_analytics(
             if use_index:
                 # Try index-based fast path first
                 try:
-                    index_entries = project.list_session_index_entries()
+                    index_entries = _current_index_entries(project)
 
                     # Apply date filtering to index entries
                     if start_dt or end_dt:
@@ -248,7 +257,7 @@ def get_project_analytics(
     # Try index-based fast path first if requested
     if use_index:
         try:
-            index_entries = project.list_session_index_entries()
+            index_entries = _current_index_entries(project)
 
             # Apply date filtering to index entries
             if start_dt or end_dt:
@@ -557,6 +566,25 @@ def _calculate_analytics_from_index(
     )
 
 
+def _as_full_sessions(sessions: list) -> list:
+    """Replace each SessionIndexEntry with the Session it points to.
+
+    Entries whose JSONL is gone are dropped: sessions-index.json can still list them.
+    """
+    from models.session import Session
+    from models.session_index import SessionIndexEntry
+
+    full = []
+    for session in sessions:
+        if isinstance(session, SessionIndexEntry):
+            path = Path(session.full_path)
+            if not path.is_file():
+                continue
+            session = Session.from_path(path)
+        full.append(session)
+    return full
+
+
 def _calculate_analytics_from_sessions(
     sessions: list,
     tz_offset_minutes: int = 0,
@@ -583,6 +611,10 @@ def _calculate_analytics_from_sessions(
 
     if use_index and sessions and all(isinstance(s, SessionIndexEntry) for s in sessions):
         return _calculate_analytics_from_index(sessions, tz_offset_minutes)
+
+    # The global fallback can mix index entries (projects with sessions-index.json)
+    # with full sessions; the full calculation below needs every item as a Session.
+    sessions = _as_full_sessions(sessions)
 
     total_input_tokens = 0
     total_output_tokens = 0
