@@ -362,6 +362,12 @@ class ProjectSummary(BaseModel):
     latest_session_time: Optional[datetime] = Field(
         default=None, description="Start time of the most recent session"
     )
+    total_tokens: Optional[int] = Field(
+        default=None, description="Input + output + cache reads/writes, incl. subagents"
+    )
+    total_cost: Optional[float] = Field(
+        default=None, description="Session cost incl. subagents, in USD"
+    )
 
 
 class ProjectDetail(ProjectSummary):

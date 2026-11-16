@@ -436,6 +436,8 @@ def list_projects(request: Request):
                                 git_root_path=git_root,
                                 is_nested_project=is_nested,
                                 latest_session_time=row.get("last_activity"),
+                                total_tokens=row.get("total_tokens"),
+                                total_cost=row.get("total_cost"),
                             )
                         )
                     return summaries
