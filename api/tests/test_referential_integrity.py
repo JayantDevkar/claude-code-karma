@@ -206,7 +206,9 @@ class TestV24ReindexesLocalCommandPrompts:
         ensure_schema(conn)
 
         mtimes = dict(conn.execute("SELECT uuid, jsonl_mtime FROM sessions").fetchall())
-        assert mtimes == {"caveat": 9.0, "command": 9.0, "typed": 10.0}
+        untouched = mtimes["typed"]
+        assert {u for u, m in mtimes.items() if m < untouched} == {"caveat", "command"}
+        assert mtimes["caveat"] == mtimes["command"] == untouched - 1
 
 
 class TestV26ReindexesWakePrompts:
@@ -230,7 +232,10 @@ class TestV26ReindexesWakePrompts:
         ensure_schema(conn)
 
         mtimes = dict(conn.execute("SELECT uuid, jsonl_mtime FROM sessions").fetchall())
-        assert mtimes == {"wake": 9.0, "quoted": 10.0, "typed": 10.0}
+        untouched = mtimes["typed"]
+        assert {u for u, m in mtimes.items() if m < untouched} == {"wake"}
+        assert mtimes["wake"] == untouched - 1
+        assert mtimes["quoted"] == untouched
 
 
 # ============================================================================

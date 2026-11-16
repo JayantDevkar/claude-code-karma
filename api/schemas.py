@@ -429,6 +429,18 @@ class ProjectAnalytics(BaseModel):
         default_factory=WorkModeDistribution,
         description="Work mode distribution based on tool usage",
     )
+    tokens_by_date: dict[str, int] = Field(
+        default_factory=dict, description="Local day -> tokens spent that day"
+    )
+    cost_by_date: dict[str, float] = Field(
+        default_factory=dict, description="Local day -> USD spent that day"
+    )
+    models_categorized_tokens: dict[str, int] = Field(
+        default_factory=dict, description="Model family -> tokens"
+    )
+    models_categorized_cost: dict[str, float] = Field(
+        default_factory=dict, description="Model family -> USD"
+    )
 
 
 class DashboardStats(BaseModel):

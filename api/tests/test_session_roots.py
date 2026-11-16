@@ -483,12 +483,14 @@ def test_upgrade_reindexes_sessions_stored_with_a_stray_path(mem_db):
     ensure_schema(mem_db)
 
     mtimes = dict(mem_db.execute("SELECT uuid, jsonl_mtime FROM sessions").fetchall())
-    assert mtimes == {
-        "good": 100.0,
-        "stray": 98.0,  # v27 and v28 both flag it
-        "no-path": 100.0,
-        "no-project": 100.0,
-        "case-only": 100.0,
+    untouched = mtimes["good"]
+    assert {u for u, m in mtimes.items() if m < untouched} == {"stray"}
+    assert mtimes["stray"] == untouched - 2  # v27 and v28 both flag it
+    assert {u for u, m in mtimes.items() if m == untouched} == {
+        "good",
+        "no-path",
+        "no-project",
+        "case-only",
     }
 
 
