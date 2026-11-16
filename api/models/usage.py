@@ -10,6 +10,7 @@ import hashlib
 import json
 import logging
 import re
+import sys
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Optional
@@ -24,7 +25,12 @@ PricingTable = dict[str, Any]
 
 
 def _is_number(value: Any) -> bool:
-    return isinstance(value, (int, float)) and not isinstance(value, bool)
+    # The range check also rejects NaN, +/-inf and ints too big for a float
+    return (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and 0 <= value <= sys.float_info.max
+    )
 
 
 def _valid_model_entry(entry: Any) -> bool:
@@ -34,6 +40,14 @@ def _valid_model_entry(entry: Any) -> bool:
         and "output" in entry
         and all(_is_number(v) for v in entry.values())
     )
+
+
+def _override_section(override: dict, key: str) -> dict:
+    section = override.get(key, {})
+    if isinstance(section, dict):
+        return section
+    logger.warning("Ignoring pricing override %s: must be a JSON object", key)
+    return {}
 
 
 def load_pricing(defaults_path: Path, override_path: Optional[Path]) -> PricingTable:
@@ -54,19 +68,19 @@ def load_pricing(defaults_path: Path, override_path: Optional[Path]) -> PricingT
         logger.warning("Ignoring pricing override %s: %s", override_path, e)
         return pricing
 
-    for model_id, entry in (override.get("models") or {}).items():
+    for model_id, entry in _override_section(override, "models").items():
         if _valid_model_entry(entry):
             pricing["models"][model_id] = entry
         else:
             logger.warning("Ignoring pricing override for %s: needs numeric input/output", model_id)
-    for key, value in (override.get("multipliers") or {}).items():
+    for key, value in _override_section(override, "multipliers").items():
         if key in pricing["multipliers"] and _is_number(value):
             pricing["multipliers"][key] = value
         else:
             logger.warning("Ignoring pricing override multiplier %s=%r", key, value)
     default_model = override.get("default_model")
     if default_model is not None:
-        if default_model in pricing["models"]:
+        if isinstance(default_model, str) and default_model in pricing["models"]:
             pricing["default_model"] = default_model
         else:
             logger.warning("Ignoring pricing override default_model %r: not priced", default_model)
@@ -74,9 +88,7 @@ def load_pricing(defaults_path: Path, override_path: Optional[Path]) -> PricingT
 
 
 # Prices load once at import; edits to the override file apply on API restart
-_PRICING = load_pricing(
-    Path(__file__).with_name("pricing.json"), settings.karma_base / "pricing.json"
-)
+_PRICING = load_pricing(Path(__file__).with_name("pricing.json"), settings.pricing_override_path)
 MODEL_PRICING: dict[str, dict[str, float]] = _PRICING["models"]
 DEFAULT_PRICING_MODEL: str = _PRICING["default_model"]
 
