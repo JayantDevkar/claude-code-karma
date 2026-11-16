@@ -178,13 +178,19 @@ export interface ProjectAnalytics {
 	cache_hit_rate: number;
 	tools_used: Record<string, number>;
 	sessions_by_date: Record<string, number>;
+	tokens_by_date: Record<string, number>;
+	cost_by_date: Record<string, number>;
 	projects_active: number;
 	temporal_heatmap: number[][];
 	peak_hours: number[];
 	models_categorized: Record<string, number>;
+	models_categorized_tokens: Record<string, number>;
+	models_categorized_cost: Record<string, number>;
 	time_distribution: TimeDistribution;
 	work_mode_distribution: WorkModeDistribution;
 }
+
+export type AnalyticsMetric = 'sessions' | 'tokens' | 'cost';
 
 export interface TimeDistribution {
 	morning_pct: number;
@@ -380,6 +386,10 @@ export interface Project {
 	is_nested_project: boolean;
 	/** Start time of the most recent session (from project list API) */
 	latest_session_time?: string;
+	/** Input + output + cache reads/writes incl. subagents (project list API, SQLite only) */
+	total_tokens?: number | null;
+	/** Cost incl. subagents in USD (project list API, SQLite only) */
+	total_cost?: number | null;
 	/** Sessions array (only populated in project detail API) */
 	sessions?: SessionSummary[];
 }

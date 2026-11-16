@@ -10,7 +10,7 @@ import sqlite3
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 27
+SCHEMA_VERSION = 30
 
 SCHEMA_SQL = """
 -- Schema versioning
@@ -380,6 +380,25 @@ CREATE INDEX IF NOT EXISTS idx_cron_state_session
 # Append to canonical fresh-install schema.
 SCHEMA_SQL = SCHEMA_SQL + _SHELLS_CRON_SCHEMA_SQL
 
+# Per-session token usage in 15-minute buckets (main session plus subagents, merged).
+_USAGE_BUCKETS_SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS session_usage_buckets (
+    session_uuid TEXT NOT NULL,
+    bucket_start INTEGER NOT NULL,      -- UTC epoch seconds, multiple of 900
+    model TEXT NOT NULL,                -- '' when the response had no model
+    input_tokens INTEGER NOT NULL DEFAULT 0,          -- uncached input only
+    output_tokens INTEGER NOT NULL DEFAULT 0,
+    cache_creation_tokens INTEGER NOT NULL DEFAULT 0,
+    cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+    cost_usd REAL NOT NULL DEFAULT 0,
+    PRIMARY KEY (session_uuid, bucket_start, model),
+    FOREIGN KEY (session_uuid) REFERENCES sessions(uuid) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_usage_buckets_start ON session_usage_buckets(bucket_start);
+"""
+
+SCHEMA_SQL = SCHEMA_SQL + _USAGE_BUCKETS_SCHEMA_SQL
+
 # FTS5 index over sessions and its sync triggers; also re-applied by _ensure_sessions_fts.
 _SESSIONS_FTS_SQL = """
 -- Full-text search (FTS5)
@@ -418,6 +437,16 @@ END;
 
 SCHEMA_SQL = SCHEMA_SQL + _SESSIONS_FTS_SQL
 
+# v29: key/value state of the index itself, e.g. the pricing fingerprint behind stored costs
+_INDEX_META_SQL = """
+CREATE TABLE IF NOT EXISTS index_meta (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+"""
+
+SCHEMA_SQL = SCHEMA_SQL + _INDEX_META_SQL
+
 
 def ensure_schema(conn: sqlite3.Connection) -> None:
     """
@@ -439,8 +468,29 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
     # v13 incremental block below (ALTER is not idempotent).
     conn.executescript(_SHELLS_CRON_SCHEMA_SQL)
 
+    # Same cross-branch guard for the v29 index_meta table.
+    conn.executescript(_INDEX_META_SQL)
+
+    # Same cross-branch guard for the usage buckets table (CREATE IF NOT EXISTS).
+    buckets_existed = (
+        conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='session_usage_buckets'"
+        ).fetchone()
+        is not None
+    )
+    conn.executescript(_USAGE_BUCKETS_SCHEMA_SQL)
+
     # Same cross-branch guard for sessions columns added after v19.
     columns_added = _ensure_session_columns(conn)
+
+    # A freshly created buckets table is empty; re-index so it fills.
+    if not buckets_existed and not columns_added:
+        has_sessions = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='sessions'"
+        ).fetchone()
+        if has_sessions:
+            conn.execute("UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1")
+            conn.commit()
 
     # Upgraded DBs can lose the sessions_fts triggers, which freezes search (issue #145).
     _ensure_sessions_fts(conn)
@@ -878,6 +928,30 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
                     "WHERE project_path <> (SELECT p.project_path FROM projects p "
                     "WHERE p.encoded_name = sessions.project_encoded_name) COLLATE NOCASE"
                 )
+
+        if current_version < 28:
+            logger.info(
+                "Migrating → v28: re-index sessions whose project_path isn't their project "
+                "dir's (v27 compared against a project path that could be stray too)"
+            )
+            has_sessions = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='sessions'"
+            ).fetchone()
+            if has_sessions and not columns_added:
+                from models.project import Project
+
+                conn.create_function("encodes_to", 2, Project.encodes_to, deterministic=True)
+                conn.execute(
+                    "UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1 "
+                    "WHERE project_path IS NOT NULL "
+                    "AND NOT encodes_to(LOWER(project_path), LOWER(project_encoded_name))"
+                )
+
+        # v29: index_meta comes from the guard above; the first sync then re-prices every session
+
+        if current_version < 30:
+            # session_usage_buckets is created, and the re-index forced, above.
+            logger.info("Migrating → v30: session_usage_buckets")
 
     # Record version
     conn.execute(

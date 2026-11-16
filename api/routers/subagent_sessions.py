@@ -160,9 +160,7 @@ def _determine_subagent_type(parent_session: Session, agent_id: str) -> Optional
     """
     from services.subagent_types import get_all_subagent_types
 
-    jsonl_path = parent_session.jsonl_path
-    subagents_dir = jsonl_path.parent / jsonl_path.stem / "subagents"
-    types = get_all_subagent_types(jsonl_path, subagents_dir)
+    types = get_all_subagent_types(parent_session.jsonl_path, parent_session.list_subagent_paths())
     result = types.get(agent_id)
     # Convert internal classification markers to None for the API response
     if result and result.startswith("_"):

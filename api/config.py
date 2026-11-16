@@ -28,6 +28,11 @@ class Settings(BaseSettings):
         description="Base directory for Claude Code data",
     )
 
+    pricing_override_path: Path = Field(
+        default_factory=lambda: Path.home() / ".claude_karma" / "pricing.json",
+        description="User pricing override file, read once at startup",
+    )
+
     # File size limits (in bytes)
     max_agent_size: int = Field(
         default=100_000,  # 100KB

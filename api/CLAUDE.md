@@ -101,8 +101,8 @@ Project (entry point)
 
 ### Path Encoding
 
-Project paths are URL-encoded: leading `/` becomes `-`, all `/` become `-`
-- `/Users/me/repo` → `-Users-me-repo`
+Project paths are encoded: every character except ASCII letters and digits becomes `-`; names over 200 characters are cut and get a hash suffix (`Project.encode_path`)
+- `/Users/me/my_repo` → `-Users-me-my-repo`
 
 ## Key Patterns
 
@@ -119,6 +119,13 @@ Related sessions detected via:
 
 ### Compaction Detection
 Sessions with `SummaryMessage` indicate compacted/resumed conversations. Use `CompactionDetector` to identify.
+
+### Model Pricing
+Prices (USD per 1M tokens) ship in `models/pricing.json` and load once at startup. Users override them in `~/.claude_karma/pricing.json` (or the path in `CLAUDE_KARMA_PRICING_OVERRIDE_PATH`), which has the same shape. An override entry under `models` replaces that model's whole entry, a new model ID is added, and `multipliers` merge per key. Invalid entries are logged and skipped. When the effective prices change, the indexer re-parses every session so stored costs match. It compares a fingerprint kept in the `index_meta` table.
+
+```json
+{"models": {"claude-sonnet-5-5": {"input": 2.0, "output": 10.0, "cache_read": 0.05}}}
+```
 
 ### Live Sessions
 Real-time state tracked in `~/.claude_karma/live-sessions/{slug}.json` via Claude Code hooks (captain-hook library).

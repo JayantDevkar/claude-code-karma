@@ -524,7 +524,7 @@
         <tr><td class="what">Karma metadata index</td><td class="path">~/.claude_karma/metadata.db</td></tr>
       </tbody>
     </table>
-    <p style="font-size:13px; color:var(--ink-faint); margin-top:12px;">Path encoding: a leading <span class="mono" style="font-size:12px">/</span> becomes <span class="mono" style="font-size:12px">-</span>, and every other <span class="mono" style="font-size:12px">/</span> becomes <span class="mono" style="font-size:12px">-</span> — so <span class="mono" style="font-size:12px">/Users/me/repo</span> → <span class="mono" style="font-size:12px">-Users-me-repo</span>.</p>
+    <p style="font-size:13px; color:var(--ink-faint); margin-top:12px;">Path encoding: every character except ASCII letters and digits becomes <span class="mono" style="font-size:12px">-</span> — so <span class="mono" style="font-size:12px">/Users/me/my_repo</span> → <span class="mono" style="font-size:12px">-Users-me-my-repo</span>.</p>
 
     <h3 style="font-size:21px; margin:38px 0 14px;">Live session tracking</h3>
     <p style="max-width:66ch; color:var(--ink-soft);">Opt-in Claude Code hooks write small JSON state files as a session moves through its lifecycle. The dashboard polls those files to show real-time status — no daemon, no socket, just the filesystem.</p>

@@ -436,6 +436,8 @@ def list_projects(request: Request):
                                 git_root_path=git_root,
                                 is_nested_project=is_nested,
                                 latest_session_time=row.get("last_activity"),
+                                total_tokens=row.get("total_tokens"),
+                                total_cost=row.get("total_cost"),
                             )
                         )
                     return summaries
@@ -776,18 +778,9 @@ def _lookup_session_in_project(
         # Slug match
         slug_cache = _get_slug_cache(project)
         if identifier in slug_cache:
-            session_uuid = slug_cache[identifier]
-            jsonl_path = next(
-                (
-                    d / f"{session_uuid}.jsonl"
-                    for d in project.session_dirs
-                    if (d / f"{session_uuid}.jsonl").exists()
-                ),
-                project.project_dir / f"{session_uuid}.jsonl",
-            )
-            if jsonl_path.exists():
+            session = project.get_session(slug_cache[identifier])
+            if session is not None:
                 try:
-                    session = Session.from_path(jsonl_path)
                     return SessionLookupResult(
                         uuid=session.uuid,
                         slug=session.slug,
@@ -1265,7 +1258,7 @@ def get_project_analytics(
     else:
         sessions = project.list_sessions()
 
-    return _calculate_analytics_from_sessions(sessions)
+    return _calculate_analytics_from_sessions(sessions, start_dt=start_dt, end_dt=end_dt)
 
 
 @router.get("/projects/{encoded_name}/agents", response_model=list[AgentSummary])
