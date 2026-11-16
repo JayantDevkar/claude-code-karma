@@ -388,6 +388,10 @@ describe('getModelDisplayName', () => {
 		expect(getModelDisplayName('claude-3-haiku')).toBe('Haiku');
 	});
 
+	it('returns Fable for fable model', () => {
+		expect(getModelDisplayName('claude-fable-5-1')).toBe('Fable');
+	});
+
 	it('returns Opus 4.5 for opus-4-5 model', () => {
 		expect(getModelDisplayName('claude-opus-4-5-20251101')).toBe('Opus 4.5');
 	});
@@ -421,6 +425,10 @@ describe('getModelDisplayNameCompact', () => {
 		expect(getModelDisplayNameCompact('claude-3-haiku')).toBe('Haiku');
 	});
 
+	it('returns Fable for fable model', () => {
+		expect(getModelDisplayNameCompact('claude-fable-5-1')).toBe('Fable');
+	});
+
 	it('slices first 8 chars for unknown model', () => {
 		expect(getModelDisplayNameCompact('abcdefghijklmnop')).toBe('abcdefgh');
 	});
@@ -440,6 +448,10 @@ describe('getModelBadgeLabel', () => {
 
 	it('returns Haiku for haiku model', () => {
 		expect(getModelBadgeLabel('claude-3-haiku')).toBe('Haiku');
+	});
+
+	it('returns F for fable model', () => {
+		expect(getModelBadgeLabel('claude-fable-5-1')).toBe('F');
 	});
 
 	it('returns O for generic opus', () => {
@@ -698,6 +710,10 @@ describe('getModelColor', () => {
 
 	it('returns haiku for haiku model', () => {
 		expect(getModelColor(['claude-3-haiku'])).toBe('haiku');
+	});
+
+	it('returns fable for fable model', () => {
+		expect(getModelColor(['claude-fable-5-1'])).toBe('fable');
 	});
 
 	it('returns default for unrecognized model', () => {

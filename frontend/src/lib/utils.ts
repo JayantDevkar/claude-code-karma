@@ -490,6 +490,7 @@ export function getModelDisplayName(modelName: string): string {
 	if (modelName.includes('sonnet')) return 'Sonnet';
 	if (modelName.includes('opus')) return 'Opus';
 	if (modelName.includes('haiku')) return 'Haiku';
+	if (modelName.includes('fable')) return 'Fable';
 	return modelName.replace('claude-', '').replace(/-/g, ' ');
 }
 
@@ -502,6 +503,7 @@ export function getModelDisplayNameCompact(modelName: string): string {
 	if (modelName.includes('sonnet')) return 'Sonnet';
 	if (modelName.includes('opus')) return 'Opus';
 	if (modelName.includes('haiku')) return 'Haiku';
+	if (modelName.includes('fable')) return 'Fable';
 	return modelName.slice(0, 8);
 }
 
@@ -516,6 +518,7 @@ export function getModelBadgeLabel(modelName: string): string {
 	if (modelName.includes('sonnet-4-5') || modelName.includes('sonnet-4.5')) return 'S 4.5';
 	if (modelName.includes('sonnet')) return 'S';
 	if (modelName.includes('haiku')) return 'Haiku';
+	if (modelName.includes('fable')) return 'F';
 	return 'non-claude';
 }
 
@@ -698,7 +701,7 @@ export function getTimestampRangeForFilter(
 // Model Color Utilities
 // ============================================
 
-export type ModelColor = 'opus' | 'sonnet' | 'haiku' | 'default';
+export type ModelColor = 'opus' | 'sonnet' | 'haiku' | 'fable' | 'default';
 
 /**
  * Detect model color from model names array
@@ -709,6 +712,7 @@ export function getModelColor(models: string[]): ModelColor {
 	if (primary.includes('opus')) return 'opus';
 	if (primary.includes('sonnet')) return 'sonnet';
 	if (primary.includes('haiku')) return 'haiku';
+	if (primary.includes('fable')) return 'fable';
 	return 'default';
 }
 
@@ -736,6 +740,12 @@ export const modelColorConfig: Record<
 		badge: 'bg-[var(--model-haiku-subtle)] border-[var(--model-haiku)]/20',
 		sparkle: 'text-[var(--model-haiku)]',
 		iconBg: 'var(--model-haiku-subtle)'
+	},
+	fable: {
+		border: 'var(--model-fable)',
+		badge: 'bg-[var(--model-fable-subtle)] border-[var(--model-fable)]/20',
+		sparkle: 'text-[var(--model-fable)]',
+		iconBg: 'var(--model-fable-subtle)'
 	},
 	default: {
 		border: 'var(--accent)',
