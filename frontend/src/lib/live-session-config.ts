@@ -8,6 +8,8 @@ import type { LiveSessionStatus, LiveSessionSummary, StopError } from './api-typ
 export interface StatusConfig {
 	/** Primary color for status indicator and text */
 	color: string;
+	/** Text color where `color` is too light for AA on a light background */
+	textColor?: string;
 	/** Display label for the status */
 	label: string;
 	/** Whether the status indicator should pulse/animate */
@@ -66,6 +68,7 @@ export const statusConfig: Record<LiveSessionStatus, StatusConfig> = {
 	// No pulse: a usage limit usually can't be acted on until it resets.
 	interrupted: {
 		color: 'var(--nav-orange)',
+		textColor: 'var(--status-interrupted-text)',
 		label: 'interrupted',
 		pulse: false,
 		bgTint: 'var(--status-interrupted-bg)'

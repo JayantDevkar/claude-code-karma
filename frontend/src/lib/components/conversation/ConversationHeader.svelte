@@ -98,7 +98,7 @@
 	// Status configuration for live sessions
 	const statusConfig: Record<
 		LiveSessionStatus,
-		{ color: string; label: string; pulse: boolean }
+		{ color: string; textColor?: string; label: string; pulse: boolean }
 	> = {
 		starting: { color: 'var(--nav-purple)', label: 'starting', pulse: true },
 		active: { color: 'var(--success)', label: 'active', pulse: true },
@@ -106,7 +106,12 @@
 		waiting: { color: 'var(--info)', label: 'waiting', pulse: false },
 		stopped: { color: 'var(--text-muted)', label: 'stopped', pulse: false },
 		stale: { color: 'var(--error)', label: 'stale', pulse: false },
-		interrupted: { color: 'var(--nav-orange)', label: 'interrupted', pulse: false },
+		interrupted: {
+			color: 'var(--nav-orange)',
+			textColor: 'var(--status-interrupted-text)',
+			label: 'interrupted',
+			pulse: false
+		},
 		ended: { color: 'var(--text-faint)', label: 'ended', pulse: false }
 	};
 
@@ -481,7 +486,7 @@
 				</div>
 			{/snippet}
 			{#snippet headerRight()}
-				<div class="flex items-center gap-2">
+				<div class="flex flex-wrap items-center gap-2">
 					{#if liveStatus && liveStatus.status !== 'ended'}
 						{@const config = statusConfig[liveStatus.status]}
 						<div
@@ -498,7 +503,7 @@
 							></span>
 							<span
 								class="text-xs font-medium uppercase tracking-wide"
-								style="color: {config.color}"
+								style="color: {config.textColor ?? config.color}"
 							>
 								{config.label}
 							</span>

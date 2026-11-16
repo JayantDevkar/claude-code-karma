@@ -163,9 +163,8 @@
 			(s) => s.status === 'active' || s.status === 'waiting' || s.status === 'starting'
 		).length,
 		idle: sessions.filter((s) => s.status === 'idle').length,
-		stopped: sessions.filter(
-			(s) => s.status === 'stopped' || s.status === 'stale' || s.status === 'interrupted'
-		).length
+		stopped: sessions.filter((s) => s.status === 'stopped' || s.status === 'stale').length,
+		interrupted: sessions.filter((s) => s.status === 'interrupted').length
 	});
 
 	const activeSessions = $derived(visibleLiveSessions(sessions));
@@ -280,6 +279,9 @@
 							{sessionCounts.stopped > 0
 								? `${sessionCounts.active + sessionCounts.idle > 0 ? ', ' : ''}${sessionCounts.stopped} stopped`
 								: ''}
+							{sessionCounts.interrupted > 0
+								? `${sessionCounts.active + sessionCounts.idle + sessionCounts.stopped > 0 ? ', ' : ''}${sessionCounts.interrupted} interrupted`
+								: ''}
 						{/if}
 					</span>
 				{/if}
@@ -359,7 +361,10 @@
 										<span class="session-name font-mono"
 											>{getDisplayName(session)}</span
 										>
-										<span class="status-label" style="color: {config.color}">
+										<span
+											class="status-label"
+											style="color: {config.textColor ?? config.color}"
+										>
 											{config.label.toUpperCase()}{#if session.status === 'interrupted' && session.stop_error}<span
 													class="stop-reason"
 													title={`${stopErrorReason(session.stop_error)} (${stopErrorTooltip(session.stop_error)})`}

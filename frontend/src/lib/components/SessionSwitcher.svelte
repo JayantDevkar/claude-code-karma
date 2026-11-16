@@ -220,7 +220,11 @@
 					</div>
 					<!-- Never wraps — a second line would shift the tiles mid-cycle. -->
 					<div class="detail-meta">
-						<span class="meta-status" style="--tone: {config.color}">
+						<span
+							class="meta-status"
+							style="--tone: {config.color}; --tone-text: {config.textColor ??
+								config.color}"
+						>
 							<span class="meta-dot"></span>{config.label}
 						</span>
 						{#if selected.active_subagent_count > 0}
@@ -504,7 +508,7 @@
 		text-transform: uppercase;
 		letter-spacing: 0.4px;
 		font-size: 13px;
-		color: var(--tone);
+		color: var(--tone-text);
 	}
 
 	.meta-dot {
