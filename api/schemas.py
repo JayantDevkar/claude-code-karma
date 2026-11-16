@@ -211,6 +211,12 @@ class SessionSummary(BaseModel):
         None,
         description="Extra session root the session was synced from; None for this machine",
     )
+    tokens_with_subagents: Optional[int] = Field(
+        None, description="Input + output + cache reads/writes, incl. subagents (SQLite lists)"
+    )
+    cost_with_subagents: Optional[float] = Field(
+        None, description="Session cost incl. subagents, in USD (SQLite lists)"
+    )
 
 
 class CompactionSummary(BaseModel):

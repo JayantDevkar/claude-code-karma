@@ -490,6 +490,8 @@ async def get_agent_sessions(
                             session_titles=row.get("session_titles", [])
                             or title_cache.get_titles(row["project_encoded_name"], row["uuid"])
                             or [],
+                            tokens_with_subagents=row.get("tokens_with_subagents"),
+                            cost_with_subagents=row.get("cost_with_subagents"),
                         )
                     )
 
