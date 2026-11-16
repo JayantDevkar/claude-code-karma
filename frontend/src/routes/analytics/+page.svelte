@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import { browser } from '$app/environment';
 	import { Activity, Zap, Database, Cpu, FolderOpen, Clock, BarChart3 } from 'lucide-svelte';
-	import { goto } from '$app/navigation';
+	import { goto, replaceState } from '$app/navigation';
 	import { page, navigating } from '$app/stores';
 	import SkeletonBox from '$lib/components/skeleton/SkeletonBox.svelte';
 	import SkeletonText from '$lib/components/skeleton/SkeletonText.svelte';
@@ -36,24 +36,36 @@
 		{ label: 'Cost', value: 'cost' }
 	];
 
-	let selectedMetric = $derived.by((): AnalyticsMetric => {
-		const m = $page.url.searchParams.get('metric');
-		return m === 'tokens' || m === 'cost' ? m : 'sessions';
-	});
+	const initialMetric = $page.url.searchParams.get('metric');
+	let selectedMetric = $state<AnalyticsMetric>(
+		initialMetric === 'tokens' || initialMetric === 'cost' ? initialMetric : 'sessions'
+	);
 
-	const handleMetricChange = (m: AnalyticsMetric) => {
-		const url = new URL($page.url);
+	const setMetricParam = (url: URL, m: AnalyticsMetric) => {
 		if (m === 'sessions') {
 			url.searchParams.delete('metric');
 		} else {
 			url.searchParams.set('metric', m);
 		}
-		goto(url.toString(), { replaceState: true, noScroll: true, keepFocus: true });
+	};
+
+	const handleMetricChange = (m: AnalyticsMetric) => {
+		selectedMetric = m;
+		if (!browser) return;
+		const url = new URL(window.location.href);
+		setMetricParam(url, m);
+		// Shallow routing (no navigation), so the layout skeleton does not remount the chart
+		try {
+			replaceState(url.toString(), {});
+		} catch {
+			// Router may not be initialized yet during SSR/hydration
+		}
 	};
 
 	const handleFilterChange = (filter: AnalyticsFilterPeriod) => {
 		const url = new URL($page.url);
 		const range = getTimestampRangeForFilter(filter);
+		setMetricParam(url, selectedMetric);
 
 		// Always include timezone offset for accurate local date grouping
 		if (browser) {
@@ -155,6 +167,7 @@
 
 	// --- Helpers ---
 	const formatK = (n: number) => {
+		if (n >= 1000000000) return (n / 1e9).toFixed(1) + 'B';
 		if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
 		if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
 		return n.toString();
