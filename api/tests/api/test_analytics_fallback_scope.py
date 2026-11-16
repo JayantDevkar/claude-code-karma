@@ -149,3 +149,40 @@ def test_fallback_window_matches_sqlite_breakdown(indexed_session):
 
     for field in BREAKDOWN_FIELDS:
         assert getattr(analytics, field) == expected[field], field
+
+
+def test_fallback_handles_index_entries_mixed_with_sessions(tmp_path: Path):
+    """Global fallback mixes index entries (projects with sessions-index.json) with full
+    sessions (projects without); every item must be counted, not crash on Session methods."""
+    from models.session_index import SessionIndexEntry
+
+    indexed = tmp_path / "-indexed"
+    plain = tmp_path / "-plain"
+    (plain / "s1" / "subagents").mkdir(parents=True)
+    indexed.mkdir()
+    plain_path = plain / "s1.jsonl"
+    plain_path.write_text(_assistant_line("m1") + "\n")
+    (plain / "s1" / "subagents" / "agent-a1.jsonl").write_text(_assistant_line("x1") + "\n")
+    indexed_path = indexed / "s2.jsonl"
+    indexed_path.write_text(_assistant_line("m2") + "\n")
+
+    def entry(path: Path) -> SessionIndexEntry:
+        t = datetime(2026, 10, 1, 9, 0, tzinfo=timezone.utc)
+        return SessionIndexEntry(
+            session_id=path.stem, full_path=str(path), file_mtime=0, created=t, modified=t
+        )
+
+    analytics = _calculate_analytics_from_sessions(
+        [
+            Session.from_path(plain_path, claude_base_dir=tmp_path),
+            entry(indexed_path),
+            # sessions-index.json can still list a session whose JSONL was deleted
+            entry(indexed / "gone.jsonl"),
+        ],
+        use_index=True,
+    )
+
+    # s1 (100) + its subagent (100) + s2 (100); the deleted session is skipped
+    assert analytics.total_input_tokens == 300
+    assert analytics.total_output_tokens == 150
+    assert analytics.total_sessions == 2

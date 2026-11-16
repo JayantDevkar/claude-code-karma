@@ -557,6 +557,25 @@ def _calculate_analytics_from_index(
     )
 
 
+def _as_full_sessions(sessions: list) -> list:
+    """Replace each SessionIndexEntry with the Session it points to.
+
+    Entries whose JSONL is gone are dropped: sessions-index.json can still list them.
+    """
+    from models.session import Session
+    from models.session_index import SessionIndexEntry
+
+    full = []
+    for session in sessions:
+        if isinstance(session, SessionIndexEntry):
+            path = Path(session.full_path)
+            if not path.is_file():
+                continue
+            session = Session.from_path(path)
+        full.append(session)
+    return full
+
+
 def _calculate_analytics_from_sessions(
     sessions: list,
     tz_offset_minutes: int = 0,
@@ -583,6 +602,10 @@ def _calculate_analytics_from_sessions(
 
     if use_index and sessions and all(isinstance(s, SessionIndexEntry) for s in sessions):
         return _calculate_analytics_from_index(sessions, tz_offset_minutes)
+
+    # The global fallback can mix index entries (projects with sessions-index.json)
+    # with full sessions; the full calculation below needs every item as a Session.
+    sessions = _as_full_sessions(sessions)
 
     total_input_tokens = 0
     total_output_tokens = 0
