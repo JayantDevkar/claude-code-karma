@@ -403,7 +403,7 @@ echo '{"hook_event_name":"SessionStart","session_id":"test-123","cwd":"/tmp","tr
 ls ~/.claude_karma/live-sessions/
 ```
 
-> **Agent notes:** Confirm settings.json has all 8 events. Test manual invocation — should not error. Check live-sessions directory exists after test.
+> **Agent notes:** Confirm settings.json has all 9 events. Test manual invocation — should not error. Check live-sessions directory exists after test.
 
 ---
 

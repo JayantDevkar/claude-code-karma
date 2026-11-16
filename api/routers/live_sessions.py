@@ -184,6 +184,16 @@ def reported_subagent_status(s: SubagentState, session_status: SessionStatus) ->
     return s.status
 
 
+def reported_subagent_completed_at(
+    s: SubagentState, state: LiveSessionState, session_status: SessionStatus
+) -> str | None:
+    """ISO completed_at; an interrupted subagent's duration stops when its session last updated."""
+    done = s.completed_at
+    if done is None and reported_subagent_status(s, session_status) == SubagentStatus.INTERRUPTED:
+        done = state.updated_at
+    return done.isoformat() if done else None
+
+
 def live_active_duration(state: LiveSessionState) -> float:
     """Active time from the transcript, as on the session page; wall clock if it can't be read."""
     span = state.duration_seconds
@@ -241,7 +251,7 @@ def state_to_summary(
                 "status": reported_subagent_status(s, status).value,
                 "transcript_path": s.transcript_path,
                 "started_at": s.started_at.isoformat() if s.started_at else None,
-                "completed_at": s.completed_at.isoformat() if s.completed_at else None,
+                "completed_at": reported_subagent_completed_at(s, state, status),
                 "duration_ms": getattr(s, "duration_ms", None),
                 "stop_error": s.stop_error.model_dump(mode="json") if s.stop_error else None,
             }

@@ -30,7 +30,7 @@ from http_caching import (
 )
 from models import Session
 from models.live_session import load_live_session
-from routers.live_sessions import determine_status
+from routers.live_sessions import determine_status, reported_subagent_status
 from schemas import (
     ConversationContext,
     SubagentSessionDetail,
@@ -399,11 +399,11 @@ def get_subagent_live_status(encoded_name: str, session_uuid: str, agent_id: str
     subagent_state = state.subagents.get(agent_id)
 
     # Build response with parent session status context
-    parent_status = determine_status(state).value
+    parent_status = determine_status(state)
 
     response = {
         "parent_session_id": state.session_id,
-        "parent_status": parent_status,
+        "parent_status": parent_status.value,
         "agent_id": agent_id,
         "subagent": None,
     }
@@ -412,9 +412,7 @@ def get_subagent_live_status(encoded_name: str, session_uuid: str, agent_id: str
         response["subagent"] = {
             "agent_id": subagent_state.agent_id,
             "agent_type": subagent_state.agent_type,
-            "status": subagent_state.status.value
-            if hasattr(subagent_state.status, "value")
-            else str(subagent_state.status),
+            "status": reported_subagent_status(subagent_state, parent_status).value,
             "started_at": subagent_state.started_at.isoformat()
             if subagent_state.started_at
             else None,

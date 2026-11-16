@@ -7,6 +7,9 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
 _tests_dir = Path(__file__).resolve().parent.parent
 _api_dir = _tests_dir.parent
 if str(_api_dir) not in sys.path:
@@ -112,3 +115,48 @@ def test_stuck_starting_counts_as_ended_for_subagents(tmp_path):
 def test_old_file_without_stop_error_parses(tmp_path):
     summary = state_to_summary(_load(tmp_path, "ENDED"))
     assert summary.stop_error is None
+
+
+def test_interrupted_subagent_duration_freezes_at_session_update(tmp_path):
+    stored = _iso_ago(300)
+    state = _load(
+        tmp_path,
+        "ENDED",
+        idle_seconds=120,
+        subagents={
+            "a1": _subagent("a1", "running"),
+            "a2": _subagent("a2", "completed", completed_at=stored),
+        },
+    )
+    sub = state_to_summary(state).subagents
+    assert sub["a1"]["status"] == "interrupted"
+    assert sub["a1"]["completed_at"] == state.updated_at.isoformat()
+    assert sub["a2"]["completed_at"] == state.subagents["a2"].completed_at.isoformat()
+
+
+def test_running_subagent_of_live_session_keeps_completed_at_null(tmp_path):
+    state = _load(tmp_path, "LIVE", subagents={"a1": _subagent("a1", "running")})
+    assert state_to_summary(state).subagents["a1"]["completed_at"] is None
+
+
+def test_interrupted_rewrite_leaves_state_file_untouched(tmp_path):
+    state = _load(tmp_path, "ENDED", subagents={"a1": _subagent("a1", "running")})
+    path = tmp_path / "s-int-api.json"
+    before = path.read_bytes()
+    state_to_summary(state)
+    assert path.read_bytes() == before
+    assert json.loads(before)["subagents"]["a1"].get("completed_at") is None
+
+
+def test_live_status_endpoint_reports_interrupted(tmp_path, monkeypatch):
+    _load(tmp_path, "ENDED", subagents={"a1": _subagent("a1", "running")})
+
+    import models.live_session as live_model
+    from routers import subagent_sessions
+
+    monkeypatch.setattr(live_model, "get_live_sessions_dir", lambda: tmp_path)
+    app = FastAPI()
+    app.include_router(subagent_sessions.router, prefix="/agents")
+    r = TestClient(app).get("/agents/-home-alice-project/s-int-api/agents/a1/live-status")
+    assert r.status_code == 200
+    assert r.json()["subagent"]["status"] == "interrupted"

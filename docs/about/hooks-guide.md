@@ -39,9 +39,9 @@ Claude Code Karma ships three hook scripts in the `hooks/` directory.
 
 ### 1. live_session_tracker.py
 
-**Purpose:** Tracks session state in real time across 8 hook events.
+**Purpose:** Tracks session state in real time across 9 hook events.
 
-**Events handled:** SessionStart, SessionEnd, Stop, SubagentStart, SubagentStop, PostToolUse, UserPromptSubmit, Notification
+**Events handled:** SessionStart, SessionEnd, Stop, StopFailure, SubagentStart, SubagentStop, PostToolUse, UserPromptSubmit, Notification
 
 **State machine:**
 
