@@ -1642,6 +1642,9 @@ export interface McpServerTrend {
  * Session summary returned by MCP tools endpoints.
  */
 export interface McpSessionSummary {
+	ended_by?: EndedBy | null;
+	ended_resets_at?: string | null;
+	limit_hit_count?: number;
 	uuid: string;
 	slug: string | null;
 	project_encoded_name: string | null;

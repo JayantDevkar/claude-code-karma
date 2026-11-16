@@ -1,4 +1,4 @@
-"""Indexer persistence of API-error summaries (schema v28)."""
+"""Indexer persistence of API-error summaries."""
 
 from __future__ import annotations
 
@@ -144,7 +144,7 @@ def test_v27_db_migrates_and_reindexes():
         for col in _NEW_COLUMNS:
             conn.execute(f"ALTER TABLE {table} DROP COLUMN {col}")
     conn.execute("DELETE FROM schema_version")
-    conn.execute("INSERT INTO schema_version (version) VALUES (27)")
+    conn.execute("INSERT INTO schema_version (version) VALUES (?)", (SCHEMA_VERSION - 1,))
     conn.execute("INSERT INTO projects (encoded_name, project_path) VALUES ('-p', '/home/alice/p')")
     conn.execute(
         "INSERT INTO sessions (uuid, project_encoded_name, jsonl_mtime) VALUES ('s1', '-p', 100)"
@@ -160,7 +160,7 @@ def test_v27_db_migrates_and_reindexes():
 
 
 @needs_drop_column
-def test_db_stamped_28_without_subagent_columns_gains_them():
+def test_db_stamped_current_without_subagent_columns_gains_them():
     conn = sqlite3.connect(":memory:")
     ensure_schema(conn)
     for col in _NEW_COLUMNS:
@@ -170,7 +170,7 @@ def test_db_stamped_28_without_subagent_columns_gains_them():
         "INSERT INTO sessions (uuid, project_encoded_name, jsonl_mtime) VALUES ('s1', '-p', 100)"
     )
     conn.commit()
-    assert conn.execute("SELECT MAX(version) FROM schema_version").fetchone()[0] == 28
+    assert conn.execute("SELECT MAX(version) FROM schema_version").fetchone()[0] == SCHEMA_VERSION
 
     ensure_schema(conn)
 

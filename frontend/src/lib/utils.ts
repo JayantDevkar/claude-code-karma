@@ -1578,6 +1578,9 @@ export function toSessionWithContext(s: McpSessionSummary | SessionSummary): Ses
 		project_encoded_name: encoded,
 		project_path: encoded ?? '',
 		project_name: displayName || getProjectNameFromEncoded(encoded ?? ''),
-		machine: 'machine' in s ? s.machine : undefined
+		machine: 'machine' in s ? s.machine : undefined,
+		ended_by: s.ended_by,
+		ended_resets_at: s.ended_resets_at,
+		limit_hit_count: s.limit_hit_count
 	};
 }
