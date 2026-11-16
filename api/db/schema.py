@@ -10,7 +10,7 @@ import sqlite3
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 28
+SCHEMA_VERSION = 30
 
 SCHEMA_SQL = """
 -- Schema versioning
@@ -437,6 +437,16 @@ END;
 
 SCHEMA_SQL = SCHEMA_SQL + _SESSIONS_FTS_SQL
 
+# v29: key/value state of the index itself, e.g. the pricing fingerprint behind stored costs
+_INDEX_META_SQL = """
+CREATE TABLE IF NOT EXISTS index_meta (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+"""
+
+SCHEMA_SQL = SCHEMA_SQL + _INDEX_META_SQL
+
 
 def ensure_schema(conn: sqlite3.Connection) -> None:
     """
@@ -457,6 +467,9 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
     # sessions.needs_shell_cron_reindex ALTER is handled separately in the
     # v13 incremental block below (ALTER is not idempotent).
     conn.executescript(_SHELLS_CRON_SCHEMA_SQL)
+
+    # Same cross-branch guard for the v29 index_meta table.
+    conn.executescript(_INDEX_META_SQL)
 
     # Same cross-branch guard for the usage buckets table (CREATE IF NOT EXISTS).
     buckets_existed = (
@@ -917,8 +930,28 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
                 )
 
         if current_version < 28:
+            logger.info(
+                "Migrating → v28: re-index sessions whose project_path isn't their project "
+                "dir's (v27 compared against a project path that could be stray too)"
+            )
+            has_sessions = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='sessions'"
+            ).fetchone()
+            if has_sessions and not columns_added:
+                from models.project import Project
+
+                conn.create_function("encodes_to", 2, Project.encodes_to, deterministic=True)
+                conn.execute(
+                    "UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1 "
+                    "WHERE project_path IS NOT NULL "
+                    "AND NOT encodes_to(LOWER(project_path), LOWER(project_encoded_name))"
+                )
+
+        # v29: index_meta comes from the guard above; the first sync then re-prices every session
+
+        if current_version < 30:
             # session_usage_buckets is created, and the re-index forced, above.
-            logger.info("Migrating → v28: session_usage_buckets")
+            logger.info("Migrating → v30: session_usage_buckets")
 
     # Record version
     conn.execute(
