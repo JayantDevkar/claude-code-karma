@@ -343,7 +343,7 @@
 				</div>
 
 				{#if durationDisplay}
-					<div class="flex items-center gap-1" title="Duration: {durationDisplay}">
+					<div class="flex items-center gap-1 whitespace-nowrap" title="Duration: {durationDisplay}">
 						<Clock size={13} strokeWidth={2} class="text-[var(--nav-orange)]" />
 						<span class="tabular-nums font-medium">{durationDisplay}</span>
 					</div>

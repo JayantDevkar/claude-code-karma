@@ -336,7 +336,7 @@
 				<!-- Duration (live-updated for active sessions) -->
 				{#if formatDuration(displayDuration)}
 					<div
-						class="flex items-center gap-1"
+						class="flex items-center gap-1 whitespace-nowrap"
 						title="Duration: {formatDuration(displayDuration)}"
 					>
 						<Clock size={13} strokeWidth={2} class="text-[var(--nav-orange)]" />
