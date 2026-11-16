@@ -18,6 +18,7 @@ from cachetools import TTLCache
 from command_helpers import classify_invocation, is_command_category, is_skill_category
 from config import FILE_TOOL_MAPPINGS
 from models import AssistantMessage, Session, ToolUseBlock, UserMessage
+from models.api_error import ApiErrorSummary, ApiErrorTracker
 from models.conversation import ConversationEntity
 from utils import (
     FileOperation,
@@ -360,6 +361,7 @@ class _SubagentDigest:
     file_operations: Tuple[FileOperation, ...]
     initial_prompt: Optional[str]
     message_count: int
+    api_error_summary: ApiErrorSummary = ApiErrorSummary.EMPTY
 
 
 # Keyed by (path, mtime_ns, size): a finished subagent's file never changes, so its digest
@@ -411,9 +413,11 @@ def _read_subagent_digest(subagent) -> _SubagentDigest:
     file_operations: List[FileOperation] = []
     initial_prompt: Optional[str] = None
     message_count = 0
+    api_errors = ApiErrorTracker(skip_sidechain=False)
 
     for msg in subagent.iter_messages():
         message_count += 1
+        api_errors.feed(msg)
         if isinstance(msg, UserMessage):
             if initial_prompt is None:
                 initial_prompt = msg.content[:5000] if msg.content else None
@@ -441,6 +445,7 @@ def _read_subagent_digest(subagent) -> _SubagentDigest:
         file_operations=tuple(file_operations),
         initial_prompt=initial_prompt,
         message_count=message_count,
+        api_error_summary=api_errors.summary(),
     )
 
 
@@ -456,6 +461,7 @@ class SubagentInfo:
     initial_prompt: Optional[str]
     subagent_type: Optional[str]
     message_count: int
+    api_error_summary: ApiErrorSummary = ApiErrorSummary.EMPTY
 
 
 def collect_subagent_info(
@@ -520,6 +526,7 @@ def collect_subagent_info(
                 initial_prompt=initial_prompt,
                 subagent_type=subagent_type,
                 message_count=digest.message_count,
+                api_error_summary=digest.api_error_summary,
             )
         )
 

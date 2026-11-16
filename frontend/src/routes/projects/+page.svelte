@@ -31,6 +31,10 @@
 		| 'sessions-least'
 		| 'agents-most'
 		| 'agents-least'
+		| 'cost-most'
+		| 'cost-least'
+		| 'tokens-most'
+		| 'tokens-least'
 	>('recent');
 	let filterType = $state<'all' | 'git' | 'non-git'>('all');
 	let showSortDropdown = $state(false);
@@ -123,6 +127,18 @@
 			case 'agents-least':
 				sorted.sort((a, b) => a.agent_count - b.agent_count);
 				break;
+			case 'cost-most':
+				sorted.sort((a, b) => (b.total_cost ?? 0) - (a.total_cost ?? 0));
+				break;
+			case 'cost-least':
+				sorted.sort((a, b) => (a.total_cost ?? 0) - (b.total_cost ?? 0));
+				break;
+			case 'tokens-most':
+				sorted.sort((a, b) => (b.total_tokens ?? 0) - (a.total_tokens ?? 0));
+				break;
+			case 'tokens-least':
+				sorted.sort((a, b) => (a.total_tokens ?? 0) - (b.total_tokens ?? 0));
+				break;
 		}
 
 		// Group the filtered and sorted projects
@@ -176,7 +192,11 @@
 			'sessions-most': 'Most Sessions',
 			'sessions-least': 'Least Sessions',
 			'agents-most': 'Most Agents',
-			'agents-least': 'Least Agents'
+			'agents-least': 'Least Agents',
+			'cost-most': 'Highest Cost',
+			'cost-least': 'Lowest Cost',
+			'tokens-most': 'Most Tokens',
+			'tokens-least': 'Fewest Tokens'
 		};
 		return labels[sort];
 	}
@@ -381,6 +401,21 @@
 					>
 						Least Sessions
 					</button>
+					<div class="border-t border-[var(--border-subtle)] my-1"></div>
+					{#each ['cost-most', 'cost-least', 'tokens-most', 'tokens-least'] as const as option (option)}
+						<button
+							onclick={() => {
+								sortBy = option;
+								showSortDropdown = false;
+							}}
+							class="w-full px-4 py-1.5 text-left text-xs font-medium hover:bg-[var(--bg-subtle)] transition-colors {sortBy ===
+							option
+								? 'text-[var(--text-primary)]'
+								: 'text-[var(--text-secondary)]'}"
+						>
+							{getSortLabel(option)}
+						</button>
+					{/each}
 				</div>
 			{/if}
 		</div>

@@ -87,6 +87,25 @@ def get_last_sync_time() -> float:
     return _last_sync_complete
 
 
+def _reprice_if_pricing_changed(conn: sqlite3.Connection) -> bool:
+    """Force a re-parse of every session when model prices differ from those stored costs used."""
+    from models.usage import pricing_fingerprint
+
+    current = pricing_fingerprint()
+    row = conn.execute("SELECT value FROM index_meta WHERE key = 'pricing_fingerprint'").fetchone()
+    if row is not None and row[0] == current:
+        return False
+    reset = conn.execute("UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1").rowcount
+    conn.execute(
+        "INSERT OR REPLACE INTO index_meta (key, value) VALUES ('pricing_fingerprint', ?)",
+        (current,),
+    )
+    conn.commit()
+    if reset:
+        logger.info("Model pricing changed: re-pricing %d sessions", reset)
+    return True
+
+
 def sync_all_projects(conn: sqlite3.Connection) -> dict:
     """
     Sync all project directories into SQLite.
@@ -113,26 +132,34 @@ def sync_all_projects(conn: sqlite3.Connection) -> dict:
             return {"status": "no_projects_dir"}
 
         stats = {"total": 0, "indexed": 0, "skipped": 0, "errors": 0}
+        _reprice_if_pricing_changed(conn)
 
         from services.desktop_sessions import (
             get_real_project_encoded_name,
             is_worktree_project,
         )
+        from services.session_copies import superseded_copies
 
         # Two-pass indexing: normal projects first, then worktrees
-        worktree_dirs = []
+        project_dirs = [
+            d for d in projects_dir.iterdir() if d.is_dir() and is_encoded_project_dir(d.name)
+        ]
+        worktree_dirs = [d for d in project_dirs if is_worktree_project(d.name)]
         real_project_paths = {}
+        # A session copied into a worktree dir: index only its most complete copy
+        superseded = superseded_copies(
+            [d for d in project_dirs if d not in worktree_dirs] + worktree_dirs
+        )
 
         # First pass: normal projects
-        for encoded_dir in projects_dir.iterdir():
-            if not encoded_dir.is_dir() or not is_encoded_project_dir(encoded_dir.name):
-                continue
-            if is_worktree_project(encoded_dir.name):
-                worktree_dirs.append(encoded_dir)
+        for encoded_dir in project_dirs:
+            if encoded_dir in worktree_dirs:
                 continue
 
             try:
-                project_stats = sync_project(conn, encoded_dir)
+                project_stats = sync_project(
+                    conn, encoded_dir, skip_uuids=superseded.get(encoded_dir)
+                )
                 stats["total"] += project_stats["total"]
                 stats["indexed"] += project_stats["indexed"]
                 stats["skipped"] += project_stats["skipped"]
@@ -172,6 +199,7 @@ def sync_all_projects(conn: sqlite3.Connection) -> dict:
                         encoded_name_override=real_encoded,
                         project_path_override=real_path,
                         session_source=wt_source,
+                        skip_uuids=superseded.get(wt_dir),
                     )
                 else:
                     # Can't resolve — index as standalone (graceful degradation)
@@ -179,7 +207,7 @@ def sync_all_projects(conn: sqlite3.Connection) -> dict:
                         "Cannot resolve worktree %s to real project, indexing standalone",
                         wt_dir.name,
                     )
-                    project_stats = sync_project(conn, wt_dir)
+                    project_stats = sync_project(conn, wt_dir, skip_uuids=superseded.get(wt_dir))
                 stats["total"] += project_stats["total"]
                 stats["indexed"] += project_stats["indexed"]
                 stats["skipped"] += project_stats["skipped"]
@@ -402,10 +430,8 @@ def _index_session(
     initial_prompt = get_initial_prompt(session, max_length=500)
 
     # Count subagents via filesystem (fast, no JSONL parse)
-    subagent_count = 0
-    subagents_dir = jsonl_path.parent / uuid / "subagents"
-    if subagents_dir.exists():
-        subagent_count = len(list(subagents_dir.glob("agent-*.jsonl")))
+    subagent_paths = session.list_subagent_paths()
+    subagent_count = len(subagent_paths)
     subagents = session.list_subagents() if subagent_count else []
     subagent_cost = sum(agent.get_total_cost() for agent in subagents)
     subagent_usage = sum((agent.get_usage_summary() for agent in subagents), TokenUsage.zero())
@@ -418,6 +444,8 @@ def _index_session(
         from services.desktop_sessions import get_session_source
 
         session_source = get_session_source(uuid)
+
+    err = session.api_error_summary
 
     # Upsert session. ON CONFLICT instead of INSERT OR REPLACE: REPLACE deletes the
     # row and cascades to every child table, churning shell/cron ids on each re-index.
@@ -433,7 +461,7 @@ def _index_session(
             session_titles, is_continuation_marker, was_compacted,
             compaction_count, file_snapshot_count, subagent_count,
             jsonl_mtime, jsonl_size, session_source, source_encoded_name,
-            source_root, indexed_at
+            source_root, ended_by, ended_resets_at, limit_hit_count, indexed_at
         ) VALUES (
             ?, ?, ?, ?,
             ?, ?, ?, ?,
@@ -444,7 +472,7 @@ def _index_session(
             ?, ?, ?,
             ?, ?, ?,
             ?, ?, ?, ?,
-            ?, datetime('now')
+            ?, ?, ?, ?, datetime('now')
         )
         ON CONFLICT(uuid) DO UPDATE SET {_SESSION_UPSERT_SET}
         """,
@@ -481,8 +509,39 @@ def _index_session(
             session_source,
             source_encoded_name,
             source_root,
+            err.ended_by,
+            err.ended_resets_at.isoformat() if err.ended_resets_at else None,
+            err.limit_hit_count,
         ),
     )
+
+    # Replace usage buckets for the session plus all its subagents
+    from models.usage import merge_usage_buckets
+
+    buckets = merge_usage_buckets(
+        session.get_usage_buckets(), *(agent.get_usage_buckets() for agent in subagents)
+    )
+    conn.execute("DELETE FROM session_usage_buckets WHERE session_uuid = ?", (uuid,))
+    if buckets:
+        conn.executemany(
+            """INSERT INTO session_usage_buckets
+               (session_uuid, bucket_start, model, input_tokens, output_tokens,
+                cache_creation_tokens, cache_read_tokens, cost_usd)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            [
+                (
+                    uuid,
+                    start,
+                    model,
+                    b.usage.input_tokens,
+                    b.usage.output_tokens,
+                    b.usage.cache_creation_input_tokens,
+                    b.usage.cache_read_input_tokens,
+                    b.cost,
+                )
+                for (start, model), b in buckets.items()
+            ],
+        )
 
     # Upsert tool usage (INSERT OR REPLACE + cleanup to avoid DELETE gap)
     if tools_used:
@@ -549,7 +608,7 @@ def _index_session(
         try:
             from services.subagent_types import get_all_subagent_types
 
-            subagent_types = get_all_subagent_types(jsonl_path, subagents_dir)
+            subagent_types = get_all_subagent_types(jsonl_path, subagent_paths)
             for subagent in subagents:
                 subagent_type = subagent_types.get(subagent.agent_id, "_unknown")
                 if subagent_type == "_unknown":
@@ -559,11 +618,13 @@ def _index_session(
                     continue
                 usage = subagent.get_usage_summary()
                 duration = subagent.duration_seconds or 0.0
+                sub_err = subagent.api_error_summary
                 conn.execute(
                     """INSERT INTO subagent_invocations
                        (session_uuid, agent_id, subagent_type, input_tokens,
-                        output_tokens, cost_usd, duration_seconds, started_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                        output_tokens, cost_usd, duration_seconds, started_at,
+                        ended_by, ended_resets_at, limit_hit_count)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         uuid,
                         subagent.agent_id,
@@ -573,6 +634,9 @@ def _index_session(
                         subagent.get_total_cost(),
                         duration,
                         subagent.start_time.isoformat() if subagent.start_time else None,
+                        sub_err.ended_by,
+                        sub_err.ended_resets_at.isoformat() if sub_err.ended_resets_at else None,
+                        sub_err.limit_hit_count,
                     ),
                 )
 
@@ -692,16 +756,18 @@ def _detect_project_path(session, encoded_name: str) -> Optional[str]:
 
     Tries working directories first, then decodes the encoded name.
     """
+    from models.project import Project
+
     # The cwd Claude Code named the dir after, else the one the session started in
     working_dirs = session.get_working_directories()
     if working_dirs:
-        return next((d for d in working_dirs if _encodes_to(d, encoded_name)), working_dirs[0])
+        return next(
+            (d for d in working_dirs if Project.encodes_to(d, encoded_name)), working_dirs[0]
+        )
 
     # Fallback: Decode from encoded name (lossy for paths with hyphens).
     # Only use the decoded path if it actually exists on disk, to avoid
     # storing wrong paths (e.g. "claude-karma" → "claude/karma").
-    from models.project import Project
-
     decoded = Project.decode_path(encoded_name)
     if Path(decoded).is_dir():
         return decoded
@@ -715,6 +781,7 @@ def _sync_extra_roots(
     conn: sqlite3.Connection, stats: dict, real_project_paths: dict[str, str]
 ) -> None:
     """Index project dirs from extra session roots under their canonical project."""
+    from services.session_copies import superseded_copies
     from services.session_roots import get_remote_dirs, invalidate
 
     # Pick up roots-config edits and new remote dirs on every full index pass
@@ -727,6 +794,8 @@ def _sync_extra_roots(
     local_uuids = {
         row[0] for row in conn.execute("SELECT uuid FROM sessions WHERE source_root IS NULL")
     }
+    # One session in several synced dirs (worktree copy, two roots): index its most complete copy
+    superseded = superseded_copies(rd.path for rd in remote_dirs)
     for rd in remote_dirs:
         try:
             project_stats = sync_project(
@@ -736,20 +805,13 @@ def _sync_extra_roots(
                 project_path_override=real_project_paths.get(rd.canonical) if rd.merged else None,
                 session_source=None,
                 source_root=rd.root.name,
-                skip_uuids=local_uuids,
+                skip_uuids=local_uuids | superseded.get(rd.path, set()),
             )
             for key in ("total", "indexed", "skipped", "errors"):
                 stats[key] += project_stats[key]
         except Exception as e:
             logger.warning("Error syncing %s from root %s: %s", rd.path.name, rd.root.name, e)
             stats["errors"] += 1
-        # The same session synced via two roots: the first root keeps it
-        try:
-            local_uuids.update(
-                p.stem for p in rd.path.glob("*.jsonl") if not p.name.startswith("agent-")
-            )
-        except OSError as e:  # a dropped mount must not abort the whole pass
-            logger.warning("Error listing %s from root %s: %s", rd.path.name, rd.root.name, e)
 
 
 def _cleanup_stale_sessions(conn: sqlite3.Connection, projects_dir: Path) -> None:
@@ -831,7 +893,8 @@ _SESSION_UPSERT_SET = ", ".join(
         "subagent_cache_read_tokens subagent_cache_creation_tokens "
         "initial_prompt git_branch models_used session_titles is_continuation_marker "
         "was_compacted compaction_count file_snapshot_count subagent_count jsonl_mtime jsonl_size "
-        "session_source source_encoded_name source_root indexed_at"
+        "session_source source_encoded_name source_root ended_by ended_resets_at "
+        "limit_hit_count indexed_at"
     ).split()
 )
 
@@ -846,6 +909,7 @@ _SESSION_CHILD_TABLES = (
     "background_shells",
     "cron_jobs",
     "cron_state_snapshots",
+    "session_usage_buckets",
 )
 _DELETE_CHUNK = 500
 
@@ -900,15 +964,6 @@ def _session_project_paths(conn: sqlite3.Connection, encoded_name: str) -> list[
     return [r[0] for r in rows]
 
 
-def _encodes_to(path: str, encoded_name: str) -> bool:
-    """Whether Claude Code would name a project dir `encoded_name` for `path`."""
-    from models.project import Project
-
-    # Windows drive letters appear as both C-- and c--
-    fold = str.lower if sys.platform == "win32" else str
-    return fold(Project.encode_path(path)) == fold(encoded_name)
-
-
 def _resolve_project_path(encoded_name: str, candidate_paths: list) -> str:
     """Pick the project_path whose encoding matches the encoded_name.
 
@@ -926,7 +981,7 @@ def _resolve_project_path(encoded_name: str, candidate_paths: list) -> str:
 
     # Find all paths whose encoding matches the encoded_name
     # (multiple paths can match due to lossy encoding: / and - both become -)
-    matches = [p for p in candidate_paths if p and _encodes_to(p, encoded_name)]
+    matches = [p for p in candidate_paths if p and Project.encodes_to(p, encoded_name)]
 
     if matches:
         matches.sort(key=lambda p: Project.encode_path(p) != encoded_name)  # exact case first
@@ -952,6 +1007,7 @@ def _update_project_summaries(conn: sqlite3.Connection) -> None:
     from pathlib import Path
 
     from config import settings
+    from services.desktop_sessions import is_worktree_project
     from services.git_identity import read_git_identity
     from services.session_roots import (
         get_extra_roots,
@@ -1017,6 +1073,23 @@ def _update_project_summaries(conn: sqlite3.Connection) -> None:
             ),
         )
 
+    # Session-less rows: drop worktree or dir-less ones, keep the rest with a zero count
+    empty = [
+        r[0]
+        for r in conn.execute(
+            "SELECT encoded_name FROM projects WHERE encoded_name NOT IN "
+            "(SELECT project_encoded_name FROM sessions WHERE project_encoded_name IS NOT NULL)"
+        )
+    ]
+    if empty:
+        gone = [
+            n for n in empty if is_worktree_project(n) or not (settings.projects_dir / n).is_dir()
+        ]
+        kept = set(empty) - set(gone)
+        conn.executemany("DELETE FROM projects WHERE encoded_name = ?", [(n,) for n in gone])
+        conn.executemany(
+            "UPDATE projects SET session_count = 0 WHERE encoded_name = ?", [(n,) for n in kept]
+        )
     conn.commit()
 
 

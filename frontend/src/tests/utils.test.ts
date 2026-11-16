@@ -33,6 +33,7 @@ import {
 	calculateSubagentDuration,
 	activeTimeWasCapped,
 	sessionOnlyTools,
+	toSessionWithContext,
 	stripFrontmatter,
 	demoteH1,
 	renderMarkdown
@@ -388,6 +389,10 @@ describe('getModelDisplayName', () => {
 		expect(getModelDisplayName('claude-3-haiku')).toBe('Haiku');
 	});
 
+	it('returns Fable for fable model', () => {
+		expect(getModelDisplayName('claude-fable-5-1')).toBe('Fable');
+	});
+
 	it('returns Opus 4.5 for opus-4-5 model', () => {
 		expect(getModelDisplayName('claude-opus-4-5-20251101')).toBe('Opus 4.5');
 	});
@@ -421,6 +426,10 @@ describe('getModelDisplayNameCompact', () => {
 		expect(getModelDisplayNameCompact('claude-3-haiku')).toBe('Haiku');
 	});
 
+	it('returns Fable for fable model', () => {
+		expect(getModelDisplayNameCompact('claude-fable-5-1')).toBe('Fable');
+	});
+
 	it('slices first 8 chars for unknown model', () => {
 		expect(getModelDisplayNameCompact('abcdefghijklmnop')).toBe('abcdefgh');
 	});
@@ -440,6 +449,10 @@ describe('getModelBadgeLabel', () => {
 
 	it('returns Haiku for haiku model', () => {
 		expect(getModelBadgeLabel('claude-3-haiku')).toBe('Haiku');
+	});
+
+	it('returns F for fable model', () => {
+		expect(getModelBadgeLabel('claude-fable-5-1')).toBe('F');
 	});
 
 	it('returns O for generic opus', () => {
@@ -698,6 +711,10 @@ describe('getModelColor', () => {
 
 	it('returns haiku for haiku model', () => {
 		expect(getModelColor(['claude-3-haiku'])).toBe('haiku');
+	});
+
+	it('returns fable for fable model', () => {
+		expect(getModelColor(['claude-fable-5-1'])).toBe('fable');
 	});
 
 	it('returns default for unrecognized model', () => {
@@ -1060,5 +1077,30 @@ describe('sessionOnlyTools', () => {
 		expect(sessionOnlyTools([{ tool_name: 'Grep', count: 4 }])).toEqual([
 			{ tool_name: 'Grep', count: 4 }
 		]);
+	});
+});
+
+describe('toSessionWithContext', () => {
+	it('carries the ended-by fields through to the card shape', () => {
+		const s = toSessionWithContext({
+			uuid: 'abc',
+			slug: 'a-slug',
+			project_encoded_name: '-Users-me-repo',
+			message_count: 3,
+			start_time: '2026-01-10T10:00:00Z',
+			end_time: null,
+			duration_seconds: null,
+			models_used: [],
+			subagent_count: 0,
+			initial_prompt: null,
+			git_branches: [],
+			session_titles: [],
+			ended_by: 'limit',
+			ended_resets_at: '2026-01-10T12:00:00+00:00',
+			limit_hit_count: 2
+		});
+		expect(s.ended_by).toBe('limit');
+		expect(s.ended_resets_at).toBe('2026-01-10T12:00:00+00:00');
+		expect(s.limit_hit_count).toBe(2);
 	});
 });

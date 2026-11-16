@@ -295,8 +295,12 @@ def session_to_summary(
     from services.session_roots import machine_for_path
 
     initial_prompt = get_initial_prompt(session, max_length=500)
+    api_errors = session.api_error_summary
 
     return SessionSummary(
+        ended_by=api_errors.ended_by,
+        ended_resets_at=api_errors.ended_resets_at,
+        limit_hit_count=api_errors.limit_hit_count,
         uuid=session.uuid,
         slug=session.slug,
         message_count=session.message_count,
@@ -330,6 +334,7 @@ def session_index_to_summary(
     """
     from services.session_roots import machine_for_path
 
+    # sessions-index.json has no error data, so ended_by/limit_hit_count stay at defaults.
     return SessionSummary(
         uuid=entry.session_id,
         slug=None,  # Not in index, will need Session for this
@@ -436,6 +441,8 @@ def list_projects(request: Request):
                                 git_root_path=git_root,
                                 is_nested_project=is_nested,
                                 latest_session_time=row.get("last_activity"),
+                                total_tokens=row.get("total_tokens"),
+                                total_cost=row.get("total_cost"),
                             )
                         )
                     return summaries
@@ -553,6 +560,11 @@ def get_project(
                             chain_info=chain_info,
                             session_source=row.get("session_source"),
                             machine=row.get("source_root"),
+                            ended_by=row.get("ended_by"),
+                            ended_resets_at=row.get("ended_resets_at"),
+                            limit_hit_count=row.get("limit_hit_count") or 0,
+                            tokens_with_subagents=row.get("tokens_with_subagents"),
+                            cost_with_subagents=row.get("cost_with_subagents"),
                         )
                     )
 
@@ -774,18 +786,9 @@ def _lookup_session_in_project(
         # Slug match
         slug_cache = _get_slug_cache(project)
         if identifier in slug_cache:
-            session_uuid = slug_cache[identifier]
-            jsonl_path = next(
-                (
-                    d / f"{session_uuid}.jsonl"
-                    for d in project.session_dirs
-                    if (d / f"{session_uuid}.jsonl").exists()
-                ),
-                project.project_dir / f"{session_uuid}.jsonl",
-            )
-            if jsonl_path.exists():
+            session = project.get_session(slug_cache[identifier])
+            if session is not None:
                 try:
-                    session = Session.from_path(jsonl_path)
                     return SessionLookupResult(
                         uuid=session.uuid,
                         slug=session.slug,
@@ -1263,7 +1266,7 @@ def get_project_analytics(
     else:
         sessions = project.list_sessions()
 
-    return _calculate_analytics_from_sessions(sessions)
+    return _calculate_analytics_from_sessions(sessions, start_dt=start_dt, end_dt=end_dt)
 
 
 @router.get("/projects/{encoded_name}/agents", response_model=list[AgentSummary])

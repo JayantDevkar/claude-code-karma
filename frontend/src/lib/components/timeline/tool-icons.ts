@@ -24,7 +24,10 @@ import {
 	PlusCircleIcon,
 	RefreshCwIcon,
 	ListIcon,
-	ClipboardListIcon
+	ClipboardListIcon,
+	CloudOffIcon,
+	HourglassIcon,
+	BanIcon
 } from 'lucide-svelte';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -157,6 +160,32 @@ export const eventTypeConfig = {
 		bgColor: 'bg-gray-500/10',
 		borderColor: 'border-gray-500/60',
 		leftAccent: 'border-l-gray-500'
+	},
+	// Muted by default; loud variants live in apiErrorToneConfig.
+	api_error: {
+		icon: CloudOffIcon,
+		color: 'text-[var(--text-muted)]',
+		bgColor: 'bg-[var(--bg-muted)]',
+		borderColor: 'border-[var(--border)]',
+		leftAccent: 'border-l-[var(--text-muted)]'
+	}
+} as const;
+
+// Loud styling for unhealed limit/refusal api_error events.
+export const apiErrorToneConfig = {
+	warning: {
+		icon: HourglassIcon,
+		color: 'text-[var(--warning)]',
+		bgColor: 'bg-[var(--warning-subtle)]',
+		borderColor: 'border-[var(--warning)]/60',
+		leftAccent: 'border-l-[var(--warning)]'
+	},
+	error: {
+		icon: BanIcon,
+		color: 'text-[var(--error)]',
+		bgColor: 'bg-[var(--error-subtle)]',
+		borderColor: 'border-[var(--error)]/60',
+		leftAccent: 'border-l-[var(--error)]'
 	}
 } as const;
 

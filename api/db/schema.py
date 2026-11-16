@@ -10,7 +10,7 @@ import sqlite3
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 27
+SCHEMA_VERSION = 31
 
 SCHEMA_SQL = """
 -- Schema versioning
@@ -56,6 +56,10 @@ CREATE TABLE IF NOT EXISTS sessions (
     source_root TEXT,
     -- When Karma last asked Haiku for a synced session's title; NULL = never
     title_attempted_at TEXT,
+    -- How the session ended when the last turn was an API error: limit/refusal/api_error
+    ended_by TEXT,
+    ended_resets_at TEXT,
+    limit_hit_count INTEGER DEFAULT 0,
     indexed_at TEXT DEFAULT (datetime('now')),
     -- Per-session flag set to 1 when a session needs the bg-shells/cron
     -- extraction pass (v13). Cleared by the indexer after processing.
@@ -119,6 +123,9 @@ CREATE TABLE IF NOT EXISTS subagent_invocations (
     cost_usd REAL DEFAULT 0,
     duration_seconds REAL DEFAULT 0,
     started_at TEXT,
+    ended_by TEXT,
+    ended_resets_at TEXT,
+    limit_hit_count INTEGER DEFAULT 0,
     FOREIGN KEY (session_uuid) REFERENCES sessions(uuid) ON DELETE CASCADE
 );
 
@@ -380,6 +387,25 @@ CREATE INDEX IF NOT EXISTS idx_cron_state_session
 # Append to canonical fresh-install schema.
 SCHEMA_SQL = SCHEMA_SQL + _SHELLS_CRON_SCHEMA_SQL
 
+# Per-session token usage in 15-minute buckets (main session plus subagents, merged).
+_USAGE_BUCKETS_SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS session_usage_buckets (
+    session_uuid TEXT NOT NULL,
+    bucket_start INTEGER NOT NULL,      -- UTC epoch seconds, multiple of 900
+    model TEXT NOT NULL,                -- '' when the response had no model
+    input_tokens INTEGER NOT NULL DEFAULT 0,          -- uncached input only
+    output_tokens INTEGER NOT NULL DEFAULT 0,
+    cache_creation_tokens INTEGER NOT NULL DEFAULT 0,
+    cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+    cost_usd REAL NOT NULL DEFAULT 0,
+    PRIMARY KEY (session_uuid, bucket_start, model),
+    FOREIGN KEY (session_uuid) REFERENCES sessions(uuid) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_usage_buckets_start ON session_usage_buckets(bucket_start);
+"""
+
+SCHEMA_SQL = SCHEMA_SQL + _USAGE_BUCKETS_SCHEMA_SQL
+
 # FTS5 index over sessions and its sync triggers; also re-applied by _ensure_sessions_fts.
 _SESSIONS_FTS_SQL = """
 -- Full-text search (FTS5)
@@ -418,6 +444,16 @@ END;
 
 SCHEMA_SQL = SCHEMA_SQL + _SESSIONS_FTS_SQL
 
+# v29: key/value state of the index itself, e.g. the pricing fingerprint behind stored costs
+_INDEX_META_SQL = """
+CREATE TABLE IF NOT EXISTS index_meta (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+"""
+
+SCHEMA_SQL = SCHEMA_SQL + _INDEX_META_SQL
+
 
 def ensure_schema(conn: sqlite3.Connection) -> None:
     """
@@ -439,8 +475,33 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
     # v13 incremental block below (ALTER is not idempotent).
     conn.executescript(_SHELLS_CRON_SCHEMA_SQL)
 
+    # Same cross-branch guard for the v29 index_meta table.
+    conn.executescript(_INDEX_META_SQL)
+
+    # Same cross-branch guard for the usage buckets table (CREATE IF NOT EXISTS).
+    buckets_existed = (
+        conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='session_usage_buckets'"
+        ).fetchone()
+        is not None
+    )
+    conn.executescript(_USAGE_BUCKETS_SCHEMA_SQL)
+
     # Same cross-branch guard for sessions columns added after v19.
     columns_added = _ensure_session_columns(conn)
+    if _ensure_subagent_columns(conn) and not columns_added:
+        # Existing subagent rows need the new values; the session columns did not nudge.
+        conn.execute("UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1")
+        conn.commit()
+
+    # A freshly created buckets table is empty; re-index so it fills.
+    if not buckets_existed and not columns_added:
+        has_sessions = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='sessions'"
+        ).fetchone()
+        if has_sessions:
+            conn.execute("UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1")
+            conn.commit()
 
     # Upgraded DBs can lose the sessions_fts triggers, which freezes search (issue #145).
     _ensure_sessions_fts(conn)
@@ -879,6 +940,32 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
                     "WHERE p.encoded_name = sessions.project_encoded_name) COLLATE NOCASE"
                 )
 
+        if current_version < 28:
+            logger.info(
+                "Migrating → v28: re-index sessions whose project_path isn't their project "
+                "dir's (v27 compared against a project path that could be stray too)"
+            )
+            has_sessions = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='sessions'"
+            ).fetchone()
+            if has_sessions and not columns_added:
+                from models.project import Project
+
+                conn.create_function("encodes_to", 2, Project.encodes_to, deterministic=True)
+                conn.execute(
+                    "UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1 "
+                    "WHERE project_path IS NOT NULL "
+                    "AND NOT encodes_to(LOWER(project_path), LOWER(project_encoded_name))"
+                )
+
+        # v29: index_meta comes from the guard above; the first sync then re-prices every session
+
+        if current_version < 30:
+            # session_usage_buckets is created, and the re-index forced, above.
+            logger.info("Migrating → v30: session_usage_buckets")
+
+        # v31: ended_by / ended_resets_at / limit_hit_count come from the column guards above
+
     # Record version
     conn.execute(
         "INSERT OR REPLACE INTO schema_version (version) VALUES (?)",
@@ -901,7 +988,30 @@ _SESSION_COLUMNS = [
     ("subagent_cache_creation_tokens", "INTEGER DEFAULT 0"),
     ("source_root", "TEXT"),
     ("title_attempted_at", "TEXT"),
+    ("ended_by", "TEXT"),
+    ("ended_resets_at", "TEXT"),
+    ("limit_hit_count", "INTEGER DEFAULT 0"),
 ]
+
+# subagent_invocations columns added after v27; also in SCHEMA_SQL for fresh installs.
+_SUBAGENT_COLUMNS = [
+    ("ended_by", "TEXT"),
+    ("ended_resets_at", "TEXT"),
+    ("limit_hit_count", "INTEGER DEFAULT 0"),
+]
+
+
+def _ensure_subagent_columns(conn: sqlite3.Connection) -> bool:
+    """Add missing subagent_invocations columns regardless of schema version; True if any added."""
+    existing = {r[1] for r in conn.execute("PRAGMA table_info(subagent_invocations)").fetchall()}
+    if not existing:
+        return False
+    missing = [(n, d) for n, d in _SUBAGENT_COLUMNS if n not in existing]
+    for name, ddl in missing:
+        conn.execute(f"ALTER TABLE subagent_invocations ADD COLUMN {name} {ddl}")
+    if missing:
+        conn.commit()
+    return bool(missing)
 
 # Columns whose NULL default is already right for existing rows (all local).
 _NO_REINDEX_COLUMNS = {"source_root", "title_attempted_at"}

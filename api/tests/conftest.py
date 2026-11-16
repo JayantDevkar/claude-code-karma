@@ -4,11 +4,17 @@ Pytest fixtures for Claude Code models tests.
 Provides sample data structures matching Claude Code's local storage format.
 """
 
+import os
 import sys
 from pathlib import Path
 
 # Add parent directory (api/) to sys.path so config module can be imported
 sys.path.insert(0, str(Path(__file__).parent.parent))
+
+# Prices load at import; keep a developer's real ~/.claude_karma/pricing.json out of the suite
+os.environ.setdefault(
+    "CLAUDE_KARMA_PRICING_OVERRIDE_PATH", str(Path(__file__).parent / "no-pricing-override.json")
+)
 
 import json
 from typing import Any, Dict

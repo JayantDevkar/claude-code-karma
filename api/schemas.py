@@ -81,6 +81,11 @@ class SubagentSummary(BaseModel):
     tools_used: dict[str, int] = Field(default_factory=dict, description="Tool name -> usage count")
     message_count: int = Field(0, description="Total messages in subagent conversation")
     initial_prompt: Optional[str] = Field(None, description="First user message to subagent")
+    ended_by: Optional[Literal["limit", "refusal", "api_error"]] = Field(
+        None, description="Why the conversation stopped on an unhealed API error turn"
+    )
+    ended_resets_at: Optional[datetime] = Field(None, description="When the usage limit resets")
+    limit_hit_count: int = Field(0, description="Usage-limit turns seen in the conversation")
 
 
 class ToolUsageSummary(BaseModel):
@@ -210,6 +215,17 @@ class SessionSummary(BaseModel):
     machine: Optional[str] = Field(
         None,
         description="Extra session root the session was synced from; None for this machine",
+    )
+    ended_by: Optional[Literal["limit", "refusal", "api_error"]] = Field(
+        None, description="Why the session stopped on an unhealed API error turn"
+    )
+    ended_resets_at: Optional[datetime] = Field(None, description="When the usage limit resets")
+    limit_hit_count: int = Field(0, description="Usage-limit turns seen in the session")
+    tokens_with_subagents: Optional[int] = Field(
+        None, description="Input + output + cache reads/writes, incl. subagents (SQLite lists)"
+    )
+    cost_with_subagents: Optional[float] = Field(
+        None, description="Session cost incl. subagents, in USD (SQLite lists)"
     )
 
 
@@ -362,6 +378,12 @@ class ProjectSummary(BaseModel):
     latest_session_time: Optional[datetime] = Field(
         default=None, description="Start time of the most recent session"
     )
+    total_tokens: Optional[int] = Field(
+        default=None, description="Input + output + cache reads/writes, incl. subagents"
+    )
+    total_cost: Optional[float] = Field(
+        default=None, description="Session cost incl. subagents, in USD"
+    )
 
 
 class ProjectDetail(ProjectSummary):
@@ -429,6 +451,18 @@ class ProjectAnalytics(BaseModel):
         default_factory=WorkModeDistribution,
         description="Work mode distribution based on tool usage",
     )
+    tokens_by_date: dict[str, int] = Field(
+        default_factory=dict, description="Local day -> tokens spent that day"
+    )
+    cost_by_date: dict[str, float] = Field(
+        default_factory=dict, description="Local day -> USD spent that day"
+    )
+    models_categorized_tokens: dict[str, int] = Field(
+        default_factory=dict, description="Model family -> tokens"
+    )
+    models_categorized_cost: dict[str, float] = Field(
+        default_factory=dict, description="Model family -> USD"
+    )
 
 
 class DashboardStats(BaseModel):
@@ -494,6 +528,7 @@ class TimelineEvent(BaseModel):
         "skill_invocation",
         "command_invocation",
         "builtin_command",
+        "api_error",
     ] = Field(..., description="Type of timeline event")
     timestamp: datetime = Field(..., description="When the event occurred")
     actor: str = Field(
@@ -574,6 +609,11 @@ class SubagentSessionDetail(BaseModel):
     initial_prompt: Optional[str] = Field(
         None, description="First user message to subagent (truncated)"
     )
+    ended_by: Optional[Literal["limit", "refusal", "api_error"]] = Field(
+        None, description="Why the subagent stopped on an unhealed API error turn"
+    )
+    ended_resets_at: Optional[datetime] = Field(None, description="When the usage limit resets")
+    limit_hit_count: int = Field(0, description="Usage-limit turns seen in the subagent")
 
 
 # =============================================================================

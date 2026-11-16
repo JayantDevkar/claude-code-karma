@@ -16,7 +16,10 @@ export type TimelineEventType =
 	| 'todo_update'
 	| 'command_invocation'
 	| 'skill_invocation'
-	| 'builtin_command';
+	| 'builtin_command'
+	| 'api_error';
+
+export type EndedBy = 'limit' | 'refusal' | 'api_error';
 
 export type EventImportance = 'high' | 'medium' | 'low';
 
@@ -53,6 +56,12 @@ export interface TimelineEventMetadata {
 	is_plugin?: boolean;
 	plugin?: string;
 	image_attachments?: ImageAttachment[];
+	// api_error events
+	kind?: EndedBy;
+	code?: string | null;
+	status?: number | null;
+	resets_at?: string | null;
+	healed?: boolean;
 	[key: string]: unknown;
 }
 
@@ -178,13 +187,19 @@ export interface ProjectAnalytics {
 	cache_hit_rate: number;
 	tools_used: Record<string, number>;
 	sessions_by_date: Record<string, number>;
+	tokens_by_date: Record<string, number>;
+	cost_by_date: Record<string, number>;
 	projects_active: number;
 	temporal_heatmap: number[][];
 	peak_hours: number[];
 	models_categorized: Record<string, number>;
+	models_categorized_tokens: Record<string, number>;
+	models_categorized_cost: Record<string, number>;
 	time_distribution: TimeDistribution;
 	work_mode_distribution: WorkModeDistribution;
 }
+
+export type AnalyticsMetric = 'sessions' | 'tokens' | 'cost';
 
 export interface TimeDistribution {
 	morning_pct: number;
@@ -227,6 +242,9 @@ export interface SessionChainInfoSummary {
 }
 
 export interface SessionSummary {
+	ended_by?: EndedBy | null;
+	ended_resets_at?: string | null;
+	limit_hit_count?: number;
 	uuid: string;
 	slug: string;
 	message_count: number;
@@ -261,6 +279,10 @@ export interface SessionSummary {
 	session_source?: 'desktop' | null;
 	/** Name of the other computer this session was synced from; null = this machine */
 	machine?: string | null;
+	/** Input + output + cache reads/writes incl. subagents (SQLite-backed lists only) */
+	tokens_with_subagents?: number | null;
+	/** Cost incl. subagents in USD (SQLite-backed lists only) */
+	cost_with_subagents?: number | null;
 }
 
 /**
@@ -333,6 +355,9 @@ export interface FileActivitySummary {
  * SubagentSummary matches the API response from /sessions/{uuid}/subagents
  */
 export interface SubagentSummary {
+	ended_by?: EndedBy | null;
+	ended_resets_at?: string | null;
+	limit_hit_count?: number;
 	agent_id: string;
 	slug: string | null;
 	subagent_type: string | null;
@@ -376,6 +401,10 @@ export interface Project {
 	is_nested_project: boolean;
 	/** Start time of the most recent session (from project list API) */
 	latest_session_time?: string;
+	/** Input + output + cache reads/writes incl. subagents (project list API, SQLite only) */
+	total_tokens?: number | null;
+	/** Cost incl. subagents in USD (project list API, SQLite only) */
+	total_cost?: number | null;
 	/** Sessions array (only populated in project detail API) */
 	sessions?: SessionSummary[];
 }
@@ -412,6 +441,7 @@ export type FilterCategory =
 	| 'subagent'
 	| 'todo_update'
 	| 'error'
+	| 'api_error'
 	| 'thinking'
 	| 'response'
 	| 'big_response'
@@ -427,6 +457,7 @@ export interface FilterCounts {
 	subagent: number;
 	todo_update: number;
 	error: number;
+	api_error: number;
 	thinking: number;
 	response: number;
 	big_response: number;
@@ -771,6 +802,9 @@ export interface ConversationContext {
  * Mirrors SessionDetail but for subagent JSONL files.
  */
 export interface SubagentSessionDetail {
+	ended_by?: EndedBy | null;
+	ended_resets_at?: string | null;
+	limit_hit_count?: number;
 	agent_id: string;
 	slug: string | null;
 	is_subagent: true;
@@ -1645,6 +1679,9 @@ export interface McpServerTrend {
  * Session summary returned by MCP tools endpoints.
  */
 export interface McpSessionSummary {
+	ended_by?: EndedBy | null;
+	ended_resets_at?: string | null;
+	limit_hit_count?: number;
 	uuid: string;
 	slug: string | null;
 	project_encoded_name: string | null;

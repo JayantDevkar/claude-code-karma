@@ -150,6 +150,16 @@ def test_resolve_falls_back_to_live_session_before_jsonl_exists(env, tmp_path):
     assert body["project_encoded_name"] == Project.encode_path(str(cwd))
 
 
+def test_resolve_from_live_session_links_to_the_real_project_dir(env, tmp_path):
+    client, _, live_dir = env
+    cwd = tmp_path / "my_repo"
+    cwd.mkdir()
+    _write_live_state(live_dir, UUID_A, str(cwd), None)
+
+    res = client.get(f"/sessions/resolve/{UUID_A[:8]}")
+    assert res.json()["project_encoded_name"].endswith("-my-repo")
+
+
 def test_resolve_prefers_jsonl_over_live_session_once_it_exists(env, tmp_path):
     client, projects_dir, live_dir = env
     cwd = tmp_path / "repo"

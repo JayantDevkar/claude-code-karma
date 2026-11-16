@@ -1,7 +1,9 @@
 <script lang="ts">
-	import { FolderOpen, GitBranch, Activity, MessageSquare } from 'lucide-svelte';
+	import { FolderOpen, GitBranch, Activity, MessageSquare, Cpu, Coins } from 'lucide-svelte';
 	import type { Project } from '$lib/api-types';
-	import { getProjectName } from '$lib/utils';
+	import { getProjectName, formatTokens, formatCost } from '$lib/utils';
+
+	const TOKENS_TITLE = 'Input + output + cache reads/writes, incl. subagents';
 
 	interface Props {
 		project: Project;
@@ -142,11 +144,25 @@
 
 				<!-- Stats row -->
 				<div class="flex items-center justify-between text-xs text-[var(--text-muted)]">
-					<div class="flex items-center gap-4">
+					<div class="flex flex-wrap items-center gap-x-4 gap-y-1 whitespace-nowrap">
 						<div class="flex items-center gap-1.5">
 							<MessageSquare size={12} strokeWidth={2} />
 							<span class="tabular-nums">{project.session_count} sessions</span>
 						</div>
+						{#if project.total_tokens}
+							<div class="flex items-center gap-1.5" title={TOKENS_TITLE}>
+								<Cpu size={12} strokeWidth={2} />
+								<span class="tabular-nums"
+									>{formatTokens(project.total_tokens)} tokens</span
+								>
+							</div>
+						{/if}
+						{#if project.total_cost}
+							<div class="flex items-center gap-1.5">
+								<Coins size={12} strokeWidth={2} />
+								<span class="tabular-nums">{formatCost(project.total_cost)}</span>
+							</div>
+						{/if}
 						<div
 							class="flex items-center gap-1.5"
 							style={hasRecentActivity ? `color: ${colorConfig.border};` : ''}
@@ -218,11 +234,27 @@
 				</p>
 
 				<!-- Stats row (inline like SubagentCard) -->
-				<div class="flex items-center gap-4 text-xs text-[var(--text-muted)]">
+				<div
+					class="flex flex-wrap items-center gap-x-4 gap-y-1 whitespace-nowrap text-xs text-[var(--text-muted)]"
+				>
 					<div class="flex items-center gap-1.5">
 						<MessageSquare size={14} strokeWidth={2} />
 						<span class="tabular-nums">{project.session_count} sessions</span>
 					</div>
+					{#if project.total_tokens}
+						<div class="flex items-center gap-1.5" title={TOKENS_TITLE}>
+							<Cpu size={14} strokeWidth={2} />
+							<span class="tabular-nums"
+								>{formatTokens(project.total_tokens)} tokens</span
+							>
+						</div>
+					{/if}
+					{#if project.total_cost}
+						<div class="flex items-center gap-1.5">
+							<Coins size={14} strokeWidth={2} />
+							<span class="tabular-nums">{formatCost(project.total_cost)}</span>
+						</div>
+					{/if}
 					{#if project.agent_count > 0}
 						<div class="flex items-center gap-1.5">
 							<Activity size={14} strokeWidth={2} />

@@ -80,7 +80,7 @@ from http_caching import (
     check_conditional_request,
     get_file_cache_info,
 )
-from models import Session, ToolUseBlock
+from models import ApiErrorSummary, Session, ToolUseBlock
 from models.plan import load_plan
 from models.project import get_cached_jsonl_count
 from models.session import active_duration_seconds
@@ -188,15 +188,14 @@ def _count_subagents_fast(project_dir: Path, session_uuid: str) -> int:
     Returns:
         Number of subagent JSONL files
     """
-    subagents_dir = project_dir / session_uuid / "subagents"
-    if not subagents_dir.exists():
-        return 0
-    return len(list(subagents_dir.glob("agent-*.jsonl")))
+    from services.session_copies import subagent_files
+
+    return len(subagent_files(project_dir / f"{session_uuid}.jsonl"))
 
 
 def _session_cache_info(session: Session):
     """ETag and Last-Modified over the session JSONL and its subagent JSONLs."""
-    return get_file_cache_info(session.jsonl_path, session.subagents_dir.glob("agent-*.jsonl"))
+    return get_file_cache_info(session.jsonl_path, session.list_subagent_paths())
 
 
 def _has_messages(session: Session) -> bool:
@@ -601,6 +600,11 @@ def _get_all_sessions_sqlite(
                 or [],
                 session_source=get_session_source(row["uuid"]),
                 machine=row.get("source_root"),
+                ended_by=row.get("ended_by"),
+                ended_resets_at=_parse_iso(row.get("ended_resets_at")),
+                limit_hit_count=row.get("limit_hit_count") or 0,
+                tokens_with_subagents=row.get("tokens_with_subagents"),
+                cost_with_subagents=row.get("cost_with_subagents"),
             )
             sessions_with_context.append(session_context)
 
@@ -730,6 +734,8 @@ def _get_all_sessions_jsonl(
         )
         models_used: list[str] = []
         subagent_count = 0
+        # Error fields only when the session is already loaded: no transcript read per row.
+        api_errors = ApiErrorSummary.EMPTY
 
         from services.session_roots import machine_for_path, session_jsonl_path
 
@@ -748,6 +754,7 @@ def _get_all_sessions_jsonl(
                     session_titles = loaded_session.session_titles
                 models_used = list(loaded_session.get_models_used())
                 duration_seconds = loaded_session.duration_seconds
+                api_errors = loaded_session.api_error_summary
             except Exception:
                 pass
 
@@ -770,6 +777,9 @@ def _get_all_sessions_jsonl(
             session_titles=session_titles,
             session_source=get_session_source(meta.uuid),
             machine=machine_for_path(jsonl_path),
+            ended_by=api_errors.ended_by,
+            ended_resets_at=api_errors.ended_resets_at,
+            limit_hit_count=api_errors.limit_hit_count,
         )
         sessions_with_context.append(session_context)
 
@@ -1128,7 +1138,11 @@ def get_session(uuid: str, request: Request, fresh: bool = False):
 
     from services.session_roots import machine_for_path
 
+    api_errors = session.api_error_summary
     response_data = SessionDetail(
+        ended_by=api_errors.ended_by,
+        ended_resets_at=api_errors.ended_resets_at,
+        limit_hit_count=api_errors.limit_hit_count,
         uuid=session.uuid,
         slug=session.slug,
         project_encoded_name=project_encoded_name,
@@ -1442,6 +1456,9 @@ def get_subagents(uuid: str, request: Request, fresh: bool = False):
             tools_used=dict(info.tool_counts),
             message_count=info.message_count,
             initial_prompt=info.initial_prompt,
+            ended_by=info.api_error_summary.ended_by,
+            ended_resets_at=info.api_error_summary.ended_resets_at,
+            limit_hit_count=info.api_error_summary.limit_hit_count,
         )
         for info in subagents_info
     ]
@@ -1503,6 +1520,9 @@ async def get_subagents_parallel(uuid: str, request: Request):
                 tools_used=dict(info.tool_counts),
                 message_count=info.message_count,
                 initial_prompt=info.initial_prompt,
+                ended_by=info.api_error_summary.ended_by,
+                ended_resets_at=info.api_error_summary.ended_resets_at,
+                limit_hit_count=info.api_error_summary.limit_hit_count,
             )
             for info in subagents_info
         ]
@@ -1519,6 +1539,9 @@ async def get_subagents_parallel(uuid: str, request: Request):
             tools_used=data.get("tool_counts", {}),
             message_count=data.get("message_count", 0),
             initial_prompt=data.get("initial_prompt"),
+            ended_by=data["api_error_summary"].ended_by,
+            ended_resets_at=data["api_error_summary"].ended_resets_at,
+            limit_hit_count=data["api_error_summary"].limit_hit_count,
         )
         for data in subagent_data
     ]

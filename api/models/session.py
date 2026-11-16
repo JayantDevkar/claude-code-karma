@@ -26,6 +26,7 @@ from command_helpers import (
 
 from .active_time import ACTIVE_IDLE_CAP_SECONDS, ActiveTimeAccumulator
 from .agent import Agent
+from .api_error import ApiErrorSummary, ApiErrorTracker
 from .base_cache import (
     BaseCache,
     clear_all_caches,
@@ -49,7 +50,7 @@ from .message import (
 from .task import Task, load_tasks_from_directory, reconstruct_tasks_from_jsonl
 from .todo import TodoItem, load_todos_from_file
 from .tool_result import ToolResult
-from .usage import TokenUsage, UsageAccumulator
+from .usage import TokenUsage, UsageAccumulator, UsageBuckets
 
 if TYPE_CHECKING:
     pass
@@ -169,12 +170,15 @@ class SessionCache(BaseCache):
         "git_branches",
         "working_dirs",
         "models_used",
+        "api_error_summary",
         "message_count",
         "total_cost",
+        "usage_buckets",
         "active_duration_seconds",
         # Continuation session detection
         "user_message_count",
         "assistant_message_count",
+        "synthetic_assistant_count",
         "file_snapshot_count",
         "summary_count",  # SessionTitleMessage count (type: "summary")
         "compact_boundary_count",  # CompactBoundaryMessage count (real compaction)
@@ -206,12 +210,15 @@ class SessionCache(BaseCache):
         self.git_branches: Optional[Set[str]] = None
         self.working_dirs: Optional[List[str]] = None
         self.models_used: Optional[Set[str]] = None
+        self.api_error_summary: ApiErrorSummary = ApiErrorSummary.EMPTY
         self.message_count: Optional[int] = None
         self.total_cost: Optional[float] = None
+        self.usage_buckets: Optional[UsageBuckets] = None
         self.active_duration_seconds: Optional[float] = None
         # Continuation session detection
         self.user_message_count: int = 0
         self.assistant_message_count: int = 0
+        self.synthetic_assistant_count: int = 0
         self.file_snapshot_count: int = 0
         self.summary_count: int = 0  # SessionTitleMessage count
         self.compact_boundary_count: int = 0  # CompactBoundaryMessage count
@@ -241,11 +248,14 @@ class SessionCache(BaseCache):
         self.git_branches = None
         self.working_dirs = None
         self.models_used = None
+        self.api_error_summary = ApiErrorSummary.EMPTY
         self.message_count = None
         self.total_cost = None
+        self.usage_buckets = None
         self.active_duration_seconds = None
         self.user_message_count = 0
         self.assistant_message_count = 0
+        self.synthetic_assistant_count = 0
         self.file_snapshot_count = 0
         self.summary_count = 0
         self.compact_boundary_count = 0
@@ -371,10 +381,12 @@ class Session(BaseModel):
         working_dirs: Dict[str, None] = {}  # insertion-ordered set
         models_used: Set[str] = set()
         message_count = 0
+        api_errors = ApiErrorTracker(skip_sidechain=True)
 
         # Message type counters for continuation session detection
         user_msg_count = 0
         assistant_msg_count = 0
+        synthetic_assistant_count = 0
         file_snapshot_count = 0
         summary_count = 0  # SessionTitleMessage (type: "summary")
         compact_boundary_count = 0  # CompactBoundaryMessage (real compaction)
@@ -438,7 +450,10 @@ class Session(BaseModel):
                             if ":" in cmd_name:
                                 pending_command_plugins.add(cmd_name.split(":")[0])
             elif isinstance(msg, AssistantMessage):
-                assistant_msg_count += 1
+                if msg.is_synthetic:
+                    synthetic_assistant_count += 1
+                else:
+                    assistant_msg_count += 1
             elif isinstance(msg, FileHistorySnapshot):
                 file_snapshot_count += 1
             elif isinstance(msg, SessionTitleMessage):
@@ -466,7 +481,8 @@ class Session(BaseModel):
             # Assistant message specific data
             if isinstance(msg, AssistantMessage):
                 usage_acc.add(msg)
-                if msg.model:
+                api_errors.feed(msg)
+                if msg.model and not msg.is_synthetic:
                     models_used.add(msg.model)
                 for block in msg.content_blocks:
                     if isinstance(block, ToolUseBlock):
@@ -542,12 +558,15 @@ class Session(BaseModel):
         cache.git_branches = git_branches
         cache.working_dirs = list(working_dirs)
         cache.models_used = models_used
+        cache.api_error_summary = api_errors.summary()
         cache.message_count = message_count
         cache.total_cost = usage_acc.cost
+        cache.usage_buckets = usage_acc.buckets()
         cache.active_duration_seconds = active_time.seconds
         # Message type counts
         cache.user_message_count = user_msg_count
         cache.assistant_message_count = assistant_msg_count
+        cache.synthetic_assistant_count = synthetic_assistant_count
         cache.file_snapshot_count = file_snapshot_count
         cache.summary_count = summary_count  # SessionTitleMessage count
         cache.compact_boundary_count = compact_boundary_count  # CompactBoundaryMessage count
@@ -663,7 +682,7 @@ class Session(BaseModel):
     @property
     def has_subagents(self) -> bool:
         """Check if session has any subagents."""
-        return self.subagents_dir.exists() and any(self.subagents_dir.glob("agent-*.jsonl"))
+        return bool(self.list_subagent_paths())
 
     @property
     def has_tool_results(self) -> bool:
@@ -718,6 +737,12 @@ class Session(BaseModel):
     # Related resources
     # =========================================================================
 
+    def list_subagent_paths(self) -> List[Path]:
+        """Subagent JSONLs, including ones written under the repo's or a worktree's dir."""
+        from services.session_copies import subagent_files
+
+        return subagent_files(self.jsonl_path)
+
     def list_subagents(self) -> List[Agent]:
         """
         List all subagents for this session.
@@ -725,11 +750,8 @@ class Session(BaseModel):
         Returns:
             List of Agent instances
         """
-        if not self.subagents_dir.exists():
-            return []
-
         return sorted(
-            [Agent.from_path(p) for p in self.subagents_dir.glob("agent-*.jsonl") if p.is_file()],
+            [Agent.from_path(p) for p in self.list_subagent_paths() if p.is_file()],
             key=lambda a: a.agent_id,
         )
 
@@ -739,10 +761,7 @@ class Session(BaseModel):
 
         More efficient than len(list_subagents()) when only the count is needed.
         """
-        subagents_dir = self.session_dir / "subagents"
-        if not subagents_dir.exists():
-            return 0
-        return len(list(subagents_dir.glob("agent-*.jsonl")))
+        return len(self.list_subagent_paths())
 
     def list_tool_results(self) -> List[ToolResult]:
         """
@@ -884,11 +903,16 @@ class Session(BaseModel):
         self._load_metadata()
         return self._get_cache().total_cost or 0.0
 
-    def get_subagent_totals(self) -> tuple[TokenUsage, float]:
-        """Token usage and estimated cost summed across this session's subagents."""
+    def get_usage_buckets(self) -> UsageBuckets:
+        """Usage and cost keyed by (15-minute bucket start, model) (cached)."""
+        self._load_metadata()
+        return self._get_cache().usage_buckets or {}
+
+    def get_subagent_totals(self, subagents=None) -> tuple[TokenUsage, float]:
+        """Token usage and estimated cost summed across subagents (listed here unless given)."""
         usage = TokenUsage.zero()
         cost = 0.0
-        for agent in self.list_subagents():
+        for agent in self.list_subagents() if subagents is None else subagents:
             usage = usage + agent.get_usage_summary()
             cost += agent.get_total_cost()
         return usage, cost
@@ -902,6 +926,12 @@ class Session(BaseModel):
         """
         self._load_metadata()
         return self._get_cache().models_used or set()
+
+    @property
+    def api_error_summary(self) -> ApiErrorSummary:
+        """How the session ended (limit/refusal/api_error) and its limit-hit count (cached)."""
+        self._load_metadata()
+        return self._get_cache().api_error_summary
 
     def get_tools_used(self) -> Counter[str]:
         """
@@ -1014,6 +1044,7 @@ class Session(BaseModel):
             cache.file_snapshot_count > 0
             and cache.user_message_count == 0
             and cache.assistant_message_count == 0
+            and cache.synthetic_assistant_count == 0
         )
 
     @property

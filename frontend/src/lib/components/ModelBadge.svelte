@@ -24,6 +24,8 @@
 			return 'bg-[var(--model-sonnet-subtle)] text-[var(--model-sonnet)] border-[var(--model-sonnet)]/40';
 		if (modelName.includes('haiku'))
 			return 'bg-[var(--model-haiku-subtle)] text-[var(--model-haiku)] border-[var(--model-haiku)]/40';
+		if (modelName.includes('fable'))
+			return 'bg-[var(--model-fable-subtle)] text-[var(--model-fable)] border-[var(--model-fable)]/40';
 		return 'bg-[var(--bg-muted)] text-[var(--text-secondary)] border-[var(--border)]';
 	});
 </script>
