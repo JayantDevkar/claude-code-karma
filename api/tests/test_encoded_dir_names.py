@@ -201,3 +201,73 @@ def test_project_left_with_no_sessions_is_dropped(tmp_path, monkeypatch, mem_db)
 
     names = [r[0] for r in mem_db.execute("SELECT encoded_name FROM projects")]
     assert names == ["-home-me-kept"]
+
+
+def _project_rows(conn):
+    return {
+        r["encoded_name"]: (r["session_count"], r["project_path"], r["slug"])
+        for r in conn.execute("SELECT * FROM projects")
+    }
+
+
+def _add_session_less_row(conn, encoded_name):
+    conn.execute(
+        "INSERT INTO projects (encoded_name, project_path, slug, display_name, session_count) "
+        "VALUES (?, '/home/me/old', 'old-slug', 'old', 5)",
+        (encoded_name,),
+    )
+    conn.commit()
+
+
+def test_project_with_no_sessions_but_a_dir_is_kept_with_zero_sessions(
+    tmp_path, monkeypatch, mem_db
+):
+    local = tmp_path / ".claude"
+    monkeypatch.setattr(settings, "claude_base", local)
+    kept = local / "projects" / "-home-me-kept"
+    _write_session(kept, "k1", "/home/me/kept")
+    indexer.sync_all_projects(mem_db)
+    before = _project_rows(mem_db)["-home-me-kept"]
+    assert before[0] == 1
+
+    (kept / "k1.jsonl").unlink()
+    indexer.sync_all_projects(mem_db)
+
+    assert _project_rows(mem_db) == {"-home-me-kept": (0, before[1], before[2])}
+
+
+def test_project_with_no_sessions_and_no_dir_is_dropped(tmp_path, monkeypatch, mem_db):
+    monkeypatch.setattr(settings, "claude_base", tmp_path / ".claude")
+    settings.projects_dir.mkdir(parents=True)
+    _add_session_less_row(mem_db, "-home-me-gone")
+
+    indexer._update_project_summaries(mem_db)
+
+    assert _project_rows(mem_db) == {}
+
+
+def test_worktree_project_with_no_sessions_is_dropped_even_with_a_dir(
+    tmp_path, monkeypatch, mem_db
+):
+    monkeypatch.setattr(settings, "claude_base", tmp_path / ".claude")
+    name = "-Users-me-repo--claude-worktrees-foo"
+    (settings.projects_dir / name).mkdir(parents=True)
+    _add_session_less_row(mem_db, name)
+
+    indexer._update_project_summaries(mem_db)
+
+    assert _project_rows(mem_db) == {}
+
+
+def test_project_that_still_has_sessions_keeps_its_count(tmp_path, monkeypatch, mem_db):
+    local = tmp_path / ".claude"
+    monkeypatch.setattr(settings, "claude_base", local)
+    _write_session(local / "projects" / "-home-me-kept", "k1", "/home/me/kept")
+    indexer.sync_all_projects(mem_db)
+    before = _project_rows(mem_db)
+    _add_session_less_row(mem_db, "-home-me-gone")
+
+    indexer._update_project_summaries(mem_db)
+
+    assert before["-home-me-kept"][0] == 1
+    assert _project_rows(mem_db) == before

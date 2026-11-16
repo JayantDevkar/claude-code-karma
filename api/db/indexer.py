@@ -945,6 +945,7 @@ def _update_project_summaries(conn: sqlite3.Connection) -> None:
     from pathlib import Path
 
     from config import settings
+    from services.desktop_sessions import is_worktree_project
     from services.git_identity import read_git_identity
     from services.session_roots import (
         get_extra_roots,
@@ -1010,11 +1011,23 @@ def _update_project_summaries(conn: sqlite3.Connection) -> None:
             ),
         )
 
-    # A project whose sessions moved or were removed must not stay listed
-    conn.execute(
-        "DELETE FROM projects WHERE encoded_name NOT IN "
-        "(SELECT project_encoded_name FROM sessions WHERE project_encoded_name IS NOT NULL)"
-    )
+    # Session-less rows: drop worktree or dir-less ones, keep the rest with a zero count
+    empty = [
+        r[0]
+        for r in conn.execute(
+            "SELECT encoded_name FROM projects WHERE encoded_name NOT IN "
+            "(SELECT project_encoded_name FROM sessions WHERE project_encoded_name IS NOT NULL)"
+        )
+    ]
+    if empty:
+        gone = [
+            n for n in empty if is_worktree_project(n) or not (settings.projects_dir / n).is_dir()
+        ]
+        kept = set(empty) - set(gone)
+        conn.executemany("DELETE FROM projects WHERE encoded_name = ?", [(n,) for n in gone])
+        conn.executemany(
+            "UPDATE projects SET session_count = 0 WHERE encoded_name = ?", [(n,) for n in kept]
+        )
     conn.commit()
 
 
