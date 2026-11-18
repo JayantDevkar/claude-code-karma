@@ -22,16 +22,23 @@
 	} from 'lucide-svelte';
 	import type { SubagentSummary, SubagentStatus, StopError } from '$lib/api-types';
 	import EndedByBadge from '$lib/components/EndedByBadge.svelte';
+	import CopyIconButton from '$lib/components/ui/CopyIconButton.svelte';
+	import SubagentTypeBadge from './SubagentTypeBadge.svelte';
 	import { stopErrorReason, stopErrorTooltip } from '$lib/live-session-config';
 	import {
-		getSubagentColorVars,
-		getSubagentTypeDisplayName,
-		cleanAgentIdForDisplay,
 		formatDuration,
 		calculateSubagentDuration,
 		getProjectName,
+		getSubagentTypeDisplayName,
 		truncate
 	} from '$lib/utils';
+	import {
+		buildAgentHref,
+		getAgentDisplayName,
+		getAgentIdentityColors,
+		getModelTag,
+		getTeamTag
+	} from '$lib/utils/agent-identity';
 
 	interface Props {
 		subagent: SubagentSummary;
@@ -76,12 +83,7 @@
 	};
 
 	// Navigation is enabled if both projectEncoded and sessionSlug are provided
-	let navigationEnabled = $derived(!!projectEncoded && !!sessionSlug);
-	let agentHref = $derived(
-		navigationEnabled
-			? `/projects/${projectEncoded}/${sessionSlug}/agents/${subagent.agent_id}`
-			: null
-	);
+	let agentHref = $derived(buildAgentHref(projectEncoded, sessionSlug, subagent.agent_id));
 
 	let isExpanded = $state(false);
 
@@ -95,7 +97,9 @@
 
 	// Check if content is expandable
 	let hasExpandableContent = $derived(
-		hasMoreTools || (subagent.initial_prompt && subagent.initial_prompt.length > 200)
+		hasMoreTools ||
+			(subagent.initial_prompt && subagent.initial_prompt.length > 200) ||
+			(subagent.description && subagent.description.length > 80)
 	);
 
 	// Get icon based on type (known types get specific icons, others get Bot)
@@ -119,35 +123,33 @@
 		}
 	}
 
-	// Get colors from centralized utility (supports both known and custom types)
-	let colorVars = $derived(getSubagentColorVars(subagent.subagent_type));
+	// The agent's own colour, the same one its timeline badge uses; the type keeps its own badge.
+	let colorVars = $derived(getAgentIdentityColors(subagent));
 	let typeIcon = $derived(getTypeIcon(subagent.subagent_type));
-	// Clean agent ID for display (removes system prefixes like "aprompt_suggestion-")
-	let displayAgentId = $derived(cleanAgentIdForDisplay(subagent.agent_id));
+	// The given name, else the type; the full id stays on the card for copying and telling agents apart.
+	let displayName = $derived(getAgentDisplayName(subagent));
+	// An unnamed agent is titled by its type, so a type badge beside it would only repeat the title.
+	let showTypeBadge = $derived(displayName !== getSubagentTypeDisplayName(subagent.subagent_type));
 
-	function handleClick(e: MouseEvent) {
-		// Don't toggle if clicking on the navigation link
-		if ((e.target as HTMLElement).closest('a')) {
-			return;
-		}
-		if (hasExpandableContent) {
-			isExpanded = !isExpanded;
-		}
+	// Small tags, worded like the timeline's spawn card.
+	let tags = $derived(
+		[getTeamTag(subagent.team_name), getModelTag(subagent.model)].filter(
+			(tag): tag is string => !!tag
+		)
+	);
+
+	function toggle() {
+		if (hasExpandableContent) isExpanded = !isExpanded;
 	}
 
-	function handleKeydown(e: KeyboardEvent) {
-		// Don't toggle if pressing keys on the navigation link
-		if ((e.target as HTMLElement).closest('a')) {
-			return;
-		}
-		if (hasExpandableContent && (e.key === 'Enter' || e.key === ' ')) {
-			e.preventDefault();
-			isExpanded = !isExpanded;
-		}
+	// The whole card toggles on a mouse click; its link and buttons keep their own clicks.
+	function handleClick(e: MouseEvent) {
+		if ((e.target as HTMLElement).closest('a, button')) return;
+		toggle();
 	}
 </script>
 
-<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
 <div
 	class="
 		group rounded-lg border border-l-[3px] bg-[var(--bg-subtle)] transition-all duration-200
@@ -157,11 +159,8 @@
 		{className}
 	"
 	style="border-left-color: {colorVars.color};"
+	data-agent-id={subagent.agent_id}
 	onclick={handleClick}
-	onkeydown={handleKeydown}
-	role={hasExpandableContent ? 'button' : undefined}
-	tabindex={hasExpandableContent ? 0 : undefined}
-	aria-expanded={hasExpandableContent ? isExpanded : undefined}
 >
 	<!-- Main card content -->
 	<div class="p-4 pl-5">
@@ -181,31 +180,32 @@
 			<div class="flex-1 min-w-0">
 				<div class="flex items-center justify-between gap-2">
 					<div class="flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0">
+						<!-- Name in the agent's own colour; the full id is the link title and sits below -->
 						{#if agentHref}
 							<a
 								href={agentHref}
 								class="
-									inline-flex items-center gap-1.5
-									text-sm font-mono font-medium text-[var(--accent)]
-									hover:text-[var(--accent-hover)] hover:underline min-w-0 max-w-full
-									transition-colors truncate
+									inline-flex items-center gap-1.5 min-w-0 max-w-full
+									text-sm font-mono font-medium
+									hover:underline transition-colors
 								"
-								title={subagent.agent_id}
+								style="color: {colorVars.color};"
+								title="Open {subagent.agent_id}"
 							>
-								{displayAgentId}
-								<ExternalLink
-									size={12}
-									strokeWidth={2}
-									class="shrink-0 opacity-60"
-								/>
+								<span class="min-w-0 [overflow-wrap:anywhere]">{displayName}</span>
+								<ExternalLink size={12} strokeWidth={2} class="shrink-0 opacity-60" />
 							</a>
 						{:else}
-							<code
-								class="text-sm font-mono font-medium text-[var(--accent)] truncate min-w-0 max-w-full"
+							<span
+								class="min-w-0 max-w-full text-sm font-mono font-medium [overflow-wrap:anywhere]"
+								style="color: {colorVars.color};"
 								title={subagent.agent_id}
 							>
-								{displayAgentId}
-							</code>
+								{displayName}
+							</span>
+						{/if}
+						{#if showTypeBadge}
+							<SubagentTypeBadge type={subagent.subagent_type} />
 						{/if}
 						<!-- Status badge (when available from live status) -->
 						{#if status}
@@ -250,7 +250,11 @@
 							</span>
 						{/if}
 						{#if hasExpandableContent}
-							<div
+							<button
+								type="button"
+								onclick={toggle}
+								aria-expanded={isExpanded}
+								aria-label="{isExpanded ? 'Hide' : 'Show'} details for {displayName}"
 								class="
 									flex h-6 w-6 items-center justify-center rounded-full shrink-0 transition-colors
 									text-[var(--text-muted)] group-hover:text-[var(--text-primary)] group-hover:bg-[var(--bg-muted)]
@@ -261,17 +265,52 @@
 								{:else}
 									<ChevronDown size={16} strokeWidth={2} />
 								{/if}
-							</div>
+							</button>
 						{/if}
 					</div>
 				</div>
 
-				<!-- Task description -->
+				<!-- Full id: small, but always there to copy -->
+				<div class="mt-0.5 flex items-center gap-1 min-w-0">
+					<code
+						class="min-w-0 truncate font-mono text-[10px] text-[var(--text-muted)]"
+						title={subagent.agent_id}
+					>
+						{subagent.agent_id}
+					</code>
+					<CopyIconButton text={subagent.agent_id} title="Copy agent id" size={11} />
+				</div>
+
+				<!-- What the agent was asked to do, in one line -->
+				{#if subagent.description}
+					<p
+						class="mt-1.5 text-sm font-medium text-[var(--text-primary)] {isExpanded
+							? '[overflow-wrap:anywhere]'
+							: 'truncate'}"
+						title={isExpanded ? undefined : subagent.description}
+					>
+						{subagent.description}
+					</p>
+				{/if}
+
+				{#if tags.length > 0}
+					<div class="mt-1.5 flex flex-wrap gap-1.5">
+						{#each tags as tag, i (i)}
+							<span
+								class="rounded bg-[var(--bg-muted)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--text-secondary)] [overflow-wrap:anywhere]"
+							>
+								{tag}
+							</span>
+						{/each}
+					</div>
+				{/if}
+
+				<!-- Prompt preview -->
 				{#if subagent.initial_prompt}
 					<p
 						class="
 							mt-1.5 text-sm text-[var(--text-secondary)] transition-all duration-200
-							bg-[var(--bg-muted)] px-2 py-1 rounded-md
+							bg-[var(--bg-muted)] px-2 py-1 rounded-md [overflow-wrap:anywhere]
 							{isExpanded ? 'whitespace-pre-wrap' : 'line-clamp-2'}
 						"
 					>

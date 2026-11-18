@@ -3,7 +3,6 @@
 		MessageSquare,
 		Terminal,
 		Bot,
-		ListTodo,
 		AlertCircle,
 		CloudOff,
 		X,
@@ -15,7 +14,11 @@
 		BookOpen,
 		HelpCircle,
 		Plug,
-		ClipboardList
+		ClipboardList,
+		MessagesSquare,
+		BellRing,
+		Info,
+		ScrollText
 	} from 'lucide-svelte';
 	import { onDestroy } from 'svelte';
 	import type { FilterCategory, FilterCounts } from '$lib/api-types';
@@ -62,183 +65,106 @@
 		clearTimeout(debounceTimeout);
 	});
 
-	// Color mapping for each filter category - matches timeline event node colors
-	const filterColors: Record<
-		FilterCategory,
-		{ active: string; inactive: string; icon: string; hoverBg: string }
-	> = {
-		prompt: {
-			active: 'bg-[var(--event-prompt-subtle)] border-[var(--event-prompt)]/50 text-[var(--event-prompt)]',
-			inactive:
-				'bg-[var(--bg-base)] border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--event-prompt)]/30',
-			icon: 'text-[var(--event-prompt)]',
-			hoverBg: 'hover:bg-[var(--event-prompt-subtle)]/50'
-		},
-		tool_call: {
-			active: 'bg-[var(--event-tool-subtle)] border-[var(--event-tool)]/50 text-[var(--event-tool)]',
-			inactive:
-				'bg-[var(--bg-base)] border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--event-tool)]/30',
-			icon: 'text-[var(--event-tool)]',
-			hoverBg: 'hover:bg-[var(--event-tool-subtle)]/50'
-		},
-		subagent: {
-			active: 'bg-[var(--event-subagent-subtle)] border-[var(--event-subagent)]/50 text-[var(--event-subagent)]',
-			inactive:
-				'bg-[var(--bg-base)] border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--event-subagent)]/30',
-			icon: 'text-[var(--event-subagent)]',
-			hoverBg: 'hover:bg-[var(--event-subagent-subtle)]/50'
-		},
-		todo_update: {
-			active: 'bg-[var(--event-todo-subtle)] border-[var(--event-todo)]/50 text-[var(--event-todo)]',
-			inactive:
-				'bg-[var(--bg-base)] border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--event-todo)]/30',
-			icon: 'text-[var(--event-todo)]',
-			hoverBg: 'hover:bg-[var(--event-todo-subtle)]/50'
-		},
-		error: {
-			active: 'bg-[var(--error-subtle)] border-[var(--error)]/50 text-[var(--error)]',
-			inactive:
-				'bg-[var(--bg-base)] border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--error)]/30',
-			icon: 'text-[var(--error)]',
-			hoverBg: 'hover:bg-[var(--error-subtle)]/50'
-		},
-		api_error: {
-			active: 'bg-[var(--bg-muted)] border-[var(--text-muted)]/50 text-[var(--text-secondary)]',
-			inactive:
-				'bg-[var(--bg-base)] border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--text-muted)]/40',
-			icon: 'text-[var(--text-muted)]',
-			hoverBg: 'hover:bg-[var(--bg-muted)]/50'
-		},
-		thinking: {
-			active: 'bg-[var(--event-thinking-subtle)] border-[var(--event-thinking)]/50 text-[var(--event-thinking)]',
-			inactive:
-				'bg-[var(--bg-base)] border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--event-thinking)]/30',
-			icon: 'text-[var(--event-thinking)]',
-			hoverBg: 'hover:bg-[var(--event-thinking-subtle)]/50'
-		},
-		response: {
-			active: 'bg-[var(--event-response-subtle)] border-[var(--event-response)]/50 text-[var(--event-response)]',
-			inactive:
-				'bg-[var(--bg-base)] border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--event-response)]/30',
-			icon: 'text-[var(--event-response)]',
-			hoverBg: 'hover:bg-[var(--event-response-subtle)]/50'
-		},
-		skill: {
-			active: 'bg-purple-500/10 border-purple-500/50 text-purple-500',
-			inactive:
-				'bg-[var(--bg-base)] border-[var(--border)] text-[var(--text-secondary)] hover:border-purple-500/30',
-			icon: 'text-purple-500',
-			hoverBg: 'hover:bg-purple-500/5'
-		},
-		big_response: {
-			active: 'bg-amber-500/10 border-amber-500/50 text-amber-500',
-			inactive:
-				'bg-[var(--bg-base)] border-[var(--border)] text-[var(--text-secondary)] hover:border-amber-500/30',
-			icon: 'text-amber-500',
-			hoverBg: 'hover:bg-amber-500/5'
-		},
-		ask_user: {
-			active: 'bg-sky-500/10 border-sky-500/50 text-sky-500',
-			inactive:
-				'bg-[var(--bg-base)] border-[var(--border)] text-[var(--text-secondary)] hover:border-sky-500/30',
-			icon: 'text-sky-500',
-			hoverBg: 'hover:bg-sky-500/5'
-		},
-		mcp_tool: {
-			active: 'bg-indigo-500/10 border-indigo-500/50 text-indigo-500',
-			inactive:
-				'bg-[var(--bg-base)] border-[var(--border)] text-[var(--text-secondary)] hover:border-indigo-500/30',
-			icon: 'text-indigo-500',
-			hoverBg: 'hover:bg-indigo-500/5'
-		},
-		task: {
-			active: 'bg-emerald-500/10 border-emerald-500/50 text-emerald-500',
-			inactive:
-				'bg-[var(--bg-base)] border-[var(--border)] text-[var(--text-secondary)] hover:border-emerald-500/30',
-			icon: 'text-emerald-500',
-			hoverBg: 'hover:bg-emerald-500/5'
-		},
-		command: {
-			active: 'bg-teal-500/10 border-teal-500/50 text-teal-500',
-			inactive:
-				'bg-[var(--bg-base)] border-[var(--border)] text-[var(--text-secondary)] hover:border-teal-500/30',
-			icon: 'text-teal-500',
-			hoverBg: 'hover:bg-teal-500/5'
-		}
-	};
+	interface FilterChip {
+		id: FilterCategory;
+		label: string;
+		icon: any;
+		/** CSS colour the chip takes when active; matches the event's node colour */
+		color: string;
+		/** Grey chips need a stronger selected look, or selected reads as disabled */
+		strong?: boolean;
+		/** Longer explanation for the tooltip and screen readers */
+		hint?: string;
+	}
 
-	// Define filters with their metadata
-	const filters = [
-		{
-			id: 'prompt' as const,
-			label: 'Prompts',
-			icon: MessageSquare,
-			countKey: 'prompt' as const
-		},
-		{
-			id: 'tool_call' as const,
-			label: 'Tools',
-			icon: Terminal,
-			countKey: 'tool_call' as const
-		},
-		{ id: 'subagent' as const, label: 'Subagents', icon: Bot, countKey: 'subagent' as const },
-		{
-			id: 'todo_update' as const,
-			label: 'Todos',
-			icon: ListTodo,
-			countKey: 'todo_update' as const
-		},
-		{ id: 'error' as const, label: 'Errors', icon: AlertCircle, countKey: 'error' as const },
-		{ id: 'api_error' as const, label: 'API errors', icon: CloudOff, countKey: 'api_error' as const },
-		{
-			id: 'thinking' as const,
-			label: 'Thinking',
-			icon: Brain,
-			countKey: 'thinking' as const
-		},
-		{
-			id: 'response' as const,
-			label: 'Response',
-			icon: Sparkles,
-			countKey: 'response' as const
-		},
-		{
-			id: 'big_response' as const,
-			label: 'Big Response',
-			icon: BookOpen,
-			countKey: 'big_response' as const
-		},
-		{
-			id: 'ask_user' as const,
-			label: 'Ask User',
-			icon: HelpCircle,
-			countKey: 'ask_user' as const
-		},
-		{
-			id: 'mcp_tool' as const,
-			label: 'MCP Tools',
-			icon: Plug,
-			countKey: 'mcp_tool' as const
-		},
-		{
-			id: 'task' as const,
-			label: 'Tasks',
-			icon: ClipboardList,
-			countKey: 'task' as const
-		},
-		{
-			id: 'skill' as const,
-			label: 'Skills',
-			icon: Zap,
-			countKey: 'skill' as const
-		},
-		{
-			id: 'command' as const,
-			label: 'Commands',
-			icon: TerminalSquare,
-			countKey: 'command' as const
-		}
+	// Chips grouped by who acts: you, Claude, tools, agents, the harness.
+	const filterGroups: FilterChip[][] = [
+		[
+			{ id: 'prompt', label: 'Prompts', icon: MessageSquare, color: 'var(--event-prompt)' },
+			{
+				id: 'command',
+				label: 'Commands',
+				icon: TerminalSquare,
+				color: 'var(--event-command)'
+			}
+		],
+		[
+			{ id: 'thinking', label: 'Thinking', icon: Brain, color: 'var(--event-thinking)' },
+			{ id: 'response', label: 'Response', icon: Sparkles, color: 'var(--event-response)' },
+			{
+				id: 'big_response',
+				label: 'Big Response',
+				icon: BookOpen,
+				color: 'var(--nav-amber)'
+			},
+			{ id: 'ask_user', label: 'Ask User', icon: HelpCircle, color: 'var(--nav-blue)' }
+		],
+		[
+			{ id: 'tool_call', label: 'Tools', icon: Terminal, color: 'var(--event-tool)' },
+			{ id: 'mcp_tool', label: 'MCP Tools', icon: Plug, color: 'var(--nav-indigo)' },
+			{ id: 'skill', label: 'Skills', icon: Zap, color: 'var(--accent)' },
+			{ id: 'task', label: 'Tasks', icon: ClipboardList, color: 'var(--event-todo)' },
+			{ id: 'error', label: 'Errors', icon: AlertCircle, color: 'var(--error)' }
+		],
+		[
+			{ id: 'subagent', label: 'Subagents', icon: Bot, color: 'var(--event-subagent)' },
+			{
+				id: 'message',
+				label: 'Messages',
+				icon: MessagesSquare,
+				color: 'var(--event-message)'
+			},
+			{
+				id: 'background',
+				label: 'Background',
+				icon: BellRing,
+				color: 'var(--event-background)'
+			}
+		],
+		[
+			{
+				id: 'api_error',
+				label: 'API errors',
+				icon: CloudOff,
+				color: 'var(--event-system)',
+				strong: true
+			},
+			{
+				id: 'notice',
+				label: 'Notices',
+				icon: Info,
+				color: 'var(--event-system)',
+				strong: true
+			},
+			{
+				id: 'system',
+				label: 'System',
+				icon: ScrollText,
+				color: 'var(--event-system)',
+				strong: true,
+				hint: 'Reminders and other text added for Claude. Not shown unless selected.'
+			}
+		]
 	];
+
+	// Empty chips are not shown, and groups left empty take their divider with them.
+	const visibleGroups = $derived(
+		filterGroups
+			.map((group) => group.filter((f) => counts[f.id] > 0))
+			.filter((g) => g.length > 0)
+	);
+
+	const chipBase =
+		'inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-[var(--radius-md)] border transition-all duration-150 whitespace-nowrap';
+	const chipActive = 'bg-[var(--chip)]/12 border-[var(--chip)]/50 text-[var(--chip)]';
+	// Slate at the usual 12% tint reads as disabled, so grey chips get a stronger fill and full-contrast text.
+	const chipActiveStrong =
+		'bg-[var(--chip)]/25 border-[var(--chip)] text-[var(--text-primary)] font-semibold';
+	const chipInactive =
+		'bg-[var(--bg-base)] border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--chip)]/30 hover:bg-[var(--chip)]/5';
+
+	// One id per filter bar for the hint text a chip points at.
+	const hintIdBase = `timeline-filter-hint-${Math.random().toString(36).slice(2, 8)}`;
 
 	const hasActiveFilters = $derived(activeFilters.size > 0 || searchQuery.length > 0);
 </script>
@@ -287,9 +213,17 @@
 					<X size={12} strokeWidth={2} />
 				</button>
 			{:else}
-				<div class="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none flex items-center gap-0.5">
-					<kbd class="inline-flex items-center justify-center rounded border border-[var(--border)] bg-[var(--bg-subtle)] px-1.5 py-0.5 text-[10px] font-sans text-[var(--text-faint)]">⌘</kbd>
-					<kbd class="inline-flex items-center justify-center rounded border border-[var(--border)] bg-[var(--bg-subtle)] px-1.5 py-0.5 text-[10px] font-sans text-[var(--text-faint)]">K</kbd>
+				<div
+					class="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none flex items-center gap-0.5"
+				>
+					<kbd
+						class="inline-flex items-center justify-center rounded border border-[var(--border)] bg-[var(--bg-subtle)] px-1.5 py-0.5 text-[10px] font-sans text-[var(--text-faint)]"
+						>⌘</kbd
+					>
+					<kbd
+						class="inline-flex items-center justify-center rounded border border-[var(--border)] bg-[var(--bg-subtle)] px-1.5 py-0.5 text-[10px] font-sans text-[var(--text-faint)]"
+						>K</kbd
+					>
 				</div>
 			{/if}
 		</div>
@@ -310,44 +244,64 @@
 		</div>
 	</div>
 
-	<!-- Bottom Row: Filters -->
-	<div class="flex flex-wrap items-center gap-x-1.5 gap-y-2 min-h-[32px]">
-		{#each filters as filter}
-			{@const count = counts[filter.countKey]}
-			{@const isActive = activeFilters.has(filter.id)}
-			{@const colors = filterColors[filter.id]}
-
-			{#if count > 0}
-				<button
-					onclick={() => onToggle(filter.id)}
-					class="
-						inline-flex items-center gap-1.5
-						px-2.5 py-1.5
-						text-xs font-medium
-						rounded-[var(--radius-md)]
-						border
-						transition-all duration-150
-						whitespace-nowrap
-						{isActive ? colors.active : colors.inactive}
-						{!isActive ? colors.hoverBg : ''}
-					"
-					title="{filter.label} ({count})"
-				>
-					<filter.icon size={14} strokeWidth={2} class={colors.icon} />
-					<span class="hidden md:inline">{filter.label}</span>
-					<span class="font-mono opacity-70">
-						{count}
-					</span>
-				</button>
-			{/if}
-		{/each}
+	<!-- Bottom Row: Filters. Below lg one row that scrolls sideways; from lg up the chips wrap one by one. -->
+	<div class="flex min-h-[32px] items-start gap-2">
+		<!-- Clips the divider slot of whichever chip starts a row; the 4px padding keeps focus rings whole -->
+		<div
+			class="filter-chips -my-1 -ml-1 min-w-0 flex-1 overflow-x-auto py-1 pl-1 lg:overflow-x-clip lg:overflow-y-visible"
+			role="group"
+			aria-label="Filter events by kind"
+		>
+			<div class="filter-chip-row flex flex-nowrap items-center gap-y-2 lg:flex-wrap">
+				{#each visibleGroups as group, groupIndex (group[0].id)}
+					{#each group as filter, chipIndex (filter.id)}
+						{@const count = counts[filter.id]}
+						{@const isActive = activeFilters.has(filter.id)}
+						{@const hintId = filter.hint ? `${hintIdBase}-${filter.id}` : undefined}
+						<!-- Every chip has the same slot to its left; a group's first chip draws its divider there -->
+						<span
+							class="chip-slot inline-flex shrink-0 items-center"
+							class:group-start={chipIndex === 0 && groupIndex > 0}
+						>
+							<button
+								onclick={() => onToggle(filter.id)}
+								onfocus={(e) =>
+									e.currentTarget.scrollIntoView?.({
+										inline: 'nearest',
+										block: 'nearest'
+									})}
+								aria-pressed={isActive}
+								aria-describedby={hintId}
+								style="--chip: {filter.color}"
+								class="{chipBase} {isActive
+									? filter.strong
+										? chipActiveStrong
+										: chipActive
+									: chipInactive}"
+								title={filter.hint
+									? `${filter.label} (${count}): ${filter.hint}`
+									: `${filter.label} (${count})`}
+							>
+								<filter.icon size={14} strokeWidth={2} class="text-[var(--chip)]" />
+								<span>{filter.label}</span>
+								<span class="font-mono opacity-70">
+									{count}
+								</span>
+							</button>
+							{#if filter.hint}
+								<span id={hintId} class="sr-only">{filter.hint}</span>
+							{/if}
+						</span>
+					{/each}
+				{/each}
+			</div>
+		</div>
 
 		{#if hasActiveFilters}
 			<button
 				onclick={onClear}
 				class="
-					ml-auto
-					inline-flex items-center gap-1.5
+					inline-flex shrink-0 items-center gap-1.5
 					px-2.5 py-1.5
 					text-xs font-medium
 					text-[var(--text-muted)]
@@ -364,3 +318,35 @@
 		{/if}
 	</div>
 </div>
+
+<style>
+	/* Pull the row left by one slot, so the slot of each row's first chip falls outside the clip edge. */
+	.filter-chip-row {
+		margin-left: -0.625rem;
+	}
+
+	.chip-slot {
+		position: relative;
+		padding-left: 0.625rem;
+	}
+
+	/* A 20px divider in the slot before the first chip of a group; clipped away when it starts a row. */
+	.chip-slot.group-start::before {
+		content: '';
+		position: absolute;
+		left: 0.25rem;
+		top: 50%;
+		width: 1px;
+		height: 1.25rem;
+		transform: translateY(-50%);
+		background: var(--border);
+	}
+
+	/* The sideways-scrolling row needs no scrollbar chrome. */
+	.filter-chips {
+		scrollbar-width: none;
+	}
+	.filter-chips::-webkit-scrollbar {
+		display: none;
+	}
+</style>

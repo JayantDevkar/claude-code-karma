@@ -152,6 +152,9 @@
 	// Timeline, file activity and subagents load when a tab that shows them opens (#135)
 	const TAB_RESOURCE_KINDS: TabResourceKind[] = ['timeline', 'file-activity', 'subagents'];
 	let timelineEvents = $state<TimelineEvent[]>([]);
+	// What the timeline itself counts; hidden system events are left out.
+	let timelineShownCount = $state<number | null>(null);
+	const timelineEventCount = $derived(timelineShownCount ?? timelineEvents.length);
 	let fileActivities = $state<FileActivity[]>([]);
 	let subagentsArray = $state<SubagentSummary[]>([]);
 	let tabLoaded = $state<Record<TabResourceKind, boolean>>({
@@ -204,6 +207,7 @@
 			// Reset state for new session
 			entityData = initialEntity;
 			timelineEvents = [];
+			timelineShownCount = null;
 			fileActivities = [];
 			subagentsArray = [];
 			tabLoaded = { timeline: false, 'file-activity': false, subagents: false };
@@ -1050,6 +1054,14 @@
 		if (!isMainEntity) return {};
 		return Object.fromEntries(subagentsArray.map((a) => [a.agent_id, a.subagent_type]));
 	});
+
+	// Map of agent_id -> name and colour, so file activity names agents like the other tabs do
+	let subagentIdentities = $derived.by(() => {
+		if (!isMainEntity) return {};
+		return Object.fromEntries(
+			subagentsArray.map((a) => [a.agent_id, { name: a.name, color: a.color }])
+		);
+	});
 </script>
 
 {#snippet tabSkeleton(label: string)}
@@ -1217,8 +1229,8 @@
 									Timeline
 								</h2>
 								<p class="text-sm text-[var(--text-muted)]">
-									{#if isTailing && timelineEvents.length > TAIL_COUNT}
-										Showing {TAIL_COUNT} of {timelineEvents.length} events
+									{#if isTailing && timelineEventCount > TAIL_COUNT}
+										Showing {TAIL_COUNT} of {timelineEventCount} events
 									{:else}
 										Chronological sequence of events in this {entityLabel}
 									{/if}
@@ -1270,6 +1282,9 @@
 								onCurrentMatchChange={(idx) => {
 									currentSearchMatch = idx;
 								}}
+								onEventCountChange={(count) => {
+									timelineShownCount = count;
+								}}
 							/>
 						{:else}
 							<EmptyState
@@ -1313,6 +1328,7 @@
 								{projectPath}
 								{currentAgentId}
 								{subagentTypes}
+								{subagentIdentities}
 							/>
 						{:else}
 							<EmptyState

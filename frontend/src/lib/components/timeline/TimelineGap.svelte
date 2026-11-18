@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { TimelineGap } from '$lib/utils/timelineLogic.svelte';
-	import type { TimelineEvent } from '$lib/api-types';
 	import { Plus } from 'lucide-svelte';
+	import { GAP_LIST_LIMIT, getGapEventName, summarizeGap } from './timeline-gap';
 
 	interface Props {
 		gap: TimelineGap;
@@ -11,18 +11,8 @@
 	let { gap, onExpand }: Props = $props();
 
 	const count = $derived(gap.events.length);
-
-	// Helper to format event name
-	function getEventName(e: TimelineEvent): string {
-		if (e.event_type === 'tool_call') {
-			const toolName = e.metadata?.tool_name || 'Tool';
-			return `Tool ${toolName}`;
-		}
-		if (e.event_type === 'subagent_spawn') return 'Subagent';
-		if (e.event_type === 'prompt') return 'Prompt';
-		if (e.metadata?.result_status === 'error') return 'Error';
-		return e.event_type.charAt(0).toUpperCase() + e.event_type.slice(1).replace('_', ' ');
-	}
+	// A long gap lists kinds with counts; naming hundreds of events one by one is unreadable.
+	const summary = $derived(count > GAP_LIST_LIMIT ? summarizeGap(gap.events) : null);
 
 	function handleGapClick() {
 		// "Nearest two" logic: Reveal first 2 and last 2 events
@@ -36,10 +26,13 @@
 		}
 	}
 
-	function handleItemClick(e: MouseEvent, eventId: string) {
+	function reveal(e: MouseEvent, ids: string[]) {
 		e.stopPropagation();
-		onExpand([eventId]);
+		onExpand(ids);
 	}
+
+	const itemClass =
+		'max-w-full text-left [overflow-wrap:anywhere] hover:text-[var(--text-primary)] hover:underline decoration-dashed underline-offset-2 transition-colors cursor-pointer';
 </script>
 
 <div class="group relative flex gap-4 min-h-[32px]">
@@ -66,6 +59,7 @@
 				cursor-pointer
 			"
 			title="Show context"
+			aria-label="Show the nearest hidden events"
 		>
 			<Plus size={10} strokeWidth={3} />
 		</button>
@@ -75,34 +69,50 @@
 	<div class="flex-1 py-1 min-w-0 flex items-start">
 		<div
 			class="
-             flex flex-wrap items-center gap-x-1 gap-y-1
+             flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1
              text-xs text-[var(--text-muted)]
              text-left
         "
 		>
 			<button
 				onclick={handleGapClick}
+				title="Show the nearest hidden events"
 				class="font-medium bg-[var(--bg-subtle)] px-1.5 py-0.5 rounded text-[10px] border border-[var(--border)] hover:text-[var(--text-primary)] transition-colors mr-1"
 			>
 				hidden ({count})
 			</button>
 
-			{#each gap.events as event, i}
-				<button
-					onclick={(e) => handleItemClick(e, event.id)}
-					class="
-                        hover:text-[var(--text-primary)]
-                        hover:underline decoration-dashed underline-offset-2
-                        transition-colors
-                        cursor-pointer
-                    "
-				>
-					{getEventName(event)}
-				</button>
-				{#if i < gap.events.length - 1}
-					<span class="opacity-40">,</span>
+			{#if summary}
+				{#each summary.groups as group, i (group.key)}
+					<!-- The comma sits against its item, not in a gap of its own -->
+					<span class="inline-flex max-w-full items-baseline">
+						<button
+							onclick={(e) => reveal(e, group.ids)}
+							title="Show these {group.count}"
+							class={itemClass}
+						>
+							{group.count}
+							{group.label}
+						</button>{#if i < summary.groups.length - 1 || summary.otherKinds > 0}<span
+								class="opacity-60">,</span
+							>{/if}
+					</span>
+				{/each}
+				{#if summary.otherKinds > 0}
+					<span title="{summary.otherCount} more hidden events">
+						and {summary.otherKinds} other {summary.otherKinds === 1 ? 'kind' : 'kinds'}
+					</span>
 				{/if}
-			{/each}
+			{:else}
+				{#each gap.events as event, i (event.id)}
+					<span class="inline-flex max-w-full items-baseline">
+						<button onclick={(e) => reveal(e, [event.id])} class={itemClass}>
+							{getGapEventName(event)}
+						</button>{#if i < gap.events.length - 1}<span class="opacity-60">,</span
+							>{/if}
+					</span>
+				{/each}
+			{/if}
 		</div>
 	</div>
 </div>

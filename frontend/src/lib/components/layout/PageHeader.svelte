@@ -46,7 +46,7 @@
 <div class={className}>
 	<!-- Breadcrumb Navigation -->
 	{#if breadcrumbs.length > 0}
-		<div class="flex items-center gap-2 text-xs text-[var(--text-secondary)] mb-4">
+		<div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[var(--text-secondary)] mb-4">
 			{#each breadcrumbs as crumb, i}
 				{#if i > 0}
 					<span class="text-[var(--text-faint)]">/</span>
@@ -54,13 +54,15 @@
 				{#if crumb.href}
 					<a
 						href={crumb.href}
-						class="hover:text-[var(--text-primary)] transition-colors"
+						class="min-w-0 [overflow-wrap:anywhere] hover:text-[var(--text-primary)] transition-colors"
 						style="transition-duration: var(--duration-fast); transition-timing-function: var(--ease);"
 					>
 						{crumb.label}
 					</a>
 				{:else}
-					<span class="text-[var(--text-primary)] font-medium">{crumb.label}</span>
+					<span class="min-w-0 [overflow-wrap:anywhere] text-[var(--text-primary)] font-medium"
+						>{crumb.label}</span
+					>
 				{/if}
 			{/each}
 		</div>
@@ -96,7 +98,9 @@
 			<!-- Title and Content -->
 			<div class="flex-1 min-w-0">
 				<div class="flex flex-wrap sm:flex-nowrap items-center gap-x-3 gap-y-2 mb-2">
-					<h1 class="text-2xl font-semibold tracking-tight text-[var(--text-primary)]">
+					<h1
+						class="min-w-0 text-2xl font-semibold tracking-tight text-[var(--text-primary)] [overflow-wrap:anywhere]"
+					>
 						{title}
 					</h1>
 					{#if badges}

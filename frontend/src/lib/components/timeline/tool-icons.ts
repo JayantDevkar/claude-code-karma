@@ -27,7 +27,27 @@ import {
 	ClipboardListIcon,
 	CloudOffIcon,
 	HourglassIcon,
-	BanIcon
+	BanIcon,
+	SendIcon,
+	WorkflowIcon,
+	ActivityIcon,
+	PackageSearchIcon,
+	GitBranchIcon,
+	UsersIcon,
+	CircleStopIcon,
+	AlarmClockIcon,
+	CalendarClockIcon,
+	LayoutTemplateIcon,
+	LinkIcon,
+	BellIcon,
+	FileUpIcon,
+	ZapIcon,
+	MessagesSquareIcon,
+	BellRingIcon,
+	FoldVerticalIcon,
+	SquareTerminalIcon,
+	InfoIcon,
+	ScrollTextIcon
 } from 'lucide-svelte';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -59,8 +79,41 @@ export function getToolIcon(toolName: string | undefined): LucideIcon {
 		case 'LS':
 			return FolderIcon;
 		case 'Task':
+		case 'Agent':
 		case 'TaskOutput':
 			return BotIcon;
+		case 'SendMessage':
+			return SendIcon;
+		case 'ListAgents':
+			return UsersIcon;
+		case 'Workflow':
+			return WorkflowIcon;
+		case 'Monitor':
+			return ActivityIcon;
+		case 'ToolSearch':
+			return PackageSearchIcon;
+		case 'EnterWorktree':
+		case 'ExitWorktree':
+			return GitBranchIcon;
+		case 'TaskStop':
+			return CircleStopIcon;
+		case 'ScheduleWakeup':
+			return AlarmClockIcon;
+		case 'CronCreate':
+		case 'CronDelete':
+		case 'CronList':
+			return CalendarClockIcon;
+		case 'Artifact':
+			return LayoutTemplateIcon;
+		case 'WebFetch':
+			return LinkIcon;
+		case 'PushNotification':
+		case 'ReadNotifications':
+			return BellIcon;
+		case 'SendUserFile':
+			return FileUpIcon;
+		case 'Skill':
+			return ZapIcon;
 		case 'TaskCreate':
 			return PlusCircleIcon;
 		case 'TaskUpdate':
@@ -74,6 +127,7 @@ export function getToolIcon(toolName: string | undefined): LucideIcon {
 		case 'WebSearch':
 			return GlobeIcon;
 		case 'AskQuestion':
+		case 'AskUserQuestion':
 			return HelpCircleIcon;
 		case 'SwitchMode':
 			return ToggleLeftIcon;
@@ -168,8 +222,79 @@ export const eventTypeConfig = {
 		bgColor: 'bg-[var(--bg-muted)]',
 		borderColor: 'border-[var(--border)]',
 		leftAccent: 'border-l-[var(--text-muted)]'
+	},
+	message: {
+		icon: MessagesSquareIcon,
+		color: 'text-[var(--event-message)]',
+		bgColor: 'bg-[var(--event-message-subtle)]',
+		borderColor: 'border-[var(--event-message)]/60',
+		leftAccent: 'border-l-[var(--event-message)]'
+	},
+	task_notification: {
+		icon: BellRingIcon,
+		color: 'text-[var(--event-background)]',
+		bgColor: 'bg-[var(--event-background-subtle)]',
+		borderColor: 'border-[var(--event-background)]/60',
+		leftAccent: 'border-l-[var(--event-background)]'
+	},
+	scheduled_fire: {
+		icon: AlarmClockIcon,
+		color: 'text-[var(--event-background)]',
+		bgColor: 'bg-[var(--event-background-subtle)]',
+		borderColor: 'border-[var(--event-background)]/60',
+		leftAccent: 'border-l-[var(--event-background)]'
+	},
+	compaction: {
+		icon: FoldVerticalIcon,
+		color: 'text-[var(--event-system)]',
+		bgColor: 'bg-[var(--bg-base)]',
+		borderColor: 'border-[var(--event-system)]/60',
+		leftAccent: 'border-l-[var(--event-system)]'
+	},
+	shell_command: {
+		icon: SquareTerminalIcon,
+		color: 'text-[var(--event-command)]',
+		bgColor: 'bg-[var(--event-command-subtle)]',
+		borderColor: 'border-[var(--event-command)]/60',
+		leftAccent: 'border-l-[var(--event-command)]'
+	},
+	system_notice: {
+		icon: InfoIcon,
+		color: 'text-[var(--event-system)]',
+		bgColor: 'bg-[var(--event-system-subtle)]',
+		borderColor: 'border-[var(--event-system)]/60',
+		leftAccent: 'border-l-[var(--event-system)]'
+	},
+	system_context: {
+		icon: ScrollTextIcon,
+		color: 'text-[var(--event-system)]',
+		bgColor: 'bg-[var(--event-system-subtle)]',
+		borderColor: 'border-[var(--event-system)]/60',
+		leftAccent: 'border-l-[var(--event-system)]'
 	}
 } as const;
+
+// Neutral look for event types this build does not know yet.
+export const unknownEventConfig = {
+	icon: SparklesIcon,
+	color: 'text-[var(--text-muted)]',
+	bgColor: 'bg-[var(--bg-muted)]',
+	borderColor: 'border-[var(--border)]',
+	leftAccent: 'border-l-[var(--text-muted)]'
+} as const;
+
+export interface EventConfig {
+	icon: LucideIcon;
+	color: string;
+	bgColor: string;
+	borderColor: string;
+	leftAccent: string;
+}
+
+/** Icon and colours for an event type, with a neutral fallback for unknown types. */
+export function getEventConfig(eventType: string): EventConfig {
+	return (eventTypeConfig as Record<string, EventConfig>)[eventType] ?? unknownEventConfig;
+}
 
 // Loud styling for unhealed limit/refusal api_error events.
 export const apiErrorToneConfig = {
