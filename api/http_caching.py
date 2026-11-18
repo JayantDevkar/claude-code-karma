@@ -16,7 +16,7 @@ from functools import wraps
 from pathlib import Path
 from typing import Any, Callable, Iterable, List, Optional
 
-from fastapi import Request, Response
+from fastapi import HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 
 # === HTTP Date Utilities ===
@@ -396,3 +396,31 @@ def _add_no_cache_headers(result: Any) -> Response:
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
     response.headers["Pragma"] = "no-cache"
     return response
+
+
+# === Index not available ===
+
+# Seconds a client should wait before retrying a request that needs the SQLite index.
+INDEX_RETRY_SECONDS = 5
+
+
+def index_unavailable_error() -> HTTPException:
+    """
+    The error for a route that needs the SQLite index when sqlite_read() gave no connection.
+
+    Being built: 503 with Retry-After, so clients wait and retry.
+    Turned off in settings: 501 with no Retry-After, because retrying will never help.
+    """
+    from config import settings
+
+    if not settings.use_sqlite:
+        return HTTPException(
+            status_code=501,
+            detail="This view needs the SQLite index, which is turned off "
+            "(CLAUDE_KARMA_USE_SQLITE=false).",
+        )
+    return HTTPException(
+        status_code=503,
+        detail="The index is rebuilding. Try again in a moment.",
+        headers={"Retry-After": str(INDEX_RETRY_SECONDS)},
+    )

@@ -197,10 +197,9 @@ Deep dive into individual Claude Code sessions with comprehensive analysis.
   - Messages to and from agents and other Claude sessions
   - Background reports (agents, background commands, monitors) and scheduled task fires
   - Notices from Claude Code (recaps, model fallback, context compaction)
-  - Permission requests
 - **Who sent it** — Each event shows its sender: you, Claude, a named agent in its Claude Code colour, another session, or Claude Code itself
 - **Event filtering** — Filter chips grouped by who acts (you, Claude, tools, agents, Claude Code); reminders and other text added for Claude stay out unless the System chip is selected
-- **Time gaps** — Visual indicators for idle periods
+- **Hidden-event gaps** — Where a filter, a search or hiding leaves events out, a row says how many and of which kinds; click it to show them
 - **Expandable details** — Click events for full context
 - **Tool call parameters** — See exact tool inputs/outputs
 - **Bash command execution** — View command results

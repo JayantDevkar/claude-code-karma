@@ -44,6 +44,9 @@ class AgentRegistry:
     _by_tool: dict[str, AgentInfo] = field(default_factory=dict)
 
     def add(self, info: AgentInfo) -> None:
+        if info.agent_id in self._by_id:
+            # The same meta.json can be reached from a parent dir and from its own
+            return
         self._by_id[info.agent_id] = info
         if info.name:
             self._by_name.setdefault(info.name, []).append(info)
@@ -109,12 +112,17 @@ def build_agent_registry(
 ) -> AgentRegistry:
     """Build the registry from the meta.json files beside these subagent JSONLs (and in extra_dirs)."""
     registry = AgentRegistry()
+    seen: set[Path] = set()
     for directory in sorted({p.parent for p in subagent_paths} | set(extra_dirs)):
         try:
             meta_paths = sorted(directory.rglob(f"agent-*{_META_SUFFIX}"))
         except OSError:
             continue
         for meta_path in meta_paths:
+            # A nested dir is searched from its parent too; read each file once
+            if meta_path in seen:
+                continue
+            seen.add(meta_path)
             info = _read_meta(meta_path)
             if info is not None:
                 registry.add(info)

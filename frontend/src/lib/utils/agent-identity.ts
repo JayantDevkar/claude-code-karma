@@ -16,11 +16,16 @@ export interface ColorVars {
 // Claude Code's own agent colour names, as written to agent meta.json.
 const AGENT_COLOR_NAMES = ['red', 'blue', 'green', 'yellow', 'purple', 'orange', 'pink', 'cyan'];
 
+const DEFAULT_COLORS: ColorVars = {
+	color: 'var(--subagent-default)',
+	subtle: 'var(--subagent-default-subtle)'
+};
+
 function agentToken(name: string): ColorVars {
 	return { color: `var(--agent-${name})`, subtle: `var(--agent-${name}-subtle)` };
 }
 
-/** Agent or peer colour: its own colour name, else the subagent-type colour, else a name hash. */
+/** Agent or peer colour: its own colour name, else its type's own colour, else a hash of its name. */
 export function getAgentColorVars(
 	colorName?: string | null,
 	fallbackType?: string | null,
@@ -28,7 +33,11 @@ export function getAgentColorVars(
 ): ColorVars {
 	const normalized = colorName?.toLowerCase();
 	if (normalized && AGENT_COLOR_NAMES.includes(normalized)) return agentToken(normalized);
-	if (fallbackType) return getSubagentColorVars(fallbackType);
+	if (fallbackType) {
+		const typeColors = getSubagentColorVars(fallbackType);
+		// Most types share the default colour; a named agent of such a type is told apart by its name.
+		if (typeColors.color !== DEFAULT_COLORS.color || !fallbackName) return typeColors;
+	}
 	if (fallbackName) {
 		let hash = 0;
 		for (let i = 0; i < fallbackName.length; i++) {
@@ -36,7 +45,7 @@ export function getAgentColorVars(
 		}
 		return agentToken(AGENT_COLOR_NAMES[Math.abs(hash) % AGENT_COLOR_NAMES.length]);
 	}
-	return { color: 'var(--subagent-default)', subtle: 'var(--subagent-default-subtle)' };
+	return DEFAULT_COLORS;
 }
 
 /** Agent ids are long hex strings, or `a<name>-<hex>` for named agents; never show them raw. */
@@ -104,7 +113,7 @@ export function getAgentDisplayName(agent: Parameters<typeof getAgentLabel>[0]):
 	return getAgentLabel(agent).label;
 }
 
-/** The label with its short id, for titles that stand alone: "general-purpose af57af57". */
+/** The label with its short id, for titles that stand alone: "general-purpose a5e4d3c2". */
 export function getAgentFullName(agent: Parameters<typeof getAgentLabel>[0]): string {
 	const { label, secondary } = getAgentLabel(agent);
 	return secondary ? `${label} ${secondary}` : label;

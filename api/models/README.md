@@ -6,7 +6,7 @@ Pydantic models for parsing and querying Claude Code's local storage (`~/.claude
 
 ## Installation
 
-Requires Python 3.9+ and Pydantic v2:
+Requires Python 3.10+ and Pydantic v2:
 
 ```bash
 pip install pydantic>=2.0
@@ -44,7 +44,8 @@ Project
 │   │   ├── UserMessage
 │   │   ├── AssistantMessage
 │   │   │   └── ContentBlock (TextBlock, ThinkingBlock, ToolUseBlock)
-│   │   └── FileHistorySnapshot
+│   │   ├── FileHistorySnapshot
+│   │   └── SessionTitleMessage, CompactBoundaryMessage, QueueOperationMessage, ProgressMessage
 │   ├── Side entry (SystemEntry, QueuedCommandEntry)
 │   ├── Agent (subagents/)
 │   ├── ToolResult (tool-results/)
@@ -161,7 +162,7 @@ A subagent's name, type, team, colour and model are in the `agent-<id>.meta.json
 
 ### Messages
 
-Three message types parsed from JSONL:
+Seven entry types are parsed from JSONL into message models: `UserMessage`, `AssistantMessage`, `FileHistorySnapshot`, `SessionTitleMessage` (`type: summary`, a session title), `CompactBoundaryMessage` (`type: system`, `subtype: compact_boundary`), `QueueOperationMessage` and `ProgressMessage`. The first three carry the fields below:
 
 ```python
 from models import UserMessage, AssistantMessage, FileHistorySnapshot

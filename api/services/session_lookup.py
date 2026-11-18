@@ -8,8 +8,9 @@ service with consistent error handling and return types.
 
 import logging
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Iterable, Optional
 
 from config import settings
 from models import Agent, Session
@@ -264,18 +265,59 @@ def find_subagent(
 
     parent_session = Session.from_path(session_jsonl)
 
-    # Find subagent
+    # Find subagent; a transcript split over two files of the same name is one agent
     agent_name = f"agent-{agent_id}.jsonl"
-    agent_jsonl = next(
-        (p for p in parent_session.list_subagent_paths() if p.name == agent_name), None
-    )
-    if agent_jsonl is None:
+    agent_files = [p for p in parent_session.list_subagent_paths() if p.name == agent_name]
+    if not agent_files:
         return None
 
-    agent = Agent.from_path(agent_jsonl)
+    agent = Agent.from_segments(agent_files)
 
     return SubagentLookupResult(
         agent=agent,
         parent_session=parent_session,
         project_encoded_name=encoded_name,
     )
+
+
+def sessions_by_name(names: Iterable[str]) -> Optional[dict]:
+    """
+    Indexed sessions carrying each of these names (their latest agent-name), in one query.
+
+    Returns None when the index cannot be asked (turned off, not ready, or the query failed),
+    so callers can tell "no such session" from "do not know".
+    """
+    from db.connection import sqlite_read
+    from services.timeline_links import NamedSession
+
+    wanted = sorted({name for name in names if name})
+    if not wanted:
+        return {}
+    try:
+        with sqlite_read() as conn:
+            if conn is None:
+                return None
+            marks = ",".join("?" * len(wanted))
+            rows = conn.execute(
+                "SELECT session_name, uuid, project_encoded_name, start_time, end_time "
+                f"FROM sessions WHERE session_name IN ({marks})",
+                wanted,
+            ).fetchall()
+    except Exception as e:
+        logger.warning("Session name lookup failed: %s", e)
+        return None
+    found: dict[str, list] = {name: [] for name in wanted}
+    for row in rows:
+        found[row[0]].append(NamedSession(row[1], row[2], _aware(row[3]), _aware(row[4])))
+    return found
+
+
+def _aware(value: Optional[str]) -> Optional[datetime]:
+    """An indexed ISO timestamp as an aware datetime (UTC when it carries no zone)."""
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)

@@ -35,7 +35,7 @@
 		'max-w-full text-left [overflow-wrap:anywhere] hover:text-[var(--text-primary)] hover:underline decoration-dashed underline-offset-2 transition-colors cursor-pointer';
 </script>
 
-<div class="group relative flex gap-4 min-h-[32px]">
+<div class="group relative flex gap-4 min-h-[32px]" data-gap-id={gap.id}>
 	<!-- Left Column (Rail) -->
 	<div class="w-10 flex flex-col items-center shrink-0">
 		<!-- Dashed Line through -->
@@ -60,6 +60,7 @@
 			"
 			title="Show context"
 			aria-label="Show the nearest hidden events"
+			tabindex="-1"
 		>
 			<Plus size={10} strokeWidth={3} />
 		</button>
@@ -77,6 +78,7 @@
 			<button
 				onclick={handleGapClick}
 				title="Show the nearest hidden events"
+				data-gap-primary
 				class="font-medium bg-[var(--bg-subtle)] px-1.5 py-0.5 rounded text-[10px] border border-[var(--border)] hover:text-[var(--text-primary)] transition-colors mr-1"
 			>
 				hidden ({count})

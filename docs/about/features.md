@@ -117,7 +117,7 @@ Claude Code Karma detects and links related sessions. When a session is resumed 
 
 ### Compaction Detection
 
-Sessions that undergo context compaction (when conversation history is summarized to free up context window) are detected via the presence of `SummaryMessage` entries. Compacted sessions are flagged in the UI.
+Sessions that undergo context compaction (when conversation history is summarized to free up context window) are detected via `compact_boundary` entries (`CompactBoundaryMessage`). Compacted sessions are flagged in the UI.
 
 ### Plan Approval Workflow
 

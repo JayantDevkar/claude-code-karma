@@ -73,7 +73,12 @@ def _sibling_index(projects_dir: Path) -> dict[str, list[tuple[str, str]]]:
 
 
 def subagent_files(jsonl_path: Path) -> list[Path]:
-    """Subagent JSONLs from the session's dir plus its repo and worktree dirs; best copy per agent."""
+    """Subagent JSONLs from the session's dir plus its repo and worktree dirs; best copy per file.
+
+    Workflow agents live below `subagents/workflows/<run>/`, so the search is recursive.
+    A copy is the same relative path in another dir. Two files with one name at different
+    depths are two segments of one agent, and both are returned (see Agent.from_segments).
+    """
     from services.desktop_sessions import _extract_project_prefix_from_worktree
 
     own, uuid = jsonl_path.parent, jsonl_path.stem
@@ -85,14 +90,20 @@ def subagent_files(jsonl_path: Path) -> list[Path]:
     ]
     copies: dict[str, list[Path]] = {}
     for d in dirs:
+        root = d / uuid / "subagents"
         try:
-            agent_paths = list((d / uuid / "subagents").glob("agent-*.jsonl"))
+            agent_paths = list(root.rglob("agent-*.jsonl"))
         except OSError:
             continue
         for p in agent_paths:
-            copies.setdefault(p.name, []).append(p)
+            copies.setdefault(p.relative_to(root).as_posix(), []).append(p)
     picked = [ps[0] if len(ps) == 1 else most_complete(ps) for ps in copies.values()]
-    return sorted((p for p in picked if p is not None), key=lambda p: p.name)
+    return sorted((p for p in picked if p is not None), key=lambda p: (p.name, str(p)))
+
+
+def count_agents(paths: Iterable[Path]) -> int:
+    """Number of agents behind these files; an agent split over two files counts once."""
+    return len({p.name for p in paths})
 
 
 def superseded_copies(dirs: Iterable[Path]) -> dict[Path, set[str]]:

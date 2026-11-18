@@ -57,7 +57,7 @@ from utils import (
 # =============================================================================
 
 # Bump when the event shape changes, so browsers drop timelines cached in the old shape.
-TIMELINE_FORMAT_VERSION = "2"
+TIMELINE_FORMAT_VERSION = "3"
 
 
 def timeline_etag(file_etag: Optional[str]) -> Optional[str]:
@@ -181,6 +181,7 @@ def build_conversation_timeline(
     actor_type: str = "session",
     subagent_info: Optional[dict[str, Optional[str]]] = None,
     agent_registry: Optional[AgentRegistry] = None,
+    agent_types: Optional[dict[str, str]] = None,
 ) -> list[TimelineEvent]:
     """
     Build chronological timeline of events from a conversation.
@@ -194,6 +195,7 @@ def build_conversation_timeline(
         actor_type: Default actor type ("session" or "subagent")
         subagent_info: Optional dict mapping agent_id -> slug (for sessions)
         agent_registry: Names, colours and types of the session's subagents
+        agent_types: Types already known by agent id (an agent's own, in its own timeline)
 
     Returns:
         List of TimelineEvent sorted by timestamp
@@ -206,6 +208,7 @@ def build_conversation_timeline(
         subagent_info or {},
         agent_registry or AgentRegistry(),
     )
+    builder.spawn_types.update(agent_types or {})
     return builder.build()
 
 
@@ -304,8 +307,10 @@ class _TimelineBuilder:
         # Pass 3: harness notices and queued input, which are not conversation messages
         self.prev_user_event = None
         jsonl_path = getattr(conversation, "jsonl_path", None)
-        if jsonl_path is not None:
-            for entry in iter_side_entries(jsonl_path):
+        # An agent can span several files; a session has one
+        all_paths = getattr(conversation, "all_paths", (jsonl_path,) if jsonl_path else ())
+        for side_path in all_paths:
+            for entry in iter_side_entries(side_path):
                 self._begin_entry(entry.uuid, entry.timestamp)
                 if isinstance(entry, SystemEntry):
                     self._handle_system_entry(entry)
@@ -535,6 +540,8 @@ class _TimelineBuilder:
                 "peer_name": "main",
                 "peer_address": None,
                 "peer_agent_id": None,
+                "peer_session_uuid": None,
+                "peer_project_encoded_name": None,
                 "peer_agent_type": None,
                 "peer_color": None,
                 "message_summary": None,
@@ -815,6 +822,8 @@ class _TimelineBuilder:
             "peer_name": name,
             "peer_address": address,
             "peer_agent_id": peer_agent_id,
+            "peer_session_uuid": None,
+            "peer_project_encoded_name": None,
             "peer_agent_type": self._agent_type(peer_agent_id),
             "peer_color": color,
             "message_summary": wrapped.summary,
@@ -1134,6 +1143,8 @@ class _TimelineBuilder:
                 "peer_name": name,
                 "peer_address": recipient if is_address else None,
                 "peer_agent_id": info.agent_id if info else None,
+                "peer_session_uuid": None,
+                "peer_project_encoded_name": None,
                 "peer_agent_type": self._agent_type(info.agent_id) if info else None,
                 "peer_color": info.color if info else None,
                 "message_summary": message_summary,

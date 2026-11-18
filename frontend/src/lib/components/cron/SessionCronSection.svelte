@@ -1,5 +1,9 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import {
+		INDEX_REBUILDING_MESSAGE,
+		INDEX_STILL_REBUILDING_MESSAGE
+	} from '$lib/utils/indexRebuilding';
+	import { createIndexedTab } from '$lib/utils/indexedTab.svelte';
 	import { Clock, Loader2, Info, ChevronRight } from 'lucide-svelte';
 	import { API_BASE } from '$lib/config';
 	import type { CronJob, CronListResponse } from '$lib/api-types';
@@ -7,28 +11,22 @@
 	interface Props {
 		sessionUuid: string;
 		projectEncodedName?: string;
+		/** False while the tab is hidden; loading starts when it is first shown */
+		active?: boolean;
 	}
-	let { sessionUuid, projectEncodedName }: Props = $props();
+	let { sessionUuid, projectEncodedName, active = true }: Props = $props();
 
-	let loading = $state(true);
-	let error = $state<string | null>(null);
-	let jobs = $state<CronJob[]>([]);
+	// The index answers 503 while it rebuilds; the tab waits, retries, and gives up after a few minutes.
+	const tab = createIndexedTab<CronListResponse>(
+		() => `${API_BASE}/sessions/${sessionUuid}/cron?include_fires=true`,
+		() => active
+	);
+	const loading = $derived(tab.status === 'idle' || tab.status === 'loading');
+	const error = $derived(tab.error);
+	const jobs = $derived<CronJob[]>(tab.data?.jobs ?? []);
 	let openIds = $state<Set<string>>(new Set());
 
 	const NOW_MS = Date.now();
-
-	onMount(async () => {
-		try {
-			const res = await fetch(`${API_BASE}/sessions/${sessionUuid}/cron?include_fires=true`);
-			if (!res.ok) throw new Error(`API ${res.status}`);
-			const data = (await res.json()) as CronListResponse;
-			jobs = data.jobs ?? [];
-		} catch (e) {
-			error = e instanceof Error ? e.message : String(e);
-		} finally {
-			loading = false;
-		}
-	});
 
 	// ── status helpers ────────────────────────────────────────────────────────
 	type DerivedStatus = 'active' | 'expired' | 'deleted';
@@ -186,8 +184,30 @@
 		</div>
 	{/if}
 
+	<!-- Gave up waiting for the index: say so and offer a manual retry -->
+	{#if tab.status === 'stalled'}
+		<div
+			class="center-state"
+			role="status"
+			style="gap: 12px; align-items: center; flex-wrap: wrap; color: var(--text-secondary); font-size: 14px;"
+		>
+			{INDEX_STILL_REBUILDING_MESSAGE}
+			<button type="button" class="retry-button" onclick={tab.retry}>Try again</button>
+		</div>
+
+	<!-- Index rebuilding: waiting, not failed -->
+	{:else if tab.status === 'rebuilding'}
+		<div
+			class="center-state"
+			role="status"
+			style="gap: 8px; align-items: center; color: var(--text-secondary); font-size: 14px;"
+		>
+			<Loader2 size={16} class="animate-spin" style="color: var(--text-faint);" />
+			{INDEX_REBUILDING_MESSAGE}
+		</div>
+
 	<!-- Loading -->
-	{#if loading}
+	{:else if loading}
 		<div class="center-state">
 			<Loader2 size={18} class="animate-spin" style="color: var(--text-faint);" />
 		</div>
@@ -462,6 +482,20 @@
 		display: flex;
 		justify-content: center;
 		padding: 48px 0;
+	}
+
+	.retry-button {
+		padding: 4px 10px;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-md);
+		background: var(--bg-base);
+		color: var(--text-primary);
+		font-weight: 500;
+		cursor: pointer;
+	}
+
+	.retry-button:hover {
+		border-color: var(--accent);
 	}
 
 	.error-state {

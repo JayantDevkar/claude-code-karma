@@ -39,6 +39,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `system_notice`, `system_context`). `GET /sessions/{uuid}/subagents`
   and the agent detail endpoint gain `name`, `color`, `team_name`,
   `model` and `description`.
+- **Messages link to the session that sent them, for sessions with a
+  set name.** A message from or to another Claude session carries
+  `metadata.peer_session_uuid` and `metadata.peer_project_encoded_name`
+  when exactly one session with that name was running at the time. Only
+  sessions you gave a name link. The default names Claude Code derives
+  for unnamed sessions are not recorded in the session file, so most
+  messages between unnamed sessions stay unlinked.
 
 ### Changed
 
@@ -58,10 +65,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Timeline event ids changed** from `evt-<n>` to
   `evt-<entry uuid>-<n>`. An id stays the same while a live session
   grows.
-- **The first start re-indexes every session** (schema v32). Message
-  counts, initial prompts, and skill and command counts are
-  recalculated. It runs in the background when the API starts and takes
+- **The first start re-indexes every session** (schema v33). Message
+  counts, initial prompts, skill and command counts, agent types,
+  subagent counts and subagent costs are recalculated, and session names
+  are stored. It runs in the background when the API starts and takes
   a couple of minutes for about a thousand sessions.
+- **Shell and cron routes answer 503 while the index is being built.**
+  `/shells`, `/cron`, their project rollups, the per-session lists and
+  the kill action answer `503` with
+  `{"detail": "The index is rebuilding. Try again in a moment."}` and
+  `Retry-After: 5`. `Retry-After` is exposed to cross-origin pages.
+  With the index turned off (`CLAUDE_KARMA_USE_SQLITE=false`) they
+  answer `501` with no `Retry-After`, since waiting will not help.
+- **Timeline caching follows its links.** A timeline's ETag now covers
+  the links resolved from the index, and a timeline whose links could
+  not be looked up is sent with `Cache-Control: no-store`.
 
 ### Fixed
 
@@ -81,6 +99,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The agent page reported the type `_teammate`** for named agents. It
   now reports the agent's real type, the same one the Subagents tab and
   the timeline show.
+- **Shells and Cron tabs failed with a server error during a re-index.**
+  The routes read the index without checking that it was ready.
+- **Skill session lists failed without the index.**
+  `/skills/{name}/sessions` raised a server error whenever it fell back
+  to reading session files.
+- **Named teammates had no type in agent analytics.** The index matched
+  agents by a hex-only id, so teammates were stored as `_teammate`.
+  They are now stored under the type they were spawned as.
+- **Workflow agents were missing.** Agents that a workflow runs live in
+  a subfolder that was never searched, so they were absent from the
+  Subagents tab, their pages returned 404, and their tokens and cost
+  were left out of the session's totals. A workflow agent that carries
+  on in a second file is shown as one agent with both parts counted.
 
 ## [0.2.0] — 2026-05-19
 

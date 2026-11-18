@@ -122,7 +122,7 @@ describe('System filter', () => {
 		const idle = ev(
 			'system_context',
 			{ kind: 'agent_idle' },
-			{ actor: 'a1', actor_type: 'subagent', actor_name: 'impl-t28' }
+			{ actor: 'a1', actor_type: 'subagent', actor_name: 'builder-b' }
 		);
 		expect(matchesSingleFilter(idle, 'system')).toBe(true);
 		expect(matchesSingleFilter(idle, 'subagent')).toBe(false);
@@ -290,6 +290,22 @@ describe('calculateFilterCounts', () => {
 });
 
 describe('search', () => {
+	it('does not match on ids and addresses that the card never shows', () => {
+		const message = ev('message', {
+			direction: 'in',
+			peer_kind: 'session',
+			peer_name: 'docs-site-2',
+			peer_address: 'uds:/tmp/cc-socks/4101.sock',
+			peer_agent_id: 'a1c2d3e4f5a6b7c8d',
+			peer_session_uuid: '0a1b2c3d-0000-4000-8000-000000000001',
+			peer_project_encoded_name: '-Users-me-docs'
+		});
+		for (const query of ['users', '0a1b2c3d', 'cc-socks', 'a1c2d3e4']) {
+			expect(matchesSearch(message, query), query).toBe(false);
+		}
+		expect(matchesSearch(message, 'docs-site')).toBe(true);
+	});
+
 	it('matches the wording shown on the card, not only the backend title', () => {
 		const done = ev('task_notification', { task_kind: 'shell', task_status: 'completed' });
 		expect(matchesSearch({ ...done, title: 'Background command completed' }, 'finished')).toBe(

@@ -10,7 +10,7 @@ import sqlite3
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 32
+SCHEMA_VERSION = 33
 
 SCHEMA_SQL = """
 -- Schema versioning
@@ -60,6 +60,8 @@ CREATE TABLE IF NOT EXISTS sessions (
     ended_by TEXT,
     ended_resets_at TEXT,
     limit_hit_count INTEGER DEFAULT 0,
+    -- The name the session was given (its latest agent-name entry); NULL when it has none
+    session_name TEXT,
     indexed_at TEXT DEFAULT (datetime('now')),
     -- Per-session flag set to 1 when a session needs the bg-shells/cron
     -- extraction pass (v13). Cleared by the indexer after processing.
@@ -72,6 +74,7 @@ CREATE INDEX IF NOT EXISTS idx_sessions_start ON sessions(start_time DESC);
 CREATE INDEX IF NOT EXISTS idx_sessions_slug ON sessions(slug);
 CREATE INDEX IF NOT EXISTS idx_sessions_branch ON sessions(project_encoded_name, git_branch);
 CREATE INDEX IF NOT EXISTS idx_sessions_mtime ON sessions(jsonl_mtime);
+CREATE INDEX IF NOT EXISTS idx_sessions_session_name ON sessions(session_name);
 
 -- Tool usage per session (denormalized for fast aggregation)
 CREATE TABLE IF NOT EXISTS session_tools (
@@ -980,6 +983,20 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             ).fetchone()
             if has_sessions and not columns_added and not reindex_forced:
                 conn.execute("UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1")
+                reindex_forced = True
+
+        if current_version < 33:
+            # sessions.session_name comes from the column guard above
+            logger.info(
+                "Migrating → v33: re-index sessions (named teammates get their real type, "
+                "workflow agents are listed, session names are stored)"
+            )
+            has_sessions = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='sessions'"
+            ).fetchone()
+            if has_sessions and not columns_added and not reindex_forced:
+                conn.execute("UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1")
+                reindex_forced = True
 
     # Record version
     conn.execute(
@@ -1006,6 +1023,7 @@ _SESSION_COLUMNS = [
     ("ended_by", "TEXT"),
     ("ended_resets_at", "TEXT"),
     ("limit_hit_count", "INTEGER DEFAULT 0"),
+    ("session_name", "TEXT"),
 ]
 
 # subagent_invocations columns added after v27; also in SCHEMA_SQL for fresh installs.
@@ -1044,8 +1062,8 @@ def _ensure_session_columns(conn: sqlite3.Connection) -> bool:
     if needs_reindex:
         logger.info("Added sessions columns %s; forcing a reindex", needs_reindex)
         conn.execute("UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1")
-    if missing:
-        conn.commit()
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_session_name ON sessions(session_name)")
+    conn.commit()
     return bool(needs_reindex)
 
 

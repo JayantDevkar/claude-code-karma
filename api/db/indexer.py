@@ -404,6 +404,7 @@ def _index_session(
         source_root: Extra session root name the JSONL was synced from (None = local)
     """
     from models import Session
+    from models.side_entries import read_session_name
     from models.usage import TokenUsage
     from utils import get_initial_prompt
 
@@ -431,7 +432,8 @@ def _index_session(
 
     # Count subagents via filesystem (fast, no JSONL parse)
     subagent_paths = session.list_subagent_paths()
-    subagent_count = len(subagent_paths)
+    # Files, not agents: an agent split over two files counts once
+    subagent_count = len({p.name for p in subagent_paths})
     subagents = session.list_subagents() if subagent_count else []
     subagent_cost = sum(agent.get_total_cost() for agent in subagents)
     subagent_usage = sum((agent.get_usage_summary() for agent in subagents), TokenUsage.zero())
@@ -461,7 +463,7 @@ def _index_session(
             session_titles, is_continuation_marker, was_compacted,
             compaction_count, file_snapshot_count, subagent_count,
             jsonl_mtime, jsonl_size, session_source, source_encoded_name,
-            source_root, ended_by, ended_resets_at, limit_hit_count, indexed_at
+            source_root, ended_by, ended_resets_at, limit_hit_count, session_name, indexed_at
         ) VALUES (
             ?, ?, ?, ?,
             ?, ?, ?, ?,
@@ -472,7 +474,7 @@ def _index_session(
             ?, ?, ?,
             ?, ?, ?,
             ?, ?, ?, ?,
-            ?, ?, ?, ?, datetime('now')
+            ?, ?, ?, ?, ?, datetime('now')
         )
         ON CONFLICT(uuid) DO UPDATE SET {_SESSION_UPSERT_SET}
         """,
@@ -512,6 +514,7 @@ def _index_session(
             err.ended_by,
             err.ended_resets_at.isoformat() if err.ended_resets_at else None,
             err.limit_hit_count,
+            read_session_name(jsonl_path),
         ),
     )
 
@@ -894,7 +897,7 @@ _SESSION_UPSERT_SET = ", ".join(
         "initial_prompt git_branch models_used session_titles is_continuation_marker "
         "was_compacted compaction_count file_snapshot_count subagent_count jsonl_mtime jsonl_size "
         "session_source source_encoded_name source_root ended_by ended_resets_at "
-        "limit_hit_count indexed_at"
+        "limit_hit_count session_name indexed_at"
     ).split()
 )
 

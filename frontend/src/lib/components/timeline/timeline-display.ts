@@ -96,6 +96,21 @@ export interface RouteParty {
 	agentId?: string | null;
 	/** True when the party is the parent session of the agent being viewed */
 	isMainSession?: boolean;
+	/** Link to the other session's page, when the backend resolved which session it is */
+	sessionHref?: string | null;
+}
+
+/** Link to the other session of a cross-session message, or null when it is not known. */
+export function getPeerSessionHref(event: TimelineEvent): string | null {
+	const m = event.metadata ?? {};
+	const uuid = typeof m.peer_session_uuid === 'string' ? m.peer_session_uuid.trim() : '';
+	if (!uuid) return null;
+	// The full id, not a prefix, so the lookup cannot pick another session.
+	const id = encodeURIComponent(uuid);
+	const project =
+		typeof m.peer_project_encoded_name === 'string' ? m.peer_project_encoded_name : '';
+	// Both forms land on the Timeline tab; the short link resolves the project by itself.
+	return project ? `/projects/${encodeURIComponent(project)}/${id}?tab=timeline` : `/s/${id}`;
 }
 
 /** Sender and recipient of a message event, for the `sender → recipient` line. */
@@ -137,7 +152,8 @@ export function getMessageRoute(
 					peerName
 				),
 		agentId: isMain ? null : (m.peer_agent_id ?? null),
-		isMainSession: isMain
+		isMainSession: isMain,
+		sessionHref: isMain ? null : getPeerSessionHref(event)
 	};
 
 	return isOut ? { from: self, to: peer } : { from: peer, to: self };
@@ -538,7 +554,7 @@ export function isEventExpandable(event: TimelineEvent): boolean {
 	);
 }
 
-/** Compact token count for the compaction row, e.g. 155206 -> "155k". */
+/** Compact token count for the compaction row, e.g. 150000 -> "150k". */
 export function formatCompactTokens(tokens: number | null | undefined): string | null {
 	if (typeof tokens !== 'number' || !Number.isFinite(tokens) || tokens <= 0) return null;
 	if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(1)}M`;

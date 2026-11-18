@@ -175,6 +175,8 @@ app.add_middleware(
     allow_credentials=settings.cors_allow_credentials,
     allow_methods=settings.cors_allow_methods,
     allow_headers=settings.cors_allow_headers,
+    # Lets the dashboard read how long to wait when the index is rebuilding
+    expose_headers=["Retry-After"],
 )
 
 # Include routers

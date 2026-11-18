@@ -149,6 +149,25 @@ def parse_side_entry(data: dict) -> Optional[SideEntry]:
     return None
 
 
+def read_session_name(jsonl_path: Path) -> Optional[str]:
+    """The name a session was given (its latest `agent-name` entry), or None if it has none."""
+    name = None
+    try:
+        with open(jsonl_path, "r", encoding="utf-8", errors="replace") as f:
+            for line in f:
+                if '"agent-name"' not in line:
+                    continue
+                try:
+                    data = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(data, dict) and data.get("type") == "agent-name":
+                    name = _first_str(data.get("agentName")) or name
+    except OSError:
+        return None
+    return name
+
+
 def iter_side_entries(jsonl_path: Path) -> Iterator[SideEntry]:
     """Yield the system notices and queued commands of a session or agent JSONL, in file order."""
     if not jsonl_path.exists():

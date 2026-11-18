@@ -55,10 +55,11 @@ def test_upgrade_is_idempotent():
     assert _mtime(conn) == 99.0
 
 
-def test_db_already_at_v32_is_not_reindexed():
+def test_db_already_at_v32_gets_no_second_v32_reindex():
     conn = _db_at(32)
     ensure_schema(conn)
-    assert _mtime(conn) == 100.0
+    # One nudge, from the next migration (v33); v32 does not run again
+    assert _mtime(conn) == 99.0
 
 
 def test_fresh_db_is_stamped_current():

@@ -9,9 +9,9 @@ export const timelineFixture = [
 		actor: 'user',
 		actor_type: 'user',
 		title: 'User prompt',
-		summary: 'Review the timeline categories and find the gaps',
+		summary: 'Add pagination to the list endpoint',
 		metadata: {
-			full_content: 'Review the timeline categories and find the gaps',
+			full_content: 'Add pagination to the list endpoint',
 			prompt_source: 'typed'
 		}
 	},
@@ -35,14 +35,14 @@ export const timelineFixture = [
 		timestamp: '2026-11-18T10:00:05Z',
 		actor: 'session',
 		actor_type: 'session',
-		title: 'Skill: /superpowers:systematic-debugging',
-		summary: 'Invoked /superpowers:systematic-debugging',
+		title: 'Skill: /docs-tools:outline',
+		summary: 'Invoked /docs-tools:outline',
 		metadata: {
 			tool_name: 'Skill',
-			command_name: 'superpowers:systematic-debugging',
+			command_name: 'docs-tools:outline',
 			has_result: true,
-			result_content: 'Launching skill: superpowers:systematic-debugging',
-			skill_body: '# Systematic Debugging\n\nFind the root cause first.'
+			result_content: 'Launching skill: docs-tools:outline',
+			skill_body: '# Outline\n\nList the headings first.'
 		}
 	},
 	{
@@ -52,15 +52,15 @@ export const timelineFixture = [
 		actor: 'session',
 		actor_type: 'session',
 		title: 'Agent',
-		summary: 'Review plan-2 Task 6',
+		summary: 'Review the pagination change',
 		metadata: {
 			tool_name: 'Agent',
 			subagent_type: 'general-purpose',
-			prompt: 'You are reviewing Task 6 of plan-2.',
-			spawned_agent_id: 'a0ae946093e2cb8e5',
-			spawned_agent_name: 'rev-m6',
+			prompt: 'You are reviewing the pagination change.',
+			spawned_agent_id: 'a1c2d3e4f5a6b7c8d',
+			spawned_agent_name: 'reviewer-a',
 			spawned_agent_color: 'yellow',
-			team_name: 'wind-tunnel',
+			team_name: 'checkout-team',
 			agent_model: 'opus',
 			run_in_background: true,
 			has_result: true
@@ -72,16 +72,16 @@ export const timelineFixture = [
 		timestamp: '2026-11-18T10:02:00Z',
 		actor: 'session',
 		actor_type: 'session',
-		title: 'Message to rev-m6',
-		summary: 'Fix round is at 3161b7d',
+		title: 'Message to reviewer-a',
+		summary: 'Second round is ready',
 		metadata: {
 			direction: 'out',
 			peer_kind: 'agent',
-			peer_name: 'rev-m6',
-			peer_agent_id: 'a0ae946093e2cb8e5',
+			peer_name: 'reviewer-a',
+			peer_agent_id: 'a1c2d3e4f5a6b7c8d',
 			peer_color: 'yellow',
-			message_summary: 'Fix round is at 3161b7d',
-			full_content: 'Fix round for your review is at 3161b7d. Please verify it.',
+			message_summary: 'Second round is ready',
+			full_content: 'The second round is ready for your review. Please verify it.',
 			tool_name: 'SendMessage',
 			has_result: true,
 			result_content: 'Message delivered',
@@ -92,17 +92,17 @@ export const timelineFixture = [
 		id: 'evt-6',
 		event_type: 'message',
 		timestamp: '2026-11-18T10:03:00Z',
-		actor: 'occu-orchestration-airflow-72',
+		actor: 'docs-site-2',
 		actor_type: 'peer_session',
-		actor_name: 'occu-orchestration-airflow-72',
-		title: 'Message from occu-orchestration-airflow-72',
-		summary: '[ASK] Why did the triage blame the wrong lines?',
+		actor_name: 'docs-site-2',
+		title: 'Message from docs-site-2',
+		summary: '[ASK] Which page size does the list endpoint use?',
 		metadata: {
 			direction: 'in',
 			peer_kind: 'session',
-			peer_name: 'occu-orchestration-airflow-72',
-			peer_address: 'uds:/tmp/cc-socks/10999.sock',
-			full_content: '[ASK] Why did the triage blame the wrong lines?',
+			peer_name: 'docs-site-2',
+			peer_address: 'uds:/tmp/cc-socks/4101.sock',
+			full_content: '[ASK] Which page size does the list endpoint use?',
 			queued: true,
 			relayed: true
 		}
@@ -114,14 +114,14 @@ export const timelineFixture = [
 		actor: 'system',
 		actor_type: 'system',
 		title: 'Background task completed',
-		summary: 'Review plan-2 Task 6 finished',
+		summary: 'Review the pagination change finished',
 		metadata: {
-			task_id: 'a0ae946093e2cb8e5',
+			task_id: 'a1c2d3e4f5a6b7c8d',
 			task_status: 'completed',
-			task_summary: 'Review plan-2 Task 6 finished',
+			task_summary: 'Review the pagination change finished',
 			task_kind: 'agent',
-			agent_id: 'a0ae946093e2cb8e5',
-			agent_name: 'rev-m6',
+			agent_id: 'a1c2d3e4f5a6b7c8d',
+			agent_name: 'reviewer-a',
 			agent_color: 'yellow',
 			full_content: 'Fixes verified.'
 		}
@@ -133,11 +133,11 @@ export const timelineFixture = [
 		actor: 'system',
 		actor_type: 'system',
 		title: 'Background task failed',
-		summary: 'Wait until PR #6 is merged',
+		summary: 'Wait until the build finishes',
 		metadata: {
-			task_id: 'bblmd3xw1',
+			task_id: 'b00000002',
 			task_status: 'failed',
-			task_summary: 'Wait until PR #6 is merged',
+			task_summary: 'Wait until the build finishes',
 			task_kind: 'shell'
 		}
 	},
@@ -148,8 +148,8 @@ export const timelineFixture = [
 		actor: 'system',
 		actor_type: 'system',
 		title: 'Scheduled task',
-		summary: 'Hourly check (DE-346)',
-		metadata: { full_content: 'Hourly check (DE-346)', cron: '0 * * * *', task_id: 't1' }
+		summary: 'Hourly link check',
+		metadata: { full_content: 'Hourly link check', cron: '0 * * * *', task_id: 't1' }
 	},
 	{
 		id: 'evt-10',
@@ -161,7 +161,7 @@ export const timelineFixture = [
 		summary: null,
 		metadata: {
 			trigger: 'auto',
-			pre_tokens: 155206,
+			pre_tokens: 150000,
 			full_content: 'This session is being continued from a previous conversation.'
 		}
 	},
@@ -172,10 +172,10 @@ export const timelineFixture = [
 		actor: 'user',
 		actor_type: 'user',
 		title: 'Shell command',
-		summary: 'slack app install',
+		summary: 'npm run build',
 		metadata: {
-			command: 'slack app install --team T3 -E deployed',
-			result_content: 'App installed',
+			command: 'npm run build -- --mode staging',
+			result_content: 'Build finished',
 			stderr: 'warning: beta'
 		}
 	},
@@ -196,10 +196,10 @@ export const timelineFixture = [
 		actor: 'system',
 		actor_type: 'system',
 		title: 'Recap',
-		summary: 'We were reviewing the incident-first work.',
+		summary: 'We were reviewing the pagination change.',
 		metadata: {
 			kind: 'away_summary',
-			full_content: 'We were reviewing the incident-first work.'
+			full_content: 'We were reviewing the pagination change.'
 		}
 	},
 	{
@@ -209,9 +209,9 @@ export const timelineFixture = [
 		actor: 'user',
 		actor_type: 'user',
 		title: 'User prompt',
-		summary: 'use the branch jay/wt-reply-shape',
+		summary: 'use the branch feature/pagination',
 		metadata: {
-			full_content: 'use the branch jay/wt-reply-shape',
+			full_content: 'use the branch feature/pagination',
 			prompt_source: 'queued',
 			queued: true
 		}
@@ -220,17 +220,17 @@ export const timelineFixture = [
 		id: 'evt-15',
 		event_type: 'tool_call',
 		timestamp: '2026-11-18T10:11:00Z',
-		actor: 'a0ae946093e2cb8e5',
+		actor: 'a1c2d3e4f5a6b7c8d',
 		actor_type: 'subagent',
-		actor_name: 'rev-m6',
+		actor_name: 'reviewer-a',
 		actor_color: 'yellow',
 		title: 'Read file',
-		summary: 'api/models/message.py',
+		summary: 'src/list/page.ts',
 		metadata: {
 			tool_name: 'Read',
 			has_result: true,
 			result_status: 'success',
-			agent_id: 'a0ae946093e2cb8e5'
+			agent_id: 'a1c2d3e4f5a6b7c8d'
 		}
 	},
 	// The shapes below are copied from real backend output, not from the contract.
@@ -241,11 +241,11 @@ export const timelineFixture = [
 		actor: 'system',
 		actor_type: 'system',
 		title: 'Monitor update',
-		summary: 'Monitor event: "PR #6 checks"',
+		summary: 'Monitor event: "build status"',
 		metadata: {
 			task_id: null,
 			task_status: null,
-			task_summary: 'Monitor event: "PR #6 checks"',
+			task_summary: 'Monitor event: "build status"',
 			tool_use_id: null,
 			task_kind: 'monitor',
 			output_file: null,
@@ -260,14 +260,14 @@ export const timelineFixture = [
 		actor: 'system',
 		actor_type: 'system',
 		title: 'Background command completed',
-		summary: 'Background command "Run all five test suites" completed (exit code 0)',
+		summary: 'Background command "Run the unit tests" completed (exit code 0)',
 		metadata: {
-			task_id: 'b46fd4ed7',
+			task_id: 'b00000001',
 			task_status: 'completed',
-			task_summary: 'Background command "Run all five test suites" completed (exit code 0)',
-			tool_use_id: 'toolu_012eVX8ooGXMsSHo8Ze8sP5N',
+			task_summary: 'Background command "Run the unit tests" completed (exit code 0)',
+			tool_use_id: 'toolu_example0001',
 			task_kind: 'shell',
-			output_file: '/private/tmp/tasks/b46fd4ed7.output',
+			output_file: '/tmp/tasks/b00000001.output',
 			queued: true
 		}
 	},
@@ -275,16 +275,16 @@ export const timelineFixture = [
 		id: 'evt-18',
 		event_type: 'system_context',
 		timestamp: '2026-11-18T10:13:00Z',
-		actor: 'aimpl-t28-e4a00898e0a882a3',
+		actor: 'abuilder-b-0b0b0b0b0b0b0b0b',
 		actor_type: 'subagent',
-		actor_name: 'impl-t28',
+		actor_name: 'builder-b',
 		actor_color: 'green',
 		title: 'Agent idle',
-		summary: 'impl-t28 is idle (available)',
+		summary: 'builder-b is idle (available)',
 		metadata: {
 			kind: 'agent_idle',
-			agent_id: 'aimpl-t28-e4a00898e0a882a3',
-			full_content: 'Status: DONE_WITH_CONCERNS'
+			agent_id: 'abuilder-b-0b0b0b0b0b0b0b0b',
+			full_content: 'Status: DONE'
 		}
 	},
 	{
@@ -350,7 +350,7 @@ export const timelineFixture = [
 			kind: 'bridge_status',
 			level: null,
 			full_content: '/remote-control is active',
-			url: 'https://claude.ai/code/session_01D8zmUuZXUA6CccYva1F8du'
+			url: 'https://claude.ai/code/session_example'
 		}
 	},
 	{

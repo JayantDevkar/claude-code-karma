@@ -42,7 +42,7 @@
 				? agentHref(p.agentId)
 				: p.isMainSession
 					? mainSessionHref
-					: null}
+					: (p.sessionHref ?? null)}
 		{@const Icon = p.kind === 'session' ? SquareTerminal : Bot}
 		{@const fullName = p.secondary ? `${p.label} ${p.secondary}` : p.label}
 		{@const kindLabel = p.kind === 'session' ? 'Session' : 'Agent'}

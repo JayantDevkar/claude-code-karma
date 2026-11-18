@@ -1421,7 +1421,7 @@
 
 					<Tabs.Content value="shells" class="animate-fade-in">
 						{#if sessionUuid}
-							<SessionShellsSection {sessionUuid} />
+							<SessionShellsSection {sessionUuid} active={activeTab === 'shells'} />
 						{:else}
 							<p class="text-sm text-[var(--text-muted)] m-0 px-1 py-6 text-center">
 								Session UUID unavailable.
@@ -1431,7 +1431,11 @@
 
 					<Tabs.Content value="cron" class="animate-fade-in">
 						{#if sessionUuid}
-							<SessionCronSection {sessionUuid} projectEncodedName={encodedName} />
+							<SessionCronSection
+								{sessionUuid}
+								projectEncodedName={encodedName}
+								active={activeTab === 'cron'}
+							/>
 						{:else}
 							<p class="text-sm text-[var(--text-muted)] m-0 px-1 py-6 text-center">
 								Session UUID unavailable.

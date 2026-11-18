@@ -801,8 +801,8 @@ def get_skill_sessions(
     # Process sessions in parallel (16 workers like agent_analytics)
     import asyncio
 
-    loop = asyncio.get_event_loop()
-    results = loop.run_until_complete(
+    # This sync endpoint runs in a worker thread, which has no event loop of its own
+    results = asyncio.run(
         process_items_parallel(session_tuples, process_session_for_skill, max_concurrent=16)
     )
 

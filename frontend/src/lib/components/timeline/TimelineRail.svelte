@@ -87,6 +87,53 @@
 		popupEventId = null;
 	}
 
+	// The card's one tab stop: its open control, or its hide control when there is nothing to open.
+	function focusCard(id: string | undefined) {
+		if (!id) return false;
+		const card = findCard(id);
+		const control = card?.querySelector<HTMLElement>('[data-timeline-primary]');
+		control?.focus();
+		return !!control;
+	}
+
+	function findCard(id: string): HTMLElement | undefined {
+		if (!containerRef) return undefined;
+		return Array.from(containerRef.querySelectorAll<HTMLElement>('[data-event-id]')).find(
+			(el) => el.dataset.eventId === id
+		);
+	}
+
+	// Hiding removes the card. If it held focus, however it was activated, focus must not fall to the page.
+	async function hideEvent(id: string) {
+		const hadFocus = findCard(id)?.contains(document.activeElement) ?? false;
+		const shown = visibleEvents as TimelineEvent[];
+		const index = shown.findIndex((e) => e.id === id);
+		const neighbour = shown[index + 1] ?? shown[index - 1];
+		timeline.toggleHide(id);
+		if (!hadFocus) return;
+		await tick();
+		if (!containerRef) return;
+		// The gap that now holds the event comes first: undoing the hide is then one keypress away.
+		const gap = timeline.viewItems.find(
+			(item) => 'type' in item && item.type === 'gap' && item.events.some((e) => e.id === id)
+		);
+		const gapButton = gap
+			? Array.from(containerRef.querySelectorAll<HTMLElement>('[data-gap-id]'))
+					.find((el) => el.dataset.gapId === gap.id)
+					?.querySelector<HTMLElement>('[data-gap-primary]')
+			: null;
+		if (gapButton) gapButton.focus();
+		else if (!focusCard(neighbour?.id)) endRef?.focus();
+	}
+
+	let endRef = $state<HTMLElement | null>(null);
+
+	function skipToEnd(e: MouseEvent) {
+		e.preventDefault();
+		endRef?.focus();
+		endRef?.scrollIntoView?.({ block: 'nearest' });
+	}
+
 	// Focus goes back to the card of the event last shown, not the one first opened.
 	async function returnFocusToCard(e: Event) {
 		const id = lastPopupEventId;
@@ -98,11 +145,9 @@
 		const card = Array.from(containerRef.querySelectorAll<HTMLElement>('[data-event-id]')).find(
 			(el) => el.dataset.eventId === id
 		);
-		const control = card?.querySelector<HTMLElement>(
-			'button[aria-haspopup], button[aria-expanded]'
-		);
+		const control = card?.querySelector<HTMLElement>('[data-timeline-primary]');
 		control?.focus({ preventScroll: true });
-		card?.scrollIntoView({ block: 'nearest' });
+		card?.scrollIntoView?.({ block: 'nearest' });
 	}
 
 	// If the event is gone from the list, forget it so the popup cannot reopen by itself.
@@ -319,6 +364,16 @@
 			class="mb-6 z-20 lg:sticky lg:top-14"
 		/>
 
+		<!-- A long session has thousands of cards; this is the way past them for keyboard users -->
+		<a
+			href="#timeline-end"
+			onclick={skipToEnd}
+			class="sr-only focus:not-sr-only focus:mb-4 focus:inline-block focus:rounded-md focus:border focus:border-[var(--border)] focus:bg-[var(--bg-base)] focus:px-3 focus:py-1.5 focus:text-sm focus:text-[var(--text-primary)]"
+		>
+			Skip past the timeline ({visibleEvents.length.toLocaleString()}
+			{visibleEvents.length === 1 ? 'event' : 'events'} shown)
+		</a>
+
 		<!-- Timeline -->
 		<div class="pl-2" bind:this={timelineContentRef}>
 			{#if timeline.viewItems.length === 0 && timeline.systemCount > 0 && !timeline.showSystem}
@@ -356,7 +411,7 @@
 						onOpenPopup={() => openPopup(eventItem)}
 						{currentAgentId}
 						{projectPath}
-						onToggleHide={() => timeline.toggleHide(eventItem.id)}
+						onToggleHide={() => hideEvent(eventItem.id)}
 						searchQuery={timeline.searchQuery}
 						{projectEncoded}
 						{sessionSlug}
@@ -364,6 +419,16 @@
 				{/if}
 			{/each}
 		</div>
+
+		<!-- Where the skip link lands -->
+		<p
+			id="timeline-end"
+			bind:this={endRef}
+			tabindex="-1"
+			class="mt-2 pl-2 text-xs text-[var(--text-muted)] focus:outline-none focus-visible:underline"
+		>
+			End of timeline
+		</p>
 	</div>
 {/if}
 

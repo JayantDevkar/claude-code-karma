@@ -129,7 +129,12 @@
 	// The given name, else the type; the full id stays on the card for copying and telling agents apart.
 	let displayName = $derived(getAgentDisplayName(subagent));
 	// An unnamed agent is titled by its type, so a type badge beside it would only repeat the title.
-	let showTypeBadge = $derived(displayName !== getSubagentTypeDisplayName(subagent.subagent_type));
+	// Internal markers such as "_teammate" are not types a reader would recognise, so they get no badge either.
+	let showTypeBadge = $derived(
+		!!subagent.subagent_type &&
+			!subagent.subagent_type.startsWith('_') &&
+			displayName !== getSubagentTypeDisplayName(subagent.subagent_type)
+	);
 
 	// Small tags, worded like the timeline's spawn card.
 	let tags = $derived(
@@ -193,7 +198,11 @@
 								title="Open {subagent.agent_id}"
 							>
 								<span class="min-w-0 [overflow-wrap:anywhere]">{displayName}</span>
-								<ExternalLink size={12} strokeWidth={2} class="shrink-0 opacity-60" />
+								<ExternalLink
+									size={12}
+									strokeWidth={2}
+									class="shrink-0 opacity-60"
+								/>
 							</a>
 						{:else}
 							<span
@@ -236,7 +245,10 @@
 								{statusStyle.label}
 							</span>
 						{/if}
-						<EndedByBadge endedBy={subagent.ended_by} resetsAt={subagent.ended_resets_at} />
+						<EndedByBadge
+							endedBy={subagent.ended_by}
+							resetsAt={subagent.ended_resets_at}
+						/>
 					</div>
 
 					<!-- Duration & expand/collapse indicator -->
@@ -254,7 +266,9 @@
 								type="button"
 								onclick={toggle}
 								aria-expanded={isExpanded}
-								aria-label="{isExpanded ? 'Hide' : 'Show'} details for {displayName}"
+								aria-label="{isExpanded
+									? 'Hide'
+									: 'Show'} details for {displayName}"
 								class="
 									flex h-6 w-6 items-center justify-center rounded-full shrink-0 transition-colors
 									text-[var(--text-muted)] group-hover:text-[var(--text-primary)] group-hover:bg-[var(--bg-muted)]

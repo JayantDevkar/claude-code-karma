@@ -19,10 +19,12 @@ import logging
 import re
 from pathlib import Path
 
+from services.agent_registry import build_agent_registry
+
 logger = logging.getLogger(__name__)
 
 # Pre-compiled regex for agent ID extraction from tool result text
-AGENT_ID_PATTERN = re.compile(r"agentId:\s*([a-fA-F0-9]+)")
+AGENT_ID_PATTERN = re.compile(r"agentId:\s*([\w\-]+)")
 
 
 def get_all_subagent_types(
@@ -31,10 +33,13 @@ def get_all_subagent_types(
     """
     Extract agent_id -> subagent_type mapping from a session and its subagents.
 
-    Four-phase approach:
+    Same order as collectors.resolve_subagent_type (spawn call, system id prefix, meta.json),
+    with two differences: phase 2.5 matches running agents by prompt, and system agents get
+    this module's markers ("_compact", "_prompt_suggestion", "_warmup", "_teammate"):
     1. Scan parent session JSONL for Task tool_use / tool_result pairs
     2. Scan ALL subagent JSONLs (catches nested agent spawns)
     3. Classify remaining agents by ID prefix (system agents)
+    3.5 Use the type recorded in each remaining agent's meta.json
     4. Classify remaining _unknown agents by first message content
 
     Args:
@@ -74,6 +79,15 @@ def get_all_subagent_types(
         agent_id = agent_file.stem.removeprefix("agent-")
         if agent_id not in result:
             result[agent_id] = _classify_by_prefix(agent_id)
+
+    # Phase 3.5: the type Claude Code recorded in the agent's meta.json
+    if any(agent_type == "_unknown" for agent_type in result.values()):
+        registry = build_agent_registry(agent_files)
+        for agent_file in agent_files:
+            agent_id = agent_file.stem.removeprefix("agent-")
+            identity = registry.get(agent_id)
+            if result.get(agent_id) == "_unknown" and identity and identity.agent_type:
+                result[agent_id] = identity.agent_type
 
     # Phase 4: Classify remaining _unknown agents by first message content
     for agent_file in agent_files:
@@ -180,6 +194,12 @@ def _match_tool_results(
 
         tool_use_id = block.get("tool_use_id")
         if not tool_use_id or tool_use_id not in task_tools:
+            continue
+
+        # Structured id first: a named teammate's result text has no "agentId:" line
+        tool_use_result = msg.get("toolUseResult")
+        if isinstance(tool_use_result, dict) and isinstance(tool_use_result.get("agentId"), str):
+            agent_id_to_type[tool_use_result["agentId"]] = task_tools[tool_use_id]
             continue
 
         # Extract agentId from the tool result's content

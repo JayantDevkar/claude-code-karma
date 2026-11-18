@@ -96,6 +96,9 @@ export interface TimelineEventMetadata {
 	peer_agent_type?: string | null;
 	message_summary?: string | null;
 	relayed?: boolean;
+	/** The other session of a cross-session message, when the backend could resolve it */
+	peer_session_uuid?: string | null;
+	peer_project_encoded_name?: string | null;
 	// task_notification
 	task_id?: string | null;
 	task_status?: string | null;
