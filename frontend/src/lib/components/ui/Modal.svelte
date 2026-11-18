@@ -13,6 +13,10 @@
 		footer?: Snippet;
 		headerActions?: Snippet;
 		maxWidth?: 'sm' | 'md' | 'lg' | 'xl';
+		/** top keeps the header in one place when the content height changes, e.g. while paging */
+		anchor?: 'center' | 'top';
+		/** Runs when focus is about to return after closing; call preventDefault to place it yourself */
+		onCloseAutoFocus?: (event: Event) => void;
 	}
 
 	let {
@@ -24,7 +28,9 @@
 		children,
 		footer,
 		headerActions,
-		maxWidth = 'md'
+		maxWidth = 'md',
+		anchor = 'center',
+		onCloseAutoFocus
 	}: Props = $props();
 
 	const maxWidthClasses: Record<string, string> = {
@@ -55,9 +61,11 @@
 			"
 		/>
 		<Dialog.Content
+			{onCloseAutoFocus}
 			class="
-				fixed left-[50%] top-[50%] z-50
-				translate-x-[-50%] translate-y-[-50%]
+				fixed left-[50%] z-50
+				translate-x-[-50%]
+				{anchor === 'top' ? 'top-[6vh]' : 'top-[50%] translate-y-[-50%]'}
 				bg-[var(--bg-base)]
 				rounded-xl
 				{maxWidthClasses[maxWidth]} w-full

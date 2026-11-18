@@ -2,23 +2,31 @@
 	import {
 		ChevronDown,
 		ChevronRight,
-		Bot,
 		CheckCircle2,
 		AlertCircle,
-		Copy,
-		Check
+		CirclePause,
+		Hand
 	} from 'lucide-svelte';
-	import { marked } from 'marked';
-	import DOMPurify from 'isomorphic-dompurify';
 	import type { TimelineEvent, EventImportance, TodoItem } from '$lib/api-types';
 	import { formatElapsedTime, formatDate, truncate } from '$lib/utils';
-	import { eventTypeConfig, apiErrorToneConfig, getToolIcon } from './tool-icons';
+	import { getEventConfig, apiErrorToneConfig, getToolIcon } from './tool-icons';
 	import ToolCallDetail from './ToolCallDetail.svelte';
 	import TodoUpdateDetail from './TodoUpdateDetail.svelte';
-	import ImageAttachments from '$lib/components/ImageAttachments.svelte';
-	import { markdownCopyButtons } from '$lib/actions/markdownCopyButtons';
-	import { highlightPlainText, highlightHtmlContent } from '$lib/utils/highlight';
+	import EventContent from './EventContent.svelte';
+	import EventTitle from './EventTitle.svelte';
+	import { highlightPlainText } from '$lib/utils/highlight';
 	import { matchesSearch } from '$lib/utils/timelineLogic.svelte';
+	import {
+		buildAgentHref,
+		getDisplaySummary,
+		getDisplayTitle,
+		getEventBadgeLabels,
+		getEventBadges,
+		getEventTags,
+		getPeerLabel,
+		isEventExpandable,
+		isFailedTask
+	} from './timeline-display';
 
 	interface Props {
 		event: TimelineEvent;
@@ -40,6 +48,10 @@
 		onToggleHide?: () => void;
 		/** Search query for highlighting matches */
 		searchQuery?: string;
+		/** Project encoded name for building agent links */
+		projectEncoded?: string;
+		/** Session slug for building agent links */
+		sessionSlug?: string;
 	}
 
 	let {
@@ -48,8 +60,8 @@
 		isFirst,
 		isLast,
 		sessionStartTime,
-		isHighlighted,
-		hasActiveFilter,
+		isHighlighted: _isHighlighted,
+		hasActiveFilter: _hasActiveFilter,
 		isExpanded,
 		onToggleExpand,
 		usePopup = false,
@@ -57,151 +69,117 @@
 		currentAgentId = null,
 		projectPath = null,
 		onToggleHide,
-		searchQuery = ''
+		searchQuery = '',
+		projectEncoded,
+		sessionSlug
 	}: Props = $props();
 
-	let isCopied = $state(false);
+	const meta = $derived(event.metadata ?? {});
+	const type = $derived(event.event_type);
 
-	// Sanitized markdown for expanded view; depends on content/expansion, not searchQuery (see $derived below).
-	let sanitizedExpandedContent = $state('');
-
-	// Skips tool_call/todo_update — they render via ToolCallDetail/TodoUpdateDetail instead.
-	$effect(() => {
-		if (
-			isExpanded &&
-			hasExpandableContent &&
-			event.event_type !== 'tool_call' &&
-			event.event_type !== 'todo_update'
-		) {
-			const rawContent =
-				event.metadata?.full_content ||
-				event.metadata?.full_thinking ||
-				event.metadata?.full_text ||
-				event.metadata?.result_content ||
-				(event.metadata?.prompt as string | undefined) ||
-				event.summary ||
-				'';
-
-			const parsed = marked.parse(rawContent);
-			if (parsed instanceof Promise) {
-				parsed.then((html) => {
-					sanitizedExpandedContent = DOMPurify.sanitize(html);
-				});
-			} else {
-				sanitizedExpandedContent = DOMPurify.sanitize(parsed);
-			}
-		}
-	});
-
-	// Cheap text-node walk over the already-parsed content; skips tool_call/todo_update like the effect above.
-	const renderedExpandedContent = $derived(
-		event.event_type !== 'tool_call' && event.event_type !== 'todo_update'
-			? searchQuery
-				? highlightHtmlContent(sanitizedExpandedContent, searchQuery)
-				: sanitizedExpandedContent
-			: ''
-	);
-
-	// Get event configuration
 	const isPlanEvent = $derived(
-		event.event_type === 'tool_call' &&
-			(event.metadata?.tool_name === 'ExitPlanMode' ||
-				event.metadata?.tool_name === 'EnterPlanMode')
+		type === 'tool_call' &&
+			(meta.tool_name === 'ExitPlanMode' || meta.tool_name === 'EnterPlanMode')
 	);
-	const isHealedApiError = $derived(
-		event.event_type === 'api_error' && event.metadata?.healed === true
+	const isHealedApiError = $derived(type === 'api_error' && meta.healed === true);
+	const isMediumEffortThinking = $derived(
+		type === 'thinking' && !meta.full_thinking && !event.summary
 	);
-	// Loud only for the final (unhealed) limit/refusal turn; other api_error stays muted.
+	const failedTask = $derived(isFailedTask(event));
+	const isAgentIdle = $derived(type === 'system_context' && meta.kind === 'agent_idle');
+
+	// compaction is a boundary across the rail; quiet rows are low-emphasis one-liners.
+	const variant = $derived.by<'boundary' | 'quiet' | 'card'>(() => {
+		if (type === 'compaction') return 'boundary';
+		// System events only appear when their filter is selected, so they render as full cards.
+		if (isMediumEffortThinking || isHealedApiError) return 'quiet';
+		if (type === 'system_notice' && meta.kind === 'interrupted') return 'quiet';
+		return 'card';
+	});
+
+	// Loud only for the final (unhealed) limit/refusal turn and failed background tasks.
 	const config = $derived.by(() => {
-		if (event.event_type === 'api_error' && !event.metadata?.healed) {
-			if (event.metadata?.kind === 'limit') return apiErrorToneConfig.warning;
-			if (event.metadata?.kind === 'refusal') return apiErrorToneConfig.error;
+		const base = getEventConfig(type);
+		if (type === 'api_error' && !meta.healed) {
+			if (meta.kind === 'limit') return apiErrorToneConfig.warning;
+			if (meta.kind === 'refusal') return apiErrorToneConfig.error;
 		}
-		return eventTypeConfig[event.event_type] || eventTypeConfig.tool_call;
+		if (failedTask) return { ...apiErrorToneConfig.error, icon: base.icon };
+		if (isAgentIdle) return { ...base, icon: CirclePause };
+		if (type === 'system_notice' && meta.kind === 'interrupted') return { ...base, icon: Hand };
+		// A notice the harness flagged as a warning or error keeps its icon but takes that tone.
+		if (type === 'system_notice') {
+			if (meta.level === 'warning') return { ...apiErrorToneConfig.warning, icon: base.icon };
+			if (meta.level === 'error') return { ...apiErrorToneConfig.error, icon: base.icon };
+		}
+		return base;
 	});
 
-	// Get tool-specific icon for tool_call events
-	const toolName = $derived(event.metadata?.tool_name as string | undefined);
-	const IconComponent = $derived(
-		event.event_type === 'tool_call' ? getToolIcon(toolName) : config.icon
-	);
+	const toolName = $derived(meta.tool_name as string | undefined);
+	const IconComponent = $derived(type === 'tool_call' ? getToolIcon(toolName) : config.icon);
 
-	// Display title — for subagent spawns, show "Spawn [type] subagent"
-	const displayTitle = $derived.by(() => {
-		if (event.metadata?.spawned_agent_id && event.metadata?.subagent_type) {
-			return `Spawn ${event.metadata.subagent_type} subagent`;
-		}
-		return event.title;
-	});
+	const displayTitle = $derived(getDisplayTitle(event));
+	const displaySummary = $derived(getDisplaySummary(event));
 
-	// Determine importance
 	const importance = $derived.by<EventImportance>(() => {
-		if (event.event_type === 'prompt') return 'high';
-		if (event.metadata?.spawned_agent_id) return 'high';
-		if (event.event_type === 'todo_update') return 'medium';
-		if (event.event_type === 'tool_call') {
+		if (type === 'prompt') return 'high';
+		if (meta.spawned_agent_id) return 'high';
+		if (type === 'todo_update') return 'medium';
+		if (type === 'tool_call') {
 			const modifyTools = ['Write', 'Edit', 'StrReplace', 'Delete', 'Bash', 'Shell'];
 			if (toolName && modifyTools.includes(toolName)) return 'medium';
 		}
 		return 'low';
 	});
 
-	// Check for expandable content
-	const hasToolResult = $derived(event.metadata?.has_result === true);
+	const hasToolResult = $derived(meta.has_result === true);
 
-	// Get todos for todo_update events
 	const todosArray = $derived.by<TodoItem[]>(() => {
-		if (event.event_type === 'todo_update' && Array.isArray(event.metadata?.todos)) {
-			return event.metadata.todos as TodoItem[];
-		}
+		if (type === 'todo_update' && Array.isArray(meta.todos)) return meta.todos as TodoItem[];
 		return [];
 	});
-	const hasExpandableTodos = $derived(todosArray.length > 3);
 
-	const hasExpandableContent = $derived(
-		event.event_type === 'tool_call' ||
-			event.event_type === 'todo_update' ||
-			event.metadata?.full_content ||
-			event.metadata?.full_thinking ||
-			event.metadata?.full_text ||
-			event.metadata?.result_content ||
-			event.metadata?.prompt ||
-			(event.summary && event.summary.length > 100)
+	const hasExpandableContent = $derived(isEventExpandable(event));
+
+	function agentHref(agentId: string): string | null {
+		return buildAgentHref(projectEncoded, sessionSlug, agentId);
+	}
+
+	// On an agent's page, its parent session is one click away.
+	const mainSessionHref = $derived(
+		currentAgentId && projectEncoded && sessionSlug
+			? `/projects/${projectEncoded}/${sessionSlug}`
+			: null
 	);
 
-	// thinking event with no stored content
-	const isMediumEffortThinking = $derived(
-		event.event_type === 'thinking' && !event.metadata?.full_thinking && !event.summary
-	);
+	// The same badges and tags the popup shows; kept here only for the search-match check.
+	const badgeLabels = $derived(getEventBadgeLabels(getEventBadges(event, currentAgentId)));
+	const tags = $derived(getEventTags(event));
 
-	// Dimmed when filter active but doesn't match
-	const isDimmed = $derived(hasActiveFilter && !isHighlighted);
-
-	// Show actor badge only if:
-	// 1. Event is from a subagent (actor_type === 'subagent')
-	// 2. AND it's not the current agent being viewed (for agent timeline views)
-	const shouldShowActorBadge = $derived(
-		event.actor_type === 'subagent' && (!currentAgentId || event.actor !== currentAgentId)
-	);
+	const quietNote = $derived.by(() => {
+		if (isMediumEffortThinking) return 'content not stored';
+		if (isHealedApiError) return 'resumed';
+		return '';
+	});
 
 	// True when the event matched the search but the match is buried in content not shown on the collapsed card.
 	const hasHiddenMatch = $derived.by(() => {
-		// Expanded content is already visible via ToolCallDetail/the markdown block below.
 		if (isExpanded) return false;
 		const trimmedQuery = searchQuery.trim();
 		if (!trimmedQuery) return false;
 
-		const visibleParts = [displayTitle];
-		if (event.summary && event.event_type !== 'todo_update') {
-			visibleParts.push(truncate(event.summary, 100));
-		}
-		if (toolName && event.event_type === 'tool_call') visibleParts.push(toolName);
-		if (shouldShowActorBadge) visibleParts.push(event.actor);
-		if (event.event_type === 'todo_update' && todosArray.length <= 3) {
+		const visibleParts = [displayTitle, ...tags];
+		if (displaySummary && type !== 'todo_update')
+			visibleParts.push(truncate(displaySummary, 100));
+		if (toolName && type === 'tool_call') visibleParts.push(toolName);
+		visibleParts.push(...badgeLabels);
+		if (type === 'message') visibleParts.push(getPeerLabel(event));
+		if (type === 'todo_update' && todosArray.length <= 3) {
 			// Mirrors TodoUpdateDetail's own inlineLimit (beyond 3 it shows a "click to see all" hint, not content).
 			for (const todo of todosArray) {
 				visibleParts.push(todo.content);
-				if (todo.status === 'in_progress' && todo.activeForm) visibleParts.push(todo.activeForm);
+				if (todo.status === 'in_progress' && todo.activeForm)
+					visibleParts.push(todo.activeForm);
 			}
 		}
 		const visibleText = visibleParts.join(' ').toLowerCase();
@@ -209,17 +187,90 @@
 		return matchesSearch(event, searchQuery);
 	});
 
+	function open() {
+		if (!hasExpandableContent) return;
+		if (usePopup && onOpenPopup) onOpenPopup();
+		else onToggleExpand();
+	}
+
+	// The whole card opens on a mouse click; clicks on the controls inside it are theirs alone.
+	function openFromCard(e: MouseEvent) {
+		const target = e.target as HTMLElement | null;
+		if (target?.closest('a, button, input, textarea, select')) return;
+		open();
+	}
 </script>
+
+{#snippet highlighted(text: string)}
+	{#if searchQuery}{@html highlightPlainText(text, searchQuery)}{:else}{text}{/if}
+{/snippet}
+
+{#snippet tagList()}
+	{#each tags as tag, i (i)}
+		<span
+			class="max-w-full rounded bg-[var(--bg-muted)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--text-secondary)] [overflow-wrap:anywhere]"
+		>
+			{@render highlighted(tag)}
+		</span>
+	{/each}
+{/snippet}
+
+{#snippet trailing(dim: boolean)}
+	<div class="flex shrink-0 items-center gap-2 self-end sm:self-auto">
+		{#if hasHiddenMatch}
+			<span
+				class="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--warning)]"
+				title="Search match found in expanded content"
+			></span>
+		{/if}
+		<span
+			class="whitespace-nowrap font-mono text-xs tabular-nums {dim
+				? 'text-[var(--text-muted)]/50'
+				: 'text-[var(--text-muted)]/70'}"
+			title={formatDate(event.timestamp)}
+		>
+			{formatElapsedTime(event.timestamp, sessionStartTime)}
+		</span>
+		{#if hasExpandableContent}
+			<!-- The one keyboard control for opening the event -->
+			<button
+				type="button"
+				class="rounded p-0.5 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-muted)] hover:text-[var(--text-primary)]"
+				aria-expanded={usePopup ? undefined : isExpanded}
+				aria-haspopup={usePopup ? 'dialog' : undefined}
+				aria-label="{isExpanded ? 'Hide' : 'Show'} details: {displayTitle}"
+				onclick={open}
+			>
+				{#if isExpanded}
+					<ChevronDown class="h-4 w-4" />
+				{:else}
+					<ChevronRight class="h-4 w-4" />
+				{/if}
+			</button>
+		{/if}
+	</div>
+{/snippet}
+
+{#snippet expanded()}
+	{#if isExpanded && hasExpandableContent && !usePopup}
+		{#if type === 'tool_call'}
+			<ToolCallDetail {event} {projectPath} {searchQuery} />
+		{:else if type !== 'todo_update'}
+			<div class="mt-3 border-t border-[var(--border)] pt-3">
+				<EventContent {event} {searchQuery} />
+			</div>
+		{/if}
+	{/if}
+{/snippet}
 
 <div
 	data-event-index={index}
-	class="
-		group relative flex gap-4 transition-all duration-200
-	"
+	data-event-type={type}
+	data-event-id={event.id}
+	class="group relative flex gap-4 transition-all duration-200"
 >
 	<!-- Rail line -->
 	<div class="relative flex flex-col items-center">
-		<!-- Top connector -->
 		{#if !isFirst}
 			<div
 				class="absolute -top-4 h-4 w-px bg-gradient-to-b from-[var(--border)] to-[var(--border)]/50"
@@ -232,6 +283,7 @@
 				relative z-10 flex h-8 w-8 items-center justify-center rounded-full border-2 transition-all duration-200
 				{isPlanEvent ? 'bg-[var(--event-plan-subtle)]' : config.bgColor}
 				{isPlanEvent ? 'border-[var(--event-plan)]/60' : config.borderColor}
+				{variant === 'boundary' ? 'border-dashed' : ''}
 				group-hover:scale-110 group-hover:shadow-lg
 				{importance === 'high'
 				? 'ring-2 ring-offset-2 ring-offset-[var(--bg-base)] ring-[var(--accent)]/20'
@@ -243,14 +295,13 @@
 				if (onToggleHide) onToggleHide();
 			}}
 			title="Hide event"
-			aria-label="Hide event"
+			aria-label="Hide event: {displayTitle}"
 		>
 			<IconComponent
 				class="h-4 w-4 {isPlanEvent ? 'text-[var(--event-plan)]' : config.color}"
 			/>
 		</button>
 
-		<!-- Bottom connector -->
 		{#if !isLast}
 			<div
 				class="h-full w-px flex-1 bg-gradient-to-b from-[var(--border)]/50 to-[var(--border)]"
@@ -258,274 +309,180 @@
 		{/if}
 	</div>
 
-	<!-- Content card -->
-	{#if isMediumEffortThinking}
-		<div class="mb-4 flex-1 min-w-0 rounded-lg border border-dashed border-[var(--event-thinking)]/30 border-l-[3px] border-l-[var(--event-thinking)]/40 bg-[var(--bg-subtle)]/50 px-4 py-2.5 pl-5">
-			<div class="flex items-center justify-between gap-3">
-				<div class="flex items-center gap-2 min-w-0">
-					<span class="text-sm font-medium text-[var(--text-muted)]">Thinking</span>
-					<span class="text-xs text-[var(--text-muted)]/50 truncate">· content not stored</span>
-				</div>
-				<span
-					class="whitespace-nowrap font-mono text-xs text-[var(--text-muted)]/50 tabular-nums shrink-0"
-					title={formatDate(event.timestamp)}
+	{#if variant === 'boundary'}
+		<!-- Compaction: a divider across the timeline, not a card -->
+		<div class="mb-4 min-w-0 flex-1">
+			<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+			<div
+				class="flex min-h-8 flex-wrap items-center gap-x-3 gap-y-1.5 {hasExpandableContent
+					? 'cursor-pointer'
+					: ''}"
+				onclick={openFromCard}
+			>
+				<div
+					class="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1 sm:flex-none"
 				>
-					{formatElapsedTime(event.timestamp, sessionStartTime)}
-				</span>
+					<span class="text-sm font-medium text-[var(--text-secondary)]">
+						{@render highlighted(displayTitle)}
+					</span>
+					{@render tagList()}
+				</div>
+				<!-- Below sm the rule gets its own full-width line, so it still reads as a divider -->
+				<div
+					class="order-last h-px basis-full border-t border-dashed border-[var(--event-system)]/50 sm:order-none sm:min-w-4 sm:flex-1 sm:basis-0"
+					aria-hidden="true"
+				></div>
+				{@render trailing(true)}
 			</div>
+			{@render expanded()}
 		</div>
-	{:else if isHealedApiError}
-		<div class="mb-4 flex-1 min-w-0 rounded-lg border border-dashed border-[var(--border)] border-l-[3px] border-l-[var(--text-muted)]/40 bg-[var(--bg-subtle)]/50 px-4 py-2.5 pl-5">
-			<div class="flex items-center justify-between gap-3">
-				<div class="flex items-center gap-2 min-w-0">
-					<span class="text-sm font-medium text-[var(--text-secondary)] truncate min-w-0">{displayTitle}</span>
-					<span class="text-xs text-[var(--text-secondary)] shrink-0">· resumed</span>
+	{:else if variant === 'quiet'}
+		<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+		<div
+			class="
+				mb-4 flex-1 min-w-0 rounded-lg border border-dashed border-l-[3px] bg-[var(--bg-subtle)]/50 px-4 py-2.5 pl-5
+				{isMediumEffortThinking
+				? 'border-[var(--event-thinking)]/30 border-l-[var(--event-thinking)]/40'
+				: 'border-[var(--border)] border-l-[var(--text-muted)]/40'}
+				{hasExpandableContent ? 'cursor-pointer' : ''}
+			"
+			onclick={openFromCard}
+		>
+			<div
+				class="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-3"
+			>
+				<div class="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+					<span
+						class="text-sm font-medium {isMediumEffortThinking
+							? 'text-[var(--text-muted)]'
+							: 'text-[var(--text-secondary)]'}"
+					>
+						{@render highlighted(displayTitle)}
+					</span>
+					<span class="text-xs text-[var(--text-muted)]">{quietNote}</span>
 				</div>
-				<span
-					class="whitespace-nowrap font-mono text-xs text-[var(--text-muted)]/50 tabular-nums shrink-0"
-					title={formatDate(event.timestamp)}
-				>
-					{formatElapsedTime(event.timestamp, sessionStartTime)}
-				</span>
+				{@render trailing(true)}
 			</div>
+			{@render expanded()}
 		</div>
 	{:else}
-	<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-	<div
-		class="
-			mb-4 flex-1 min-w-0 rounded-lg border border-l-[3px] bg-[var(--bg-subtle)] p-4 pl-5 transition-all duration-200
-			hover:shadow-md
-			{hasExpandableContent ? 'cursor-pointer' : ''}
-			{isPlanEvent ? 'border-[var(--event-plan)]/60' : config.borderColor}
-			{isPlanEvent ? 'border-l-[var(--event-plan)]' : config.leftAccent}
-		"
-		onclick={() => {
-			if (!hasExpandableContent) return;
-			if (usePopup && onOpenPopup) {
-				onOpenPopup();
-			} else {
-				onToggleExpand();
-			}
-		}}
-		onkeydown={(e) => {
-			if (hasExpandableContent && (e.key === 'Enter' || e.key === ' ')) {
-				e.preventDefault();
-				if (usePopup && onOpenPopup) {
-					onOpenPopup();
-				} else {
-					onToggleExpand();
-				}
-			}
-		}}
-		role={hasExpandableContent ? 'button' : undefined}
-		tabindex={hasExpandableContent ? 0 : undefined}
-	>
-		<!-- Header -->
-		<div class="flex items-start justify-between gap-4">
-			<div class="flex-1 space-y-1">
-				<!-- Title and badges -->
-				<div class="flex items-center gap-2 flex-wrap">
-					<span class="font-medium text-[var(--text-primary)]">
-						{#if searchQuery}
-							{@html highlightPlainText(displayTitle, searchQuery)}
-						{:else}
-							{displayTitle}
-						{/if}
-					</span>
-
-					<!-- Actor badge (if subagent and not the current agent being viewed) -->
-					{#if shouldShowActorBadge}
-						<span
-							class="inline-flex items-center gap-1 rounded-full bg-[var(--event-subagent-subtle)] px-2 py-0.5 text-[10px] font-medium text-[var(--event-subagent)]"
-						>
-							<Bot class="h-2.5 w-2.5" />
-							{event.actor}
-						</span>
-					{/if}
-
-					<!-- Tool name badge -->
-					{#if toolName && event.event_type === 'tool_call'}
-						<span
-							class="rounded bg-[var(--bg-muted)] px-1.5 py-0.5 text-[10px] font-mono text-[var(--text-muted)]"
-						>
-							{toolName}
-						</span>
-					{/if}
-
-					<!-- Result status badge -->
-					{#if event.event_type === 'tool_call'}
-						{#if !hasToolResult}
-							<span
-								class="inline-flex items-center gap-1 rounded-full bg-[var(--warning-subtle)] px-2 py-0.5 text-[10px] font-medium text-[var(--warning)]"
-							>
-								pending
-							</span>
-						{:else if event.metadata?.result_status === 'error'}
-							<span
-								class="inline-flex items-center gap-1 rounded-full bg-[var(--error-subtle)] px-2 py-0.5 text-[10px] font-medium text-[var(--error)]"
-							>
-								<AlertCircle class="h-2.5 w-2.5" />
-								error
-							</span>
-						{:else}
-							<span
-								class="inline-flex items-center gap-1 rounded-full bg-[var(--success-subtle)] px-2 py-0.5 text-[10px] font-medium text-[var(--success)]"
-							>
-								<CheckCircle2 class="h-2.5 w-2.5" />
-								done
-							</span>
-						{/if}
-					{/if}
-
-					<!-- Spawned agent badge -->
-					{#if event.metadata?.spawned_agent_id}
-						<span
-							class="inline-flex items-center gap-1 rounded-full bg-[var(--event-subagent-subtle)] px-2 py-0.5 text-[10px] font-medium text-[var(--event-subagent)]"
-						>
-							<Bot class="h-2.5 w-2.5" />
-							→ {event.metadata.spawned_agent_id}
-						</span>
-					{/if}
-				</div>
-
-				<!-- Summary - show regular summary for non-todo events -->
-				{#if event.summary && event.event_type !== 'todo_update' && !(event.event_type === 'api_error' && event.summary === displayTitle)}
-					<p class="font-mono text-xs text-[var(--text-muted)]">
-						{#if searchQuery}
-							{@html highlightPlainText(
-								isExpanded ? event.summary : truncate(event.summary, 100),
-								searchQuery
-							)}
-						{:else}
-							{isExpanded ? event.summary : truncate(event.summary, 100)}
-						{/if}
-					</p>
-				{/if}
-
-				<!-- Todo preview - show inline for todo_update events -->
-				{#if event.event_type === 'todo_update'}
-					<div class="mt-1">
-						<TodoUpdateDetail
-							todos={todosArray}
-							action={event.metadata?.action as 'set' | 'merge' | undefined}
-							agentSlug={event.metadata?.agent_slug as string | undefined}
-							{isExpanded}
+		<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+		<div
+			class="
+				mb-4 flex-1 min-w-0 rounded-lg border border-l-[3px] bg-[var(--bg-subtle)] p-4 pl-5 transition-all duration-200
+				hover:shadow-md
+				{hasExpandableContent ? 'cursor-pointer' : ''}
+				{isPlanEvent ? 'border-[var(--event-plan)]/60' : config.borderColor}
+				{isPlanEvent ? 'border-l-[var(--event-plan)]' : config.leftAccent}
+			"
+			onclick={openFromCard}
+		>
+			<!-- Header: below sm the time and chevron take their own row, so the title gets the full width -->
+			<div class="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+				<div class="min-w-0 space-y-1 sm:flex-1">
+					<!-- Title and badges -->
+					<div class="flex flex-wrap items-center gap-2">
+						<EventTitle
+							{event}
+							{currentAgentId}
+							{agentHref}
+							{mainSessionHref}
 							{searchQuery}
 						/>
-					</div>
-				{/if}
 
-				<!-- Mini image thumbnails — visible on collapsed card; hidden when inline-expanded -->
-				{#if !isExpanded && event.metadata?.image_attachments?.length}
-					<div class="mt-2 flex items-center gap-1.5">
-						{#each (event.metadata.image_attachments as import('$lib/api-types').ImageAttachment[]).slice(0, 5) as attachment, i}
-							<div
-								class="relative h-8 w-8 shrink-0 overflow-hidden rounded border border-[var(--border)] opacity-80 transition-opacity hover:opacity-100"
-								title="Image attachment {i + 1}"
+						{#if toolName && type === 'tool_call'}
+							<span
+								class="max-w-full rounded bg-[var(--bg-muted)] px-1.5 py-0.5 text-[10px] font-mono text-[var(--text-muted)] [overflow-wrap:anywhere]"
 							>
-								<img
-									src="data:{attachment.media_type};base64,{attachment.data}"
-									alt="Attached image {i + 1}"
-									class="h-full w-full object-cover"
-								/>
-							</div>
-						{/each}
-						{#if (event.metadata.image_attachments as import('$lib/api-types').ImageAttachment[]).length > 5}
-							<span class="text-[10px] text-[var(--text-muted)]">
-								+{(event.metadata.image_attachments as import('$lib/api-types').ImageAttachment[]).length - 5} more
+								{toolName}
+							</span>
+						{/if}
+
+						<!-- Result status badge -->
+						{#if type === 'tool_call'}
+							{#if !hasToolResult}
+								<span
+									class="inline-flex items-center gap-1 rounded-full bg-[var(--warning-subtle)] px-2 py-0.5 text-[10px] font-medium text-[var(--warning)]"
+								>
+									pending
+								</span>
+							{:else if meta.result_status === 'error'}
+								<span
+									class="inline-flex items-center gap-1 rounded-full bg-[var(--error-subtle)] px-2 py-0.5 text-[10px] font-medium text-[var(--error)]"
+								>
+									<AlertCircle class="h-2.5 w-2.5" />
+									error
+								</span>
+							{:else}
+								<span
+									class="inline-flex items-center gap-1 rounded-full bg-[var(--success-subtle)] px-2 py-0.5 text-[10px] font-medium text-[var(--success)]"
+								>
+									<CheckCircle2 class="h-2.5 w-2.5" />
+									done
+								</span>
+							{/if}
+						{/if}
+
+						{@render tagList()}
+
+						{#if type === 'system_context' && !isAgentIdle}
+							<span class="text-xs text-[var(--text-muted)]">
+								added for Claude, not typed by you
 							</span>
 						{/if}
 					</div>
-				{/if}
-			</div>
 
-			<!-- Timestamp and expand -->
-			<div class="flex items-center gap-2 shrink-0">
-				{#if hasHiddenMatch}
-					<span
-						class="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--warning)]"
-						title="Search match found in expanded content"
-					></span>
-				{/if}
-				<span
-					class="whitespace-nowrap font-mono text-xs text-[var(--text-muted)]/70 tabular-nums"
-					title={formatDate(event.timestamp)}
-				>
-					{formatElapsedTime(event.timestamp, sessionStartTime)}
-				</span>
-				{#if hasExpandableContent}
-					<button
-						class="rounded p-0.5 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-muted)] hover:text-[var(--text-primary)]"
-						aria-expanded={isExpanded}
-						aria-label={isExpanded ? 'Collapse' : 'Expand'}
-					>
-						{#if isExpanded}
-							<ChevronDown class="h-4 w-4" />
-						{:else}
-							<ChevronRight class="h-4 w-4" />
-						{/if}
-					</button>
-				{/if}
-			</div>
-		</div>
+					<!-- Summary -->
+					{#if displaySummary && type !== 'todo_update' && !(type === 'api_error' && displaySummary === displayTitle)}
+						<p class="break-words font-mono text-xs text-[var(--text-muted)]">
+							{@render highlighted(
+								isExpanded ? displaySummary : truncate(displaySummary, 100)
+							)}
+						</p>
+					{/if}
 
-		<!-- Expanded content (only shown for inline expansion, not when using popup) -->
-		{#if isExpanded && hasExpandableContent && !usePopup}
-			<!-- Tool call detail - use specialized component -->
-			{#if event.event_type === 'tool_call'}
-				<ToolCallDetail {event} {projectPath} {searchQuery} />
-			{:else if event.event_type !== 'todo_update'}
-				<!-- Non-tool-call, non-todo content (prompts, thinking, responses) -->
-				<div class="mt-3 border-t border-[var(--border)] pt-3 relative">
-					<div class="rounded bg-[var(--bg-muted)]/50 p-3 relative">
-						<button
-							class="
-								md-global-copy
-								float-right
-								ml-2 mb-2
-								p-1.5
-								rounded-md
-								bg-[var(--bg-base)]
-								border border-[var(--border)]
-								text-[var(--text-muted)]
-								shadow-sm
-								hover:text-[var(--text-primary)] hover:border-[var(--accent)]
-								transition-colors
-							"
-							data-tooltip={isCopied ? 'Copied!' : 'Copy entire response'}
-							aria-label={isCopied ? 'Copied!' : 'Copy entire response'}
-							onclick={(e) => {
-								e.stopPropagation();
-								const content =
-									event.metadata?.full_content ||
-									event.metadata?.full_thinking ||
-									event.metadata?.full_text ||
-									event.metadata?.result_content ||
-									(event.metadata?.prompt as string | undefined) ||
-									event.summary ||
-									'';
-								navigator.clipboard.writeText(content);
-								isCopied = true;
-								setTimeout(() => (isCopied = false), 2000);
-							}}
-						>
-							{#if isCopied}
-								<Check size={14} class="text-[var(--success)]" />
-							{:else}
-								<Copy size={14} />
-							{/if}
-						</button>
-						{#if event.metadata?.image_attachments?.length}
-							<ImageAttachments attachments={event.metadata.image_attachments} />
-						{/if}
-						<div class="markdown-preview text-sm" use:markdownCopyButtons={renderedExpandedContent}>
-							{@html renderedExpandedContent}
+					<!-- Todo preview - show inline for todo_update events -->
+					{#if type === 'todo_update'}
+						<div class="mt-1">
+							<TodoUpdateDetail
+								todos={todosArray}
+								action={meta.action as 'set' | 'merge' | undefined}
+								agentSlug={meta.agent_slug as string | undefined}
+								{isExpanded}
+								{searchQuery}
+							/>
 						</div>
-					</div>
+					{/if}
+
+					<!-- Mini image thumbnails — visible on collapsed card; hidden when inline-expanded -->
+					{#if !isExpanded && meta.image_attachments?.length}
+						{@const images = meta.image_attachments}
+						<div class="mt-2 flex items-center gap-1.5">
+							{#each images.slice(0, 5) as attachment, i}
+								<div
+									class="relative h-8 w-8 shrink-0 overflow-hidden rounded border border-[var(--border)] opacity-80 transition-opacity hover:opacity-100"
+									title="Image attachment {i + 1}"
+								>
+									<img
+										src="data:{attachment.media_type};base64,{attachment.data}"
+										alt="Attached image {i + 1}"
+										class="h-full w-full object-cover"
+									/>
+								</div>
+							{/each}
+							{#if images.length > 5}
+								<span class="text-[10px] text-[var(--text-muted)]">
+									+{images.length - 5} more
+								</span>
+							{/if}
+						</div>
+					{/if}
 				</div>
-			{/if}
-			<!-- todo_update uses TodoUpdateDetail inline, no extra expanded content needed -->
-		{/if}
-	</div>
+
+				{@render trailing(false)}
+			</div>
+
+			{@render expanded()}
+		</div>
 	{/if}
 </div>

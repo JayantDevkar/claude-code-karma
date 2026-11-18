@@ -99,7 +99,9 @@ def process_subagent_data(subagent: Any) -> dict:
         api_errors.feed(msg)
         if isinstance(msg, UserMessage):
             if initial_prompt is None:
-                initial_prompt = msg.content[:5000] if msg.content else None
+                # A fork's prompt is the text beside the tool result that started it
+                first_text = msg.prompt_text or msg.content
+                initial_prompt = first_text[:5000] if first_text else None
         elif isinstance(msg, AssistantMessage):
             for block in msg.content_blocks:
                 if isinstance(block, ToolUseBlock):

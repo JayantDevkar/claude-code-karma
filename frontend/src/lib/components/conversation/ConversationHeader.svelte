@@ -14,7 +14,8 @@
 		MessageCircle,
 		Monitor,
 		Copy,
-		Laptop
+		Laptop,
+		Hash
 	} from 'lucide-svelte';
 	import { fade } from 'svelte/transition';
 	import PageHeader from '$lib/components/layout/PageHeader.svelte';
@@ -34,14 +35,19 @@
 		formatDuration,
 		formatTokens,
 		getProjectName,
-		getSubagentColorVars,
 		getSubagentTypeDisplayName,
-		cleanAgentIdForDisplay,
 		getEffectiveSubagentType,
 		getSessionDisplayName,
 		sessionHasTitle,
 		copyToClipboard
 	} from '$lib/utils';
+	import {
+		getAgentColorVars,
+		getAgentFullName,
+		getAgentLabel,
+		getModelTag,
+		getTeamTag
+	} from '$lib/utils/agent-identity';
 
 	interface Props {
 		entity: ConversationEntity;
@@ -163,7 +169,7 @@
 	// For subagents, clean the agent ID for display (removes system prefixes)
 	let title = $derived.by(() => {
 		if (isSubagentSession(entity)) {
-			return cleanAgentIdForDisplay(entity.agent_id);
+			return getAgentFullName(entity);
 		}
 		return getSessionDisplayName(
 			entity.session_titles,
@@ -172,6 +178,11 @@
 			entity.chain_title
 		);
 	});
+
+	// An unnamed agent is titled by its type, so the type badge and subtitle would only repeat it.
+	let titleIsType = $derived(
+		isSubagentSession(entity) && getAgentLabel(entity).secondary !== null
+	);
 
 	// Check if we have a session title (to show slug as badge)
 	let hasSessionTitle = $derived(
@@ -186,9 +197,19 @@
 
 	let subtitle = $derived.by(() => {
 		if (isSubagentSession(entity)) {
-			return getSubagentTypeDisplayName(effectiveSubagentType);
+			// What the agent was asked to do, when known; the type is not repeated under a title that is the type.
+			if (entity.description) return entity.description;
+			return titleIsType ? '' : getSubagentTypeDisplayName(effectiveSubagentType);
 		}
 		return `#${entity.uuid?.slice(0, 8)}`;
+	});
+
+	// Team and model tags, worded like the subagent card and the timeline spawn card.
+	let agentTags = $derived.by<string[]>(() => {
+		if (!isSubagentSession(entity)) return [];
+		return [getTeamTag(entity.team_name), getModelTag(entity.model)].filter(
+			(tag): tag is string => !!tag
+		);
 	});
 
 	let breadcrumbs = $derived.by(() => {
@@ -208,7 +229,7 @@
 					label: parentSessionSlug || sessionSlug,
 					href: `/projects/${encodedName}/${sessionSlug}`
 				},
-				{ label: `Agent ${entity.agent_id}` }
+				{ label: getAgentFullName(entity) }
 			];
 		}
 
@@ -226,6 +247,10 @@
 		}
 		if (duration) {
 			items.push({ icon: Clock, text: formatDuration(duration), class: 'font-mono' });
+		}
+		// The title is the agent's name, so the full id is listed here for copying.
+		if (isSubagentSession(entity) && title !== entity.agent_id) {
+			items.push({ icon: Hash, text: entity.agent_id, class: 'font-mono break-all' });
 		}
 
 		return items;
@@ -252,8 +277,11 @@
 		}
 	}
 
+	// The agent's own colour first, so the page matches its timeline badge and subagent card.
 	let colorVars = $derived(
-		isSubagentSession(entity) ? getSubagentColorVars(effectiveSubagentType) : null
+		isSubagentSession(entity)
+			? getAgentColorVars(entity.color, effectiveSubagentType, entity.name)
+			: null
 	);
 	let typeIcon = $derived(isSubagentSession(entity) ? getTypeIcon(effectiveSubagentType) : null);
 
@@ -303,7 +331,7 @@
 			<!-- Header Row -->
 			<PageHeader {title} {breadcrumbs} {subtitle} {metadata} class="mb-0">
 				{#snippet badges()}
-					{#if effectiveSubagentType && typeIcon}
+					{#if effectiveSubagentType && typeIcon && !titleIsType}
 						{@const TypeIconComponent = typeIcon}
 						<a
 							href="/agents/{encodeURIComponent(
@@ -325,6 +353,13 @@
 							</span>
 						</a>
 					{/if}
+					{#each agentTags as tag, i (i)}
+						<span
+							class="rounded bg-[var(--bg-base)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--text-secondary)] [overflow-wrap:anywhere]"
+						>
+							{tag}
+						</span>
+					{/each}
 					{@render endedBy()}
 				{/snippet}
 				{#snippet headerRight()}

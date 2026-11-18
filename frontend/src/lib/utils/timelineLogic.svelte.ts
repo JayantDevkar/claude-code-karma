@@ -1,4 +1,5 @@
 import type { TimelineEvent, FilterCategory, FilterCounts } from '$lib/api-types';
+import { getDisplayTitle, isFailedTask } from '$lib/components/timeline/timeline-display';
 
 /**
  * Timeline Logic Utility
@@ -6,81 +7,115 @@ import type { TimelineEvent, FilterCategory, FilterCounts } from '$lib/api-types
  * Uses Svelte 5 runes for reactive state management
  */
 
-/**
- * Check if an event matches a specific filter category
- * @param event - The timeline event to check
- * @param filter - The filter category to match against
- * @param currentAgentId - When viewing an agent's timeline, the agent's ID (affects subagent filter)
- */
-function matchesSingleFilter(
+const TASK_TOOLS = ['TaskCreate', 'TaskUpdate', 'TaskGet', 'TaskList'];
+
+/** Filter chips in display order, grouped by who acts. */
+export const FILTER_CATEGORIES: FilterCategory[] = [
+	'prompt',
+	'command',
+	'thinking',
+	'response',
+	'big_response',
+	'ask_user',
+	'tool_call',
+	'mcp_tool',
+	'skill',
+	'task',
+	'error',
+	'subagent',
+	'message',
+	'background',
+	'api_error',
+	'notice',
+	'system'
+];
+
+/** Text injected for the model; left out of the timeline unless the System filter is selected. */
+export function isSystemContext(event: TimelineEvent): boolean {
+	return event.event_type === 'system_context';
+}
+
+/** Events the timeline works with: everything, minus system context unless System is selected. */
+export function selectBaseEvents(events: TimelineEvent[], showSystem: boolean): TimelineEvent[] {
+	if (showSystem) return events;
+	return events.some(isSystemContext) ? events.filter((e) => !isSystemContext(e)) : events;
+}
+
+function toolName(event: TimelineEvent): string | null {
+	const name = event.metadata?.tool_name;
+	return typeof name === 'string' ? name : null;
+}
+
+/** Check if an event matches one filter chip; currentAgentId is set in an agent's own timeline. */
+export function matchesSingleFilter(
 	event: TimelineEvent,
 	filter: FilterCategory,
 	currentAgentId?: string | null
 ): boolean {
+	const type = event.event_type;
+	// System events belong to the System chip only, whoever their actor is.
+	if (isSystemContext(event)) return filter === 'system';
 	switch (filter) {
 		case 'prompt':
-			return event.event_type === 'prompt';
-		case 'tool_call':
-			return event.event_type === 'tool_call';
-		case 'subagent':
-			// In agent view (currentAgentId is set), only match events that spawn OTHER subagents,
-			// not all events with actor_type === 'subagent' (which would be ALL agent events)
-			if (currentAgentId) {
-				return (
-					event.event_type === 'subagent_spawn' ||
-					Boolean(event.metadata?.spawned_agent_id)
-				);
-			}
-			// In session view, match events from subagents OR events that spawn subagents
+			return type === 'prompt';
+		case 'command':
 			return (
-				event.actor_type === 'subagent' ||
-				event.event_type === 'subagent_spawn' ||
-				Boolean(event.metadata?.spawned_agent_id)
+				type === 'command_invocation' ||
+				type === 'builtin_command' ||
+				type === 'shell_command'
 			);
-		case 'todo_update':
-			return event.event_type === 'todo_update';
+		case 'thinking':
+			return type === 'thinking';
+		case 'response':
+			return type === 'response';
+		case 'big_response':
+			return type === 'response' && event.metadata?.is_big_response === true;
+		case 'ask_user':
+			return type === 'tool_call' && toolName(event) === 'AskUserQuestion';
+		case 'tool_call':
+			return type === 'tool_call';
+		case 'mcp_tool': {
+			const name = toolName(event);
+			return (
+				type === 'tool_call' &&
+				name !== null &&
+				(name.startsWith('mcp__') || name === 'CallMcpTool')
+			);
+		}
+		case 'skill':
+			return type === 'skill_invocation';
+		case 'task':
+			// TodoWrite is the older form of the Task tools, so they share one chip.
+			return (
+				type === 'todo_update' ||
+				(type === 'tool_call' && TASK_TOOLS.includes(toolName(event) ?? ''))
+			);
 		case 'error':
 			return (
 				event.metadata?.result_status === 'error' ||
-				(event.event_type === 'tool_call' &&
+				(type === 'tool_call' &&
 					event.metadata?.has_result === true &&
-					!event.metadata.result_status) // Fallback for error detection if needed
+					!event.metadata.result_status) ||
+				isFailedTask(event)
 			);
+		case 'subagent':
+			// In an agent view, only spawns of OTHER agents count; every event there is the agent's own.
+			if (currentAgentId) {
+				return type === 'subagent_spawn' || Boolean(event.metadata?.spawned_agent_id);
+			}
+			return (
+				event.actor_type === 'subagent' ||
+				type === 'subagent_spawn' ||
+				Boolean(event.metadata?.spawned_agent_id)
+			);
+		case 'message':
+			return type === 'message';
+		case 'background':
+			return type === 'task_notification' || type === 'scheduled_fire';
 		case 'api_error':
-			return event.event_type === 'api_error';
-		case 'thinking':
-			return event.event_type === 'thinking';
-		case 'response':
-			return event.event_type === 'response';
-		case 'big_response':
-			return (
-				event.event_type === 'response' && event.metadata?.is_big_response === true
-			);
-		case 'ask_user':
-			return (
-				event.event_type === 'tool_call' && event.metadata?.tool_name === 'AskUserQuestion'
-			);
-		case 'mcp_tool':
-			return (
-				event.event_type === 'tool_call' &&
-				typeof event.metadata?.tool_name === 'string' &&
-				(event.metadata.tool_name.startsWith('mcp__') ||
-					event.metadata.tool_name === 'CallMcpTool')
-			);
-		case 'task':
-			return (
-				event.event_type === 'tool_call' &&
-				typeof event.metadata?.tool_name === 'string' &&
-				['TaskCreate', 'TaskUpdate', 'TaskGet', 'TaskList'].includes(
-					event.metadata.tool_name as string
-				)
-			);
-		case 'skill':
-			return event.event_type === 'skill_invocation';
-		case 'command':
-			return (
-				event.event_type === 'command_invocation' || event.event_type === 'builtin_command'
-			);
+			return type === 'api_error';
+		case 'notice':
+			return type === 'system_notice' || type === 'compaction';
 		default:
 			return false;
 	}
@@ -123,20 +158,31 @@ const haystackCache = new Map<string, { fingerprint: string; haystack: string }>
 // A separator no realistic query contains, so a multi-word query can't match across two fields' boundary.
 const FIELD_SEPARATOR = String.fromCharCode(0);
 
+// Total length of the metadata's own string values: cheap, and changes when the backend fills one in later.
+function metadataTextLength(metadata: TimelineEvent['metadata'] | undefined): number {
+	if (!metadata) return 0;
+	let total = 0;
+	for (const value of Object.values(metadata)) {
+		if (typeof value === 'string') total += value.length + 1;
+		else if (value != null) total += 1;
+	}
+	return total;
+}
+
 function getEventFingerprint(event: TimelineEvent): string {
 	const m = event.metadata;
 	return [
 		event.timestamp,
+		event.event_type,
+		event.title,
+		event.actor_name ?? '',
 		event.summary?.length ?? 0,
-		m?.result_content?.length ?? 0,
-		m?.full_content?.length ?? 0,
-		m?.full_text?.length ?? 0,
-		m?.full_thinking?.length ?? 0,
 		m?.has_result ? 1 : 0,
 		m?.result_status ?? '',
-		// Structural signals so a metadata field arriving on a later poll (e.g. spawned_agent_slug) invalidates the cache.
+		m?.peer_name ?? '',
+		m?.spawned_agent_slug ?? '',
 		m ? Object.keys(m).length : 0,
-		m?.spawned_agent_slug ?? ''
+		metadataTextLength(m)
 	].join('|');
 }
 
@@ -146,7 +192,13 @@ function getHaystack(event: TimelineEvent): string {
 	if (cached && cached.fingerprint === fingerprint) {
 		return cached.haystack;
 	}
-	const parts: string[] = [event.title, event.summary ?? '', event.actor];
+	const parts: string[] = [
+		event.title,
+		getDisplayTitle(event),
+		event.summary ?? '',
+		event.actor,
+		event.actor_name ?? ''
+	];
 	collectSearchableText(event.metadata, parts);
 	const haystack = parts.join(FIELD_SEPARATOR).toLowerCase();
 	haystackCache.set(event.id, { fingerprint, haystack });
@@ -165,7 +217,7 @@ export function matchesSearch(event: TimelineEvent, query: string): boolean {
 /**
  * Check if event matches any active filter (OR logic) AND search query
  */
-function matchesFilters(
+export function matchesFilters(
 	event: TimelineEvent,
 	filters: Set<FilterCategory>,
 	searchQuery: string,
@@ -182,105 +234,20 @@ function matchesFilters(
 	return false;
 }
 
-/**
- * Calculate filter counts from events (optimized single-pass)
- */
-function calculateFilterCounts(
+/** Count how many events each filter chip matches. */
+export function calculateFilterCounts(
 	events: TimelineEvent[],
 	currentAgentId?: string | null
 ): FilterCounts {
-	const counts = {
-		prompt: 0,
-		tool_call: 0,
-		subagent: 0,
-		todo_update: 0,
-		error: 0,
-		api_error: 0,
-		thinking: 0,
-		response: 0,
-		big_response: 0,
-		ask_user: 0,
-		mcp_tool: 0,
-		task: 0,
-		skill: 0,
-		command: 0
-	};
-
+	const counts = Object.fromEntries(FILTER_CATEGORIES.map((c) => [c, 0])) as FilterCounts;
 	for (const event of events) {
-		const type = event.event_type;
-
-		// Simple direct matches
-		if (type === 'prompt') counts.prompt++;
-		if (type === 'tool_call') counts.tool_call++;
-		if (type === 'todo_update') counts.todo_update++;
-		if (type === 'api_error') counts.api_error++;
-		if (type === 'thinking') counts.thinking++;
-		if (type === 'response') counts.response++;
-
-		// Big response (subset of response)
-		if (type === 'response' && event.metadata?.is_big_response) counts.big_response++;
-
-		// AskUserQuestion (subset of tool_call)
-		if (type === 'tool_call' && event.metadata?.tool_name === 'AskUserQuestion')
-			counts.ask_user++;
-
-		// MCP tools (subset of tool_call)
-		if (
-			type === 'tool_call' &&
-			typeof event.metadata?.tool_name === 'string' &&
-			((event.metadata.tool_name as string).startsWith('mcp__') ||
-				event.metadata.tool_name === 'CallMcpTool')
-		)
-			counts.mcp_tool++;
-
-		// Task tools (subset of tool_call)
-		if (
-			type === 'tool_call' &&
-			typeof event.metadata?.tool_name === 'string' &&
-			['TaskCreate', 'TaskUpdate', 'TaskGet', 'TaskList'].includes(
-				event.metadata.tool_name as string
-			)
-		)
-			counts.task++;
-
-		// Subagent logic (complex)
-		if (currentAgentId) {
-			if (type === 'subagent_spawn' || event.metadata?.spawned_agent_id) {
-				counts.subagent++;
-			}
-		} else {
-			if (
-				event.actor_type === 'subagent' ||
-				type === 'subagent_spawn' ||
-				event.metadata?.spawned_agent_id
-			) {
-				counts.subagent++;
-			}
-		}
-
-		// Skill/command invocation
-		if (type === 'skill_invocation') counts.skill++;
-		if (type === 'command_invocation' || type === 'builtin_command') counts.command++;
-
-		// Error detection
-		if (
-			event.metadata?.result_status === 'error' ||
-			(type === 'tool_call' &&
-				event.metadata?.has_result === true &&
-				!event.metadata.result_status)
-		) {
-			counts.error++;
+		for (const category of FILTER_CATEGORIES) {
+			if (matchesSingleFilter(event, category, currentAgentId)) counts[category]++;
 		}
 	}
-
 	return counts;
 }
 
-/**
- * Create timeline logic state and actions
- * Returns reactive state and helper functions for timeline management
- * @param eventsGetter - Function that returns the current events array (maintains reactivity)
- */
 /**
  * Gap in the timeline representing hidden events
  */
@@ -302,6 +269,60 @@ export interface TimelineLogicOptions {
 	tailCount?: number;
 	/** Function that returns the current agent ID (reactive, affects filter behavior) */
 	currentAgentIdGetter?: () => string | null;
+}
+
+export interface ViewItemsInput {
+	events: TimelineEvent[];
+	hasActiveFilter: boolean;
+	isTailing: boolean;
+	tailCount: number;
+	revealedIds: Set<string>;
+	hiddenIds: Set<string>;
+	matches: (event: TimelineEvent) => boolean;
+}
+
+/** Turn events into visible events plus gaps for the hidden runs between them. */
+export function buildViewItems(input: ViewItemsInput): TimelineViewItem[] {
+	const { events, hasActiveFilter, isTailing, tailCount, revealedIds, hiddenIds, matches } = input;
+	if (!hasActiveFilter && !isTailing && hiddenIds.size === 0) return events;
+
+	const items: TimelineViewItem[] = [];
+	let gapEvents: TimelineEvent[] = [];
+	const flushGap = (trailing: boolean) => {
+		if (gapEvents.length === 0) return;
+		const first = gapEvents[0].id;
+		const last = gapEvents[gapEvents.length - 1].id;
+		items.push({
+			type: 'gap',
+			id: trailing ? `gap-end-${first}` : `gap-${first}-${last}`,
+			events: gapEvents
+		});
+		gapEvents = [];
+	};
+
+	events.forEach((event, i) => {
+		const isInLastN = isTailing && i >= events.length - tailCount;
+		let isVisible: boolean;
+		if (revealedIds.has(event.id)) {
+			isVisible = true;
+		} else if (hiddenIds.has(event.id)) {
+			isVisible = false;
+		} else if (isTailing && !hasActiveFilter) {
+			// Tailing with no filter shows only the last N.
+			isVisible = isInLastN;
+		} else {
+			isVisible = isInLastN || matches(event);
+		}
+
+		if (isVisible) {
+			flushGap(false);
+			items.push(event);
+		} else {
+			gapEvents.push(event);
+		}
+	});
+	flushGap(true);
+	return items;
 }
 
 /**
@@ -333,34 +354,21 @@ export function createTimelineLogic(
 	let manuallyRevealedIds = $state<Set<string>>(new Set());
 	let manuallyHiddenIds = $state<Set<string>>(new Set());
 
-	// Derived state - filter counts
+	// System is a filter like the others, except that unselected its events are not in the list at all.
+	const showSystem = $derived(activeFilters.has('system'));
+	const baseEvents = $derived(selectBaseEvents(eventsGetter(), showSystem));
+	const systemCount = $derived(eventsGetter().filter(isSystemContext).length);
+
+	// The System chip always shows how many there are, selected or not.
 	const counts = $derived.by<FilterCounts>(() => {
-		return calculateFilterCounts(eventsGetter(), getAgentId());
+		return { ...calculateFilterCounts(baseEvents, getAgentId()), system: systemCount };
 	});
 
-	// Derived state - effective filters (if all relevant selected, treat as none)
+	// Selecting every available category is the same as selecting none.
 	const effectiveFilters = $derived.by<Set<FilterCategory>>(() => {
-		// Calculate how many non-zero categories exist
-		const categories: FilterCategory[] = [
-			'prompt',
-			'tool_call',
-			'subagent',
-			'todo_update',
-			'error',
-			'api_error',
-			'thinking',
-			'response',
-			'big_response',
-			'ask_user',
-			'mcp_tool',
-			'task',
-			'skill',
-			'command'
-		];
-		const availableCategories = categories.filter((c) => counts[c] > 0);
-
-		// If all available categories are selected, it's equivalent to no filter
-		// But only if we have at least 2 categories to toggle between
+		// With System selected the filter is never "everything": other kinds still need their chips.
+		if (activeFilters.has('system')) return activeFilters;
+		const availableCategories = FILTER_CATEGORIES.filter((c) => c !== 'system' && counts[c] > 0);
 		if (
 			availableCategories.length > 1 &&
 			availableCategories.every((c) => activeFilters.has(c)) &&
@@ -377,89 +385,21 @@ export function createTimelineLogic(
 	const isTailing = $derived(isTailingGetter());
 
 	// Derived state - View Items (Events + Gaps)
-	// Handles both filter-based visibility AND tailing mode
-	const viewItems = $derived.by<TimelineViewItem[]>(() => {
-		const events = eventsGetter();
-		const totalEvents = events.length;
+	const viewItems = $derived.by<TimelineViewItem[]>(() =>
+		buildViewItems({
+			events: baseEvents,
+			hasActiveFilter,
+			isTailing,
+			tailCount,
+			revealedIds: manuallyRevealedIds,
+			hiddenIds: manuallyHiddenIds,
+			matches: (event) => matchesFilters(event, effectiveFilters, searchQuery, getAgentId())
+		})
+	);
 
-		// If no filter AND not tailing AND no manual hides, show all events
-		if (!hasActiveFilter && !isTailing && manuallyHiddenIds.size === 0) {
-			return events;
-		}
-
-		const items: TimelineViewItem[] = [];
-		let currentGapEvents: TimelineEvent[] = [];
-
-		for (let i = 0; i < events.length; i++) {
-			const event = events[i];
-
-			// Check if event is in the last N (for tailing)
-			const isInLastN = isTailing && i >= totalEvents - tailCount;
-
-			// Determine visibility based on mode:
-			// - When tailing is ON:
-			//   - If no filter: ONLY show last N events
-			//   - If filter active: show filter matches + last N
-			// - When tailing is OFF:
-			//   - Show based on filter/search only
-			// - manuallyRevealedIds overrides to show
-			// - manuallyHiddenIds overrides to hide (unless revealed)
-			let isVisible: boolean;
-
-			// Check manual reveal/hide first
-			if (manuallyRevealedIds.has(event.id)) {
-				// Always show if manually revealed
-				isVisible = true;
-			} else if (manuallyHiddenIds.has(event.id)) {
-				// Always hide if manually hidden (and not revealed)
-				isVisible = false;
-			} else if (isTailing && !hasActiveFilter) {
-				// Tailing ON, no filter: ONLY show last N
-				isVisible = isInLastN;
-			} else if (isTailing && hasActiveFilter) {
-				// Tailing ON, filter active: show filter matches + last N
-				isVisible =
-					isInLastN ||
-					matchesFilters(event, effectiveFilters, searchQuery, getAgentId()) ||
-					manuallyRevealedIds.has(event.id);
-			} else {
-				// Tailing OFF: show based on filter/search
-				isVisible =
-					matchesFilters(event, effectiveFilters, searchQuery, getAgentId()) ||
-					manuallyRevealedIds.has(event.id);
-			}
-
-			if (isVisible) {
-				// If we have accumulated hidden events, push a gap
-				if (currentGapEvents.length > 0) {
-					items.push({
-						type: 'gap',
-						id: `gap-${currentGapEvents[0].id}-${currentGapEvents[currentGapEvents.length - 1].id}`,
-						events: [...currentGapEvents]
-					});
-					currentGapEvents = [];
-				}
-				items.push(event);
-			} else {
-				currentGapEvents.push(event);
-			}
-		}
-
-		// Trailing gap (should be rare when tailing since last N are always visible)
-		if (currentGapEvents.length > 0) {
-			items.push({
-				type: 'gap',
-				id: `gap-end-${currentGapEvents[0].id}`,
-				events: [...currentGapEvents]
-			});
-		}
-
-		return items;
-	});
-
-	// Derived state - matching count (only truly matching events, excluding manually revealed for stat correctness? Or inclusive? User typically wants to know matches count. Let's keep strict matches for the count.)
+	// Strict matches only; manually revealed events do not count.
 	const matchingCount = $derived.by(() => {
-		return eventsGetter().filter((e) =>
+		return baseEvents.filter((e) =>
 			matchesFilters(e, effectiveFilters, searchQuery, getAgentId())
 		).length;
 	});
@@ -569,6 +509,15 @@ export function createTimelineLogic(
 		},
 		get tailCount() {
 			return tailCount;
+		},
+		get baseEvents() {
+			return baseEvents;
+		},
+		get showSystem() {
+			return showSystem;
+		},
+		get systemCount() {
+			return systemCount;
 		},
 		// Actions
 		toggleFilter,

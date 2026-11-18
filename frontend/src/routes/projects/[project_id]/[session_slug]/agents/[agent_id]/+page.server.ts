@@ -1,7 +1,7 @@
 import type { SubagentSessionDetail, ToolUsage, Task, LiveSessionSummary } from '$lib/api-types';
 import { API_BASE } from '$lib/config';
 import { safeFetch, fetchWithFallback } from '$lib/utils/api-fetch';
-import { cleanAgentIdForDisplay } from '$lib/utils';
+import { getAgentFullName } from '$lib/utils/agent-identity';
 import { joinTitle } from '$lib/page-title';
 
 interface SessionLookupResult {
@@ -83,7 +83,7 @@ export async function load({ params, fetch }) {
 
 	return {
 		agent: agentResult.data,
-		title: joinTitle([cleanAgentIdForDisplay(agentResult.data.agent_id), 'Subagent']),
+		title: joinTitle([getAgentFullName(agentResult.data), 'Subagent']),
 		tools: tools_used,
 		tasks: tasksData,
 		liveSession: liveSessionResult.ok ? liveSessionResult.data : null,

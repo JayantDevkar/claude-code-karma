@@ -20,12 +20,30 @@ from config import FILE_TOOL_MAPPINGS
 from models import AssistantMessage, Session, ToolUseBlock, UserMessage
 from models.api_error import ApiErrorSummary, ApiErrorTracker
 from models.conversation import ConversationEntity
+from services.agent_registry import AgentInfo, build_agent_registry
+from services.timeline_parsing import clean_task_prompt
 from utils import (
     FileOperation,
     extract_file_operation,
     normalize_key,
     prompt_from_user_message,
 )
+
+
+def resolve_subagent_type(
+    agent_id: Optional[str], spawn_type: Optional[str], identity: Optional[AgentInfo]
+) -> Optional[str]:
+    """
+    The one rule for an agent's type, shared by the subagents list, the agent page and the timeline.
+
+    The spawn call's subagent_type, else a system agent's id prefix, else the type in its meta.json.
+    """
+    if spawn_type:
+        return spawn_type
+    inferred = _infer_type_from_agent_id(agent_id) if agent_id else None
+    if inferred:
+        return inferred
+    return identity.agent_type if identity is not None else None
 
 
 @dataclass
@@ -231,14 +249,14 @@ def collect_agent_data(agent: ConversationEntity) -> ConversationData:
     # Use core collection function
     data = _collect_conversation_data_core(agent, actor=agent_id, actor_type="subagent")
 
-    # For subagents, the first UserMessage is always the Task prompt.
-    # The core function may skip it if is_internal_message is a false positive
-    # (e.g., prompt text discusses <local-command-caveat> patterns).
-    if data.initial_prompt is None:
-        for msg in agent.iter_messages():
-            if isinstance(msg, UserMessage) and msg.content:
-                data.initial_prompt = msg.content[:5000]
-                break
+    # For subagents, the first UserMessage is always the Task prompt, whoever sent it:
+    # the core function skips it when it comes from a teammate or rides on a fork's tool result.
+    for msg in agent.iter_messages():
+        if isinstance(msg, UserMessage) and (msg.prompt_text or msg.content):
+            if msg.prompt_text or not msg.is_tool_result or data.initial_prompt is None:
+                # Plain text: no <teammate-message> wrapper, no fork boilerplate
+                data.initial_prompt = clean_task_prompt((msg.prompt_text or msg.content)[:5000])
+            break
 
     return data
 
@@ -420,7 +438,9 @@ def _read_subagent_digest(subagent) -> _SubagentDigest:
         api_errors.feed(msg)
         if isinstance(msg, UserMessage):
             if initial_prompt is None:
-                initial_prompt = msg.content[:5000] if msg.content else None
+                # A fork's prompt is the text beside the tool result that started it
+                first_text = msg.prompt_text or msg.content
+                initial_prompt = first_text[:5000] if first_text else None
         elif isinstance(msg, AssistantMessage):
             for block in msg.content_blocks:
                 if not isinstance(block, ToolUseBlock):
@@ -462,6 +482,12 @@ class SubagentInfo:
     subagent_type: Optional[str]
     message_count: int
     api_error_summary: ApiErrorSummary = ApiErrorSummary.EMPTY
+    # Identity from the agent's meta.json (the same values the timeline shows)
+    name: Optional[str] = None
+    color: Optional[str] = None
+    team_name: Optional[str] = None
+    model: Optional[str] = None
+    description: Optional[str] = None
 
 
 def collect_subagent_info(
@@ -491,24 +517,25 @@ def collect_subagent_info(
             agent_id_to_type[result_data.spawned_agent_id] = subagent_type
 
     subagents_info: List[SubagentInfo] = []
+    registry = build_agent_registry(
+        session.list_subagent_paths(), extra_dirs=[session.subagents_dir]
+    )
 
     for subagent in session.list_subagents():
         digest = _subagent_digest(subagent)
-        initial_prompt = digest.initial_prompt
+        # The task as plain text: no <teammate-message> wrapper, no fork boilerplate
+        initial_prompt = clean_task_prompt(digest.initial_prompt) if digest.initial_prompt else None
+        identity = registry.get(subagent.agent_id)
 
-        # Match subagent to Task invocation
-        subagent_type = agent_id_to_type.get(subagent.agent_id)
+        # The Task call's type, else a system agent's id prefix, else the type in its meta.json
+        subagent_type = resolve_subagent_type(
+            subagent.agent_id, agent_id_to_type.get(subagent.agent_id), identity
+        )
 
         # Fallback: match by normalized description prefix
         if subagent_type is None and initial_prompt:
             prompt_prefix = initial_prompt[:100]
             subagent_type = session_data.task_descriptions.get(normalize_key(prompt_prefix))
-
-        # Fallback: infer type from agent_id prefix for system agents
-        # System agents have IDs like "aprompt_suggestion-7796cd" or "acompact-abc123"
-        # where the prefix before the last hyphen+hex is the type
-        if subagent_type is None:
-            subagent_type = _infer_type_from_agent_id(subagent.agent_id)
 
         # Detect warmup agents - Claude Code spawns these to warm up model cache
         # They have "Warmup" as their initial prompt and are internal Claude overhead
@@ -527,6 +554,11 @@ def collect_subagent_info(
                 subagent_type=subagent_type,
                 message_count=digest.message_count,
                 api_error_summary=digest.api_error_summary,
+                name=identity.name if identity else None,
+                color=identity.color if identity else None,
+                team_name=identity.team_name if identity else None,
+                model=identity.model if identity else None,
+                description=identity.description if identity else None,
             )
         )
 

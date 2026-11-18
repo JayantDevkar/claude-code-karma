@@ -60,6 +60,9 @@ api/
 │   └── settings.py      # User settings
 ├── services/            # Business logic layer
 │   ├── session_relationships.py  # Chain detection
+│   ├── conversation_endpoints.py # Timeline, tools and file-activity builders
+│   ├── agent_registry.py         # Subagent names, types and colours (meta.json)
+│   ├── timeline_parsing.py       # Text parsers for message and notification wrappers
 │   └── tool_results.py           # Tool result handling
 ├── middleware/          # HTTP middleware
 │   └── caching.py       # Response caching
@@ -68,6 +71,7 @@ api/
 │   ├── session.py       # Session conversation
 │   ├── agent.py         # Subagent conversations
 │   ├── message.py       # Message types
+│   ├── side_entries.py  # System notices and queued input (not messages)
 │   ├── content.py       # Content blocks
 │   ├── usage.py         # Token stats
 │   ├── live_session.py  # Real-time state
@@ -82,6 +86,7 @@ api/
 Project (entry point)
 ├── Session ({uuid}.jsonl)
 │   ├── Message (UserMessage, AssistantMessage, FileHistorySnapshot, SummaryMessage)
+│   ├── Side entry (SystemEntry, QueuedCommandEntry; read by iter_side_entries())
 │   ├── Agent (subagents in {uuid}/subagents/)
 │   ├── ToolResult ({uuid}/tool-results/toolu_*.txt)
 │   └── TodoItem (~/.claude/todos/{uuid}-*.json)
@@ -119,6 +124,15 @@ Related sessions detected via:
 
 ### Compaction Detection
 Sessions with `SummaryMessage` indicate compacted/resumed conversations. Use `CompactionDetector` to identify.
+
+### Who Sent a User Entry
+Not every `type: user` entry is a prompt. `UserMessage.source` says who wrote it: `human`, `command`, `shell`, `peer_session` (another Claude session), `agent` (a teammate, team lead or coordinator), `task_notification`, `scheduled`, `skill_body`, `system_reminder`, `meta`, `compact_summary`, `local_command`, `interrupt` or `tool_result`. It is derived from the entry's structured fields (`origin`, `isMeta`, `sourceToolUseID`, `isCompactSummary`, `turnOrigin`); the start of the text is only a fallback for older sessions. `is_internal_message` is true when the entry came from another session, an agent or Claude Code.
+
+### Side Entries
+`system` notices and `queued_command` attachments are not conversation messages. `iter_side_entries()` in `models/side_entries.py` reads them as `SystemEntry` and `QueuedCommandEntry`. They are kept out of `iter_messages()`, so message counts and the indexer do not see them; the timeline builder reads both.
+
+### Agent Registry
+`services/agent_registry.py` reads the `agent-*.meta.json` next to each subagent JSONL (name, type, team, colour, model, description). The timeline, the subagents list and the agent detail use it to name agents. `collectors.resolve_subagent_type()` is the one rule for an agent's type: the spawn call's `subagent_type`, else a system agent's id prefix, else the type in its meta.json.
 
 ### Model Pricing
 Prices (USD per 1M tokens) ship in `models/pricing.json` and load once at startup. Users override them in `~/.claude_karma/pricing.json` (or the path in `CLAUDE_KARMA_PRICING_OVERRIDE_PATH`), which has the same shape. An override entry under `models` replaces that model's whole entry, a new model ID is added, and `multipliers` merge per key. Invalid entries are logged and skipped. When the effective prices change, the indexer re-parses every session so stored costs match. It compares a fingerprint kept in the `index_meta` table.
@@ -167,6 +181,8 @@ Real-time state tracked in `~/.claude_karma/live-sessions/{slug}.json` via Claud
 | `Session` | `models/session.py` | Main conversation, aggregates usage stats |
 | `Agent` | `models/agent.py` | Both standalone and subagent conversations |
 | `parse_message()` | `models/message.py` | Parses UserMessage, AssistantMessage, etc. |
+| `iter_side_entries()` | `models/side_entries.py` | Yields SystemEntry and QueuedCommandEntry (harness notices, queued input) |
+| `build_agent_registry()` | `services/agent_registry.py` | Subagent names, types and colours from meta.json |
 | `parse_content_block()` | `models/content.py` | Parses TextBlock, ToolUseBlock, etc. |
 | `TokenUsage` | `models/usage.py` | Token stats with `__add__` for aggregation |
 | `LiveSession` | `models/live_session.py` | Real-time session state from hooks |

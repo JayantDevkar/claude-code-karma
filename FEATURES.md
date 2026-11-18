@@ -189,12 +189,17 @@ Deep dive into individual Claude Code sessions with comprehensive analysis.
 #### Timeline Tab
 
 - **Event-based timeline** — Chronological view of session activity:
+  - Prompts, slash commands and `!` shell commands
   - Tool calls (Read, Write, Edit, Bash, Grep, etc.)
   - Task updates (created, in progress, completed)
   - Plan events (enter/exit plan mode)
-  - Subagent spawns
+  - Subagent spawns, linked to the agent they started
+  - Messages to and from agents and other Claude sessions
+  - Background reports (agents, background commands, monitors) and scheduled task fires
+  - Notices from Claude Code (recaps, model fallback, context compaction)
   - Permission requests
-- **Event filtering** — Filter by event type
+- **Who sent it** — Each event shows its sender: you, Claude, a named agent in its Claude Code colour, another session, or Claude Code itself
+- **Event filtering** — Filter chips grouped by who acts (you, Claude, tools, agents, Claude Code); reminders and other text added for Claude stay out unless the System chip is selected
 - **Time gaps** — Visual indicators for idle periods
 - **Expandable details** — Click events for full context
 - **Tool call parameters** — See exact tool inputs/outputs
@@ -229,6 +234,7 @@ Deep dive into individual Claude Code sessions with comprehensive analysis.
 #### Subagents Tab
 
 - **Subagent activity** — All spawned agents:
+  - Agent name and colour, for named teammates and forks
   - Agent type (explore, executor, planner, etc.)
   - Model used (Opus, Sonnet, Haiku, Fable)
   - Start time and duration

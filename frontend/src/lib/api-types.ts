@@ -17,7 +17,16 @@ export type TimelineEventType =
 	| 'command_invocation'
 	| 'skill_invocation'
 	| 'builtin_command'
-	| 'api_error';
+	| 'api_error'
+	| 'message'
+	| 'task_notification'
+	| 'scheduled_fire'
+	| 'compaction'
+	| 'shell_command'
+	| 'system_notice'
+	| 'system_context';
+
+export type TimelineActorType = 'user' | 'session' | 'subagent' | 'peer_session' | 'system';
 
 export type EndedBy = 'limit' | 'refusal' | 'api_error';
 
@@ -30,7 +39,13 @@ export interface TimelineEvent {
 	title: string;
 	summary?: string;
 	actor: string;
-	actor_type: 'main' | 'subagent';
+	actor_type: TimelineActorType;
+	/** Display name for a subagent or peer session */
+	actor_name?: string | null;
+	/** Claude Code colour name from the agent's meta.json */
+	actor_color?: string | null;
+	/** Subagent type of the actor, used as the colour fallback */
+	actor_agent_type?: string | null;
 	metadata: TimelineEventMetadata;
 }
 
@@ -57,11 +72,57 @@ export interface TimelineEventMetadata {
 	plugin?: string;
 	image_attachments?: ImageAttachment[];
 	// api_error events
-	kind?: EndedBy;
+	kind?: EndedBy | string;
 	code?: string | null;
 	status?: number | null;
 	resets_at?: string | null;
 	healed?: boolean;
+	// system_notice / system_context: kind is a plain string there
+	level?: string | null;
+	url?: string | null;
+	original_model?: string | null;
+	fallback_model?: string | null;
+	// prompt
+	prompt_source?: string | null;
+	queued?: boolean;
+	is_task_prompt?: boolean;
+	// message
+	direction?: 'in' | 'out';
+	peer_kind?: 'session' | 'agent';
+	peer_name?: string | null;
+	peer_address?: string | null;
+	peer_agent_id?: string | null;
+	peer_color?: string | null;
+	peer_agent_type?: string | null;
+	message_summary?: string | null;
+	relayed?: boolean;
+	// task_notification
+	task_id?: string | null;
+	task_status?: string | null;
+	task_summary?: string | null;
+	tool_use_id?: string | null;
+	task_kind?: 'agent' | 'shell' | 'monitor' | 'workflow' | 'mcp' | null;
+	agent_name?: string | null;
+	agent_color?: string | null;
+	agent_type?: string | null;
+	output_file?: string | null;
+	// scheduled_fire
+	cron?: string | null;
+	wakeup_source?: string | null;
+	// compaction
+	trigger?: string | null;
+	pre_tokens?: number | null;
+	// shell_command
+	command?: string;
+	stderr?: string | null;
+	// skill and command invocations
+	skill_body?: string | null;
+	// subagent_spawn
+	spawned_agent_name?: string | null;
+	spawned_agent_color?: string | null;
+	team_name?: string | null;
+	agent_model?: string | null;
+	run_in_background?: boolean;
 	[key: string]: unknown;
 }
 
@@ -98,7 +159,7 @@ export interface FileActivity {
 	path: string;
 	operation: FileOperation;
 	actor: string;
-	actor_type: 'main' | 'subagent';
+	actor_type: 'session' | 'subagent';
 	tool_name: string;
 }
 
@@ -364,6 +425,14 @@ export interface SubagentSummary {
 	tools_used: Record<string, number>;
 	message_count: number;
 	initial_prompt: string | null;
+	/** Name the agent was given when spawned (null for unnamed agents and old sessions) */
+	name?: string | null;
+	/** Claude Code colour name; the same value as the timeline's actor_color */
+	color?: string | null;
+	team_name?: string | null;
+	model?: string | null;
+	/** Short task description from the spawn call */
+	description?: string | null;
 }
 
 /**
@@ -437,36 +506,24 @@ export interface Breadcrumb {
 
 export type FilterCategory =
 	| 'prompt'
-	| 'tool_call'
-	| 'subagent'
-	| 'todo_update'
-	| 'error'
-	| 'api_error'
+	| 'command'
 	| 'thinking'
 	| 'response'
 	| 'big_response'
 	| 'ask_user'
+	| 'tool_call'
 	| 'mcp_tool'
-	| 'task'
 	| 'skill'
-	| 'command';
+	| 'task'
+	| 'error'
+	| 'subagent'
+	| 'message'
+	| 'background'
+	| 'api_error'
+	| 'notice'
+	| 'system';
 
-export interface FilterCounts {
-	prompt: number;
-	tool_call: number;
-	subagent: number;
-	todo_update: number;
-	error: number;
-	api_error: number;
-	thinking: number;
-	response: number;
-	big_response: number;
-	ask_user: number;
-	mcp_tool: number;
-	task: number;
-	skill: number;
-	command: number;
-}
+export type FilterCounts = Record<FilterCategory, number>;
 
 export interface TimeRangeFilter {
 	type: 'preset' | 'custom';
@@ -833,6 +890,11 @@ export interface SubagentSessionDetail {
 	// Subagent-specific metadata
 	subagent_type: string | null;
 	initial_prompt: string | null;
+	name?: string | null;
+	color?: string | null;
+	team_name?: string | null;
+	model?: string | null;
+	description?: string | null;
 }
 
 /**

@@ -179,9 +179,9 @@ def check_conditional_request(
         if etag in client_etags or "*" in client_etags:
             return Response(status_code=304, headers={"ETag": etag})
 
-    # Check If-Modified-Since (date validation)
+    # Check If-Modified-Since (date validation); ignored when If-None-Match was sent (RFC 7232)
     if_modified_since = request.headers.get("if-modified-since")
-    if if_modified_since and last_modified:
+    if if_modified_since and last_modified and not (if_none_match and etag):
         client_time = parse_http_date(if_modified_since)
         if client_time and client_time >= last_modified:
             headers = {}

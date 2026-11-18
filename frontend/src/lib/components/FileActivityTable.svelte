@@ -13,13 +13,8 @@
 		ExternalLink
 	} from 'lucide-svelte';
 	import type { FileActivity, FileOperation } from '$lib/api-types';
-	import {
-		formatDate,
-		truncate,
-		formatDisplayPath,
-		copyToClipboard,
-		getSubagentColorVars
-	} from '$lib/utils';
+	import { formatDate, truncate, formatDisplayPath, copyToClipboard } from '$lib/utils';
+	import { getAgentIdentityColors, getAgentLabel } from '$lib/utils/agent-identity';
 
 	interface Props {
 		activities: FileActivity[];
@@ -28,6 +23,8 @@
 		currentAgentId?: string | null;
 		/** Map of agent_id to subagent_type for color lookup */
 		subagentTypes?: Record<string, string | null>;
+		/** Map of agent_id to the agent's name and colour, when the session's subagents are loaded */
+		subagentIdentities?: Record<string, { name?: string | null; color?: string | null }>;
 		class?: string;
 	}
 
@@ -36,6 +33,7 @@
 		projectPath = null,
 		currentAgentId = null,
 		subagentTypes = {},
+		subagentIdentities = {},
 		class: className = ''
 	}: Props = $props();
 
@@ -277,13 +275,26 @@
 						<td class="px-4 py-3">
 							<div class="flex items-center gap-1.5">
 								{#if activity.actor_type === 'subagent' && (!currentAgentId || activity.actor !== currentAgentId)}
-									{@const colorVars = getSubagentColorVars(
-										subagentTypes[activity.actor]
-									)}
+									{@const identity = {
+										agent_id: activity.actor,
+										subagent_type: subagentTypes[activity.actor],
+										...subagentIdentities[activity.actor]
+									}}
+									{@const colorVars = getAgentIdentityColors(identity)}
+									{@const agentLabel = getAgentLabel(identity)}
 									<!-- Show subagent badge for nested subagents (not the current agent being viewed) -->
-									<BotIcon class="h-3.5 w-3.5" style="color: {colorVars.color}" />
-									<span class="text-xs" style="color: {colorVars.color}"
-										>{activity.actor}</span
+									<BotIcon
+										class="h-3.5 w-3.5 shrink-0"
+										style="color: {colorVars.color}"
+									/>
+									<span
+										class="text-xs [overflow-wrap:anywhere]"
+										style="color: {colorVars.color}"
+										title={activity.actor}
+										>{agentLabel.label}{#if agentLabel.secondary}<span
+												class="ml-1 text-[10px] opacity-75"
+												>{agentLabel.secondary}</span
+											>{/if}</span
 									>
 								{:else}
 									<!-- Show main/session style for current agent or main session activities -->

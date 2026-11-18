@@ -18,6 +18,23 @@ from .api_error import ApiError, classify_api_error
 from .content import ContentBlock, parse_content_block
 from .usage import TokenUsage
 
+UserSource = Literal[
+    "human",
+    "command",
+    "shell",
+    "interrupt",
+    "tool_result",
+    "peer_session",
+    "agent",
+    "task_notification",
+    "scheduled",
+    "skill_body",
+    "system_reminder",
+    "meta",
+    "compact_summary",
+    "local_command",
+]
+
 
 class MessageBase(BaseModel):
     """
@@ -84,6 +101,40 @@ class UserMessage(MessageBase):
         alias="isMeta",
         description="True if Claude Code marked the message as meta (not typed by the user)",
     )
+    source: UserSource = Field(
+        default="human", description="Who or what produced this entry (see classify_user_source)"
+    )
+    origin_kind: Optional[str] = Field(default=None, description="origin.kind as written")
+    origin_name: Optional[str] = Field(default=None, description="Sender name from origin.name")
+    origin_from: Optional[str] = Field(default=None, description="Sender address from origin.from")
+    origin_sender_task_id: Optional[str] = Field(
+        default=None, description="origin.senderTaskId: the sending agent's id"
+    )
+    origin_relayed: bool = Field(default=False, description="True when origin.hopChain is set")
+    source_tool_use_id: Optional[str] = Field(
+        default=None, alias="sourceToolUseID", description="Tool call that injected this entry"
+    )
+    is_compact_summary: bool = Field(
+        default=False, alias="isCompactSummary", description="True for a compaction summary"
+    )
+    prompt_source: Optional[str] = Field(
+        default=None, alias="promptSource", description="typed, queued, sdk, system, ..."
+    )
+    turn_origin: Optional[str] = Field(
+        default=None, alias="turnOrigin", description="human, peer, scheduled, ..."
+    )
+    scheduled_task_id: Optional[str] = Field(default=None, alias="scheduledTaskId")
+    wakeup_source: Optional[str] = Field(default=None, alias="wakeupSource")
+    spawned_agent_id: Optional[str] = Field(
+        default=None, description="toolUseResult.agentId of an Agent tool result"
+    )
+    tool_result_is_error: Optional[bool] = Field(
+        default=None, description="is_error of the tool_result block, when the block has it"
+    )
+    prompt_text: Optional[str] = Field(
+        default=None,
+        description="Text a tool_result entry carries beside the result (fork prompts)",
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -91,21 +142,24 @@ class UserMessage(MessageBase):
         """Extract content from nested message.content structure."""
         if not isinstance(data, dict):
             return data
+        data = _extract_sender_fields(data)
         # If content is already set at top level, use it directly
         if "content" in data and not isinstance(data.get("content"), (dict, list)):
-            # Detect internal message patterns on pre-set string content
-            _detect_internal_message(data, data.get("content", ""))
+            _apply_source(data, data.get("content") or "")
             return data
         # Extract from nested message.content
         nested_msg = data.get("message", {})
         content = nested_msg.get("content", data.get("content", ""))
         # Handle case where content is a list (tool results)
         if isinstance(content, list):
+            content_parts = content
             # Detect tool_result wrappers BEFORE stripping the structure
             for part in content:
                 if isinstance(part, dict) and part.get("type") == "tool_result":
                     data["is_tool_result"] = True
                     data["tool_result_id"] = part.get("tool_use_id")
+                    if isinstance(part.get("is_error"), bool):
+                        data["tool_result_is_error"] = part["is_error"]
                     break
             parts = []
             images = []
@@ -141,24 +195,143 @@ class UserMessage(MessageBase):
             content = "\n".join(parts) or ""
             if images:
                 data["image_attachments"] = images
-        # Detect internal message patterns on the extracted text
-        _detect_internal_message(data, content if isinstance(content, str) else "")
+            if data.get("is_tool_result"):
+                texts = [
+                    p["text"]
+                    for p in content_parts
+                    if isinstance(p, dict)
+                    and p.get("type") == "text"
+                    and isinstance(p.get("text"), str)
+                ]
+                data["prompt_text"] = "\n".join(texts) or None
+        _apply_source(data, content if isinstance(content, str) else "")
         return {**data, "content": content}
 
 
-def _detect_internal_message(data: dict, content: str) -> None:
-    """Set is_internal_message flag if content matches internal patterns."""
-    if not content:
-        return
-    if (
-        "<local-command-caveat>" in content
-        or "<local-command-stdout>" in content
-        or "<task-notification>" in content
-        or "<retrieval_status>" in content
-        or content.startswith("Command running in background")
-        or content.startswith("Command was manually backgrounded")
-        or content.startswith("This session is being continued from a previous")
+# Sources that are not something the user typed or ran.
+_INTERNAL_SOURCES = frozenset(
+    {
+        "peer_session",
+        "agent",
+        "task_notification",
+        "scheduled",
+        "skill_body",
+        "system_reminder",
+        "meta",
+        "compact_summary",
+        "local_command",
+    }
+)
+
+_SYSTEM_NOTIFICATION_PREFIX = "[SYSTEM NOTIFICATION - NOT USER INPUT]"
+
+# Text patterns for sessions written before the structured sender fields existed.
+_LEGACY_TEXT_SOURCES: tuple[tuple[tuple[str, ...], UserSource], ...] = (
+    (("<task-notification>", _SYSTEM_NOTIFICATION_PREFIX), "task_notification"),
+    (("<teammate-message", "<agent-message"), "agent"),
+    (("The coordinator sent a message",), "agent"),
+    (("<cross-session-message", "Another Claude session sent a message"), "peer_session"),
+    (("<bash-input>", "<bash-stdout>", "<bash-stderr>"), "shell"),
+    (
+        ("<local-command-caveat>", "<local-command-stdout>", "<local-command-stderr>"),
+        "local_command",
+    ),
+    (("<command-name>", "<command-message>"), "command"),
+    (("This session is being continued from a previous",), "compact_summary"),
+    (("[Request interrupted by user",), "interrupt"),
+    (
+        (
+            "<retrieval_status>",
+            "Command running in background",
+            "Command was manually backgrounded",
+        ),
+        "meta",
+    ),
+)
+
+
+def _extract_sender_fields(data: dict) -> dict:
+    """Flatten origin and toolUseResult.agentId into top-level keys; returns a copy."""
+    result = dict(data)
+    origin = data.get("origin")
+    if isinstance(origin, dict):
+        result["origin_kind"] = _str_or_none(origin.get("kind"))
+        result["origin_name"] = _str_or_none(origin.get("name"))
+        result["origin_from"] = _str_or_none(origin.get("from"))
+        result["origin_sender_task_id"] = _str_or_none(origin.get("senderTaskId"))
+        result["origin_relayed"] = bool(origin.get("hopChain"))
+    tool_use_result = data.get("toolUseResult")
+    if isinstance(tool_use_result, dict) and isinstance(tool_use_result.get("agentId"), str):
+        result["spawned_agent_id"] = tool_use_result["agentId"]
+    for key in ("promptSource", "turnOrigin", "scheduledTaskId", "wakeupSource", "sourceToolUseID"):
+        if key in result and not isinstance(result[key], str):
+            del result[key]
+    return result
+
+
+def _str_or_none(value: Any) -> Optional[str]:
+    return value if isinstance(value, str) and value else None
+
+
+def _first(data: dict, *keys: str) -> Any:
+    for key in keys:
+        if data.get(key):
+            return data[key]
+    return None
+
+
+def classify_text_source(content: str) -> Optional[UserSource]:
+    """Source implied by how the text starts, or None if nothing matches."""
+    head = content.lstrip()[:200]
+    if head.startswith("Another Claude session sent a message") and (
+        "<agent-message" in head or "<teammate-message" in head
     ):
+        return "agent"
+    for prefixes, source in _LEGACY_TEXT_SOURCES:
+        if head.startswith(prefixes):
+            return source
+    return None
+
+
+def classify_user_source(data: dict, content: str) -> UserSource:
+    """Who produced a user entry: structured fields first, text patterns as fallback."""
+    if data.get("is_tool_result"):
+        return "tool_result"
+    if _first(data, "isCompactSummary", "is_compact_summary"):
+        return "compact_summary"
+    kind = data.get("origin_kind")
+    head = content.lstrip()[:120]
+    if kind == "peer":
+        if data.get("origin_sender_task_id") or "<agent-message" in head:
+            return "agent"
+        return "peer_session"
+    if kind == "coordinator":
+        return "agent"
+    turn_origin = _first(data, "turnOrigin", "turn_origin")
+    if kind == "task-notification" or turn_origin == "task_notification":
+        return "task_notification"
+    if turn_origin == "scheduled" or _first(data, "wakeupSource", "wakeup_source"):
+        return "scheduled"
+    if _first(data, "sourceToolUseID", "source_tool_use_id"):
+        return "skill_body"
+    from_text = classify_text_source(content)
+    if from_text is not None:
+        return from_text
+    if kind == "human":
+        return "human"
+    if head.startswith("<system-reminder>"):
+        return "system_reminder"
+    if _first(data, "isMeta", "is_meta"):
+        return "meta"
+    return "human"
+
+
+def _apply_source(data: dict, content: str) -> None:
+    """Set source and is_internal_message on the raw dict."""
+    # Always derived: an entry's own top-level "source" key means something else
+    data["source"] = classify_user_source(data, content)
+    text_source = classify_text_source(content) if content else None
+    if data["source"] in _INTERNAL_SOURCES or text_source in _INTERNAL_SOURCES:
         data["is_internal_message"] = True
 
 

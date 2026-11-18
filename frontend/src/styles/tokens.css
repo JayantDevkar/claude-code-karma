@@ -98,6 +98,30 @@
 	--event-builtin-subtle: rgba(100, 116, 139, 0.18);
 	--event-command: #0f766e; /* teal-700: AA 4.63:1 on event-command-subtle */
 	--event-command-subtle: rgba(20, 184, 166, 0.18);
+	--event-message: #be185d; /* pink-700: messages between agents and sessions */
+	--event-message-subtle: rgba(219, 39, 119, 0.14);
+	--event-background: #0369a1; /* sky-700: background tasks and scheduled fires */
+	--event-background-subtle: rgba(2, 132, 199, 0.16);
+	--event-system: #64748b;
+	--event-system-subtle: rgba(100, 116, 139, 0.14);
+
+	/* Agent identity colours (Claude Code's own colour names) */
+	--agent-red: #b91c1c;
+	--agent-red-subtle: rgba(220, 38, 38, 0.12);
+	--agent-blue: #1d4ed8;
+	--agent-blue-subtle: rgba(37, 99, 235, 0.12);
+	--agent-green: #166534;
+	--agent-green-subtle: rgba(22, 163, 74, 0.12);
+	--agent-yellow: #854d0e;
+	--agent-yellow-subtle: rgba(202, 138, 4, 0.14);
+	--agent-purple: #7e22ce;
+	--agent-purple-subtle: rgba(147, 51, 234, 0.12);
+	--agent-orange: #9a3412;
+	--agent-orange-subtle: rgba(234, 88, 12, 0.12);
+	--agent-pink: #be185d;
+	--agent-pink-subtle: rgba(219, 39, 119, 0.12);
+	--agent-cyan: #155e75;
+	--agent-cyan-subtle: rgba(8, 145, 178, 0.12);
 
 	/* Data Visualization Palette */
 	--data-primary: var(--accent);
@@ -291,6 +315,28 @@
 	--event-builtin-subtle: rgba(148, 163, 184, 0.32);
 	--event-command: #2dd4bf;
 	--event-command-subtle: rgba(45, 212, 191, 0.32);
+	--event-message: #f472b6;
+	--event-message-subtle: rgba(244, 114, 182, 0.32);
+	--event-background: #38bdf8;
+	--event-background-subtle: rgba(56, 189, 248, 0.32);
+	--event-system: #94a3b8;
+	--event-system-subtle: rgba(148, 163, 184, 0.32);
+	--agent-red: #fca5a5;
+	--agent-red-subtle: rgba(248, 113, 113, 0.2);
+	--agent-blue: #60a5fa;
+	--agent-blue-subtle: rgba(96, 165, 250, 0.2);
+	--agent-green: #4ade80;
+	--agent-green-subtle: rgba(74, 222, 128, 0.2);
+	--agent-yellow: #facc15;
+	--agent-yellow-subtle: rgba(250, 204, 21, 0.2);
+	--agent-purple: #d8b4fe;
+	--agent-purple-subtle: rgba(192, 132, 252, 0.2);
+	--agent-orange: #fb923c;
+	--agent-orange-subtle: rgba(251, 146, 60, 0.2);
+	--agent-pink: #f472b6;
+	--agent-pink-subtle: rgba(244, 114, 182, 0.2);
+	--agent-cyan: #22d3ee;
+	--agent-cyan-subtle: rgba(34, 211, 238, 0.2);
 
 	/* Navigation Colors */
 	--nav-blue: #60a5fa;
@@ -417,6 +463,28 @@
 		--event-builtin-subtle: rgba(148, 163, 184, 0.25);
 		--event-command: #2dd4bf;
 		--event-command-subtle: rgba(45, 212, 191, 0.25);
+		--event-message: #f472b6;
+		--event-message-subtle: rgba(244, 114, 182, 0.25);
+		--event-background: #38bdf8;
+		--event-background-subtle: rgba(56, 189, 248, 0.25);
+		--event-system: #94a3b8;
+		--event-system-subtle: rgba(148, 163, 184, 0.25);
+		--agent-red: #fca5a5;
+		--agent-red-subtle: rgba(248, 113, 113, 0.2);
+		--agent-blue: #60a5fa;
+		--agent-blue-subtle: rgba(96, 165, 250, 0.2);
+		--agent-green: #4ade80;
+		--agent-green-subtle: rgba(74, 222, 128, 0.2);
+		--agent-yellow: #facc15;
+		--agent-yellow-subtle: rgba(250, 204, 21, 0.2);
+		--agent-purple: #d8b4fe;
+		--agent-purple-subtle: rgba(192, 132, 252, 0.2);
+		--agent-orange: #fb923c;
+		--agent-orange-subtle: rgba(251, 146, 60, 0.2);
+		--agent-pink: #f472b6;
+		--agent-pink-subtle: rgba(244, 114, 182, 0.2);
+		--agent-cyan: #22d3ee;
+		--agent-cyan-subtle: rgba(34, 211, 238, 0.2);
 		--nav-blue: #60a5fa;
 		--nav-blue-subtle: rgba(96, 165, 250, 0.15);
 		--nav-green: #34d399;

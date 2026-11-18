@@ -1411,6 +1411,26 @@ def get_file_activity(uuid: str, request: Request, fresh: bool = False):
     return JSONResponse(content=response_data, headers=headers)
 
 
+def _subagent_summary(info) -> SubagentSummary:
+    """Response row for one subagent, with the identity the timeline also shows."""
+    return SubagentSummary(
+        agent_id=info.agent_id,
+        slug=info.slug,
+        subagent_type=info.subagent_type,
+        name=info.name,
+        color=info.color,
+        team_name=info.team_name,
+        model=info.model,
+        description=info.description,
+        tools_used=dict(info.tool_counts),
+        message_count=info.message_count,
+        initial_prompt=info.initial_prompt,
+        ended_by=info.api_error_summary.ended_by,
+        ended_resets_at=info.api_error_summary.ended_resets_at,
+        limit_hit_count=info.api_error_summary.limit_hit_count,
+    )
+
+
 @router.get("/{uuid}/subagents")
 def get_subagents(uuid: str, request: Request, fresh: bool = False):
     """
@@ -1448,20 +1468,7 @@ def get_subagents(uuid: str, request: Request, fresh: bool = False):
     subagents_info = collect_subagent_info(session, session_data, tool_results)
 
     # Convert to response schema
-    summaries = [
-        SubagentSummary(
-            agent_id=info.agent_id,
-            slug=info.slug,
-            subagent_type=info.subagent_type,
-            tools_used=dict(info.tool_counts),
-            message_count=info.message_count,
-            initial_prompt=info.initial_prompt,
-            ended_by=info.api_error_summary.ended_by,
-            ended_resets_at=info.api_error_summary.ended_resets_at,
-            limit_hit_count=info.api_error_summary.limit_hit_count,
-        )
-        for info in subagents_info
-    ]
+    summaries = [_subagent_summary(info) for info in subagents_info]
 
     # Log unmatched subagents for debugging
     for info in subagents_info:
@@ -1512,39 +1519,41 @@ async def get_subagents_parallel(uuid: str, request: Request):
         tool_results = collect_tool_results(session, extract_spawned_agent=True, parse_xml=True)
         subagents_info = collect_subagent_info(session, session_data, tool_results)
 
-        return [
-            SubagentSummary(
-                agent_id=info.agent_id,
-                slug=info.slug,
-                subagent_type=info.subagent_type,
-                tools_used=dict(info.tool_counts),
-                message_count=info.message_count,
-                initial_prompt=info.initial_prompt,
-                ended_by=info.api_error_summary.ended_by,
-                ended_resets_at=info.api_error_summary.ended_resets_at,
-                limit_hit_count=info.api_error_summary.limit_hit_count,
-            )
-            for info in subagents_info
-        ]
+        return [_subagent_summary(info) for info in subagents_info]
+
+    from services.agent_registry import build_agent_registry
+    from services.timeline_parsing import clean_task_prompt
 
     # Phase 4: Use parallel processing for many subagents
     subagent_data = await process_subagents_parallel(subagents)
+    registry = build_agent_registry(
+        session.list_subagent_paths(), extra_dirs=[session.subagents_dir]
+    )
 
     # Build response summaries
-    summaries = [
-        SubagentSummary(
-            agent_id=data["agent_id"],
-            slug=data.get("slug"),
-            subagent_type=None,  # Type matching not done in parallel mode
-            tools_used=data.get("tool_counts", {}),
-            message_count=data.get("message_count", 0),
-            initial_prompt=data.get("initial_prompt"),
-            ended_by=data["api_error_summary"].ended_by,
-            ended_resets_at=data["api_error_summary"].ended_resets_at,
-            limit_hit_count=data["api_error_summary"].limit_hit_count,
+    summaries = []
+    for data in subagent_data:
+        identity = registry.get(data["agent_id"])
+        prompt = data.get("initial_prompt")
+        summaries.append(
+            SubagentSummary(
+                agent_id=data["agent_id"],
+                slug=data.get("slug"),
+                # No Task-call matching in parallel mode; the agent's meta.json still has the type
+                subagent_type=identity.agent_type if identity else None,
+                name=identity.name if identity else None,
+                color=identity.color if identity else None,
+                team_name=identity.team_name if identity else None,
+                model=identity.model if identity else None,
+                description=identity.description if identity else None,
+                tools_used=data.get("tool_counts", {}),
+                message_count=data.get("message_count", 0),
+                initial_prompt=clean_task_prompt(prompt) if prompt else None,
+                ended_by=data["api_error_summary"].ended_by,
+                ended_resets_at=data["api_error_summary"].ended_resets_at,
+                limit_hit_count=data["api_error_summary"].limit_hit_count,
+            )
         )
-        for data in subagent_data
-    ]
 
     return summaries
 
@@ -1633,7 +1642,8 @@ def get_timeline(uuid: str, request: Request, fresh: bool = False):
         uuid: Session UUID
         fresh: If true, use minimal cache (1s) for live session polling
     """
-    from services.conversation_endpoints import build_conversation_timeline
+    from services.agent_registry import build_agent_registry
+    from services.conversation_endpoints import build_conversation_timeline, timeline_etag
 
     session = find_session(uuid)
     if not session:
@@ -1641,6 +1651,7 @@ def get_timeline(uuid: str, request: Request, fresh: bool = False):
 
     # Subagent files count: they supply the slugs shown on spawn events
     etag, last_modified = _session_cache_info(session)
+    etag = timeline_etag(etag)
     conditional_response = check_conditional_request(request, etag, last_modified)
     if conditional_response:
         return conditional_response
@@ -1653,6 +1664,11 @@ def get_timeline(uuid: str, request: Request, fresh: bool = False):
     for sa in session.list_subagents():
         subagent_info[sa.agent_id] = sa.slug
 
+    # Names, colours and types of the subagents, from their meta.json files
+    agent_registry = build_agent_registry(
+        session.list_subagent_paths(), extra_dirs=[session.subagents_dir]
+    )
+
     # Use shared service for building timeline
     events = build_conversation_timeline(
         conversation=session,
@@ -1660,6 +1676,7 @@ def get_timeline(uuid: str, request: Request, fresh: bool = False):
         actor="session",
         actor_type="session",
         subagent_info=subagent_info,
+        agent_registry=agent_registry,
     )
 
     # Add cache headers - minimal cache for live polling

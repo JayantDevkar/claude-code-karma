@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 api_path = Path(__file__).parent.parent
 sys.path.insert(0, str(api_path))
 
-from collectors import collect_agent_data
+from collectors import collect_agent_data, resolve_subagent_type
 from http_caching import (
     build_cache_headers,
     check_conditional_request,
@@ -36,6 +36,7 @@ from schemas import (
     SubagentSessionDetail,
     TaskSchema,
 )
+from services.agent_registry import build_agent_registry
 from services.session_lookup import find_subagent
 from utils import normalize_timezone
 
@@ -97,9 +98,16 @@ def get_subagent_detail(
                 "WHERE session_uuid = ? AND agent_id = ?",
                 (session_uuid, agent_id),
             ).fetchone()
-            if row and row[0]:
+            # Index markers ("_teammate", "_unknown") are not types
+            if row and row[0] and not row[0].startswith("_"):
                 subagent_type = row[0]
 
+    # Same identity and type rule as the subagents list and the timeline's spawn events
+    registry = build_agent_registry(
+        parent_session.list_subagent_paths(), extra_dirs=[agent.jsonl_path.parent]
+    )
+    identity = registry.get(agent.agent_id)
+    subagent_type = resolve_subagent_type(agent.agent_id, subagent_type, identity)
     if not subagent_type:
         subagent_type = _determine_subagent_type(parent_session, agent_id)
 
@@ -127,6 +135,11 @@ def get_subagent_detail(
         git_branches=list(agent_data.git_branches),
         working_directories=list(agent_data.working_directories),
         subagent_type=subagent_type,
+        name=identity.name if identity else None,
+        color=identity.color if identity else None,
+        team_name=identity.team_name if identity else None,
+        model=identity.model if identity else None,
+        description=identity.description if identity else None,
         initial_prompt=agent_data.initial_prompt,
         ended_by=agent.api_error_summary.ended_by,
         ended_resets_at=agent.api_error_summary.ended_resets_at,
@@ -167,7 +180,14 @@ def _determine_subagent_type(parent_session: Session, agent_id: str) -> Optional
     result = types.get(agent_id)
     # Convert internal classification markers to None for the API response
     if result and result.startswith("_"):
-        return None
+        result = None
+    if result is None:
+        # Named teammates are not matched by the scan above; their meta.json records the type
+        registry = build_agent_registry(
+            parent_session.list_subagent_paths(), extra_dirs=[parent_session.subagents_dir]
+        )
+        identity = registry.get(agent_id)
+        result = identity.agent_type if identity else None
     return result
 
 
@@ -186,7 +206,7 @@ def get_subagent_timeline(
         agent_id: Short hex agent ID
         fresh: If true, use minimal cache for live session polling
     """
-    from services.conversation_endpoints import build_conversation_timeline
+    from services.conversation_endpoints import build_conversation_timeline, timeline_etag
 
     result = find_subagent(encoded_name, session_uuid, agent_id)
     if not result:
@@ -194,9 +214,21 @@ def get_subagent_timeline(
 
     agent = result.agent
 
+    etag, last_modified = get_file_cache_info(agent.jsonl_path)
+    etag = timeline_etag(etag)
+    conditional_response = check_conditional_request(request, etag, last_modified)
+    if conditional_response:
+        return conditional_response
+
     # Collect working directories for path relativization
     agent_data = collect_agent_data(agent)
     working_directories = list(agent_data.working_directories)
+
+    # Teammates and the agent itself are named from the parent session's subagents
+    parent = result.parent_session
+    agent_registry = build_agent_registry(
+        parent.list_subagent_paths(), extra_dirs=[agent.jsonl_path.parent]
+    )
 
     # Use shared service for building timeline
     events = build_conversation_timeline(
@@ -204,13 +236,18 @@ def get_subagent_timeline(
         working_dirs=working_directories,
         actor=agent.agent_id,
         actor_type="subagent",
+        agent_registry=agent_registry,
     )
 
     # Return with cache headers
     response_data = [e.model_dump(mode="json") for e in events]
-    headers = {
-        "Cache-Control": f"private, max-age={1 if fresh else 60}, stale-while-revalidate={2 if fresh else 300}"
-    }
+    headers = build_cache_headers(
+        etag=etag,
+        last_modified=last_modified,
+        max_age=1 if fresh else 60,
+        stale_while_revalidate=2 if fresh else 300,
+        private=True,
+    )
     return JSONResponse(content=response_data, headers=headers)
 
 
