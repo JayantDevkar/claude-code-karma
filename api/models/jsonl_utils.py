@@ -79,6 +79,26 @@ def _merge_user_message_dicts(base: dict, extra: dict) -> dict:
     return merged
 
 
+def _content_parts(d: dict) -> list | None:
+    content = d.get("message", {}).get("content", d.get("content"))
+    return content if isinstance(content, list) else None
+
+
+def _should_merge_user_dicts(base: dict, extra: dict) -> bool:
+    """True when two same-timestamp user entries are one prompt split in two (image pairs)."""
+    base_parts, extra_parts = _content_parts(base), _content_parts(extra)
+    if base_parts is None or extra_parts is None:
+        return False
+    parts = base_parts + extra_parts
+    if any(isinstance(p, dict) and p.get("type") == "tool_result" for p in parts):
+        return False
+    only_markers = all(
+        isinstance(p, dict) and p.get("type") == "text" and _is_image_marker_text(p.get("text", ""))
+        for p in extra_parts
+    )
+    return only_markers or bool(base.get("isMeta")) == bool(extra.get("isMeta"))
+
+
 def iter_messages_from_jsonl(jsonl_path: Path) -> Iterator[Message]:
     """
     Iterate over messages in a JSONL file.
@@ -91,6 +111,8 @@ def iter_messages_from_jsonl(jsonl_path: Path) -> Iterator[Message]:
     into a single message before parsing.  Claude Code writes such pairs
     when the user attaches an image: one entry with the real text + base64
     image block and a second text-only entry with a file-path reference.
+    Other same-timestamp pairs (a command and its output, two tool results,
+    a notification after a reminder) stay separate entries.
 
     Args:
         jsonl_path: Path to the JSONL file containing messages.
@@ -125,6 +147,7 @@ def iter_messages_from_jsonl(jsonl_path: Path) -> Iterator[Message]:
                 and pending.get("type") == "user"
                 and data.get("type") == "user"
                 and pending.get("timestamp") == data.get("timestamp")
+                and _should_merge_user_dicts(pending, data)
             ):
                 pending = _merge_user_message_dicts(pending, data)
                 continue

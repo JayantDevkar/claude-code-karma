@@ -341,6 +341,21 @@ def _spawn_relay_note(content: str) -> Optional[str]:
     return (match.group(1).strip() or None) if match else None
 
 
+# Entries another session, an agent or the harness wrote; none is a prompt the user typed.
+_NOT_A_PROMPT_SOURCES = frozenset(
+    {
+        "peer_session",
+        "agent",
+        "task_notification",
+        "scheduled",
+        "skill_body",
+        "system_reminder",
+        "shell",
+        "interrupt",
+    }
+)
+
+
 def prompt_from_user_message(
     msg: "UserMessage", prev: Optional["UserMessage"] = None
 ) -> Optional[str]:
@@ -348,7 +363,8 @@ def prompt_from_user_message(
     Return the prompt the user typed in a message, or None if it holds none.
 
     Skips tool results, meta messages (e.g., the <local-command-caveat> that
-    opens sessions started with /clear), local command output, command
+    opens sessions started with /clear), messages from other sessions, agents
+    and the harness (by the entry's source), local command output, command
     messages without arguments (e.g., /clear), and the built-in command a
     caveat introduces, even with arguments (e.g., /model fable).
 
@@ -365,6 +381,8 @@ def prompt_from_user_message(
         return None
     if msg.is_meta:
         return _spawn_relay_note(msg.content)
+    if msg.source in _NOT_A_PROMPT_SOURCES:
+        return None
     if msg.content.lstrip().startswith("<local-command-stdout>"):
         return None
     if (
@@ -604,6 +622,7 @@ class ToolResultData:
     content: str  # Truncated for display
     parsed: dict | None = None
     spawned_agent_id: str | None = None  # Extracted from full content before truncation
+    is_error: bool | None = None  # The tool_result block's is_error, when the block has it
 
 
 def parse_tool_result_content(content: str) -> tuple[bool, str | None, str | None]:
@@ -763,6 +782,9 @@ def collect_tool_results(
             # Extract spawned agent ID from FULL content before truncation
             spawned_agent_id = None
             if extract_spawned_agent:
+                # Structured toolUseResult.agentId first; named teammates have no "agentId:" text
+                spawned_agent_id = msg.spawned_agent_id
+            if extract_spawned_agent and not spawned_agent_id:
                 match = re.search(r"agentId:\s*([\w\-]+)", extracted_content)
                 if match:
                     agent_id = match.group(1)
@@ -791,6 +813,7 @@ def collect_tool_results(
                 content=result_preview,
                 parsed=parsed_xml,
                 spawned_agent_id=spawned_agent_id,
+                is_error=msg.tool_result_is_error,
             )
 
     return results
@@ -835,6 +858,11 @@ def _cap_text(value: str, limit: int = _METADATA_TEXT_LIMIT) -> str:
     if len(value) <= limit:
         return value
     return value[:limit] + f"\n... [truncated, {len(value)} chars total]"
+
+
+def _capped_input(tool_input: dict) -> dict:
+    """The tool input with long strings capped, for timeline metadata."""
+    return {k: _cap_text(v) if isinstance(v, str) else v for k, v in tool_input.items()}
 
 
 def get_tool_summary(block, working_dirs: list[str] | None = None) -> tuple[str, str | None, dict]:
@@ -993,12 +1021,88 @@ def get_tool_summary(block, working_dirs: list[str] | None = None) -> tuple[str,
             {"notebook": notebook, "cell_idx": cell_idx, "is_new_cell": is_new},
         )
     elif tool_name == "WebSearch":
-        search_term = tool_input.get("search_term", "")
+        search_term = tool_input.get("query") or tool_input.get("search_term", "")
         return (
             "Web search",
             search_term[:100] if search_term else None,
-            {"search_term": search_term},
+            {**_capped_input(tool_input), "search_term": search_term},
         )
+    elif tool_name == "WebFetch":
+        url = tool_input.get("url", "")
+        return "Fetch web page", url[:200] if url else None, _capped_input(tool_input)
+    elif tool_name == "ToolSearch":
+        query = tool_input.get("query", "")
+        return "Load tools", query[:100] if query else None, _capped_input(tool_input)
+    elif tool_name == "AskUserQuestion":
+        questions = tool_input.get("questions", [])
+        count = len(questions) if isinstance(questions, list) else 0
+        first = questions[0] if count and isinstance(questions[0], dict) else {}
+        question = str(first.get("question", ""))
+        summary = question[:100] if question else f"{count} question{'s' if count != 1 else ''}"
+        return "Ask the user", summary, dict(tool_input)
+    elif tool_name == "ExitPlanMode":
+        plan = str(tool_input.get("plan", ""))
+        first_line = plan.strip().split("\n", 1)[0].lstrip("# ")
+        return "Present plan", first_line[:100] or None, _capped_input(tool_input)
+    elif tool_name == "EnterPlanMode":
+        return "Enter plan mode", None, dict(tool_input)
+    elif tool_name == "Workflow":
+        name = tool_input.get("name") or ""
+        if not name:
+            match = re.search(
+                r"name:\s*['\"]([^'\"]+)['\"]", str(tool_input.get("script", ""))[:2000]
+            )
+            name = match.group(1) if match else ""
+        script_path = str(tool_input.get("scriptPath") or "")
+        summary = name or (path_basename(script_path) if script_path else None)
+        return "Run workflow", summary, {**_capped_input(tool_input), "workflow_name": name or None}
+    elif tool_name == "Monitor":
+        label = str(tool_input.get("description") or tool_input.get("command") or "")
+        return "Watch in background", label[:100] or None, _capped_input(tool_input)
+    elif tool_name == "TaskStop":
+        task_id = str(tool_input.get("task_id", ""))
+        return "Stop background task", task_id or None, dict(tool_input)
+    elif tool_name == "ScheduleWakeup":
+        reason = str(tool_input.get("reason", ""))
+        if tool_input.get("stop"):
+            summary = "Stop the loop"
+        else:
+            summary = f"In {tool_input.get('delaySeconds')}s" + (
+                f": {reason[:80]}" if reason else ""
+            )
+        return "Schedule wakeup", summary, _capped_input(tool_input)
+    elif tool_name == "CronCreate":
+        cron = str(tool_input.get("cron", ""))
+        return "Schedule task", cron or None, _capped_input(tool_input)
+    elif tool_name == "CronDelete":
+        cron_id = str(tool_input.get("id", ""))
+        return "Cancel scheduled task", cron_id or None, dict(tool_input)
+    elif tool_name == "EnterWorktree":
+        path = str(tool_input.get("path") or tool_input.get("name") or "")
+        return "Enter worktree", to_relative(path) or None, dict(tool_input)
+    elif tool_name == "ExitWorktree":
+        action = str(tool_input.get("action", ""))
+        return "Exit worktree", action or None, dict(tool_input)
+    elif tool_name == "ListAgents":
+        return "List agents", None, dict(tool_input)
+    elif tool_name == "ReadNotifications":
+        return "Read notifications", None, dict(tool_input)
+    elif tool_name == "Artifact":
+        action = str(tool_input.get("action") or "publish")
+        target = str(tool_input.get("file_path") or tool_input.get("url") or "")
+        summary = f"{action} {path_basename(target)}" if target else action
+        return "Artifact", summary, _capped_input(tool_input)
+    elif tool_name == "SendUserFile":
+        files = tool_input.get("files", [])
+        names = (
+            [path_basename(f) for f in files if isinstance(f, str)]
+            if isinstance(files, list)
+            else []
+        )
+        return "Send file to user", ", ".join(names)[:100] or None, _capped_input(tool_input)
+    elif tool_name == "PushNotification":
+        message = str(tool_input.get("message", ""))
+        return "Push notification", message[:100] or None, _capped_input(tool_input)
     elif tool_name == "AskQuestion":
         title = tool_input.get("title", "")
         questions = tool_input.get("questions", [])

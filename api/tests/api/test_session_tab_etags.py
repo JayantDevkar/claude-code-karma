@@ -133,3 +133,26 @@ def test_payloads_survive_the_cache_headers(client, session_files):
 
     timeline = client.get(f"/sessions/{SESSION_UUID}/timeline").json()
     assert any(e["event_type"] == "tool_call" for e in timeline)
+
+
+AGENT_TIMELINE_URL = f"/agents/-Users-test-tabetags/{SESSION_UUID}/agents/a1/timeline"
+
+
+def test_subagent_timeline_sends_a_versioned_etag_and_honours_it(client, session_files):
+    from services.conversation_endpoints import TIMELINE_FORMAT_VERSION
+
+    first = client.get(AGENT_TIMELINE_URL)
+    assert first.status_code == 200
+    etag = first.headers["etag"]
+    assert etag.endswith(f'-t{TIMELINE_FORMAT_VERSION}"')
+    again = client.get(AGENT_TIMELINE_URL, headers={"If-None-Match": etag})
+    assert again.status_code == 304
+
+
+def test_subagent_timeline_etag_changes_when_the_agent_file_does(client, session_files):
+    _, agent = session_files
+    etag = client.get(AGENT_TIMELINE_URL).headers["etag"]
+    _bump_mtime(agent)
+    again = client.get(AGENT_TIMELINE_URL, headers={"If-None-Match": etag})
+    assert again.status_code == 200
+    assert again.headers["etag"] != etag

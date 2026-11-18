@@ -10,7 +10,7 @@ import sqlite3
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 31
+SCHEMA_VERSION = 32
 
 SCHEMA_SQL = """
 -- Schema versioning
@@ -489,19 +489,23 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
 
     # Same cross-branch guard for sessions columns added after v19.
     columns_added = _ensure_session_columns(conn)
+    # True once a guard below has nudged every session, so a later migration need not
+    reindex_forced = False
     if _ensure_subagent_columns(conn) and not columns_added:
         # Existing subagent rows need the new values; the session columns did not nudge.
         conn.execute("UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1")
         conn.commit()
+        reindex_forced = True
 
     # A freshly created buckets table is empty; re-index so it fills.
-    if not buckets_existed and not columns_added:
+    if not buckets_existed and not columns_added and not reindex_forced:
         has_sessions = conn.execute(
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name='sessions'"
         ).fetchone()
         if has_sessions:
             conn.execute("UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1")
             conn.commit()
+            reindex_forced = True
 
     # Upgraded DBs can lose the sessions_fts triggers, which freezes search (issue #145).
     _ensure_sessions_fts(conn)
@@ -965,6 +969,17 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             logger.info("Migrating → v30: session_usage_buckets")
 
         # v31: ended_by / ended_resets_at / limit_hit_count come from the column guards above
+
+        if current_version < 32:
+            logger.info(
+                "Migrating → v32: re-index sessions (user entries are classified by sender; "
+                "message counts, initial prompts, skills and commands change)"
+            )
+            has_sessions = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='sessions'"
+            ).fetchone()
+            if has_sessions and not columns_added and not reindex_forced:
+                conn.execute("UPDATE sessions SET jsonl_mtime = jsonl_mtime - 1")
 
     # Record version
     conn.execute(

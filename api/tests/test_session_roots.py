@@ -590,7 +590,8 @@ def test_upgrade_leaves_paths_that_encode_to_their_project_alone(mem_db):
     ensure_schema(mem_db)
 
     mtimes = dict(mem_db.execute("SELECT uuid, jsonl_mtime FROM sessions").fetchall())
-    assert mtimes == {"good": 100.0, "no-path": 100.0, "case-only": 100.0, "stray": 99.0}
+    # v32 re-indexes every session once; only the stray path gets the extra v28 nudge
+    assert mtimes == {"good": 99.0, "no-path": 99.0, "case-only": 99.0, "stray": 98.0}
 
 
 def test_drive_letter_case_still_matches_for_windows_paths():

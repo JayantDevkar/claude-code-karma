@@ -76,11 +76,22 @@ class SubagentSummary(BaseModel):
     agent_id: str = Field(..., description="Agent short hex ID")
     slug: Optional[str] = Field(None, description="Session slug (inherited from parent session)")
     subagent_type: Optional[str] = Field(
-        None, description="Type of subagent: Explore, Plan, Bash, or custom agent name"
+        None, description="Type of subagent: Explore, Plan, Bash, or custom agent type"
     )
+    name: Optional[str] = Field(
+        None, description="Teammate or fork name from the agent's meta.json"
+    )
+    color: Optional[str] = Field(
+        None, description="Claude Code colour name of the agent (the timeline's actor_color)"
+    )
+    team_name: Optional[str] = Field(None, description="Team the agent was spawned into")
+    model: Optional[str] = Field(None, description="Model the agent was spawned with")
+    description: Optional[str] = Field(None, description="Description given when it was spawned")
     tools_used: dict[str, int] = Field(default_factory=dict, description="Tool name -> usage count")
     message_count: int = Field(0, description="Total messages in subagent conversation")
-    initial_prompt: Optional[str] = Field(None, description="First user message to subagent")
+    initial_prompt: Optional[str] = Field(
+        None, description="The task given to the subagent, without message wrappers"
+    )
     ended_by: Optional[Literal["limit", "refusal", "api_error"]] = Field(
         None, description="Why the conversation stopped on an unhealed API error turn"
     )
@@ -529,12 +540,32 @@ class TimelineEvent(BaseModel):
         "command_invocation",
         "builtin_command",
         "api_error",
+        "message",
+        "task_notification",
+        "scheduled_fire",
+        "compaction",
+        "shell_command",
+        "system_notice",
+        "system_context",
     ] = Field(..., description="Type of timeline event")
     timestamp: datetime = Field(..., description="When the event occurred")
     actor: str = Field(
-        ..., description="Who triggered the event: 'user', 'session', or subagent agentId"
+        ...,
+        description="Who caused the event: 'user', 'session', a subagent id, "
+        "a peer session name or address, or 'system'",
     )
-    actor_type: Literal["user", "session", "subagent"] = Field(..., description="Type of actor")
+    actor_type: Literal["user", "session", "subagent", "peer_session", "system"] = Field(
+        ..., description="Type of actor"
+    )
+    actor_name: Optional[str] = Field(
+        None, description="Display name of a subagent or peer session"
+    )
+    actor_color: Optional[str] = Field(
+        None, description="Claude Code colour name of the agent, from its meta.json"
+    )
+    actor_agent_type: Optional[str] = Field(
+        None, description="Type of the agent when the actor is a subagent (same rule as spawns)"
+    )
     title: str = Field(..., description="Short summary of the event")
     summary: Optional[str] = Field(None, description="Preview text or details")
     metadata: dict = Field(default_factory=dict, description="Tool-specific data for expansion")
@@ -606,8 +637,17 @@ class SubagentSessionDetail(BaseModel):
     subagent_type: Optional[str] = Field(
         None, description="Type of subagent: Explore, Plan, Bash, or custom"
     )
+    name: Optional[str] = Field(
+        None, description="Teammate or fork name from the agent's meta.json"
+    )
+    color: Optional[str] = Field(
+        None, description="Claude Code colour name of the agent (the timeline's actor_color)"
+    )
+    team_name: Optional[str] = Field(None, description="Team the agent was spawned into")
+    model: Optional[str] = Field(None, description="Model the agent was spawned with")
+    description: Optional[str] = Field(None, description="Description given when it was spawned")
     initial_prompt: Optional[str] = Field(
-        None, description="First user message to subagent (truncated)"
+        None, description="The task given to the subagent, without message wrappers (truncated)"
     )
     ended_by: Optional[Literal["limit", "refusal", "api_error"]] = Field(
         None, description="Why the subagent stopped on an unhealed API error turn"
