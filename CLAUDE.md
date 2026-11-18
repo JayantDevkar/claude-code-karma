@@ -126,7 +126,7 @@ Project paths are encoded: every character except ASCII letters and digits becom
 ```
 Project (entry point)
 ├── Session ({uuid}.jsonl)
-│   ├── Message (UserMessage, AssistantMessage, FileHistorySnapshot, SummaryMessage)
+│   ├── Message (UserMessage, AssistantMessage, FileHistorySnapshot, SessionTitleMessage, CompactBoundaryMessage, QueueOperationMessage, ProgressMessage)
 │   ├── Agent (subagents/)
 │   ├── ToolResult (tool-results/)
 │   └── TodoItem
@@ -139,7 +139,7 @@ Project (entry point)
 - Lazy Loading: Messages loaded via `iter_messages()` for large sessions
 - Frozen Models: All Pydantic models use `ConfigDict(frozen=True)`
 - Session Chains: Related sessions detected via `leaf_uuid` or slug matching
-- Compaction Detection: Sessions with `SummaryMessage` are compacted
+- Compaction Detection: Sessions with a `CompactBoundaryMessage` are compacted (`SessionTitleMessage` entries are titles, not compactions)
 
 **Frontend:**
 - Svelte 5 Runes: `$state()`, `$derived()`, `$effect()`, `$props()`

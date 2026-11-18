@@ -126,7 +126,9 @@ Project (entry point — one per encoded path)
 │   │   ├── UserMessage
 │   │   ├── AssistantMessage
 │   │   ├── FileHistorySnapshot
-│   │   └── SummaryMessage (indicates compaction)
+│   │   ├── SessionTitleMessage (a session title)
+│   │   ├── CompactBoundaryMessage (marks a compaction)
+│   │   └── QueueOperationMessage, ProgressMessage
 │   ├── Agent (subagents/ — spawned Task agents)
 │   ├── ToolResult (tool-results/ — large tool outputs)
 │   └── TodoItem (todos/ — task lists)
@@ -155,7 +157,7 @@ Related sessions are detected via two mechanisms:
 
 ### Compaction Detection
 
-When Claude Code compacts a session's context window, it inserts a `SummaryMessage` containing the compressed history. Claude Code Karma detects these messages and flags the session as compacted in the UI.
+When Claude Code compacts a session's context window, it writes a `compact_boundary` system entry (parsed as `CompactBoundaryMessage`), followed by a user entry that holds the summary. Claude Code Karma detects the boundary and flags the session as compacted in the UI.
 
 ### Async File I/O
 
@@ -174,7 +176,7 @@ The API uses `aiofiles` for non-blocking file reads. Since all data comes from t
 | File I/O | aiofiles | Non-blocking filesystem access |
 | Testing | pytest | Unit and integration tests |
 | Linting | ruff | Python linting and formatting |
-| Runtime | Python 3.9+ | Minimum supported version |
+| Runtime | Python 3.10+ | Minimum supported version |
 
 ### Frontend
 

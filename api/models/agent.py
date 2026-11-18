@@ -8,10 +8,9 @@ Subagents: ~/.claude/projects/{project}/{session-uuid}/subagents/agent-{id}.json
 from __future__ import annotations
 
 import json
-import re
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict, Iterator, List, Optional
+from typing import TYPE_CHECKING, Dict, Iterator, List, Optional, Sequence, Tuple
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -31,6 +30,22 @@ from .task import Task, reconstruct_tasks_from_jsonl
 
 if TYPE_CHECKING:
     from .usage import TokenUsage, UsageBuckets
+
+
+def _first_timestamp(path: Path) -> str:
+    """Timestamp of a transcript's first dated entry ("" when it has none), for ordering segments."""
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            for line in f:
+                try:
+                    data = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(data, dict) and isinstance(data.get("timestamp"), str):
+                    return data["timestamp"]
+    except OSError:
+        pass
+    return ""
 
 
 class AgentCache(BaseCache):
@@ -127,6 +142,30 @@ class Agent(BaseModel):
         default=None,
         description="Session slug (human-readable session name, inherited from parent session)",
     )
+    segment_paths: Tuple[Path, ...] = Field(
+        default=(),
+        description="Further files holding this agent's transcript, in order after jsonl_path",
+    )
+
+    @classmethod
+    def from_segments(cls, paths: Sequence[Path]) -> "Agent":
+        """
+        One agent from every file that holds part of its transcript.
+
+        A workflow agent can continue in a second file with the same name (its run under
+        `subagents/workflows/<run>/`, then the top level). The file that starts first is
+        jsonl_path; the others follow as segment_paths.
+        """
+        ordered = sorted(paths, key=lambda p: (_first_timestamp(p), str(p)))
+        agent = cls.from_path(ordered[0])
+        if len(ordered) == 1:
+            return agent
+        return agent.model_copy(update={"segment_paths": tuple(ordered[1:])})
+
+    @property
+    def all_paths(self) -> Tuple[Path, ...]:
+        """Every file of this agent's transcript, in order."""
+        return (self.jsonl_path, *self.segment_paths)
 
     @classmethod
     def from_path(cls, path: Path) -> "Agent":
@@ -141,10 +180,8 @@ class Agent(BaseModel):
         Returns:
             Agent instance
         """
-        # Extract agent_id from filename: agent-{id}.jsonl -> {id}
-        filename = path.stem  # agent-a5793c3
-        match = re.match(r"agent-([a-f0-9]+)", filename)
-        agent_id = match.group(1) if match else filename.replace("agent-", "")
+        # Extract agent_id from filename: agent-{id}.jsonl -> {id}; named agents are a<name>-<hex>
+        agent_id = path.stem.removeprefix("agent-")
 
         # Determine if subagent by checking path structure
         # Subagent path: .../{session-uuid}/subagents/agent-xxx.jsonl
@@ -191,17 +228,31 @@ class Agent(BaseModel):
     # Cache management (uses shared base_cache utilities)
     # =========================================================================
 
+    def _cache_key(self) -> Path:
+        """Cache key: the file, plus the segment count so a one-file view never shares an entry."""
+        if not self.segment_paths:
+            return self.jsonl_path
+        return Path(f"{self.jsonl_path}+{len(self.segment_paths)}")
+
     def _get_cache(self) -> AgentCache:
         """Get or create cache for this agent."""
-        return get_or_create_cache(_agent_cache, self.jsonl_path, AgentCache)
+        return get_or_create_cache(_agent_cache, self._cache_key(), AgentCache)
 
     def _get_file_mtime(self) -> Optional[float]:
-        """Get file modification time, or None if file doesn't exist."""
-        return get_file_mtime(self.jsonl_path)
+        """Latest modification time across the agent's files, or None if the first is missing."""
+        first = get_file_mtime(self.jsonl_path)
+        if first is None or not self.segment_paths:
+            return first
+        return max([first, *(m for p in self.segment_paths if (m := get_file_mtime(p)))])
 
     def _is_cache_stale(self, cache: AgentCache) -> bool:
-        """Check if cache is stale (file has been modified since cache was populated)."""
-        return is_cache_stale(cache, self.jsonl_path)
+        """Check if cache is stale (a file has been modified since cache was populated)."""
+        if not self.segment_paths:
+            return is_cache_stale(cache, self.jsonl_path)
+        current = self._get_file_mtime()
+        if not cache._metadata_loaded or current is None:
+            return False
+        return cache._file_mtime is None or current != cache._file_mtime
 
     def _load_metadata(self) -> None:
         """
@@ -283,7 +334,7 @@ class Agent(BaseModel):
 
     def clear_cache(self) -> None:
         """Clear cache for this agent (useful for testing)."""
-        clear_cache(_agent_cache, self.jsonl_path)
+        clear_cache(_agent_cache, self._cache_key())
 
     @classmethod
     def clear_all_caches(cls) -> None:
@@ -306,12 +357,13 @@ class Agent(BaseModel):
 
     def iter_messages(self) -> Iterator[Message]:
         """
-        Iterate over messages in this agent's JSONL file.
+        Iterate over messages in this agent's JSONL file (and its later segments, in order).
 
         Yields:
             Message instances (UserMessage, AssistantMessage, etc.)
         """
-        yield from iter_messages_from_jsonl(self.jsonl_path)
+        for path in self.all_paths:
+            yield from iter_messages_from_jsonl(path)
 
     def list_messages(self) -> List[Message]:
         """

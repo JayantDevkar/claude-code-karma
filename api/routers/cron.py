@@ -27,6 +27,7 @@ from db.queries_shells_cron import (
     get_cron_global,
     get_cron_project_rollup,
 )
+from http_caching import index_unavailable_error
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +64,8 @@ def list_cron_global(
     JSONL once (sessions are already closed when their cron TTL is visible here).
     """
     with sqlite_read() as conn:
+        if conn is None:
+            raise index_unavailable_error()
         conn.row_factory = sqlite3.Row
         rows = get_cron_global(
             conn,
@@ -79,6 +82,8 @@ def list_cron_global(
 def cron_project_rollup() -> dict:
     """Per-project counts: total cron jobs, active jobs (within TTL, undeleted)."""
     with sqlite_read() as conn:
+        if conn is None:
+            raise index_unavailable_error()
         conn.row_factory = sqlite3.Row
         rows = get_cron_project_rollup(conn)
     return {"projects": rows, "count": len(rows)}
@@ -104,6 +109,8 @@ def list_cron_for_session(
     snapshot if one exists.
     """
     with sqlite_read() as conn:
+        if conn is None:
+            raise index_unavailable_error()
         conn.row_factory = sqlite3.Row
         if not conn.execute("SELECT 1 FROM sessions WHERE uuid = ?", (uuid,)).fetchone():
             raise HTTPException(status_code=404, detail="session not found")

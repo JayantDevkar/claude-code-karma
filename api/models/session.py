@@ -750,8 +750,13 @@ class Session(BaseModel):
         Returns:
             List of Agent instances
         """
+        # An agent whose transcript continues in a second file of the same name is one agent
+        by_name: dict[str, list[Path]] = {}
+        for p in self.list_subagent_paths():
+            if p.is_file():
+                by_name.setdefault(p.name, []).append(p)
         return sorted(
-            [Agent.from_path(p) for p in self.list_subagent_paths() if p.is_file()],
+            [Agent.from_segments(paths) for paths in by_name.values()],
             key=lambda a: a.agent_id,
         )
 
@@ -761,7 +766,9 @@ class Session(BaseModel):
 
         More efficient than len(list_subagents()) when only the count is needed.
         """
-        return len(self.list_subagent_paths())
+        from services.session_copies import count_agents
+
+        return count_agents(self.list_subagent_paths())
 
     def list_tool_results(self) -> List[ToolResult]:
         """

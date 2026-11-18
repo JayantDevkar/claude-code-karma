@@ -63,7 +63,8 @@ api/
 │   ├── conversation_endpoints.py # Timeline, tools and file-activity builders
 │   ├── agent_registry.py         # Subagent names, types and colours (meta.json)
 │   ├── timeline_parsing.py       # Text parsers for message and notification wrappers
-│   └── tool_results.py           # Tool result handling
+│   ├── timeline_links.py         # Links from session messages to the session on the other end
+│   └── timeline_response.py      # Timeline HTTP answer: ETag over files and links, cache headers
 ├── middleware/          # HTTP middleware
 │   └── caching.py       # Response caching
 ├── models/              # Pydantic models for parsing
@@ -85,7 +86,7 @@ api/
 ```
 Project (entry point)
 ├── Session ({uuid}.jsonl)
-│   ├── Message (UserMessage, AssistantMessage, FileHistorySnapshot, SummaryMessage)
+│   ├── Message (UserMessage, AssistantMessage, FileHistorySnapshot, SessionTitleMessage, CompactBoundaryMessage, QueueOperationMessage, ProgressMessage)
 │   ├── Side entry (SystemEntry, QueuedCommandEntry; read by iter_side_entries())
 │   ├── Agent (subagents in {uuid}/subagents/)
 │   ├── ToolResult ({uuid}/tool-results/toolu_*.txt)
@@ -123,7 +124,7 @@ Related sessions detected via:
 - Slug matching (85% confidence)
 
 ### Compaction Detection
-Sessions with `SummaryMessage` indicate compacted/resumed conversations. Use `CompactionDetector` to identify.
+A `CompactBoundaryMessage` (`type: system`, `subtype: compact_boundary`) marks a compaction. `SessionTitleMessage` (`type: summary`) is a session title, not a compaction. Use `CompactionDetector` to identify compacted sessions.
 
 ### Who Sent a User Entry
 Not every `type: user` entry is a prompt. `UserMessage.source` says who wrote it: `human`, `command`, `shell`, `peer_session` (another Claude session), `agent` (a teammate, team lead or coordinator), `task_notification`, `scheduled`, `skill_body`, `system_reminder`, `meta`, `compact_summary`, `local_command`, `interrupt` or `tool_result`. It is derived from the entry's structured fields (`origin`, `isMeta`, `sourceToolUseID`, `isCompactSummary`, `turnOrigin`); the start of the text is only a fallback for older sessions. `is_internal_message` is true when the entry came from another session, an agent or Claude Code.
@@ -132,7 +133,7 @@ Not every `type: user` entry is a prompt. `UserMessage.source` says who wrote it
 `system` notices and `queued_command` attachments are not conversation messages. `iter_side_entries()` in `models/side_entries.py` reads them as `SystemEntry` and `QueuedCommandEntry`. They are kept out of `iter_messages()`, so message counts and the indexer do not see them; the timeline builder reads both.
 
 ### Agent Registry
-`services/agent_registry.py` reads the `agent-*.meta.json` next to each subagent JSONL (name, type, team, colour, model, description). The timeline, the subagents list and the agent detail use it to name agents. `collectors.resolve_subagent_type()` is the one rule for an agent's type: the spawn call's `subagent_type`, else a system agent's id prefix, else the type in its meta.json.
+`services/agent_registry.py` reads the `agent-*.meta.json` next to each subagent JSONL (name, type, team, colour, model, description). The timeline, the subagents list and the agent detail use it to name agents. `collectors.resolve_subagent_type()` gives an agent's type for those three: the spawn call's `subagent_type`, else a system agent's id prefix, else the type in its meta.json. The indexer (`services/subagent_types.py`) follows the same order and keeps its own markers for system agents.
 
 ### Model Pricing
 Prices (USD per 1M tokens) ship in `models/pricing.json` and load once at startup. Users override them in `~/.claude_karma/pricing.json` (or the path in `CLAUDE_KARMA_PRICING_OVERRIDE_PATH`), which has the same shape. An override entry under `models` replaces that model's whole entry, a new model ID is added, and `multipliers` merge per key. Invalid entries are logged and skipped. When the effective prices change, the indexer re-parses every session so stored costs match. It compares a fingerprint kept in the `index_meta` table.

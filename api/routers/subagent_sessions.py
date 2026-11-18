@@ -71,7 +71,7 @@ def get_subagent_detail(
         agent.clear_cache()
 
     # Check conditional request headers (single stat() call)
-    etag, last_modified = get_file_cache_info(agent.jsonl_path)
+    etag, last_modified = get_file_cache_info(agent.jsonl_path, agent.segment_paths)
 
     conditional_response = check_conditional_request(request, etag, last_modified)
     if conditional_response:
@@ -87,29 +87,12 @@ def get_subagent_detail(
 
     total_cost = agent.get_total_cost()
 
-    # Determine subagent type: SQLite fast-path, then JSONL fallback
-    subagent_type = None
-    from db.connection import sqlite_read
-
-    with sqlite_read() as conn:
-        if conn is not None:
-            row = conn.execute(
-                "SELECT subagent_type FROM subagent_invocations "
-                "WHERE session_uuid = ? AND agent_id = ?",
-                (session_uuid, agent_id),
-            ).fetchone()
-            # Index markers ("_teammate", "_unknown") are not types
-            if row and row[0] and not row[0].startswith("_"):
-                subagent_type = row[0]
-
     # Same identity and type rule as the subagents list and the timeline's spawn events
     registry = build_agent_registry(
         parent_session.list_subagent_paths(), extra_dirs=[agent.jsonl_path.parent]
     )
     identity = registry.get(agent.agent_id)
-    subagent_type = resolve_subagent_type(agent.agent_id, subagent_type, identity)
-    if not subagent_type:
-        subagent_type = _determine_subagent_type(parent_session, agent_id)
+    subagent_type = _agent_type(parent_session, session_uuid, agent.agent_id, identity)
 
     response_data = SubagentSessionDetail(
         agent_id=agent.agent_id,
@@ -161,6 +144,32 @@ def get_subagent_detail(
     )
 
 
+def _agent_type(
+    parent_session: Session, session_uuid: str, agent_id: str, identity
+) -> Optional[str]:
+    """
+    An agent's type, by the rule the subagents list and spawn events use.
+
+    The spawn call's type comes from the index when it has one (markers such as
+    "_teammate" are not types); the scan of the session files is the slow last resort.
+    """
+    from db.connection import sqlite_read
+
+    spawn_type = None
+    with sqlite_read() as conn:
+        if conn is not None:
+            row = conn.execute(
+                "SELECT subagent_type FROM subagent_invocations "
+                "WHERE session_uuid = ? AND agent_id = ?",
+                (session_uuid, agent_id),
+            ).fetchone()
+            if row and row[0] and not row[0].startswith("_"):
+                spawn_type = row[0]
+    return resolve_subagent_type(agent_id, spawn_type, identity) or _determine_subagent_type(
+        parent_session, agent_id
+    )
+
+
 def _determine_subagent_type(parent_session: Session, agent_id: str) -> Optional[str]:
     """
     Determine the subagent type by finding the Task tool call that spawned it.
@@ -206,49 +215,49 @@ def get_subagent_timeline(
         agent_id: Short hex agent ID
         fresh: If true, use minimal cache for live session polling
     """
-    from services.conversation_endpoints import build_conversation_timeline, timeline_etag
+    from services.conversation_endpoints import build_conversation_timeline
+    from services.timeline_response import timeline_response
 
     result = find_subagent(encoded_name, session_uuid, agent_id)
     if not result:
         raise HTTPException(status_code=404, detail="Subagent not found")
 
     agent = result.agent
-
-    etag, last_modified = get_file_cache_info(agent.jsonl_path)
-    etag = timeline_etag(etag)
-    conditional_response = check_conditional_request(request, etag, last_modified)
-    if conditional_response:
-        return conditional_response
-
-    # Collect working directories for path relativization
-    agent_data = collect_agent_data(agent)
-    working_directories = list(agent_data.working_directories)
-
-    # Teammates and the agent itself are named from the parent session's subagents
     parent = result.parent_session
-    agent_registry = build_agent_registry(
-        parent.list_subagent_paths(), extra_dirs=[agent.jsonl_path.parent]
-    )
 
-    # Use shared service for building timeline
-    events = build_conversation_timeline(
-        conversation=agent,
-        working_dirs=working_directories,
-        actor=agent.agent_id,
-        actor_type="subagent",
-        agent_registry=agent_registry,
-    )
+    def build():
+        # Collect working directories for path relativization
+        agent_data = collect_agent_data(agent)
+        working_directories = list(agent_data.working_directories)
 
-    # Return with cache headers
-    response_data = [e.model_dump(mode="json") for e in events]
-    headers = build_cache_headers(
-        etag=etag,
+        # Teammates and the agent itself are named from the parent session's subagents
+        agent_registry = build_agent_registry(
+            parent.list_subagent_paths(), extra_dirs=[agent.jsonl_path.parent]
+        )
+        # The agent's own spawn call is in its parent's file, so its type is passed in
+        own_type = _agent_type(
+            parent, session_uuid, agent.agent_id, agent_registry.get(agent.agent_id)
+        )
+
+        # Use shared service for building timeline
+        return build_conversation_timeline(
+            conversation=agent,
+            working_dirs=working_directories,
+            actor=agent.agent_id,
+            actor_type="subagent",
+            agent_registry=agent_registry,
+            agent_types={agent.agent_id: own_type} if own_type else None,
+        )
+
+    etag, last_modified = get_file_cache_info(agent.jsonl_path, agent.segment_paths)
+    return timeline_response(
+        request,
+        file_etag=etag,
         last_modified=last_modified,
-        max_age=1 if fresh else 60,
-        stale_while_revalidate=2 if fresh else 300,
-        private=True,
+        own_uuid=session_uuid,
+        fresh=fresh,
+        build=build,
     )
-    return JSONResponse(content=response_data, headers=headers)
 
 
 @router.get("/{encoded_name}/{session_uuid}/agents/{agent_id}/tools")

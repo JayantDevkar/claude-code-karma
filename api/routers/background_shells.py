@@ -29,6 +29,7 @@ from db.queries_shells_cron import (
     get_shells_global,
     get_shells_project_rollup,
 )
+from http_caching import index_unavailable_error
 
 logger = logging.getLogger(__name__)
 
@@ -89,6 +90,8 @@ def list_shells_global(
     """
     _maybe_sync()
     with sqlite_read() as conn:
+        if conn is None:
+            raise index_unavailable_error()
         conn.row_factory = __import__("sqlite3").Row
         rows = get_shells_global(
             conn,
@@ -104,6 +107,8 @@ def list_shells_global(
 def shells_project_rollup() -> dict:
     """Per-project counts: total shells, currently running, total output bytes."""
     with sqlite_read() as conn:
+        if conn is None:
+            raise index_unavailable_error()
         conn.row_factory = __import__("sqlite3").Row
         rows = get_shells_project_rollup(conn)
     return {"projects": rows, "count": len(rows)}
@@ -124,6 +129,8 @@ def list_shells_for_session(
     polls attached (chronological) when include_polls=True.
     """
     with sqlite_read() as conn:
+        if conn is None:
+            raise index_unavailable_error()
         conn.row_factory = __import__("sqlite3").Row
         # Confirm the session exists so we can 404 cleanly rather than return [].
         session_exists = conn.execute(
@@ -155,6 +162,8 @@ def kill_shell(tool_use_id: str) -> dict:
     import sqlite3 as _sqlite3
 
     with sqlite_read() as conn:
+        if conn is None:
+            raise index_unavailable_error()
         conn.row_factory = _sqlite3.Row
         row = conn.execute(
             "SELECT id, terminated_at, output_file_path FROM background_shells WHERE tool_use_id = ?",

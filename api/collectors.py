@@ -34,9 +34,11 @@ def resolve_subagent_type(
     agent_id: Optional[str], spawn_type: Optional[str], identity: Optional[AgentInfo]
 ) -> Optional[str]:
     """
-    The one rule for an agent's type, shared by the subagents list, the agent page and the timeline.
+    An agent's type for the subagents list, the agent page and the timeline.
 
     The spawn call's subagent_type, else a system agent's id prefix, else the type in its meta.json.
+    The indexer (services/subagent_types.py) follows the same order but also matches unfinished
+    agents by prompt, and stores system agents under its own markers ("_compact", "_warmup").
     """
     if spawn_type:
         return spawn_type
@@ -404,9 +406,11 @@ def _file_version(path: Path) -> Optional[tuple]:
 
 def _subagent_digest(subagent) -> _SubagentDigest:
     """Cached digest of a subagent file; concurrent callers wait for one parse."""
-    key = _file_version(subagent.jsonl_path)
-    if key is None:
+    versions = [_file_version(p) for p in getattr(subagent, "all_paths", (subagent.jsonl_path,))]
+    if None in versions:
         return _read_subagent_digest(subagent)
+    # One file is the common case; an agent split over two is keyed by both
+    key = versions[0] if len(versions) == 1 else tuple(versions)
     with _digest_lock:
         digest = _digest_cache.get(key)
         if digest is not None:
@@ -490,6 +494,20 @@ class SubagentInfo:
     description: Optional[str] = None
 
 
+def spawn_types_by_agent(session_data: SessionData, tool_results: Dict[str, Any]) -> Dict[str, str]:
+    """Agent id -> the subagent_type its spawn call asked for, matched through the tool results."""
+    agent_id_to_type: Dict[str, str] = {}
+    for tool_use_id, subagent_type in session_data.task_tool_to_type.items():
+        result_data = tool_results.get(tool_use_id)
+        if (
+            result_data
+            and hasattr(result_data, "spawned_agent_id")
+            and result_data.spawned_agent_id
+        ):
+            agent_id_to_type[result_data.spawned_agent_id] = subagent_type
+    return agent_id_to_type
+
+
 def collect_subagent_info(
     session: Session, session_data: SessionData, tool_results: Dict[str, Any]
 ) -> List[SubagentInfo]:
@@ -504,17 +522,7 @@ def collect_subagent_info(
     Returns:
         List of SubagentInfo for each subagent
     """
-    # Build agent_id -> subagent_type mapping from tool results
-    agent_id_to_type: Dict[str, str] = {}
-
-    for tool_use_id, subagent_type in session_data.task_tool_to_type.items():
-        result_data = tool_results.get(tool_use_id)
-        if (
-            result_data
-            and hasattr(result_data, "spawned_agent_id")
-            and result_data.spawned_agent_id
-        ):
-            agent_id_to_type[result_data.spawned_agent_id] = subagent_type
+    agent_id_to_type = spawn_types_by_agent(session_data, tool_results)
 
     subagents_info: List[SubagentInfo] = []
     registry = build_agent_registry(

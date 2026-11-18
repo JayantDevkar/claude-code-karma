@@ -72,6 +72,8 @@ sys.path.insert(0, str(models_path))
 from collectors import (
     collect_session_data,
     collect_subagent_info,
+    resolve_subagent_type,
+    spawn_types_by_agent,
 )
 from config import FILE_TOOL_MAPPINGS, settings
 from http_caching import (
@@ -188,9 +190,9 @@ def _count_subagents_fast(project_dir: Path, session_uuid: str) -> int:
     Returns:
         Number of subagent JSONL files
     """
-    from services.session_copies import subagent_files
+    from services.session_copies import count_agents, subagent_files
 
-    return len(subagent_files(project_dir / f"{session_uuid}.jsonl"))
+    return count_agents(subagent_files(project_dir / f"{session_uuid}.jsonl"))
 
 
 def _session_cache_info(session: Session):
@@ -1529,6 +1531,11 @@ async def get_subagents_parallel(uuid: str, request: Request):
     registry = build_agent_registry(
         session.list_subagent_paths(), extra_dirs=[session.subagents_dir]
     )
+    # Same type rule as the sequential path: the spawn call first, then the agent's meta.json
+    spawn_types = spawn_types_by_agent(
+        collect_session_data(session, include_subagents=False),
+        collect_tool_results(session, extract_spawned_agent=True, parse_xml=True),
+    )
 
     # Build response summaries
     summaries = []
@@ -1539,8 +1546,9 @@ async def get_subagents_parallel(uuid: str, request: Request):
             SubagentSummary(
                 agent_id=data["agent_id"],
                 slug=data.get("slug"),
-                # No Task-call matching in parallel mode; the agent's meta.json still has the type
-                subagent_type=identity.agent_type if identity else None,
+                subagent_type=resolve_subagent_type(
+                    data["agent_id"], spawn_types.get(data["agent_id"]), identity
+                ),
                 name=identity.name if identity else None,
                 color=identity.color if identity else None,
                 team_name=identity.team_name if identity else None,
@@ -1643,52 +1651,47 @@ def get_timeline(uuid: str, request: Request, fresh: bool = False):
         fresh: If true, use minimal cache (1s) for live session polling
     """
     from services.agent_registry import build_agent_registry
-    from services.conversation_endpoints import build_conversation_timeline, timeline_etag
+    from services.conversation_endpoints import build_conversation_timeline
+    from services.timeline_response import timeline_response
 
     session = find_session(uuid)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
+    def build():
+        # Get working directories for relative path conversion
+        working_dirs = list(session.get_working_directories())
+
+        # Pre-build a map of subagent IDs to slugs for quick lookup
+        subagent_info: dict[str, str | None] = {}
+        for sa in session.list_subagents():
+            subagent_info[sa.agent_id] = sa.slug
+
+        # Names, colours and types of the subagents, from their meta.json files
+        agent_registry = build_agent_registry(
+            session.list_subagent_paths(), extra_dirs=[session.subagents_dir]
+        )
+
+        # Use shared service for building timeline
+        return build_conversation_timeline(
+            conversation=session,
+            working_dirs=working_dirs,
+            actor="session",
+            actor_type="session",
+            subagent_info=subagent_info,
+            agent_registry=agent_registry,
+        )
+
     # Subagent files count: they supply the slugs shown on spawn events
     etag, last_modified = _session_cache_info(session)
-    etag = timeline_etag(etag)
-    conditional_response = check_conditional_request(request, etag, last_modified)
-    if conditional_response:
-        return conditional_response
-
-    # Get working directories for relative path conversion
-    working_dirs = list(session.get_working_directories())
-
-    # Pre-build a map of subagent IDs to slugs for quick lookup
-    subagent_info: dict[str, str | None] = {}
-    for sa in session.list_subagents():
-        subagent_info[sa.agent_id] = sa.slug
-
-    # Names, colours and types of the subagents, from their meta.json files
-    agent_registry = build_agent_registry(
-        session.list_subagent_paths(), extra_dirs=[session.subagents_dir]
-    )
-
-    # Use shared service for building timeline
-    events = build_conversation_timeline(
-        conversation=session,
-        working_dirs=working_dirs,
-        actor="session",
-        actor_type="session",
-        subagent_info=subagent_info,
-        agent_registry=agent_registry,
-    )
-
-    # Add cache headers - minimal cache for live polling
-    response_data = [e.model_dump(mode="json") for e in events]
-    headers = build_cache_headers(
-        etag=etag,
+    return timeline_response(
+        request,
+        file_etag=etag,
         last_modified=last_modified,
-        max_age=1 if fresh else 60,
-        stale_while_revalidate=2 if fresh else 300,
-        private=True,
+        own_uuid=session.uuid,
+        fresh=fresh,
+        build=build,
     )
-    return JSONResponse(content=response_data, headers=headers)
 
 
 # ============================================================================

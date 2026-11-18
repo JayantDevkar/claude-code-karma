@@ -106,22 +106,22 @@ def of_type(events: list, event_type: str) -> list:
 
 PEER_TEXT = (
     "Another Claude session sent a message:\n"
-    '<cross-session-message from="uds:/tmp/cc-socks/10999.sock" '
-    'from-name="airflow-72" from-mode="bypass">\n[ASK] Why did triage blame no-zones?\n'
+    '<cross-session-message from="uds:/tmp/example/peer.sock" '
+    'from-name="docs-site" from-mode="bypass">\n[ASK] Which port does the dev server use?\n'
     "</cross-session-message>"
 )
 PEER_ORIGIN = {
     "kind": "peer",
-    "from": "uds:/tmp/cc-socks/10999.sock",
-    "name": "airflow-72",
+    "from": "uds:/tmp/example/peer.sock",
+    "name": "docs-site",
     "fromMode": "bypass",
-    "body": "[ASK] Why did triage blame no-zones?",
+    "body": "[ASK] Which port does the dev server use?",
 }
 TASK_NOTE = (
-    "<task-notification>\n<task-id>a88c3f920e0d92c99</task-id>\n"
+    "<task-notification>\n<task-id>a0123456789abcdef</task-id>\n"
     "<tool-use-id>toolu_spawn</tool-use-id>\n<output-file>/tmp/x.output</output-file>\n"
-    '<status>completed</status>\n<summary>Agent "Probe write" finished</summary>\n'
-    "<result>WRITE OK</result>\n</task-notification>"
+    '<status>completed</status>\n<summary>Agent "Tidy the notes" finished</summary>\n'
+    "<result>NOTES TIDIED</result>\n</task-notification>"
 )
 
 
@@ -134,8 +134,8 @@ class TestUserSource:
     def test_peer_origin_is_peer_session(self):
         msg = parse_message(user(1, PEER_TEXT, isMeta=True, origin=PEER_ORIGIN))
         assert msg.source == "peer_session"
-        assert msg.origin_name == "airflow-72"
-        assert msg.origin_from == "uds:/tmp/cc-socks/10999.sock"
+        assert msg.origin_name == "docs-site"
+        assert msg.origin_from == "uds:/tmp/example/peer.sock"
         assert msg.is_internal_message is True
 
     def test_peer_with_sender_task_is_agent(self):
@@ -167,7 +167,9 @@ class TestUserSource:
         reminder = parse_message(
             user(1, "<system-reminder>\nOther agents active\n</system-reminder>", isMeta=True)
         )
-        other = parse_message(user(1, '[Cross-session idle notice] "infra" is idle', isMeta=True))
+        other = parse_message(
+            user(1, '[Cross-session idle notice] "docs-site" is idle', isMeta=True)
+        )
         assert reminder.source == "system_reminder"
         assert other.source == "meta"
 
@@ -182,12 +184,12 @@ class TestUserSource:
                 "Scheduled check",
                 isMeta=True,
                 turnOrigin="scheduled",
-                scheduledTaskId="6fdf7649",
+                scheduledTaskId="task0001",
                 wakeupSource="schedule_wakeup",
             )
         )
         assert msg.source == "scheduled"
-        assert msg.scheduled_task_id == "6fdf7649"
+        assert msg.scheduled_task_id == "task0001"
 
     def test_task_notification_by_origin_and_by_text(self):
         by_origin = parse_message(user(1, TASK_NOTE, origin={"kind": "task-notification"}))
@@ -222,11 +224,11 @@ class TestUserSource:
                 "toolu_1",
                 "Spawned successfully.",
                 is_error=False,
-                toolUseResult={"agentId": "aimpl-m9-cd8b", "prompt": "x" * 5000},
+                toolUseResult={"agentId": "abuilder-00aa11bb22cc", "prompt": "x" * 5000},
             )
         )
         assert msg.source == "tool_result"
-        assert msg.spawned_agent_id == "aimpl-m9-cd8b"
+        assert msg.spawned_agent_id == "abuilder-00aa11bb22cc"
         assert msg.tool_result_is_error is False
         assert "toolUseResult" not in msg.model_dump()
 
@@ -280,7 +282,7 @@ class TestSideEntries:
             system(1, "away_summary", content="We were reviewing X."),
             system(2, "stop_hook_summary", hookCount=1),
             system(3, "turn_duration", durationMs=5),
-            queued(4, "use the branch jay/x", {"kind": "human"}, humanTurn=True),
+            queued(4, "use the branch feature/x", {"kind": "human"}, humanTurn=True),
             _base("attachment", 5, attachment={"type": "skill_listing"}),
             user(6, 'quoting "type":"system" and queued_command in a prompt'),
             {"type": "api-request-blob", "message": {"content": '"type":"system"'}},
@@ -289,7 +291,7 @@ class TestSideEntries:
         side = list(iter_side_entries(path))
         assert [type(e) for e in side] == [SystemEntry, QueuedCommandEntry]
         assert side[0].subtype == "away_summary"
-        assert side[1].prompt == "use the branch jay/x"
+        assert side[1].prompt == "use the branch feature/x"
         assert side[1].origin_kind == "human"
 
     def test_missing_file_yields_nothing(self, tmp_path):
@@ -299,21 +301,23 @@ class TestSideEntries:
 class TestAgentRegistry:
     def test_reads_meta_json_next_to_each_agent(self, tmp_path):
         meta = {
-            "agentType": "impl-m9",
-            "name": "impl-m9",
-            "teamName": "session-18e9",
+            "agentType": "builder",
+            "name": "builder",
+            "teamName": "example-team",
             "color": "purple",
             "model": "opus",
-            "description": "Implement Task 9",
+            "description": "Build the parser",
             "spawnedAgentType": "general-purpose",
             "toolUseId": "toolu_spawn",
         }
-        session = write_session(tmp_path, [user(1, "hi")], {"aimpl-m9-cd8b": {"meta": meta}})
+        session = write_session(
+            tmp_path, [user(1, "hi")], {"abuilder-00aa11bb22cc": {"meta": meta}}
+        )
         registry = build_agent_registry(session.list_subagent_paths())
-        info = registry.get("aimpl-m9-cd8b")
-        assert (info.name, info.color, info.team_name) == ("impl-m9", "purple", "session-18e9")
+        info = registry.get("abuilder-00aa11bb22cc")
+        assert (info.name, info.color, info.team_name) == ("builder", "purple", "example-team")
         assert info.agent_type == "general-purpose"
-        assert registry.by_name("impl-m9") is info
+        assert registry.by_name("builder") is info
         assert registry.by_tool_use_id("toolu_spawn") is info
 
     def test_missing_or_broken_meta_is_ignored(self, tmp_path):
@@ -333,14 +337,14 @@ class TestTimelineSenders:
         assert of_type(events, "prompt") == []
         (ev,) = of_type(events, "message")
         assert (ev.actor, ev.actor_type, ev.actor_name) == (
-            "airflow-72",
+            "docs-site",
             "peer_session",
-            "airflow-72",
+            "docs-site",
         )
         assert ev.metadata["direction"] == "in"
         assert ev.metadata["peer_kind"] == "session"
-        assert ev.metadata["peer_address"] == "uds:/tmp/cc-socks/10999.sock"
-        assert ev.metadata["full_content"] == "[ASK] Why did triage blame no-zones?"
+        assert ev.metadata["peer_address"] == "uds:/tmp/example/peer.sock"
+        assert ev.metadata["full_content"] == "[ASK] Which port does the dev server use?"
         assert ev.metadata["relayed"] is True
 
     def test_agent_message_resolves_to_the_subagent(self, tmp_path):
@@ -366,13 +370,13 @@ class TestTimelineSenders:
         block = tool_use(
             "toolu_sm",
             "SendMessage",
-            to="uds:/tmp/cc-socks/10999.sock",
-            recipient="uds:/tmp/cc-socks/10999.sock",
+            to="uds:/tmp/example/peer.sock",
+            recipient="uds:/tmp/example/peer.sock",
             recipient_kind="session",
             type="message",
-            summary="Reply to triage ASK",
-            message="ANSWER: nothing in WT picks fiber lines",
-            content="ANSWER: nothing…",
+            summary="Reply to the port question",
+            message="ANSWER: the dev server uses port 3000",
+            content="ANSWER: the dev…",
         )
         session = write_session(
             tmp_path,
@@ -384,9 +388,9 @@ class TestTimelineSenders:
         assert (ev.actor, ev.actor_type) == ("session", "session")
         meta = ev.metadata
         assert (meta["direction"], meta["peer_kind"]) == ("out", "session")
-        assert meta["peer_address"] == "uds:/tmp/cc-socks/10999.sock"
-        assert meta["message_summary"] == "Reply to triage ASK"
-        assert meta["full_content"] == "ANSWER: nothing in WT picks fiber lines"
+        assert meta["peer_address"] == "uds:/tmp/example/peer.sock"
+        assert meta["message_summary"] == "Reply to the port question"
+        assert meta["full_content"] == "ANSWER: the dev server uses port 3000"
         assert (meta["tool_name"], meta["tool_id"], meta["has_result"]) == (
             "SendMessage",
             "toolu_sm",
@@ -397,29 +401,27 @@ class TestTimelineSenders:
         block = tool_use(
             "toolu_sm",
             "SendMessage",
-            to="impl-m9",
-            recipient="impl-m9",
+            to="builder",
+            recipient="builder",
             recipient_kind="name",
             message="go",
         )
         session = write_session(
             tmp_path,
             [assistant(1, [block])],
-            {"aimpl-m9-cd8b": {"meta": {"name": "impl-m9", "color": "purple"}}},
+            {"abuilder-00aa11bb22cc": {"meta": {"name": "builder", "color": "purple"}}},
         )
         (ev,) = of_type(timeline(session), "message")
         assert ev.metadata["peer_kind"] == "agent"
-        assert ev.metadata["peer_agent_id"] == "aimpl-m9-cd8b"
-        assert (ev.metadata["peer_name"], ev.metadata["peer_color"]) == ("impl-m9", "purple")
+        assert ev.metadata["peer_agent_id"] == "abuilder-00aa11bb22cc"
+        assert (ev.metadata["peer_name"], ev.metadata["peer_color"]) == ("builder", "purple")
 
     def test_skill_body_attaches_to_its_skill_event(self, tmp_path):
         body = [{"type": "text", "text": "Base directory for this skill: /x\n\n# Debugging"}]
         session = write_session(
             tmp_path,
             [
-                assistant(
-                    1, [tool_use("toolu_skill", "Skill", skill="superpowers:systematic-debugging")]
-                ),
+                assistant(1, [tool_use("toolu_skill", "Skill", skill="example-plugin:debugging")]),
                 tool_result(2, "toolu_skill", "Launching skill"),
                 user(2, body, isMeta=True, sourceToolUseID="toolu_skill"),
             ],
@@ -452,7 +454,7 @@ class TestTimelineSenders:
             [
                 user(1, "real question", origin={"kind": "human"}, promptSource="typed"),
                 user(2, "<system-reminder>\nOther agents active\n</system-reminder>", isMeta=True),
-                user(3, '[Cross-session idle notice] "infra" is idle now', isMeta=True),
+                user(3, '[Cross-session idle notice] "docs-site" is idle now', isMeta=True),
             ],
         )
         events = timeline(session)
@@ -472,7 +474,7 @@ class TestTimelineSenders:
                         tool_use(
                             "toolu_spawn",
                             "Agent",
-                            description="Probe write",
+                            description="Tidy the notes",
                             prompt="p",
                             subagent_type="general-purpose",
                             run_in_background=True,
@@ -483,15 +485,15 @@ class TestTimelineSenders:
                     2,
                     "toolu_spawn",
                     "Async agent launched successfully.",
-                    toolUseResult={"agentId": "a88c3f920e0d92c99", "status": "async_launched"},
+                    toolUseResult={"agentId": "a0123456789abcdef", "status": "async_launched"},
                 ),
                 user(9, TASK_NOTE, origin={"kind": "task-notification"}),
             ],
             {
-                "a88c3f920e0d92c99": {
+                "a0123456789abcdef": {
                     "meta": {
                         "agentType": "general-purpose",
-                        "description": "Probe write",
+                        "description": "Tidy the notes",
                         "toolUseId": "toolu_spawn",
                     }
                 }
@@ -499,37 +501,37 @@ class TestTimelineSenders:
         )
         events = timeline(session)
         (spawn,) = of_type(events, "subagent_spawn")
-        assert spawn.metadata["spawned_agent_id"] == "a88c3f920e0d92c99"
+        assert spawn.metadata["spawned_agent_id"] == "a0123456789abcdef"
         assert spawn.metadata["run_in_background"] is True
         (note,) = of_type(events, "task_notification")
         assert (note.actor, note.actor_type) == ("system", "system")
         meta = note.metadata
         assert (meta["task_id"], meta["task_status"], meta["task_kind"]) == (
-            "a88c3f920e0d92c99",
+            "a0123456789abcdef",
             "completed",
             "agent",
         )
-        assert meta["task_summary"] == 'Agent "Probe write" finished'
+        assert meta["task_summary"] == 'Agent "Tidy the notes" finished'
         assert meta["tool_use_id"] == "toolu_spawn"
-        assert meta["agent_id"] == "a88c3f920e0d92c99"
+        assert meta["agent_id"] == "a0123456789abcdef"
         assert meta["output_file"] == "/tmp/x.output"
-        assert meta["full_content"] == "WRITE OK"
+        assert meta["full_content"] == "NOTES TIDIED"
 
     def test_named_teammate_spawn_links_without_agent_id_text(self, tmp_path):
         result = tool_result(
             2,
             "toolu_spawn",
-            "Spawned successfully.\nname: impl-m9",
+            "Spawned successfully.\nname: builder",
             toolUseResult={
-                "agentId": "aimpl-m9-cd8b",
+                "agentId": "abuilder-00aa11bb22cc",
                 "status": "teammate_spawned",
-                "name": "impl-m9",
+                "name": "builder",
             },
         )
         meta = {
-            "name": "impl-m9",
+            "name": "builder",
             "color": "purple",
-            "teamName": "session-18e9",
+            "teamName": "example-team",
             "model": "opus",
             "spawnedAgentType": "general-purpose",
         }
@@ -542,23 +544,23 @@ class TestTimelineSenders:
                         tool_use(
                             "toolu_spawn",
                             "Agent",
-                            description="Task 9",
+                            description="Parser",
                             prompt="p",
-                            name="impl-m9",
+                            name="builder",
                             subagent_type="general-purpose",
                         )
                     ],
                 ),
                 result,
             ],
-            {"aimpl-m9-cd8b": {"meta": meta}},
+            {"abuilder-00aa11bb22cc": {"meta": meta}},
         )
         (spawn,) = of_type(timeline(session), "subagent_spawn")
         m = spawn.metadata
-        assert m["spawned_agent_id"] == "aimpl-m9-cd8b"
-        assert (m["spawned_agent_name"], m["spawned_agent_color"]) == ("impl-m9", "purple")
+        assert m["spawned_agent_id"] == "abuilder-00aa11bb22cc"
+        assert (m["spawned_agent_name"], m["spawned_agent_color"]) == ("builder", "purple")
         assert (m["team_name"], m["agent_model"], m["run_in_background"]) == (
-            "session-18e9",
+            "example-team",
             "opus",
             False,
         )
@@ -571,16 +573,16 @@ class TestTimelineSenders:
                     1,
                     "scheduled_task_fire",
                     content="Running scheduled task",
-                    taskId="6fdf7649",
-                    cron="9,29,49 * * * *",
-                    prompt="Scheduled check: read the DM",
+                    taskId="task0001",
+                    cron="*/20 * * * *",
+                    prompt="Scheduled check: run the tests",
                 ),
                 user(
                     1,
-                    "Scheduled check: read the DM",
+                    "Scheduled check: run the tests",
                     isMeta=True,
                     turnOrigin="scheduled",
-                    scheduledTaskId="6fdf7649",
+                    scheduledTaskId="task0001",
                     wakeupSource="schedule_wakeup",
                     promptSource="system",
                 ),
@@ -590,10 +592,10 @@ class TestTimelineSenders:
         (ev,) = of_type(events, "scheduled_fire")
         assert len(events) == 1
         assert ev.actor_type == "system"
-        assert ev.metadata["cron"] == "9,29,49 * * * *"
-        assert ev.metadata["task_id"] == "6fdf7649"
+        assert ev.metadata["cron"] == "*/20 * * * *"
+        assert ev.metadata["task_id"] == "task0001"
         assert ev.metadata["wakeup_source"] == "schedule_wakeup"
-        assert ev.metadata["full_content"] == "Scheduled check: read the DM"
+        assert ev.metadata["full_content"] == "Scheduled check: run the tests"
 
     def test_compaction_boundary_and_summary_are_one_event(self, tmp_path):
         session = write_session(
@@ -658,7 +660,7 @@ class TestTimelineSenders:
                 system(
                     1,
                     "local_command",
-                    content="<command-name>/remote-control</command-name>\n<command-message>remote-control</command-message>\n<command-args>wt</command-args>",
+                    content="<command-name>/remote-control</command-name>\n<command-message>remote-control</command-message>\n<command-args>demo</command-args>",
                     level="info",
                 ),
                 system(
@@ -666,7 +668,7 @@ class TestTimelineSenders:
                     "local_command",
                     content="<local-command-stdout>Connected</local-command-stdout>",
                     level="info",
-                    commandRun={"command": "remote-control", "args": "wt"},
+                    commandRun={"command": "remote-control", "args": "demo"},
                 ),
             ],
         )
@@ -679,7 +681,7 @@ class TestTimelineSenders:
         session = write_session(
             tmp_path,
             [
-                system(1, "away_summary", content="We were reviewing the bot work."),
+                system(1, "away_summary", content="We were tidying the docs."),
                 system(
                     2, "informational", content="Safeguards stopped the response", level="notice"
                 ),
@@ -716,7 +718,7 @@ class TestTimelineSenders:
         session = write_session(
             tmp_path,
             [
-                queued(1, "use the branch jay/x", {"kind": "human"}, humanTurn=True),
+                queued(1, "use the branch feature/x", {"kind": "human"}, humanTurn=True),
                 queued(2, PEER_TEXT.split("\n", 1)[1], PEER_ORIGIN, isMeta=True),
                 queued(3, TASK_NOTE, {"kind": "task-notification"}, mode="task-notification"),
             ],
@@ -725,14 +727,14 @@ class TestTimelineSenders:
         assert [e.event_type for e in events] == ["prompt", "message", "task_notification"]
         assert all(e.metadata["queued"] is True for e in events)
         assert (events[0].actor, events[0].metadata["prompt_source"]) == ("user", "queued")
-        assert events[0].metadata["full_content"] == "use the branch jay/x"
-        assert events[1].actor_name == "airflow-72"
+        assert events[0].metadata["full_content"] == "use the branch feature/x"
+        assert events[1].actor_name == "docs-site"
 
     def test_reply_to_an_address_is_named_after_its_sender(self, tmp_path):
         reply = tool_use(
             "toolu_sm",
             "SendMessage",
-            to="uds:/tmp/cc-socks/10999.sock",
+            to="uds:/tmp/example/peer.sock",
             recipient_kind="session",
             message="ANSWER: yes",
         )
@@ -741,63 +743,63 @@ class TestTimelineSenders:
             [user(1, PEER_TEXT, isMeta=True, origin=PEER_ORIGIN), assistant(2, [reply])],
         )
         incoming, outgoing = of_type(timeline(session), "message")
-        assert outgoing.metadata["peer_name"] == "airflow-72"
-        assert outgoing.title == "Message to airflow-72"
+        assert outgoing.metadata["peer_name"] == "docs-site"
+        assert outgoing.title == "Message to docs-site"
 
     def test_teammate_messages_to_the_lead_are_one_event_each(self, tmp_path):
         text = (
             "Another Claude session sent a message:\n"
-            '<teammate-message teammate_id="spec-reader" color="purple" summary="Human test plan">\nPlan is ready.\n</teammate-message>\n\n'
-            '<teammate-message teammate_id="impl-m9" color="orange">\nTask 9 done.\n</teammate-message>'
+            '<teammate-message teammate_id="planner" color="purple" summary="Test plan">\nPlan is ready.\n</teammate-message>\n\n'
+            '<teammate-message teammate_id="builder" color="orange">\nParser is built.\n</teammate-message>'
         )
         session = write_session(
             tmp_path,
             [user(1, text)],
-            {"aimpl-m9-cd8b": {"meta": {"name": "impl-m9", "color": "orange"}}},
+            {"abuilder-00aa11bb22cc": {"meta": {"name": "builder", "color": "orange"}}},
         )
         events = timeline(session)
         assert [e.event_type for e in events] == ["message", "message"]
         first, second = events
         assert (first.actor, first.actor_type, first.actor_color) == (
-            "spec-reader",
+            "planner",
             "subagent",
             "purple",
         )
-        assert first.metadata["message_summary"] == "Human test plan"
+        assert first.metadata["message_summary"] == "Test plan"
         assert first.metadata["full_content"] == "Plan is ready."
-        assert (second.actor, second.actor_name) == ("aimpl-m9-cd8b", "impl-m9")
-        assert second.metadata["peer_agent_id"] == "aimpl-m9-cd8b"
+        assert (second.actor, second.actor_name) == ("abuilder-00aa11bb22cc", "builder")
+        assert second.metadata["peer_agent_id"] == "abuilder-00aa11bb22cc"
 
     def test_teammate_idle_signal_is_quiet_context_from_the_agent(self, tmp_path):
         body = json.dumps(
             {
                 "type": "idle_notification",
-                "from": "impl-m9",
+                "from": "builder",
                 "idleReason": "available",
                 "result": "VERDICT: ready",
             }
         )
         text = (
             "Another Claude session sent a message:\n"
-            f'<teammate-message teammate_id="impl-m9" color="purple">\n{body}\n</teammate-message>'
+            f'<teammate-message teammate_id="builder" color="purple">\n{body}\n</teammate-message>'
         )
         session = write_session(
             tmp_path,
             [user(1, text)],
-            {"aimpl-m9-cd8b": {"meta": {"name": "impl-m9", "color": "purple"}}},
+            {"abuilder-00aa11bb22cc": {"meta": {"name": "builder", "color": "purple"}}},
         )
         (ev,) = timeline(session)
         assert ev.event_type == "system_context"
         assert ev.metadata["kind"] == "agent_idle"
-        assert (ev.actor, ev.actor_type) == ("aimpl-m9-cd8b", "subagent")
-        assert (ev.actor_name, ev.actor_color) == ("impl-m9", "purple")
+        assert (ev.actor, ev.actor_type) == ("abuilder-00aa11bb22cc", "subagent")
+        assert (ev.actor_name, ev.actor_color) == ("builder", "purple")
         assert ev.metadata["full_content"] == "VERDICT: ready"
 
     def test_other_teammate_json_stays_a_message_with_its_body(self, tmp_path):
         body = json.dumps({"type": "shutdown_request", "reason": "done"})
         text = (
             "Another Claude session sent a message:\n"
-            f'<teammate-message teammate_id="impl-m9">\n{body}\n</teammate-message>'
+            f'<teammate-message teammate_id="builder">\n{body}\n</teammate-message>'
         )
         (ev,) = timeline(write_session(tmp_path, [user(1, text)]))
         assert ev.event_type == "message"
@@ -826,7 +828,7 @@ class TestTimelineSenders:
 
     def test_meta_flag_does_not_hide_a_human_origin(self, tmp_path):
         session = write_session(
-            tmp_path, [queued(1, "leave the simulator alone", {"kind": "human"}, isMeta=True)]
+            tmp_path, [queued(1, "skip the slow tests", {"kind": "human"}, isMeta=True)]
         )
         (ev,) = timeline(session)
         assert (ev.event_type, ev.actor) == ("prompt", "user")
@@ -863,7 +865,7 @@ class TestTimelineSenders:
 
 class TestSubagentTimeline:
     def _agent_timeline(self, tmp_path, entries, meta=None, others=None):
-        agent_id = "aimpl-m9-cd8b"
+        agent_id = "abuilder-00aa11bb22cc"
         for e in entries:
             e["agentId"] = agent_id
             e["isSidechain"] = True
@@ -880,21 +882,21 @@ class TestSubagentTimeline:
         )
 
     def test_first_teammate_message_is_the_task_prompt(self, tmp_path):
-        first = '<teammate-message teammate_id="team-lead" summary="Implement Task 9">\nYou are implementing Task 9.\n</teammate-message>'
+        first = '<teammate-message teammate_id="team-lead" summary="Build the parser">\nBuild the parser module.\n</teammate-message>'
         later = '<teammate-message teammate_id="team-lead" summary="Fix round 1">\nFix the review items.\n</teammate-message>'
         events = self._agent_timeline(
             tmp_path,
             [user(1, first), assistant(2, [{"type": "text", "text": "x" * 80}]), user(3, later)],
-            meta={"name": "impl-m9", "color": "purple"},
+            meta={"name": "builder", "color": "purple"},
         )
         prompt, response, message = events
         assert prompt.event_type == "prompt" and prompt.title == "Task prompt"
         assert prompt.metadata["is_task_prompt"] is True
         assert (prompt.actor_type, prompt.actor_name) == ("session", "team-lead")
-        assert prompt.metadata["full_content"] == "You are implementing Task 9."
+        assert prompt.metadata["full_content"] == "Build the parser module."
         assert (response.actor, response.actor_name, response.actor_color) == (
-            "aimpl-m9-cd8b",
-            "impl-m9",
+            "abuilder-00aa11bb22cc",
+            "builder",
             "purple",
         )
         assert message.event_type == "message"
@@ -910,7 +912,7 @@ class TestSubagentTimeline:
                 user(1, "Review the diff"),
                 user(
                     2,
-                    "The coordinator sent a message while you were working:\nVerify 3161b7d.",
+                    "The coordinator sent a message while you were working:\nVerify abc1234.",
                     isMeta=True,
                     origin={"kind": "coordinator"},
                 ),
@@ -923,7 +925,7 @@ class TestSubagentTimeline:
         )
         assert [e.event_type for e in events] == ["prompt", "message", "system_context"]
         assert events[0].metadata["is_task_prompt"] is True
-        assert events[1].metadata["full_content"] == "Verify 3161b7d."
+        assert events[1].metadata["full_content"] == "Verify abc1234."
         assert (events[1].actor, events[1].actor_type) == ("coordinator", "session")
 
     def test_workflow_task_at_the_same_timestamp_joins_the_task_prompt(self, tmp_path):
@@ -978,8 +980,8 @@ class TestStableEventIds:
                     tool_use("toolu_1", "Read", file_path="/x"),
                 ],
             ),
-            system(3, "away_summary", content="We were reviewing the bot work."),
-            queued(4, "use the branch jay/x", {"kind": "human"}),
+            system(3, "away_summary", content="We were tidying the docs."),
+            queued(4, "use the branch feature/x", {"kind": "human"}),
             user(5, "next", origin={"kind": "human"}),
         ]
 
@@ -1028,7 +1030,7 @@ class TestReviewFixes:
                 {"type": "tool_result", "tool_use_id": "toolu_fork", "content": "Fork started"},
                 {
                     "type": "text",
-                    "text": "<fork-boilerplate>\nYou are a worker fork.\n</fork-boilerplate>\n\nRecord the inventory.",
+                    "text": "<fork-boilerplate>\nYou are a worker fork.\n</fork-boilerplate>\n\nUpdate the changelog.",
                 },
             ],
         )
@@ -1047,7 +1049,7 @@ class TestReviewFixes:
         prompts = of_type(events, "prompt")
         assert len(prompts) == 1
         assert prompts[0].metadata["is_task_prompt"] is True
-        assert "Record the inventory." in prompts[0].metadata["full_content"]
+        assert "Update the changelog." in prompts[0].metadata["full_content"]
         assert "Fork started" not in prompts[0].metadata["full_content"]
 
     def test_raw_source_key_does_not_break_parsing(self):
@@ -1061,7 +1063,7 @@ class TestReviewFixes:
 
         teammate = (
             "Another Claude session sent a message:\n"
-            '<teammate-message teammate_id="spec-reader">\nPlan is ready.\n</teammate-message>'
+            '<teammate-message teammate_id="planner">\nPlan is ready.\n</teammate-message>'
         )
         session = write_session(
             tmp_path,
@@ -1100,57 +1102,53 @@ class TestReviewFixes:
             return [
                 assistant(
                     sec,
-                    [
-                        tool_use(
-                            tool_id, "Agent", description="review", prompt="p", name="code-review"
-                        )
-                    ],
+                    [tool_use(tool_id, "Agent", description="review", prompt="p", name="reviewer")],
                 ),
                 tool_result(sec + 1, tool_id, "Spawned.", toolUseResult={"agentId": agent_id}),
             ]
 
         def says(sec, text):
-            wrapped = f'<teammate-message teammate_id="code-review">\n{text}\n</teammate-message>'
+            wrapped = f'<teammate-message teammate_id="reviewer">\n{text}\n</teammate-message>'
             return user(sec, "Another Claude session sent a message:\n" + wrapped)
 
-        meta = {"name": "code-review", "color": "blue"}
+        meta = {"name": "reviewer", "color": "blue"}
         session = write_session(
             tmp_path,
             [
-                *spawn(1, "t1", "acr-1"),
+                *spawn(1, "t1", "arev-1"),
                 says(5, "first review"),
-                *spawn(10, "t2", "acr-2"),
+                *spawn(10, "t2", "arev-2"),
                 says(15, "second review"),
             ],
-            {"acr-1": {"meta": meta}, "acr-2": {"meta": {**meta, "color": "green"}}},
+            {"arev-1": {"meta": meta}, "arev-2": {"meta": {**meta, "color": "green"}}},
         )
         first, second = of_type(timeline(session), "message")
-        assert first.metadata["peer_agent_id"] == "acr-1"
-        assert second.metadata["peer_agent_id"] == "acr-2"
+        assert first.metadata["peer_agent_id"] == "arev-1"
+        assert second.metadata["peer_agent_id"] == "arev-2"
 
     def test_ambiguous_name_without_spawn_events_is_left_unlinked(self, tmp_path):
-        wrapped = '<teammate-message teammate_id="code-review">\nhi\n</teammate-message>'
-        meta = {"name": "code-review"}
+        wrapped = '<teammate-message teammate_id="reviewer">\nhi\n</teammate-message>'
+        meta = {"name": "reviewer"}
         session = write_session(
             tmp_path,
             [user(1, "Another Claude session sent a message:\n" + wrapped)],
-            {"acr-1": {"meta": meta}, "acr-2": {"meta": meta}},
+            {"arev-1": {"meta": meta}, "arev-2": {"meta": meta}},
         )
         (ev,) = timeline(session)
         assert ev.metadata["peer_agent_id"] is None
-        assert (ev.actor, ev.actor_type) == ("code-review", "subagent")
+        assert (ev.actor, ev.actor_type) == ("reviewer", "subagent")
 
     def test_mcp_error_text_without_is_error(self, tmp_path):
         session = write_session(
             tmp_path,
             [
                 assistant(
-                    1, [tool_use("t1", "mcp__dev-tools__x"), tool_use("t2", "mcp__dev-tools__y")]
+                    1, [tool_use("t1", "mcp__example__x"), tool_use("t2", "mcp__example__y")]
                 ),
                 tool_result(
                     2,
                     "t1",
-                    '{"result":"An error occurred (code: GEN-ERR-12). Check mcp_errors.log"}',
+                    '{"result":"An error occurred (code: E-12). See the server log"}',
                 ),
                 tool_result(3, "t2", '{"result":"Found 2 results: An error occurred earlier"}'),
             ],
@@ -1164,21 +1162,21 @@ class TestReviewFixes:
     def test_agent_initial_prompt_when_first_message_is_from_a_teammate(self, tmp_path):
         from collectors import collect_agent_data
 
-        first = '<teammate-message teammate_id="team-lead" summary="Task 9">\nImplement Task 9.\n</teammate-message>'
+        first = '<teammate-message teammate_id="team-lead" summary="Parser">\nBuild the parser.\n</teammate-message>'
         entries = [
             user(1, first),
             assistant(2, [{"type": "text", "text": "y" * 80}]),
             user(3, "later", origin={"kind": "human"}),
         ]
         for e in entries:
-            e["agentId"], e["isSidechain"] = "aimpl-1", True
-        session = write_session(tmp_path, [user(0, "go")], {"aimpl-1": {"entries": entries}})
+            e["agentId"], e["isSidechain"] = "abuilder-1", True
+        session = write_session(tmp_path, [user(0, "go")], {"abuilder-1": {"entries": entries}})
         data = collect_agent_data(session.list_subagents()[0])
-        assert "Implement Task 9." in data.initial_prompt
+        assert "Build the parser." in data.initial_prompt
         assert "later" not in data.initial_prompt
 
     def test_prompt_summary_drops_pasted_content_wrappers(self, tmp_path):
-        text = '\n\n<pasted_content id="5d34">\nContinue the rework.\n</pasted_content>'
+        text = '\n\n<pasted_content id="1a2b">\nContinue the rework.\n</pasted_content>'
         (ev,) = timeline(write_session(tmp_path, [user(1, text, origin={"kind": "human"})]))
         assert ev.summary == "Continue the rework."
         assert ev.metadata["full_content"] == text
@@ -1243,18 +1241,18 @@ class TestWrapperParsing:
 
 
 class TestAgentTypeOnEvents:
-    META = {"name": "impl-m9", "spawnedAgentType": "feature-dev:code-reviewer"}
+    META = {"name": "builder", "spawnedAgentType": "example-plugin:reviewer"}
 
     def _session(self, tmp_path, entries):
-        return write_session(tmp_path, entries, {"aimpl-m9-cd8b": {"meta": self.META}})
+        return write_session(tmp_path, entries, {"abuilder-00aa11bb22cc": {"meta": self.META}})
 
     def test_messages_name_the_peer_agents_type(self, tmp_path):
         incoming = (
             "Another Claude session sent a message:\n"
-            '<teammate-message teammate_id="impl-m9">\nTask 9 done.\n</teammate-message>'
+            '<teammate-message teammate_id="builder">\nParser is built.\n</teammate-message>'
         )
         outgoing = tool_use(
-            "t_sm", "SendMessage", to="impl-m9", recipient_kind="name", message="go"
+            "t_sm", "SendMessage", to="builder", recipient_kind="name", message="go"
         )
         stranger = tool_use(
             "t_sm2", "SendMessage", to="uds:/tmp/x.sock", recipient_kind="session", message="hi"
@@ -1263,34 +1261,34 @@ class TestAgentTypeOnEvents:
             self._session(tmp_path, [user(1, incoming), assistant(2, [outgoing, stranger])])
         )
         came, went, other = of_type(events, "message")
-        assert came.actor_agent_type == "feature-dev:code-reviewer"
-        assert came.metadata["peer_agent_type"] == "feature-dev:code-reviewer"
-        assert went.metadata["peer_agent_type"] == "feature-dev:code-reviewer"
+        assert came.actor_agent_type == "example-plugin:reviewer"
+        assert came.metadata["peer_agent_type"] == "example-plugin:reviewer"
+        assert went.metadata["peer_agent_type"] == "example-plugin:reviewer"
         assert went.actor_agent_type is None
         assert other.metadata["peer_agent_type"] is None
 
     def test_idle_row_and_task_notification_name_the_agents_type(self, tmp_path):
         idle = json.dumps(
-            {"type": "idle_notification", "from": "impl-m9", "idleReason": "available"}
+            {"type": "idle_notification", "from": "builder", "idleReason": "available"}
         )
         idle_text = (
             "Another Claude session sent a message:\n"
-            f'<teammate-message teammate_id="impl-m9">\n{idle}\n</teammate-message>'
+            f'<teammate-message teammate_id="builder">\n{idle}\n</teammate-message>'
         )
-        note = TASK_NOTE.replace("a88c3f920e0d92c99", "aimpl-m9-cd8b").replace(
+        note = TASK_NOTE.replace("a0123456789abcdef", "abuilder-00aa11bb22cc").replace(
             "toolu_spawn", "t_none"
         )
-        shell = TASK_NOTE.replace("a88c3f920e0d92c99", "bsh123456").replace(
-            'Agent "Probe write" finished', 'Background command "x" completed (exit code 0)'
+        shell = TASK_NOTE.replace("a0123456789abcdef", "bsh123456").replace(
+            'Agent "Tidy the notes" finished', 'Background command "x" completed (exit code 0)'
         )
         events = timeline(
             self._session(tmp_path, [user(1, idle_text), user(2, note), user(3, shell)])
         )
         (idle_row,) = of_type(events, "system_context")
-        assert idle_row.actor_agent_type == "feature-dev:code-reviewer"
-        assert idle_row.metadata["agent_type"] == "feature-dev:code-reviewer"
+        assert idle_row.actor_agent_type == "example-plugin:reviewer"
+        assert idle_row.metadata["agent_type"] == "example-plugin:reviewer"
         agent_note, shell_note = of_type(events, "task_notification")
-        assert agent_note.metadata["agent_type"] == "feature-dev:code-reviewer"
+        assert agent_note.metadata["agent_type"] == "example-plugin:reviewer"
         assert shell_note.metadata.get("agent_type") is None
 
     def test_type_from_the_spawn_call_when_the_agent_has_no_meta(self, tmp_path):
@@ -1300,7 +1298,7 @@ class TestAgentTypeOnEvents:
         result = tool_result(
             2, "t_spawn", "done\nagentId: a1b2c3d4e5", toolUseResult={"agentId": "a1b2c3d4e5"}
         )
-        note = TASK_NOTE.replace("a88c3f920e0d92c99", "a1b2c3d4e5").replace(
+        note = TASK_NOTE.replace("a0123456789abcdef", "a1b2c3d4e5").replace(
             "toolu_spawn", "t_spawn"
         )
         events = timeline(write_session(tmp_path, [spawn, result, user(3, note)]))
@@ -1315,3 +1313,92 @@ class TestAgentTypeOnEvents:
         (ev,) = timeline(write_session(tmp_path, [user(1, text)]))
         assert (ev.actor_type, ev.actor_agent_type) == ("subagent", None)
         assert ev.metadata["peer_agent_type"] is None
+
+
+class TestPeerSessionLinks:
+    """A message from a named session links to that session only when one session fits."""
+
+    OTHER = "99999999-8888-7777-6666-555555555555"
+
+    def _events(self, tmp_path):
+        reply = tool_use(
+            "toolu_sm", "SendMessage", to="docs-site", recipient_kind="name", message="ANSWER: 3000"
+        )
+        session = write_session(
+            tmp_path,
+            [user(60, PEER_TEXT, isMeta=True, origin=PEER_ORIGIN), assistant(120, [reply])],
+        )
+        return timeline(session)
+
+    def _named(self, uuid, start_sec, end_sec, project="-Users-me-docs"):
+        from datetime import datetime
+
+        from services.timeline_links import NamedSession
+
+        def at(sec):
+            return datetime.fromisoformat(_ts(sec).replace("Z", "+00:00"))
+
+        return NamedSession(uuid, project, at(start_sec), at(end_sec))
+
+    def _link(self, events, candidates, own_uuid=SID):
+        from services.timeline_links import link_peer_sessions
+
+        return link_peer_sessions(events, {"docs-site": candidates}, own_uuid=own_uuid)
+
+    def test_message_events_carry_null_links_by_default(self, tmp_path):
+        incoming, outgoing = of_type(self._events(tmp_path), "message")
+        for ev in (incoming, outgoing):
+            assert ev.metadata["peer_session_uuid"] is None
+            assert ev.metadata["peer_project_encoded_name"] is None
+
+    def test_one_session_with_the_name_active_at_the_time_is_linked(self, tmp_path):
+        events = self._events(tmp_path)
+        links = self._link(events, [self._named(self.OTHER, 0, 600)])
+        incoming, outgoing = of_type(events, "message")
+        assert incoming.metadata["peer_session_uuid"] == self.OTHER
+        assert incoming.metadata["peer_project_encoded_name"] == "-Users-me-docs"
+        assert outgoing.metadata["peer_session_uuid"] == self.OTHER
+        assert set(links) == {incoming.id, outgoing.id}
+
+    def test_two_sessions_with_the_name_at_that_time_are_not_guessed_between(self, tmp_path):
+        events = self._events(tmp_path)
+        self._link(events, [self._named(self.OTHER, 0, 600), self._named("another", 30, 300)])
+        assert all(e.metadata["peer_session_uuid"] is None for e in of_type(events, "message"))
+
+    def test_the_session_active_at_the_time_wins_over_one_that_was_not(self, tmp_path):
+        events = self._events(tmp_path)
+        self._link(events, [self._named("earlier", 0, 30), self._named(self.OTHER, 40, 600)])
+        assert of_type(events, "message")[0].metadata["peer_session_uuid"] == self.OTHER
+
+    def test_a_session_not_running_at_the_time_is_not_linked(self, tmp_path):
+        events = self._events(tmp_path)
+        self._link(events, [self._named(self.OTHER, 0, 30)])
+        assert all(e.metadata["peer_session_uuid"] is None for e in of_type(events, "message"))
+
+    def test_a_session_is_never_linked_to_itself(self, tmp_path):
+        events = self._events(tmp_path)
+        self._link(events, [self._named(SID, 0, 600)])
+        assert all(e.metadata["peer_session_uuid"] is None for e in of_type(events, "message"))
+
+    def test_agent_messages_are_not_looked_up(self, tmp_path):
+        from services.timeline_links import peer_refs
+
+        text = (
+            "Another Claude session sent a message:\n"
+            '<teammate-message teammate_id="docs-site">\nhello\n</teammate-message>'
+        )
+        events = timeline(write_session(tmp_path, [user(1, text)]))
+        assert peer_refs(events) == ()
+        assert self._link(events, [self._named(self.OTHER, 0, 600)]) == {}
+        assert events[0].metadata["peer_session_uuid"] is None
+
+    def test_etag_reflects_the_resolved_links(self, tmp_path):
+        from services.timeline_links import links_etag
+
+        events = self._events(tmp_path)
+        none = links_etag('"base"', self._link(events, []))
+        one = links_etag('"base"', self._link(events, [self._named(self.OTHER, 0, 600)]))
+        other = links_etag('"base"', self._link(events, [self._named("someone-else", 0, 600)]))
+        assert none == '"base"'
+        assert len({none, one, other}) == 3
+        assert one.startswith('"base-l') and one.endswith('"')
