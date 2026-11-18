@@ -4,6 +4,8 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from models.jsonl_utils import iter_messages_from_jsonl
@@ -946,6 +948,7 @@ class TestTimelineCacheVersion:
         assert timeline_etag(None) is None
 
     def test_stale_etag_is_not_rescued_by_if_modified_since(self):
+        pytest.importorskip("starlette")  # the models-only CI job has no web deps
         from datetime import datetime, timezone
 
         from starlette.requests import Request

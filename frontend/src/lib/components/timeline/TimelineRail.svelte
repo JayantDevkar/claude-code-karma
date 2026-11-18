@@ -93,6 +93,8 @@
 		if (!id || !containerRef) return;
 		e.preventDefault();
 		await tick();
+		// The rail can unmount while the tick is pending.
+		if (!containerRef) return;
 		const card = Array.from(containerRef.querySelectorAll<HTMLElement>('[data-event-id]')).find(
 			(el) => el.dataset.eventId === id
 		);
