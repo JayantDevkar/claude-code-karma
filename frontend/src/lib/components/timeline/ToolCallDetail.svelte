@@ -22,7 +22,7 @@
 	} from 'lucide-svelte';
 	import { marked } from 'marked';
 	import { markdownCopyButtons } from '$lib/actions/markdownCopyButtons';
-	import DOMPurify from 'isomorphic-dompurify';
+	import { sanitizeEventHtml } from '$lib/utils/sanitizeEventHtml';
 	import type { TimelineEvent } from '$lib/api-types';
 	import { formatDisplayPath } from '$lib/utils';
 	import { highlightPlainText, highlightHtmlContent } from '$lib/utils/highlight';
@@ -95,10 +95,10 @@
 			const parsed = marked.parse(raw);
 			if (parsed instanceof Promise) {
 				parsed.then((html) => {
-					sanitizedPlanHtml = DOMPurify.sanitize(html);
+					sanitizedPlanHtml = sanitizeEventHtml(html);
 				});
 			} else {
-				sanitizedPlanHtml = DOMPurify.sanitize(parsed);
+				sanitizedPlanHtml = sanitizeEventHtml(parsed);
 			}
 		}
 	});

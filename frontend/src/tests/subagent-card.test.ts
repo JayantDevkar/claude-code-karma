@@ -22,8 +22,8 @@ beforeEach(() => {
 
 function agent(overrides: Partial<SubagentSummary> = {}): SubagentSummary {
 	return {
-		agent_id: 'areview-backend-dfe067fd7904abc2',
-		slug: 'velvet-sauteeing-mist',
+		agent_id: 'areview-api-0f1e2d3c4b5a6978',
+		slug: 'quiet-amber-river',
 		subagent_type: 'general-purpose',
 		tools_used: { Bash: 3, Read: 2 },
 		message_count: 12,
@@ -44,21 +44,19 @@ describe('SubagentCard: named agent', () => {
 	afterEach(cleanup);
 
 	const named = agent({
-		name: 'review-backend',
+		name: 'review-api',
 		color: 'blue',
-		team_name: 'wind-tunnel',
+		team_name: 'checkout-team',
 		model: 'opus',
 		description: 'Review the backend changes'
 	});
 
 	it('titles the card with the name, in the colour the timeline uses for that agent', () => {
 		const { card } = setup(named);
-		const link = within(card).getByRole('link', { name: /review-backend/ });
-		expect(link).toHaveTextContent(/^review-backend$/);
+		const link = within(card).getByRole('link', { name: /review-api/ });
+		expect(link).toHaveTextContent(/^review-api$/);
 		expect(tint(link)).toBe('var(--agent-blue)');
-		expect(tint(link)).toBe(
-			getAgentColorVars('blue', 'general-purpose', 'review-backend').color
-		);
+		expect(tint(link)).toBe(getAgentColorVars('blue', 'general-purpose', 'review-api').color);
 		expect(card.style.borderLeftColor).toBe('var(--agent-blue)');
 	});
 
@@ -69,11 +67,11 @@ describe('SubagentCard: named agent', () => {
 
 	it('keeps the full id on the card to copy, and links with it encoded', () => {
 		const { card } = setup(named);
-		expect(within(card).getByText('areview-backend-dfe067fd7904abc2')).toBeInTheDocument();
+		expect(within(card).getByText('areview-api-0f1e2d3c4b5a6978')).toBeInTheDocument();
 		expect(within(card).getByRole('button', { name: 'Copy agent id' })).toBeInTheDocument();
-		expect(within(card).getByRole('link', { name: /review-backend/ })).toHaveAttribute(
+		expect(within(card).getByRole('link', { name: /review-api/ })).toHaveAttribute(
 			'href',
-			'/projects/-Users-me-repo/abc12345/agents/areview-backend-dfe067fd7904abc2'
+			'/projects/-Users-me-repo/abc12345/agents/areview-api-0f1e2d3c4b5a6978'
 		);
 	});
 
@@ -84,14 +82,14 @@ describe('SubagentCard: named agent', () => {
 		expect(
 			description.compareDocumentPosition(prompt) & Node.DOCUMENT_POSITION_FOLLOWING
 		).toBeTruthy();
-		expect(card).toHaveTextContent('team wind-tunnel');
+		expect(card).toHaveTextContent('team checkout-team');
 		expect(card).toHaveTextContent('opus');
 	});
 
 	it('hides a model tag that says nothing', () => {
 		for (const model of ['inherit', 'Inherit', '', '  ', null]) {
 			const { card, unmount } = setup(agent({ ...named, model }));
-			expect(card).toHaveTextContent('team wind-tunnel');
+			expect(card).toHaveTextContent('team checkout-team');
 			expect(card).not.toHaveTextContent(/inherit/i);
 			unmount();
 		}
@@ -101,8 +99,8 @@ describe('SubagentCard: named agent', () => {
 
 	it('gives two agents of the same type their own colours', () => {
 		const frontend = agent({
-			agent_id: 'areview-frontend-0123456789abcdef',
-			name: 'review-frontend',
+			agent_id: 'areview-web-0123456789abcdef',
+			name: 'review-web',
 			color: 'green'
 		});
 		expect(getAgentIdentityColors(named).color).toBe('var(--agent-blue)');
@@ -114,82 +112,90 @@ describe('SubagentCard: unnamed agent', () => {
 	afterEach(cleanup);
 
 	it('titles the card with a short readable id when there is no name', () => {
-		const { card } = setup(agent({ agent_id: 'aui-review-57f8a08c8c69f14f' }));
-		expect(within(card).getByRole('link', { name: /ui-review/ })).toHaveTextContent(
-			/^ui-review$/
+		const { card } = setup(agent({ agent_id: 'aui-check-0a1b2c3d4e5f6071' }));
+		expect(within(card).getByRole('link', { name: /ui-check/ })).toHaveTextContent(
+			/^ui-check$/
 		);
-		expect(within(card).getByText('aui-review-57f8a08c8c69f14f')).toBeInTheDocument();
+		expect(within(card).getByText('aui-check-0a1b2c3d4e5f6071')).toBeInTheDocument();
 	});
 
 	it('titles an unnamed agent by its type, with the id beneath and no repeated type badge', () => {
-		const plain = agent({ agent_id: 'a030ff016e8febfee', subagent_type: 'Explore' });
+		const plain = agent({ agent_id: 'a9f8e7d6c5b4a3f2e', subagent_type: 'Explore' });
 		const { card } = setup(plain);
 		const link = within(card).getByRole('link', { name: /Explore/ });
 		expect(link).toHaveTextContent(/^Explore$/);
 		expect(tint(link)).toBe('var(--subagent-explore)');
-		expect(within(card).getByText('a030ff016e8febfee')).toBeInTheDocument();
+		expect(within(card).getByText('a9f8e7d6c5b4a3f2e')).toBeInTheDocument();
 		expect(within(card).getAllByText('Explore')).toHaveLength(1);
+	});
+
+	it('never shows an internal type marker as a badge', () => {
+		const { card } = setup(agent({ name: 'reviewer-a', subagent_type: '_teammate' }));
+		expect(card).toHaveTextContent('reviewer-a');
+		expect(card).not.toHaveTextContent('_teammate');
 	});
 
 	it('hides a team tag that is only the session itself', () => {
 		const { card } = setup(
-			agent({ name: 'rev-m6', team_name: 'session-650f4fe4', model: 'opus' })
+			agent({ name: 'reviewer-a', team_name: 'session-4e5f6a7b', model: 'opus' })
 		);
 		expect(card).toHaveTextContent('opus');
-		expect(card).not.toHaveTextContent('session-650f4fe4');
+		expect(card).not.toHaveTextContent('session-4e5f6a7b');
 	});
 
 	it('renders without optional fields: no tags, no description, no link without a route', () => {
-		const { card } = setup(agent({ agent_id: 'a030ff016e8febfee', initial_prompt: null }), {});
+		const { card } = setup(agent({ agent_id: 'a9f8e7d6c5b4a3f2e', initial_prompt: null }), {});
 		expect(within(card).queryByRole('link')).toBeNull();
-		expect(card).toHaveTextContent('a030ff01');
+		expect(card).toHaveTextContent('a9f8e7d6');
 		expect(card).not.toHaveTextContent('team ');
 	});
 
 	it('names every agent by one rule: name, id-embedded name, type plus short id, short id', () => {
-		expect(getAgentLabel({ agent_id: 'arev-m6-0123456789abcdef', name: 'rev-m6' })).toEqual({
-			label: 'rev-m6',
+		expect(
+			getAgentLabel({ agent_id: 'areviewer-a-0123456789abcdef', name: 'reviewer-a' })
+		).toEqual({
+			label: 'reviewer-a',
 			secondary: null
 		});
 		expect(
 			getAgentLabel({
-				agent_id: 'aimpl-t28-e4a00898e0a882a3',
+				agent_id: 'abuilder-b-0b0b0b0b0b0b0b0b',
 				subagent_type: 'general-purpose'
 			})
 		).toEqual({
-			label: 'impl-t28',
+			label: 'builder-b',
 			secondary: null
 		});
 		expect(
-			getAgentLabel({ agent_id: 'af57af573db6a9d4d', subagent_type: 'general-purpose' })
+			getAgentLabel({ agent_id: 'a5e4d3c2b1a0f9e8d', subagent_type: 'general-purpose' })
 		).toEqual({
 			label: 'general-purpose',
-			secondary: 'af57af57'
+			secondary: 'a5e4d3c2'
 		});
 		expect(
 			getAgentLabel({
-				agent_id: 'af57af573db6a9d4d',
+				agent_id: 'a5e4d3c2b1a0f9e8d',
 				name: 'general-purpose',
 				subagent_type: 'general-purpose'
 			})
-		).toEqual({ label: 'general-purpose', secondary: 'af57af57' });
+		).toEqual({ label: 'general-purpose', secondary: 'a5e4d3c2' });
 		expect(
-			getAgentLabel({ agent_id: 'af57af573db6a9d4d', subagent_type: '_teammate' })
+			getAgentLabel({ agent_id: 'a5e4d3c2b1a0f9e8d', subagent_type: '_teammate' })
 		).toEqual({
-			label: 'af57af57',
+			label: 'a5e4d3c2',
 			secondary: null
 		});
 		expect(getAgentLabel({ agent_id: 'aprompt_suggestion-7796cd0011223344' })).toEqual({
 			label: 'Prompt Suggestion',
 			secondary: '7796cd00'
 		});
-		const unnamed = { agent_id: 'af57af573db6a9d4d', subagent_type: 'general-purpose' };
-		expect(getAgentFullName(unnamed)).toBe('general-purpose af57af57');
-		expect(getAgentFullName({ agent_id: 'arev-m6-0123456789abcdef', name: 'rev-m6' })).toBe(
-			'rev-m6'
-		);
+		const unnamed = { agent_id: 'a5e4d3c2b1a0f9e8d', subagent_type: 'general-purpose' };
+		expect(getAgentFullName(unnamed)).toBe('general-purpose a5e4d3c2');
 		expect(
-			getAgentDisplayName({ agent_id: 'af57af573db6a9d4d', subagent_type: 'Explore' })
+			getAgentFullName({ agent_id: 'areviewer-a-0123456789abcdef', name: 'reviewer-a' })
+		).toBe('reviewer-a');
+		expect(
+			getAgentDisplayName({ agent_id: 'a5e4d3c2b1a0f9e8d', subagent_type: 'Explore' })
 		).toBe('Explore');
 	});
 });
@@ -197,7 +203,7 @@ describe('SubagentCard: unnamed agent', () => {
 describe('SubagentCard: long name', () => {
 	afterEach(cleanup);
 
-	const longName = 'final-fix-wave-2-residual-rereview-of-the-notification-threading-change';
+	const longName = 'a-very-long-agent-name-that-keeps-going-well-past-the-width-of-one-card';
 
 	it('shows the whole name and lets it wrap instead of truncating it', () => {
 		const { card } = setup(agent({ name: longName, color: 'pink' }));
@@ -212,28 +218,27 @@ describe('SubagentCard: long name', () => {
 describe('SubagentCard: expanding', () => {
 	afterEach(cleanup);
 
-	const long = agent({ name: 'rev-m6', initial_prompt: 'x'.repeat(300) });
+	const long = agent({ name: 'reviewer-a', initial_prompt: 'x'.repeat(300) });
 
 	it('expands from a real button and not from a role=button container', async () => {
 		const { card } = setup(long);
 		expect(card.getAttribute('role')).toBeNull();
-		const toggle = within(card).getByRole('button', { name: 'Show details for rev-m6' });
+		const toggle = within(card).getByRole('button', { name: 'Show details for reviewer-a' });
 		expect(toggle).toHaveAttribute('aria-expanded', 'false');
 		await fireEvent.click(toggle);
 		expect(
-			within(card).getByRole('button', { name: 'Hide details for rev-m6' })
+			within(card).getByRole('button', { name: 'Hide details for reviewer-a' })
 		).toHaveAttribute('aria-expanded', 'true');
 	});
 
 	it('does not expand when the name link or the copy button is clicked', async () => {
 		const { card } = setup(long);
-		const link = within(card).getByRole('link', { name: /rev-m6/ });
+		const link = within(card).getByRole('link', { name: /reviewer-a/ });
 		link.addEventListener('click', (e) => e.preventDefault());
 		await fireEvent.click(link);
 		await fireEvent.click(within(card).getByRole('button', { name: 'Copy agent id' }));
-		expect(within(card).getByRole('button', { name: /details for rev-m6/ })).toHaveAttribute(
-			'aria-expanded',
-			'false'
-		);
+		expect(
+			within(card).getByRole('button', { name: /details for reviewer-a/ })
+		).toHaveAttribute('aria-expanded', 'false');
 	});
 });

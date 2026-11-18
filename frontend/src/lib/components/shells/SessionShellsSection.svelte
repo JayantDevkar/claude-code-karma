@@ -1,34 +1,29 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { Activity, Play, X, Square, Loader2 } from 'lucide-svelte';
 	import { API_BASE } from '$lib/config';
-	import type {
-		BackgroundShell,
-		ShellsListResponse
-	} from '$lib/api-types';
+	import type { BackgroundShell, ShellsListResponse } from '$lib/api-types';
+	import {
+		INDEX_REBUILDING_MESSAGE,
+		INDEX_STILL_REBUILDING_MESSAGE
+	} from '$lib/utils/indexRebuilding';
+	import { createIndexedTab } from '$lib/utils/indexedTab.svelte';
 
 	interface Props {
 		sessionUuid: string;
+		/** False while the tab is hidden; loading starts when it is first shown */
+		active?: boolean;
 	}
-	let { sessionUuid }: Props = $props();
+	let { sessionUuid, active = true }: Props = $props();
 
-	let loading = $state(true);
-	let error = $state<string | null>(null);
-	let shells = $state<BackgroundShell[]>([]);
+	// The index answers 503 while it rebuilds; the tab waits, retries, and gives up after a few minutes.
+	const tab = createIndexedTab<ShellsListResponse>(
+		() => `${API_BASE}/sessions/${sessionUuid}/shells?include_polls=true`,
+		() => active
+	);
+	const loading = $derived(tab.status === 'idle' || tab.status === 'loading');
+	const error = $derived(tab.error);
+	const shells = $derived<BackgroundShell[]>(tab.data?.shells ?? []);
 	let expandedId = $state<number | null>(null);
-
-	onMount(async () => {
-		try {
-			const res = await fetch(`${API_BASE}/sessions/${sessionUuid}/shells?include_polls=true`);
-			if (!res.ok) throw new Error(`API ${res.status}`);
-			const data = (await res.json()) as ShellsListResponse;
-			shells = data.shells ?? [];
-		} catch (e) {
-			error = e instanceof Error ? e.message : String(e);
-		} finally {
-			loading = false;
-		}
-	});
 
 	function formatDuration(start: string, end: string | null): string {
 		const s = new Date(start).getTime();
@@ -65,7 +60,29 @@
 		{/if}
 	</div>
 
-	{#if loading}
+	{#if tab.status === 'stalled'}
+		<div
+			role="status"
+			class="flex flex-wrap items-center justify-center gap-3 rounded-lg border border-dashed border-[var(--border)] p-8 text-sm text-[var(--text-secondary)]"
+		>
+			{INDEX_STILL_REBUILDING_MESSAGE}
+			<button
+				type="button"
+				onclick={tab.retry}
+				class="rounded-md border border-[var(--border)] bg-[var(--bg-base)] px-2.5 py-1 font-medium text-[var(--text-primary)] hover:border-[var(--accent)]"
+			>
+				Try again
+			</button>
+		</div>
+	{:else if tab.status === 'rebuilding'}
+		<div
+			role="status"
+			class="flex items-center justify-center gap-2 rounded-lg border border-dashed border-[var(--border)] p-8 text-sm text-[var(--text-secondary)]"
+		>
+			<Loader2 size={16} class="animate-spin shrink-0" />
+			{INDEX_REBUILDING_MESSAGE}
+		</div>
+	{:else if loading}
 		<div class="flex items-center justify-center py-12 text-[var(--text-muted)]">
 			<Loader2 size={20} class="animate-spin" />
 		</div>
@@ -82,7 +99,9 @@
 			<Activity size={28} class="mx-auto mb-3 opacity-40" />
 			<p class="m-0">No background shells recorded for this session.</p>
 			<p class="m-0 mt-1 text-xs">
-				They appear here when Claude runs <code class="font-mono">Bash{'{run_in_background:true}'}</code>
+				They appear here when Claude runs <code class="font-mono"
+					>Bash{'{run_in_background:true}'}</code
+				>
 				or <code class="font-mono">Monitor</code>.
 			</p>
 		</div>
@@ -149,12 +168,15 @@
 							class="border-t border-[var(--border)] p-4 space-y-3 bg-[var(--bg-base)]"
 						>
 							<div>
-								<div class="text-xs uppercase tracking-wide text-[var(--text-muted)] mb-1">
+								<div
+									class="text-xs uppercase tracking-wide text-[var(--text-muted)] mb-1"
+								>
 									Command
 								</div>
 								<pre
-									class="font-mono text-xs text-[var(--text-primary)] bg-[var(--bg-subtle)] p-3 rounded overflow-x-auto m-0 whitespace-pre-wrap break-all"
-								>{shell.command}{shell.command_truncated ? '\n…(truncated)' : ''}</pre>
+									class="font-mono text-xs text-[var(--text-primary)] bg-[var(--bg-subtle)] p-3 rounded overflow-x-auto m-0 whitespace-pre-wrap break-all">{shell.command}{shell.command_truncated
+										? '\n…(truncated)'
+										: ''}</pre>
 							</div>
 							<div class="grid grid-cols-2 gap-3 text-xs">
 								<div>
@@ -179,17 +201,22 @@
 								</div>
 								<div>
 									<span class="text-[var(--text-muted)]">Tool:</span>
-									<span class="font-mono text-[var(--text-primary)]">{shell.tool_name}</span>
+									<span class="font-mono text-[var(--text-primary)]"
+										>{shell.tool_name}</span
+									>
 								</div>
 							</div>
 							{#if shell.polls && shell.polls.length > 0}
 								<div>
-									<div class="text-xs uppercase tracking-wide text-[var(--text-muted)] mb-1">
+									<div
+										class="text-xs uppercase tracking-wide text-[var(--text-muted)] mb-1"
+									>
 										Latest poll output
 									</div>
 									<pre
-										class="font-mono text-xs text-[var(--text-secondary)] bg-[var(--bg-subtle)] p-3 rounded overflow-x-auto m-0 max-h-40 whitespace-pre-wrap break-all"
-									>{shell.polls[shell.polls.length - 1].output_excerpt ?? '(empty)'}</pre>
+										class="font-mono text-xs text-[var(--text-secondary)] bg-[var(--bg-subtle)] p-3 rounded overflow-x-auto m-0 max-h-40 whitespace-pre-wrap break-all">{shell
+											.polls[shell.polls.length - 1].output_excerpt ??
+											'(empty)'}</pre>
 								</div>
 							{/if}
 						</div>

@@ -128,7 +128,12 @@ const SEARCH_SKIP_KEYS = new Set([
 	'tool_id',
 	'result_timestamp',
 	'spawned_agent_id',
-	'result_parsed'
+	'result_parsed',
+	// Ids and addresses that are never shown as text on the card
+	'peer_session_uuid',
+	'peer_project_encoded_name',
+	'peer_agent_id',
+	'peer_address'
 ]);
 
 // Recursively collects every searchable string value inside `value` into `out`,

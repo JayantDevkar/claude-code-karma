@@ -47,6 +47,9 @@
 		class: className = ''
 	}: Props = $props();
 
+	// Stable across server and client rendering, unlike a random suffix.
+	const uid = $props.id();
+
 	// Debounces the downstream search (a full metadata scan) so it doesn't re-run on every keystroke.
 	let debounceTimeout: ReturnType<typeof setTimeout>;
 	function handleSearchInput(value: string) {
@@ -164,7 +167,7 @@
 		'bg-[var(--bg-base)] border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--chip)]/30 hover:bg-[var(--chip)]/5';
 
 	// One id per filter bar for the hint text a chip points at.
-	const hintIdBase = `timeline-filter-hint-${Math.random().toString(36).slice(2, 8)}`;
+	const hintIdBase = `timeline-filter-hint-${uid}`;
 
 	const hasActiveFilters = $derived(activeFilters.size > 0 || searchQuery.length > 0);
 </script>

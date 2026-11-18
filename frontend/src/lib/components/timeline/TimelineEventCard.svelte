@@ -193,6 +193,15 @@
 		else onToggleExpand();
 	}
 
+	// One tab stop per card: Delete on its control hides the event. A Mac's delete key sends Backspace.
+	function hideOnDelete(e: KeyboardEvent) {
+		if ((e.key !== 'Delete' && e.key !== 'Backspace') || !onToggleHide) return;
+		e.preventDefault();
+		// A held key repeats on whichever card focus moved to; one press hides one event.
+		if (e.repeat) return;
+		onToggleHide();
+	}
+
 	// The whole card opens on a mouse click; clicks on the controls inside it are theirs alone.
 	function openFromCard(e: MouseEvent) {
 		const target = e.target as HTMLElement | null;
@@ -238,8 +247,12 @@
 				class="rounded p-0.5 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-muted)] hover:text-[var(--text-primary)]"
 				aria-expanded={usePopup ? undefined : isExpanded}
 				aria-haspopup={usePopup ? 'dialog' : undefined}
-				aria-label="{isExpanded ? 'Hide' : 'Show'} details: {displayTitle}"
+				aria-label="{isExpanded ? 'Collapse' : 'Show'} details: {displayTitle}"
+				aria-keyshortcuts="Delete Backspace"
+				title="{isExpanded ? 'Collapse' : 'Show'} details. Press Delete to hide this event."
+				data-timeline-primary
 				onclick={open}
+				onkeydown={hideOnDelete}
 			>
 				{#if isExpanded}
 					<ChevronDown class="h-4 w-4" />
@@ -267,7 +280,7 @@
 	data-event-index={index}
 	data-event-type={type}
 	data-event-id={event.id}
-	class="group relative flex gap-4 transition-all duration-200"
+	class="timeline-row group relative -mx-1 -mt-1 flex gap-4 px-1 pt-1 transition-all duration-200"
 >
 	<!-- Rail line -->
 	<div class="relative flex flex-col items-center">
@@ -292,8 +305,12 @@
 			"
 			onclick={(e) => {
 				e.stopPropagation();
-				if (onToggleHide) onToggleHide();
+				onToggleHide?.();
 			}}
+			onkeydown={hasExpandableContent ? undefined : hideOnDelete}
+			aria-keyshortcuts={hasExpandableContent ? undefined : 'Delete Backspace'}
+			tabindex={hasExpandableContent ? -1 : 0}
+			data-timeline-primary={hasExpandableContent ? undefined : ''}
 			title="Hide event"
 			aria-label="Hide event: {displayTitle}"
 		>
@@ -486,3 +503,12 @@
 		</div>
 	{/if}
 </div>
+
+<style>
+	/* Off-screen rows skip layout and paint; rings fit in the 4px padding, and fixed children stay in the row. */
+	.timeline-row {
+		content-visibility: auto;
+		contain-intrinsic-block-size: auto 96px;
+		overflow-clip-margin: 16px;
+	}
+</style>
