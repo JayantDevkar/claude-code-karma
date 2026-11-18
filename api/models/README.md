@@ -45,6 +45,7 @@ Project
 │   │   ├── AssistantMessage
 │   │   │   └── ContentBlock (TextBlock, ThinkingBlock, ToolUseBlock)
 │   │   └── FileHistorySnapshot
+│   ├── Side entry (SystemEntry, QueuedCommandEntry)
 │   ├── Agent (subagents/)
 │   ├── ToolResult (tool-results/)
 │   └── TodoItem
@@ -156,6 +157,8 @@ agent.list_messages()     # List[Message]
 agent.get_usage_summary() # TokenUsage
 ```
 
+A subagent's name, type, team, colour and model are in the `agent-<id>.meta.json` next to its JSONL. `services/agent_registry.py` (`build_agent_registry()`) reads them.
+
 ### Messages
 
 Three message types parsed from JSONL:
@@ -177,6 +180,7 @@ for msg in session.iter_messages():
     if isinstance(msg, UserMessage):
         msg.content    # str
         msg.user_type  # Optional[str]
+        msg.source     # str: who wrote the entry (see below)
         
     elif isinstance(msg, AssistantMessage):
         msg.model          # Optional[str] (e.g., "claude-opus-4-5-20251101")
@@ -186,6 +190,33 @@ for msg in session.iter_messages():
         msg.text_content   # str (concatenated text blocks)
         msg.tool_calls     # List[ToolUseBlock]
         msg.tool_names     # List[str]
+```
+
+A `type: user` entry is not always a prompt. `UserMessage.source` says who wrote it:
+
+| `source` | Written by |
+|----------|-----------|
+| `human`, `command`, `shell`, `interrupt` | The user: a typed prompt, a slash command, a `!` shell command, an interruption |
+| `peer_session` | Another Claude session |
+| `agent` | A teammate, the team lead or the coordinator |
+| `task_notification`, `scheduled` | A background task reporting back, a scheduled task firing |
+| `skill_body`, `system_reminder`, `meta`, `local_command`, `compact_summary` | Claude Code: injected text, command output, a compaction summary |
+| `tool_result` | A tool result |
+
+The value comes from the entry's structured fields (`origin`, `isMeta`, `sourceToolUseID`, `isCompactSummary`, `turnOrigin`), which are also parsed onto the message (`origin_kind`, `origin_name`, `origin_from`, `source_tool_use_id`, `is_compact_summary`, `turn_origin`). The start of the text is only a fallback for sessions written before those fields existed.
+
+#### Side entries
+
+`system` notices (recaps, model fallback, local command output, scheduled fires) and `queued_command` attachments (input delivered while Claude was working) are not messages. They are read separately and never appear in `iter_messages()`:
+
+```python
+from models.side_entries import QueuedCommandEntry, SystemEntry, iter_side_entries
+
+for entry in iter_side_entries(session.jsonl_path):
+    if isinstance(entry, SystemEntry):
+        entry.subtype, entry.content, entry.timestamp
+    elif isinstance(entry, QueuedCommandEntry):
+        entry.prompt, entry.origin_kind, entry.timestamp
 ```
 
 ### Content Blocks
@@ -374,6 +405,7 @@ print(f"Total tokens across all sessions: {total.total_tokens:,}")
 │   ├── {session-uuid}/
 │   │   ├── tool-results/toolu_*.txt  # Large tool outputs
 │   │   └── subagents/agent-*.jsonl   # Subagent sessions
+│   │       └── agent-*.meta.json     # Name, type, colour of each subagent
 │   └── agent-{id}.jsonl              # Standalone agents
 ├── debug/{session-uuid}.txt          # Debug logs
 ├── file-history/{session-uuid}/      # File backups

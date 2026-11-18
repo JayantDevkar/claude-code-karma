@@ -14,6 +14,10 @@ Browse all Claude Code sessions across every project. Filter by project, date ra
 
 Chronological event stream for any session. Events include user messages, assistant responses, tool calls (with inputs and outputs), subagent spawns, file operations, and system events. Each event is timestamped and categorized.
 
+Each event shows who sent it: you, Claude, a named agent, another Claude session, or Claude Code itself. Messages between agents and sessions, background task reports, scheduled task fires, context compaction and notices from Claude Code are events of their own. Agents appear with their name, type and Claude Code colour.
+
+Filter chips are grouped by who acts. Reminders and other text added for Claude are left out unless you select the System chip.
+
 ### Conversation Viewer
 
 Full conversation playback showing user and assistant messages in sequence. Supports markdown rendering, code blocks, and tool call visualization inline with the conversation flow.
@@ -43,7 +47,7 @@ The live sessions view shows all active sessions with their current state, proje
 
 ### Subagent Monitoring
 
-Track subagent (Task agent) spawning within sessions. See which agents were created, their prompts, duration, tool usage, and outcomes. Subagent conversations are individually browsable.
+Track subagent (Task agent) spawning within sessions. See which agents were created, their prompts, duration, tool usage, and outcomes. Named agents show their name, type and colour, the same way on the timeline, the Subagents tab and the agent page. Subagent conversations are individually browsable.
 
 ### Session Title Auto-Generation
 

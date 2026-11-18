@@ -22,10 +22,10 @@ The API also provides interactive documentation via FastAPI's built-in Swagger U
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/sessions/{uuid}` | Session details: messages, metadata, token counts, duration, model |
-| GET | `/sessions/{uuid}/timeline` | Chronological event timeline with messages, tool calls, and subagent events |
+| GET | `/sessions/{uuid}/timeline` | Chronological event timeline: prompts, Claude's turns, tool calls, subagent spawns, messages between agents and sessions, background task reports, scheduled fires, compaction and notices. Each event names its sender (`actor_type`, `actor_name`, `actor_color`, `actor_agent_type`) |
 | GET | `/sessions/{uuid}/tools` | Tool usage breakdown: call counts, tool names, success/failure |
 | GET | `/sessions/{uuid}/file-activity` | File operations performed during the session (read, write, edit, create) |
-| GET | `/sessions/{uuid}/subagents` | Subagent (Task agent) activity: spawned agents, prompts, outcomes |
+| GET | `/sessions/{uuid}/subagents` | Subagent (Task agent) activity: spawned agents with their name, type, colour, team, model and spawn description, prompts, outcomes |
 
 **Path parameter:** `uuid` is the session UUID matching the JSONL filename.
 
